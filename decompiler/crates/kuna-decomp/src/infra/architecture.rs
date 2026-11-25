@@ -1337,6 +1337,10 @@ pub struct Architecture {
     /// (kuna `boolbranch`) Keep a 0/1 select under a branch instruction instead of
     /// folding it into the condition ([`crate::p3_dataflow::kuna_boolbranch`]).
     pub bool_branch_keep: bool,
+    /// (kuna `boolbranch return`) A function that is only a guard with a
+    /// short-circuit condition returning 1 or 0 prints one `return` of the
+    /// condition ([`crate::p8_structure::kuna_boolret`]).
+    pub bool_ret: bool,
     /// (kuna `acleintrinsics`) On AArch64, lift the memory-tagging instructions
     /// with their tag effect (`kuna_memtag`) and print the barrier, hint and
     /// memory-tagging user ops as ACLE intrinsics (`kuna_acleintrinsics`).
@@ -2668,6 +2672,7 @@ impl Architecture {
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             byte_store_width: false, // (kuna) option bytestorewidth; reset_defaults sets the shipped default
             bool_branch_keep: false, // (kuna) option boolbranch; reset_defaults sets the shipped default
+            bool_ret: false, // (kuna) option boolbranch return; reset_defaults sets the shipped default
             acle_intrinsics: false, // (kuna) option acleintrinsics; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -3006,7 +3011,8 @@ impl Architecture {
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.byte_store_width = false; // (kuna) option bytestorewidth: opt-in
-        self.bool_branch_keep = true; // (kuna) option boolbranch default keep: a 0/1 select under a branch instruction keeps its if; conditional execution still folds
+        self.bool_branch_keep = true; // (kuna) option boolbranch default return: a 0/1 select under a branch instruction keeps its if; conditional execution still folds
+        self.bool_ret = true; // (kuna) option boolbranch default return: a whole-body short-circuit guard returning 1/0 prints one return of the condition
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = true; // (kuna) option calltargettype default-on; acts only with `ctypes` on, and `option calltargettype off` keeps the upstream `code *` spellings
@@ -3709,6 +3715,7 @@ impl Architecture {
         ctx.opaque_predicate = self.opaque_predicate;
         ctx.byte_store_width = self.byte_store_width;
         ctx.bool_branch_keep = self.bool_branch_keep;
+        ctx.bool_ret = self.bool_ret && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) boolbranch return
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the

@@ -136,12 +136,19 @@ pub(super) fn only_tested(data: &Funcdata, out: VarnodeId) -> bool {
     tested
 }
 
-/// Parse `fold|keep` into the `keep` flag and a confirmation message.
-pub fn parse_bool_branch(p1: &str) -> KunaResult<(bool, String)> {
+/// Parse `fold|keep|return` into the `keep` flag, the `return` flag
+/// ([`crate::p8_structure::kuna_boolret`]) and a confirmation message.
+pub fn parse_bool_branch(p1: &str) -> KunaResult<(bool, bool, String)> {
     match p1 {
-        "keep" => Ok((true, "0/1 selects under a branch instruction keep the branch".to_string())),
-        "fold" => Ok((false, "0/1 selects fold into the branch condition".to_string())),
-        _ => Err(KunaError::parse(format!("Unknown boolbranch value: {p1} (expected fold or keep)"))),
+        "return" => Ok((
+            true,
+            true,
+            "0/1 selects under a branch instruction keep the branch; a function that only tests a short-circuit condition returns it"
+                .to_string(),
+        )),
+        "keep" => Ok((true, false, "0/1 selects under a branch instruction keep the branch".to_string())),
+        "fold" => Ok((false, false, "0/1 selects fold into the branch condition".to_string())),
+        _ => Err(KunaError::parse(format!("Unknown boolbranch value: {p1} (expected fold, keep or return)"))),
     }
 }
 

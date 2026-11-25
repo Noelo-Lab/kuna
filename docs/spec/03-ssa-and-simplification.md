@@ -3386,7 +3386,7 @@ ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.
 
 (kuna) **Which 0/1 selects fold into their condition** (`option boolbranch
-fold|keep`, default keep,
+fold|keep|return`, default return,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_boolbranch.rs (keeps_branch)`).
 `ruleaction_7.rs (RuleConditionalMove)` (group `conditionalexe`) turns a
 two-input MULTIEQUAL whose inputs are both boolean, under a CBRANCH root whose
@@ -3431,6 +3431,10 @@ is upstream's rule. On the decbench corpus the default turns 171 functions at
 IT block) into exact matches of the source's control flow and loses 3, where the
 source wrote `return c ? 1 : 0;` or kept a flag the new output also shows
 (`tests/stages/kuna-boolbranch.xml`, `tests/stages/kuna-boolbranch-thumb.xml`).
+`return` is `keep` at this rule; it adds one re-spelling on the final tree,
+for a function whose whole body is a guard on a short-circuit condition that
+returns 1 or 0, which this rule cannot fold under any value (§8, *boolbranch
+return*).
 
 **Conditional constants.** `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionConditionalConst)` (mainloop tail, wrapper over
