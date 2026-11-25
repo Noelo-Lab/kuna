@@ -16,6 +16,7 @@ kuna-analysis.workspace = true
 kuna-sleigh.workspace = true
 kuna-slacomp.workspace = true
 kuna-jvm = { workspace = true, optional = true }
+kuna-managed.workspace = true
 kuna-num.workspace = true
 # FID and FLIRT construction also read archive members.
 object = { workspace = true, features = ["archive"] }

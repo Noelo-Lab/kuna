@@ -1,5 +1,5 @@
-//! glibc's heap policy for a JVM engine run, set once the input has been
-//! routed to the JVM engine (never on the native path).
+//! glibc's heap policy for a managed engine run, set once the input has been
+//! routed to a managed engine (never on the native path).
 //!
 //! Every engine thread builds and drops millions of small objects. Under the
 //! default policy each thread's heap grows a few pages at a time and is trimmed

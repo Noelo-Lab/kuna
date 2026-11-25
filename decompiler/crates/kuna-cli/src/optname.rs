@@ -39,11 +39,14 @@ pub(crate) fn check(name: &str) -> Result<(), String> {
         return Ok(());
     }
     let mut msg = format!("option {name}: Unknown option");
-    if name.starts_with("jvm_") {
-        msg.push_str(
-            "; jvm_* options apply to JVM inputs (class files, jars, directories), \
-             which `kuna catalog --engine jvm` lists",
-        );
+    let managed = crate::nonnative::ENGINES.iter().find(|e| name.starts_with(&format!("{}_", e.name())));
+    if let Some(e) = managed {
+        msg.push_str(&format!(
+            "; {0}_* options apply to {1} inputs ({2}), which `kuna catalog --engine {0}` lists",
+            e.name(),
+            e.label(),
+            e.inputs()
+        ));
         return Err(msg);
     }
     if let Some(near) = nearest(name) {
@@ -128,6 +131,7 @@ mod tests {
         assert!(!err.contains("did you mean"), "nothing is near it: {err}");
     }
 
+    #[cfg(feature = "jvm")]
     #[test]
     fn a_jvm_option_on_a_native_input_points_at_the_jvm_catalog() {
         let err = check("jvm_decompile_finally").unwrap_err();

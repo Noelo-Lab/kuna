@@ -1,17 +1,42 @@
-//! Inputs the native engine does not decompile, routed to the engine that does.
+//! Inputs the native engine does not decompile, routed to the managed engine
+//! that does.
 //!
 //! [`dispatch`] runs on every file-taking subcommand before any native work:
-//! it finds the input operand, sniffs it (one `stat`, one 8-byte read) and
-//! hands a JVM input (a class file, a jar, a directory) to the JVM engine.
+//! it finds the input operand and asks each engine of [`ENGINES`] to sniff it
+//! (one `stat`, a short read); the first that claims it runs the command.
 //! Anything else returns `None` and takes the native path unchanged, as does
-//! every invocation with `--raw-image` or `--jobs-worker`.
+//! every invocation with `--raw-image` or `--jobs-worker`. An engine meets the
+//! CLI through the contract of `kuna_managed`, and everything here is the same
+//! for each: `decompile`, `decompile-all`, `decompile-project` and `functions`
+//! run the engine, every other file-taking subcommand answers with a
+//! capability error. Each subcommand has its own parser ([`args`]) that
+//! refuses the native-only flags; driving a run is [`run`], the text and JSON
+//! shapes [`render`], what is reported about failed and hidden code
+//! [`failures`], the source-tree export [`project`].
 
 use std::path::Path;
 
-mod jvm;
+use kuna_managed::{Engine, Kind};
 
-pub(crate) use jvm::catalog;
-pub(crate) use jvm::corpus;
+mod args;
+pub(crate) mod catalog;
+mod failures;
+mod heap;
+mod project;
+mod render;
+mod run;
+#[cfg(test)]
+mod toy;
+
+#[cfg(feature = "jvm")]
+#[path = "nonnative/jvm/corpus.rs"]
+pub(crate) mod corpus;
+
+/// The managed engines compiled into this kuna.
+pub(crate) static ENGINES: &[&dyn Engine] = &[
+    #[cfg(feature = "jvm")]
+    &kuna_jvm::kuna_engine::Jvm,
+];
 
 /// The subcommands that take an input file.
 const INPUT_SUBCOMMANDS: &[&str] = &[
@@ -80,19 +105,82 @@ const VALUE_FLAGS: &[&str] = &[
     "--as",
 ];
 
-/// The JVM engine's exit status for `kuna <sub> <rest..>`, or `None` when the
-/// input is not a JVM input.
-pub(crate) fn dispatch(sub: &str, rest: &[String]) -> Option<i32> {
+/// The exit status of `kuna <sub> <rest..>` run by the first of `engines`
+/// that claims the input, or `None` when none does.
+pub(crate) fn dispatch(engines: &[&'static dyn Engine], sub: &str, rest: &[String]) -> Option<i32> {
     if !INPUT_SUBCOMMANDS.contains(&sub)
         || rest.iter().any(|a| a == "--raw-image" || a == "--jobs-worker")
     {
         return None;
     }
     let input = input_operand(sub, rest)?;
-    if !kuna_jvm::kuna_input::sniff(Path::new(input)) {
-        return None;
+    let engine = engines.iter().find(|e| e.sniff(Path::new(input)))?;
+    Some(run(*engine, sub, rest, input))
+}
+
+fn run(engine: &'static dyn Engine, sub: &str, rest: &[String], input: &str) -> i32 {
+    if rest.iter().any(|a| a == "-h" || a == "--help") {
+        eprintln!("{}", engine.usage(sub));
+        return 0;
     }
-    Some(jvm::run(sub, rest, input))
+    let kind = match engine.classify(Path::new(input)) {
+        Ok(kind) => kind,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 1;
+        }
+    };
+    let Some(sub) = args::Sub::parse(sub) else {
+        eprintln!("error: {}", capability_error(engine, sub, input, &kind));
+        return 1;
+    };
+    let parsed = match args::parse(engine, sub, rest, input, &kind) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return 2;
+        }
+    };
+    if sub != args::Sub::Functions {
+        heap::tune();
+    }
+    match sub {
+        args::Sub::Decompile => render::decompile(&parsed),
+        args::Sub::DecompileAll => render::decompile_all(&parsed),
+        args::Sub::Project => project::run(&parsed),
+        args::Sub::Functions => render::functions(&parsed),
+    }
+}
+
+/// The input as the error messages name it: `JVM input (jar)`.
+fn input_label(engine: &dyn Engine, kind: &Kind) -> String {
+    format!("{} input ({})", engine.label(), kind.name)
+}
+
+/// The engine's manual: `kuna docs jvm`.
+fn docs(engine: &dyn Engine) -> String {
+    format!("kuna docs {}", engine.name())
+}
+
+fn capability_error(engine: &dyn Engine, sub: &str, input: &str, kind: &Kind) -> String {
+    let what = match sub {
+        "strings" => "has no string inventory yet",
+        "xrefs" => "has no cross-reference index yet",
+        "disassemble" | "read" => "has no bytecode listing yet",
+        "decompile-graph" => "has no program graph yet",
+        "crypto" => "has no crypto-constant scan yet",
+        "raw-pcode" => "does not lift bytecode to p-code",
+        "unpack" => "reads archives directly; there is nothing to unpack",
+        "fid" => "has no function-ID databases",
+        _ => "does not support this subcommand",
+    };
+    let label = engine.label();
+    format!(
+        "{input}: {} is decompiled by the non-native {label} engine, which {what}; \
+         {label} support covers decompile, decompile-all, decompile-project and functions ({})",
+        input_label(engine, kind),
+        docs(engine)
+    )
 }
 
 /// The first argument that is neither a flag nor a flag's value; `fid`'s

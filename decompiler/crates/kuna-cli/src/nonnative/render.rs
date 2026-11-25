@@ -1,44 +1,41 @@
-//! What `decompile`, `decompile-all` and `functions` print for a JVM input.
+//! What `decompile`, `decompile-all` and `functions` print for a managed input.
 //!
-//! Text is the engine's: Java, or Kotlin for a class the Kotlin plugin claims.
-//! A class is its compilation unit exactly as the engine writes it, a method
-//! its slice of that unit (by the engine's method spans) with the common
-//! indentation removed; JVM methods that share a span, such as a Kotlin
+//! Text is the engine's: for the JVM, Java, or Kotlin for a class the Kotlin
+//! plugin claims. A type is its unit exactly as the engine writes it, a member
+//! its slice of that unit (by the engine's member spans) with the common
+//! indentation removed; members that share a span, such as a Kotlin
 //! property's getter and setter, print it once. The JSON documents keep the
 //! native shapes (`decompile-all --json`, `functions --json`, see
-//! `docs/cli.md`) and add what a method needs to be named: `class`, `method`,
+//! `docs/cli.md`) and add what a member needs to be named: `class`, `method`,
 //! `descriptor`, `access`, `path`, `language` and `line`, and what
-//! [`failures`] reports: `nested_errors` and `warnings` per method, `status`
-//! per class. Addresses are `null`, `size` is the bytecode length, and
+//! [`failures`] reports: `nested_errors` and `warnings` per member, `status`
+//! per type. Addresses are `null`, `size` is the bytecode length, and
 //! `line_mappings` map lines of `code` to bytecode offsets.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
-use std::sync::Arc;
 
-use kuna_jvm::fernflower::DecompiledClass;
-use kuna_jvm::kuna_input::SharedRuntime;
-use kuna_jvm::kuna_inventory::{class_access_names, method_access_names};
-use kuna_jvm::kuna_spans::MethodSpan;
+use kuna_managed::{Failure, Inventory, MemberSpan, Runtime, Target, Unit};
 
 use super::args::{Args, SortKey, Triage};
-use super::failures::{self, Nested, Status, Units};
-use super::run::{self, Loaded, Outcome, Watch};
-use super::select::{java_name, Target, Universe};
+use super::failures::{self, Status, Units};
+use super::run::{self, Outcome};
 use crate::jsonfmt::{self, Json};
 
-/// One method as a record.
+/// One member as a record.
 pub(crate) struct Record {
     pub(crate) class: String,
+    /// `class` as printed.
+    owner: String,
     pub(crate) method: String,
     pub(crate) descriptor: String,
-    pub(crate) access: i32,
+    access: Vec<&'static str>,
     pub(crate) size: u64,
     pub(crate) code: String,
-    /// The method's own failure, else the bodies written inside it that failed.
+    /// The member's own failure, else the bodies written inside it that failed.
     pub(crate) error: Option<String>,
     pub(crate) own_error: Option<String>,
-    pub(crate) nested: Vec<Nested>,
+    pub(crate) nested: Vec<Failure>,
     pub(crate) warnings: Vec<String>,
     pub(crate) path: String,
     pub(crate) language: &'static str,
@@ -50,39 +47,36 @@ pub(crate) struct Record {
 
 impl Record {
     pub(crate) fn name(&self) -> String {
-        format!("{}.{}", java_name(&self.class), self.method)
+        format!("{}.{}", self.owner, self.method)
     }
 
     pub(crate) fn signature(&self) -> String {
         format!("{}{}", self.name(), self.descriptor)
     }
 
-    fn from_span(unit: &DecompiledClass, span: &MethodSpan, universe: &Universe) -> Record {
-        let raw = unit.content.get(span.start..span.end).unwrap_or("");
+    fn from_span(unit: &Unit, span: &MemberSpan, inventory: &Inventory) -> Record {
+        let raw = text(unit).get(span.start..span.end).unwrap_or("");
         let lines = span
             .lines
             .iter()
             .filter(|(line, _)| (span.start_line..=span.end_line).contains(line))
             .map(|(line, offsets)| (line - span.start_line + 1, offsets.clone()))
             .collect();
-        let size = universe
-            .method(&span.class, &span.name, &span.descriptor)
-            .and_then(|m| m.code_length)
-            .unwrap_or(0);
-        let nested = Nested::all(&span.nested);
+        let size = inventory.member(&span.owner, &span.name, &span.signature).map_or(0, |m| m.size);
         Record {
-            class: span.class.clone(),
+            class: span.owner.clone(),
+            owner: (inventory.display)(&span.owner),
             method: span.name.clone(),
-            descriptor: span.descriptor.clone(),
-            access: span.access,
-            size: u64::from(size),
+            descriptor: span.signature.clone(),
+            access: span.access.clone(),
+            size,
             code: dedent(raw),
-            error: failures::method_error(span.error.as_deref(), &nested),
+            error: failures::member_error(span.error.as_deref(), &span.nested),
             own_error: span.error.clone(),
-            nested,
+            nested: span.nested.clone(),
             warnings: span.warnings.clone(),
             path: unit.path.clone(),
-            language: unit.language(),
+            language: unit.language,
             line: span.start_line,
             lines,
             span: (span.start, span.end),
@@ -120,24 +114,21 @@ impl Record {
             record.push(("line_mappings".into(), Json::Array(mappings)));
         }
         record.extend([
-            ("class".into(), Json::Str(java_name(&self.class))),
+            ("class".into(), Json::Str(self.owner.clone())),
             ("method".into(), Json::Str(self.method.clone())),
             ("descriptor".into(), Json::Str(self.descriptor.clone())),
-            ("access".into(), access_json(method_access_names(self.access as u16))),
+            ("access".into(), strings(&self.access)),
             ("path".into(), Json::Str(self.path.clone())),
             ("language".into(), Json::Str(self.language.into())),
             ("line".into(), number(self.line)),
-            ("nested_errors".into(), Nested::json(&self.nested)),
-            (
-                "warnings".into(),
-                Json::Array(self.warnings.iter().map(|w| Json::Str(w.clone())).collect()),
-            ),
+            ("nested_errors".into(), failures::nested_json(&self.nested)),
+            ("warnings".into(), strings(&self.warnings)),
         ]);
         Json::Object(record)
     }
 }
 
-/// One written class: a compilation unit, or a nested class's part of one.
+/// One written type: a unit, or a nested type's part of one.
 struct ClassBlock {
     name: String,
     path: Option<String>,
@@ -146,48 +137,48 @@ struct ClassBlock {
     size: u64,
     code: Option<String>,
     status: Status,
-    /// Why the engine could not decompile the class (`Status::Failed`).
+    /// Why the engine could not decompile the type (`Status::Failed`).
     error: Option<String>,
-    /// Why a hidden class has no text.
+    /// Why a hidden type has no text.
     note: Option<String>,
-    /// Failed bodies in the class's text outside its methods.
-    nested: Vec<Nested>,
+    /// Failed bodies in the type's text outside its members.
+    nested: Vec<Failure>,
 }
 
 impl ClassBlock {
-    /// `class`, written in `unit` (`root_size`: the unit's class-file bytes).
-    fn written(unit: &DecompiledClass, class: &str, universe: &Universe, root_size: u64) -> ClassBlock {
+    /// `class`, written in `unit` (`root_size`: the unit's definition bytes).
+    fn written(args: &Args, unit: &Unit, class: &str, inventory: &Inventory, root_size: u64) -> ClassBlock {
         let block = |status, code, line, error, note| ClassBlock {
-            name: java_name(class),
+            name: (inventory.display)(class),
             path: (status != Status::Hidden).then(|| unit.path.clone()),
-            language: (status != Status::Hidden).then(|| unit.language()),
+            language: (status != Status::Hidden).then_some(unit.language),
             line,
-            size: if class == unit.qualified_name {
+            size: if class == unit.name {
                 root_size
             } else {
-                universe.get(class).map_or(0, |c| c.size as u64)
+                inventory.get(class).map_or(0, |c| c.size)
             },
             code,
             status,
             error,
             note,
-            nested: failures::outside_methods(unit, class),
+            nested: failures::outside_members(unit, class),
         };
         match class_slice(unit, class) {
             Some((code, line)) => {
-                let line = (class != unit.qualified_name).then_some(line);
-                match failures::class_failure(unit, class) {
+                let line = (class != unit.name).then_some(line);
+                match failures::type_failure(unit, class) {
                     Some(why) => block(Status::Failed, Some(code), line, Some(why), None),
                     None => block(Status::Decompiled, Some(code), line, None, None),
                 }
             }
             None => match failures::unit_failure(unit) {
                 Some(why) => {
-                    let why = format!("{} could not be decompiled: {why}", java_name(&unit.qualified_name));
+                    let why = format!("{} could not be decompiled: {why}", (inventory.display)(&unit.name));
                     block(Status::Failed, None, None, Some(why), None)
                 }
                 None => {
-                    let why = hidden_member(&Target::Class(class.to_string()), unit.language() == "kotlin");
+                    let why = args.engine.hidden(&Target::Type(class.to_string()), unit.language);
                     block(Status::Hidden, None, None, None, Some(why))
                 }
             },
@@ -195,9 +186,9 @@ impl ClassBlock {
     }
 
     /// `class`, whose unit was not delivered, for `why`.
-    fn missing(class: &str, size: u64, why: String) -> ClassBlock {
+    fn missing(class: &str, inventory: &Inventory, size: u64, why: String) -> ClassBlock {
         ClassBlock {
-            name: java_name(class),
+            name: (inventory.display)(class),
             path: None,
             language: None,
             line: None,
@@ -220,7 +211,7 @@ impl ClassBlock {
             ("status".into(), Json::Str(self.status.name().into())),
             ("error".into(), optional(self.error.as_deref())),
             ("note".into(), optional(self.note.as_deref())),
-            ("nested_errors".into(), Nested::json(&self.nested)),
+            ("nested_errors".into(), failures::nested_json(&self.nested)),
         ])
     }
 
@@ -254,8 +245,13 @@ fn optional(s: Option<&str>) -> Json {
     s.map_or(Json::Null, |s| Json::Str(s.to_string()))
 }
 
-fn access_json(names: Vec<&'static str>) -> Json {
-    Json::Array(names.into_iter().map(|n| Json::Str(n.into())).collect())
+fn strings<S: AsRef<str>>(items: &[S]) -> Json {
+    Json::Array(items.iter().map(|s| Json::Str(s.as_ref().to_string())).collect())
+}
+
+/// A delivered unit's text (empty when it has none).
+fn text(unit: &Unit) -> &str {
+    unit.text.as_deref().unwrap_or_default()
 }
 
 /// `text` with the indentation every non-blank line shares removed, without
@@ -278,18 +274,18 @@ pub(crate) fn dedent(text: &str) -> String {
     out
 }
 
-fn runtime_json(runtime: Option<&Arc<SharedRuntime>>) -> Json {
+fn runtime_json(runtime: Option<&Runtime>) -> Json {
     match runtime {
         Some(rt) => Json::Object(vec![
-            ("path".into(), Json::Str(rt.home().display().to_string())),
-            ("version".into(), optional(rt.version())),
+            ("path".into(), Json::Str(rt.path.clone())),
+            ("version".into(), optional(rt.version.as_deref())),
         ]),
         None => Json::Null,
     }
 }
 
-/// The language of the units a document holds: `java` or `kotlin`, `mixed`
-/// for both, `null` for none.
+/// The language of the units a document holds: one name, `mixed` for
+/// several, `null` for none.
 fn language_of(records: &[Record], classes: &[ClassBlock]) -> Json {
     let found: BTreeSet<&str> = records
         .iter()
@@ -310,7 +306,7 @@ fn document(
     count: usize,
     total: Option<usize>,
     error: Option<&str>,
-    runtime: Option<&Arc<SharedRuntime>>,
+    runtime: Option<&Runtime>,
 ) -> Vec<(String, Json)> {
     let mut omitted = Vec::new();
     if args.omit_line_mappings {
@@ -322,12 +318,9 @@ fn document(
     }
     let mut head = vec![
         ("binary".to_string(), Json::Str(args.input.clone())),
-        ("engine".to_string(), Json::Str("jvm".into())),
+        ("engine".to_string(), Json::Str(args.engine.name().into())),
         ("language".to_string(), language),
-        (
-            "omitted".to_string(),
-            Json::Array(omitted.into_iter().map(|k| Json::Str(k.into())).collect()),
-        ),
+        ("omitted".to_string(), strings(&omitted)),
         ("count".to_string(), number(count)),
     ];
     if let Some(total) = total {
@@ -361,106 +354,37 @@ fn emit_document(
 }
 
 /// The part of `unit` that `class` (written inside it) covers, with its first line.
-fn class_slice(unit: &DecompiledClass, class: &str) -> Option<(String, u32)> {
-    if unit.qualified_name == class {
-        return Some((unit.content.clone(), 1));
+fn class_slice(unit: &Unit, class: &str) -> Option<(String, u32)> {
+    if unit.name == class {
+        return Some((text(unit).to_string(), 1));
     }
-    let span = unit.classes.iter().find(|c| c.internal == class)?;
-    let text = unit.content.get(span.start..span.end)?;
-    Some((dedent(text), span.start_line))
+    let span = unit.types.iter().find(|c| c.name == class)?;
+    let part = text(unit).get(span.start..span.end)?;
+    Some((dedent(part), span.start_line))
 }
 
 /// Whether `span` lies inside the part of `unit` that `class` covers.
-fn within_class(unit: &DecompiledClass, class: &str, span: &MethodSpan) -> bool {
-    if unit.qualified_name == class {
+fn within_class(unit: &Unit, class: &str, span: &MemberSpan) -> bool {
+    if unit.name == class {
         return true;
     }
-    unit.classes
+    unit.types
         .iter()
-        .find(|c| c.internal == class)
+        .find(|c| c.name == class)
         .is_some_and(|c| c.start <= span.start && span.end <= c.end)
-}
-
-/// Why `target` has no text in its unit, and what prints it; `kotlin` when
-/// the unit is Kotlin, whose writer prints declarations rather than methods.
-fn hidden_member(target: &Target, kotlin: bool) -> String {
-    match target {
-        Target::Methods { class, name, .. } if kotlin => format!(
-            "{}.{name} has no declaration of its own in the Kotlin source of {}: the Kotlin writer \
-             puts a primary constructor in the class header and folds lambda bodies, $default \
-             methods and @JvmStatic forwarders into the declarations they serve (--option \
-             jvm_kt_decompile_facades on writes a multifile facade's functions); --language java \
-             (jvm_kt_enable off) writes the class as Java, method by method, and --option \
-             jvm_remove_synthetic off adds its synthetic methods",
-            java_name(class),
-            java_name(class)
-        ),
-        Target::Methods { class, name, .. } if name == "<init>" => format!(
-            "{}.<init> is not in the decompiled source of {} (the engine leaves out default \
-             constructors, and always an anonymous class's; --option jvm_hide_default_constructor off \
-             prints the default ones)",
-            java_name(class),
-            java_name(class)
-        ),
-        Target::Methods { class, name, .. } => format!(
-            "{}.{name} is not in the decompiled source of {} (the engine folds synthetic and bridge \
-             methods into their users; --option jvm_remove_synthetic off and jvm_remove_bridge off \
-             print them)",
-            java_name(class),
-            java_name(class)
-        ),
-        Target::Class(class) => format!(
-            "{} is not in the decompiled source: the engine writes an anonymous or local class inside \
-             the method that creates it, so not when that method failed, and leaves synthetic classes out \
-             (--option jvm_remove_synthetic off prints them)",
-            java_name(class)
-        ),
-    }
-}
-
-/// Opens the runtime and drives the engine over `select`, handing the outcome to `finish`.
-pub(crate) fn execute(
-    args: &Args,
-    loaded: &Loaded,
-    select: Option<BTreeSet<String>>,
-    finish: &(dyn Fn(Outcome, Option<&Arc<SharedRuntime>>) -> i32 + Sync),
-) -> i32 {
-    let runtime = match run::open_runtime(&args.runtime) {
-        Ok(runtime) => runtime,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return 1;
-        }
-    };
-    let watch = Arc::new(Watch::default());
-    let config = match run::config(args, runtime.clone(), select, &watch) {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return 1;
-        }
-    };
-    run::drive(loaded, args, &config, &watch, &|outcome| finish(outcome, runtime.as_ref()))
-}
-
-pub(crate) fn load_or_report(args: &Args) -> Result<Loaded, i32> {
-    run::load(args).map_err(|e| {
-        eprintln!("error: {e}");
-        1
-    })
 }
 
 // --- decompile ---------------------------------------------------------------
 
 pub(crate) fn decompile(args: &Args) -> i32 {
-    let loaded = match load_or_report(args) {
-        Ok(loaded) => loaded,
+    let mut program = match run::open(args) {
+        Ok(program) => program,
         Err(status) => return status,
     };
-    let own = loaded.own_class();
+    let own = program.inventory().own.clone();
     let target = match args.target.as_deref() {
-        Some(text) => loaded.universe.resolve(text, own.as_deref(), &args.input),
-        None => own.clone().map(Target::Class).ok_or_else(|| "decompile requires a class or method".to_string()),
+        Some(text) => program.resolve(text),
+        None => own.map(Target::Type).ok_or_else(|| "decompile requires a class or method".to_string()),
     };
     let target = match target {
         Ok(target) => target,
@@ -469,24 +393,29 @@ pub(crate) fn decompile(args: &Args) -> i32 {
             return 1;
         }
     };
-    let select: BTreeSet<String> = loaded.universe.chain(target.class()).into_iter().collect();
-    execute(args, &loaded, Some(select), &|outcome, runtime| {
-        finish_decompile(args, &loaded, &target, &outcome, runtime)
+    let runtime = match run::prepare(args, &mut *program) {
+        Ok(runtime) => runtime,
+        Err(status) => return status,
+    };
+    let inventory = program.inventory();
+    let select: BTreeSet<String> = inventory.chain(target.owner()).into_iter().collect();
+    run::drive(&*program, args, Some(select), &|outcome| {
+        finish_decompile(args, inventory, &target, &outcome, runtime.as_ref())
     })
 }
 
 fn finish_decompile(
     args: &Args,
-    loaded: &Loaded,
+    inventory: &Inventory,
     target: &Target,
     outcome: &Outcome,
-    runtime: Option<&Arc<SharedRuntime>>,
+    runtime: Option<&Runtime>,
 ) -> i32 {
-    let universe = &loaded.universe;
-    let failed = |name: &str, why: String, unit: Option<&DecompiledClass>, block: Option<ClassBlock>| {
-        let message = format!("could not decompile {}: {why}", java_name(name));
+    let display = inventory.display;
+    let failed = |name: &str, why: String, unit: Option<&Unit>, block: Option<ClassBlock>| {
+        let message = format!("could not decompile {}: {why}", display(name));
         if args.json {
-            let language = unit.map_or(Json::Null, |u| Json::Str(u.language().into()));
+            let language = unit.map_or(Json::Null, |u| Json::Str(u.language.into()));
             let head = document(args, language, 0, None, Some(&message), runtime);
             emit_document(args, head, &[], block.as_slice(), 1);
         } else if let Some(mut code) = block.and_then(|b| b.code) {
@@ -499,21 +428,21 @@ fn finish_decompile(
         1
     };
     let units = Units::new(outcome);
-    let result = match units.find(universe, target.class()) {
-        Ok(result) => result,
-        Err(why) => return failed(&universe.root_of(target.class()), why, None, None),
+    let unit = match units.find(inventory, target.owner()) {
+        Ok(unit) => unit,
+        Err(why) => return failed(&inventory.root_of(target.owner()), why, None, None),
     };
-    let root = result.qualified_name.as_str();
-    let Some(unit) = &result.unit else {
-        let why = result.error.clone().unwrap_or_else(|| "no output".into());
+    let root = unit.name.as_str();
+    if unit.text.is_none() {
+        let why = unit.error.clone().unwrap_or_else(|| "no output".into());
         return failed(root, why, None, None);
-    };
+    }
     let unit_failed = || failures::unit_failure(unit);
-    let hidden = || hidden_member(target, unit.language() == "kotlin");
+    let hidden = || args.engine.hidden(target, unit.language);
     let (records, classes): (Vec<Record>, Vec<ClassBlock>) = match target {
-        Target::Class(class) => {
-            let root_size = units.sizes(universe).get(root).copied().unwrap_or(0);
-            let block = ClassBlock::written(unit, class, universe, root_size);
+        Target::Type(class) => {
+            let root_size = units.sizes(inventory).get(root).copied().unwrap_or(0);
+            let block = ClassBlock::written(args, unit, class, inventory, root_size);
             match block.status {
                 Status::Hidden => return failed(root, hidden(), Some(unit), None),
                 Status::Failed => {
@@ -525,19 +454,19 @@ fn finish_decompile(
                 Status::Decompiled => {}
             }
             let records = unit
-                .methods
+                .members
                 .iter()
                 .filter(|span| within_class(unit, class, span))
-                .map(|span| Record::from_span(unit, span, universe))
+                .map(|span| Record::from_span(unit, span, inventory))
                 .collect();
             (records, vec![block])
         }
-        Target::Methods { .. } => {
+        Target::Members { .. } => {
             let records: Vec<Record> = unit
-                .methods
+                .members
                 .iter()
-                .filter(|s| target.matches(&s.class, &s.name, &s.descriptor))
-                .map(|span| Record::from_span(unit, span, universe))
+                .filter(|s| target.matches(&s.owner, &s.name, &s.signature))
+                .map(|span| Record::from_span(unit, span, inventory))
                 .collect();
             if records.is_empty() {
                 let why = unit_failed().unwrap_or_else(hidden);
@@ -546,7 +475,7 @@ fn finish_decompile(
             (records, Vec::new())
         }
     };
-    if records.len() > 1 && matches!(target, Target::Methods { descriptor: None, .. }) {
+    if records.len() > 1 && matches!(target, Target::Members { signature: None, .. }) {
         eprintln!(
             "note: {} has {} overloads, printed in source order; add a descriptor such as {:?} to pick one",
             records[0].name(),
@@ -554,9 +483,9 @@ fn finish_decompile(
             records[0].signature()
         );
     }
-    let all_failed = matches!(target, Target::Methods { .. }) && records.iter().all(|r| r.error.is_some());
-    let class_level = classes.first().map(|b| (target.class(), b.nested.as_slice()));
-    failures::warn(&records, class_level);
+    let all_failed = matches!(target, Target::Members { .. }) && records.iter().all(|r| r.error.is_some());
+    let outside = classes.first().map(|b| (display(target.owner()), b.nested.as_slice()));
+    failures::warn(&records, outside);
     let status = i32::from(all_failed);
     if args.json {
         let error = all_failed.then(|| format!("could not decompile {}", records[0].name()));
@@ -565,14 +494,14 @@ fn finish_decompile(
         return emit_document(args, head, &records, &classes, status);
     }
     let text = match target {
-        Target::Class(_) => {
+        Target::Type(_) => {
             let mut code = classes[0].code.clone().unwrap_or_default();
             if !code.ends_with('\n') {
                 code.push('\n');
             }
             code
         }
-        Target::Methods { .. } => {
+        Target::Members { .. } => {
             let mut text = String::new();
             for (i, (record, _)) in shared_text(&records).into_iter().enumerate() {
                 if i > 0 {
@@ -602,31 +531,28 @@ fn shared_text(records: &[Record]) -> Vec<(&Record, Vec<String>)> {
 
 // --- decompile-all -----------------------------------------------------------
 
-/// One inventory method, as triage sees it.
+/// One inventory member, as triage sees it.
 struct Candidate<'a> {
     class: &'a str,
     name: &'a str,
     descriptor: &'a str,
     size: u64,
     order: usize,
+    signature: String,
 }
 
-impl Candidate<'_> {
-    fn signature(&self) -> String {
-        format!("{}.{}{}", java_name(self.class), self.name, self.descriptor)
-    }
-}
-
-fn candidates(universe: &Universe) -> Vec<Candidate<'_>> {
+fn candidates(inventory: &Inventory) -> Vec<Candidate<'_>> {
     let mut out = Vec::new();
-    for class in &universe.classes {
-        for method in &class.methods {
+    for class in &inventory.types {
+        let owner = (inventory.display)(&class.name);
+        for member in &class.members {
             out.push(Candidate {
-                class: &class.internal,
-                name: &method.name,
-                descriptor: &method.descriptor,
-                size: u64::from(method.code_length.unwrap_or(0)),
+                class: &class.name,
+                name: &member.name,
+                descriptor: &member.signature,
+                size: member.size,
                 order: out.len(),
+                signature: format!("{owner}.{}{}", member.name, member.signature),
             });
         }
     }
@@ -657,14 +583,14 @@ fn order_and_limit<T>(items: &mut Vec<T>, triage: &Triage, key: impl Fn(&T) -> (
     }
 }
 
-/// Whether `class` is `ancestor` or written inside it.
-fn inside(universe: &Universe, class: &str, ancestor: &str) -> bool {
+/// Whether `class` is `ancestor` or declared inside it.
+fn inside(inventory: &Inventory, class: &str, ancestor: &str) -> bool {
     let mut current = class.to_string();
     for _ in 0..256 {
         if current == ancestor {
             return true;
         }
-        match universe.get(&current).and_then(|c| c.outer.clone()) {
+        match inventory.get(&current).and_then(|c| c.outer.clone()) {
             Some(outer) if outer != current => current = outer,
             _ => return false,
         }
@@ -673,15 +599,13 @@ fn inside(universe: &Universe, class: &str, ancestor: &str) -> bool {
 }
 
 pub(crate) fn decompile_all(args: &Args) -> i32 {
-    let loaded = match load_or_report(args) {
-        Ok(loaded) => loaded,
+    let mut program = match run::open(args) {
+        Ok(program) => program,
         Err(status) => return status,
     };
-    let universe = &loaded.universe;
-    let own = loaded.own_class();
     let mut targets = Vec::new();
     for text in args.functions.iter().flatten() {
-        match universe.resolve(text, own.as_deref(), &args.input) {
+        match program.resolve(text) {
             Ok(target) => targets.push(target),
             Err(e) => {
                 eprintln!("error: {e}");
@@ -689,34 +613,35 @@ pub(crate) fn decompile_all(args: &Args) -> i32 {
             }
         }
     }
-    let by_method = args.triage.narrows() || targets.iter().any(|t| matches!(t, Target::Methods { .. }));
+    let runtime = match run::prepare(args, &mut *program) {
+        Ok(runtime) => runtime,
+        Err(status) => return status,
+    };
+    let inventory = program.inventory();
+    let by_method = args.triage.narrows() || targets.iter().any(|t| matches!(t, Target::Members { .. }));
     let selected = |class: &str, name: &str, descriptor: &str| {
         targets.is_empty()
             || targets.iter().any(|t| match t {
-                Target::Class(c) => inside(universe, class, c),
-                Target::Methods { .. } => t.matches(class, name, descriptor),
+                Target::Type(c) => inside(inventory, class, c),
+                Target::Members { .. } => t.matches(class, name, descriptor),
             })
     };
-    let total = candidates(universe).len();
+    let total = candidates(inventory).len();
     let wanted: Option<BTreeSet<String>> = if targets.is_empty() && !args.triage.narrows() {
         None
     } else {
-        let mut picked: Vec<Candidate<'_>> = candidates(universe)
+        let mut picked: Vec<Candidate<'_>> = candidates(inventory)
             .into_iter()
             .filter(|c| selected(c.class, c.name, c.descriptor))
-            .filter(|c| passes(&args.triage, &c.signature(), c.size))
+            .filter(|c| passes(&args.triage, &c.signature, c.size))
             .collect();
         if args.triage.limit.is_some() {
-            picked.retain(|c| {
-                universe
-                    .method(c.class, c.name, c.descriptor)
-                    .is_some_and(|m| m.access & 0x1040 == 0)
-            });
+            picked.retain(|c| inventory.member(c.class, c.name, c.descriptor).is_some_and(|m| !m.synthetic));
         }
-        order_and_limit(&mut picked, &args.triage, |c| (c.size, c.signature(), c.order));
+        order_and_limit(&mut picked, &args.triage, |c| (c.size, c.signature.clone(), c.order));
         let mut classes: BTreeSet<String> = picked.iter().map(|c| c.class.to_string()).collect();
         for target in &targets {
-            if let Target::Class(class) = target {
+            if let Target::Type(class) = target {
                 classes.insert(class.clone());
             }
         }
@@ -724,7 +649,7 @@ pub(crate) fn decompile_all(args: &Args) -> i32 {
     };
     let roots = wanted
         .as_ref()
-        .map(|classes| classes.iter().flat_map(|c| universe.chain(c)).collect::<BTreeSet<String>>());
+        .map(|classes| classes.iter().flat_map(|c| inventory.chain(c)).collect::<BTreeSet<String>>());
     let shape = Shape {
         targets: &targets,
         wanted: wanted.as_ref(),
@@ -732,8 +657,8 @@ pub(crate) fn decompile_all(args: &Args) -> i32 {
         selected: &selected,
         total,
     };
-    execute(args, &loaded, roots, &|outcome, runtime| {
-        let status = finish_decompile_all(args, &loaded, &shape, &outcome, runtime);
+    run::drive(&*program, args, roots, &|outcome| {
+        let status = finish_decompile_all(args, inventory, &shape, &outcome, runtime.as_ref());
         run::abandon(outcome);
         status
     })
@@ -742,7 +667,7 @@ pub(crate) fn decompile_all(args: &Args) -> i32 {
 /// What `decompile-all` was asked for.
 struct Shape<'a> {
     targets: &'a [Target],
-    /// The classes selected (`--functions`, triage); `None`: every class.
+    /// The types selected (`--functions`, triage); `None`: every type.
     wanted: Option<&'a BTreeSet<String>>,
     by_method: bool,
     selected: &'a (dyn Fn(&str, &str, &str) -> bool + Sync),
@@ -751,23 +676,22 @@ struct Shape<'a> {
 
 fn finish_decompile_all(
     args: &Args,
-    loaded: &Loaded,
+    inventory: &Inventory,
     shape: &Shape<'_>,
     outcome: &Outcome,
-    runtime: Option<&Arc<SharedRuntime>>,
+    runtime: Option<&Runtime>,
 ) -> i32 {
-    let universe = &loaded.universe;
+    let display = inventory.display;
     let (targets, by_method) = (shape.targets, shape.by_method);
     let units = Units::new(outcome);
-    let relevant = units.holding(universe, shape.wanted);
+    let relevant = units.holding(inventory, shape.wanted);
     let mut records: Vec<(Record, usize)> = Vec::new();
-    for result in &relevant {
-        let Some(unit) = &result.unit else { continue };
-        for span in &unit.methods {
-            if !(shape.selected)(&span.class, &span.name, &span.descriptor) {
+    for unit in relevant.iter().filter(|u| u.text.is_some()) {
+        for span in &unit.members {
+            if !(shape.selected)(&span.owner, &span.name, &span.signature) {
                 continue;
             }
-            let record = Record::from_span(unit, span, universe);
+            let record = Record::from_span(unit, span, inventory);
             if passes(&args.triage, &record.signature(), record.size) {
                 let order = records.len();
                 records.push((record, order));
@@ -783,7 +707,7 @@ fn finish_decompile_all(
         } else {
             relevant
                 .iter()
-                .map(|r| r.qualified_name.clone())
+                .map(|r| r.name.clone())
                 .chain(outcome.missing.iter().map(|(n, _)| n.clone()))
                 .collect()
         }
@@ -791,29 +715,30 @@ fn finish_decompile_all(
         targets
             .iter()
             .filter_map(|t| match t {
-                Target::Class(class) => Some(class.clone()),
-                Target::Methods { .. } => None,
+                Target::Type(class) => Some(class.clone()),
+                Target::Members { .. } => None,
             })
             .collect()
     };
-    let sizes = units.sizes(universe);
+    let sizes = units.sizes(inventory);
     let unit_size = |root: &str| sizes.get(root).copied().unwrap_or(0);
     let classes: Vec<ClassBlock> = class_roots
         .iter()
-        .map(|class| match units.find(universe, class) {
-            Ok(result) => match &result.unit {
-                Some(unit) => ClassBlock::written(unit, class, universe, unit_size(&result.qualified_name)),
-                None => ClassBlock::missing(
-                    class,
-                    unit_size(&result.qualified_name),
-                    result.error.clone().unwrap_or_else(|| "no output".into()),
-                ),
-            },
-            Err(why) => ClassBlock::missing(class, unit_size(&universe.root_of(class)), why),
+        .map(|class| match units.find(inventory, class) {
+            Ok(unit) if unit.text.is_some() => {
+                ClassBlock::written(args, unit, class, inventory, unit_size(&unit.name))
+            }
+            Ok(unit) => ClassBlock::missing(
+                class,
+                inventory,
+                unit_size(&unit.name),
+                unit.error.clone().unwrap_or_else(|| "no output".into()),
+            ),
+            Err(why) => ClassBlock::missing(class, inventory, unit_size(&inventory.root_of(class)), why),
         })
         .collect();
 
-    let produced = relevant.iter().any(|r| failures::result_failure(r).is_none());
+    let produced = relevant.iter().any(|r| failures::unit_failure(r).is_none());
     let error = match (&outcome.error, produced) {
         (Some(e), _) => Some(e.clone()),
         (None, false) => Some(format!("no class of {} could be decompiled", args.input)),
@@ -824,11 +749,11 @@ fn finish_decompile_all(
         eprintln!("error: {e}");
     }
     for (name, why) in &outcome.missing {
-        eprintln!("warning: could not decompile {}: {why}", java_name(name));
+        eprintln!("warning: could not decompile {}: {why}", display(name));
     }
-    for result in &relevant {
-        if let Some(why) = failures::result_failure(result) {
-            eprintln!("warning: could not decompile {}: {why}", java_name(&result.qualified_name));
+    for unit in &relevant {
+        if let Some(why) = failures::unit_failure(unit) {
+            eprintln!("warning: could not decompile {}: {why}", display(&unit.name));
         }
     }
     if args.json {
@@ -845,7 +770,7 @@ fn finish_decompile_all(
         let in_class_block = |record: &Record| {
             targets
                 .iter()
-                .any(|t| matches!(t, Target::Class(c) if inside(universe, &record.class, c)))
+                .any(|t| matches!(t, Target::Type(c) if inside(inventory, &record.class, c)))
         };
         let outside: Vec<Record> = records.into_iter().filter(|r| !in_class_block(r)).collect();
         for (record, signatures) in shared_text(&outside) {
@@ -864,22 +789,23 @@ fn finish_decompile_all(
 // --- functions -----------------------------------------------------------------
 
 pub(crate) fn functions(args: &Args) -> i32 {
-    let loaded = match load_or_report(args) {
-        Ok(loaded) => loaded,
+    let program = match run::open(args) {
+        Ok(program) => program,
         Err(status) => return status,
     };
-    let universe = &loaded.universe;
-    let all = candidates(universe);
+    let inventory = program.inventory();
+    let display = inventory.display;
+    let all = candidates(inventory);
     let total = all.len();
     let mut listed: Vec<Candidate<'_>> = all
         .into_iter()
-        .filter(|c| passes(&args.triage, &c.signature(), c.size))
+        .filter(|c| passes(&args.triage, &c.signature, c.size))
         .collect();
-    order_and_limit(&mut listed, &args.triage, |c| (c.size, c.signature(), c.order));
+    order_and_limit(&mut listed, &args.triage, |c| (c.size, c.signature.clone(), c.order));
     if !args.json {
         let mut text = String::new();
         for c in &listed {
-            let _ = writeln!(text, "{}", c.signature());
+            let _ = writeln!(text, "{}", c.signature);
         }
         return crate::output::emit_with_status(&text, 0);
     }
@@ -887,41 +813,38 @@ pub(crate) fn functions(args: &Args) -> i32 {
     let functions: Vec<Json> = listed
         .iter()
         .map(|c| {
-            let access = universe
-                .method(c.class, c.name, c.descriptor)
-                .map_or(0, |m| m.access);
+            let access = inventory.member(c.class, c.name, c.descriptor).map_or(&[][..], |m| &m.access);
             Json::Object(vec![
-                ("name".into(), Json::Str(format!("{}.{}", java_name(c.class), c.name))),
+                ("name".into(), Json::Str(format!("{}.{}", display(c.class), c.name))),
                 ("address".into(), Json::Null),
                 ("address_hex".into(), Json::Null),
                 ("aliases".into(), Json::Array(Vec::new())),
                 ("object_location".into(), Json::Null),
                 ("size".into(), number(c.size)),
-                ("class".into(), Json::Str(java_name(c.class))),
+                ("class".into(), Json::Str(display(c.class))),
                 ("method".into(), Json::Str(c.name.to_string())),
                 ("descriptor".into(), Json::Str(c.descriptor.to_string())),
-                ("access".into(), access_json(method_access_names(access))),
+                ("access".into(), strings(access)),
             ])
         })
         .collect();
-    let classes: Vec<Json> = universe
-        .classes
+    let classes: Vec<Json> = inventory
+        .types
         .iter()
-        .filter(|c| !args.triage.narrows() || owners.contains(c.internal.as_str()))
+        .filter(|c| !args.triage.narrows() || owners.contains(c.name.as_str()))
         .map(|c| {
-            let flags = c.inner_access.unwrap_or(c.access);
             Json::Object(vec![
-                ("name".into(), Json::Str(java_name(&c.internal))),
-                ("outer".into(), c.outer.as_deref().map_or(Json::Null, |o| Json::Str(java_name(o)))),
+                ("name".into(), Json::Str(display(&c.name))),
+                ("outer".into(), c.outer.as_deref().map_or(Json::Null, |o| Json::Str(display(o)))),
                 ("source_file".into(), optional(c.source_file.as_deref())),
                 ("size".into(), number(c.size)),
-                ("access".into(), access_json(class_access_names(flags))),
+                ("access".into(), strings(&c.access)),
             ])
         })
         .collect();
     let doc = Json::Object(vec![
         ("binary".into(), Json::Str(args.input.clone())),
-        ("engine".into(), Json::Str("jvm".into())),
+        ("engine".into(), Json::Str(args.engine.name().into())),
         ("count".into(), number(listed.len())),
         ("total".into(), number(total)),
         ("error".into(), Json::Null),

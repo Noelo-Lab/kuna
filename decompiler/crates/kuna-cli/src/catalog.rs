@@ -4,8 +4,8 @@
 //! override keeps external queries. This module renders a table, indented JSON
 //! or the generated Markdown manual. Validation compares the catalog with
 //! [`kuna_decomp::options::KUNA_OPTION_NAMES`] to reject missing or stale rows.
-//! `--engine jvm|all` adds the JVM engine's rows (`docs/options-jvm.md`); the
-//! default query is the native catalog alone.
+//! `--engine <managed engine>|all` adds a managed engine's rows (for the JVM,
+//! `docs/options-jvm.md`); the default query is the native catalog alone.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -15,6 +15,7 @@ use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, emit_ca
 use kuna_decomp::options::KUNA_OPTION_NAMES;
 
 use crate::jsonfmt::{dumps_indent2, extract_json_span, parse, Json};
+use crate::nonnative::{catalog as managed, ENGINES};
 use crate::paths;
 
 /// Read the local static catalog unless the caller selected an external console.
@@ -93,13 +94,13 @@ fn entries(v: &Json) -> Vec<&Json> {
 
 /// Which engine's rows a catalog query covers. `Default` (no `--engine`, or
 /// the legacy `cpp|rust`) is the native catalog exactly as it always was; a
-/// JVM option name given to `--option` still finds its row there. The other
-/// three tag every row with `engine` (and `aliases`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// managed engine's option name given to `--option` still finds its row
+/// there. The others tag every row with `engine` (and `aliases`).
+#[derive(Clone, Copy)]
 pub enum Engine {
     Default,
     Native,
-    Jvm,
+    Managed(&'static dyn kuna_managed::Engine),
     All,
 }
 
@@ -108,35 +109,13 @@ impl Engine {
         match value {
             None | Some("cpp") | Some("rust") => Ok(Engine::Default),
             Some("native") => Ok(Engine::Native),
-            Some("jvm") => Ok(Engine::Jvm),
             Some("all") => Ok(Engine::All),
-            Some(other) => Err(format!("unknown --engine {other:?} (expected native, jvm or all)")),
+            Some(other) => ENGINES.iter().find(|e| e.name() == other).map(|e| Engine::Managed(*e)).ok_or_else(|| {
+                let names: Vec<&str> = std::iter::once("native").chain(ENGINES.iter().map(|e| e.name())).collect();
+                format!("unknown --engine {other:?} (expected {} or all)", names.join(", "))
+            }),
         }
     }
-
-    fn native(self) -> bool {
-        self != Engine::Jvm
-    }
-}
-
-#[cfg(feature = "jvm")]
-fn jvm_rows(option: Option<&str>) -> Result<Vec<Json>, String> {
-    Ok(crate::nonnative::catalog::rows(option))
-}
-
-#[cfg(not(feature = "jvm"))]
-fn jvm_rows(_option: Option<&str>) -> Result<Vec<Json>, String> {
-    Err("this kuna was built without the JVM engine (cargo feature `jvm`)".into())
-}
-
-#[cfg(feature = "jvm")]
-fn jvm_knows(name: &str) -> bool {
-    crate::nonnative::catalog::knows(name)
-}
-
-#[cfg(not(feature = "jvm"))]
-fn jvm_knows(_name: &str) -> bool {
-    false
 }
 
 /// `row` with `aliases` (when absent) and `engine` appended.
@@ -153,28 +132,34 @@ fn tagged(row: &Json, engine: &str) -> Json {
     row
 }
 
-/// The rows a query selects, in catalog order: native rows, then JVM rows.
+/// The rows a query selects, in catalog order: native rows, then managed engines' rows.
 fn selected_rows(option: Option<&str>, pinned_by: Option<&str>, engine: Engine) -> Result<Vec<Json>, String> {
-    let jvm_only = match option {
-        Some(name) => engine == Engine::Jvm
-            || (engine != Engine::Native && emit_catalog_json_one(name, None).is_none() && jvm_knows(name)),
-        None => engine == Engine::Jvm,
+    let only = match (engine, option) {
+        (Engine::Managed(e), _) => Some(e),
+        (Engine::Default | Engine::All, Some(name)) if emit_catalog_json_one(name, None).is_none() => {
+            ENGINES.iter().copied().find(|e| managed::knows(*e, name))
+        }
+        _ => None,
     };
     let mut rows = Vec::new();
-    if engine.native() && !jvm_only {
+    if only.is_none() {
         let v = run_catalog(option, pinned_by)?;
         for e in entries(&v) {
-            rows.push(if engine == Engine::Default { e.clone() } else { tagged(e, "native") });
+            rows.push(if matches!(engine, Engine::Default) { e.clone() } else { tagged(e, "native") });
         }
     }
-    if jvm_only || (engine == Engine::All && option.is_none()) {
-        let found = jvm_rows(option)?;
-        if found.is_empty() {
-            if let Some(name) = option {
+    match only {
+        Some(e) => {
+            let found = managed::rows(e, option);
+            if let (true, Some(name)) = (found.is_empty(), option) {
                 return Err(format!("unknown option: {name:?}"));
             }
+            rows.extend(found);
         }
-        rows.extend(found);
+        None if matches!(engine, Engine::All) && option.is_none() => {
+            rows.extend(ENGINES.iter().flat_map(|e| managed::rows(*e, None)));
+        }
+        None => {}
     }
     Ok(rows)
 }
@@ -256,23 +241,14 @@ pub fn cmd_markdown(option: Option<&str>, engine: Engine) -> i32 {
     }
     match engine {
         Engine::Default | Engine::Native => crate::output::emit_with_status(&emit_catalog_markdown(), 0),
-        Engine::Jvm => jvm_markdown(),
+        Engine::Managed(e) => crate::output::emit_with_status(&managed::markdown(e), 0),
         Engine::All => {
-            eprintln!("error: --markdown renders one engine's catalog: --engine native (docs/options.md) or --engine jvm (docs/options-jvm.md)");
+            let others: String =
+                ENGINES.iter().map(|e| format!(" or --engine {0} (docs/options-{0}.md)", e.name())).collect();
+            eprintln!("error: --markdown renders one engine's catalog: --engine native (docs/options.md){others}");
             2
         }
     }
-}
-
-#[cfg(feature = "jvm")]
-fn jvm_markdown() -> i32 {
-    crate::output::emit_with_status(&crate::nonnative::catalog::markdown(), 0)
-}
-
-#[cfg(not(feature = "jvm"))]
-fn jvm_markdown() -> i32 {
-    eprintln!("error: this kuna was built without the JVM engine (cargo feature `jvm`)");
-    1
 }
 
 /// (default) the human-readable table (port of catalog.main's text branch).
@@ -365,8 +341,12 @@ pub fn cmd_check(pinned_by: Option<&str>) -> i32 {
         ));
     }
 
-    let (jvm_problems, jvm_ok) = jvm_check();
-    problems.extend(jvm_problems);
+    let mut managed_ok = String::new();
+    for engine in ENGINES {
+        let (found, ok) = managed::check(*engine);
+        problems.extend(found);
+        managed_ok.push_str(&ok);
+    }
 
     if !problems.is_empty() {
         eprintln!("catalog DRIFT:");
@@ -376,23 +356,7 @@ pub fn cmd_check(pinned_by: Option<&str>) -> i32 {
         return 1;
     }
     crate::output::emit_with_status(
-        &format!("catalog OK: documents exactly the registered kuna options\n{jvm_ok}"),
+        &format!("catalog OK: documents exactly the registered kuna options\n{managed_ok}"),
         0,
     )
-}
-
-#[cfg(feature = "jvm")]
-fn jvm_check() -> (Vec<String>, String) {
-    (
-        crate::nonnative::catalog::check(),
-        format!(
-            "catalog OK: {} JVM engine options, each spelled jvm_<name> with a resolvable default\n",
-            crate::nonnative::catalog::count()
-        ),
-    )
-}
-
-#[cfg(not(feature = "jvm"))]
-fn jvm_check() -> (Vec<String>, String) {
-    (Vec::new(), String::new())
 }

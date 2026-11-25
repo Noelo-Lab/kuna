@@ -145,7 +145,7 @@ rules:
   `label7`), so an object is allocated exactly where the Java constructor runs, never as
   an extra temporary.
 - **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
-  `kuna_options`, `kuna_fixes`, `kuna_driver`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
+  `kuna_options`, `kuna_fixes`, `kuna_driver`, `kuna_engine`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
   `kuna_corpus`, `kuna_reclaim`), in `src/fixes/`, in the modules that replace JVM
   facilities (`context_source`, `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the
   Kotlin plugin's seams (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported
