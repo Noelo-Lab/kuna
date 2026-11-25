@@ -413,6 +413,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-wbcq"
+version = "0.1.0"
+dependencies = [
+ "kuna-base",
+ "kuna-console",
+ "kuna-num",
+ "kuna-verify",
+ "object",
+ "serde_json",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.189"
 source = "registry+https://github.com/rust-lang/crates.io-index"

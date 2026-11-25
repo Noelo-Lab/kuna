@@ -17,7 +17,7 @@ is not needed for day-to-day work.
 
 | Path | What |
 |---|---|
-| `decompiler/` | The engine — a cargo workspace. `kuna-decomp` is the decompiler (`src/` is phase-foldered: `p0_knowledge/`…`p9_emit/`, plus `substrate/` and `infra/`); `kuna-analysis` the loader/analyzer tier (ELF markup, strings, DWARF, function discovery); `kuna-sleigh`/`kuna-slacomp` the SLEIGH runtime/compiler (binary `slacomp`); `kuna-console` the `decomp_dbg`/`decomp_test_dbg` binaries; `kuna-cli` the user-facing `kuna` binary; `kuna-ghidra` and `kuna-wasm` the Ghidra and browser front-ends; `kuna-base`/`kuna-num`/`kuna-harness`/`kuna-lift-diff` support; `kuna-verify` the dev-only differential semantic check (`docs/features/diffverify/`). |
+| `decompiler/` | The engine — a cargo workspace. `kuna-decomp` is the decompiler (`src/` is phase-foldered: `p0_knowledge/`…`p9_emit/`, plus `substrate/` and `infra/`); `kuna-analysis` the loader/analyzer tier (ELF markup, strings, DWARF, function discovery); `kuna-sleigh`/`kuna-slacomp` the SLEIGH runtime/compiler (binary `slacomp`); `kuna-console` the `decomp_dbg`/`decomp_test_dbg` binaries; `kuna-cli` the user-facing `kuna` binary; `kuna-ghidra` and `kuna-wasm` the Ghidra and browser front-ends; `kuna-base`/`kuna-num`/`kuna-harness`/`kuna-lift-diff` support; `kuna-verify` the dev-only differential semantic check (`docs/features/diffverify/`); `kuna-wbcq` the dev-only state-machine learning experiment built on it (`docs/features/wbcq/`). |
 | `tests/datatests/` | Vendored XML regression corpus (83 files / 675 assertions) — what `make test` runs. |
 | `tests/stages/` | kuna-owned issue testcases — `make test-stages`. Conventions: `tests/stages/README.md`. |
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`). |
@@ -200,6 +200,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/decbench-loop.md` | The decbench benchmark / improvement campaign. |
 | `docs/modes.md` | `--mode auto\|reliable\|aggressive\|fast` option presets and size thresholds. |
 | `docs/features/diffverify/README.md` | `kuna-verify`, the dev-only differential check: what it compares, its verdicts, how to read a `DIFFERS`, how to triage one. Agent rules and past regressions for the crate: `decompiler/crates/kuna-verify/AGENTS.md`. |
+| `docs/features/wbcq/README.md` | `kuna-wbcq`, the dev-only experiment that learns a step function's minimal state machine against its machine code (L#, z3 path enumeration, a path-closure certificate), and what it found about Fission RFC #1093's claims. |
 | `docs/multilang.md` | The multi-language (Rust/Go/Swift) source-support architecture and roadmap: the `sourcelang` plane, idiom engine, type facets, per-language packs. |
 | `docs/observatory.md` | The local codebase observatory (`make observatory`): generated architecture/churn/coverage/walkthrough pages + their JSON contracts. |
 | `docs/missing-ghidra-analyses.md` | The `kuna-analysis` tier: the analyzer gap vs Ghidra, pass contract, commit gating. |

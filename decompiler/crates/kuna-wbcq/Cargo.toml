@@ -1,0 +1,30 @@
+[package]
+autotests = false
+name = "kuna-wbcq"
+description = "kuna dev-only experiment: the minimal state machine of a step function, learned against its machine code (WBCQ)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kuna-base.workspace = true
+kuna-num.workspace = true
+kuna-console.workspace = true
+kuna-verify = { path = "../kuna-verify" }
+serde_json = "1"
+
+[dev-dependencies]
+object.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "kuna-wbcq"
+path = "src/bin/kuna-wbcq.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -258,7 +258,8 @@ pub struct Solver {
 }
 
 impl Solver {
-    fn start(millis: u32) -> Option<Solver> {
+    /// Start z3 with `millis` per query; `None` when it cannot be run.
+    pub fn start(millis: u32) -> Option<Solver> {
         let mut child = Command::new("z3")
             .args(["-in", "-smt2", &format!("-t:{millis}")])
             .stdin(Stdio::piped())
@@ -307,17 +308,19 @@ impl Drop for Solver {
 }
 
 /// What one query gave.
-enum Answer {
+pub enum Answer {
     Model(HashMap<(i32, u64), u8>),
-    /// Unsatisfiable, unknown in the time given, or nothing to ask.
-    None,
+    /// Unsatisfiable, or nothing to ask (no input byte in the conditions).
+    Unsat,
+    /// z3 gave up in the time given.
+    Unknown,
     /// z3 did not answer as expected: the process is not used again.
     Broken,
 }
 
 /// Ask z3 for inputs that hold `path.branches[..k]` and take `branches[k]`
 /// the other way. The query's scope is popped whatever the answer.
-fn solve(solver: &mut Solver, path: &Path, k: usize) -> Answer {
+pub fn solve(solver: &mut Solver, path: &Path, k: usize) -> Answer {
     let mut em = Emitter { ids: HashMap::new(), defs: String::new() };
     let mut asserts = String::new();
     for (i, b) in path.branches[..=k].iter().enumerate() {
@@ -337,7 +340,7 @@ fn solve(solver: &mut Solver, path: &Path, k: usize) -> Answer {
         }
     }
     if used.is_empty() {
-        return Answer::None;
+        return Answer::Unsat;
     }
     script.push_str(&em.defs);
     script.push_str(&asserts);
@@ -351,7 +354,8 @@ fn solve(solver: &mut Solver, path: &Path, k: usize) -> Answer {
             Some(m) => Answer::Model(m),
             None => Answer::Broken,
         },
-        Some("unsat" | "unknown") => Answer::None,
+        Some("unsat") => Answer::Unsat,
+        Some("unknown") => Answer::Unknown,
         _ => Answer::Broken,
     };
     if solver.send("(pop 1)\n").is_none() {
@@ -493,7 +497,7 @@ impl Worklist {
                         inputs.extend(model);
                         return Some((*run, Rc::new(inputs), want.0));
                     }
-                    Answer::None => {}
+                    Answer::Unsat | Answer::Unknown => {}
                     Answer::Broken => {
                         self.solver = None;
                         self.broken = true;
