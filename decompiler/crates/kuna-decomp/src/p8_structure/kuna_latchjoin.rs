@@ -40,6 +40,31 @@ use crate::funcdata::Funcdata;
 
 /// Joins performed per apply, a bound on the restart loop.
 const MAX_JOINS: usize = 16;
+/// Operations one copy has and the other lacks that the backward walk steps over.
+const MAX_SKIPS: usize = 2;
+
+/// An operation that reads and writes no memory and has no other effect, so it
+/// can run before operations it followed when it reads none of their outputs.
+fn pure(data: &Funcdata, op: OpId) -> bool {
+    let p = data.obank().get(op).unwrap();
+    !matches!(
+        p.code(),
+        OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_LOAD
+            | OpCode::CPUI_STORE
+            | OpCode::CPUI_BRANCH
+            | OpCode::CPUI_CBRANCH
+            | OpCode::CPUI_BRANCHIND
+            | OpCode::CPUI_CALL
+            | OpCode::CPUI_CALLIND
+            | OpCode::CPUI_CALLOTHER
+            | OpCode::CPUI_RETURN
+            | OpCode::CPUI_NEW
+            | OpCode::CPUI_CPOOLREF
+            | OpCode::CPUI_SEGMENTOP
+    ) && p.get_out().is_some_and(|w| !storage_matters(data, w))
+}
 
 /// \brief Join identical copies of a loop latch into one block.
 pub struct ActionLatchJoin {
@@ -101,9 +126,10 @@ pub fn joined_gotos(fd: &Funcdata) -> Option<i32> {
     Some(crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd))
 }
 
-/// The goto count of a decompile without the join.
-pub fn plain_gotos(fd: &Funcdata) -> i32 {
-    crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd)
+/// Whether a decompile without the join is structured and prints fewer gotos
+/// than the `with` the joined one printed.
+pub fn fewer_gotos(plain: &Funcdata, with: i32) -> bool {
+    plain.sblocks_get_size() > 0 && crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(plain) < with
 }
 
 /// One accepted join: `ops_a[i]` and `ops_b[i]` are the corresponding ops of the
@@ -297,19 +323,43 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
     }
     let negated = true_target(data, a, ta) != true_target(data, b, tb);
     let cond = (pa.get_in(1).unwrap(), pb.get_in(1).unwrap(), negated);
-    // Walk back pairing ops by shape.
-    let mut ia = ops_a.len();
-    let mut ib = ops_b.len();
-    let mut pairs: Vec<(OpId, OpId, Vec<i32>)> = Vec::new();
-    let mut stop = String::from("start of block");
-    while ia > 0 && ib > 0 {
-        let (oa, ob) = (ops_a[ia - 1], ops_b[ib - 1]);
+    // Walk back pairing ops by shape.  An operation without memory effects that
+    // only one copy has is stepped over (it stays in its copy, ahead of the run).
+    let try_shape = |oa: OpId, ob: OpId| -> Result<Vec<i32>, String> {
         let negated = cond.2
             && data.obank().get(oa).unwrap().get_out() == Some(cond.0)
             && data.obank().get(ob).unwrap().get_out() == Some(cond.1);
-        match shape(data, oa, ob, negated) {
+        shape(data, oa, ob, negated)
+    };
+    let mut ia = ops_a.len();
+    let mut ib = ops_b.len();
+    let mut pairs: Vec<(OpId, OpId, Vec<i32>)> = Vec::new();
+    let mut skipped: Vec<(OpId, bool)> = Vec::new();
+    let mut stop = String::from("start of block");
+    while ia > 0 && ib > 0 {
+        let (oa, ob) = (ops_a[ia - 1], ops_b[ib - 1]);
+        match try_shape(oa, ob) {
             Ok(slots) => pairs.push((oa, ob, slots)),
             Err(e) => {
+                if !pairs.is_empty() {
+                    let room = MAX_SKIPS - skipped.len();
+                    let step = |ops: &[OpId], i: usize, other: OpId, side_a: bool| -> Option<usize> {
+                        (1..=room.min(i.saturating_sub(1))).find(|&k| {
+                            (0..k).all(|j| pure(data, ops[i - 1 - j]))
+                                && if side_a { try_shape(ops[i - 1 - k], other) } else { try_shape(other, ops[i - 1 - k]) }.is_ok()
+                        })
+                    };
+                    if let Some(k) = step(&ops_a, ia, ob, true) {
+                        skipped.extend((0..k).map(|j| (ops_a[ia - 1 - j], true)));
+                        ia -= k;
+                        continue;
+                    }
+                    if let Some(k) = step(&ops_b, ib, oa, false) {
+                        skipped.extend((0..k).map(|j| (ops_b[ib - 1 - j], false)));
+                        ib -= k;
+                        continue;
+                    }
+                }
                 stop = e;
                 break;
             }
@@ -318,6 +368,7 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
         ib -= 1;
     }
     pairs.reverse();
+
     if pairs.is_empty() {
         return Err(format!("no common tail: {stop}"));
     }
@@ -388,6 +439,18 @@ fn match_latches(data: &Funcdata, h: BlockId, a: BlockId, b: BlockId) -> Verdict
                         continue 'outer;
                     }
                     Err(Err(e)) => return Err(e),
+                }
+            }
+        }
+        // A stepped-over op now runs before the run ops it followed: it may not
+        // read their outputs.
+        for &(x, side_a) in &skipped {
+            let pos = if side_a { &pos_a } else { &pos_b };
+            let px = data.obank().get(x).unwrap();
+            for s in 0..px.num_input() {
+                if let Some(j) = def_pos(px.get_in(s).unwrap(), pos) {
+                    start += j + 1;
+                    continue 'outer;
                 }
             }
         }
