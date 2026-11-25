@@ -45,6 +45,18 @@ pub struct Contract {
     pub source: String,
 }
 
+/// A contract that names the compiler's `-fsigned-char` or
+/// `-funsigned-char` (in a comment) overrides the target's plain `char`.
+fn char_override(src: &str, sizes: CSizes) -> CSizes {
+    let signed = src.contains("-fsigned-char");
+    let unsigned = src.contains("-funsigned-char");
+    match (signed, unsigned) {
+        (true, false) => CSizes { char_signed: true, ..sizes },
+        (false, true) => CSizes { char_signed: false, ..sizes },
+        _ => sizes,
+    }
+}
+
 fn strip_comments(src: &str) -> String {
     let block = Regex::new(r"(?s)/\*.*?\*/").expect("regex");
     let line = Regex::new(r"//[^\n]*").expect("regex");
@@ -124,6 +136,7 @@ fn resolve(spelling: &str, defs: &BTreeMap<String, String>, sizes: CSizes, depth
 
 /// Read `function`'s return type from C source.
 pub fn from_source(src: &str, function: &str, source: &str, sizes: CSizes) -> Result<Contract, String> {
+    let sizes = char_override(src, sizes);
     let clean = strip_comments(src);
     let defs = typedefs(&clean);
     let re = Regex::new(&format!(
@@ -183,5 +196,9 @@ unsigned char c(void);";
         assert!(from_source(src, "a", "s", x86).unwrap().ret.signed);
         assert!(from_source(src, "b", "s", ARM).unwrap().ret.signed);
         assert!(!from_source(src, "c", "s", x86).unwrap().ret.signed);
+        let flagged = format!("/* built with -fsigned-char */\n{src}");
+        assert!(from_source(&flagged, "a", "s", ARM).unwrap().ret.signed);
+        let flagged = format!("// -funsigned-char\n{src}");
+        assert!(!from_source(&flagged, "a", "s", x86).unwrap().ret.signed);
     }
 }

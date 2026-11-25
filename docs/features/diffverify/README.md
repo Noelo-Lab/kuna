@@ -39,7 +39,10 @@ ins16  DIFFERS  (run 1 of 256)
   target, their arguments, and the memory a callee could read at that moment. At the end,
   the memory written outside the frame and the return value are compared. The return
   value is compared under the calling convention, and under the real return type when a
-  C prototype is given (`--contract FILE.c`).
+  C prototype is given (`--contract FILE.c`). Plain `char` there is unsigned on the
+  System V ABIs of ARM, AArch64, PowerPC, RISC-V and s390, and signed on x86, Apple
+  Silicon and Windows ARM; a source that mentions `-fsigned-char` or
+  `-funsigned-char` (in a comment) overrides it.
 - **Not checked: the printed C.** A fault in the C printer (a cast, an operator's
   precedence, a type's spelling) is not in the IR, so `AGREES` cannot rule it out. That
   is Tier P, a separate axis (`proposal.md`).
@@ -67,7 +70,7 @@ ins16  DIFFERS  (run 1 of 256)
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides are not counted. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
 | `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
-| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
+| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
 Exit status: 1 when a function differs, 3 when a file could not be checked, 2 for a usage
@@ -102,7 +105,7 @@ kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline 
 kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
 kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
 kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N] [--jobs N] [--file-seconds S]
-common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES (0)] [--json] [--trace] [--sleighpath DIR]
+common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES (0)] [--call-reruns N (4)] [--json] [--trace] [--sleighpath DIR]
 ```
 
 - **`check`** loads a binary with the options `kuna decompile` turns on (the Listing, and
@@ -292,6 +295,18 @@ run yet.
   it prints the bytes after it as code. No run reaches them on either side, so this is
   invisible here; it is a readability fault for Tier P. A run in which a callee aborts
   on its input stops on both sides, which is right.
+- **Frame bytes kuna has no local for.** A callee run for real is compared on what it
+  reads inside and past the object it was given, but only where kuna has a local. A
+  byte kuna lost entirely (a store to a slot it never recovered) is not compared yet:
+  telling it from the outgoing argument area and saved registers, which kuna does not
+  keep in memory either, needs those found from the machine side first.
+- **Runs that run out of budget.** One run past `--budget` makes the function
+  `UNKNOWN(budget)` however many other runs agreed; that is 4,283 of the 5,405
+  `UNKNOWN` on decbench. Counting such runs apart, as trapped runs are, would turn most
+  into `AGREES(n)` with a note; that is a change to what `AGREES` claims and is left
+  for a decision.
+- **Symbolic proof (Tier S).** Not started: a relational symbolic engine over both
+  sides' p-code belongs in its own pull request.
 - **Speed.** Comparing memory by page rather than by byte, a lifting cache shared by a
   worker's functions, and overlapping z3 queries with runs. None is at the top of the
   current profile.

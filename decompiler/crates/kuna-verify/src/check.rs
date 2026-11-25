@@ -191,27 +191,45 @@ impl Compare<'_> {
 fn compare_writes(env: &Env, run: u32, machine: &Writes, kuna: &Writes, read: Option<&crate::state::FrameReads>) -> Option<String> {
     let manage = env.prog.arch().manage();
     let ram = env.ram.get_index();
-    let keys: BTreeSet<(i32, u64)> = machine
-        .bytes
-        .keys()
-        .chain(kuna.bytes.keys())
-        .copied()
-        .filter(|&(sp, off)| {
-            let both = |o: &(u64, u64)| off >= o.0 && off < o.1 && kuna.objects.contains(o);
-            let past = |o: &(u64, u64)| off >= o.1 && off < env.sp0 && kuna.objects.contains(o);
-            let reached = machine.objects.iter().any(both) || read.is_some_and(|r| r.contains(&off) && machine.objects.iter().any(past));
-            !(sp == ram && env.in_stack(off, 1))
-                || (reached && read.is_none_or(|r| r.contains(&off)) && !machine.skip.contains(&off) && !kuna.skip.contains(&off))
-        })
-        .collect();
+    let compared = |sp: i32, off: u64| {
+        let both = |o: &(u64, u64)| off >= o.0 && off < o.1 && kuna.objects.contains(o);
+        let past = |o: &(u64, u64)| off >= o.1 && off < env.sp0 && kuna.objects.contains(o);
+        let reached = machine.objects.iter().any(both) || read.is_some_and(|r| r.contains(&off) && machine.objects.iter().any(past));
+        !(sp == ram && env.in_stack(off, 1))
+            || (reached && read.is_none_or(|r| r.contains(&off)) && !machine.skip.contains(&off) && !kuna.skip.contains(&off))
+    };
     let mut first = None;
     let mut differ = 0usize;
-    for (sp, off) in keys {
-        let Some(space) = manage.get_space(sp) else { continue };
-        let side = |w: &Writes| {
-            w.bytes.get(&(sp, off)).copied().unwrap_or_else(|| env.base_byte(run, w.epoch, &w.escaped, space, off))
+    let mut ms = machine.bytes.iter().peekable();
+    let mut ks = kuna.bytes.iter().peekable();
+    loop {
+        let (key, m, k) = match (ms.peek(), ks.peek()) {
+            (None, None) => break,
+            (Some(&(&mk, &mv)), Some(&(&kk, &kv))) if mk == kk => {
+                ms.next();
+                ks.next();
+                (mk, Some(mv), Some(kv))
+            }
+            (Some(&(&mk, &mv)), Some(&(&kk, _))) if mk < kk => {
+                ms.next();
+                (mk, Some(mv), None)
+            }
+            (Some(&(&mk, &mv)), None) => {
+                ms.next();
+                (mk, Some(mv), None)
+            }
+            (_, Some(&(&kk, &kv))) => {
+                ks.next();
+                (kk, None, Some(kv))
+            }
         };
-        let (m, k) = (side(machine), side(kuna));
+        let (sp, off) = key;
+        if !compared(sp, off) {
+            continue;
+        }
+        let Some(space) = manage.get_space(sp) else { continue };
+        let m = m.unwrap_or_else(|| env.base_byte(run, machine.epoch, &machine.escaped, space, off));
+        let k = k.unwrap_or_else(|| env.base_byte(run, kuna.epoch, &kuna.escaped, space, off));
         if m != k {
             differ += 1;
             first.get_or_insert(format!("{}:{off:#x}: machine 0x{m:02x}, kuna 0x{k:02x}", space.get_name()));
