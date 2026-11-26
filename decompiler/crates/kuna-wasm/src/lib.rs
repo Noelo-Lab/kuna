@@ -540,6 +540,10 @@ fn resolve_language(
 /// `readonly` range implies it, the image-scoped ones (byte overlays) before
 /// the analysis commit, the program-scoped ones after it; the function- and
 /// symbol-scoped ones are dispatched by the decompile loop.
+///
+/// The mode's load-time overrides are in the environment while the image
+/// loads, and the load-option environment is restored once the program is
+/// built, so one request's mode never reaches a later request's load.
 fn load_program(
     binary: &str,
     spec_root: &str,
@@ -549,26 +553,39 @@ fn load_program(
     directives: &[Directive],
     discovery: bool,
 ) -> Result<ConsoleProgram, String> {
-    let arm64e_env = kuna_decomp::kuna_macho_arm64e::MACHO_ARM64E_ENV;
-    let arm64e = overrides
-        .iter()
-        .filter(|(option, _)| *option == "macho-arm64e")
-        .map(|(_, value)| *value)
-        .last();
-    let previous_arm64e = std::env::var_os(arm64e_env);
-    if let Some(value) = arm64e {
-        std::env::set_var(arm64e_env, value);
-    }
-
-    let spec_roots = vec![spec_root.to_string()];
-    let bootstrap = bootstrap_from_image(binary, "", &spec_roots);
-    if arm64e.is_some() {
-        match previous_arm64e {
-            Some(value) => std::env::set_var(arm64e_env, value),
-            None => std::env::remove_var(arm64e_env),
+    let environment = kuna_decomp::kuna_loadoptions::EnvSnapshot::capture();
+    for (option, value) in overrides {
+        if let Some(variable) = load_time_env(option) {
+            std::env::set_var(variable, value);
         }
     }
-    let mut prog = bootstrap
+    let loaded =
+        build_program(binary, spec_root, overrides, want_fast_funcdisc, language, directives, discovery);
+    environment.restore();
+    loaded
+}
+
+/// The environment variable the loader reads a load-time mode override from.
+fn load_time_env(option: &str) -> Option<&'static str> {
+    match option {
+        "macho-arm64e" => Some(kuna_decomp::kuna_macho_arm64e::MACHO_ARM64E_ENV),
+        "ppc32picimports" => Some(kuna_decomp::kuna_ppc32picimports::ENV),
+        _ => None,
+    }
+}
+
+/// [`load_program`] with the load-time overrides already in the environment.
+fn build_program(
+    binary: &str,
+    spec_root: &str,
+    overrides: &[(&'static str, &'static str)],
+    want_fast_funcdisc: bool,
+    language: Option<&str>,
+    directives: &[Directive],
+    discovery: bool,
+) -> Result<ConsoleProgram, String> {
+    let spec_roots = vec![spec_root.to_string()];
+    let mut prog = bootstrap_from_image(binary, "", &spec_roots)
         .map_err(|e| format!("could not build an architecture for {binary}: {}", e.explain()))?;
 
     let set = |prog: &mut ConsoleProgram, name: &str, value: &str| {

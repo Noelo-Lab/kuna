@@ -1,0 +1,90 @@
+<decompilertest>
+<!-- P9 emission, option truthycond (default ptrchain). gcc 11 -O0 -fno-pic
+     -fno-stack-protector -fcf-protection=none, x86-64:
+
+       struct node { struct node *next; int v; };
+       int check(int n) { return n > 3; }
+       void use(char *p) { *p = 0; }
+       void mixed(char *p, int n) { if (check(n) && p && n) use(p); }
+       void alone(char *p) { if (p) use(p); }
+       int negated(char *p, int n) { if (!p || !n) return -1; return n; }
+       int field(struct node *s, int n) { if (s->next && n) return s->next->v; return 0; }
+       int is_abs(const char *path) { return path != 0 && path[0] == '/'; }
+       int count(struct node *s, int n) { int c = 0; while (s && c < n) { c++; s = s->next; } return c; }
+
+     By default a pointer variable that is an operand of && or || keeps its
+     comparison: mixed's p, negated's !p and is_abs's returned chain. The
+     integer n, the call, the field s->next, the stand-alone if (p) and the
+     chain that is count's loop test stay truthy. Under truthycond on every one
+     of them is truthy. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e5897dfc837dfc030f9fc00fb6c05dc3554889e548897df8488b45f8c60000905dc3554889e54883ec1048897df88975f48b45f489c7e8c2ffffff85c0741948837df8007412837df400740c488b45f84889c7e8b8ffffff90c9c3554889e54883ec0848897df848837df800740c488b45f84889c7e896ffffff90c9c3554889e548897df88975f448837df8007406837df4007507b8ffffffffeb038b45f45dc3554889e548897df88975f4488b45f8488b004885c07412837df400740c488b45f8488b008b4008eb05b8000000005dc3554889e548897df848837df8007412488b45f80fb6003c2f7507b801000000eb05b8000000005dc3554889e548897de88975e4c745fc00000000eb0f8345fc01488b45e8488b00488945e848837de80074088b45fc3b45e47ce28b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="check"/>
+<symbol space="ram" offset="0x100013" name="use"/>
+<symbol space="ram" offset="0x100025" name="mixed"/>
+<symbol space="ram" offset="0x10005e" name="alone"/>
+<symbol space="ram" offset="0x100080" name="negated"/>
+<symbol space="ram" offset="0x1000a4" name="field"/>
+<symbol space="ram" offset="0x1000d4" name="is_abs"/>
+<symbol space="ram" offset="0x1000fc" name="count"/>
+</binaryimage>
+<script>
+<com>parse line struct node { struct node *next; int4 v; };</com>
+<com>parse line extern int check(int n);</com>
+<com>parse line extern void use(char *p);</com>
+<com>parse line extern void mixed(char *p, int n);</com>
+<com>parse line extern void alone(char *p);</com>
+<com>parse line extern int negated(char *p, int n);</com>
+<com>parse line extern int field(struct node *s, int n);</com>
+<com>parse line extern int is_abs(char *path);</com>
+<com>parse line extern int count(struct node *s, int n);</com>
+<com>lo fu mixed</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu alone</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu negated</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu field</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu is_abs</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu count</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option truthycond on</com>
+<com>lo fu mixed</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu alone</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu negated</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu field</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu is_abs</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu count</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="PTRCHAIN #1: a pointer between a call and an integer keeps its comparison" min="1" max="1">^  if \(\(\(check\(n\)\) &amp;&amp; \(p != NULL\)\) &amp;&amp; \(n\)\)$</stringmatch>
+<stringmatch name="PTRCHAIN #2: a negated pointer in a chain prints == NULL" min="1" max="1">^  if \(\(p == NULL\) \|\| \(!n\)\)$</stringmatch>
+<stringmatch name="PTRCHAIN #3: a returned chain keeps the pointer comparison" min="1" max="1">^  return \(\(path != NULL\) &amp;&amp; \(\*path == '/'\)\);$</stringmatch>
+<stringmatch name="PTRCHAIN #4: a loop test stays truthy under both values" min="2" max="2">; \(v1 &amp;&amp; \(v2 &lt; n\)\);</stringmatch>
+<stringmatch name="PTRCHAIN #5: a stand-alone pointer test stays truthy under both values" min="2" max="2">^  if \(p\)$</stringmatch>
+<stringmatch name="PTRCHAIN #6: a field access in a chain stays truthy under both values" min="2" max="2">^  if \(\(s-&gt;next\) &amp;&amp; \(n\)\)$</stringmatch>
+<stringmatch name="PTRCHAIN #7: on prints the pointer truthy between a call and an integer" min="1" max="1">^  if \(\(\(check\(n\)\) &amp;&amp; \(p\)\) &amp;&amp; \(n\)\)$</stringmatch>
+<stringmatch name="PTRCHAIN #8: on prints the negated pointer as !p" min="1" max="1">^  if \(\(!p\) \|\| \(!n\)\)$</stringmatch>
+<stringmatch name="PTRCHAIN #9: on returns the truthy chain" min="1" max="1">^  return \(\(path\) &amp;&amp; \(\*path == '/'\)\);$</stringmatch>
+<stringmatch name="PTRCHAIN #10: only the three pointer chain operands print NULL" min="3" max="3">NULL</stringmatch>
+</decompilertest>

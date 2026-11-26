@@ -229,6 +229,7 @@ fn render_one(stem: &str, which: usize) -> Result<String, String> {
     let entry = Address::new(space, off);
     arch.early_return = false; // (kuna) C++-parity test: opt out of earlyreturn (DIV-23 default-on)
     arch.switch_return = false; // (kuna) also opt out of switchreturn (DIV-25 default-on)
+    arch.ret_shape.on = false; // (kuna) returndup record: the structured returns
     let fd = decompile_func(arch, &name, entry, 0).map_err(|e| format!("decompile: {e}"))?;
     // (kuna DIV-37) The frozen C++ oracles pin the upstream braced
     // single-statement if-body form; reset braceelide for the comparison.

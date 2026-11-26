@@ -285,7 +285,8 @@ fn mixed_width_identities_survive_a_decompile_boundary() {
     ] {
         let transcript = console(
             &format!(
-                "map prototype lookup char *lookup(void);\n\
+                "option returndup record\n\
+             map prototype lookup char *lookup(void);\n\
              map prototype probe int probe(char *s);\n\
              map prototype pick_flag int pick_flag(void);\n\
              load function pick_flag\ndecompile\n{first}\ndecompile\n{second}\ndecompile\nprint C"
@@ -324,7 +325,8 @@ fn mixed_width_renamed_body_matches_native_values() {
             order[0],
             order[1],
         ];
-        let (code, rejected) = run_fixture("pick_flag", "localnamebatch_x86_64", &extra, true);
+        let (code, rejected) =
+            run_fixture_options("pick_flag", "localnamebatch_x86_64", &extra, true, &[("returndup", "record")]);
         assert!(rejected.is_empty(), "{rejected:?}\n{code}");
         let source = common::scratch_file("mixed-register-lifetimes", "c");
         std::fs::write(&source, format!("#include <stdint.h>\ntypedef int32_t int4; typedef uint32_t uint4;\nstatic int state;\nchar *lookup(void) {{ return state == 0 ? 0 : (char *)\"x\"; }}\nint4 probe(char *s) {{ return state == 1 ? 7 : 0; }}\n{code}\nint main(void) {{ state=0; if(pick_flag()!=0) return 1; state=1; if(pick_flag()!=1) return 2; state=2; return pick_flag()!=0; }}\n")).unwrap();

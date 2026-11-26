@@ -838,6 +838,8 @@ pub struct ArchContext {
     pub byte_store_width: bool,
     /// (kuna `boolbranch`) Mirror of `Architecture::bool_branch_keep`.
     pub bool_branch_keep: bool,
+    /// (kuna `boolbranch return`) Mirror of `Architecture::bool_ret`, in C output only.
+    pub bool_ret: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -1139,11 +1141,11 @@ pub struct ArchContext {
     /// instead of out-index 0.  Read by
     /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
-    /// (kuna) defer a live loop head in the deferred `ruleBlockIfNoExit` scan
-    /// (`loop_cond_hoist`, option `loopcondhoist`, opt-in default-off) so
-    /// `ruleBlockWhileDo` keeps the loop's head test.  Read by
-    /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
-    pub loop_cond_hoist: bool,
+    /// (kuna) which exit of a loop the structurers keep (`loop_cond_hoist`,
+    /// option `loopcondhoist`).  Read by
+    /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure) and
+    /// [`ActionReturnSplit`](crate::blockaction::ActionReturnSplit).
+    pub loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
     /// (kuna) `loopcontinue auto` — the recorded jump statements keep their
@@ -1272,6 +1274,9 @@ pub struct ArchContext {
     /// (kuna) `loweredswitch auto` — unoptimized functions decide by the compiled tests.
     pub lowered_switch_compiled: bool,
     pub cond_fold: int4,
+    /// (kuna `condfold noreturn`) Fold a chain of tests that all branch to one
+    /// call that does not return.  See [`crate::p8_structure::kuna_fatalchain`].
+    pub cond_fold_noreturn: bool,
     /// (kuna) `condstmts`: most statements a folded condition operand may print
     /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
@@ -1293,6 +1298,8 @@ pub struct ArchContext {
     /// opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_dedupitetail`]'s `ActionDedupIteTail`.
     pub dedup_ite_tail: bool,
+    /// (kuna) join duplicated loop latches (`dedupitetail latch`).
+    pub latch_join: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
     /// (`if (c) v = A; else v = B;`) to a `?:` ternary (`v = c ? A : B;`)
     /// (`iteregion`, opt-in default-off — a **runtime choice**: matches source only
@@ -1316,6 +1323,8 @@ pub struct ArchContext {
     /// (kuna) `tailform`: the function-tail form policy, `None` when off -- see
     /// `Architecture::tail_form`.
     pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
+    /// (kuna) `returndup auto` in optimized functions -- see `Architecture::ret_shape`.
+    pub ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
     /// see `Architecture::param_copy_hoist`.  Read by
@@ -1696,6 +1705,7 @@ impl ArchContext {
             opaque_predicate: false,
             byte_store_width: false,
             bool_branch_keep: false,
+            bool_ret: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
@@ -1789,7 +1799,7 @@ impl ArchContext {
             do_while_continue: true,
             goto_next: false,
             post_increment: false,
-            loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
+            loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist::Off, // loopcondhoist
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
@@ -1812,11 +1822,13 @@ impl ArchContext {
             lowered_switch_tree: false, // loweredswitch tree|all
             lowered_switch_compiled: false, // loweredswitch auto
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
+            cond_fold_noreturn: false,   // condfold noreturn
             cond_stmts: -1,              // condstmts (-1 = off)
             goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off, // gotoreduce
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
+            latch_join: false,            // dedupitetail latch
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
             iteregion_record: false,      // iteregion auto
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
@@ -1824,6 +1836,7 @@ impl ArchContext {
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
             tail_form: None,              // tailform (copied from the Architecture)
+            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // returndup auto (copied from the Architecture)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             duplicate_call_returns: false, // returndup calls
             returndup_record: false, // returndup auto
