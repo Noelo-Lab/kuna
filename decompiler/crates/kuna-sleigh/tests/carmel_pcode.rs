@@ -712,6 +712,22 @@ fn conditional_call_stores_its_link_on_both_paths_but_only_a_call_decrements_sp(
         assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("A2L")), ((a0 + 1) & 0xffff, 0, 1));
         assert_eq!((m.reg("SP"), m.data(0x403f), m.data(0x4040)), (sp, 10, 0));
     }
+    for (rhs, target, sp) in [(1, 10, 0x4002), (2, 4, 0x4004)] {
+        let mut m = Machine::new(
+            0,
+            &[(0x209a02, NOP), (0x289c20, NOP), (INC_A0, NOP), (INC_A1, NOP),
+              (INC_A2, NOP), (0x21ace6, NOP), (NOP, NOP)],
+            &[(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 6), (12, 1, 0)],
+            None,
+        );
+        m.seed(&[("A0L", 1), ("A1L", rhs), ("SP", 0x4004)]);
+        m.seed_data(0x4003, 10);
+        m.seed_data(0x4004, 0x9876);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.step(), 3 * target);
+        assert_eq!((m.reg("SP"), m.data(0x4003), m.data(0x4004)), (sp, 4, 0));
+    }
 }
 
 #[test]

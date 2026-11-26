@@ -3953,6 +3953,8 @@ remains in the lifted program. Unassigned selectors 31 and 59 do not
 sample the board. An untaken conditional `CALL` still stores the
 link at old `SP` and `SP-1`; only a taken call decrements `SP` and
 transfers. Speculative fetches are not architectural edges.
+The compact zero-delay `CALL EQ1` with a NOP peer tests the incoming
+lane-1 zero flag and follows the same link-store rule.
 
 The covered CE1 wide `LOAD` execution ports are enabled by the address
 stage (`CE1` or `CECFG1.AEN`), not by the late result predicate. This

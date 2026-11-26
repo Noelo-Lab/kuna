@@ -10895,7 +10895,24 @@ macro loop_break() {
 }
 
 # A conditional CALL emits its link store even when the condition is false.
-:"CALL NC1" conditional_target "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=0 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_0 { local taken:1 = (EST & 1) == 0; store_link(SP, link_2_0); if (!taken) goto <veto>; SP = SP - 2; call conditional_target; <veto> }
+compact_call_test: "NC1" is slot_9_22=0x1441 {
+    local taken:1 = (EST & 1) == 0;
+    export taken;
+}
+compact_call_test: "EQ1" is slot_9_22=0x144e {
+    local taken:1 = (EST & 8) != 0;
+    export taken;
+}
+
+:CALL compact_call_test conditional_target "||" nop_right is
+    ((carmel_issue=1 & slot_mode=0 & slot_0_1=0 & compact_call_test & conditional_target);
+     (slot_mode=0 & nop_right)) & link_2_0 {
+    store_link(SP, link_2_0);
+    if (!compact_call_test) goto <veto>;
+    SP = SP - 2;
+    call conditional_target;
+  <veto>
+}
 :"CALL NC1" conditional_target "delay 1" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=1 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_1 & resume_2_1 [ carmel_counted_delay=1; ] { local taken:1 = (EST & 1) == 0; local old_sp:2 = SP; delayslot(1); store_link(old_sp, link_2_1); if (!taken) goto inst_next; SP = old_sp - 2; call conditional_target; goto resume_2_1; }
 :"CALL NC1" conditional_target "delay 2" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=2 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_2 & resume_2_2 [ carmel_counted_delay=1; ] { local taken:1 = (EST & 1) == 0; local old_sp:2 = SP; delayslot(2); store_link(old_sp, link_2_2); if (!taken) goto inst_next; SP = old_sp - 2; call conditional_target; goto resume_2_2; }
 :"CALL NC1" conditional_target "delay 3" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=3 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_3 & resume_2_3 [ carmel_counted_delay=1; ] { local taken:1 = (EST & 1) == 0; local old_sp:2 = SP; delayslot(2); store_link(old_sp, link_2_3); if (!taken) goto inst_next; SP = old_sp - 2; call conditional_target; goto resume_2_3; }
