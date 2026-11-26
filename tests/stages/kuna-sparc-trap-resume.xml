@@ -1,0 +1,34 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+<!--
+    A SPARC trap in the delay slot of `ba` is lifted as `call [sw_trap(..)]`
+    followed, in the same instruction's p-code, by the branch's `goto`. Control
+    comes back from the trap to the branch target, so that `goto` is the call's
+    resume edge. Here a function is also declared at that resume address, as
+    function discovery declares one after a call-class instruction.
+
+        10000: mov 1, %g1
+        10004: ba  10014
+        10008:  ta 0x10
+        1000c: nop
+        10010: nop
+        10014: retl          <- resume (declared)
+        10018:  mov 3, %o0
+
+    The resume is followed into the body: one trap call, no call to `resume`,
+    and the value the resumed code returns.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">821020011080000491d02010010000000100000081c3e00890102003</bytechunk>
+<symbol space="ram" offset="0x10000" name="trap_in_delay"/>
+<symbol space="ram" offset="0x10014" name="resume"/>
+</binaryimage>
+<script>
+  <com>lo fu trap_in_delay</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPARC-TRAP-RESUME #1: the trap is called once" min="1" max="1">sw_trap\(0x10\)\)\(\);</stringmatch>
+<stringmatch name="SPARC-TRAP-RESUME #2: the declared resume is not called" min="0" max="0">resume\(</stringmatch>
+<stringmatch name="SPARC-TRAP-RESUME #3: the resumed code's value is returned" min="1" max="1">return 3;</stringmatch>
+</decompilertest>

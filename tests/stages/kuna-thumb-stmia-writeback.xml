@@ -1,0 +1,38 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8-m">
+<!--
+    Thumb STMIA (T1) always writes the base back: Rn += 4 * BitCount, also when
+    Rn is in the register list. The vendored spec gave STMIA the LDMIA rule,
+    which skips the writeback when Rn is in the list, so in f r0 kept its
+    entry value, the return was a pass-through and f printed as void. Unicorn
+    on the same bytes returns a0 + 8.
+
+    f:  0x0  03 c0   stmia r0!,{r0,r1}
+        0x2  70 47   bx lr
+    g:  0x4  03 c2   stmia r2!,{r0,r1}     ; base not in the list (control)
+        0x6  10 46   mov r0,r2
+        0x8  70 47   bx lr
+-->
+<bytechunk space="ram" offset="0x0">
+03c0704703c210467047
+</bytechunk>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>set context TMode 1 [ram,0x0] [ram,0x10]</com>
+  <com>map function r0x0 f</com>
+  <com>map function r0x4 g</com>
+  <com>disassemble 0x0 0x2</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="Thumb stmia #1: the base in the list still disassembles with writeback" min="1" max="1">^0x00000000: stmia[ ]+r0!,\{r0,r1\}</stringmatch>
+<stringmatch name="Thumb stmia #2: f returns the written-back base" min="1" max="1">return \(int4\)a0 \+ 8;</stringmatch>
+<stringmatch name="Thumb stmia #3: f keeps its result" min="0" max="0">void f\(</stringmatch>
+<stringmatch name="Thumb stmia #4: g, base not in the list, returns the written-back base" min="1" max="1">return &amp;a2\[1\];</stringmatch>
+</decompilertest>

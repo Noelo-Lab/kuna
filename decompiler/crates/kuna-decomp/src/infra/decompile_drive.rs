@@ -19,7 +19,7 @@ use crate::action::{Action, ActionContext};
 use crate::architecture::Architecture;
 use crate::flow::{FlowEnvironment, FlowInfo};
 use crate::funcdata::{funcdata_flags, Funcdata};
-use crate::context::{HighVariableId, TypeOp};
+use crate::context::{HighVariableId, OpId, TypeOp};
 
 use kuna_sleigh::translate::Translate;
 use kuna_sleigh::loadimage::ImageBytes;
@@ -514,6 +514,10 @@ impl FlowEnvironment for ArchFlowEnv {
                     .map(|uo| String::from_utf8_lossy(uo.get_name()).into_owned())
             },
         )
+    }
+
+    fn stated_jump_targets(&self, site: &Address) -> Option<&crate::jumptable::StatedJump> {
+        self.arch().stated_jump_targets.get(site)
     }
 
     fn stated_callee_site(&self, fd: &Funcdata, site: &Address) -> bool {
@@ -1164,6 +1168,7 @@ fn generate_flow(
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
     let target_snapshot = flow.target_index_snapshot();
     let mut data = flow.data;
+    data.kuna_flow_ranges = crate::flow::decoded_ranges(&data, &target_snapshot);
     data.switch_over_jump_tables(|fd, addr| {
         crate::flow::target_in(fd, &target_snapshot, addr)
     })?;
@@ -1181,12 +1186,46 @@ fn generate_flow(
     Ok(data)
 }
 
+/// The PPC count/link register transfer discards two bits even when SLEIGH
+/// names the register itself as the destination. Each stated classic CTR/LR
+/// branch reads its operand through that mask, installed in the completed CFG
+/// before heritage reads it, including on a fresh follow.
+fn align_stated_powerpc_branches(arch: &Architecture, data: &mut Funcdata) -> KunaResult<()> {
+    if arch.stated_jump_targets.is_empty() {
+        return Ok(());
+    }
+    for index in 0..data.num_jump_tables() {
+        let table = data.get_jump_table(index);
+        let site = table.get_op_address().clone();
+        if !arch.stated_jump_targets.get(&site).is_some_and(|f|
+            f.selector == crate::jumptable::StatedSelector::PowerPcAligned)
+        {
+            continue;
+        }
+        let branch = table.get_indirect_op().unwrap();
+        let raw = data.obank().get(branch).unwrap().get_in(0).unwrap();
+        let size = data.vbank().get(raw).unwrap().get_size();
+        let address_bits = kuna_base::address::calc_mask(size.min(site.get_addr_size()));
+        let align = data.new_op(2, site);
+        data.op_set_opcode(align, crate::typeop::type_op_for(OpCode::CPUI_INT_AND));
+        data.op_unset_input(branch, 0);
+        data.op_set_input(align, raw, 0)?;
+        let mask = data.new_constant(size, address_bits & !3);
+        data.op_set_input(align, mask, 1)?;
+        let aligned = data.new_unique_out(size, align)?;
+        data.op_insert_before(align, branch);
+        data.op_set_input(branch, aligned, 0)?;
+    }
+    Ok(())
+}
+
 /// Mark processing started and publish the flow's buffered comments.
 fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcdata> {
     // startProcessing then sets the processing_started flag (so isProcStarted()
     // is true; the rest of startProcessing — sortCallSpecs / buildInfoList /
     // applyDeadCodeDelay — is a W4 stub or handled lazily in op_heritage).
     data.set_flag_raw(funcdata_flags::processing_started);
+    align_stated_powerpc_branches(arch, &mut data)?;
     // Publish buffered flow comments only after replacement construction succeeds,
     // and only from the drive that owns the Architecture.  A nested recovery drive
     // (the P4 callee-contract bootstrap) exists to state types: its statements are
@@ -1199,6 +1238,15 @@ fn publish_flow(arch: &mut Architecture, mut data: Funcdata) -> KunaResult<Funcd
         }
         if arch.mapped_flow_boundary_image {
             crate::kuna_mappedflowboundary::clear_stale_warnings(&mut arch.commentdb, &func_addr);
+        }
+        if !arch.stated_jump_targets.is_empty()
+            && (0..data.num_jump_tables()).any(|i| data.get_jump_table(i).is_override())
+        {
+            arch.commentdb.retain_comments(|c|
+                c.func_addr != func_addr || c.tp != crate::architecture::comment_type::warning
+                    || c.text != "WARNING: Treating indirect jump as call"
+                    || !arch.stated_jump_targets.contains_key(&c.addr)
+            );
         }
         let pending = data.drain_pending_comments();
         crate::kuna_gottailcall::clear_stale_warnings(arch, &func_addr, &pending);
@@ -1448,16 +1496,27 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     }
 }
 
-/// Flush any analysis comments the **action pipeline** buffered on the `Funcdata`
-/// (e.g. the `branchflip:` warning that `ActionBranchFlip` records at S8) into the
-/// comment database for emit.  The flow-time `Funcdata::warning`s are drained in
-/// `follow_flow_on_fd` before the pipeline runs; warnings raised *inside* the
-/// pipeline land here.  No-op when nothing was buffered.
+/// Publish analysis diagnostics after simplification. A recovered jump's
+/// fallback diagnostic belongs to its call operation, not an address that can
+/// outlive the call when another operation from the same instruction survives.
+/// It is published ahead of the pipeline's own comments, as flow published it,
+/// so a pipeline warning at the same address keeps printing after it.
 fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
     if !arch.kuna_drive_publishes() {
         return;
     }
     let func_addr = fd.get_address().clone();
+    for call in fd.call_specs().iter().filter(|call| call.is_bad_jump_table()) {
+        let Some(op) = fd.obank().get(call.get_op()) else { continue; };
+        if !op.is_dead() && matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            arch.commentdb.add_comment_no_duplicate(
+                crate::architecture::comment_type::warning,
+                &func_addr,
+                op.get_addr(),
+                "WARNING: Treating indirect jump as call",
+            );
+        }
+    }
     for (tp, ad, txt) in fd.drain_pending_comments() {
         arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
     }
@@ -1653,11 +1712,13 @@ const MAX_TAIL_CONTRACTS: usize = 4;
 const MAX_TAIL_CALLEE_INSTRUCTIONS: u32 = 512;
 
 /// State the recovered prototype of every callee `root` tail-calls (a CALL the
-/// flow followed with its artificial RETURN at the same address), so the tail
-/// call passes through the callee's arguments and result the way a
-/// callee-first `decompile-all` sees them.  At most [`MAX_TAIL_CONTRACTS`]
-/// callees of at most [`MAX_TAIL_CALLEE_INSTRUCTIONS`] instructions are tried.
-/// Inert under `protoorder off`.
+/// flow followed with its artificial RETURN at the same address), and then of
+/// the direct callee just before each tail call whose callee states its first
+/// parameter in a register `root` never touches, whose result the tail call
+/// may pass on, so the tail call passes through the callee's arguments and
+/// result the way a callee-first `decompile-all` sees them.  At most
+/// [`MAX_TAIL_CONTRACTS`] callees of at most [`MAX_TAIL_CALLEE_INSTRUCTIONS`]
+/// instructions are tried, tail callees first.  Inert under `protoorder off`.
 fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
     if !arch.protoorder.is_on() || root.num_calls() == 0 {
         return;
@@ -1669,23 +1730,44 @@ fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
             root.obank().get(op).filter(|o| o.code() == OpCode::CPUI_RETURN).map(|o| o.get_addr().clone())
         })
         .collect();
-    let tails: Vec<Address> = (0..root.num_calls())
-        .filter_map(|i| {
-            let fc = root.get_call_specs(i);
-            let at = root.obank().get(fc.get_op())?.get_addr().clone();
-            returns.contains(&at).then(|| fc.get_entry_address().clone())
-        })
+    let tail_calls: Vec<OpId> = (0..root.num_calls())
+        .map(|i| root.get_call_specs(i).get_op())
+        .filter(|&op| root.obank().get(op).is_some_and(|o| returns.contains(o.get_addr())))
         .collect();
-    let entries = eligible_callees(arch, tails, root.get_address());
-    if entries.is_empty() {
-        return;
+    let entry_of = |op: OpId| root.get_call_specs_index(op).map(|i| root.get_call_specs(i).get_entry_address().clone());
+    let tails = eligible_callees(arch, tail_calls.iter().filter_map(|&op| entry_of(op)).collect(), root.get_address());
+    let used = state_contracts(arch, tails, MAX_TAIL_CONTRACTS);
+    let fed = |arch: &Architecture, op: OpId| {
+        entry_of(op)
+            .and_then(|e| crate::p4_calls::kuna_protoorder::stated_key(&e))
+            .and_then(|key| arch.kuna_protoorder_types.get(&key))
+            .and_then(|t| t.inputs.first().map(|(addr, size, _)| (addr.clone(), *size)))
+            .is_some_and(|(addr, size)| crate::p4_calls::kuna_passthrough::untouched_register(root, &addr, size))
+    };
+    let feeders: Vec<Address> = tail_calls
+        .iter()
+        .filter(|&&op| fed(arch, op))
+        .filter_map(|&op| crate::p4_calls::kuna_passthrough::producing_call(root, op))
+        .filter_map(entry_of)
+        .collect();
+    let feeders = eligible_callees(arch, feeders, root.get_address());
+    state_contracts(arch, feeders, MAX_TAIL_CONTRACTS.saturating_sub(used));
+}
+
+/// State the recovered prototypes of at most `budget` of `entries`, each
+/// against the statements made before this call; returns how many were tried.
+fn state_contracts(arch: &mut Architecture, entries: Vec<Address>, budget: usize) -> usize {
+    if entries.is_empty() || budget == 0 {
+        return 0;
     }
     let prior = std::mem::take(&mut arch.kuna_protoorder_types);
     let mut stated = Vec::new();
-    for entry in entries.into_iter().take(MAX_TAIL_CONTRACTS) {
+    let mut tried = 0;
+    for entry in entries.into_iter().take(budget) {
         if deadline_passed() {
             break;
         }
+        tried += 1;
         if let Some((Some(types), _)) = recover_one_contract(arch, &prior, &entry, Some(MAX_TAIL_CALLEE_INSTRUCTIONS)) {
             if let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(&entry) {
                 stated.push((key, types));
@@ -1694,6 +1776,7 @@ fn bootstrap_tail_callees(arch: &mut Architecture, root: &Funcdata) {
     }
     arch.kuna_protoorder_types = prior;
     arch.kuna_protoorder_types.extend(stated);
+    tried
 }
 
 /// Make the possible producers of a raw Thumb wrapper's observed return
@@ -2164,7 +2247,9 @@ fn decompile_func_full_with_objects_inner(
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
-                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>|
+                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>,
+                       latch_join: bool,
+                       chain_any: bool|
      -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
@@ -2187,6 +2272,8 @@ fn decompile_func_full_with_objects_inner(
             fd.withdraw_stack_store_guard();
         }
         fd.set_condstmts_seed(condstmts_seed.clone());
+        fd.kuna_latch_join_withdrawn = !latch_join;
+        fd.set_chainfold_withdrawn(!chain_any);
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -2397,38 +2484,78 @@ fn decompile_func_full_with_objects_inner(
             }
         }
     };
-    // (kuna `elfmain`) A `main` whose finished declaration is not exactly what the
-    // runtime seed typed and named is decompiled again without the seed.
     let mut prefollowed = prefollowed;
-    let mut elfmain = elfmain_rt.as_ref();
+    // (kuna `condfold auto`) A function whose fold of a chain into an ordinary
+    // block still prints a goto is decompiled again without such folds; the copy
+    // with fewer gotos wins, the second on a tie.
+    let mut chain_any = true;
+    let mut relaxed: Option<(KunaResult<Funcdata>, int4)> = None;
     let result = loop {
-        // (kuna `stackstoreguard`) A function whose final layout spoiled what the
-        // guard needs is analyzed again from scratch without it.
-        let mut seed = std::collections::BTreeSet::new();
-        let mut unguarded = false;
-        let mut result = match attempt(prefollowed.take(), false, &seed, elfmain) {
-            Ok(fd) if fd.stack_store_guard_spoiled() => {
-                unguarded = true;
-                attempt(None, true, &seed, elfmain)
+        // (kuna `elfmain`) A `main` whose finished declaration is not exactly what the
+        // runtime seed typed and named is decompiled again without the seed.
+        let mut elfmain = elfmain_rt.as_ref();
+        let result = loop {
+            // (kuna `dedupitetail latch`) A function whose joined loop latch prints
+            // gotos is decompiled again without the join; the copy with fewer gotos wins.
+            let mut joined: Option<(KunaResult<Funcdata>, int4)> = None;
+            let result = loop {
+                let latch_join = joined.is_none();
+                // (kuna `stackstoreguard`) A function whose final layout spoiled what the
+                // guard needs is analyzed again from scratch without it.
+                let mut seed = std::collections::BTreeSet::new();
+                let mut unguarded = false;
+                let mut result = match attempt(prefollowed.take(), false, &seed, elfmain, latch_join, chain_any) {
+                    Ok(fd) if fd.stack_store_guard_spoiled() => {
+                        unguarded = true;
+                        attempt(None, true, &seed, elfmain, latch_join, chain_any)
+                    }
+                    other => other,
+                };
+                // (kuna `condstmts`) A function whose final structure folded a block over the
+                // cap is analyzed again with that block complex from the first structuring on.
+                for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+                    let Ok(fd) = &result else { break };
+                    let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
+                    seed = next;
+                    match attempt(None, unguarded, &seed, elfmain, latch_join, chain_any) {
+                        Ok(fd) => result = Ok(fd),
+                        Err(_) => break,
+                    }
+                }
+                match joined.take() {
+                    None => match result.as_ref().ok().and_then(crate::p8_structure::kuna_latchjoin::joined_gotos) {
+                        Some(with) if with > 0 => joined = Some((result, with)),
+                        _ => break result,
+                    },
+                    Some((first, with)) => {
+                        break match &result {
+                            Ok(plain) if crate::p8_structure::kuna_latchjoin::fewer_gotos(plain, with) => result,
+                            _ => first,
+                        }
+                    }
+                }
+            };
+            if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
+                elfmain = None;
+                continue;
             }
-            other => other,
+            break result;
         };
-        // (kuna `condstmts`) A function whose final structure folded a block over the
-        // cap is analyzed again with that block complex from the first structuring on.
-        for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
-            let Ok(fd) = &result else { break };
-            let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
-            seed = next;
-            match attempt(None, unguarded, &seed, elfmain) {
-                Ok(fd) => result = Ok(fd),
-                Err(_) => break,
+        match relaxed.take() {
+            None => match result.as_ref().ok().and_then(crate::p8_structure::kuna_fatalchain::late_gotos) {
+                Some(with) => {
+                    relaxed = Some((result, with));
+                    chain_any = false;
+                }
+                None => break result,
+            },
+            Some((first, with)) => {
+                break match &result {
+                    Ok(plain) if crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(plain) <= with => result,
+                    _ => first,
+                }
             }
         }
-        if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
-            elfmain = None;
-            continue;
-        }
-        break result;
     };
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one;
@@ -2793,14 +2920,22 @@ pub fn print_c_prototype(arch: &mut Architecture, fd: &Funcdata) -> String {
 /// `int8`, `float8`, …, spelled per standard C — 8-byte integers always use
 /// `long long` so the text is data-model independent) plus the fixed Ghidra
 /// `undefined` family block (`undefined`, `undefined1..8` — 3/5/6/7 mapped to
-/// the next larger unsigned integer with a sizeof note — and `undefined16/32`
-/// as byte-array structs).  `bool` is covered by `#include <stdbool.h>`;
-/// `char`/`void` are real C and emit nothing.
+/// the next larger unsigned integer with a sizeof note — `undefined16` as a
+/// one-byte-aligned `unsigned __int128` where the compiler has one, so the
+/// body's 16-byte arithmetic compiles and no record's layout moves, and
+/// otherwise, like `undefined32`, as a byte-array struct; clang on Windows lays
+/// a record out the Microsoft way, which keeps the 16-byte alignment, so it
+/// takes the struct).  `bool` is covered
+/// by `#include <stdbool.h>`; `char`/`void` are real C and emit nothing.
+/// `KUNA_ANY_ARGS` is the parameter list of a helper the header declares
+/// ([`crate::kuna_unitcalls`]): `...` where `()` means no parameters (C23,
+/// and the c2x modes of gcc 13 and clang 16 on), and empty before.
 pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     use crate::dtype::type_metatype::*;
     let mut out = String::new();
     out.push_str("/* kuna recompile prelude (generated): core scalar typedefs */\n");
     out.push_str("#include <stdbool.h>\n");
+    out.push_str("#if defined(__STDC_VERSION__) && __STDC_VERSION__ > 201710L && (__STDC_VERSION__ >= 202311L || (defined(__clang__) && __clang_major__ >= 16) || (defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 13))\n#define KUNA_ANY_ARGS ...\n#else\n#define KUNA_ANY_ARGS\n#endif\n");
     // A recovered aggregate can hold target pointers, and a host that compiles
     // this header for a different data model sizes them differently and moves
     // every field after such a member -- which also moves what `p[1]` means in
@@ -2874,7 +3009,9 @@ pub fn print_c_recompile_prelude(arch: &Architecture) -> String {
     out.push_str("typedef unsigned long long undefined6; /* 6 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined7; /* 7 bytes in the decompiler; sizeof differs */\n");
     out.push_str("typedef unsigned long long undefined8;\n");
+    out.push_str("#if defined(__SIZEOF_INT128__) && !(defined(__clang__) && defined(_WIN32))\n__extension__ typedef unsigned __int128 undefined16 __attribute__((aligned(1)));\n#else\n");
     out.push_str("typedef struct { unsigned char b[16]; } undefined16;\n");
+    out.push_str("#endif\n");
     out.push_str("typedef struct { unsigned char b[32]; } undefined32;\n");
     out
 }

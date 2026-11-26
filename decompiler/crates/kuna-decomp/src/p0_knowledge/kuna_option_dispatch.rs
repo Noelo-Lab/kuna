@@ -48,6 +48,16 @@ kuna_options! { self, p1;
         self.arm_constant_shift = mode;
         Ok(msg)
     },
+    "armshiftguard" => {
+        let (mode, msg) = crate::p9_emit::kuna_armshiftguard::OptionArmShiftGuard.apply(p1)?;
+        self.arm_shift_guard = mode;
+        Ok(msg)
+    },
+    "rangetest" => {
+        let (mode, msg) = crate::p9_emit::kuna_rangetest::OptionRangeTest.apply(p1)?;
+        self.range_test = mode;
+        Ok(msg)
+    },
     "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;
@@ -55,8 +65,8 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "truthycond" => {
-        let (val, msg) = crate::kuna_truthycond::OptionTruthyCond.apply(p1)?;
-        self.print_mut().options.set_truthy_cond(val);
+        let (mode, msg) = crate::kuna_truthycond::OptionTruthyCond.apply(p1)?;
+        self.print_mut().options.set_truthy_mode(mode);
         Ok(msg)
     },
     "braceelide" => {
@@ -184,6 +194,7 @@ kuna_options! { self, p1;
     "funcboundflow" => on_off!(funcbound_flow, "Fall-through bound at function entries"),
     "overlapbranch" => on_off!(overlap_branch, "Overlapping-branch fall-through truncation"),
     "cleanupcode" => on_off!(remove_cleanup_code, "Rust drop/deallocate call removal"),
+    "varargsave" => on_off!(vararg_save, "System V variadic register-save prologue folding"),
     "linuxsyscall" => {
         let (mode, msg) = crate::kuna_linuxsyscall::OptionLinuxSyscall.apply(p1)?;
         self.linux_syscall = mode;
@@ -353,6 +364,7 @@ kuna_options! { self, p1;
         self.recover_lowered_switch = mode.enabled();
         self.lowered_switch_linear = mode.linear();
         self.lowered_switch_tree = mode.tree();
+        self.lowered_switch_compiled = mode == crate::kuna_loweredswitch::LoweredSwitchMode::Auto;
         Ok(msg)
     },
     "nulterminator" => {
@@ -484,11 +496,16 @@ kuna_options! { self, p1;
     },
     "loopcondhoist" => {
         let (val, msg) =
-            crate::p8_structure::kuna_ifnoexit::OptionLoopCondHoist.apply(p1)?;
+            crate::p8_structure::kuna_loopcond::OptionLoopCondHoist.apply(p1)?;
         self.loop_cond_hoist = val;
         Ok(msg)
     },
-    "loopcontinue" => on_off!(loop_continue, "Secondary loop-latch continue recovery"),
+    "loopcontinue" => {
+        let (val, record, msg) = crate::p8_structure::kuna_loopcontinue::OptionLoopContinue.apply(p1)?;
+        self.loop_continue = val;
+        self.loop_continue_record = record;
+        Ok(msg)
+    },
     "postinc" => on_off!(post_increment, "Pointer steps folded into *p++"),
     "regionlooprefine" => on_off!(
         region_loop_refine,
@@ -505,9 +522,10 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "condfold" => {
-        let (val, msg) =
+        let ((val, chain), msg) =
             crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
         self.cond_fold = val;
+        self.cond_fold_chain = chain;
         Ok(msg)
     },
     "condstmts" => {
@@ -535,14 +553,16 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "dedupitetail" => {
-        let (val, msg) =
+        let (val, latch, msg) =
             crate::p8_structure::kuna_dedupitetail::OptionDedupIteTail.apply(p1)?;
         self.dedup_ite_tail = val;
+        self.latch_join = latch;
         Ok(msg)
     },
     "iteregion" => {
-        let (val, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
+        let (val, record, msg) = crate::p8_structure::kuna_iteregion::OptionIteRegion.apply(p1)?;
         self.iteregion = val;
+        self.iteregion_record = record;
         Ok(msg)
     },
     "iteexpr" => on_off!(iteexpr, "Computed-expression arm ?: recovery (iteregion extension)"),
@@ -559,15 +579,22 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "returndup" => {
-        let (val, calls, msg) =
+        let (val, calls, record, shapes, msg) =
             crate::p8_structure::kuna_returndup::OptionReturnDup.apply(p1)?;
         self.duplicate_shared_returns = val;
         self.duplicate_call_returns = calls;
+        self.returndup_record = record;
+        self.ret_shape.on = shapes;
         Ok(msg)
     },
     "rettriangle" => {
         let (val, msg) = crate::p8_structure::kuna_rettriangle::OptionRetTriangle.apply(p1)?;
         self.returndup_triangle = val;
+        Ok(msg)
+    },
+    "tailform" => {
+        let (val, msg) = crate::p8_structure::kuna_tailform::OptionTailForm.apply(p1)?;
+        self.tail_form = val;
         Ok(msg)
     },
     "earlyreturn" => {
@@ -721,6 +748,12 @@ kuna_options! { self, p1;
     },
     "cortexmpriv" => on_off!(cortexmpriv, "Cortex-M privileged-mode guard folding"),
     "bytestorewidth" => on_off!(byte_store_width, "Byte-array constant store width"),
+    "boolbranch" => {
+        let (keep, ret, msg) = crate::kuna_boolbranch::parse_bool_branch(p1)?;
+        self.bool_branch_keep = keep;
+        self.bool_ret = ret;
+        Ok(msg)
+    },
     "acleintrinsics" => on_off!(acle_intrinsics, "AArch64 ACLE intrinsics"),
     "dedupvardecls" => {
         let (val, msg) = crate::kuna_dedupvardecls::OptionDedupVarDecls.apply(p1)?;

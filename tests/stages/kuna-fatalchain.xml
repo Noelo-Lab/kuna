@@ -1,0 +1,77 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `condfold noreturn`: a chain of tests that all branch to one call that
+    does not return, `if ((r = f()) != 0 || (r = g()) != 0) fatal(r, ..);`,
+    prints as one `if` over the `||` chain with the call as its body and the
+    rest of the function after it.  The function is structured inside the main
+    loop while each call block still holds its stack bookkeeping, so upstream's
+    BlockBasic::isComplex declines every later test and the chain prints as a
+    ladder of nested `if`s with the call after all of them.
+
+    Stage / sub-stage: P8 "goto-quality", option condfold (default noreturn).
+
+    The images are decompiler/crates/kuna-analysis/tests/fixtures/
+    fatalchain_gcc_O2_x86_64 and fatalchain_gcc_O0_x86_64 (fatalchain.c,
+    gcc 11.4 -O2 -fno-reorder-blocks-and-partition and -O0), loaded whole;
+    `option noreturn fatal` states what the whole-binary run infers.  reply
+    is only the chain, twice has two chains after a single test, wide's second
+    test makes four calls, more than the condstmts cap of three statements in
+    front of a folded test, and compose (-O0) has the rest of the function
+    after the chain.
+
+    Pass 1 runs with `option condfold off` and prints the ladders.  Pass 2
+    (`option condfold noreturn`, the default) prints each chain as one `if`
+    with the call as its body; wide keeps its ladder.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fatalchain_gcc_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>option noreturn fatal</com>
+  <com>option condfold off</com>
+  <com>load function reply</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold noreturn</com>
+  <com>load function reply</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wide</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/fatalchain_gcc_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>option noreturn fatal</com>
+  <com>option condfold off</com>
+  <com>load function compose</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold noreturn</com>
+  <com>load function compose</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="FATALCHAIN #1: off prints reply as a ladder that returns innermost" min="1" max="1">^        return;$</stringmatch>
+<stringmatch name="FATALCHAIN #2: the default prints reply's chain as one condition" min="1" max="1">^  if \(\(\(v1\) \|\| \(v1 = put\(a0,v[0-9] &amp; 0xffffffff\), v1\)\) \|\| \(v1 = put\(a0,v[0-9] &amp; 0xffffffff\), v1\)\)$</stringmatch>
+<stringmatch name="FATALCHAIN #3: the default makes the no-return call the body" min="1" max="1">^    fatal\(v1,"reply"\); // no-return$</stringmatch>
+<stringmatch name="FATALCHAIN #4: off nests twice's second chain inside the first" min="1" max="1">^      fatal\(v1,"second"\); // no-return$</stringmatch>
+<stringmatch name="FATALCHAIN #5: the default prints twice's first chain as one if" min="1" max="1">^  if \(\(v1\) \|\| \(v1 = put\(a0,v3 &amp; 0xffffffff\), v1\)\)$</stringmatch>
+<stringmatch name="FATALCHAIN #6: the default prints twice's second chain as one if" min="1" max="1">^  if \(\(v1\) \|\| \(v1 = put\(a0,\*a0\), v1\)\)$</stringmatch>
+<stringmatch name="FATALCHAIN #7: the default prints the rest of twice after the chains" min="1" max="1">^  return \*a0;$</stringmatch>
+<stringmatch name="FATALCHAIN #8: wide's test with four calls in front keeps its ladder" min="1" max="1">^  fatal\(v1,"wide"\); // no-return$</stringmatch>
+<stringmatch name="FATALCHAIN #9: off nests compose's rest inside the -O0 ladder" min="1" max="1">^        sink = \*a0;$</stringmatch>
+<stringmatch name="FATALCHAIN #10: the default prints compose's -O0 chain as one condition" min="1" max="1">^  if \(\(\(v1\) \|\| \(v1 = put\(a0,a1\), v1\)\) \|\| \(v1 = put\(a0,a2\), v1\)\)$</stringmatch>
+<stringmatch name="FATALCHAIN #11: the default prints compose's rest after the chain" min="1" max="1">^  sink = \*a0;$</stringmatch>
+</decompilertest>

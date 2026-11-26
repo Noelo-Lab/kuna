@@ -377,6 +377,8 @@ fn short_circuit_plt_calls() -> Vec<u8> {
     words.iter().flat_map(|w| w.to_be_bytes()).collect()
 }
 
+/// `condfold noreturn`: the default `auto` folds the `on` chain too, because the
+/// store it keeps after each call does not print.
 #[test]
 fn elfv1_calls_keep_their_short_circuit_condition() {
     for (code, address) in [(short_circuit_local_calls(), "0x1040"), (short_circuit_plt_calls(), "0x1060")] {
@@ -385,7 +387,7 @@ fn elfv1_calls_keep_their_short_circuit_condition() {
         let [default, on, off] = [None, Some("on"), Some("off")].map(|option| {
             let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
             command.env("KUNA_SPECS", common::repo_root().join("specs"))
-                .args(["decompile", path.to_str().unwrap(), address, "--addr"]);
+                .args(["decompile", path.to_str().unwrap(), address, "--addr", "--option", "condfold", "noreturn"]);
             if let Some(value) = option { command.args(["--option", "callmechanisms", value]); }
             let out = command.output().unwrap();
             let text = String::from_utf8(out.stdout).unwrap();
@@ -396,5 +398,34 @@ fn elfv1_calls_keep_their_short_circuit_condition() {
         assert!(off.contains(") && ("), "{address}\n{off}");
         assert_eq!(default, off, "{address}");
         assert!(!on.contains(") && ("), "a store after each call splits the condition at {address}\n{on}");
+    }
+}
+
+/// The gap walk names no start inside `sample` or `exact24`, which dynamic symbols size
+/// through their descriptors. It keeps the routines behind `sample` and `dotted`, a symbol,
+/// two call targets (one called only by an uncalled export) and a descriptor's code inside
+/// other functions.
+#[test]
+fn a_gap_walk_start_is_outside_the_code_a_descriptor_symbol_sizes() {
+    for name in ["elfv1_symbol_extent_be.so", "elfv1_symbol_extent_le.so"] {
+        let image = common::fixture(name);
+        let (out, err, rc) = common::run_kuna(&["functions", &image, "--json"]);
+        assert_eq!(rc, 0, "{err}");
+        let listed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let sizes: std::collections::BTreeMap<u64, u64> = listed["functions"].as_array().unwrap().iter()
+            .map(|f| (f["address"].as_u64().unwrap(), f["size"].as_u64().unwrap())).collect();
+        assert_eq!(sizes.len(), 40, "{name}: {out}");
+        assert_eq!((sizes.get(&0x1068), sizes.get(&0x10e4)), (Some(&28), Some(&24)), "{name}");
+        for guess in [0x1074, 0x10ec] {
+            assert!(!sizes.contains_key(&guess), "{name}: {guess:#x}");
+        }
+        for kept in [0x1084, 0x10a0, 0x10bc, 0x10d4, 0x1128, 0x1144] {
+            assert!(sizes.contains_key(&kept), "{name}: {kept:#x}");
+        }
+        for function in ["sample", "exact24"] {
+            let (out, err, rc) = common::run_kuna(&["decompile", &image, function]);
+            assert_eq!(rc, 0, "{err}");
+            assert!(out.contains("return a0") && !out.contains("funcboundflow"), "{name} {function}: {out}");
+        }
     }
 }

@@ -20,6 +20,9 @@
     Each arm is a single COMPUTED assignment (`x = b + 5` / `x = b - 3`) is an
     INT_ADD/INT_SUB, not a COPY, so shipped iteregion declines it.
 
+    Both passes run with `option iteregion on`: the source wrote the if/else,
+    whose arms each store at -O0, and `iteregion auto` keeps that form.
+
     Pass 1 (option iteexpr off, the DEFAULT): iteregion (on) sees only COPY arms, so
     the computed-arm diamond stays an `if (a != 0) { x = b + 5; } else { x = b - 3; }`
     with NO ternary.
@@ -34,6 +37,7 @@ f30f1efa554889e548897de8488975e048837de800740e488b45e04883c005488945f8eb0c488b45
 <script>
   <!-- iteexpr is default-off; set it explicitly in pass 1 to guard a future flip,
        then flip it on for pass 2 (the only change between the two passes). -->
+  <com>option iteregion on</com>
   <com>option iteexpr off</com>
   <com>lo fu expr_arm</com>
   <com>decompile</com>

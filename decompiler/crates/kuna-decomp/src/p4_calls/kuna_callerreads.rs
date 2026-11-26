@@ -173,7 +173,7 @@ fn complete_returns(data: &Funcdata) -> bool {
         return false;
     }
     if data.call_specs().iter().any(|call| {
-        call.is_bad_jump_table()
+        call.is_jump_fallback()
             && call.get_entry_address().is_invalid()
             && data.obank().get(call.get_op()).is_some_and(|op| !op.is_dead())
     }) {

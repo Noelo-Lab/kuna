@@ -1,0 +1,126 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option loopcondhoist` (default `on`), P8 goto-quality: the test that
+    is a loop's condition is the loop's exit.  The structurers keep the exit of
+    the loop's condition block as the loop exit (CollapseStructure findExit and
+    the region structurer's refinement), ruleBlockIfNoExit folds that block's
+    returning arm last, and ActionReturnSplit does not copy the return block a
+    `break` of an unoptimized function shares with the loop exit.
+
+    gcc 11 (-fno-pic -fno-stack-protector -fcf-protection=none -fno-inline),
+    linked with -Ttext 0x100000 (-O0) and 0x100200 (-O2), data at 0x101000:
+        struct ent { int type; const char *name; };
+        extern struct ent ents[]; extern int nents; extern void *in;
+        int get(void *f); int next(void);
+        void lookup(int id, const char **group, const char **name)
+        { const char *cur = 0; int i;
+          for (i = 0; i LT nents; i++) {
+            if (ents[i].type AND 1) cur = ents[i].name;
+            if (i == id) { *group = cur; *name = ents[i].name; break; }
+          } }
+        int find(const char **list, int n, const char *key)
+        { int i = 0;
+          while (i LT n) { if (list[i][0] == key[0]) return i; i++; }
+          return -1; }
+        int readc(int *c)
+        { int ok = 1; *c = -1;
+          while (in != 0) { *c = get(in); if (*c != -1) break; ok AND= next(); }
+          return ok; }
+    (LT and AND stand for the operators an XML comment cannot spell.)
+
+    At -O0 every loop is entered by a jump to its condition, laid out after the
+    body.  At -O2 gcc rotates readc into a guard and a bottom test, the latch.
+
+    Pass 1 (default on): the -O0 lookup is the source's for loop (#1) with the
+    stores written before its break inside the break arm (#2), find a for loop
+    with its return inside (#3), readc a while loop whose break reaches the one
+    return (#4), and the -O2 readc a while loop on its latch test (#5).
+    Pass 2 (option loopcondhoist off): lookup, find and the -O2 readc are
+    `while( true )` with the condition as an inner exit, the old output (#6);
+    the -O0 readc keeps its form, because `loopcontinue auto` keeps the break
+    gcc recorded with its one return (#4).
+    Pass 3 (option loopcondhoist auto): lookup keeps the source form (#1, #2);
+    the -O2 readc is not unoptimized and keeps `while( true )` (#6).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+554889e5897dec488975e0488955d848c745f800000000c745f400000000eb608b45f4489848c1e0044805201010008b0083e00185c074168b45f4489848c1e004480528101000488b00488945f88b45
+f43b45ec7526488b45e0488b55f84889108b45f4489848c1e004480528101000488b10488b45d8488910eb108345f4018b057a0f00003945f47c9590905dc3554889e548897de88975e4488955d8c745
+fc00000000eb2e8b45fc4898488d14c500000000488b45e84801d0488b000fb610488b45d80fb60038c275058b45fceb118345fc018b45fc3b45e47ccab8ffffffff5dc3554889e54883ec2048897de8
+c745fc01000000488b45e8c700ffffffffeb28488b05f61e00004889c7e82e000000488b55e88902488b45e88b0083f8ff7516e8280000002145fc488b05ce1e00004885c075cceb01908b45fcc9c390
+f30f1efa31c04885ff0f95c0c30f1f00f30f1efa31c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x100200" readonly="true">
+448b05f90d00004585c07e44b92010100031c04531c9eb140f1f84000000000083c0014883c1104439c07424f6010174044c8b490839c775e74863ff4c890e48c1e704488b8728101000488902c36690
+c366662e0f1f8400000000000f1f400085f67e2c0fb60a4863f631c0eb0b66904883c0014839f07417488b14c74189c0380a75ec4489c0c30f1f84000000000041b8ffffffff4489c0c3660f1f440000
+415441bc01000000534889fb4883ec08c707ffffffff488b3d431d00004885ff751aeb240f1f4000e843000000488b3d2c1d00004121c44885ff740ce81f000000890383f8ff74e04883c4084489e05b
+415cc3662e0f1f8400000000000f1f00f30f1efa31c04885ff0f95c0c30f1f00f30f1efa31c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x101000">
+0400000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+00000000000000000000000000000000
+</bytechunk>
+<bytechunk space="ram" offset="0x102000">0000000000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="lookup"/>
+<symbol space="ram" offset="0x10008f" name="find"/>
+<symbol space="ram" offset="0x1000e4" name="readc"/>
+<symbol space="ram" offset="0x100140" name="get"/>
+<symbol space="ram" offset="0x100150" name="next"/>
+<symbol space="ram" offset="0x1002a0" name="readc_o2"/>
+<symbol space="ram" offset="0x100300" name="get_o2"/>
+<symbol space="ram" offset="0x100310" name="next_o2"/>
+<symbol space="ram" offset="0x101000" name="nents"/>
+<symbol space="ram" offset="0x101020" name="ents"/>
+<symbol space="ram" offset="0x102000" name="in"/>
+</binaryimage>
+<script>
+  <com>lo fu lookup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu find</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu readc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu readc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loopcondhoist off</com>
+  <com>lo fu lookup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu find</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu readc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu readc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loopcondhoist auto</com>
+  <com>lo fu lookup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu readc_o2</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOOPCONDHOIST-LAYOUT #1: the -O0 for loop keeps its condition and the stores before its break (passes 1 and 3)" min="2" max="2">^  for \(v1 = 0; v1 &lt; dat_101000; v1 = v1 \+ 1\) \{</stringmatch>
+<stringmatch name="LOOPCONDHOIST-LAYOUT #2: the break arm carries the stores (passes 1 and 3)" min="2" max="2">^    if \(v1 == a0\) \{
+^      \*a1 = v2;
+^      \*a2 = [^\n]*;
+^      break;</stringmatch>
+<stringmatch name="LOOPCONDHOIST-LAYOUT #3: the -O0 while with an early return is a for loop with the return inside (pass 1)" min="1" max="1">^  for \(v1 = 0; v1 &lt; a1; v1 = v1 \+ 1\) \{
+^    if \(\*a0\[v1\] == \*a2\)
+^      return v1;</stringmatch>
+<stringmatch name="LOOPCONDHOIST-LAYOUT #4: the -O0 break to the shared return stays a break (passes 1 and 2)" min="2" max="2">^  while \(dat_102000\) \{
+^    v1 = get\(dat_102000\);
+^    \*a0 = v1;
+^    if \(\*a0 != -1\) break;</stringmatch>
+<stringmatch name="LOOPCONDHOIST-LAYOUT #5: the -O2 latch test is the loop condition by default (pass 1 only)" min="1" max="1">^  while \(dat_102000\) \{
+^    v1 = get_o2\(dat_102000\);</stringmatch>
+<stringmatch name="LOOPCONDHOIST-LAYOUT #6: off prints three loops as while( true ), auto the -O2 one (passes 2 and 3)" min="4" max="4">while\( true \) \{</stringmatch>
+</decompilertest>

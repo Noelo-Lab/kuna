@@ -8,6 +8,7 @@ pub mod coreaction_casts;
 pub mod printlanguage;
 pub mod printc;
 pub(crate) mod kuna_fieldextract;
+pub(crate) mod kuna_voidtailswitch;
 pub mod kuna_partialconcat;
 pub mod kuna_partialaccess;
 pub mod kuna_widelocal;
@@ -56,6 +57,7 @@ pub mod kuna_stackassign;
 pub mod kuna_stackbytes;
 pub mod kuna_stacklayout;
 pub mod kuna_truthycond;
+pub mod kuna_rangetest; // (kuna) a merged unsigned range test printed as its two comparisons
 pub mod kuna_braceelide;
 pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
 pub mod kuna_warnstyle;
@@ -64,6 +66,8 @@ pub mod kuna_arraycoverwidth;
 pub mod kuna_bytearrayc;
 pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
+pub mod kuna_armshiftguard; // (kuna) when a register-controlled ARM LSL prints its range guard
+pub mod kuna_armshiftwide; // (kuna) the register shift counts of a lowered double-word shift
 pub mod kuna_armconstantshift;
 pub(crate) mod kuna_acleintrinsics; // (kuna) AArch64 barrier, hint and memory-tagging user ops as ACLE intrinsics
 pub mod kuna_emptystrconst;
@@ -83,6 +87,7 @@ pub mod kuna_castarith; // (kuna) pointer arithmetic stays in pointer terms
 pub mod kuna_structdefs;
 pub mod kuna_namedglobals;
 pub mod kuna_globalref; // (kuna) a constant address used as a pointer prints as its global
+pub mod kuna_unitcalls; // (kuna) the helpers and user-defined operations a function's C calls
 pub mod kuna_namespaces; // (kuna) which namespaces print in front of a name
 pub mod kuna_funcptrnames;
 pub(crate) mod kuna_rustfuncptr;

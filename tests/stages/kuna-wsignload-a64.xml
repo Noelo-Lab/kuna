@@ -1,0 +1,111 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    kuna: AArch64 sign-extending byte/halfword loads into a W register.
+
+    A W destination sign-extends to 32 bits and zeroes bits 63:32 (Arm ARM,
+    LDRSB/LDRSH/LDURSB/LDURSH/LDTRSB/LDTRSH, 32-bit variant).  Upstream's
+    AARCH64base.sinc sign-extended ldrsb/ldrsh/ldursh/ldtrsh W into all 64
+    bits of X (`ldrsh w0,[x0]` of 0xd564 gave x0 = 0xffffffffffffd564, the
+    processor 0xffffd564) and zero-extended ldursb/ldtrsb W.  Found by
+    comparing one-instruction lifts with Unicorn.
+
+    Hand assembled (clang -target aarch64-linux-gnu), one W form per
+    constructor, the result read as 64 bits:
+      lsh       ldrsh  w0,[x0,#4]          (unsigned offset)
+      lsb       ldrsb  w0,[x0,#1]
+      lsh_idx   ldrsh  w0,[x0,x1,lsl #1]   (register offset)
+      lsb_idx   ldrsb  w0,[x0,x1]
+      lsh_neg   ldursh w0,[x0,#-2]
+      lsb_neg   ldursb w0,[x0,#-1]         (was a zero extension)
+      lsh_pre   ldrsh  w8,[x0,#2]!; add x0,x0,x8
+      lsb_post  ldrsb  w8,[x0],#1;  add x0,x0,x8
+      tbl       ldrsh  w8,[x0]; ldr x0,[x1,x8,lsl #3]
+    Controls, X destinations (unchanged):
+      lsh64     ldrsh  x0,[x0]
+      lsb_neg64 ldursb x0,[x0,#-1]
+
+    Strict SLEIGH fix, no option.  Before: `return (int8)p[2];`,
+    `return (uint1)p[-1];`, `return t[*p];`.  After: `(uint4)p[2]`,
+    `(uint4)p[-1]`, `t[(uint4)*p]`.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+0008c079c0035fd60004c039c0035fd6
+0078e178c0035fd60068e138c0035fd6
+00e0df78c0035fd600f0df38c0035fd6
+082cc0780000088bc0035fd60814c038
+0000088bc0035fd60800c079207868f8
+c0035fd600008079c0035fd600f09f38
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="lsh"/>
+<symbol space="ram" offset="0x10008" name="lsb"/>
+<symbol space="ram" offset="0x10010" name="lsh_idx"/>
+<symbol space="ram" offset="0x10018" name="lsb_idx"/>
+<symbol space="ram" offset="0x10020" name="lsh_neg"/>
+<symbol space="ram" offset="0x10028" name="lsb_neg"/>
+<symbol space="ram" offset="0x10030" name="lsh_pre"/>
+<symbol space="ram" offset="0x1003c" name="lsb_post"/>
+<symbol space="ram" offset="0x10048" name="tbl"/>
+<symbol space="ram" offset="0x10054" name="lsh64"/>
+<symbol space="ram" offset="0x1005c" name="lsb_neg64"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint8 lsh(int2 *p);</com>
+  <com>parse line extern uint8 lsb(int1 *p);</com>
+  <com>parse line extern uint8 lsh_idx(int2 *p,int8 i);</com>
+  <com>parse line extern uint8 lsb_idx(int1 *p,int8 i);</com>
+  <com>parse line extern uint8 lsh_neg(int2 *p);</com>
+  <com>parse line extern uint8 lsb_neg(int1 *p);</com>
+  <com>parse line extern uint8 lsh_pre(int2 *p);</com>
+  <com>parse line extern uint8 lsb_post(int1 *p);</com>
+  <com>parse line extern int8 tbl(int2 *p,int8 *t);</com>
+  <com>parse line extern int8 lsh64(int2 *p);</com>
+  <com>parse line extern int8 lsb_neg64(int1 *p);</com>
+  <com>lo fu lsh</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsb</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsh_idx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsb_idx</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsh_neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsb_neg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsh_pre</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsb_post</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsh64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu lsb_neg64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="WSIGNLOAD-A64 #1: lsh: ldrsh w unsigned offset" min="1" max="1">return \(uint4\)p\[2\];</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #2: lsb: ldrsb w unsigned offset" min="1" max="1">return \(uint4\)p\[1\];</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #3: lsh_idx/lsb_idx: register offset" min="2" max="2">return \(uint4\)p\[i\];</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #4: lsh_neg/lsb_neg: ldursh and ldursb w" min="2" max="2">return \(uint4\)p\[-1\];</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #5: lsh_pre: pre-index" min="1" max="1">return \(int8\)&amp;p\[1\] \+ \(uint8\)\(uint4\)p\[1\];</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #6: lsb_post: post-index" min="1" max="1">return \(uint8\)&amp;p\[\(uint4\)\*p \+ 1UL\];</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #7: tbl: the index is the 32-bit value" min="1" max="1">return t\[\(uint4\)\*p\];</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #8: no 64-bit sign extension of a w load" min="0" max="0">\(int8\)p\[</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #9: no zero extension of ldursb w" min="0" max="0">\(uint1\)p\[</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #10: lsh64: x destination still sign-extends" min="1" max="1">return \*p;</stringmatch>
+<stringmatch name="WSIGNLOAD-A64 #11: lsb_neg64: ldursb x still sign-extends" min="1" max="1">return p\[-1\];</stringmatch>
+</decompilertest>

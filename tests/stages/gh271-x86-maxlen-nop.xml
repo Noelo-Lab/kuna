@@ -47,6 +47,8 @@
 <symbol space="ram" offset="0x1000" name="f"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default model; this test pins the 4-line size rule's function-tail form -->
+  <com>option tailform on</com>
   <com>disassemble 0x1000 0x1029</com>
   <com>lo fu f</com>
   <com>decompile</com>

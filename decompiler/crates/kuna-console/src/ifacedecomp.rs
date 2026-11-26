@@ -1532,12 +1532,22 @@ decomp_command!(
 
 decomp_command!(
     /// C++ `IfcMapaddress`: `map address <addr> <typedeclaration>`.
+    /// `map address data [space,addr] <typedeclaration>` maps a processor global.
     IfcMapaddress,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         {
             let dcp = dcp_mut(status)?;
             if dcp.conf.is_none() {
                 return Err(IfaceError::execution("No load image present"));
+            }
+        }
+        if s.skip_ws().peek() == Some(b'd') {
+            let text = s.rest();
+            if let Some(spec) = text.strip_prefix("data ") {
+                let prog = dcp_mut(status)?.conf.as_mut().expect("conf checked above");
+                let (space, addr, decl) = crate::assertsyntax::parse_data(spec).map_err(IfaceError::parse)?;
+                return crate::assertions::apply_data(prog, space, addr, decl)
+                    .map_err(IfaceError::execution);
             }
         }
         let fd_present = dcp_mut(status)?.fd.is_some();
@@ -3469,12 +3479,17 @@ decomp_command!(
 decomp_command!(
     /// C++ `IfcJumpOverride`: `override jumptable ...`.
     IfcJumpOverride,
-    fn execute(&self, status: &mut IfaceStatus, _s: &mut CommandStream) -> IfaceResult<()> {
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         let dcp = dcp_mut(status)?;
-        if dcp.fd.is_none() {
-            return Err(IfaceError::execution("No function selected"));
+        let prog = dcp.conf.as_mut().ok_or_else(|| IfaceError::execution("No image loaded"))?;
+        let (addr, targets) = crate::assertsyntax::jump_targets(&s.rest()).map_err(IfaceError::parse)?;
+        let site = crate::assertions::data_addr(prog, addr).map_err(IfaceError::parse)?;
+        if dcp.pending_flow_overrides.values().flatten().any(|(at, _)| *at == site) {
+            return Err(IfaceError::execution(format!("a flow override is already stated at {addr:#x}")));
         }
-        Err(engine_unavailable("parse_machaddr + Funcdata::installJumpTable + setOverride"))
+        crate::jump_targets::install(prog, addr, &targets).map_err(IfaceError::execution)?;
+        status.out("Successfully added override\n");
+        Ok(())
     }
 );
 
@@ -3500,6 +3515,7 @@ decomp_command!(
         if type_ == kuna_decomp::overrides::flow_type::NONE {
             return Err(IfaceError::parse("Bad override type"));
         }
+        crate::jump_targets::require_unstated(prog, &addr).map_err(IfaceError::execution)?;
         // (kuna) A `call` override on a `push <cont>; push <target>; ret` link
         // recovers ONE call of a chain built entirely out of them; the follower
         // then resumes at the continuation and meets the next link's `ret`,

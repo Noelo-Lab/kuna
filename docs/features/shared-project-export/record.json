@@ -1,0 +1,28 @@
+{
+  "slug": "shared-project-export",
+  "proposal": true,
+  "scope": "large",
+  "status": "draft proposal; implementation not approved or included",
+  "track": "tooling",
+  "option": null,
+  "new_option": false,
+  "change_kind": "refactor: move callgraph + callee_first into kuna-console, one project export for kuna-cli and kuna-wasm",
+  "parent": "a3351f838",
+  "owning_files": [
+    "decompiler/crates/kuna-cli/src/decompile_project.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all/callee_first.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all/custom_reg_callers.rs",
+    "decompiler/crates/kuna-cli/src/decompile_all/result_store.rs",
+    "decompiler/crates/kuna-cli/src/callgraph.rs",
+    "decompiler/crates/kuna-wasm/src/lib.rs",
+    "decompiler/crates/kuna-console/src/project.rs"
+  ],
+  "observed_evidence": {
+    "engine_parent": "a3351f838",
+    "diff_tool": "python3 difflib.unified_diff(n=0), +/- lines; GNU diff -U0 gives 36019 (.c) and 2568 (.h) on mcount_x86_64",
+    "fauxware": { "c_lines": 190, "c_differing": 4, "h_lines": 92, "h_differing": 2, "example": "accepted: int (CLI) vs void (kuna_wasm project)" },
+    "mcount_x86_64": { "c_lines": 172079, "c_differing": 36213, "h_lines": 3638, "h_differing": 3210, "asm_differing": 2009 },
+    "protoorder_off": "kuna decompile-project --option protoorder off equals kuna_wasm project on both fixtures (.c/.h/.asm byte-identical; README differs only in the Path row)"
+  },
+  "acceptance": "kuna_wasm project artifacts equal kuna decompile-project's on the export fixtures, byte for byte except the README path row; CLI gates unchanged"
+}

@@ -29,6 +29,8 @@ c3
 <symbol space="ram" offset="0x101000" name="setStruct"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this upstream test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>option partialaccess off</com>
   <com>parse line enum flags {
   FLAG_1=1,

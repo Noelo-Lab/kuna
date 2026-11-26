@@ -1028,12 +1028,15 @@ fn export(
     })
     .collect::<Vec<_>>()
     .join(", ");
+    let whole = args.addrs.is_empty() && args.names.is_none();
+    let coverage = whole.then(|| kuna_console::kuna_coverage::Code::of(&prog).measure_results(&writer.records));
     Ok(crate::decompile_project::ProjectCompletion {
         summary: format!(
-            "wrote {}: {files}; functions: {} ok, {} failed\n",
+            "wrote {}: {files}; functions: {} ok, {} failed{}\n",
             layout.out_dir.display(),
             counts.ok,
-            counts.failed
+            counts.failed,
+            crate::decompile_project::coverage_clause(coverage.as_ref())
         ),
         error: BatchOutcome::new(counts.total, writer.bodies).all_failed_error(&args.binary),
     })
@@ -1356,6 +1359,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: hints,
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),

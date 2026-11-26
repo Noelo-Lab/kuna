@@ -74,9 +74,10 @@ pub fn forwards_declared_value(
 }
 
 /// Narrow register trial `i` of variadic call spec `idx` to the int width when
-/// only its low int bytes are defined and every byte above them is a part of
-/// the caller's own incoming register that its locked prototype declares no
-/// parameter in. The trial may be active, or inactive and later gap-filled.
+/// only its low int bytes are defined and every byte above them comes from the
+/// caller's own incoming register bytes that it cannot take as a parameter (see
+/// `undeclared_bytes`). The trial may be active, or inactive and later
+/// gap-filled.
 /// `int d4(const char *f, int a) { pr(f, a); return pr(f, a); }` hands `a` on
 /// in `esi`; the 8-byte `rsi` trial would otherwise print `CONCAT44(v1,a)` with
 /// `v1` never set.
@@ -111,9 +112,9 @@ pub fn narrow_undeclared_upper(data: &mut Funcdata, idx: int4, i: int4) {
 }
 
 /// Are bytes `[offset, offset + width)` of `vn`, counted from its least
-/// significant byte, copied from an incoming register that no parameter of the
-/// calling function's locked prototype overlaps?
-fn undeclared_bytes(
+/// significant byte, copied from incoming register bytes the calling function
+/// cannot take as a parameter?
+pub(super) fn undeclared_bytes(
     data: &Funcdata,
     vn: VarnodeId,
     offset: int4,
@@ -130,16 +131,9 @@ fn undeclared_bytes(
         return false;
     }
     if v.is_input() {
-        let proto = data.get_func_proto();
         let at = v.get_addr();
-        return proto.is_input_locked()
-            && at.get_space().is_some_and(|s| s.get_type() == spacetype::IPTR_PROCESSOR)
-            && (0..proto.num_params()).filter_map(|i| proto.get_param(i)).all(|p| {
-                let (pa, ps) = (p.get_address(), p.get_size());
-                pa.get_space().is_some_and(|s| s.get_type() != spacetype::IPTR_JOIN)
-                    && at.overlap(0, &pa, ps) < 0
-                    && pa.overlap(0, at, size) < 0
-            });
+        let piece = if at.is_big_endian() { at + (size - offset - width) as i64 } else { at + offset as i64 };
+        return not_a_parameter(data, &piece, width);
     }
     let Some(op) = v.get_def().and_then(|id| data.obank().get(id)) else { return false };
     let mut input = |slot, off, len| {
@@ -174,6 +168,33 @@ fn undeclared_bytes(
         OpCode::CPUI_MULTIEQUAL => (0..op.num_input()).all(|slot| input(slot, offset, width)),
         _ => false,
     }
+}
+
+/// Can the calling function not be handed a parameter in the processor
+/// register bytes `[at, at + width)`? Either no input entry of its model
+/// reaches them (RAX under System V), or its locked prototype declares no
+/// parameter there.
+fn not_a_parameter(data: &Funcdata, at: &Address, width: int4) -> bool {
+    let Some(space) = at.get_space().filter(|s| s.get_type() == spacetype::IPTR_PROCESSOR) else {
+        return false;
+    };
+    let proto = data.get_func_proto();
+    let end = at.get_offset() + width as u64;
+    let outside_model = proto.has_model()
+        && proto.model().input().get_entry().iter().all(|e| {
+            e.get_join_record().is_none()
+                && (!std::rc::Rc::ptr_eq(e.get_space(), space)
+                    || e.get_base() >= end
+                    || e.get_base() + e.get_size() as u64 <= at.get_offset())
+        });
+    outside_model
+        || (proto.is_input_locked()
+            && (0..proto.num_params()).filter_map(|i| proto.get_param(i)).all(|p| {
+                let (pa, ps) = (p.get_address(), p.get_size());
+                pa.get_space().is_some_and(|s| s.get_type() != spacetype::IPTR_JOIN)
+                    && at.overlap(0, &pa, ps) < 0
+                    && pa.overlap(0, at, width) < 0
+            }))
 }
 
 /// Is `vn` the calling function's own input where it declares a parameter, or

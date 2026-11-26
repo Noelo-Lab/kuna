@@ -1,0 +1,98 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna-varargsave: an x86-64 System V variadic function opens with the
+    register-save prologue that implements va_start: the general argument
+    registers past the named ones stored to the save area, then
+    `test %al,%al; je; movaps %xmm0..%xmm7` into it.  It printed as an
+    `if (al) { ... }` the source does not have, with every xmm and every
+    general argument register as a parameter.
+    Stage / sub-stage: P4 "own-input-prototype-recovery" (folded right after
+    the first heritage pass, p4_calls/kuna_varargsave.rs).
+    P0 assertion: `option varargsave on|off` (default on).
+    Chunk 0x100000: gcc 11.4 -O2 -fno-inline -fcf-protection=none
+    -fno-stack-protector -c, the two calls to vsink patched to its address:
+      int vsink(int tag, const char *fmt, va_list ap) { return tag + fmt[0]; }
+      int report(int tag, const char *fmt, ...)    hands its va_list on
+      int scaled(double k, const char *fmt, ...)   the same, xmm0 is named
+      double firstd(int n, ...)    va_arg(ap, double) once: gcc reads the
+                                   saved xmm0 slot directly
+      double dsum(int n, ...)      va_arg(ap, double) in a loop: indexes the
+                                   save area through a register
+    #1-#3 prove the fold (report and scaled print `...` after their named
+    parameters, and pass those on); #4-#5 are the refused controls (a body
+    that reads its own save area keeps the stores); #6-#7 prove the bug with
+    the option off (fourteen parameters and the `if (v1)` block).
+    The script pins `option dedupitetail on`: the default `latch` joins a loop
+    latch gcc duplicated here, which changes the shape these asserts pin.
+-->
+<bytechunk space="ram" offset="0x100000">
+0fbe0601f8c3662e0f1f840000000000
+4881ecd8000000488954243048894c24
+384c894424404c894c244884c074370f
+294424500f294c24600f295424700f29
+9c24800000000f29a424900000000f29
+ac24a00000000f29b424b00000000f29
+bc24c0000000488d8424e0000000488d
+542408c7442408100000004889442410
+488d442420c744240c30000000488944
+2418e869ffffff4881c4d8000000c390
+4881ecd80000004989fa488974242848
+8954243048894c24384c894424404c89
+4c244884c074320f294c24600f295424
+700f299c24800000000f29a424900000
+000f29ac24a00000000f29b424b00000
+000f29bc24c0000000f20f2cf8488d84
+24e00000004c89d6c744240808000000
+4889442410488d542408488d442420c7
+44240c400000004889442418e8cffeff
+ff4881c4d8000000c30f1f8000000000
+4883ec3084c074050f294424a8488d44
+2438660fefc0c7442494300000004889
+442498488d842478fffffff20f2ac748
+894424a0f20f584424a84883c430c390
+4883ec3084c074280f294424a80f294c
+24b80f295424c80f295c24d80f296424
+e80f296c24f80f297424080f297c2418
+488d4424384c8d842478ffffffc74424
+943000000048894424984c894424a085
+ff7e4d4889c6b930000000660fefc031
+c0eb180f1f44000089ca83c00183c110
+4c01c2f20f580239c7741a81f9af0000
+0076e54889f283c0014883c608f20f58
+0239c775e64883c430c3660f1f440000
+660fefc04883c430c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="vsink"/>
+<symbol space="ram" offset="0x100010" name="report"/>
+<symbol space="ram" offset="0x1000a0" name="scaled"/>
+<symbol space="ram" offset="0x100140" name="firstd"/>
+<symbol space="ram" offset="0x100180" name="dsum"/>
+</binaryimage>
+<script>
+  <com>option dedupitetail on</com>
+  <com>lo fu report</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu firstd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu dsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option varargsave off</com>
+  <com>lo fu report</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="varargsave #1: report is variadic after its two named parameters" min="1" max="1">void report\(unsigned long a0,unsigned long a1,\.\.\.\)</stringmatch>
+<stringmatch name="varargsave #2: scaled keeps its named double, the save starts at xmm1" min="1" max="1">void scaled\(float8 a0,unsigned long a1,\.\.\.\)</stringmatch>
+<stringmatch name="varargsave #3: both pass their named parameters on" min="2" max="2">vsink\((\(int4\))?a0,a1,&amp;v1\);</stringmatch>
+<stringmatch name="varargsave #4: firstd reads its saved xmm0 slot itself and is not folded" min="1" max="1">float8 firstd\(float8 a0,int4 a1\)</stringmatch>
+<stringmatch name="varargsave #5: dsum indexes its save area itself and is not folded" min="1" max="1">float8 dsum\(float8 a0,float8 a1,</stringmatch>
+<stringmatch name="varargsave #6: with the option off report takes fourteen parameters" min="1" max="1">void report\(unsigned long a0,unsigned long a1,unsigned long a2,[^)]*unsigned long a13\)</stringmatch>
+<stringmatch name="varargsave #7: the al test prints only in dsum and with the option off" min="2" max="2">if \(v1\) \{</stringmatch>
+</decompilertest>

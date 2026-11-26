@@ -1,0 +1,72 @@
+<decompilertest>
+<!-- P3 conditional execution, option boolbranch (default keep). A branch
+     instruction that selects the constants 1 and 0 keeps its if; conditional
+     execution still folds into the condition. gcc 11 -O0 -fno-pic
+     -fno-stack-protector, x86-64:
+
+       int positive(int x) { if (x > 0) return 1; return 0; }
+       int same(int x, int y) { int v; if (x == y) v = 1; else v = 0; return v + y; }
+       long addsat(long a, long b)
+       { long r; if (__builtin_add_overflow(a, b, &r)) r = 0x7fffffffffffffffL; return r; }
+       int flagged(int v, int *n)
+       { int set = 0; if (v == 0) { set = 1; *n += 1; } *n *= 3; if (set) *n -= 1; return v; }
+
+     greater is hand-written: xor %eax,%eax; mov $1,%edx; cmp %esi,%edi;
+     cmovg %edx,%eax; ret. The cmovg lifts to a CBRANCH that skips the rest of
+     its own instruction, so it folds either way. addsat's overflow flag is set
+     to 0, jumped over by jno and tested; its arm only assigns the constant and
+     the value is only tested, so it folds too. flagged's arm also increments
+     *n, so its flag stays under keep, as the source wrote it. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e5897dfc837dfc007e07b801000000eb05b8000000005dc3554889e5897dec8975e88b45ec3b45e87509c745fc01000000eb07c745fc000000008b55fc8b45e801d05dc3554889e548897de8488975e0b900000000488b55e8488b45e04801d07105b901000000488945f84889c883e00184c0740e48b8ffffffffffffff7f488945f8488b45f85dc3554889e5897dec488975e0c745fc00000000837dec007516c745fc01000000488b45e08b008d5001488b45e08910488b45e08b1089d001c001c2488b45e08910837dfc00740f488b45e08b008d50ff488b45e089108b45ec5dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="positive"/>
+<symbol space="ram" offset="0x10001b" name="same"/>
+<symbol space="ram" offset="0x100047" name="addsat"/>
+<symbol space="ram" offset="0x10008c" name="flagged"/>
+<bytechunk space="ram" offset="0x100100" readonly="true">31c0ba0100000039f70f4fc2c3</bytechunk>
+<symbol space="ram" offset="0x100100" name="greater"/>
+</binaryimage>
+<script>
+<com>parse line extern int positive(int x);</com>
+<com>parse line extern int same(int x, int y);</com>
+<com>parse line extern long addsat(long a, long b);</com>
+<com>parse line extern int flagged(int v, int *n);</com>
+<com>parse line extern int greater(int x, int y);</com>
+<com>option boolbranch fold</com>
+<com>lo fu positive</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu same</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu flagged</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option boolbranch keep</com>
+<com>lo fu positive</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu same</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu flagged</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu addsat</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu greater</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="BOOLBRANCH #1: fold prints the jump selecting 1 or 0 as its condition" min="1" max="1">^  return 0 &lt; x;$</stringmatch>
+<stringmatch name="BOOLBRANCH #2: keep keeps the if of the returned select" min="1" max="1">^  if \(1 &lt;= x\)$</stringmatch>
+<stringmatch name="BOOLBRANCH #3: keep returns the constants from the two arms" min="1" max="1">^    return 1;$</stringmatch>
+<stringmatch name="BOOLBRANCH #4: fold assigns the condition" min="1" max="1">^  v1 = x == y;$</stringmatch>
+<stringmatch name="BOOLBRANCH #5: keep assigns in the arms of the kept branch" min="1" max="1">^  if \(x != y\)</stringmatch>
+<stringmatch name="BOOLBRANCH #6: fold tests the condition again in place of the flag" min="2" max="2">^  if \(!v\)$</stringmatch>
+<stringmatch name="BOOLBRANCH #7: keep keeps the one flag whose arm does other work, and no other" min="1" max="1">^  if \(v\d\)$</stringmatch>
+<stringmatch name="BOOLBRANCH #8: a materialized overflow flag that is only tested still folds" min="1" max="1">^  if \(SCARRY8\(b,a\)\)$</stringmatch>
+<stringmatch name="BOOLBRANCH #9: a cmov still folds under keep" min="1" max="1">^  return \(uint4\)\(y &lt; x\);$</stringmatch>
+</decompilertest>

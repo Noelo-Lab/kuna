@@ -750,29 +750,12 @@ fn decode_riscv(
 // PowerPC64 ELFv2 (and PPC32) — TOC-relative `.text` call stubs
 // ---------------------------------------------------------------------------
 
-/// Resolve PowerPC PLT-call stubs, which the linker synthesizes inline in
-/// `.text` (there is no `.plt` *code* section — `.plt` is a NOBITS data table,
-/// the runtime GOT for imports).
-///
-/// On PPC64 ELFv2 a call to an imported function `bl`s to a stub of the form
-/// ```text
-///     std   r2,24(r1)        ; save the caller TOC (0xf8410018)
-///     addis r12,r2,off@ha    ; r12 = TOC_base + (ha << 16)
-///     ld    r12,off@l(r12)   ; r12 = *(.plt slot) = *(TOC_base + (ha<<16) + lo)
-///     mtctr r12
-///     bctr
-/// ```
-/// The loaded address is a `.plt` slot whose `R_PPC64_JMP_SLOT` relocation names
-/// the import — exactly the `got_slot → name` map [`build_got_name_map`] already
-/// built (every symbol-bearing dynamic reloc is included, so the JMP_SLOTs are in
-/// it).  We decode the `addis`/`ld` pair, reconstruct the slot
-/// `TOC_base + (ha << 16) + sign_extend16(lo)`, and record the stub entry (the
-/// `std r2,24(r1)` — the address `bl` targets) against the matched name.
-///
-/// **TOC base.**  The ELFv2 ABI fixes the TOC pointer (`r2`) at
-/// `.got + 0x8000` (equivalently the `.TOC.` symbol); using `.got + 0x8000`
-/// avoids relying on a `.TOC.` symbol being present.  If there is no `.got`
-/// section the binary has no TOC-relative imports and we resolve nothing.
+/// Resolve the PowerPC64 ELFv2 PLT call stubs the linker writes into `.text`
+/// (`.plt` is a NOBITS table of slots, not code), recognized by
+/// [`super::kuna_ppc64_stubs`]. A stub's TOC-relative forms use the ELFv2 TOC
+/// pointer, `.got + 0x8000`; without a `.got` only pc-relative stubs occur. Each stub is
+/// named after the import whose `R_PPC64_JMP_SLOT` slot it loads, unless it
+/// lies at or inside a defined function.
 ///
 /// PPC32 uses the separate relocation-validated `kuna_ppc32_imports` resolver.
 fn decode_ppc_text(
@@ -782,97 +765,52 @@ fn decode_ppc_text(
     out: &mut Vec<PltSym>,
     named_got: &mut HashSet<u64>,
 ) {
-    // ELFv2 PPC64 is the only PowerPC ABI whose `.text` stubs we decode.
     if arch != Architecture::PowerPc64 {
         return;
     }
-    let little = file.is_little_endian();
-
-    // TOC base = `.got` vma + 0x8000 (ELFv2). No `.got` → no TOC-relative imports.
-    let got_vma = match file.sections().find(|s| s.name() == Ok(".got")) {
-        Some(s) => s.address(),
-        None => return,
+    let toc_base = file.sections().find(|s| s.name() == Ok(".got")).map(|got| got.address().wrapping_add(0x8000));
+    let Some(text) = file.sections().find(|s| s.name() == Ok(".text")) else {
+        return;
     };
-    let toc_base = got_vma.wrapping_add(0x8000);
-
-    // The stubs are inline in `.text`.
-    let text = match file.sections().find(|s| s.name() == Ok(".text")) {
-        Some(s) => s,
-        None => return,
+    let Ok(data) = text.data() else {
+        return;
     };
-    let vma = text.address();
-    let data = match text.data() {
-        Ok(d) => d,
-        Err(_) => return,
-    };
-
-    decode_ppc64_stubs(vma, data, little, toc_base, map, out, named_got);
+    let jump_slots = super::kuna_ppc64_stubs::jump_slots(file);
+    let name = |slot: u64| jump_slots.contains(&slot).then(|| map.get(&slot)).flatten().map(Vec::as_slice);
+    let stubs = decode_ppc64_stubs(text.address(), data, file.is_little_endian(), toc_base, name);
+    if stubs.is_empty() {
+        return;
+    }
+    let functions = super::kuna_ppc64_stubs::function_extents(file);
+    for stub in stubs {
+        if !super::kuna_ppc64_stubs::in_function(&functions, stub.addr) {
+            named_got.extend(stub.slot);
+            out.push(stub);
+        }
+    }
 }
 
-/// Decode the PPC64-ELFv2 `std/addis/ld/mtctr/bctr` PLT stubs in a `.text` blob.
-/// Pulled out from [`decode_ppc_text`] so the arithmetic is unit-testable without
-/// an `object::File`.  `toc_base` is the ELFv2 TOC pointer (`.got + 0x8000`).
-fn decode_ppc64_stubs(
-    vma: u64,
-    data: &[u8],
-    little: bool,
-    toc_base: u64,
-    map: &HashMap<u64, Vec<u8>>,
-    out: &mut Vec<PltSym>,
-    named_got: &mut HashSet<u64>,
-) {
+/// The ELFv2 PLT call stubs in a `.text` blob at `vma` whose slot `name`s an
+/// import, in address order. `toc_base` is the TOC pointer, if there is one.
+fn decode_ppc64_stubs<'n>(vma: u64, data: &[u8], little: bool, toc_base: Option<u64>, name: impl Fn(u64) -> Option<&'n [u8]>) -> Vec<PltSym> {
     let word = |off: usize| -> Option<u32> {
-        let b = data.get(off..off + 4)?;
-        let arr = [b[0], b[1], b[2], b[3]];
-        Some(if little { u32::from_le_bytes(arr) } else { u32::from_be_bytes(arr) })
+        let b: [u8; 4] = data.get(off..off + 4)?.try_into().ok()?;
+        Some(if little { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) })
     };
-
-    // Instruction fields (big-endian instruction semantics regardless of byte
-    // order in the file): opcode = bits[0:6], RT = bits[6:11], RA = bits[11:16].
-    let opcode = |w: u32| (w >> 26) & 0x3f;
-    let rt = |w: u32| (w >> 21) & 0x1f;
-    let ra = |w: u32| (w >> 16) & 0x1f;
-
+    let mut out = Vec::new();
     let mut off = 0usize;
-    while off + 20 <= data.len() {
-        let (w0, w1, w2, w3, w4) = match (
-            word(off),
-            word(off + 4),
-            word(off + 8),
-            word(off + 12),
-            word(off + 16),
-        ) {
-            (Some(a), Some(b), Some(c), Some(d), Some(e)) => (a, b, c, d, e),
-            _ => break,
-        };
-
-        // std r2,24(r1)         = 0xf8410018  (DS-form, opcode 62, RT=2, RA=1)
-        // addis r12,r2,off@ha   opcode 15, RT=12, RA=2
-        // ld    r12,off@l(r12)  DS-form, opcode 58, XO=0, RT=12, RA=12
-        // mtctr r12             = 0x7d8903a6
-        // bctr                  = 0x4e800420
-        let is_std_r2 = w0 == 0xf8410018;
-        let is_addis = opcode(w1) == 15 && rt(w1) == 12 && ra(w1) == 2;
-        let is_ld = opcode(w2) == 58 && (w2 & 0x3) == 0 && rt(w2) == 12 && ra(w2) == 12;
-        let is_mtctr = w3 == 0x7d8903a6;
-        let is_bctr = w4 == 0x4e800420;
-
-        if is_std_r2 && is_addis && is_ld && is_mtctr && is_bctr {
-            // addis @ha: sign-extend the 16-bit field, then << 16.
-            let ha = ((w1 & 0xffff) as i16) as i64;
-            // ld DS-form: the 14-bit DS displacement is the low 16 bits with the
-            // bottom two bits forced to the XO (0 for `ld`); sign-extend it.
-            let lo = ((w2 & 0xfffc) as i16) as i64;
-            let slot = toc_base
-                .wrapping_add((ha << 16) as u64)
-                .wrapping_add(lo as u64);
-            let stub = vma.wrapping_add(off as u64);
-            record(stub, slot, map, out, named_got);
-            off += 20; // skip past this 5-instruction stub
-            continue;
+    while off + 4 <= data.len() {
+        match super::kuna_ppc64_stubs::stub_at(word, vma, off, toc_base).and_then(|(slot, len, inner)| Some((slot, len, inner, name(slot)?))) {
+            Some((slot, len, inner, import)) => {
+                for entry in [off].into_iter().chain(inner.then_some(off + 4)) {
+                    out.push(PltSym { addr: vma.wrapping_add(entry as u64), name: import.to_vec(), slot: Some(slot) });
+                }
+                off += len;
+            }
+            None => off += 4,
         }
-        off += 4;
     }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -967,6 +905,56 @@ fn resolve_mips_imports(file: &object::File) -> Vec<PltSym> {
         }
     }
     out
+}
+
+/// The libraries glibc itself provides, whose `GLIBC_*` versions name glibc's
+/// own definitions.
+const GLIBC_LIBRARIES: &[&[u8]] = &[
+    b"libc.so.6", b"libm.so.6", b"libpthread.so.0", b"libdl.so.2", b"librt.so.1", b"libutil.so.1",
+    b"libresolv.so.2", b"libanl.so.1",
+];
+
+/// The names of the MIPS image's undefined dynamic functions whose symbol
+/// requires a public `GLIBC_*` version of a glibc library, so the link resolved
+/// them to glibc's own definitions. `GLIBC_PRIVATE` is glibc's internal
+/// interface, which its headers do not declare, and a name also imported under
+/// another version is left out. Empty off-MIPS and without symbol versioning.
+pub(crate) fn mips_glibc_import_names(file: &object::File) -> HashSet<Vec<u8>> {
+    if !super::kuna_mipsabi::is_mips(file.architecture()) {
+        return HashSet::new();
+    }
+    match file {
+        object::File::Elf32(elf) => requiring_glibc(elf),
+        object::File::Elf64(elf) => requiring_glibc(elf),
+        _ => HashSet::new(),
+    }
+}
+
+fn requiring_glibc<'data, Elf, R>(elf: &object::read::elf::ElfFile<'data, Elf, R>) -> HashSet<Vec<u8>>
+where
+    Elf: object::read::elf::FileHeader,
+    R: object::ReadRef<'data>,
+{
+    let endian = elf.endian();
+    let Ok(Some(versions)) = elf.elf_section_table().versions(endian, elf.data()) else {
+        return HashSet::new();
+    };
+    let (mut glibc, mut other) = (HashSet::new(), HashSet::new());
+    for sym in elf.dynamic_symbols() {
+        if sym.kind() != object::SymbolKind::Text || !sym.is_undefined() {
+            continue;
+        }
+        let Ok(name) = sym.name_bytes() else { continue };
+        let required = versions.version(versions.version_index(endian, sym.index())).ok().flatten();
+        let by_glibc = required.is_some_and(|version| {
+            version.file().is_some_and(|file| GLIBC_LIBRARIES.contains(&file))
+                && version.name().starts_with(b"GLIBC_")
+                && version.name() != b"GLIBC_PRIVATE"
+        });
+        if by_glibc { &mut glibc } else { &mut other }.insert(strip_version(name));
+    }
+    glibc.retain(|name| !other.contains(name));
+    glibc
 }
 
 /// The MIPS GOT external slots' `[start, stop]` (inclusive) byte ranges, to be
@@ -1150,6 +1138,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn only_public_glibc_versioned_mips_imports_are_bound_to_glibc() {
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/mips-glibc-imports");
+        for (image, glibc) in [
+            ("n32-glibc.elf", true),
+            ("o32-glibc.elf", true),
+            ("n64-glibc.elf", true),
+            ("n32-pthread.elf", true),
+            ("n32-unversioned.elf", false),
+            ("n32-other.elf", false),
+            ("n32-private.elf", false),
+        ] {
+            let bytes = std::fs::read(fixtures.join(image)).expect("fixture");
+            let file = object::File::parse(bytes.as_slice()).expect("ELF");
+            let mut imports: Vec<Vec<u8>> = resolve_mips_imports(&file).into_iter().map(|import| import.name).collect();
+            let mut bound: Vec<Vec<u8>> = mips_glibc_import_names(&file).into_iter().collect();
+            imports.sort_unstable();
+            bound.sort_unstable();
+            assert_eq!(imports.len(), 3, "{image}");
+            assert_eq!(bound, if glibc { imports } else { Vec::new() }, "{image}");
+        }
+    }
+
+    #[test]
     fn aarch64_plt_decode() {
         // clang bytes: `adrp x16,0x3000; ldr x17,[x16,#0xff8]; add x16,x16,#0xff8; br x17`.
         let mut data: Vec<u8> = vec![0u8; 32]; // dummy PLT0 header
@@ -1202,56 +1213,117 @@ mod tests {
         assert_eq!(out[0].name, b"read".to_vec());
     }
 
+    fn ppc64_words(words: &[u32], little: bool) -> Vec<u8> {
+        words.iter().flat_map(|w| if little { w.to_le_bytes() } else { w.to_be_bytes() }).collect()
+    }
+
+    fn ppc64_named(vma: u64, words: &[u32], little: bool, toc: u64, slot: u64) -> Vec<(u64, Vec<u8>)> {
+        let name = |s: u64| (s == slot).then_some(&b"free"[..]);
+        decode_ppc64_stubs(vma, &ppc64_words(words, little), little, Some(toc), name).into_iter().map(|s| (s.addr, s.name)).collect()
+    }
+
     #[test]
     fn ppc64_plt_decode() {
-        // Real bytes from a `powerpc64le-linux-gnu-gcc -O0` ELFv2 stub (the
-        // `puts@plt` call stub at 0x680 of fixtures/plt_ppc64le):
-        //   std   r2,24(r1)        f8 41 00 18
-        //   addis r12,r2,-1        3d 82 ff ff
-        //   ld    r12,32752(r12)   e9 8c 7f f0
-        //   mtctr r12              7d 89 03 a6
-        //   bctr                   4e 80 04 20
-        // File is little-endian (ELFv2 LE), so each word is stored byte-reversed.
-        let mut stub: Vec<u8> = Vec::new();
-        for w in [0xf8410018u32, 0x3d82ffff, 0xe98c7ff0, 0x7d8903a6, 0x4e800420] {
-            stub.extend_from_slice(&w.to_le_bytes());
+        // `puts@plt` at 0x680 of fixtures/plt_ppc64le: std r2,24(r1); addis
+        // r12,r2,-1; ld r12,32752(r12); mtctr r12; bctr, after 16 bytes of padding.
+        let words = [0, 0, 0, 0, 0xf8410018, 0x3d82ffff, 0xe98c7ff0, 0x7d8903a6, 0x4e800420];
+        assert_eq!(ppc64_named(0x620, &words, true, 0x27f00, 0x1fef0), [(0x630, b"free".to_vec())]);
+        let be = [0xf8410018, 0x3d820002, 0xe98c0010, 0x7d8903a6, 0x4e800420];
+        assert_eq!(ppc64_named(0x1000, &be, false, 0x40000, 0x40000 + (2 << 16) + 0x10), [(0x1000, b"free".to_vec())]);
+    }
+
+    #[test]
+    fn ppc64_every_linker_stub_form_names_its_slot() {
+        const MTCTR: u32 = 0x7d8903a6;
+        const BCTR: u32 = 0x4e800420;
+        const NOTOC: [u32; 4] = [0x7d8802a6, 0x429f0005, 0x7d6802a6, 0x7d8803a6];
+        let toc = 0x47f00;
+        let forms: [(&str, Vec<u32>, u64); 7] = [
+            ("GNU ld, slot near the TOC", vec![0xf8410018, 0xe9828118, MTCTR, BCTR], toc - 32488),
+            ("--plt-localentry", vec![0xe9828118, MTCTR, BCTR], toc - 32488),
+            ("--plt-localentry, far", vec![0x3d820001, 0xe98c8018, MTCTR, BCTR], toc + 0x10000 - 32744),
+            ("pc-relative caller", [&NOTOC[..], &[0x3d8b0003, 0xe98c0010, MTCTR, BCTR]].concat(), 0x10008 + 0x30010),
+            ("pc-relative caller, near", [&NOTOC[..], &[0xe98b0010, MTCTR, BCTR]].concat(), 0x10008 + 0x10),
+            ("Power10 pld", vec![0x04100003, 0xe5800018, MTCTR, BCTR], 0x10000 + 0x30018),
+            ("lld, slot far from the TOC", vec![0xf8410018, 0x3d820001, 0xe98c8018, MTCTR, BCTR], toc + 0x10000 - 32744),
+        ];
+        for (form, words, slot) in forms {
+            for little in [true, false] {
+                assert_eq!(ppc64_named(0x10000, &words, little, toc, slot), [(0x10000, b"free".to_vec())], "{form}");
+            }
         }
-        let mut data = vec![0u8; 16]; // a little leading `.text` padding
-        data.extend_from_slice(&stub);
+        let back = [0x0413ffff, 0xe580fff0, MTCTR, BCTR];
+        assert_eq!(ppc64_named(0x10000, &back, true, toc, 0x10000 - 16).len(), 1, "a negative pld displacement");
+    }
 
-        let vma = 0x620u64; // `.text` base from the real fixture
-        let stub_addr = vma + 16;
-        // TOC base = .got(0x1ff00) + 0x8000 = 0x27f00; slot = TOC + (-1<<16) + 32752.
-        let toc_base = 0x27f00u64;
-        let expected_slot = toc_base.wrapping_add(((-1i64) << 16) as u64) + 32752;
-        assert_eq!(expected_slot, 0x1fef0); // matches the R_PPC64_JMP_SLOT offset
-
-        let mut map: HashMap<u64, Vec<u8>> = HashMap::new();
-        map.insert(expected_slot, b"puts".to_vec());
-        let mut out: Vec<PltSym> = Vec::new();
-        let mut named: HashSet<u64> = HashSet::new();
-        decode_ppc64_stubs(vma, &data, /*little*/ true, toc_base, &map, &mut out, &mut named);
-
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].addr, stub_addr);
-        assert_eq!(out[0].name, b"puts".to_vec());
-
-        // Big-endian word layout decodes identically (the stub shape is shared by
-        // ELFv2 BE); a positive @ha exercises the other sign of the page offset.
-        let mut data_be = vec![0u8; 0];
-        for w in [0xf8410018u32, 0x3d820002, 0xe98c0010, 0x7d8903a6, 0x4e800420] {
-            data_be.extend_from_slice(&w.to_be_bytes());
+    #[test]
+    fn ppc64_stub_for_both_callers_names_both_entries() {
+        const MTCTR: u32 = 0x7d8903a6;
+        const BCTR: u32 = 0x4e800420;
+        const NOTOC: [u32; 4] = [0x7d8802a6, 0x429f0005, 0x7d6802a6, 0x7d8803a6];
+        let forms: [(&str, Vec<u32>, u64); 2] = [
+            ("pc-relative", [&[0xf8410018][..], &NOTOC[..], &[0x3d8b0003, 0xe98c0010, MTCTR, BCTR]].concat(), 0x1000c + 0x30010),
+            ("Power10", vec![0xf8410018, 0x60000000, 0x04100003, 0xe5800018, MTCTR, BCTR], 0x10008 + 0x30018),
+        ];
+        for (form, words, slot) in forms {
+            for little in [true, false] {
+                let named = ppc64_named(0x10000, &words, little, 0x47f00, slot);
+                assert_eq!(named, [(0x10000, b"free".to_vec()), (0x10004, b"free".to_vec())], "{form}");
+            }
         }
-        let toc_be = 0x40000u64;
-        let expected_be = toc_be + (2u64 << 16) + 0x10;
-        let mut map_be: HashMap<u64, Vec<u8>> = HashMap::new();
-        map_be.insert(expected_be, b"printf".to_vec());
-        let mut out_be: Vec<PltSym> = Vec::new();
-        let mut named_be: HashSet<u64> = HashSet::new();
-        decode_ppc64_stubs(0x1000, &data_be, /*little*/ false, toc_be, &map_be, &mut out_be, &mut named_be);
-        assert_eq!(out_be.len(), 1);
-        assert_eq!(out_be[0].addr, 0x1000);
-        assert_eq!(out_be[0].name, b"printf".to_vec());
+        let padded = [0x60000000, 0x04100003, 0xe5800018, MTCTR, BCTR];
+        assert_eq!(ppc64_named(0x10000, &padded, true, 0x47f00, 0x10004 + 0x30018), [(0x10004, b"free".to_vec())], "padding before a stub");
+    }
+
+    #[test]
+    fn ppc64_near_stub_shapes_name_nothing() {
+        const MTCTR: u32 = 0x7d8903a6;
+        const BCTR: u32 = 0x4e800420;
+        let toc = 0x47f00;
+        let slot = toc - 32488;
+        let refused: [(&str, Vec<u32>, u64); 9] = [
+            ("a call, bctrl", vec![0xf8410018, 0xe9828118, MTCTR, 0x4e800421], slot),
+            ("ctr from r11", vec![0xf8410018, 0xe9828118, 0x7d6903a6, BCTR], slot),
+            ("based on r3", vec![0xf8410018, 0xe9838118, MTCTR, BCTR], slot),
+            ("an lwa, not an ld", vec![0xf8410018, 0xe982811a, MTCTR, BCTR], slot),
+            ("bcl past the next word", vec![0x7d8802a6, 0x429f0009, 0x7d6802a6, 0x7d8803a6, 0xe98b0010, MTCTR, BCTR], 0x10008 + 0x10),
+            ("pld without R", vec![0x04000003, 0xe5800018, MTCTR, BCTR], 0x30018),
+            ("pld from r12", vec![0x04100003, 0xe58c0018, MTCTR, BCTR], 0x10000 + 0x30018),
+            ("cut before bctr", vec![0xf8410018, 0xe9828118, MTCTR], slot),
+            ("an unrelocated slot", vec![0xf8410018, 0xe9828118, MTCTR, BCTR], slot + 8),
+        ];
+        for (shape, words, expected) in refused {
+            assert!(ppc64_named(0x10000, &words, true, toc, expected).is_empty(), "{shape}");
+        }
+    }
+
+    #[test]
+    fn ppc64_fixture_stubs_are_the_linkers() {
+        // Each address is the stub symbol GNU ld (`--emit-stub-syms`) or lld
+        // (`__plt_*`) writes for the same link, or the word after it where
+        // pc-relative callers enter a stub that saves the TOC; see the README.
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/ppc64-plt-stubs");
+        let gnu: &[(u64, &str)] = &[(0x1000, "strlen"), (0x1020, "free")];
+        let both: &[(u64, &str)] = &[(0x2e0, "strlen"), (0x2e4, "strlen"), (0x300, "free"), (0x304, "free")];
+        for (image, expected) in [
+            ("toc.elf", gnu),
+            ("localentry.elf", gnu),
+            ("notoc.elf", gnu),
+            ("pld.elf", gnu),
+            ("be.elf", gnu),
+            ("lld-toc.elf", &[(0x13b0, "free"), (0x13c4, "strlen")][..]),
+            ("lld-pld.elf", &[(0x1380, "free"), (0x13a0, "strlen")][..]),
+            ("guards.elf", &[(0x1000, "free")][..]),
+            ("both.elf", both),
+            ("both-pld.elf", both),
+        ] {
+            let bytes = std::fs::read(fixtures.join(image)).expect("fixture");
+            let file = object::File::parse(bytes.as_slice()).expect("ELF");
+            let mut stubs: Vec<(u64, Vec<u8>)> = resolve_plt_imports(&file, &bytes).into_iter().map(|s| (s.addr, s.name)).collect();
+            stubs.sort_unstable();
+            let expected: Vec<(u64, Vec<u8>)> = expected.iter().map(|&(a, n)| (a, n.as_bytes().to_vec())).collect();
+            assert_eq!(stubs, expected, "{image}");
+        }
     }
 
     #[test]

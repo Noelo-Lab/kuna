@@ -10,6 +10,7 @@
 <symbol space="ram" offset="0x80662e0" name="promote_compare"/>
 </binaryimage>
 <script>
+  <com>option loopcondhoist off</com>
   <com>lo fu promote_compare</com>
   <com>decompile</com>
   <com>print C</com>

@@ -620,6 +620,7 @@ fn execute_with_context(
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn frame_bookkeeping_preserves_native_writes_and_real_snapshots() {
     let fixture = common::fixture("lifetimes_frame_events_x86_64");
     common::process::required_output(&mut Command::new(&fixture));
@@ -702,6 +703,7 @@ int check_frame_cache(uint8 input) {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn object_names_preserve_pointer_field_dereferences() {
     let fixture = common::fixture("lifetimes_pointer_fields_x86_64");
     common::process::required_output(&mut Command::new(&fixture));
@@ -731,6 +733,7 @@ bool construct_set(struct FieldSet *set) { set->head = &first_node; return true;
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn typed_address_publications_preserve_old_reads_and_object_views() {
     let fixture = common::fixture("lifetimes_objects_x86_64");
     common::process::required_output(&mut Command::new(&fixture));
@@ -1021,6 +1024,7 @@ fn named_objects_keep_aliases_interior_views_and_uncertain_effects() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn logical_object_reuse_joins_loops_and_partial_updates_match_native() {
     common::process::required_output(&mut Command::new(common::fixture(
         "lifetimes_objects_x86_64",
@@ -1053,6 +1057,7 @@ fn named_objects_survive_indexed_store_guard_retries() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn bounded_word_and_byte_indices_use_the_whole_eight_byte_object() {
     common::process::required_output(&mut Command::new(common::fixture("lifetimes_index_x86_64")));
     for (function, expected) in [
@@ -1110,6 +1115,7 @@ fn an_old_escaped_pointer_observes_the_new_object() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn partial_writes_control_flow_and_unknown_memory_effects_match_native() {
     for (function, arguments, expected) in [
         ("escaped_alias", "", 7),
@@ -1204,6 +1210,7 @@ fn numeric_conversion_targets_the_scalar_view() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn declared_stack_layouts_preserve_incompatible_stores() {
     common::process::required_output(&mut Command::new(common::fixture("lifetimes_stack_x86_64")));
     let code = decompile_surface(
@@ -1244,6 +1251,7 @@ fn declared_stack_layouts_preserve_incompatible_stores() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn partial_color_initialization_preserves_reused_stack_bytes() {
     common::process::required_output(&mut Command::new(common::fixture(
         "lifetimes_partial_windows_x64",
@@ -1321,6 +1329,7 @@ fn complete_and_conditional_cfg_overwrites_match_native() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn declared_float_members_keep_bits_and_call_effects_are_not_stores() {
     common::process::required_output(&mut Command::new(common::fixture(
         "lifetimes_stack_representations_x86_64",
@@ -1387,6 +1396,7 @@ void write_word(uint4 *p) { uint4 bits=0x40400000; __builtin_memcpy(p,&bits,4); 
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn cached_frame_words_keep_scalar_types_across_callbacks_and_reuse() {
     common::process::required_output(&mut Command::new(common::fixture(
         "lifetimes_stack_snapshots_x86_64",

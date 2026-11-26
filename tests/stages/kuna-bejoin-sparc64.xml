@@ -43,7 +43,8 @@
 
     Assert #1: neg_one returns the 64-bit -1 at both levels, never 0xffffffff.
     Assert #2: k_one, status64 and bool64 return 64 bits at -O2.
-    Assert #3: k_one (both levels), status64 and bool64 (-O2) return 1, not 0.
+    Assert #3: k_one and status64 (both levels) and bool64 (-O2) return 1,
+    not 0.
     Assert #4: sel_const keeps its argument and returns 10 or 20, never
     shifted into the high word, at both levels.
     Assert #5: mix2 returns x << 32 whole, and nothing returns a0 or 5.
@@ -96,6 +97,8 @@ f41fbff8b010001a81c7e00893e8001b
 <symbol space="ram" offset="0x50184" name="mix3_O0"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>option bejoin on</com>
   <com>lo fu neg_one</com>
   <com>decompile</com>
@@ -144,7 +147,7 @@ f41fbff8b010001a81c7e00893e8001b
 <stringmatch name="bejoin-sparc64 #1: neg_one returns the 64-bit -1 at both levels" min="2" max="2">return 0xffffffffffffffff;</stringmatch>
 <stringmatch name="bejoin-sparc64 #1b: nothing returns a 32-bit -1" min="0" max="0">return 0xffffffff;</stringmatch>
 <stringmatch name="bejoin-sparc64 #2: k_one, status64 and bool64 return 64 bits at -O2" min="3" max="3">unsigned long long (k_one|status64|bool64)\(</stringmatch>
-<stringmatch name="bejoin-sparc64 #3: k_one, status64 and bool64 return 1" min="4" max="4">return 1;</stringmatch>
+<stringmatch name="bejoin-sparc64 #3: k_one, status64 and bool64 return 1" min="5" max="5">return 1;</stringmatch>
 <stringmatch name="bejoin-sparc64 #4: sel_const keeps its argument at both levels" min="2" max="2">sel_const(_O0)?\(int4 a0\)</stringmatch>
 <stringmatch name="bejoin-sparc64 #4b: sel_const never shifts 10 or 20 into the high word" min="0" max="0">v[0-9]+ &lt;&lt; 0x20;</stringmatch>
 <stringmatch name="bejoin-sparc64 #5: mix2 returns x shifted into the high word" min="1" max="1">return \(uint8\)a0 &lt;&lt; 0x20;</stringmatch>
