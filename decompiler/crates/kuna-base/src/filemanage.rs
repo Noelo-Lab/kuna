@@ -35,7 +35,8 @@ const SEPARATOR: char = '/';
 
 /// `path` without a Windows verbatim prefix, in which `'/'` is not a
 /// separator: `\\?\C:\x` is `C:\x` and `\\?\UNC\host\share` is
-/// `\\host\share`. Any other path is returned as it is.
+/// `\\host\share`. Any other path is returned as it is, including a verbatim
+/// one that names no drive (`\\?\Volume{...}\x`), which has no plain form.
 fn plain(path: &str) -> String {
     if !cfg!(windows) {
         return path.to_string();
@@ -43,7 +44,8 @@ fn plain(path: &str) -> String {
     match path.strip_prefix(r"\\?\") {
         Some(rest) => match rest.strip_prefix(r"UNC\") {
             Some(share) => format!(r"\\{share}"),
-            None => rest.to_string(),
+            None if drive(rest).is_some_and(|d| d.len() < rest.len()) => rest.to_string(),
+            None => path.to_string(),
         },
         None => path.to_string(),
     }
@@ -255,8 +257,8 @@ impl FileManage {
         Self::directory_list(&mut subdir, rootpath, false);
         for curpath in &subdir {
             // string::find_last_of(separatorClass): byte position of the last
-            // separator ('/' is single-byte, so byte indexing is UTF-8 safe)
-            let pos = match curpath.rfind(SEPARATOR) {
+            // separator (each is single-byte, so byte indexing is UTF-8 safe)
+            let pos = match curpath.rfind(Self::is_separator) {
                 Some(p) => p + 1,
                 None => 0,
             };
@@ -738,6 +740,8 @@ mod tests {
         if cfg!(windows) {
             assert_eq!(plain(r"\\?\C:\specs"), r"C:\specs");
             assert_eq!(plain(r"\\?\UNC\host\share\specs"), r"\\host\share\specs");
+            let volume = r"\\?\Volume{1b3b1146-4076-11e1-84aa-806e6f6e6963}\specs";
+            assert_eq!(plain(volume), volume);
         } else {
             assert_eq!(plain(r"\\?\C:\specs"), r"\\?\C:\specs");
         }
@@ -755,6 +759,9 @@ mod tests {
         assert!(verbatim.starts_with(r"\\?\"), "{verbatim}");
         let mut res: Vec<String> = Vec::new();
         FileManage::scan_directory_recursive(&mut res, "Processors", verbatim, 2);
+        assert_eq!(res.len(), 1, "{res:?}");
+        let mut res: Vec<String> = Vec::new();
+        FileManage::scan_directory_recursive(&mut res, "Ghidra", &format!(r"{verbatim}\"), 1);
         assert_eq!(res.len(), 1, "{res:?}");
         let mut res: Vec<String> = Vec::new();
         FileManage::match_list_dir(&mut res, ".ldefs", true, &format!("{verbatim}/Ghidra"), false);
