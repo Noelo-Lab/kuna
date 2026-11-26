@@ -4782,6 +4782,11 @@ selected frame register even when the result predicate suppresses the
 DATA store. Static CE-table loads that configure both banks sample the
 same incoming `EST`; one new latch cannot feed the other within that issue.
 
+If a wide `LINK` writes `CECFG1`, `CECFG2`, or `CETBL`, the incoming
+controls enable the address phase. The store then evaluates the selected
+predicate using the updated controls; it still saves the old register
+word at the old `SP`. A static predicate samples the incoming CE latch.
+
 Covered wide paired `PUSH` and `POP` reserve two DATA words on `SP`
 when address processing is enabled, independent of the execution
 predicate and of the short or long `R6` postincrement. The disconnected

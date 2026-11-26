@@ -680,6 +680,7 @@ define token wide (48)
     stack_ce_bank = (46,46)
     wide_stack_pop_control = (3,13)
     link_qualifier = (10,13)
+    link_ce_register = (2,4)
     wide_2_9 = (2,9)
     round_result_selector = (2,9) hex
     wide_0_2 = (0,2)
@@ -865,6 +866,7 @@ attach variables [swap_reg_full wide_smove_reg_src wide_smove_reg_dst] [A0L A1L 
 attach variables [wide_smove_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [wide_smove_acc_high] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [wide_smove_acc_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [link_ce_register] [_ _ CECFG1 CECFG2 CETBL _ _ _];
 attach variables [swap_base] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [swap_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [swap_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
@@ -8584,6 +8586,26 @@ macro frame_store(address, saved) {
 :LEAVE "R7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580e); (slot_mode=0 & nop_right) { local address:2 = R7 + 1; SP = address; R7 = *[data]:2 address; }
 :LEAVE "CE1" "R7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580f); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R7 + 1; SP = address; R7 = *[data]:2 address; <stack_done> }
 frame_displacement: encoded is wide_frame_delta_0 & wide_frame_delta_22 [ encoded = wide_frame_delta_0 | (wide_frame_delta_22 << 22); ] { export *[const]:2 encoded; }
+
+:LINK wide_ce_prefix link_ce_register,frame_displacement is carmel_issue=4 & wide_left_mode=0
+    & wide_right_mode=1 & wide_14_22=0x118 & link_qualifier=0
+    & wide_2_9>=0xc2 & wide_2_9<=0xc4 & wide_ce_prefix & link_ce_register & frame_displacement {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (agu == 0) goto <done>;
+    local old_sp:2 = SP;
+    local saved:2 = link_ce_register;
+    link_ce_register = old_sp - 1;
+    SP = old_sp + frame_displacement;
+    # The early register result can change the later DATA store predicate.
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (execute == 0) goto <done>;
+    frame_store(old_sp, saved);
+  <done>
+}
+
 :LINK "GB0",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x80 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { local old_sp:2 = SP; local saved:2 = zext(GB0); local frame:2 = old_sp - 1; GB0 = frame:1; SP = old_sp + frame_displacement; frame_store(old_sp, saved); }
 :LINK "A0L",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x88 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { local old_sp:2 = SP; local saved:2 = A0L; local frame:2 = old_sp - 1; A0L = frame; SP = old_sp + frame_displacement; frame_store(old_sp, saved); }
 :LINK "A0L",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x90 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { local old_sp:2 = SP; local saved:2 = A0L; local frame:2 = old_sp - 1; A0L = frame; SP = old_sp + frame_displacement; frame_store(old_sp, saved); }

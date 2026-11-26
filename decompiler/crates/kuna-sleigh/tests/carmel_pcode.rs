@@ -795,6 +795,41 @@ fn link_uses_address_enable_before_its_independently_predicated_store() {
 }
 
 #[test]
+fn link_rechecks_the_store_predicate_after_writing_ce_controls() {
+    for (left, right, reg, sp, table, saved, flags) in [
+        (0x3ffffc, 0xc6030b, "CECFG1", 0x6011, 0x0101, 0x5aa5, 0x2000),
+        (0x7ffffc, 0xc6030b, "CECFG1", 0x6011, 0x0101, 0x1000, 0x6000),
+        (0x3ffffc, 0xc6030f, "CECFG2", 0x6011, 0x0101, 0x1000, 0x5000),
+        (0x7ffffc, 0xc6030f, "CECFG2", 0x6011, 0x0101, 0x5aa5, 0x1000),
+        (0x3ffffc, 0xc60313, "CETBL", 0x8030, 0, 0, 0x1000),
+        (0x7ffffc, 0xc60313, "CETBL", 0x8030, 0, 0x5aa5, 0x1000),
+        (0x3ffffc, 0xc60313, "CETBL", 0x8030, 0xffff, 0xffff, 0x5000),
+        (0x7ffffc, 0xc60313, "CETBL", 0x8030, 0xffff, 0x5aa5, 0x1000),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP), (NOP, NOP)],
+                                 &[(0, 4, 6), (2, 1, 0), (4, 1, 0)], None);
+        m.seed(&[("SP", sp), ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", table), ("ECFG", 0x10)]);
+        m.seed_data(sp, 0x5aa5);
+        m.seed_data(sp + 1, 0xabcd);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("SP"), m.reg(reg), m.data(sp)), (sp - 4, sp - 1, saved));
+        m.step();
+        assert_eq!((m.reg("EST"), m.data(sp + 1)), (flags, 0xabcd));
+    }
+}
+
+#[test]
+fn link_ce_control_write_cannot_create_its_own_address_enable() {
+    let mut m = Machine::new(0, &[(0x3ffffc, 0xc60313), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
+    m.seed(&[("SP", 0x6011), ("CETBL", 0), ("CECFG1", 0), ("CECFG2", 0)]);
+    m.seed_data(0x6011, 0x5aa5);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("SP"), m.reg("CETBL"), m.data(0x6011)), (0x6011, 0, 0x5aa5));
+}
+
+#[test]
 fn static_ce_banks_both_sample_the_incoming_feedback_bit() {
     for (incoming, after) in [(4, 0x3004), (0x1004, 4)] {
         let mut m = Machine::new(0, &[(0x8c0001, 0xcde4b3), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
