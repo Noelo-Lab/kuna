@@ -281,9 +281,7 @@ impl ClassWriter {
                         rec.add("FinalSimplifySwitches", Some(root));
                     }
 
-                    if DecompilerContext::get_option(IFernflowerPreferences::PRETTIFY_IFS)
-                        && IfHelper::prettify_ifs(root.0)
-                    {
+                    if IfHelper::prettify_ifs(root.0) {
                         rec.add("FinalPrettifyIfs", Some(root));
                     }
 

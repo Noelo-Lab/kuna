@@ -545,8 +545,7 @@ When a full pass of the loop changes nothing, the tail runs once, in this order:
 
 Two more passes run when the class is written, before any text is produced
 (`decompiler/nonnative/kuna-jvm/src/p9_emit/class_writer.rs (ClassWriter::invoke_processors)`):
-switch simplification once more (`FinalSimplifySwitches`) and, with `jvm_prettify_ifs`,
-the removal of an `else` after a branch that always returns or throws
+switch simplification once more (`FinalSimplifySwitches`) and the removal of an `else` after a branch that always returns or throws
 (`IfHelper::prettify_ifs`).
 
 **javac's block layout (kuna).** The `if` and exit structuring of a method javac compiled (its

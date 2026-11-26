@@ -74,8 +74,6 @@ Three tiers:
 | VarHandle constant shown as an unresolved dynamic constant | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
 | method with jsr/ret fails to decompile in a modern class file | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
-| else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
-| deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
 | if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
@@ -264,15 +262,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** infra/method_processor · vineflower · vineflower-option
 - **Also spelled:** `force-jsr-inline`, `fji`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_force_jsr_inline on`
-
-### `jvm_prettify_ifs` -- on | off, default `on`
-
-- **Symptoms:** else branch missing after an if that returns; deep else chains after returns (option is off).
-- **What it does:** Before writing, turn if (c) { ..; return; } else { rest } into the if followed by rest: the else after a branch that always returns or throws is dropped (unless the else exits too).
-- **When to flip:** Turn off to keep the if/else pairs as structured from the control flow, e.g. when comparing with older Fernflower output.
-- **Where / provenance:** p9_emit/class_writer, if_helper · vineflower · vineflower-option
-- **Also spelled:** `prettify-ifs`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off`
 
 ### `jvm_resugar_idea_notnull` -- on | off, default `on`
 

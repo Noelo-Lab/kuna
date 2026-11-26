@@ -58,7 +58,6 @@ impl IFernflowerPreferences {
     pub const FORCE_JSR_INLINE: &str = "force-jsr-inline";
     pub const MARK_CORRESPONDING_SYNTHETICS: &str = "mark-corresponding-synthetics";
     pub const VALIDATE_INNER_CLASSES_NAMES: &str = "validate-inner-classes-names";
-    pub const PRETTIFY_IFS: &str = "prettify-ifs";
     pub const METHOD_TO_DECOMPILE: &str = "method-to-decompile";
 
     /// `IFernflowerPreferences.DEFAULTS`, computed once per thread.
@@ -128,7 +127,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::FORCE_JSR_INLINE, "0".to_string()),
             (IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, "0".to_string()),
             (IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES, "1".to_string()),
-            (IFernflowerPreferences::PRETTIFY_IFS, "1".to_string()),
             (IFernflowerPreferences::METHOD_TO_DECOMPILE, "".to_string()),
         ]
     }
@@ -224,6 +222,5 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "FORCE_JSR_INLINE", key: IFernflowerPreferences::FORCE_JSR_INLINE, short_name: Some("fji"), name: Some("Force JSR inline"), description: Some("Forces the processing of JSR instructions even if the class files shouldn't contain it (Java 7+)"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "MARK_CORRESPONDING_SYNTHETICS", key: IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, short_name: Some("mcs"), name: Some("Mark Corresponding Synthetics"), description: Some("Mark lambdas and anonymous and local classes with their respective synthetic constructs"), type_: None, dynamic_default_value: None },
     PreferenceOption { field: "VALIDATE_INNER_CLASSES_NAMES", key: IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES, short_name: None, name: Some("Validate inner classes names"), description: Some("Validates that the inner class name is correct (if it is separated using \"$\" for example BaseClass$InnerClass). If not then inner class won't be processed."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "PRETTIFY_IFS", key: IFernflowerPreferences::PRETTIFY_IFS, short_name: None, name: Some("Prettify Ifs"), description: Some("Use heuristics to restructure if statements to make them clearer to read."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "METHOD_TO_DECOMPILE", key: IFernflowerPreferences::METHOD_TO_DECOMPILE, short_name: None, name: Some("Method to decompile"), description: Some("Option to decompile a single method. Set to owner + \".\" + name + descriptor, e.g. foo/Bar.baz()V, or simply name + descriptor if you're only decompiling a single file and the method belongs to the root class."), type_: Some(OptionType::String), dynamic_default_value: None },
 ];

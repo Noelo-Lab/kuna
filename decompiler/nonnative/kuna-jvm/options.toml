@@ -650,28 +650,6 @@ tier = "analysis"
 symptoms = "member classes of an obfuscated jar written as separate top-level classes|renamed inner classes not nested"
 
 [[option]]
-option = "jvm_prettify_ifs"
-vineflower = "prettify-ifs"
-short = ""
-aliases = ["prettify-ifs"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer, if_helper"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Before writing, turn if (c) { ..; return; } else { rest } into the if followed by rest: the else after a branch that always returns or throws is dropped (unless the else exits too)."
-use_when = "Turn off to keep the if/else pairs as structured from the control flow, e.g. when comparing with older Fernflower output."
-example = "kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.PRETTIFY_IFS (prettify-ifs)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "else branch missing after an if that returns|deep else chains after returns (option is off)"
-
-[[option]]
 option = "jvm_siblings"
 vineflower = ""
 short = ""
