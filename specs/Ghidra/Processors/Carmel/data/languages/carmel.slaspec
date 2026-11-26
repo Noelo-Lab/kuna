@@ -7744,6 +7744,7 @@ macro paired_push_registers(at_sp, below_sp, connected) {
 }
 
 @define STACK_POP_MARKED "$(STACK_PAIR) & carmel_issue=5 & wide_left_mode=1 & stack_pair_push=0"
+@define STACK_POP_CE2 "$(STACK_PAIR_CE2) & stack_pair_push=0"
 
 stack_pop_r7: "*R7++RN7" is stack_pair_second=0x0f { export 0:2; }
 stack_pop_r7: "*R7++RN7:long" is stack_pair_second=0x4f { export 1:2; }
@@ -7751,17 +7752,32 @@ stack_pop_r3: "*R3++0" is stack_pair_second=0x33 { export 0:2; }
 stack_pop_r3: "*R3++0:long" is stack_pair_second=0x73 { export 1:2; }
 stack_pop_x: "X1" is stack_pair_first=0x9e { export X1; }
 stack_pop_x: "X2" is stack_pair_first=0x9f { export X2; }
+stack_pop_r4: "*R4+RN4" is stack_pair_second=0x2c { export 0:2; }
+stack_pop_r4: "*R4++RN4:long" is stack_pair_second=0x4c { export 1:2; }
+
+stack_pop_alu_source: "*R4+RN4" is stack_pair_second=0x2c {
+    local address:2 = R4 + RN4;
+    export address;
+}
+stack_pop_alu_source: "*R6" is stack_pair_second=0x06 { export R6; }
+stack_pop_alu_right: is stack_pair_second=0x2c { export A4L; }
+stack_pop_alu_right: is stack_pair_second=0x06 { export FF1; }
 
 stack_pop_of: is carmel_of_route=1 { export 0:1; }
 stack_pop_of: is carmel_of_route=2 { export 1:1; }
 
-macro paired_pop_fallback(long_result, active) {
-    if (!active) goto <done>;
+macro paired_pop_fallback_data(long_result) {
     local word:2 = *[data]:2 RL6;
     local shifted:2 = word s>> ((ECFG >> 5) & 1);
     *[data]:2 0xffff:2 = shifted;
     if (long_result == 0) goto <done>;
     *[data]:2 A0L = 0 - (shifted >> 15);
+  <done>
+}
+
+macro paired_pop_fallback(long_result, active) {
+    if (!active) goto <done>;
+    paired_pop_fallback_data(long_result);
   <done>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -7784,6 +7800,48 @@ macro paired_pop_fallback(long_result, active) {
     SP = SP + 2;
     stack_pop_x = *[data]:2 address;
     paired_pop_fallback(stack_pop_r3, stack_pop_of);
+}
+:POP "CETBL",stack_pop_r4 is $(STACK_POP_MARKED) & stack_pair_first=0xc4 & stack_pop_r4 & stack_pop_of {
+    if (stack_pop_r4 == 0) goto <stack>;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 1);
+  <stack>
+    SP = SP + 2;
+    paired_pop_fallback(stack_pop_r4, stack_pop_of);
+}
+:POP "CE2" "FF1",stack_pop_r4 is $(STACK_POP_CE2) & stack_pair_first=0x96 & stack_pop_r4 & carmel_of_route=2 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <publish>;
+    local address:2 = R4;
+    if (stack_pop_r4 == 0) goto <indexed>;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 1);
+    goto <stack>;
+  <indexed>
+    address = address + RN4;
+  <stack>
+    SP = SP + 2;
+    # The direct FF1 latch belongs to EX, not the predicated DATA result.
+    FF1 = *[data]:2 address;
+    if (enabled == 0) goto <publish>;
+    paired_pop_fallback_data(stack_pop_r4);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:POP "CE2" "A0L",stack_pop_alu_source is $(STACK_POP_CE2) & stack_pair_first=0x90 & stack_pop_alu_source & stack_pop_alu_right {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    local flags:2 = EST & 0xcfff;
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <publish>;
+    SP = SP + 2;
+    local first:2 = *[data]:2 stack_pop_alu_source;
+    local second:2 = *[data]:2 SP;
+    if (enabled == 0) goto <publish>;
+    A0L = first;
+    stack_pop_alu_right = second;
+    flags = (flags & 0xc104) | (zext(first == 0) << 3) | (zext(first s< 0) << 4) |
+            (zext(second == 0) << 9) | (zext(second s< 0) << 10);
+  <publish>
+    publish_alu_ce(flags);
 }
 :POP "R3","RN4" is $(STACK_POP_MARKED) & stack_pair_first=0xa3 & stack_pair_second=0xfc {
     local word:2;

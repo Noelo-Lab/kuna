@@ -4541,6 +4541,10 @@ an `X1` or `X2` first selector, the second selector also loads that latch
 from its original DATA address. The covered extended second register
 selectors instead route the old `SP+1` word to `RN4` or to the 12-bit
 `RM2` port. The two-long DATA combinations do not lift.
+The qualified `FF1` port instead latches its indexed `R4` input when CE
+or AEN admits the address phase, even when CE vetoes
+the fallback DATA store. The qualified paired ALU routes keep this
+address phase separate from the accumulator, latch, and flag writeback.
 
 Only a covered immutable CLIW record in a normalized bank can specialize a
 reference. Located TASKING images and XML can supply such a bank. Raw CODE

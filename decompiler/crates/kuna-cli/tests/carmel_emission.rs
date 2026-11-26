@@ -2375,6 +2375,90 @@ fn carmel_wide_paired_pop_fallback_ports() {
 }
 
 #[test]
+fn carmel_paired_pop_separates_address_latch_and_result_gates() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-paired-pop-routes", "bin");
+    let specs = binary.with_extension("specs");
+    tracked_carmel_entry_specs(&specs, &[
+        ("SP", 0x4040), ("R4", 0x48), ("RN4", 1), ("RL6", 0x100), ("A0L", 0x7007),
+    ], 0x1000, 2);
+    let cells = [
+        (0x48, "old_pointer", 0x9876), (0x49, "indexed_pointer", 0x789b),
+        (0x100, "fallback_source", 0x82ef), (0x4041, "stack_lower", 0x1234),
+        (0x4042, "stack_upper", 0x9678), (0x7007, "high_result", 0x1a99),
+        (0xffff, "low_result", 0x3c33),
+    ];
+    let inputs = ["CECFG1", "CECFG2", "CETBL", "EST", "ECFG", "PACFG", "RM4", "RL4", "A4L", "FF1"];
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for (_, cell, _) in cells {
+        writeln!(emitted, "volatile unsigned short {cell};").unwrap();
+    }
+    let mut main = String::from("int main(void) {\n");
+    let mut check = 0;
+    for (packet, results, fallback) in [
+        ([0x52, 0x96, 0x4c, 0xca, 0x08, 0x65], &[("FF1", [0x9876, 0x9876]), ("R4", [0x49, 0x49])][..], true),
+        ([0x52, 0x90, 0x2c, 0xca, 0x08, 0x65], &[("A0L", [0x7007, 0x789b]), ("A4L", [0xaf94, 0x9678]), ("EST", [0, 0x3400])][..], false),
+    ] {
+        fs::write(&binary, [
+            packet,
+            [0x80, 0x41, 0, 0xc6, 0x42, 0x80], // MOVE R0,0x4100
+            [0x80, 0, 0, 0xc0, 0x40, 0xec],     // TRANSFER SP,R0
+            [0x2b, 0xd8, 0, 0x2b, 0xec, 0],
+        ].as_flattened()).unwrap();
+        for (output, expected) in results {
+            let name = format!("pop_{}", output.to_ascii_lowercase());
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict",
+                "--assert", &format!("return %{output} unsigned short"),
+            ]);
+            for (i, input) in inputs.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+            }
+            for (address, cell, _) in cells {
+                kuna.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short {cell}")]);
+            }
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let c = function["code"].as_str().unwrap();
+            assert!(!c.contains("halt_"), "{function}");
+            writeln!(emitted, "{}", c.replace("sub_1000", &name)).unwrap();
+            for (i, table) in [0, 0xffff].into_iter().enumerate() {
+                for (_, cell, before) in cells {
+                    writeln!(main, "{cell} = {before};").unwrap();
+                }
+                write!(main, "if ({name}(0x1000,0x1000,{table},0,0,0,0,0,0xaf94,0x1234) != {}", expected[i]).unwrap();
+                for (address, cell, before) in cells {
+                    let after = match (fallback && i == 1, address) {
+                        (true, 0xffff) => 0x82ef,
+                        (true, 0x7007) => 0xffff,
+                        _ => before,
+                    };
+                    write!(main, " || {cell} != {after}").unwrap();
+                }
+                check += 1;
+                writeln!(main, ") return {check};").unwrap();
+            }
+        }
+    }
+    emitted.push_str(&main);
+    emitted.push_str("return 0;\n}\n");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+    fs::remove_dir_all(specs).unwrap();
+}
+
+#[test]
 fn carmel_mac_and_parallel_add_result_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
