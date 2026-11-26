@@ -7,13 +7,16 @@
 //! now has the alignment the call guarantees ([`entry_alignment`]), and the AND
 //! rules take the 256-byte reading ([`and_operand_nz_mask`]) only for an AND
 //! that writes the stack pointer itself: a prologue's `and rsp,-0x40`, after
-//! which every frame offset is measured from the realigned pointer.
+//! which every frame offset is measured from the realigned pointer. That reading
+//! keeps loads and stores consistent but gives a false constant to arithmetic
+//! that mixes the two bases (`rbp - rsp`), so such a function keeps the mask.
 
 use std::rc::Rc;
 
 use kuna_base::types::{int4, uintb};
 
 use crate::context::{OpId, VarnodeId};
+use crate::kuna_fasthash::FxHashSet;
 use crate::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
@@ -46,13 +49,14 @@ pub(crate) fn entry_alignment(data: &Funcdata, size: int4) -> uintb {
     if align.is_power_of_two() { align } else { 1 << align.ilog2() }
 }
 
-/// The stack alignment an ABI keeps where its 4-byte stack slots misstate it,
-/// or 0 to take the slots: 8 on ARM (AAPCS keeps 8 at every public interface),
-/// AArch64, MIPS, PowerPC, RISC-V, SPARC and LoongArch, whose ABIs keep at
-/// least 8; 2 on the 68000, whose slots say 4 while its stack is word-aligned.
+/// The stack alignment an ABI keeps at every entry where its 4-byte stack slots
+/// misstate it, or 0 to take the slots: 8 on AArch64, MIPS, PowerPC, RISC-V,
+/// SPARC and LoongArch, whose ABIs keep at least 8 at every call; 2 on the
+/// 68000, whose slots say 4 while its stack is word-aligned. ARM keeps its
+/// slots' 4: AAPCS promises 8 only at public interfaces.
 pub(crate) fn abi_stack_align(archid: &str) -> uintb {
     match archid.split(':').next().unwrap_or("") {
-        "ARM" | "AARCH64" | "MIPS" | "PowerPC" | "RISCV" | "sparc" | "Loongarch" => 8,
+        "AARCH64" | "MIPS" | "PowerPC" | "RISCV" | "sparc" | "Loongarch" => 8,
         "68000" => 2,
         _ => 0,
     }
@@ -65,7 +69,11 @@ pub(crate) fn and_operand_nz_mask(data: &Funcdata, vn: VarnodeId, andop: OpId) -
         return 0;
     };
     let nzm = v.get_nz_mask();
-    if v.is_input() && v.is_spacebase() && realigns_frame(data, vn, andop) {
+    if v.is_input()
+        && v.is_spacebase()
+        && realigns_frame(data, vn, andop)
+        && !mixes_bases(data, vn, andop)
+    {
         nzm & !FRAME_ALIGN_BITS
     } else {
         nzm
@@ -96,4 +104,95 @@ fn realigns_frame(data: &Funcdata, spin: VarnodeId, andop: OpId) -> bool {
             })
         })
     })
+}
+
+/// The most stack-derived Varnodes [`mixes_bases`] walks before it gives up and
+/// keeps the mask.
+const MAX_DERIVED: usize = 4096;
+
+/// Does arithmetic, a comparison or a merge take one operand derived from the
+/// realigned stack pointer `andop` writes and another derived from the entry
+/// stack pointer `spin` without it?
+fn mixes_bases(data: &Funcdata, spin: VarnodeId, andop: OpId) -> bool {
+    let Some(aligned) = data.obank().get(andop).and_then(|o| o.get_out()) else {
+        return true;
+    };
+    let (Some(entry), Some(realigned)) =
+        (derived(data, spin, Some(andop)), derived(data, aligned, None))
+    else {
+        return true;
+    };
+    realigned.iter().any(|&vn| {
+        data.vbank().get(vn).is_some_and(|v| {
+            v.descend_iter().any(|d| {
+                data.obank().get(d).is_some_and(|op| {
+                    mixing_op(op.code())
+                        && (0..op.num_input()).any(|i| {
+                            op.get_in(i)
+                                .is_some_and(|x| entry.contains(&x) && !realigned.contains(&x))
+                        })
+                })
+            })
+        })
+    })
+}
+
+/// The Varnodes computed from `root` by address arithmetic and copies, not
+/// through `stop`; `None` past [`MAX_DERIVED`].
+fn derived(data: &Funcdata, root: VarnodeId, stop: Option<OpId>) -> Option<FxHashSet<VarnodeId>> {
+    let mut seen = FxHashSet::default();
+    let mut work = vec![root];
+    seen.insert(root);
+    while let Some(vn) = work.pop() {
+        let v = data.vbank().get(vn)?;
+        for d in v.descend_iter() {
+            if Some(d) == stop {
+                continue;
+            }
+            let Some(op) = data.obank().get(d) else { continue };
+            if !carries_address(op.code()) {
+                continue;
+            }
+            if let Some(out) = op.get_out() {
+                if seen.insert(out) {
+                    if seen.len() > MAX_DERIVED {
+                        return None;
+                    }
+                    work.push(out);
+                }
+            }
+        }
+    }
+    Some(seen)
+}
+
+fn carries_address(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_COPY
+            | OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_INT_2COMP
+            | OpCode::CPUI_INT_MULT
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INDIRECT
+            | OpCode::CPUI_PTRADD
+            | OpCode::CPUI_PTRSUB
+            | OpCode::CPUI_CAST
+    )
+}
+
+fn mixing_op(code: OpCode) -> bool {
+    matches!(
+        code,
+        OpCode::CPUI_INT_ADD
+            | OpCode::CPUI_INT_SUB
+            | OpCode::CPUI_MULTIEQUAL
+            | OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+            | OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL
+    )
 }

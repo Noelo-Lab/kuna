@@ -3604,7 +3604,8 @@ a fixpoint re-pass across the MULTIEQUAL loop edges the DFS clipped. The mask
 feeds the boolean gate in §5.2, sub-variable flow (chapter 03), and dozens of
 simplification rules. An input's mask is its full width, except that the
 stack pointer's low bits are clear to the alignment the target guarantees at
-entry (8 on x86-64, 4 on i386, 8 on the RISC ABIs that keep it, 1 on AVR).
+entry (8 on x86-64, 4 on i386 and ARM, 8 on the RISC ABIs that keep it at
+every call, 1 on AVR).
 Upstream cleared its whole low byte, taking every frame as 256-aligned; the
 AND rules keep that reading only where the AND realigns the stack pointer
 itself (chapter 03, §3.2).

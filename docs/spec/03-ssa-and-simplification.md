@@ -1978,11 +1978,12 @@ folded into a frame offset. The stack pointer at entry is instead aligned to
 what the target guarantees
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_framealign.rs
 (entry_alignment)`): the widest stack-slot alignment of the default
-prototype model's inputs (8 on x86-64, 4 on i386 and SuperH, 1 on AVR and on
-targets with no stack slots, such as the 6502 and 6809), except where the ABI
-keeps another alignment than its slots say (`abi_stack_align`): 8 on ARM,
-AArch64, MIPS, PowerPC, RISC-V, SPARC and LoongArch, 2 on the word-aligned
-68000. It is never more than 8 or twice the pointer width. That is what a
+prototype model's inputs (8 on x86-64, 4 on i386, ARM and SuperH, 1 on AVR
+and on targets with no stack slots, such as the 6502 and 6809), except where
+the ABI keeps another alignment than its slots say at every entry
+(`abi_stack_align`): 8 on AArch64, MIPS, PowerPC, RISC-V, SPARC and
+LoongArch, 2 on the word-aligned 68000. ARM stays at 4: AAPCS promises 8 only
+at public interfaces, not to a static function or an arbitrary entry. It is never more than 8 or twice the pointer width. That is what a
 compiler relies on when it addresses the second word of an 8-byte frame slot
 as `(fp - 0x20) | 4`, as clang does on SPARC. The
 256-byte reading is kept only for a realigned frame, where the AND writes the
@@ -1996,11 +1997,16 @@ does with `(sp + 0x3f) & ~0x3f`, used to print as `&Stack0 - n`, which is the
 machine's address only when the entry stack pointer is a multiple of 64. It
 now prints the rounding:
 `(uint8)&((char *)__builtin_dwarf_cfa() + 0x1f)[-n] & 0xffffffffffffffc0`.
-A known limit of the realigned reading, older than this rule: a difference
-taken across the stack bases before and after the realignment folds to a
-constant. `push rbp; mov rbp,rsp; and rsp,-32; sub rsp,32; mov rax,rbp; sub
-rax,rsp` prints `return 0x38;`, where the machine gives 0x28 or 0x38
-depending on the entry stack pointer.
+The realigned reading keeps every load and store consistent, since the frame
+below the realigned pointer and the one above the entry pointer never
+overlap, but it gives a false constant to arithmetic that mixes the two
+bases: `push rbp; mov rbp,rsp; and rsp,-32; sub rsp,32; mov rax,rbp; sub
+rax,rsp` printed `return 0x38;`, where the machine gives 0x28 or 0x38 by the
+entry stack pointer. So the reading is refused (`mixes_bases`) when an add, a
+subtract, a comparison or a phi takes one operand computed from the realigned
+pointer and another computed from the entry pointer without it; that function
+keeps the mask. Saving the entry pointer to the realigned frame and restoring
+it at exit, as i386 `main` does with `ecx`, mixes nothing.
 
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested

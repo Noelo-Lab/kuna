@@ -56,7 +56,9 @@ order, and only `option guardarm on` lets its layout put the else arm first.
 frame (`(sp + 63) & ~63`, U-Boot's `ALLOC_CACHE_ALIGN_BUFFER`): the call
 argument and the load keep the `& 0xffffffffffffffc0`, and no address is
 printed as if the entry stack pointer were 64-aligned. Its control realigns
-`rsp` itself in the prologue and keeps its 64-byte local a frame variable.
+`rsp` itself in the prologue and keeps its 64-byte local a frame variable. A
+third function returns `rbp - rsp` across a realignment, which is 0x28 or
+0x38 by the entry stack pointer; it keeps the mask instead of `return 0x38;`.
 
 `kuna-boolbranch.xml` checks option `boolbranch` on gcc -O0 x86-64: a `jle`
 over `mov $1`/`mov $0` returns through a kept `if` (fold: `return 0 < x;`), an

@@ -18,6 +18,15 @@
     x86-64, where it is 8 mod 16). realigned is the control: its prologue
     realigns rsp itself (and rsp,-0x40), and its 64-byte local stays a frame
     variable.
+
+    distance returns the gap between the frame before and after realigning:
+
+        0x100100  push rbp; mov rbp,rsp; and rsp,-0x20; sub rsp,0x20
+        0x10010c  mov rax,rbp; sub rax,rsp; leave; ret
+
+    It is 0x28 or 0x38 by the entry rsp. Reading the realigned rsp as
+    entry rsp - 0x20 printed return 0x38; a function that mixes the two
+    bases keeps the mask.
 -->
 <bytechunk space="ram" offset="0x100000">
 554889e55350b8ff010000480347184883c840482540feffff4889e14889
@@ -27,20 +36,28 @@ ca4829c24889d448f7d8488d1c014883c33f4883e3c0ba0100000031f648
 e8230000000fbe44240501d8488d65f85b5dc3cccccccccc31c0c3666666
 662e0f1f840000000000c3
 </bytechunk>
+<bytechunk space="ram" offset="0x100100">
+554889e54883e4e04883ec204889e84829e0c9c3
+</bytechunk>
 </binaryimage>
 <script>
   <com>parse line extern int4 part_test(void *d);</com>
   <com>parse line extern int4 realigned(int4 n);</com>
   <com>parse line extern uint8 blk_dread(void *d,uint8 start,uint8 cnt,void *buf);</com>
   <com>parse line extern void use(void *p,int4 n);</com>
+  <com>parse line extern uint8 distance(void);</com>
   <com>map function r0x100000 part_test</com>
   <com>map function r0x100060 realigned</com>
   <com>map function r0x100090 blk_dread</com>
   <com>map function r0x1000a0 use</com>
+  <com>map function r0x100100 distance</com>
   <com>lo fu part_test</com>
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu realigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu distance</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -48,6 +65,8 @@ e8230000000fbe44240501d8488d65f85b5dc3cccccccccc31c0c3666666
 <stringmatch name="Stack align buffer #1: the rounded buffer is the call argument and the load base" min="2" max="2">__builtin_dwarf_cfa\(\) \+ 0x1f\)\[-\(\(v1 \+ 0x1ffU \| 0x40\) &amp; 0xfffffffffffffe40\)\] &amp; 0xffffffffffffffc0\)</stringmatch>
 <stringmatch name="Stack align buffer #2: the entry stack pointer is not taken as 64-aligned" min="0" max="0">Stack0000000000000000</stringmatch>
 <stringmatch name="Stack align buffer #3: only the buffer is masked, not the realigned frame" min="2" max="2">0xffffffffffffffc0</stringmatch>
+<stringmatch name="Stack align buffer #6: a difference across the realignment is not a constant" min="0" max="0">return 0x38;</stringmatch>
+<stringmatch name="Stack align buffer #7: the realignment that difference reads keeps its mask" min="1" max="1">&amp; 0xffffffffffffffe0</stringmatch>
 <stringmatch name="Stack align buffer #4: the realigned frame keeps its local" min="1" max="1">^  char v1 \[5\]; // stack - 0xc0$</stringmatch>
 <stringmatch name="Stack align buffer #5: the realigned local is passed by name" min="1" max="1">^  use\(v1,n \* 3\);$</stringmatch>
 </decompilertest>
