@@ -31,7 +31,6 @@ impl IFernflowerPreferences {
     pub const PATTERN_MATCHING: &str = "pattern-matching";
     pub const TRY_LOOP_FIX: &str = "try-loop-fix";
     pub const SWITCH_EXPRESSIONS: &str = "decompile-switch-expressions";
-    pub const SIMPLIFY_STACK_SECOND_PASS: &str = "simplify-stack";
     pub const VERIFY_VARIABLE_MERGES: &str = "verify-merges";
     pub const VERIFY_PRE_POST_VARIABLE_MERGES: &str = "verify-pre-post-merges";
     pub const OLD_TRY_DEDUP: &str = "old-try-dedup";
@@ -104,7 +103,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::PATTERN_MATCHING, "1".to_string()),
             (IFernflowerPreferences::TRY_LOOP_FIX, "1".to_string()),
             (IFernflowerPreferences::SWITCH_EXPRESSIONS, "1".to_string()),
-            (IFernflowerPreferences::SIMPLIFY_STACK_SECOND_PASS, "1".to_string()),
             (IFernflowerPreferences::VERIFY_VARIABLE_MERGES, "0".to_string()),
             (IFernflowerPreferences::VERIFY_PRE_POST_VARIABLE_MERGES, "0".to_string()),
             (IFernflowerPreferences::OLD_TRY_DEDUP, "0".to_string()),
@@ -201,7 +199,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "PATTERN_MATCHING", key: IFernflowerPreferences::PATTERN_MATCHING, short_name: Some("pam"), name: Some("Pattern Matching"), description: Some("Decompile with if and switch pattern matching enabled."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "TRY_LOOP_FIX", key: IFernflowerPreferences::TRY_LOOP_FIX, short_name: Some("tlf"), name: Some("Try-Loop fix"), description: Some("Fixes rare cases of malformed decompilation when try blocks are found inside of while loops"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "SWITCH_EXPRESSIONS", key: IFernflowerPreferences::SWITCH_EXPRESSIONS, short_name: Some("swe"), name: Some("Decompile Switch Expressions"), description: Some("Decompile switch expressions in modern Java class files."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "SIMPLIFY_STACK_SECOND_PASS", key: IFernflowerPreferences::SIMPLIFY_STACK_SECOND_PASS, short_name: Some("ssp"), name: Some("Second-Pass Stack Simplification"), description: Some("Simplify variables across stack bounds to resugar complex statements."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "VERIFY_VARIABLE_MERGES", key: IFernflowerPreferences::VERIFY_VARIABLE_MERGES, short_name: Some("vvm"), name: Some("[Experimental] Verify Variable Merges"), description: Some("Tries harder to verify the validity of variable merges. If there are strange variable recompilation issues, this is a good place to start."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "VERIFY_PRE_POST_VARIABLE_MERGES", key: IFernflowerPreferences::VERIFY_PRE_POST_VARIABLE_MERGES, short_name: Some("pvm"), name: Some("[Experimental] Verify Pre Post Variable Merges"), description: Some("Will try to validate that code before and after variable merges is equivalent"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "OLD_TRY_DEDUP", key: IFernflowerPreferences::OLD_TRY_DEDUP, short_name: None, name: Some("[Experimental] Use old try deduplication"), description: Some("Use the old try deduplication algorithm for methods with obfuscated exceptions, which inserts dummy exception handlers instead of duplicating blocks"), type_: Some(OptionType::Boolean), dynamic_default_value: None },

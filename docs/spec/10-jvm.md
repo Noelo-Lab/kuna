@@ -437,7 +437,7 @@ alternates two views of the variables:
   `StackVarsProcessor::iterate_statements` walks the blocks and inlines a variable's
   definition into its use when no intervening write can change the value. Each block is
   swept twice; the second sweep, which also inlines across the boundaries between
-  expressions on the operand stack, runs only under `jvm_simplify_stack`, and it is what
+  expressions on the operand stack, is what
   turns chains of temporaries back into `a = b = c`, `arr[i++] = v` and chained calls.
 
 Both forms are reverted (all versions back to zero) after each use, so each round

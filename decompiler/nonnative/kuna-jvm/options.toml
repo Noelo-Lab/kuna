@@ -408,28 +408,6 @@ tier = "transform"
 symptoms = "switch statement assigning a temporary in every case where a switch expression was written|yield statements misplaced"
 
 [[option]]
-option = "jvm_simplify_stack"
-vineflower = "simplify-stack"
-short = "ssp"
-aliases = ["simplify-stack", "ssp"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p3_dataflow"
-subphase = "stack_vars_processor"
-strength = "HARD"
-rewind = "p3_dataflow"
-issue = ""
-summary = "Run the second stack-variable stage, which inlines stack temporaries across statement boundaries and resugars compound expressions (a = b = c, arr[i++] = v, chained calls)."
-use_when = "Turn off when a merged expression is wrong or reorders side effects, to see each stack temporary as a var assignment."
-example = "kuna decompile app.jar com.ex.Parser --option jvm_simplify_stack off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.SIMPLIFY_STACK_SECOND_PASS (simplify-stack, -ssp)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "var10000 temporaries everywhere (option is off)|compound assignment merges side effects in the wrong order|arr[i++] = v reads differently from the bytecode"
-
-[[option]]
 option = "jvm_verify_merges"
 vineflower = "verify-merges"
 short = "vvm"

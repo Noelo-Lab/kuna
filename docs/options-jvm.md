@@ -63,9 +63,6 @@ Three tiers:
 | loop condition moved into a try block | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
 | switch statement assigning a temporary in every case where a switch expression was written | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
 | yield statements misplaced | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
-| var10000 temporaries everywhere (option is off) | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
-| compound assignment merges side effects in the wrong order | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
-| arr[i++] = v reads differently from the bytecode | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
 | one variable reused for two unrelated values | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
 | variable read before its assignment in the output | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
 | decompiled code does not recompile because of variable scoping | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
@@ -222,15 +219,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p8_structure/switch_expression_helper · vineflower · vineflower-option
 - **Also spelled:** `decompile-switch-expressions`, `swe`
 - **Example:** `kuna decompile app.jar com.ex.Codes --option jvm_decompile_switch_expressions off`
-
-### `jvm_simplify_stack` -- on | off, default `on`
-
-- **Symptoms:** var10000 temporaries everywhere (option is off); compound assignment merges side effects in the wrong order; arr[i++] = v reads differently from the bytecode.
-- **What it does:** Run the second stack-variable stage, which inlines stack temporaries across statement boundaries and resugars compound expressions (a = b = c, arr[i++] = v, chained calls).
-- **When to flip:** Turn off when a merged expression is wrong or reorders side effects, to see each stack temporary as a var assignment.
-- **Where / provenance:** p3_dataflow/stack_vars_processor · vineflower · vineflower-option
-- **Also spelled:** `simplify-stack`, `ssp`
-- **Example:** `kuna decompile app.jar com.ex.Parser --option jvm_simplify_stack off`
 
 ### `jvm_verify_merges` -- on | off, default `off`
 
