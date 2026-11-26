@@ -42,8 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| var = x; inside try followed by return var after the catch | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
-| return inside try reads differently from the bytecode | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
 | synchronized block covers more code than expected | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
 | MonitorEnter/MonitorExit pseudo-calls instead of synchronized | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
 | unbalanced monitor in handwritten bytecode | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
@@ -168,15 +166,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_incorporate_returns` -- on | off, default `on`
-
-- **Symptoms:** var = x; inside try followed by return var after the catch; return inside try reads differently from the bytecode.
-- **What it does:** Move value returns into the try and catch blocks they follow, instead of storing the value in a temporary and returning after the try.
-- **When to flip:** Turn off to see the return placement the bytecode literally has, e.g. when a return-inside-try reading looks wrong.
-- **Where / provenance:** infra/method_processor · vineflower · vineflower-option
-- **Also spelled:** `incorporate-returns`, `ner`
-- **Example:** `kuna decompile app.jar com.ex.Io --option jvm_incorporate_returns off`
 
 ### `jvm_ensure_synchronized_monitors` -- on | off, default `on`
 

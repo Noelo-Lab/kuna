@@ -100,28 +100,6 @@ tier = "core"
 symptoms = "nonsense generic types from a tampered Signature attribute|need erased types that match the method descriptors|raw List where List<String> was expected (option is off)"
 
 [[option]]
-option = "jvm_incorporate_returns"
-vineflower = "incorporate-returns"
-short = "ner"
-aliases = ["incorporate-returns", "ner"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "infra"
-subphase = "method_processor"
-strength = "HARD"
-rewind = "infra"
-issue = ""
-summary = "Move value returns into the try and catch blocks they follow, instead of storing the value in a temporary and returning after the try."
-use_when = "Turn off to see the return placement the bytecode literally has, e.g. when a return-inside-try reading looks wrong."
-example = "kuna decompile app.jar com.ex.Io --option jvm_incorporate_returns off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INCORPORATE_RETURNS (incorporate-returns, -ner)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "var = x; inside try followed by return var after the catch|return inside try reads differently from the bytecode"
-
-[[option]]
 option = "jvm_ensure_synchronized_monitors"
 vineflower = "ensure-synchronized-monitors"
 short = "esm"

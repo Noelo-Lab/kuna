@@ -256,9 +256,7 @@ impl MethodProcessor {
             DeadCodeHelper::extend_synchronized_range_to_monitorexit(graph);
         }
 
-        if DecompilerContext::get_option(IFernflowerPreferences::INCORPORATE_RETURNS) {
-            DeadCodeHelper::incorporate_value_returns(graph);
-        }
+        DeadCodeHelper::incorporate_value_returns(graph);
 
         ExceptionDeobfuscator::insert_empty_exception_handler_blocks(graph);
 
