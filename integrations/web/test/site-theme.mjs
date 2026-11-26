@@ -64,13 +64,13 @@ try {
       assert.ok(scroll <= inner, `${value} at ${width}px scrolls sideways (${scroll} > ${inner})`);
     }
   }
+  assert.deepEqual(page.exceptions, [], 'the landing page threw');
 
   await scheme('dark');
   await page.viewport(1280);
   await page.navigate(`${server.base}/dev-viz/`);
   assert.equal(await paper(), PAPER.light, '/dev-viz/ must stay light');
-
-  assert.deepEqual(page.exceptions.filter((e) => !/data\.json|fetch/i.test(e)), []);
+  assert.deepEqual(page.exceptions, [], '/dev-viz/ threw');
   console.log('SITE THEME OK — light/dark pictures, live swap, 320–1920 px, dev-viz stays light');
 } finally {
   clearTimeout(guard);
