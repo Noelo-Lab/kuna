@@ -4405,6 +4405,17 @@ a prototype an earlier pass already forced, is never replaced. A target with no
 declared prototype (an untyped `void *` field, or a code type without one)
 leaves the site on its model-recovered argument list.
 
+On an Android ELF, a typed call through the GetEnv field of JNIInvokeInterface
+still carries the header's generic output parameter, `void **`. When the
+version argument is a constant JNI version supported by Android, the call site
+refines this parameter to `JNIEnv **`. A successful call then leaves an
+environment pointer in the caller's output slot. Loads through that pointer
+can identify fields such as FindClass and RegisterNatives and apply their
+declared parameter types. A call requesting another interface, such as JVMTI,
+keeps the generic parameter. When another indirect call passes the same output
+address without a known JNI version, the shared location retains its generic
+type. The receiver type and field must both agree with the loaded JNI declaration (`kuna_jnigetenv.rs`).
+
 A prototype whose storage puts a parameter or the return value in one of its
 model's floating-point entries is forced only where the image states a
 convention that keeps such values, doubles included, in floating-point

@@ -1,0 +1,32 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x1000" name="stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/android-jni/aarch64-linux-android.so</com>
+  <com>option jniregister off</com>
+  <com>read symbols</com>
+  <com>load addr 0x48c0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/android-jni/aarch64-linux-android.so</com>
+  <com>read symbols</com>
+  <com>load function JNI_OnLoad</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x48c0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="JNI registration disabled leaves the anonymous byte counter" min="1" max="1">sub_48c0\(</stringmatch>
+<stringmatch name="JNI load hook receives the virtual machine and reserved argument" min="1" max="1">JNI_OnLoad\(JavaVM *\*[^,]+, *void *\*</stringmatch>
+<stringmatch name="JNI invocation table yields an environment" min="1" max="1">GetEnv</stringmatch>
+<stringmatch name="JNI environment names the class lookup" min="1" max="1">FindClass</stringmatch>
+<stringmatch name="JNI environment names the method registration" min="1" max="1">RegisterNatives</stringmatch>
+<stringmatch name="JNI registration names and types the byte counter" min="1" max="1">countBytes[^\(]*\([^\)]*jbyteArray</stringmatch>
+<stringmatch name="JNI array length is called through the registered environment" min="1" max="1">GetArrayLength</stringmatch>
+</decompilertest>
