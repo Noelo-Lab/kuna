@@ -53,6 +53,11 @@ kuna_options! { self, p1;
         self.arm_shift_guard = mode;
         Ok(msg)
     },
+    "rangetest" => {
+        let (mode, msg) = crate::p9_emit::kuna_rangetest::OptionRangeTest.apply(p1)?;
+        self.range_test = mode;
+        Ok(msg)
+    },
     "rustarrayzero" => on_off!(rust_array_zero, "Rust byte-array zero values"),
     "arraynotation" => {
         let (val, msg) = crate::kuna_arraynotation::OptionArrayNotation.apply(p1)?;

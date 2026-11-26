@@ -1671,6 +1671,12 @@ pub struct PrintC {
     /// Per-body spelling of a goto-target leaf whose address label another
     /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
     label_names: std::collections::BTreeMap<BlockId, String>,
+    /// (kuna `rangetest`) The unsigned comparison being pushed and the print
+    /// modifiers it was reached with, before its dispatch scopes them off.
+    pub(crate) range_entry: Option<(OpId, uint4)>,
+    /// (kuna `rangetest`) The operator of the `&&`/`||` chain whose first
+    /// clause is printing.
+    pub(crate) range_chain_head: Option<&'static crate::printlanguage::OpToken>,
 }
 
 impl Default for PrintC {
@@ -1725,6 +1731,8 @@ impl PrintC {
             named_globals: crate::kuna_namedglobals::References::default(),
             unit_calls: crate::kuna_unitcalls::Calls::default(),
             label_names: std::collections::BTreeMap::new(),
+            range_entry: None,
+            range_chain_head: None,
         }
     }
 
@@ -2137,6 +2145,12 @@ impl PrintC {
             }
         }
         self.revpol.push(ReversePolish { tok, visited: 0, paren, op, id, id2: 0 });
+    }
+
+    /// Whether no operator is waiting for operands: the next push starts an
+    /// expression.
+    pub(crate) fn rpn_is_empty(&self) -> bool {
+        self.revpol.is_empty()
     }
 
     /// C++ `PrintLanguage::pushAtom` (printlanguage.cc:162).  Push a leaf token,
@@ -4552,10 +4566,17 @@ impl PrintC {
                 return;
             }
 
+            let tok: &'static crate::printlanguage::OpToken = if opc == OpCode::CPUI_BOOL_AND {
+                &tokens::BOOLEAN_AND
+            } else {
+                &tokens::BOOLEAN_OR
+            };
             let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.context.push_mod();
             self.mark_chain_operand(fd, b0);
+            let head = self.range_chain_head.replace(tok);
             self.emit_block(fd, arch, b0);
+            self.range_chain_head = head;
             self.context.pop_mod();
             self.context.push_mod();
             self.context.unset_mod(modifiers::ONLY_BRANCH);
@@ -4565,20 +4586,17 @@ impl PrintC {
 
             // Emit the && / || token as if it were on the RPN stack (C++ builds a
             // ReversePolish with op==0, visited==1, and calls emitOp).
-            let tok: &'static crate::printlanguage::OpToken = if opc == OpCode::CPUI_BOOL_AND {
-                &tokens::BOOLEAN_AND
-            } else {
-                &tokens::BOOLEAN_OR
-            };
             let pol = ReversePolish { tok, visited: 1, paren: false, op: None, id: 0, id2: 0 };
             self.emit_op(&pol);
 
             let id2 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            let head = self.range_chain_head.take();
             if self.out_lang == crate::kuna_lang::OutLang::Go {
                 self.emit_go_condition_expression(fd, arch, b1);
             } else {
                 self.emit_block(fd, arch, b1);
             }
+            self.range_chain_head = head;
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id2);
             self.context.pop_mod();
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
@@ -6614,6 +6632,9 @@ impl PrintC {
     /// printc.cc:806-830); every other override ignores it.
     pub(crate) fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
+        if matches!(opc, OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL) {
+            self.range_entry = Some((op, self.context.mods()));
+        }
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
         // context, so scope the bit off across this dispatch (the mod-stack
@@ -6955,6 +6976,12 @@ impl PrintC {
         } else {
             tok
         };
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some(split) = self.range_split(fd, arch, op, tok.print1) {
+                self.emit_range_split(fd, arch, op, split);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go && self.op_go_binary(fd, arch, tok, op) {
             return;
         }
