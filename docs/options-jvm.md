@@ -119,8 +119,6 @@ Three tiers:
 | var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
 | parameter names differ from the debug-info names | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
 | unexpected final on parameters | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
-| @Override missing on toString or interface methods (supertype not loaded) | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
-| @Override that javac did not write is unwanted | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
 | decompiled code fails to recompile with an inference error | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
@@ -429,15 +427,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer, var_definition_helper · vineflower · vineflower-option
 - **Also spelled:** `use-method-parameters`, `ump`
 - **Example:** `kuna decompile app.jar com.ex.Api --option jvm_use_method_parameters off`
-
-### `jvm_override_annotation` -- on | off, default `on`
-
-- **Symptoms:** @Override missing on toString or interface methods (supertype not loaded); @Override that javac did not write is unwanted.
-- **What it does:** Add @Override to instance methods (Java 5+ class files) that override or implement a method found in a superclass or interface the decompiler can see.
-- **When to flip:** Turn off for output without inferred annotations; leave on and give a runtime or libraries so supertypes are known.
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `override-annotation`, `ovr`
-- **Example:** `kuna decompile app.jar com.ex.Impl --option jvm_override_annotation off`
 
 ### `jvm_explicit_generics` -- on | off, default `off`
 

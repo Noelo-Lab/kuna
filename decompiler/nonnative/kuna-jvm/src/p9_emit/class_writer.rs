@@ -1731,13 +1731,11 @@ impl ClassWriter {
 
             let annotation_attribute =
                 mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS);
-            let should_apply_override =
-                DecompilerContext::get_option(IFernflowerPreferences::OVERRIDE_ANNOTATION)
-                    && mt.get_bytecode_version().has_override()
-                    && INIT_NAME != mt.get_name()
-                    && CLINIT_NAME != mt.get_name()
-                    && !mt.has_modifier(ACC_STATIC)
-                    && !mt.has_modifier(ACC_PRIVATE);
+            let should_apply_override = mt.get_bytecode_version().has_override()
+                && INIT_NAME != mt.get_name()
+                && CLINIT_NAME != mt.get_name()
+                && !mt.has_modifier(ACC_STATIC)
+                && !mt.has_modifier(ACC_PRIVATE);
 
             if should_apply_override {
                 let is_override = class_writing::overrides(cl, &mt.get_name(), &md);
