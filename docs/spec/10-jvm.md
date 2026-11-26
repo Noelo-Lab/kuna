@@ -883,8 +883,7 @@ a constructor's leading argument-less `super()`;
 `decompiler/nonnative/kuna-jvm/src/p4_calls/class_reference14_processor.rs` turns the
 Java 1.4 class-literal cache into `X.class`;
 `decompiler/nonnative/kuna-jvm/src/p8_structure/enum_processor.rs` removes `$VALUES`,
-`values()`, `valueOf()` and the hidden name and ordinal constructor parameters
-(`jvm_decompile_enums`); and
+`values()`, `valueOf()` and the hidden name and ordinal constructor parameters; and
 `decompiler/nonnative/kuna-jvm/src/p8_structure/record_helper.rs` restores a record's
 canonical constructor and hides the accessors, `equals`, `hashCode` and `toString` that
 match the generated ones. A failure here writes the class as `$VF: Couldn't be decompiled`

@@ -305,9 +305,7 @@ impl KotlinWriter {
                 ClassReference14Processor::process_class_references(node);
             }
 
-            if cl.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
-            {
+            if cl.has_modifier(ACC_ENUM) {
                 KEnumProcessor::clear_enum(wrapper);
             }
 
@@ -575,8 +573,7 @@ impl KotlinWriter {
 
         let fields = cl.get_fields().to_vec();
         for &fd in &fields {
-            let is_enum = fd.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+            let is_enum = fd.has_modifier(ACC_ENUM);
             if is_enum {
                 enum_fields.push(fd);
             }
@@ -1400,8 +1397,7 @@ impl KotlinWriter {
             node.with(|d| d.access)
         };
         let is_deprecated = cl.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
-        let is_enum = DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
-            && (flags & ACC_ENUM) != 0;
+        let is_enum = (flags & ACC_ENUM) != 0;
         let is_interface = (flags & ACC_INTERFACE) != 0;
         let is_annotation = (flags & ACC_ANNOTATION) != 0;
 
@@ -1656,8 +1652,7 @@ impl KotlinWriter {
     ) {
         let is_interface = cl.has_modifier(ACC_INTERFACE);
         let is_deprecated = fd.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
-        let is_enum = fd.has_modifier(ACC_ENUM)
-            && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+        let is_enum = fd.has_modifier(ACC_ENUM);
 
         if is_deprecated && !KotlinWriter::contains_deprecated_annotation(fd.0) {
             KotlinWriter::append_deprecation(buffer, indent);
@@ -1869,8 +1864,7 @@ impl KotlinWriter {
 
             let is_interface = cl.has_modifier(ACC_INTERFACE);
             let is_annotation = cl.has_modifier(ACC_ANNOTATION);
-            let is_enum = cl.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+            let is_enum = cl.has_modifier(ACC_ENUM);
             let is_deprecated = mt.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
             let mut cl_init = false;
             let mut init = false;
@@ -2647,8 +2641,7 @@ impl KotlinWriter {
         } else {
             node.with(|d| d.access)
         };
-        let is_enum = cl.has_modifier(ACC_ENUM)
-            && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+        let is_enum = cl.has_modifier(ACC_ENUM);
 
         if !is_enum
             && ((class_access_flags & KotlinWriter::ACCESSIBILITY_FLAGS)

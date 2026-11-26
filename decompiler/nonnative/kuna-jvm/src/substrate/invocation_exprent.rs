@@ -1794,8 +1794,7 @@ impl InvocationExprent {
                 );
                 is_enum = new_node
                     .with(|d| d.class_struct)
-                    .has_modifier(CodeConstants::ACC_ENUM)
-                    && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+                    .has_modifier(CodeConstants::ACC_ENUM);
             }
         }
         let curr_cls = DecompilerContext::get_current_class_node();

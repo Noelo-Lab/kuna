@@ -326,9 +326,7 @@ impl ClassWriter {
                 ClassReference14Processor::process_class_references(node);
             }
 
-            if cl.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
-            {
+            if cl.has_modifier(ACC_ENUM) {
                 EnumProcessor::clear_enum(wrapper);
             }
 
@@ -714,8 +712,7 @@ impl ClassWriter {
                 let mut non_enum_fields: Vec<StructField> = Vec::new();
 
                 for fd in cl.get_fields().to_vec() {
-                    let is_enum = fd.has_modifier(ACC_ENUM)
-                        && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+                    let is_enum = fd.has_modifier(ACC_ENUM);
                     if is_enum {
                         enum_fields.push(fd);
                     } else {
@@ -1043,8 +1040,7 @@ impl ClassWriter {
         let is_deprecated = cl.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
         let is_synthetic = (flags & ACC_SYNTHETIC) != 0
             || cl.has_attribute(StructGeneralAttribute::ATTRIBUTE_SYNTHETIC);
-        let is_enum = DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
-            && (flags & ACC_ENUM) != 0;
+        let is_enum = (flags & ACC_ENUM) != 0;
         let is_interface = (flags & ACC_INTERFACE) != 0;
         let is_annotation = (flags & ACC_ANNOTATION) != 0;
         let is_module_info =
@@ -1320,8 +1316,7 @@ impl ClassWriter {
 
         let is_interface = cl.has_modifier(ACC_INTERFACE);
         let is_deprecated = fd.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
-        let is_enum = fd.has_modifier(ACC_ENUM)
-            && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+        let is_enum = fd.has_modifier(ACC_ENUM);
 
         if is_deprecated && !ClassWriter::contains_deprecated_annotation(fd.0) {
             ClassWriter::append_deprecation(buffer, indent);
@@ -1636,8 +1631,7 @@ impl ClassWriter {
 
             let is_interface = cl.has_modifier(ACC_INTERFACE);
             let is_annotation = cl.has_modifier(ACC_ANNOTATION);
-            let is_enum = cl.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+            let is_enum = cl.has_modifier(ACC_ENUM);
             let is_deprecated = mt.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
             let mut cl_init = false;
             let mut init = false;
@@ -2529,8 +2523,7 @@ impl ClassWriter {
         } else {
             node.with(|d| d.access)
         };
-        let is_enum = cl.has_modifier(ACC_ENUM)
-            && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+        let is_enum = cl.has_modifier(ACC_ENUM);
         let is_record = cl.get_record_components().is_some();
 
         if !is_enum

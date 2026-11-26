@@ -42,9 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| enum written as class extends Enum with $VALUES | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
-| need the generated values()/valueOf() bodies | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
-| enum constant initializers hide tampered code | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
 | stray outer.getClass(); before outer.new Inner() | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
 | Objects.requireNonNull-like check before an inner class instantiation | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
 | access$000(this) calls left in the output | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
@@ -161,15 +158,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_decompile_enums` -- on | off, default `on`
-
-- **Symptoms:** enum written as class extends Enum with $VALUES; need the generated values()/valueOf() bodies; enum constant initializers hide tampered code.
-- **What it does:** Write enum classes as enum declarations: constants with their arguments and bodies, no $VALUES, values() or valueOf(), and no hidden name/ordinal constructor parameters.
-- **When to flip:** Turn off to see an enum as the plain class javac generates, e.g. when the generated values()/valueOf() or the constant initializers were modified.
-- **Where / provenance:** p9_emit/class_writer, invocation_exprent, method_descriptor · vineflower · vineflower-option
-- **Also spelled:** `decompile-enums`, `den`
-- **Example:** `kuna decompile app.jar com.ex.Color --option jvm_decompile_enums off`
 
 ### `jvm_remove_getclass` -- on | off, default `on`
 

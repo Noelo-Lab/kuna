@@ -100,28 +100,6 @@ tier = "core"
 symptoms = "nonsense generic types from a tampered Signature attribute|need erased types that match the method descriptors|raw List where List<String> was expected (option is off)"
 
 [[option]]
-option = "jvm_decompile_enums"
-vineflower = "decompile-enums"
-short = "den"
-aliases = ["decompile-enums", "den"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer, invocation_exprent, method_descriptor"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Write enum classes as enum declarations: constants with their arguments and bodies, no $VALUES, values() or valueOf(), and no hidden name/ordinal constructor parameters."
-use_when = "Turn off to see an enum as the plain class javac generates, e.g. when the generated values()/valueOf() or the constant initializers were modified."
-example = "kuna decompile app.jar com.ex.Color --option jvm_decompile_enums off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILE_ENUM (decompile-enums, -den)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "enum written as class extends Enum with $VALUES|need the generated values()/valueOf() bodies|enum constant initializers hide tampered code"
-
-[[option]]
 option = "jvm_remove_getclass"
 vineflower = "remove-getclass"
 short = "rgn"

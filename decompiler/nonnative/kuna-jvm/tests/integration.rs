@@ -40,8 +40,6 @@ mod kuna_spans;
 mod kuna_deadline;
 #[path = "kuna_driver.rs"]
 mod kuna_driver;
-#[path = "trace_sweep.rs"]
-mod trace_sweep;
 #[path = "kuna_stackguard.rs"]
 mod kuna_stackguard;
 #[path = "kuna_driver_determinism.rs"]
