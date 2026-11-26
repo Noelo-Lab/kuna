@@ -4034,6 +4034,27 @@ suppress the address update when the override is enabled. The disconnected
 latches its first input into `X1` and sends the high result word to
 `INTBASE` without driving arithmetic status.
 
+Covered wide accumulating multiply forms distinguish guard and control
+writeback. The guard adds its unsigned byte at bit 16, or at bit zero
+for the shifted-addend variant, and takes bits 16–23 of the sum. It
+leaves the accumulator halves unchanged and bypasses automatic limiting.
+The signed, unsigned, and mixed products use their own operand extension
+and the incoming multiply scale. The square selector reads its other
+operand twice and can feed that word to `X1`. A DATA source samples its
+effective word address even when its address generator also updates the
+pointer. A first DATA operand feeds `X1`; an accumulator-half first
+operand does not.
+
+The connected control results accumulate from the old register word
+aligned at bit 16. They write the upper result word without automatic
+limiting, even when `ECFG.ALIM` is set. The covered rounded control form
+rounds ties upward even when `ECFG.R` is set. The routes include `FF1`
+through its alternate selector and full-word
+`ECFG`, `CECFG1`, and `PACFG` writes. A zero product can leave a control
+word unchanged without disconnecting the port. Neither the guard nor
+these control results drive the arithmetic flags; conditional-execution
+feedback still publishes.
+
 The printed wide ALU selector does not always identify a write port. Direct
 `PSTATUS` and `USER_IO` can discard the result, while the covered SUB aliases
 write the upper word of an unaligned difference without driving ALU flags.
@@ -4144,6 +4165,19 @@ comparison keeps the old value or a qualified result is vetoed.
 For covered wide shift routes, the word result uses the upper half of
 the low 32-bit lane. The word and long carry taps differ, and the guard
 can keep the zero flag clear when the written word is zero.
+
+Covered compact word shifts align their input to the upper word of the
+40-bit shifter. They publish the selected word but set `Z`, `M`, and `E`
+from the entire aligned result, and select carry from the 16-bit input
+lane on a left shift. The count is signed: six bits from the word
+immediate or seven low bits from the count register. `ASHIFT` applies
+`ALIM` after sampling flags. The covered full-accumulator logical form
+zero-extends its `RN` source, clips its count to 40 bits, and takes carry
+from the 40-bit lane. A qualified shift on the active lane publishes its
+result and status only when CE1 is enabled. The same compact opcode in
+the parallel right lane of a NOP pair does not shift or write DATA, but
+the indexed long DATA form still updates its pointer; a sequential right
+slot instead executes its admitted shifter form.
 
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source

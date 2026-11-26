@@ -403,6 +403,24 @@ define token slot (24)
     slot_15_15 = (15,15)
     slot_14_15 = (14,15)
     shift_0_src = (8,12)
+    shift_word_literal = (1,6) signed
+    shift_word_literal_bits = (1,6)
+    shift_literal_dst = (12,15)
+    shift_literal_src = (7,11)
+    shift_word_dst = (10,13)
+    shift_word_src = (5,9)
+    shift_rn_src = (8,12)
+    shift_word_r = (10,12)
+    shift_agu_base = (8,10)
+    shift_agu_step = (8,10)
+    shift_agu_rm = (8,10)
+    shift_agu_rl = (8,10)
+    shift_agu_mode = (8,10)
+    shift_agu_src = (5,7)
+    shift_agu_count = (1,4)
+    slot_11_12 = (11,12)
+    slot_11_11 = (11,11)
+    slot_12_22 = (12,22)
     slot_10_12 = (10,12)
     slot_9_12 = (9,12)
     slot_16_22 = (16,22)
@@ -521,6 +539,11 @@ define token wide (48)
     wide_div_literal = (24,39) hex
     wide_div_ce_bank = (46,46)
     wide_mac_prefix = (46,46)
+    wide_acc_mac_op = (16,22)
+    wide_acc_mac_dst = (8,15)
+    wide_acc_mac_first = (1,7)
+    wide_acc_mac_absolute = (24,39) hex
+    wide_acc_mac_displacement = (24,31) signed
     wide_call_offset_0 = (24,45) hex
     wide_call_offset_22 = (0,1) hex
     wide_9_22 = (9,22)
@@ -697,6 +720,17 @@ attach variables [shift_0_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [shift_0_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [shift_0_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [shift_0_src] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [shift_literal_dst shift_word_dst] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [shift_literal_src] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [shift_word_src] [_ _ _ _ _ _ _ _ RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [shift_rn_src] [_ _ _ _ _ _ _ _ RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
+attach variables [shift_word_r shift_agu_base] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [shift_agu_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [shift_agu_rm] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [shift_agu_rl] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [shift_agu_mode] [0 2 4 6 8 10 12 14];
+attach variables [shift_agu_src] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [shift_agu_count] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
 attach variables [mac_left] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
 attach variables [mac_right] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
 attach variables [mac_lo] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
@@ -1650,6 +1684,143 @@ macro unary_ce(cfg, est, tbl, bank, enabled) {
     local index:2 = (first << 2) | (second << 1) | third;
     enabled = (tbl >> (index + bank * 8)) & 1;
     <unary_ce_ready>
+}
+
+# The compact word port carries a 16-bit input in the upper lane of the
+# shifter. Its flags see the 24 bits that remain above the low result word.
+macro compact_shift_word(input, n, result, flags) {
+    local carry_bit:1 = (EST & 1) != 0;
+    local lane:4 = input;
+    if (n == 0) goto <align>;
+    if (n s< 0) goto <right>;
+    carry_bit = 0;
+    if (n > 16) goto <left>;
+    carry_bit = ((lane >> (16 - n)) & 1) != 0;
+  <left>
+    if (n < 24) goto <shift_left>;
+    lane = 0;
+    goto <align>;
+  <shift_left>
+    lane = (lane & 0xffffff) << n;
+    goto <align>;
+  <right>
+    local distance:4 = 0 - n;
+    if (distance <= 17) goto <shift_right>;
+    distance = 17;
+  <shift_right>
+    carry_bit = ((lane s>> (distance - 1)) & 1) != 0;
+    lane = lane s>> distance;
+  <align>
+    result = zext(lane & 0xffffff) << 16;
+    shift_flags(result, carry_bit, flags);
+}
+
+macro compact_word_logical(destination, source, count) {
+    local input:4 = zext(source);
+    local n:4 = (count ^ 32) - 32;
+    local result:8;
+    local flags:2;
+    compact_shift_word(input, n, result, flags);
+    destination = result(2);
+    EST = (EST & 0xffc6) | flags;
+}
+
+macro compact_word_arithmetic(destination, source, count) {
+    local input:4 = sext(source);
+    local n:4 = (zext(count & 127) ^ 64) - 64;
+    local result:8;
+    local flags:2;
+    compact_shift_word(input, n, result, flags);
+    shift_limit(result, flags);
+    destination = result(2);
+    EST = (EST & 0xffc6) | flags;
+}
+
+macro compact_word_logical_store(pointer, source, count) {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <done>;
+    local input:4 = zext(source);
+    local n:4 = (zext(count & 127) ^ 64) - 64;
+    local result:8;
+    local flags:2;
+    compact_shift_word(input, n, result, flags);
+    *[data]:2 pointer = result(2);
+    EST = (EST & 0xffc6) | flags;
+  <done>
+}
+
+macro compact_long_logical_ce(lo, hi, guard, source, count) {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <done>;
+    local n:4 = (count ^ 64) - 64;
+    local input:8 = zext(source);
+    local result:8 = input;
+    local carry_bit:1 = (EST & 1) != 0;
+    if (n == 0) goto <publish>;
+    if (n s< 0) goto <right>;
+    if (n <= 40) goto <left>;
+    n = 40;
+  <left>
+    carry_bit = ((input >> (40 - n)) & 1) != 0;
+    result = (input << n) & 0xffffffffff;
+    goto <publish>;
+  <right>
+    local distance:4 = 0 - n;
+    if (distance <= 40) goto <shift_right>;
+    distance = 40;
+  <shift_right>
+    carry_bit = ((input >> (distance - 1)) & 1) != 0;
+    result = input >> distance;
+  <publish>
+    local flags:2;
+    shift_flags(result, carry_bit, flags);
+    shift_write(lo, hi, guard, result, flags);
+  <done>
+}
+
+@define SHIFT_SEQ "((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))"
+@define SHIFT_WORD_IMM "slot_16_22=0x39 & slot_0_0=0 & (slot_13_14=0 | slot_13_14=1 | slot_13_14=2) & shift_literal_dst & slot_11_11=1 & (slot_8_9=0 | slot_8_9=1 | slot_8_9=2) & shift_literal_src & shift_word_literal"
+@define SHIFT_RN_IMM "slot_16_22=0x38 & slot_0_0=1 & (slot_15_15=0 | slot_14_15=2) & shift_0_dst & slot_11_12=1 & shift_rn_src & shift_count"
+@define SHIFT_WORD_AS "slot_14_22=0xfb & slot_0_0=0 & (slot_11_12=0 | slot_11_12=1 | slot_11_12=2) & shift_word_dst & slot_9_9=1 & (slot_6_7=0 | slot_6_7=1 | slot_6_7=2) & shift_word_src & slot_1_4=6"
+@define SHIFT_WORD_DATA "slot_14_22=0xec & slot_0_0=1 & slot_13_13=0 & shift_word_r & slot_7_9=2 & shift_word_src & slot_1_4=6"
+@define SHIFT_LONG_AGU "slot_12_22=0x3fc & slot_0_0=0 & slot_11_11=1 & shift_agu_base & (slot_6_7=0 | slot_6_7=1 | slot_6_7=2) & shift_agu_src & (slot_1_4=0 | slot_1_4=1 | slot_1_4=2 | slot_1_4=3 | slot_1_4=4 | slot_1_4=5) & shift_agu_count"
+
+:LSHIFT shift_literal_dst,shift_literal_src,shift_word_literal is $(SHIFT_SEQ) & $(SHIFT_WORD_IMM) & shift_word_literal_bits {
+    compact_word_logical(shift_literal_dst, shift_literal_src, shift_word_literal_bits:4);
+}
+:LSHIFT shift_literal_dst,shift_literal_src,shift_word_literal "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(SHIFT_WORD_IMM) & shift_word_literal_bits); (slot_mode=0 & nop_right) {
+    compact_word_logical(shift_literal_dst, shift_literal_src, shift_word_literal_bits:4);
+}
+:^nop_left "||" "LSHIFT" shift_literal_dst,shift_literal_src,shift_word_literal is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SHIFT_WORD_IMM)) { }
+
+:LSHIFT shift_0_dst,shift_rn_src,shift_count is $(SHIFT_SEQ) & $(SHIFT_RN_IMM) & shift_count_encoding & shift_0_dst_lo & shift_0_dst_hi & shift_0_dst_guard {
+    compact_long_logical_ce(shift_0_dst_lo, shift_0_dst_hi, shift_0_dst_guard, shift_rn_src, shift_count_encoding:4);
+}
+:LSHIFT shift_0_dst,shift_rn_src,shift_count "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(SHIFT_RN_IMM) & shift_count_encoding & shift_0_dst_lo & shift_0_dst_hi & shift_0_dst_guard); (slot_mode=0 & nop_right) {
+    compact_long_logical_ce(shift_0_dst_lo, shift_0_dst_hi, shift_0_dst_guard, shift_rn_src, shift_count_encoding:4);
+}
+:^nop_left "||" "LSHIFT" shift_0_dst,shift_rn_src,shift_count is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SHIFT_RN_IMM)) { }
+
+:ASHIFT shift_word_dst,shift_word_src,"FF1" is $(SHIFT_SEQ) & $(SHIFT_WORD_AS) {
+    compact_word_arithmetic(shift_word_dst, shift_word_src, FF1);
+}
+:ASHIFT shift_word_dst,shift_word_src,"FF1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(SHIFT_WORD_AS)); (slot_mode=0 & nop_right) {
+    compact_word_arithmetic(shift_word_dst, shift_word_src, FF1);
+}
+:^nop_left "||" "ASHIFT" shift_word_dst,shift_word_src,"FF1" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SHIFT_WORD_AS)) { }
+
+:LSHIFT "("shift_word_r")",shift_word_src,"FF1" is $(SHIFT_SEQ) & $(SHIFT_WORD_DATA) {
+    compact_word_logical_store(shift_word_r, shift_word_src, FF1);
+}
+:LSHIFT "("shift_word_r")",shift_word_src,"FF1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(SHIFT_WORD_DATA)); (slot_mode=0 & nop_right) {
+    compact_word_logical_store(shift_word_r, shift_word_src, FF1);
+}
+:^nop_left "||" "LSHIFT" "("shift_word_r")",shift_word_src,"FF1" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SHIFT_WORD_DATA)) { }
+
+:^nop_left "||" "ASHIFT" "("shift_agu_base"+="shift_agu_step")",shift_agu_src,shift_agu_count is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SHIFT_LONG_AGU) & shift_agu_step & shift_agu_rm & shift_agu_rl & shift_agu_mode) {
+    modify_ptr(shift_agu_base, shift_agu_step, shift_agu_rm, shift_agu_rl, shift_agu_mode, 1);
 }
 
 @define WIDE_IMMEDIATE_LOOP "wide_right_mode=1 & wide_14_22=0x138 & wide_loop_tag=1 & wide_loop_delay_high & (wide_loop_count_high>0 | wide_loop_count_low>0) & $(BLOCK_LOOP_PLAN)"
@@ -4424,6 +4595,95 @@ macro raw_mac_add(left, right, carry_in, short_result, store, result, flags) {
 
 macro raw_mac_word(value, result) {
     result = ((zext(value) ^ 0x8000) - 0x8000) << 16;
+}
+
+# The guard and control ports use the upper word of the same scaled product,
+# but align their addends differently. Neither port drives arithmetic flags.
+macro wide_mac_guard_result(guard, product, alignment) {
+    local sum:8 = (zext(guard) << alignment) + product;
+    guard = sum(2);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro wide_mac_control_result(destination, delta) {
+    # The addend is already aligned to the high word. The control port
+    # discards the guard instead of applying ECFG.ALIM.
+    local update:8 = delta;
+    destination = destination + update(2);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+@define WIDE_ACC_MAC "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1"
+@define WIDE_ACC_MAC_A01 "$(WIDE_ACC_MAC) & wide_acc_mac_first=0x50 & wide_0_0=1 & wide_40_45=0x11"
+@define WIDE_ACC_MAC_A01_WORD "$(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x28"
+
+:MACH "GB3","A0L","A1L" is $(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x27 & wide_acc_mac_dst=0x83 {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 1:1, product);
+    wide_mac_guard_result(GB3, product, 0:4);
+}
+:MAC "GB3","A0L","A1L" is $(WIDE_ACC_MAC_A01_WORD) & wide_acc_mac_dst=0x83 {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 1:1, product);
+    wide_mac_guard_result(GB3, product, 16:4);
+}
+:MACUU "GB3","A0L","A1L" is $(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x2b & wide_acc_mac_dst=0x83 {
+    local product:8;
+    raw_mac_product(A0L, A1L, 0:1, 0:1, product);
+    wide_mac_guard_result(GB3, product, 16:4);
+}
+:MACH "GB5","R5","*R0--" is $(WIDE_ACC_MAC) & wide_acc_mac_op=0x27 & wide_acc_mac_dst=0x85 & wide_acc_mac_first=0x65 & wide_0_0=0 & wide_40_45=0x18 {
+    local left:2 = R5;
+    local address:2 = R0;
+    modify_ptr(R0, 0:2, RM0, RL0, 0, 3);
+    local right:2 = *[data]:2 address;
+    local product:8;
+    raw_mac_product(left, right, 1:1, 1:1, product);
+    X1 = left;
+    wide_mac_guard_result(GB5, product, 0:4);
+}
+:MACH "GB3","OP3","MINMAX" is $(WIDE_ACC_MAC) & wide_acc_mac_op=0x27 & wide_acc_mac_dst=0x83 & wide_acc_mac_first=0x4e & wide_0_0=1 & wide_40_45=0x3a {
+    local operand:2 = MINMAX;
+    local product:8;
+    raw_mac_product(operand, operand, 1:1, 1:1, product);
+    X1 = operand;
+    wide_mac_guard_result(GB3, product, 0:4);
+}
+
+wide_acc_mac_control: "RL2" is wide_acc_mac_dst=0xb1 { export RL2; }
+wide_acc_mac_control: "FF1" is wide_acc_mac_dst=0xbe { export FF1; }
+wide_acc_mac_control: "X1" is wide_acc_mac_dst=0x9e { export X1; }
+wide_acc_mac_control: "CECFG1" is wide_acc_mac_dst=0xc2 { export CECFG1; }
+wide_acc_mac_control: "PACFG" is wide_acc_mac_dst=0xda { export PACFG; }
+:MAC wide_acc_mac_control,"A0L","A1L" is $(WIDE_ACC_MAC_A01_WORD) & wide_acc_mac_control {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 1:1, product);
+    wide_mac_control_result(wide_acc_mac_control, product);
+}
+:MSUUS "ECFG","*R3+=RN3","RM0" is $(WIDE_ACC_MAC) & wide_acc_mac_op=0x2e & wide_acc_mac_dst=0xc0 & wide_acc_mac_first=0x0b & wide_0_0=1 & wide_40_45=0x32 {
+    local address:2 = R3;
+    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
+    local left:2 = *[data]:2 address;
+    local product:8;
+    raw_mac_product(left, RM0, 0:1, 1:1, product);
+    X1 = left;
+    wide_mac_control_result(ECFG, -product);
+}
+:MACR "RL2","*R6+"^wide_acc_mac_displacement,"R7" is $(WIDE_ACC_MAC) & wide_acc_mac_op=0x20 & wide_acc_mac_dst=0xb1 & wide_acc_mac_first=0x26 & wide_0_0=1 & wide_40_45=0x27 & wide_acc_mac_displacement {
+    local address:2 = R6 + wide_acc_mac_displacement;
+    local left:2 = *[data]:2 address;
+    local product:8;
+    raw_mac_product(left, R7, 1:1, 1:1, product);
+    X1 = left;
+    wide_mac_control_result(RL2, product + 0x8000);
+}
+:MACUS "RL2","*"^wide_acc_mac_absolute,"RN1" is $(WIDE_ACC_MAC) & wide_acc_mac_op=0x2a & wide_acc_mac_dst=0xb1 & wide_acc_mac_first=0x3e & wide_0_0=1 & wide_40_45=0x29 & wide_acc_mac_absolute {
+    local address:2 = wide_acc_mac_absolute;
+    local left:2 = *[data]:2 address;
+    local product:8;
+    raw_mac_product(left, RN1, 0:1, 1:1, product);
+    X1 = left;
+    wide_mac_control_result(RL2, product);
 }
 
 :MSU "INTBASE","RF4","*R3" is $(WIDE_ROUTED_ALU) & wide_mac_prefix=0 & wide_0_22=0x2cd6f8 & wide_40_45=3 {
