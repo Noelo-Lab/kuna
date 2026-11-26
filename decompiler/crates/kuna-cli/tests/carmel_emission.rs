@@ -3027,6 +3027,58 @@ fn carmel_wide_mac_flag_sink_and_fallback_word_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_wide_msu_result_mux_executes_in_emitted_c() {
+    let binary = common::scratch_file("carmel-wide-msu-mux", "bin");
+    let specs = binary.with_extension("specs");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    tracked_carmel_entry_specs(&specs, &[
+        ("R5", 0x4048), ("PACFG", 0), ("FF1", 1), ("A0L", 1), ("A5L", 9),
+        ("A5H", 2), ("GB5", 0), ("ECFG", 0), ("EST", 0), ("CECFG1", 0x1000),
+        ("CECFG2", 0x1000), ("CETBL", 0xffff),
+    ], 0x1000, 0);
+    let rows = [
+        (0x8d, "A5L", 0x6000, 8, 0x6000),
+        (0x8e, "EST", 0x6000, 0x3011, 0x6000),
+        (0x8f, "EST", 0, 0x3010, 0xffff),
+        (0x8f, "X1", 1, 1, 0),
+        (0x90, "A0L", 0x6000, 0, 0x6000),
+        (0x90, "R5", 0x6000, 0x4049, 0x6000),
+    ];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n\
+                             volatile unsigned short input_word = 1, fallback_word;\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (i, (dst, result, old, expected, stored)) in rows.into_iter().enumerate() {
+        let body = [[0x95, 0x87, 0x65, 0xac, dst, 0xfc], [0x2b, 0xd8, 0, 0x2b, 0xec, 0]];
+        fs::write(&binary, body.as_flattened()).unwrap();
+        let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict",
+                "--assert", &format!("return %{result} unsigned short"),
+                "--assert", "data [data,0x4048] volatile unsigned short input_word",
+                "--assert", "data [data,0xffff] volatile unsigned short fallback_word",
+            ]));
+        let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &doc["functions"][0];
+        let text = function["code"].as_str().unwrap();
+        assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+        writeln!(c, "#define sub_1000 msu_{i}\n{text}\n#undef sub_1000").unwrap();
+        writeln!(calls,
+            "fallback_word = {old}; if (msu_{i}() != {expected} || fallback_word != {stored} || input_word != 1) return {};",
+            i + 1).unwrap();
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(&specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_parallel_logic_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

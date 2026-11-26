@@ -3946,6 +3946,11 @@ For MACR on this lane, rounding ties upward precedes flag calculation;
 `SR1` does not enter flag calculation. Limiting and the final DATA
 shift select the stored word separately from the arithmetic flags.
 MACSU bypasses DATA limiting.
+The unqualified `MSU FF1,*R5++` source pair samples DATA at the
+old `R5` and latches `FF1` into `X1` independently of the result port.
+The result multiplexer selects a complete `A5` update, the flags-only
+lane with addend -1, the fallback DATA word, or the high-word result
+into `A0L` without changing its high half or guard.
 
 The supported CE-qualified wide `DIVIDE` forms distinguish a short absolute
 DATA operand from a literal and from a long absolute DATA operand. Long

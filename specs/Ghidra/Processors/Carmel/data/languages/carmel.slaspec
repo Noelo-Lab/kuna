@@ -5942,6 +5942,60 @@ macro wide_mac_fallback_word(product, subtract, rounded, limit_product) {
     wide_mac_fallback_word(product, 0:8, 1:1, 1:1);
 }
 
+@define WIDE_MSU_FF1_R5 "$(WIDE_ACC_MAC) & wide_acc_mac_op=0x2c & wide_acc_mac_first=0x7e & wide_0_0=0 & wide_40_45=0x15"
+
+macro wide_msu_ff1_r5(product) {
+    local address:2 = R5;
+    modify_ptr(R5, 0:2, RM4, RL4, 10, 2);
+    local left:2 = FF1;
+    local right:2 = *[data]:2 address;
+    X1 = left;
+    raw_mac_product(left, right, 1:1, 1:1, product);
+}
+
+macro wide_msu_mux_result(base, product, short_result, result, flags) {
+    local raw:8 = (base & 0xffffffffff) + (~product & 0xffffffffff) + 1;
+    raw_mac_finish(base - product, raw, short_result, short_result, 0:1, result, flags);
+}
+
+:MSU "A5","FF1","*R5++" is $(WIDE_MSU_FF1_R5) & wide_acc_mac_dst=0x8d {
+    local product:8;
+    wide_msu_ff1_r5(product);
+    local old:8;
+    compact_long_sample(A5L, A5H, GB5, old);
+    local base:8 = (old ^ 0x8000000000) - 0x8000000000;
+    local result:8;
+    local flags:2;
+    wide_msu_mux_result(base, product, 0:1, result, flags);
+    A5L = result:2;
+    A5H = result(2);
+    GB5 = result(4);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+:MSU "RMW2","FF1","*R5++" is $(WIDE_MSU_FF1_R5) & wide_acc_mac_dst=0x8e {
+    local product:8;
+    wide_msu_ff1_r5(product);
+    local result:8;
+    local flags:2;
+    wide_msu_mux_result(-1:8, product, 0:1, result, flags);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+:MSU "*0xffff","FF1","*R5++" is $(WIDE_MSU_FF1_R5) & wide_acc_mac_dst=0x8f {
+    local product:8;
+    wide_msu_ff1_r5(product);
+    wide_mac_fallback_word(product, 1:8, 0:1, 1:1);
+}
+:MSU "A0L","FF1","*R5++" is $(WIDE_MSU_FF1_R5) & wide_acc_mac_dst=0x90 {
+    local product:8;
+    wide_msu_ff1_r5(product);
+    local base:8 = sext(A0L) * (1 + 0xffff * zext(ECFG & 1));
+    local result:8;
+    local flags:2;
+    wide_msu_mux_result(base, product, 1:1, result, flags);
+    A0L = result(2);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
 :MACH "GB3","A0L","A1L" is $(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x27 & wide_acc_mac_dst=0x83 {
     local product:8;
     raw_mac_product(A0L, A1L, 1:1, 1:1, product);
