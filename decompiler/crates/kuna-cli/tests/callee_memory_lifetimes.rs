@@ -136,6 +136,7 @@ int callee_const_write(const struct CalleePair *p) { ((struct CalleePair *)p)->f
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn proven_leaf_observers_allow_unread_bytes_to_be_overwritten() {
     common::process::required_output(&mut Command::new(common::fixture(
         "lifetimes_callee_x86_64",
@@ -174,11 +175,13 @@ fn hidden_aliases_all_branch_reads_and_const_writes_keep_native_behavior() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn stack_arguments_and_direct_frame_effects_preserve_native_cdecl_behavior() {
     stack_argument_cases("lifetimes_callee_stack_x86", true);
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn stack_arguments_and_direct_frame_effects_preserve_native_sysv_behavior() {
     stack_argument_cases("lifetimes_callee_stack_x86_64", false);
 }

@@ -495,6 +495,7 @@ fn joined_register_identity_survives_separate_decompiles() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn joined_register_asserted_body_matches_native_aggregate() {
     use std::process::Command;
     common::process::required_output(&mut Command::new(common::fixture("lifetimes_join_x86_64")));
@@ -581,6 +582,7 @@ fn same_instruction_register_and_temporary_names_survive_replay() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn named_scalar_temporaries_execute_the_native_multiply() {
     use std::process::Command;
     common::process::required_output(&mut Command::new(common::fixture(

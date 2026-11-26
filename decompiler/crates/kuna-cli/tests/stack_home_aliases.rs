@@ -49,6 +49,7 @@ fn decompile() -> String {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn reused_home_and_argument_slots_keep_call_keys() {
     common::process::required_output(&mut Command::new(common::fixture(FIXTURE)));
     let code = decompile();

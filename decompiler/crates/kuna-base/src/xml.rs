@@ -2342,7 +2342,7 @@ mod tests {
         // and kuna-sparc-trap-resume / a branch after a delay-slot trap is the trap's resume
         // and kuna-ptrfromuse-faroffset / a parameter read only at field offsets of 0x1000 or more is a pointer
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
-        assert_eq!(count, 939, "corpus file count drifted");
+        assert_eq!(count, 940, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
