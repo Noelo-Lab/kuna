@@ -3907,6 +3907,15 @@ result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
 `CLRBTR` clears only its physical backtrace port; a veto preserves it.
 
+The supported CE-qualified wide `DIVIDE` forms distinguish a short absolute
+DATA operand from a literal and from a long absolute DATA operand. Long
+DATA contains the low word first; the second word address wraps. The trial
+subtract tests the signed 40-bit dividend after doubling it, before
+truncating the result. Low, high and guard accumulator views select different
+physical windows. In the admitted A0 views, the result can reach part of A1
+without overwriting the remaining halves of A0 or A1. A CE veto suppresses
+all of those result writes.
+
 The covered CE-qualified compact register `ADD` and `OR` forms decode
 the X source selector separately from the physical ALU. Selector 14
 reads `X1` on the primary ALU, including a sequential right issue, and

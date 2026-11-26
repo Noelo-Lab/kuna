@@ -3034,6 +3034,100 @@ fn carmel_uncommon_native_ports_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_wide_divide_absolute_views_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-divide", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT44(h,l) (((uint64_t)(uint32_t)(h) << 32) | (uint32_t)(l))\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    let routes = [
+        (0x4858u16, 0x55, [0x89d1dd24b5, 0, 0], [0x13a3ba496a, 0, 0]),
+        (0x4858, 0x01, [0, 0xea433809a4, 0x6a834cecd0], [0, 0xd4433809a4, 0x6a000000a0]),
+        (0x4858, 0x15, [0x89d1dd24b5, 0, 0], [0x13d1dd24b5, 0, 0]),
+        (0x4858, 0x61, [0, 0xea433809a4, 0x6a834cecd0], [0, 0xd4867109a4, 0x6a834c0000]),
+        (0x4858, 0x75, [0x89d1dd24b5, 0, 0], [0x13a3bb24b5, 0, 0]),
+        (1, 0x54, [0x1012345678, 0, 0], [0x1f2468acf1, 0, 0]),
+        (1, 0x55, [0x1012345678, 0, 0], [0x202467acf1, 0, 0]),
+    ];
+    for (row, (address, selector, before, after)) in routes.into_iter().enumerate() {
+        let [address_hi, address_lo] = address.to_be_bytes();
+        fs::write(&binary, [
+            [0x3c, address_hi, address_lo, 0xc3, 0x16, selector],
+            [0x2b, 0xd8, 0, 0x2b, 0xec, 0],
+        ].as_flattened()).unwrap();
+        let mut inputs = Vec::new();
+        let mut results = Vec::new();
+        if before[0] != 0 {
+            inputs.extend([("A5L", "unsigned short"), ("A5H", "unsigned short"), ("GB5", "unsigned char")]);
+            results.extend((0..3).map(|slot| (slot, 0)));
+        } else {
+            inputs.extend([
+                ("A0L", "unsigned short"), ("A0H", "unsigned short"), ("GB0", "unsigned char"),
+                ("A1L", "unsigned short"), ("A1H", "unsigned short"), ("GB1", "unsigned char"),
+            ]);
+            results.extend((0..6).map(|slot| (slot, 1 + slot / 3)));
+        }
+        inputs.extend([("EST", "unsigned short"), ("CECFG1", "unsigned short"),
+                       ("CECFG2", "unsigned short"), ("CETBL", "unsigned short")]);
+        let low = format!("divide_{row}_low");
+        let high = format!("divide_{row}_high");
+        writeln!(c, "volatile unsigned short {low} = {};", u8::from(address == 1)).unwrap();
+        if selector != 0x54 {
+            writeln!(c, "volatile unsigned short {high};").unwrap();
+        }
+        let lane = |value: u64, slot: usize| (value >> ((slot % 3) * 16)) as u16;
+        for (slot, bank) in results.into_iter().chain([(inputs.len() - 4, 3)]) {
+            let (reg, ty) = inputs[slot];
+            let name = format!("divide_{row}_{reg}");
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict", "--assert", &format!("return %{reg} {ty}"),
+                "--assert", &format!("data [data,{address:#x}] volatile unsigned short {low}"),
+            ]);
+            if selector != 0x54 {
+                kuna.args(["--assert", &format!("data [data,{:#x}] volatile unsigned short {high}", address + 1)]);
+            }
+            for (i, (input, ty)) in inputs.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} {ty} in_{}", input.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            let text = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            writeln!(c, "#define sub_0 {name}\n{text}\n#undef sub_0").unwrap();
+            for table in [0, 0xffff] {
+                let accumulator_inputs = inputs.len() - 4;
+                let arguments = (0..accumulator_inputs)
+                    .map(|i| lane(before[if accumulator_inputs == 3 { 0 } else { 1 + i / 3 }], i))
+                    .chain([0, 0x1000, 0x1000, table])
+                    .map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
+                let expected = if bank == 3 { table & 0x3000 }
+                    else { lane(if table == 0 { before[bank] } else { after[bank] }, slot) };
+                writeln!(calls, "if ({name}({arguments}) != {expected:#x}) return {};", row + 1).unwrap();
+            }
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

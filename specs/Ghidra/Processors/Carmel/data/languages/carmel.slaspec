@@ -6481,14 +6481,54 @@ macro paired_pop_fallback(long_result, active) {
 macro wide_div_biased(lo, hi, guard, biased) {
     biased = zext(guard ^ 0x80) * 0x100000000 + zext(hi) * 0x10000 + zext(lo);
 }
-macro wide_div_trial(biased, word, alignment, word_bias, result) {
+macro wide_div_trial_biased(biased, divisor, bias, result) {
     local doubled:8 = biased * 2;
-    local lhs:8 = doubled + word_bias;
-    local rhs:8 = 0x10000000000 + (zext(word ^ 0x8000) << alignment);
+    local lhs:8 = doubled + bias;
+    local rhs:8 = 0x10000000000 + divisor;
     result = doubled;
     if (lhs < rhs) goto <wide_div_failed_trial>;
     result = (lhs - rhs) | 1;
     <wide_div_failed_trial>
+}
+macro wide_div_trial(biased, word, alignment, word_bias, result) {
+    local divisor:8 = zext(word ^ 0x8000) << alignment;
+    wide_div_trial_biased(biased, divisor, word_bias, result);
+}
+
+macro wide_div_read_long(address, divisor) {
+    local low:2 = *[data]:2 address;
+    local next:2 = address + 1;
+    local high:2 = *[data]:2 next;
+    divisor = (zext(high ^ 0x8000) << 32) | (zext(low) << 16);
+}
+
+macro wide_div_publish_ce(enabled) {
+    local incoming:2 = EST;
+    local second:2;
+    unary_ce(CECFG1, incoming, CETBL, 0, enabled);
+    unary_ce(CECFG2, incoming, CETBL, 1, second);
+    EST = (incoming & 0xcfff) | (enabled << 12) | (second << 13);
+}
+
+macro wide_div_low_long(divisor) {
+    local enabled:2;
+    wide_div_publish_ce(enabled);
+    if (enabled == 0) goto <veto>;
+    local dividend:8;
+    wide_div_biased(A5L, A5H, GB5, dividend);
+    local result:8;
+    wide_div_trial_biased(dividend, divisor, 0x800000000000, result);
+    A5L = result:2;
+    A5H = result(2);
+    GB5 = result(4);
+  <veto>
+}
+
+macro wide_div_high_long(divisor, high, guard, result) {
+    local dividend:8 = 0x8000000000 + zext(guard) * 0x10000 + zext(high);
+    wide_div_trial_biased(dividend, divisor, 0x800000000000, result);
+    high = result:2;
+    guard = result(2);
 }
 macro wide_div_trace_sink(lo, hi, guard) {
     # The dividend port is fixed at zero; only the signed comparison and
@@ -6502,6 +6542,78 @@ macro wide_div_trace_sink(lo, hi, guard) {
 :DIVIDE "CE1" "A5H","A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x276 & wide_13_22=0x218 & wide_40_45=0x10 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; dividend = 0x8000000000 + zext(GB5) * 0x10000 + zext(A5H); local result:8; wide_div_trial(dividend, A0L, 32, 0x800000000000, result); A5H = result:2; GB5 = result(2); <wide_div_disabled> }
 :DIVIDE "CE1" "A5L",wide_div_literal is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x256 & wide_13_22=0x218 & wide_40_45=0xf & wide_div_literal { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; wide_div_biased(A5L, A5H, GB5, dividend); local result:8; wide_div_trial(dividend, wide_div_literal:2, 32, 0x800000000000, result); A5L = result:2; A5H = result(2); GB5 = result(4); <wide_div_disabled> }
 :DIVTRACE "discard","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x762 & wide_13_22=0x219 & wide_40_45=0x9 { wide_div_trace_sink(A1L, A1H, GB1); }
+
+@define WIDE_DIV_ABSOLUTE "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_13_22=0x218 & wide_40_45=0x3c & wide_div_literal"
+:DIVIDE "CE1" "A5L","*"^wide_div_literal is $(WIDE_DIV_ABSOLUTE) & wide_0_9=0x254 {
+    local address:2 = wide_div_literal;
+    local divisor:2 = *[data]:2 address;
+    local enabled:2;
+    wide_div_publish_ce(enabled);
+    if (enabled == 0) goto <veto>;
+    local dividend:8;
+    wide_div_biased(A5L, A5H, GB5, dividend);
+    local result:8;
+    wide_div_trial(dividend, divisor, 32, 0x800000000000, result);
+    A5L = result:2;
+    A5H = result(2);
+    GB5 = result(4);
+  <veto>
+}
+:DIVIDE "CE1" "A5L","long *"^wide_div_literal is $(WIDE_DIV_ABSOLUTE) & wide_0_9=0x255 {
+    local divisor:8;
+    wide_div_read_long(wide_div_literal:2, divisor);
+    wide_div_low_long(divisor);
+}
+:DIVIDE "CE1" "GB0","long *"^wide_div_literal is $(WIDE_DIV_ABSOLUTE) & wide_0_9=0x201 {
+    local divisor:8;
+    wide_div_read_long(wide_div_literal:2, divisor);
+    local enabled:2;
+    wide_div_publish_ce(enabled);
+    if (enabled == 0) goto <veto>;
+    # GB0 supplies the low byte, and the low byte of A1L supplies the sign byte.
+    local top:1 = A1L:1;
+    local dividend:8 = zext(top ^ 0x80) * 0x100000000 + zext(GB0);
+    local result:8;
+    wide_div_trial_biased(dividend, divisor, 0x800000000000, result);
+    GB0 = result:1;
+    local neighbor:1 = result(4);
+    A1L = zext(neighbor);
+    A1H = 0;
+  <veto>
+}
+:DIVIDE "CE1" "GB5","long *"^wide_div_literal is $(WIDE_DIV_ABSOLUTE) & wide_0_9=0x215 {
+    local divisor:8;
+    wide_div_read_long(wide_div_literal:2, divisor);
+    local enabled:2;
+    wide_div_publish_ce(enabled);
+    if (enabled == 0) goto <veto>;
+    local dividend:8 = 0x8000000000 + zext(GB5);
+    local result:8;
+    wide_div_trial_biased(dividend, divisor, 0x800000000000, result);
+    GB5 = result:1;
+  <veto>
+}
+:DIVIDE "CE1" "A0H","long *"^wide_div_literal is $(WIDE_DIV_ABSOLUTE) & wide_0_9=0x261 {
+    local divisor:8;
+    wide_div_read_long(wide_div_literal:2, divisor);
+    local enabled:2;
+    wide_div_publish_ce(enabled);
+    if (enabled == 0) goto <veto>;
+    local result:8;
+    wide_div_high_long(divisor, A0H, GB0, result);
+    A1L = 0;
+  <veto>
+}
+:DIVIDE "CE1" "A5H","long *"^wide_div_literal is $(WIDE_DIV_ABSOLUTE) & wide_0_9=0x275 {
+    local divisor:8;
+    wide_div_read_long(wide_div_literal:2, divisor);
+    local enabled:2;
+    wide_div_publish_ce(enabled);
+    if (enabled == 0) goto <veto>;
+    local result:8;
+    wide_div_high_long(divisor, A5H, GB5, result);
+  <veto>
+}
 
 # Use unsigned 64-bit carriers for signed-40 arithmetic, never a size-5 value.
 macro wide_mac_su_subtract(addend, left, right, word_result, result, flags) {
