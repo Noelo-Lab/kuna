@@ -6575,13 +6575,26 @@ fn commit_analysis_output(
             None,
             num_spaces,
         )?;
-        let (sid, _) = arch.symboltab.add_symbol_mapped(
-            scope,
-            &base,
-            Rc::clone(&fact.type_),
-            &addr,
-            &Address::new_invalid(),
-        )?;
+        // An untyped label the load already placed under that name at that
+        // address (an `itaniumrtti` vptr) takes the type instead of a second
+        // symbol beside it.
+        let labelled = arch.symboltab.find_by_name(scope, &base).into_iter().find(|&sid| {
+            let sym = arch.symboltab.symbol(sid);
+            matches!(sym.kind, kuna_decomp::database::SymbolKind::Plain)
+                && (sym.flags & kuna_decomp::varnode::varnode_flags::typelock) == 0
+                && sym.mapentry.first().is_some_and(|&e| arch.symboltab.entry(sym.scope, e).get_addr() == &addr)
+        });
+        let sid = match labelled {
+            Some(sid) => {
+                arch.symboltab.retype_symbol(sid, Rc::clone(&fact.type_))?;
+                sid
+            }
+            None => {
+                arch.symboltab
+                    .add_symbol_mapped(scope, &base, Rc::clone(&fact.type_), &addr, &Address::new_invalid())?
+                    .0
+            }
+        };
         arch.symboltab.set_attribute(
             sid,
             kuna_decomp::varnode::varnode_flags::typelock
@@ -6941,6 +6954,7 @@ fn commit_analysis_output(
     // 7c. An Objective-C direct method's `self`, the same unlocked hint; a
     //     function Swift already hinted keeps that one.
     commit_input_hints(prog, code_space, &out.objc_self_hints);
+    commit_input_hints(prog, code_space, &out.itanium_this_hints);
 
     // 7d. (kuna `swiftmetadata`) Each local Swift enum's case count by its
     //     metadata accessor: the bound of the table its `switch` indexes

@@ -2340,7 +2340,8 @@ mod tests {
         // and kuna-mips-octeon-elf32-o64 / an Octeon ELF32 image declaring O64 or no ABI loads as Octeon O64
         // and kuna-word-index-scalar / a word index matching a global stays numeric without pointer evidence
         // and kuna-sparc-trap-resume / a branch after a delay-slot trap is the trap's resume
-        assert_eq!(count, 937, "corpus file count drifted");
+        // and kuna-itaniumclasses / an Itanium class's members take a typed this
+        assert_eq!(count, 938, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

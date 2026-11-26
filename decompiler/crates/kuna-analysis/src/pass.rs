@@ -319,7 +319,7 @@ pub use crate::pclntab::kuna_goabi0_leaf::LeafStackInputs;
 #[derive(Clone, Debug)]
 pub struct InputHintFact {
     pub func_addr: u64,
-    pub reg: &'static str,
+    pub reg: std::borrow::Cow<'static, str>,
     pub name: String,
     pub type_: Option<std::rc::Rc<kuna_decomp::dtype::Datatype>>,
 }
@@ -537,6 +537,9 @@ pub struct AnalysisOutput {
     /// method): an unlocked hint on its first argument register, typed
     /// `Class *` under `objcivars`.
     pub objc_self_hints: Vec<InputHintFact>,
+    /// (kuna `itaniumrtti`) The `this` of each member function of an Itanium
+    /// class: an unlocked hint on the first argument register, typed `C *`.
+    pub itanium_this_hints: Vec<InputHintFact>,
     /// (kuna) Address ranges holding an **external reference** — an import slot
     /// whose contents the dynamic loader fills in with the address of a function
     /// living in another image (a PE IAT entry or a typed Mach-O lazy/non-lazy
@@ -939,6 +942,7 @@ impl AnalysisOutput {
         self.const_ranges.extend(other.const_ranges);
         self.objc_self_types.extend(other.objc_self_types);
         self.objc_self_hints.extend(other.objc_self_hints);
+        self.itanium_this_hints.extend(other.itanium_this_hints);
         self.externref.extend(other.externref);
         self.import_slot_names.extend(other.import_slot_names);
         self.data_import_slots.extend(other.data_import_slots);

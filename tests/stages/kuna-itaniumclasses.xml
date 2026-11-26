@@ -1,0 +1,84 @@
+<!--
+  Kuna: Itanium classes typed from the vtable graph and the code.
+  P1 external-refinement (itaniumrtti); P0 assertion: option itaniumrtti off|on.
+
+  The fixtures are stripped, hidden-visibility g++ builds, so only the Itanium
+  RTTI graph names the classes, and nothing gives a size or a member.
+
+  Asserts #1-#2 are the off pass: Shape::area is sub_14b8 reading its object
+  as ((int *)a0)[2]. Asserts #3-#8 are the on pass: its `this` is a Shape *,
+  laid out to the 0x10 bytes the deleting destructor passes to operator
+  delete, so the read is this->field_0x8; Circle repeats its base's field and
+  adds its own at 0xc; Circle's constructor stores &Circle_vptr into the typed
+  vptr; and Vec<double>'s member, read through XMM0, is a double field, so its
+  getter keeps returning double.
+  Assert #9: Widget has two sub-vtables (Loggable and Drawable bases), so its
+  methods keep an untyped receiver.
+  Assert #10: Counter has no virtual destructor, so no operator delete gives its
+  size; its method's receiver is only named `this`.
+  Assert #11: Zero::zero returns a Zero by value through the slot in its first
+  parameter, so that parameter is not `this`.
+-->
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti off</com>
+  <com>read symbols</com>
+  <com>load function 0x14b8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumrtti_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function 0x14b8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x158a</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x14ea</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x1942</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function 0x17dc</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumctors_O0_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function zoo::Counter::vfunc_0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/itaniumctors_byvalue_O2_x86_64.so</com>
+  <com>option listing on</com>
+  <com>option itaniumrtti on</com>
+  <com>read symbols</com>
+  <com>load function bv::Zero::vfunc_2</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="itaniumclasses #1: off: Shape::area takes an untyped object" min="1" max="1">int4 sub_14b8\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="itaniumclasses #2: off: its member is read by index" min="1" max="1">return \(\(int4 \*\)a0\)\[2\] \* a1;</stringmatch>
+<stringmatch name="itaniumclasses #3: on: Shape::area takes a Shape *this" min="1" max="1">int4 shapes::Shape::vfunc_2\(Shape \*this,int4 a1\)</stringmatch>
+<stringmatch name="itaniumclasses #4: on: the member is a field of the sized class" min="1" max="1">return this->field_0x8 \* a1;</stringmatch>
+<stringmatch name="itaniumclasses #5: on: Circle::area takes a Circle *this" min="1" max="1">int4 shapes::Circle::vfunc_2\(Circle \*this,int4 a1\)</stringmatch>
+<stringmatch name="itaniumclasses #6: on: Circle's own member is the field past its base's" min="1" max="1">return this->field_0xc \* a1 \* this->field_0xc \* 3;</stringmatch>
+<stringmatch name="itaniumclasses #7: on: the constructor stores the typed vptr object" min="1" max="1">this->vptr = &amp;Circle_vptr;</stringmatch>
+<stringmatch name="itaniumclasses #8: on: a member read through XMM0 is a double field" min="1" max="1">float8 shapes::Vec_double::vfunc_2\(Vec_double \*this\)</stringmatch>
+<stringmatch name="itaniumclasses #9: on: a class with two sub-vtables keeps an untyped receiver" min="1" max="1">int4 shapes::Widget::vfunc_2\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="itaniumclasses #10: on: a class with no size gets only the name" min="1" max="1">unsigned int zoo::Counter::vfunc_0\(void \*this\)</stringmatch>
+<stringmatch name="itaniumclasses #11: on: a by-value return slot is not this" min="1" max="1">bv::Zero::vfunc_2\(struct_\d+ \*a0\)</stringmatch>
+</decompilertest>

@@ -112,10 +112,13 @@ impl AnalysisPass for ItaniumCtorsPass {
             return out;
         }
         if let Some(walker) = Walker::new(ctx) {
-            let (mut symbols, has_virtual_dtor) = destructor_slots(&walker, &classes);
-            symbols.extend(constructors(&walker, listing, &classes, &has_virtual_dtor));
+            let (mut symbols, has_virtual_dtor, mut members) = destructor_slots(&walker, &classes);
+            let (ctors, ctor_members) = constructors(&walker, listing, &classes, &has_virtual_dtor);
+            symbols.extend(ctors);
+            members.extend(ctor_members);
             symbols.retain(|s| !named_already(ctx, s.addr));
             out.symbols = symbols;
+            super::kuna_itaniumclasses::emit(&walker, &classes, &members, &mut out);
         }
         out
     }
@@ -159,6 +162,8 @@ fn is_structural_name(name: &str) -> bool {
 pub struct ClassVtables {
     /// The qualified class name the slot symbols use (`shapes::Circle`).
     pub name: String,
+    /// No base but a primary one at offset 0, none virtual, and one sub-vtable.
+    pub single: bool,
     /// Indices (into the same slice) of every transitive base class.
     pub ancestors: HashSet<usize>,
     /// The primary sub-vtable's slot targets, `None` for an imported slot.
@@ -171,7 +176,10 @@ pub struct ClassVtables {
 /// a virtual destructor. A slot is shaped like `C`'s destructor when its stores
 /// make it `C`'s, all of them and also those before its first call or branch, and
 /// it shows no by-value return slot.
-fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>, HashSet<usize>) {
+fn destructor_slots(
+    walker: &Walker,
+    classes: &[ClassVtables],
+) -> (Vec<SymFact>, HashSet<usize>, Vec<(u64, usize)>) {
     let owner_of = owners(classes);
     let mut walked: HashMap<u64, (Option<usize>, Vec<u64>, bool)> = HashMap::new();
     let mut walk = |f: u64| -> (Option<usize>, Vec<u64>, bool) {
@@ -187,6 +195,7 @@ fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>,
             .clone()
     };
     let mut out: Vec<SymFact> = Vec::new();
+    let mut members: Vec<(u64, usize)> = Vec::new();
     let mut has_virtual_dtor: HashSet<usize> = HashSet::new();
     for (c, cls) in classes.iter().enumerate() {
         let slots = &cls.primary_slots;
@@ -226,6 +235,7 @@ fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>,
         has_virtual_dtor.insert(c);
         let name = dtor_name(&cls.name);
         for (i, f) in shaped {
+            members.push((f, c));
             out.push(SymFact {
                 addr: f,
                 name: name.clone(),
@@ -235,6 +245,7 @@ fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>,
             // calls it rather than storing the vptr itself.
             if next(i, f).0 {
                 if let Some(Some(n)) = slots.get(i + 1) {
+                    members.push((*n, c));
                     out.push(SymFact {
                         addr: *n,
                         name: name.clone(),
@@ -245,7 +256,7 @@ fn destructor_slots(walker: &Walker, classes: &[ClassVtables]) -> (Vec<SymFact>,
         }
     }
     dedup(&mut out);
-    (out, has_virtual_dtor)
+    (out, has_virtual_dtor, members)
 }
 
 /// The constructor names of `classes`: functions in no vtable whose `this` stores
@@ -255,7 +266,7 @@ fn constructors(
     listing: &Listing,
     classes: &[ClassVtables],
     has_virtual_dtor: &HashSet<usize>,
-) -> Vec<SymFact> {
+) -> (Vec<SymFact>, Vec<(u64, usize)>) {
     let owner_of = owners(classes);
     let in_a_vtable: HashSet<u64> = classes
         .iter()
@@ -266,6 +277,7 @@ fn constructors(
     candidates.dedup();
 
     let mut out: Vec<SymFact> = Vec::new();
+    let mut members: Vec<(u64, usize)> = Vec::new();
     for entry in candidates {
         if in_a_vtable.contains(&entry) {
             continue;
@@ -294,6 +306,7 @@ fn constructors(
                 .iter()
                 .any(|a| has_virtual_dtor.contains(a));
         if virtual_dtor {
+            members.push((entry, c));
             out.push(SymFact {
                 addr: entry,
                 name: ctor_name(&classes[c].name),
@@ -302,10 +315,10 @@ fn constructors(
         }
     }
     dedup(&mut out);
-    out
+    (out, members)
 }
 
-fn owners(classes: &[ClassVtables]) -> HashMap<u64, (usize, bool)> {
+pub(super) fn owners(classes: &[ClassVtables]) -> HashMap<u64, (usize, bool)> {
     let mut m = HashMap::new();
     for (c, cls) in classes.iter().enumerate() {
         for (i, &v) in cls.vptrs.iter().enumerate() {
@@ -427,11 +440,16 @@ type Ops = Vec<(OpCode, Option<VarnodeData>, Vec<VarnodeData>)>;
 /// whether `this` was a by-value return slot (memory reached through the second
 /// parameter, or `this` returned).
 #[derive(Default)]
-struct Walk {
+pub(super) struct Walk {
     stores: Vec<Store>,
     calls: Vec<u64>,
     trap: bool,
-    second: bool,
+    pub(super) second: bool,
+    /// Every load and store through `this`: offset, width, and whether the
+    /// value moves through a floating-point register.
+    pub(super) accesses: Vec<(i64, u32, bool)>,
+    /// The constant size of each `operator delete(this, size)` call.
+    pub(super) deletes: Vec<u64>,
 }
 
 /// One vptr constant stored at `this + off`.
@@ -479,8 +497,9 @@ struct State {
 
 /// The per-binary facts every walk shares: where `this` and the stack pointer
 /// live, what a call leaves intact, and how much a call pops.
-struct Walker<'a> {
-    ctx: &'a AnalysisCtx<'a>,
+pub(super) struct Walker<'a> {
+    pub(super) ctx: &'a AnalysisCtx<'a>,
+    deleters: std::cell::RefCell<HashMap<u64, bool>>,
     sp: Key,
     this_reg: Option<Key>,
     /// `this` passed in memory: its frame offset from the entry stack pointer.
@@ -553,6 +572,7 @@ impl<'a> Walker<'a> {
         };
         Some(Walker {
             ctx,
+            deleters: Default::default(),
             sp,
             this_reg,
             this_slot,
@@ -565,7 +585,7 @@ impl<'a> Walker<'a> {
 
     /// Walk the function at `entry` along its fall-through path for at most
     /// `limit` instructions.
-    fn walk(&self, entry: u64, owner_of: &HashMap<u64, (usize, bool)>, limit: usize) -> Walk {
+    pub(super) fn walk(&self, entry: u64, owner_of: &HashMap<u64, (usize, bool)>, limit: usize) -> Walk {
         let mut st = State::default();
         st.regs.insert(self.sp, Val::Sp(0));
         if let Some(k) = self.this_reg {
@@ -590,7 +610,7 @@ impl<'a> Walker<'a> {
             let mut conditional = false;
             let mut leaves = false;
             let mut raised = None;
-            for (opc, out, ins) in &ops {
+            for (i, (opc, out, ins)) in ops.iter().enumerate() {
                 match opc {
                     OpCode::CPUI_CBRANCH => {
                         conditional = true;
@@ -602,12 +622,24 @@ impl<'a> Walker<'a> {
                             && ins.first().and_then(key_of) == raised;
                         walk.second |= *opc == OpCode::CPUI_RETURN
                             && self.ret_reg.and_then(|k| st.regs.get(&k)) == Some(&Val::This(0));
+                        if *opc == OpCode::CPUI_BRANCH && !conditional {
+                            if let Some(n) = ins
+                                .first()
+                                .filter(|t| !is_constant(t))
+                                .and_then(|t| self.deleted_size(&st, t.offset))
+                            {
+                                walk.deletes.push(n);
+                            }
+                        }
                         leaves = !conditional;
                         conditional = true;
                     }
                     OpCode::CPUI_CALL => {
                         if let Some(target) = ins.first().filter(|t| !is_constant(t)) {
                             walk.calls.push(target.offset);
+                            if let Some(n) = self.deleted_size(&st, target.offset) {
+                                walk.deletes.push(n);
+                            }
                         }
                         built |= self.passes_this(&st);
                         self.after_call(&mut st);
@@ -623,12 +655,18 @@ impl<'a> Walker<'a> {
                     }
                     OpCode::CPUI_STORE => {
                         walk.second |= self.through_second(&st, ins);
+                        if let (Some(o), Some(v)) = (self.through_this(&st, ins), ins.get(2)) {
+                            walk.accesses.push((o, v.size, self.moves_float(&ops, i, v, false)));
+                        }
                         let order = (called, called || branched, built);
                         self.store(&mut st, ins, owner_of, &mut walk.stores, order)
                     }
                     _ => {
                         if *opc == OpCode::CPUI_LOAD {
                             walk.second |= self.through_second(&st, ins);
+                            if let (Some(o), Some(v)) = (self.through_this(&st, ins), out.as_ref()) {
+                                walk.accesses.push((o, v.size, self.moves_float(&ops, i, v, true)));
+                            }
                         }
                         if *opc == OpCode::CPUI_CALLOTHER {
                             raised = out.as_ref().and_then(key_of);
@@ -651,6 +689,80 @@ impl<'a> Walker<'a> {
             ins.get(1).and_then(|a| self.value(st, a)),
             Some(Val::Second(_))
         )
+    }
+
+    /// The offset from `this` a LOAD or STORE goes through.
+    fn through_this(&self, st: &State, ins: &[VarnodeData]) -> Option<i64> {
+        match ins.get(1).and_then(|a| self.value(st, a))? {
+            Val::This(o) | Val::Spilled(o) => Some(o),
+            _ => None,
+        }
+    }
+
+    /// The size passed to a call of the sized `operator delete` on `this`.
+    fn deleted_size(&self, st: &State, target: u64) -> Option<u64> {
+        let is_delete = *self.deleters.borrow_mut().entry(target).or_insert_with(|| {
+            let Some(space) = self.ctx.arch.manage().get_default_code_space() else {
+                return false;
+            };
+            let at = Address::new(Rc::clone(space), target);
+            self.ctx
+                .arch
+                .symboltab
+                .function_display_name_across_scopes(&at)
+                .is_some_and(|name| is_sized_delete(&name))
+        });
+        if !is_delete {
+            return None;
+        }
+        let this = self.this_reg.and_then(|k| st.regs.get(&k))?;
+        if !matches!(this, Val::This(0) | Val::Spilled(0)) {
+            return None;
+        }
+        match self.second_reg.and_then(|k| st.regs.get(&k))? {
+            Val::Const(n) => Some(*n),
+            _ => None,
+        }
+    }
+
+    /// Does the value a LOAD defines or a STORE writes move through a
+    /// floating-point register, directly or by a COPY within the instruction?
+    fn moves_float(&self, ops: &Ops, i: usize, vn: &VarnodeData, load: bool) -> bool {
+        if self.is_float_register(vn) {
+            return true;
+        }
+        let k = key_of(vn);
+        let copy = if load {
+            ops[i + 1..]
+                .iter()
+                .find(|(op, _, ins)| *op == OpCode::CPUI_COPY && ins.first().and_then(key_of) == k)
+                .and_then(|(_, out, _)| out.as_ref())
+        } else {
+            ops[..i]
+                .iter()
+                .rev()
+                .find(|(op, out, _)| *op == OpCode::CPUI_COPY && out.as_ref().and_then(key_of) == k)
+                .and_then(|(_, _, ins)| ins.first())
+        };
+        copy.is_some_and(|r| self.is_float_register(r))
+    }
+
+    /// Is `vn` a floating-point or vector register?
+    fn is_float_register(&self, vn: &VarnodeData) -> bool {
+        let Some(space) = vn.space.as_ref() else { return false };
+        if space.get_type() != kuna_base::space::spacetype::IPTR_PROCESSOR {
+            return false;
+        }
+        let name = self.ctx.arch.translate().get_register_name(space, vn.offset, vn.size as i32);
+        is_float_register_name(&name)
+    }
+
+    /// The register `this` arrives in, by name.
+    pub(super) fn this_register(&self) -> Option<String> {
+        let (space, off, size) = self.this_reg?;
+        let spc = self.ctx.arch.manage().get_space(space as i32)?;
+        let name = self.ctx.arch.translate().get_register_name(spc, off, size as i32);
+        (!name.is_empty()).then_some(name)
     }
 
     /// Is the call about to be made passed `this` (plus an offset, or spilled)?
@@ -842,6 +954,40 @@ impl PcodeEmit for Lifted {
     }
 }
 
+/// The floating-point and vector register files by their SLEIGH names: x86's
+/// `XMM`/`YMM`/`ZMM`, `ST` and `MM`; AArch64's and ARM's `b`/`h`/`s`/`d`/`q`/`v`;
+/// the `f` files of PowerPC, MIPS and RISC-V (`f0`, `fa0`, `ft0`, `fs0`).
+fn is_float_register_name(name: &str) -> bool {
+    let digits_from = |rest: &str| !rest.is_empty() && rest.bytes().next().is_some_and(|b| b.is_ascii_digit());
+    if ["XMM", "YMM", "ZMM"].iter().any(|p| name.starts_with(p)) {
+        return true;
+    }
+    if let Some(rest) = name.strip_prefix("ST").or_else(|| name.strip_prefix("MM")) {
+        return digits_from(rest);
+    }
+    let mut chars = name.chars();
+    match chars.next() {
+        Some('b' | 'h' | 's' | 'd' | 'q' | 'v') => digits_from(chars.as_str()),
+        Some('f') => {
+            let rest = chars.as_str();
+            let rest = rest.strip_prefix(['a', 't', 's']).filter(|r| digits_from(r)).unwrap_or(rest);
+            digits_from(rest)
+        }
+        _ => false,
+    }
+}
+
+/// `operator delete(void *, size_t)` and its aligned form, by demangled or
+/// mangled name (Mach-O adds a leading underscore).
+fn is_sized_delete(name: &str) -> bool {
+    let bare = name.split('@').next().unwrap_or(name).trim_start_matches('_');
+    bare == "operator delete"
+        || bare.starts_with("operator delete(void*, unsigned long")
+        || bare.starts_with("operator delete(void*, unsigned int")
+        || bare.starts_with("ZdlPvm")
+        || bare.starts_with("ZdlPvj")
+}
+
 fn is_constant(vn: &VarnodeData) -> bool {
     vn.space
         .as_ref()
@@ -881,6 +1027,7 @@ mod tests {
 
     fn class(name: &str, ancestors: &[usize], vptrs: &[u64]) -> ClassVtables {
         ClassVtables {
+            single: true,
             name: name.to_string(),
             ancestors: ancestors.iter().copied().collect(),
             primary_slots: Vec::new(),

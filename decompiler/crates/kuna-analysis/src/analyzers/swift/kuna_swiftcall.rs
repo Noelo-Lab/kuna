@@ -413,7 +413,7 @@ pub fn bind(types: &Types, regs: &Registers, symbols: &[(u64, String)], out: &mu
         }
         out.swift_types.input_hints.push(InputHintFact {
             func_addr: f,
-            reg: regs.self_reg,
+            reg: regs.self_reg.into(),
             name: "self".to_string(),
             type_: binding.self_t,
         });
