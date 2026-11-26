@@ -72,7 +72,7 @@ pub const DOCS: &[Doc] = &[
     Doc {
         topic: "jvm",
         title: "The JVM engine",
-        summary: "The JVM engine for class files, jars and directories: why it is separate, its fidelity contract, Kotlin output and the bundled plugins, the JDK it reads, its limits and tests.",
+        summary: "The JVM engine for class files, jars and directories: its inputs, the JDK it reads, the options worth knowing, Kotlin output, failures, its limits and tests.",
         path: "docs/jvm.md",
         body: include_str!("../../../../docs/jvm.md"),
     },

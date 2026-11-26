@@ -101,9 +101,10 @@ contributors, Apache License, Version 2.0): class files compiled or assembled
 from their testData sources (the Kotlin ones with kotlinc 2.0.0 against
 kotlin-stdlib, copyright JetBrains s.r.o. and Kotlin Programming Language
 contributors, Apache License, Version 2.0, whose inline functions the compiler
-copies into them), the class files they ship there, and the Java and Kotlin
-text the released vineflower-1.12.0.jar prints for them; its provenance is
-recorded in tests/jvm/README.md. The Kotlin fixture of the CLI tests
+copies into them) and the class files they ship there; its provenance is
+recorded in tests/jvm/README.md. A few listings in the engine's own test data
+(decompiler/nonnative/kuna-jvm/tests/data/) were recorded from the released
+vineflower-1.12.0.jar. The Kotlin fixture of the CLI tests
 (tests/fixtures/jvm/kotlin/) is compiled the same way, from kuna's own sources.
 
 The PKLITE unpacker (decompiler/crates/kuna-analysis/src/pklite) is ported
