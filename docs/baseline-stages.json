@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5524,
-    5524
+    5527,
+    5527
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2784,6 +2784,9 @@
     "data:SPARC-REGISTER-PAIR #3: the ldd still loads both halves, the high word into the index",
     "data:SPARC-REGISTER-PAIR #4: the fused 64-bit pair local never appears",
     "data:SPARC-REGISTER-PAIR #5: and neither do its CONCAT44 piece updates",
+    "data:SPARC-TRAP-RESUME #1: the trap is called once",
+    "data:SPARC-TRAP-RESUME #2: the declared resume is not called",
+    "data:SPARC-TRAP-RESUME #3: the resumed code's value is returned",
     "data:SPARC64 odd destination conversion reaches return",
     "data:SPE integer pair: declared arguments",
     "data:SPE integer pair: no undefined pieces",

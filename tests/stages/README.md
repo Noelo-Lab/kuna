@@ -768,6 +768,8 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 
 - `kuna-sparc-register-pair.xml`: a SPARC32 register pair loaded whole by `ldd` on one path and set as two 32-bit values on the other keeps a loop index and a counter as separate locals (always on; without it they fuse into one 64-bit local updated with `CONCAT44`).
 
+- `kuna-sparc-trap-resume.xml`: a `ta 0x10` in the delay slot of `ba` lifts to the trap's `call` followed by the branch's `goto`, and a function is declared at the branch target. The `goto` is where the trap resumes, so the function prints the trap once and returns the resumed code's `3`, with no call to the declared function (always on; one pass, a strict fix).
+
 - `kuna-integer-float-rounding.xml`, `kuna-integer-float-rounding64.xml`, `kuna-integer-float-rounding-x87.xml`: an integer-to-float conversion keeps its rounding through a later float conversion or a narrower float trace (always on), while exact intermediates, x87 extended conversions and `fld1` still combine.
 
 `kuna-global-load-call-order.xml` keeps a post-call memory-loaded global write after the getter, including a later call, a loop marker and a no-final-call control. The CLI roundtrips check an impure getter, a computed-value reload control and overlapping x86-64 SIMD reads using GCC/Clang at O0/O2.
