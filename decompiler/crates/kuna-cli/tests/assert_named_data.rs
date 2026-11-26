@@ -89,7 +89,10 @@ fn named_data_renders_and_rejects_unknown_spaces_in_both_cli_paths() {
         assert!(!body.contains("in_default_space"), "{body}");
 
         for (assertion, detail) in [
-            ("data [MEM,0x181] unsigned char misplaced", "unknown processor space \"MEM\""),
+            (
+                "data [MEM,0x181] unsigned char misplaced",
+                "unknown processor space \"MEM\" (this target has: OTHER, code, register, mem, codebyte)",
+            ),
             ("data [code,0x10000] unsigned char misplaced", "address 0x10000 is outside space \"code\""),
         ] {
             let mut invalid = args.clone();

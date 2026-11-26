@@ -2474,7 +2474,10 @@ from where the number ends.
 A data assertion with `[space,addr]` resolves the named processor space and
 scales the hexadecimal address by that space's word size before inserting the
 symbol. The mapping and any outer `volatile` qualifier apply only to that
-space. Bare addresses keep the existing default mapping.
+space. Bare addresses keep the existing default mapping. The console lowering
+is `map address data [space,addr] <C typedeclaration>`, a form `map address`
+recognizes before its machine-address grammar; it always maps a global. An
+unknown space's rejection lists the target's processor spaces.
 
 `map address` retains an object's outer `volatile` qualifier and marks a
 global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`

@@ -187,7 +187,7 @@ pub(crate) fn parse_data(rest: &str) -> Result<(Option<&str>, u64, &str), &'stat
     } else {
         (None, location)
     };
-    let addr = parse_vma(addr).ok_or("data needs a hex address")?;
+    let addr = parse_vma(addr).ok_or("data needs a hex <addr>")?;
     if decl.is_empty() {
         return Err("data needs a C type declaration naming the symbol");
     }

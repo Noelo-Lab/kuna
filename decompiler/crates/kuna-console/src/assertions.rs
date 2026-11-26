@@ -337,14 +337,18 @@ pub(crate) fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, Stri
 }
 
 fn named_data_addr(prog: &ConsoleProgram, name: &str, units: u64) -> Result<Address, String> {
-    use kuna_base::space::spacetype::IPTR_PROCESSOR;
+    use kuna_base::space::{spacetype::IPTR_PROCESSOR, AddrSpace};
 
-    let space = prog
-        .arch()
-        .manage()
-        .get_space_by_name(name)
-        .filter(|space| space.get_type() == IPTR_PROCESSOR)
-        .ok_or_else(|| format!("unknown processor space {name:?}"))?;
+    let manage = prog.arch().manage();
+    let processor = |space: &&Rc<AddrSpace>| space.get_type() == IPTR_PROCESSOR;
+    let space = manage.get_space_by_name(name).filter(processor).ok_or_else(|| {
+        let known: Vec<&str> = (0..manage.num_spaces())
+            .filter_map(|i| manage.get_space(i))
+            .filter(processor)
+            .map(|space| space.get_name())
+            .collect();
+        format!("unknown processor space {name:?} (this target has: {})", known.join(", "))
+    })?;
     let offset = units
         .checked_mul(u64::from(space.get_word_size()))
         .filter(|&offset| offset <= space.get_highest())

@@ -647,7 +647,8 @@ use `[space,addr]` as one token with the exact, case-sensitive space name. The
 hexadecimal address is in that space's addressable units: `[mem,0x181]` on AVR
 means byte `0x181` in `mem`, while `[code,0x181]` means word `0x181` (byte `0x302`)
 in `code`. An unknown space or out-of-range address is reported as a rejected
-assertion; `--assert-strict` exits nonzero.
+assertion, and an unknown space's message lists the target's processor spaces;
+`--assert-strict` exits nonzero.
 
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
