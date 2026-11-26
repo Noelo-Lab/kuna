@@ -26,6 +26,8 @@ pub const ERROR_ATTRIBUTE: &str = "KunaDexError";
 /// What a class's `dalvik.annotation` nesting annotations say.
 #[derive(Clone, Debug, Default)]
 pub struct Nest {
+    /// The class has an `InnerClass` annotation (it is nested itself).
+    pub inner: bool,
     pub name: Option<u32>,
     pub flags: u16,
     pub enclosing_class: Option<u32>,
@@ -54,11 +56,10 @@ fn element<'v>(dex: &Dex, a: &'v EncodedAnnotation, name: &[u8]) -> Option<&'v V
 
 fn nest_of(dex: &Dex, anns: &[Annotation]) -> Result<Option<Nest>> {
     let mut nest = Nest::default();
-    let mut inner = false;
     for a in anns.iter().filter(|a| a.visibility == VISIBILITY_SYSTEM) {
         match ann_type(dex, a)? {
             b"Ldalvik/annotation/InnerClass;" => {
-                inner = true;
+                nest.inner = true;
                 if let Some(Value::String(s)) = element(dex, &a.value, b"name") {
                     nest.name = Some(*s);
                 }
@@ -90,7 +91,7 @@ fn nest_of(dex: &Dex, anns: &[Annotation]) -> Result<Option<Nest>> {
             _ => {}
         }
     }
-    Ok((inner || !nest.members.is_empty()).then_some(nest))
+    Ok((nest.inner || !nest.members.is_empty()).then_some(nest))
 }
 
 impl Nesting {
@@ -115,7 +116,7 @@ impl Nesting {
     }
 
     fn outer_of(&self, dex: &Dex, ty: u32) -> Option<u32> {
-        let n = self.nest.get(&ty)?;
+        let n = self.nest.get(&ty).filter(|n| n.inner)?;
         n.enclosing_class
             .or_else(|| n.enclosing_method.and_then(|m| dex.method(m).ok().map(|m| m.class)))
     }
@@ -292,7 +293,7 @@ impl<'d, 'a> Writer<'d, 'a> {
         let mut order: Vec<u32> = Vec::new();
         let mut t = ty;
         let mut depth = 0;
-        while nesting.nest.contains_key(&t) && depth < 64 {
+        while nesting.nest.get(&t).is_some_and(|n| n.inner) && depth < 64 {
             order.push(t);
             match nesting.outer_of(dex, t) {
                 Some(o) => t = o,
@@ -315,7 +316,7 @@ impl<'d, 'a> Writer<'d, 'a> {
             }
             let desc = dex.type_desc(t)?;
             let inner = self.pool.class(internal(desc));
-            let (outer, name, flags) = match nesting.nest.get(&t) {
+            let (outer, name, flags) = match nesting.nest.get(&t).filter(|n| n.inner) {
                 Some(nest) => {
                     let member = nest.enclosing_class.is_some() && nest.name.is_some();
                     let outer = match (member, nest.enclosing_class) {
@@ -349,7 +350,7 @@ impl<'d, 'a> Writer<'d, 'a> {
             b.0.extend_from_slice(&body.0);
             attrs.push(self.attr("InnerClasses", b.0));
         }
-        if let Some(nest) = nesting.nest.get(&ty) {
+        if let Some(nest) = nesting.nest.get(&ty).filter(|n| n.inner) {
             let enclosing = match (nest.enclosing_method, nest.enclosing_class, nest.name) {
                 (Some(m), _, _) => {
                     let mi = dex.method(m)?;
@@ -436,7 +437,8 @@ impl<'d, 'a> Writer<'d, 'a> {
                     let b = self.failed_body(&e.0);
                     let a = self.attr("Code", b);
                     attrs.push(a);
-                    let a = self.attr(ERROR_ATTRIBUTE, e.0.into_bytes());
+                    let text = self.pool.utf8(e.0.as_bytes());
+                    let a = self.attr(ERROR_ATTRIBUTE, text.to_be_bytes().to_vec());
                     attrs.push(a);
                 }
             }

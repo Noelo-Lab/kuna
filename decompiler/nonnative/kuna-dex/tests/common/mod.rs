@@ -18,6 +18,8 @@ pub struct Method {
 pub struct Class {
     pub version: u16,
     pub utf8: Vec<String>,
+    /// `(inner, outer, simple name)` class names of the `InnerClasses` entries.
+    pub inner: Vec<(String, String, String)>,
     pub methods: Vec<Method>,
     pub attrs: Vec<String>,
 }
@@ -48,6 +50,7 @@ pub fn read_class(b: &[u8]) -> Class {
     let version = r.u16();
     let n = r.u16();
     let mut utf8 = vec![String::new(); n as usize];
+    let mut class_ref = vec![0u16; n as usize];
     let mut i = 1;
     while i < n {
         let tag = r.u8();
@@ -63,7 +66,8 @@ pub fn read_class(b: &[u8]) -> Class {
                 r.take(8);
                 i += 1;
             }
-            7 | 8 | 16 => {
+            7 => class_ref[i as usize] = r.u16(),
+            8 | 16 => {
                 r.take(2);
             }
             15 => {
@@ -121,11 +125,25 @@ pub fn read_class(b: &[u8]) -> Class {
         }
         methods.push(m);
     }
-    let attrs = attrs(&mut r, &utf8).into_iter().map(|a| a.0).collect();
+    let class_attrs = attrs(&mut r, &utf8);
     assert_eq!(r.1, b.len(), "trailing bytes");
+    let name = |i: u16| if i == 0 { String::new() } else { utf8[class_ref[i as usize] as usize].clone() };
+    let mut inner = Vec::new();
+    for (an, body) in &class_attrs {
+        if an == "InnerClasses" {
+            let mut c = R(body, 0);
+            for _ in 0..c.u16() {
+                let (i, o, nm) = (c.u16(), c.u16(), c.u16());
+                c.u16();
+                inner.push((name(i), name(o), utf8[nm as usize].clone()));
+            }
+        }
+    }
+    let attrs = class_attrs.into_iter().map(|a| a.0).collect();
     Class {
         version,
         utf8,
+        inner,
         methods,
         attrs,
     }

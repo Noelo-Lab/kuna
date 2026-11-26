@@ -70,6 +70,16 @@ fn nesting_and_signatures_become_attributes() {
     assert!(objects.utf8.iter().any(|s| s == "Ljava/util/List<Ljava/lang/String;>;"));
     let flow = &classes.iter().find(|c| c.0 == "dx/Objects").unwrap().1;
     assert!(flow.utf8.iter().any(|s| s == "ConstantValue"));
+    for (name, c) in &classes {
+        for (inner, outer, simple) in &c.inner {
+            let tail = inner.rsplit('$').next().unwrap_or("");
+            let local = tail.starts_with(|ch: char| ch.is_ascii_digit());
+            assert!(!outer.is_empty() || local, "{name}: {inner} listed with no outer");
+            assert!(outer.is_empty() || inner == &format!("{outer}${simple}"), "{name}: {inner} {outer} {simple}");
+        }
+    }
+    let member = &classes.iter().find(|c| c.0 == "dx/Objects$Inner").unwrap().1;
+    assert!(member.inner.contains(&("dx/Objects$Inner".into(), "dx/Objects".into(), "Inner".into())));
 }
 
 #[test]
@@ -78,4 +88,28 @@ fn kotlin_classes_keep_metadata() {
     let point = &classes.iter().find(|c| c.0 == "kx/Point").unwrap().1;
     assert!(point.attrs.iter().any(|a| a == "RuntimeVisibleAnnotations"));
     assert!(point.utf8.iter().any(|s| s == "Lkotlin/Metadata;"));
+}
+
+#[test]
+fn an_untranslatable_method_fails_alone() {
+    let mut data = fixture("release.dex");
+    let dex = Dex::parse(&data).unwrap();
+    let i = (0..dex.class_count()).find(|&i| dex.class_name(i).unwrap() == "dx/Arith").unwrap();
+    let cd = dex.class_data(dex.class_def(i).unwrap().class_data_off).unwrap();
+    let em = cd
+        .direct_methods
+        .iter()
+        .find(|m| dex.string(dex.method(m.method).unwrap().name).unwrap() == b"ii")
+        .unwrap();
+    let at = em.code_off as usize + 16;
+    drop(dex);
+    data[at..at + 4].copy_from_slice(&[0x0f, 0x00, 0x00, 0x00]);
+    let dex = Dex::parse(&data).unwrap();
+    let t = dex.translate(i, &Options::default()).unwrap();
+    assert_eq!(t.failures.len(), 1, "{:?}", t.failures);
+    assert!(t.failures[0].starts_with("ii(II)I: register v0 is read"), "{:?}", t.failures);
+    let c = read_class(&t.bytes);
+    let m = c.methods.iter().find(|m| m.name == "ii").unwrap();
+    assert!(m.attrs.iter().any(|a| a == kuna_dex::ERROR_ATTRIBUTE));
+    assert!(c.methods.iter().filter(|m| m.name != "ii").all(|m| !m.attrs.iter().any(|a| a == kuna_dex::ERROR_ATTRIBUTE)));
 }

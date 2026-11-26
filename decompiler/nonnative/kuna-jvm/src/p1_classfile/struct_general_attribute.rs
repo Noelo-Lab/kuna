@@ -202,6 +202,9 @@ impl StructGeneralAttribute {
         AttributeKey::of("SourceFile");
     pub const ATTRIBUTE_NEST_HOST: AttributeKey<StructNestHostAttribute> =
         AttributeKey::of("NestHost");
+    /// kuna-dex's reason a DEX method was not translated (a string index, as `SourceFile`).
+    pub const ATTRIBUTE_KUNA_DEX_ERROR: AttributeKey<StructSourceFileAttribute> =
+        AttributeKey::of("KunaDexError");
 
     /// Java: `new StructGeneralAttribute()` (`Synthetic`, `Deprecated`).
     pub fn new() -> StructGeneralAttribute {
@@ -238,7 +241,7 @@ impl StructGeneralAttribute {
             "Module" => StructModuleAttribute::new().0,
             "Record" => StructRecordAttribute::new().0,
             "PermittedSubclasses" => StructPermittedSubclassesAttribute::new().0,
-            "SourceFile" => StructSourceFileAttribute::new().0,
+            "SourceFile" | "KunaDexError" => StructSourceFileAttribute::new().0,
             "NestHost" => StructNestHostAttribute::new().0,
             _ => return None,
         })

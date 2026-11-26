@@ -11,7 +11,7 @@ document — and exits `0` before anything is loaded, so it needs neither an inp
 nor a compiled `.sla`. `kuna --help` lists the subcommands. Help goes to stderr, as
 every usage block in this CLI does.
 
-**JVM class files, jars and directories** are inputs too: the commands that take an input
+**JVM class files, jars, directories, DEX files and APKs** are inputs too: the commands that take an input
 recognize them and decompile them to Java (and Kotlin classes to Kotlin) with a separate
 engine. Where this reference
 says *binary*, read *native binary*; everything specific to JVM inputs is in *JVM inputs*
@@ -4827,7 +4827,7 @@ module-qualified callee — the loader retains no library-module mapping.
 
 Design notes and the reasoning behind each rule: spec §9.7.
 
-## JVM inputs — class files, jars and directories
+## JVM inputs — class files, jars, directories, DEX files and APKs
 
 ```bash
 kuna decompile app.jar com.ex.Main             # the class, as its whole compilation unit
@@ -4840,7 +4840,7 @@ kuna decompile app.jar com.ex.Main --option jvm_decompile_finally off
 kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class written as Java
 ```
 
-A class file, a jar (or war, ear, zip) or a directory of classes is decompiled to **Java**,
+A class file, a jar (or war, ear, zip), a directory of classes, a DEX file or an APK is decompiled to **Java**,
 and a class compiled from Kotlin to **Kotlin**, by kuna's non-native JVM engine,
 `kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins with kuna's fixes of
 Vineflower's defects, which `--option jvm_vineflower_compat on` turns off for Vineflower's
@@ -4861,7 +4861,9 @@ a JVM input when:
 | jar, war, ear, zip | a zip local or empty-archive header (`PK\x03\x04`, `PK\x05\x06`), or a `.jar`/`.war`/`.ear`/`.zip` name with a zip end record in its last KiB (an executable jar behind a launcher script) | decompiled; classes are placed by their class name whatever the entry prefix (`BOOT-INF/classes/`, `WEB-INF/classes/`), multi-release variants under `META-INF/versions/` are skipped, nested jars are not opened |
 | directory | any directory (no native command takes one) | every class file, jar and zip under it; `error: no .class files under DIR` (exit `1`) when there is none |
 | `.jmod`, jimage | `JM 01 00`, `DA DA FE CA` | `error: PATH: jmod inputs are not supported yet (kuna docs jvm)` (`jimage` likewise), exit `1` |
-| DEX, APK | `dex\n`, or a zip without `.class` entries | `error: PATH: no JVM classes (DEX bytecode is not JVM bytecode) (kuna docs jvm)`, exit `1` |
+| DEX | `dex\n` (versions 035-039) | decompiled: each DEX class is translated to a JVM class file in memory first (`docs/jvm.md`, *Android: DEX and APK input*); an unparseable file is `error: PATH: unreadable DEX file: REASON`, exit `1` |
+| APK (or any zip with DEX and no classes) | a zip without `.class` entries whose root holds `classes.dex`, `classes2.dex`, ... | decompiled like a DEX file, all `classes*.dex` in order, the first definition of a class winning; a zip with both class files and DEX is a jar (its DEX is ignored) |
+| zip without either | a zip with no `.class` entries and no `classes*.dex` | `error: PATH: no JVM classes (no .class entries or classes*.dex) (kuna docs jvm)`, exit `1` |
 | fat Mach-O | `CA FE BA BE` whose bytes 6-7 (the low half of its architecture count) are below 45, or `CA FE BA BF` | native, as before (`--slice` below) |
 
 `--raw-image` (and the internal `--jobs-worker`) always keeps an input native. The

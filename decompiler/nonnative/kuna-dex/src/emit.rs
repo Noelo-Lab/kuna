@@ -1,6 +1,8 @@
 //! JVM code for one analysed method. Blocks are laid out in Dalvik address
-//! order, each `(register, category)` pair is one JVM local (parameters keep
-//! their slots), and within a block a value defined once and read once is
+//! order, except that a block reached only by an unconditional `goto` follows
+//! its predecessor (as javac lays out a handler's code), so exception and
+//! local ranges are built from the blocks they cover. Each `(register,
+//! category)` pair is one JVM local (parameters keep their slots), and within a block a value defined once and read once is
 //! left on the operand stack for its reader instead of stored: pending
 //! definitions form a stack, and one folds into an instruction's operand
 //! only when everything pending above it folds into the same instruction in
@@ -39,6 +41,9 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     pending: Vec<usize>,
     user: Vec<usize>,
     pc_at: Vec<u32>,
+    pc_end: Vec<u32>,
+    block_pc: Vec<(u32, u32)>,
+    next_block: Vec<u32>,
     stmts: Vec<(u32, u32)>,
     min_addr: u32,
 }
@@ -91,7 +96,10 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             deferred: vec![false; m.ops.len()],
             pending: Vec::new(),
             user,
-            pc_at: vec![0; m.ops.len() + 1],
+            pc_at: vec![u32::MAX; m.ops.len() + 1],
+            pc_end: vec![u32::MAX; m.ops.len()],
+            block_pc: vec![(u32::MAX, u32::MAX); m.blocks.len()],
+            next_block: vec![u32::MAX; m.blocks.len()],
             stmts: Vec::new(),
             min_addr: u32::MAX,
         }
@@ -123,14 +131,14 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
 
     fn run(&mut self) -> Result<()> {
         let m = self.m;
-        for b in 0..m.blocks.len() {
+        let order = layout(m);
+        for w in order.windows(2) {
+            self.next_block[w[0] as usize] = w[1];
+        }
+        for (i, &b) in order.iter().enumerate() {
+            let b = b as usize;
             let blk = &m.blocks[b];
-            if !blk.reachable {
-                for k in blk.start..blk.end {
-                    self.pc_at[k] = self.asm.pc();
-                }
-                continue;
-            }
+            let start = self.asm.pc();
             self.asm.bind(self.labels[b]);
             let catches = m.ops[blk.start].insn.op == 0x0d;
             self.asm.depth = i32::from(catches);
@@ -139,8 +147,15 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 self.step(k, b)?;
             }
             self.flush()?;
+            for k in blk.start..blk.end - 1 {
+                self.pc_end[k] = self.pc_at[k + 1];
+            }
+            self.pc_end[blk.end - 1] = self.asm.pc();
+            self.block_pc[b] = (start, self.asm.pc());
+            if falls(&m.ops[blk.end - 1]) && order.get(i + 1) != Some(&(b as u32 + 1)) {
+                return Err(err(format!("internal: block at {:#x} lost its fall-through", m.ops[blk.start].insn.addr)));
+            }
         }
-        self.pc_at[m.ops.len()] = self.asm.pc();
         let handlers: Vec<u32> = m
             .blocks
             .iter()
@@ -626,8 +641,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             0x28..=0x2a => {
                 let t = self.branch_target(o)?;
-                let next = o.block as usize + 1;
-                if next >= self.labels.len() || self.labels[next] != t || !m.blocks[next].reachable {
+                let next = self.next_block[o.block as usize];
+                if next == u32::MAX || self.labels[next as usize] != t {
                     self.asm.branch(op::GOTO, t, 0);
                 }
                 Ok(0)
@@ -860,9 +875,50 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         Ok(())
     }
 
-    fn pc_of(&self, addr: u32) -> u32 {
-        let k = self.m.ops.partition_point(|o| o.insn.addr < addr);
-        self.pc_at[k]
+    /// The JVM pc intervals a try item protects: every block it covers; and,
+    /// as javac protects a `synchronized` block, its own catch-all handler's
+    /// `move-exception` right before it, and the `monitor-exit` right after
+    /// it when that handler releases the same monitor.
+    fn coverage(&self, t: &crate::dex::Try) -> Vec<(u32, u32)> {
+        let m = self.m;
+        let end = t.start + t.count;
+        let mut iv: Vec<(u32, u32)> = m
+            .blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| b.reachable && (t.start..end).contains(&m.ops[b.start].insn.addr))
+            .map(|(i, _)| self.block_pc[i])
+            .collect();
+        let at = |addr: u32| m.ops.partition_point(|o| o.insn.addr < addr);
+        if let Some(&(None, h)) = t.handlers.last() {
+            let (hk, k) = (at(h), at(end));
+            let catches = m.ops.get(hk).filter(|o| o.insn.op == 0x0d && o.insn.addr == h);
+            let start = at(t.start);
+            if let Some(prev) = start.checked_sub(1).map(|p| &m.ops[p]) {
+                if prev.insn.op == 0x0d && prev.insn.addr == h && prev.end == t.start && m.blocks[prev.block as usize].reachable {
+                    iv.push(self.block_pc[prev.block as usize]);
+                }
+            }
+            let exit = m.ops.get(k).filter(|o| o.insn.op == 0x1e && o.insn.addr == end);
+            let releases = catches.is_some()
+                && m.ops.get(hk + 1).is_some_and(|o| o.insn.op == 0x1e && Some(o.insn.a) == exit.map(|e| e.insn.a));
+            if let Some(e) = exit.filter(|e| releases && m.blocks[e.block as usize].reachable) {
+                iv.push((self.block_pc[e.block as usize].0, self.pc_end[k]));
+            }
+        }
+        merge(iv)
+    }
+
+    /// The JVM pc intervals of the ops whose addresses are in `[start, end)`.
+    fn span(&self, start: u32, end: u32) -> Vec<(u32, u32)> {
+        let m = self.m;
+        let first = m.ops.partition_point(|o| o.insn.addr < start);
+        let iv = (first..m.ops.len())
+            .take_while(|&k| m.ops[k].insn.addr < end)
+            .filter(|&k| self.pc_at[k] != u32::MAX)
+            .map(|k| (self.pc_at[k], self.pc_end[k]))
+            .collect();
+        merge(iv)
     }
 
     fn finish(self) -> Result<Vec<u8>> {
@@ -874,10 +930,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         let mut table = Body::default();
         let mut entries = 0u16;
         for t in &m.code.tries {
-            let (start, end) = (self.pc_of(t.start), self.pc_of(t.start + t.count));
-            if start >= end {
-                continue;
-            }
+            for (start, end) in self.coverage(t) {
             for &(ty, addr) in &t.handlers {
                 let k = m.ops.partition_point(|o| o.insn.addr < addr);
                 let b = m.ops[k].block;
@@ -892,6 +945,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 };
                 table.u16(start as u16).u16(end as u16).u16(pc as u16).u16(catch);
                 entries += 1;
+            }
             }
         }
         let mut attrs: Vec<(u16, Vec<u8>)> = Vec::new();
@@ -930,18 +984,20 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 (m.dex.string(l.name)?, desc.to_vec(), cat(desc))
             };
             let Some(&slot) = self.slots.get(&(l.reg, c)) else { continue };
-            let (start, end) = (self.pc_of(l.start), self.pc_of(l.end));
-            if start >= end || !seen.insert((start, end, name.to_vec(), slot)) {
-                continue;
-            }
-            let ni = self.sh.pool.utf8(name);
-            let di = self.sh.pool.utf8(&desc);
-            lvt.u16(start as u16).u16((end - start) as u16).u16(ni).u16(di).u16(slot);
-            n += 1;
-            if l.sig != NO_INDEX {
-                let si = self.sh.pool.utf8(m.dex.string(l.sig)?);
-                lvtt.u16(start as u16).u16((end - start) as u16).u16(ni).u16(si).u16(slot);
-                nt += 1;
+            let span = if l.start == 0 { self.span(0, l.end).first().map(|&(_, e)| vec![(0, e)]).unwrap_or_default() } else { self.span(l.start, l.end) };
+            for (start, end) in span {
+                if start >= end || !seen.insert((start, end, name.to_vec(), slot)) {
+                    continue;
+                }
+                let ni = self.sh.pool.utf8(name);
+                let di = self.sh.pool.utf8(&desc);
+                lvt.u16(start as u16).u16((end - start) as u16).u16(ni).u16(di).u16(slot);
+                n += 1;
+                if l.sig != NO_INDEX {
+                    let si = self.sh.pool.utf8(m.dex.string(l.sig)?);
+                    lvtt.u16(start as u16).u16((end - start) as u16).u16(ni).u16(si).u16(slot);
+                    nt += 1;
+                }
             }
         }
         for (name, count, body) in [(&b"LocalVariableTable"[..], n, lvt), (b"LocalVariableTypeTable", nt, lvtt)] {
@@ -964,6 +1020,71 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         }
         Ok(out.0)
     }
+}
+
+fn falls(o: &Op) -> bool {
+    !matches!(o.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a)
+}
+
+/// Sorted intervals with touching ones joined.
+fn merge(mut iv: Vec<(u32, u32)>) -> Vec<(u32, u32)> {
+    iv.retain(|&(s, e)| s < e);
+    iv.sort_unstable();
+    let mut out: Vec<(u32, u32)> = Vec::new();
+    for (s, e) in iv {
+        match out.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => out.push((s, e)),
+        }
+    }
+    out
+}
+
+/// Reachable blocks in emission order: address order, each fall-through
+/// successor right after its block, and a block whose only predecessor
+/// jumps to it unconditionally right after that predecessor.
+fn layout(m: &Method) -> Vec<u32> {
+    let n = m.blocks.len();
+    let mut preds = vec![0u32; n];
+    let mut handler = vec![false; n];
+    for b in m.blocks.iter().filter(|b| b.reachable) {
+        for &s in &b.succs {
+            preds[s as usize] += 1;
+        }
+        for h in &b.handlers {
+            handler[h.1 as usize] = true;
+        }
+    }
+    let mut placed = vec![false; n];
+    let mut order = Vec::new();
+    for first in 0..n {
+        if placed[first] || !m.blocks[first].reachable {
+            continue;
+        }
+        let mut b = first;
+        loop {
+            placed[b] = true;
+            order.push(b as u32);
+            let blk = &m.blocks[b];
+            let last = &m.ops[blk.end - 1];
+            if falls(last) {
+                b += 1;
+                if placed[b] {
+                    break;
+                }
+                continue;
+            }
+            let t = match last.insn.op {
+                0x28..=0x2a => blk.succs[0] as usize,
+                _ => break,
+            };
+            if placed[t] || preds[t] != 1 || handler[t] {
+                break;
+            }
+            b = t;
+        }
+    }
+    order
 }
 
 fn kind_index(c: Mask) -> u8 {

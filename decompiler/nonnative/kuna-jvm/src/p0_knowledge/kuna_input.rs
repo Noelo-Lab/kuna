@@ -14,6 +14,11 @@
 //! `BOOT-INF/classes/a/B.class` stay as they are: the engine places them by
 //! their class name, as Vineflower does.
 //!
+//! A DEX file, or a zip whose root holds `classes*.dex` and no class files
+//! (an APK), is translated class by class to JVM class files (`kuna-dex`)
+//! when loaded; the first definition of a class wins across the DEX files,
+//! and the classes are then listed and read exactly like a jar's entries.
+//!
 //! [`SharedRuntime`] is the same idea for a JDK's class library.
 
 use std::cell::RefCell;
@@ -47,9 +52,11 @@ pub enum InputKind {
     Jmod,
     /// A jimage (`lib/modules`, `DA DA FE CA`); recognized, not supported yet.
     JImage,
-    /// A DEX file (`dex\n`): Android bytecode, not JVM bytecode.
+    /// A DEX file (`dex\n`), translated to class files when loaded.
     Dex,
-    /// A zip without `.class` entries (an APK holds DEX instead).
+    /// A zip with `classes*.dex` at its root and no `.class` entries (an APK).
+    DexArchive,
+    /// A zip without `.class` entries or `classes*.dex`.
     NoJvmClasses,
     /// Anything else, including fat Mach-O binaries (also `CA FE BA BE`).
     Other,
@@ -60,7 +67,11 @@ impl InputKind {
     pub fn is_supported(self) -> bool {
         matches!(
             self,
-            InputKind::ClassFile | InputKind::Archive | InputKind::Directory
+            InputKind::ClassFile
+                | InputKind::Archive
+                | InputKind::Directory
+                | InputKind::Dex
+                | InputKind::DexArchive
         )
     }
 
@@ -72,6 +83,7 @@ impl InputKind {
             InputKind::Jmod => "jmod",
             InputKind::JImage => "jimage",
             InputKind::Dex => "dex",
+            InputKind::DexArchive => "apk",
             InputKind::NoJvmClasses => "zip without JVM classes",
             InputKind::Other => "other",
         }
@@ -160,8 +172,15 @@ pub fn sniff(path: &Path) -> bool {
     }
 }
 
+/// Whether a zip entry is one of an APK's `classes.dex`, `classes2.dex`, ….
+fn is_dex_entry(name: &str) -> bool {
+    name.strip_prefix("classes")
+        .and_then(|n| n.strip_suffix(".dex"))
+        .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// The kind of input at `path`; reads a zip's central directory to tell a
-/// jar from an archive without class files.
+/// jar from an APK or an archive without class files.
 pub fn classify(path: &Path) -> io::Result<InputKind> {
     let meta = std::fs::metadata(path)?;
     if meta.is_dir() {
@@ -177,12 +196,11 @@ pub fn classify(path: &Path) -> io::Result<InputKind> {
         return Ok(kind);
     }
     let zip = ZipReader::open(path)?;
-    let has_classes = zip
-        .entries()
-        .iter()
-        .any(|e| !e.is_directory() && e.name.ends_with(CLASS_SUFFIX));
-    Ok(if has_classes {
+    let files = || zip.entries().iter().filter(|e| !e.is_directory());
+    Ok(if files().any(|e| e.name.ends_with(CLASS_SUFFIX)) {
         InputKind::Archive
+    } else if files().any(|e| is_dex_entry(&e.name)) {
+        InputKind::DexArchive
     } else {
         InputKind::NoJvmClasses
     })
@@ -198,15 +216,17 @@ pub enum InputError {
     BadClass(PathBuf, String),
     /// A directory without class files.
     NoClasses(PathBuf),
+    /// A DEX file (or an APK's) that could not be parsed.
+    BadDex(PathBuf, String),
 }
 
 impl fmt::Display for InputError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             InputError::Io(p, e) => write!(f, "{}: {e}", p.display()),
-            InputError::Unsupported(p, InputKind::Dex | InputKind::NoJvmClasses) => write!(
+            InputError::Unsupported(p, InputKind::NoJvmClasses) => write!(
                 f,
-                "{}: no JVM classes (DEX bytecode is not JVM bytecode)",
+                "{}: no JVM classes (no .class entries or classes*.dex)",
                 p.display()
             ),
             InputError::Unsupported(p, InputKind::Other) => {
@@ -222,6 +242,7 @@ impl fmt::Display for InputError {
             }
             InputError::BadClass(p, e) => write!(f, "{}: unreadable class file: {e}", p.display()),
             InputError::NoClasses(p) => write!(f, "no .class files under {}", p.display()),
+            InputError::BadDex(p, e) => write!(f, "{}: unreadable DEX file: {e}", p.display()),
         }
     }
 }
@@ -271,6 +292,10 @@ enum Store {
     File {
         contents: Vec<u8>,
     },
+    /// Classes translated from DEX; other resources come from the APK, if any.
+    Dex {
+        zip: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug)]
@@ -291,6 +316,7 @@ pub fn load(path: &Path, options: &LoadOptions) -> Result<InputSet, InputError> 
     let kind = classify(path).map_err(io)?;
     let units = match kind {
         InputKind::Archive => vec![Arc::new(zip_unit(path).map_err(io)?)],
+        InputKind::Dex | InputKind::DexArchive => vec![Arc::new(dex_unit(path, kind)?)],
         InputKind::Directory => {
             let unit = directory_unit(path).map_err(io)?;
             if !unit.has_classes() {
@@ -510,6 +536,75 @@ fn read_entries<'a>(
     out
 }
 
+/// Translates every class of a DEX file, or of an APK's `classes*.dex` in
+/// order (`classes.dex`, `classes2.dex`, …), into class-file entries; a class
+/// defined twice keeps its first definition, and a class that cannot be
+/// translated is an entry whose read fails with the reason.
+fn dex_unit(path: &Path, kind: InputKind) -> Result<Unit, InputError> {
+    let io = |e| InputError::Io(path.to_path_buf(), e);
+    let file = java_file_path(path);
+    let mut images: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut raw: Vec<(String, bool)> = Vec::new();
+    let zip = if kind == InputKind::DexArchive {
+        let zip = ZipReader::open(Path::new(&file)).map_err(io)?;
+        let mut dexes: Vec<(u32, String)> = Vec::new();
+        for e in zip.entries() {
+            if !e.is_directory() && is_dex_entry(&e.name) {
+                let n = e.name["classes".len()..e.name.len() - 4].parse().unwrap_or(1);
+                dexes.push((n, e.name.clone()));
+            } else {
+                raw.push((e.name.clone(), e.is_directory()));
+            }
+        }
+        dexes.sort();
+        for (_, name) in dexes {
+            let entry = zip.get_entry(&name).ok_or_else(|| io(io::ErrorKind::NotFound.into()))?;
+            images.push((name, zip.read_entry(entry).map_err(io)?));
+        }
+        Some(PathBuf::from(&file))
+    } else {
+        images.push((java_name(&file).to_string(), std::fs::read(&file).map_err(io)?));
+        None
+    };
+    let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(8);
+    let mut bytes = BTreeMap::new();
+    let mut classes = Vec::new();
+    for (entry, data) in &images {
+        let dex = kuna_dex::Dex::parse(data)
+            .map_err(|e| InputError::BadDex(path.to_path_buf(), format!("{entry}: {e}")))?;
+        let translated = dex.translate_all(&kuna_dex::Options::default(), threads);
+        for (i, t) in translated.into_iter().enumerate() {
+            let (name, read) = match t {
+                Ok(t) => (t.name, Ok(Arc::from(t.bytes))),
+                Err(e) => match dex.class_name(i as u32) {
+                    Ok(n) => (n, Err(format!("DEX class not translated: {e}"))),
+                    Err(_) => continue,
+                },
+            };
+            let resource = format!("{name}{CLASS_SUFFIX}");
+            if let std::collections::btree_map::Entry::Vacant(slot) = bytes.entry(resource) {
+                classes.push((slot.key().clone(), false));
+                slot.insert(read);
+            }
+        }
+    }
+    classes.extend(raw);
+    let (classes_, directories, others) =
+        crate::rt::try_catch(|| zip_listing(&classes)).unwrap_or_default();
+    Ok(Unit {
+        name: match kind {
+            InputKind::DexArchive => format!("archive {}", java_absolute_path(&file)),
+            _ => format!("file {file}"),
+        },
+        store: Store::Dex { zip },
+        classes: classes_,
+        directories,
+        others,
+        bytes,
+        children: Vec::new(),
+    })
+}
+
 fn utf16_sorted_children(dir: &str) -> io::Result<Vec<String>> {
     let mut names = Vec::new();
     for entry in std::fs::read_dir(dir)? {
@@ -704,6 +799,8 @@ impl IContextSource for View {
                 }
             }
             Store::File { contents, .. } => Some(contents.clone()),
+            Store::Dex { zip: Some(path) } => self.read_zip(path, resource),
+            Store::Dex { zip: None } => jthrow!(IOException; "{resource}: not in the DEX file"),
         }
     }
 }

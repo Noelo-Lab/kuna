@@ -84,7 +84,7 @@ fn classify_and_sniff_files() {
         (&garbage, InputKind::Other),
         (&elf, InputKind::Other),
         (&jar, InputKind::Archive),
-        (&apk, InputKind::NoJvmClasses),
+        (&apk, InputKind::DexArchive),
         (&boot, InputKind::Archive),
         (&script, InputKind::Other),
         (&jmod, InputKind::Jmod),
@@ -260,14 +260,15 @@ fn load_errors() {
         &make_zip(&[("classes.dex", b"dex\n035\0")]),
     );
     let err = kuna_input::load(&apk, &LoadOptions::default()).unwrap_err();
+    assert!(matches!(err, InputError::BadDex(..)), "{err}");
+    assert!(err.to_string().contains("unreadable DEX file"), "{err}");
+    let zip = write(&dir, "res.zip", &make_zip(&[("res/a.txt", b"text")]));
+    let err = kuna_input::load(&zip, &LoadOptions::default()).unwrap_err();
     assert!(matches!(
         err,
         InputError::Unsupported(_, InputKind::NoJvmClasses)
     ));
-    assert!(
-        err.to_string().contains("DEX bytecode is not JVM bytecode"),
-        "{err}"
-    );
+    assert!(err.to_string().contains("no JVM classes"), "{err}");
     let jmod = write(&dir, "x.jmod", b"JM\x01\x00");
     assert!(matches!(
         kuna_input::load(&jmod, &LoadOptions::default()),

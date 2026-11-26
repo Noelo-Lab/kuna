@@ -6,6 +6,7 @@ Anchors:
   - decompiler/nonnative/kuna-jvm/options.toml
   - decompiler/crates/kuna-cli/src/nonnative
   - decompiler/nonnative/kuna-managed
+  - decompiler/nonnative/kuna-dex
 ```
 
 Chapters 01-09 describe the native pipeline: machine code lifted through SLEIGH to
@@ -1705,3 +1706,102 @@ lambdas rebuilt from `invokeSuspend`, and an open suspend function's `$suspendIm
 
 The other fixes each correct one step of one Vineflower pass, and their table row is their
 description.
+
+## 10.17 DEX input (kuna)
+
+A DEX file or an APK reaches the engine as class files. The loader
+(`decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_input.rs (dex_unit)`) parses each
+`classes*.dex` in order, translates every class definition with `kuna-dex`, keeps the first
+definition of each class name, and lists and serves the bytes as a jar unit's entries; a
+class that cannot be translated at all is an entry whose read fails with the reason. The
+rest of this section is `kuna-dex`, which depends on nothing and translates one class
+without reading any other class's code.
+
+**Parsing.** `decompiler/nonnative/kuna-dex/src/dex.rs` validates the header (versions 035
+to 039, little-endian, the declared file size) and the bounds of every id table once, and
+reads items on demand: class data and encoded fields and methods (LEB128), code items with
+their try items and catch handlers, encoded values and arrays, annotation directories, sets
+and parameter lists, call sites and method handles (from the map list). Every offset and
+count is checked when read, counts never size an allocation beyond what the remaining bytes
+can hold, and nested values are depth-limited, so a malformed file is an error.
+`decompiler/nonnative/kuna-dex/src/insn.rs` decodes every instruction format and the three
+payloads; `decompiler/nonnative/kuna-dex/src/debug.rs` runs the debug-info state machine
+into line positions and local ranges (parameters, `this` included, start at address 0).
+
+**Ops and blocks.** `decompiler/nonnative/kuna-dex/src/code.rs` turns each instruction
+into an op with its register uses in JVM push order and its def, each with a category
+mask (int-like, float, long, double, reference): an invoke absorbs the `move-result` that
+follows it, `fill-array-data` reads and redefines its array (so `new int[]{...}` keeps the
+array on the stack), and a `new-instance` whose constructor call follows in the same block
+with nothing touching the register between becomes one op defining the constructed object.
+Blocks start at branch targets, after branches, returns and throws, at try boundaries and
+at handlers; a block in a try range has its handlers as exception successors, and
+reachability follows normal edges and the handlers of blocks with a throwing instruction.
+Unreachable blocks are not translated, and a reachable block that falls off the code is an
+error.
+
+**Values and webs.** Liveness is computed per register with exception edges taken at each
+throwing op (the state before the op flows to the handler). A forward pass then numbers
+values: every def is a value, and where a live register receives two different values at a
+block entry the block gets a phi for that register; a use names the one value reaching it.
+Webs are the union-find classes of values joined through phis. A web of a single constant
+def with no phi is *inline*: the constant is written at each of its uses, typed by that use,
+so one register can carry one literal (`0` as int, float and `null`) to differently-typed
+uses, and no store is emitted.
+
+**Types.** Each web is a type variable starting from all categories; the method's
+parameter types, every typed opcode, field type, invoke parameter and return type, and
+`move-result` kind narrow it, and moves, `check-cast`, fills and the two operands of
+`if-eq`/`if-ne` join variables. Reference descriptors are inferred for webs from
+parameters, allocations, casts, members, results and element reads, iterated to a fixpoint,
+and an `aget`/`aput` value takes the element category of its array's descriptor. A
+variable left ambiguous resolves int over float over reference (long over double); an empty
+one is a method failure. An array whose type stays unknown (always `null`) is accessed with
+the opcode its value's category picks, and `aconst_null` is accepted by every array opcode.
+
+**Emission.** `decompiler/nonnative/kuna-dex/src/emit.rs` writes one JVM local per
+(register, category), parameters in their JVM slots. Blocks are laid out in address order,
+a fall-through successor right after its block, and a block whose only predecessor jumps to
+it unconditionally right after that predecessor, with the `goto` dropped (so a handler's
+code is contiguous, as javac writes it). Within a block, a value defined once and used once
+later in the same block, not named by debug info there, is not stored: its op is pushed on a
+pending stack, and an op folds pending values into its operands only when they form the top
+of that stack in the operand order the JVM evaluates (`aput`, `iput` and `sput` push their
+operands in a different order than Dalvik lists them); every other pending value is flushed
+first, in Dalvik order, as a store, so no side effect, load or exception moves past another.
+A statement flushes everything pending before it is written. `add-int/lit` on one local
+becomes `iinc`, `not-int` becomes `^ -1`, `rsub-int` pushes its literal first,
+`filled-new-array` becomes `newarray` and a `dup`/store per element, comparisons become
+`lcmp`/`fcmpl`/`fcmpg`/`dcmpl`/`dcmpg`, the switches `tableswitch` and `lookupswitch`
+(default: the fall-through block), `if-eqz` on a reference `ifnull`, `invoke-polymorphic`
+`invokevirtual` with the call-site descriptor, and `invoke-custom` `invokedynamic` with a
+`BootstrapMethods` entry. A handler block starting with `move-exception` is the JVM handler
+and stores the exception; any other handler is reached through a stub that pops it. Each
+try item protects the JVM pc intervals of the blocks it covers (merged where adjacent);
+when its catch-all handler starts with `move-exception` and releases a monitor, the
+handler's own `move-exception` right before the range and the `monitor-exit` of that
+monitor right after it are protected too, as javac protects a `synchronized` block.
+`LineNumberTable` maps each statement's first pc to the line of its earliest Dalvik
+instruction; `LocalVariableTable` maps each debug local to the pc intervals of the ops in
+its address range. Branches are 16-bit unless one overflows, when the method is assembled
+again with `goto_w` and inverted conditionals over it. A method over 65,535 bytes, a
+register read before any write, or a type conflict fails that method only: it gets a body
+that throws and a `KunaDexError` attribute (a constant-pool string, laid out as
+`SourceFile`), which the engine turns into its failure comment
+(`decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (code_to_java_schedule)`).
+
+**Classes.** `decompiler/nonnative/kuna-dex/src/class.rs` writes the members and the
+attributes of 10.3 from the system annotations, and `decompiler/nonnative/kuna-dex/src/classfile.rs`
+the constant pool and bytes. A class lists in `InnerClasses` itself and its outer chain, its
+member classes, and every class of the file whose `EnclosingClass` or `EnclosingMethod`
+names it (the engine links anonymous and local classes through their encloser's
+attribute). Static values become `ConstantValue` for primitives and strings when non-zero
+or the field is final. Since DEX does not mark a method's class as an interface, a static,
+`super` or direct call is an interface call when the class is an interface defined in the
+file or one of a short list of JDK interfaces. The class-file version is the lowest that
+expresses the class: 50 (or the `min_version` option, down to 49), 51 for method-handle and
+method-type constants, 52 for `invokedynamic`, interfaces with code, and interface calls
+other than `invokeinterface`. Its `verifiable` option keeps classes at their minimum by
+calling library interface methods through `Methodref` (verifiable, but failing if run), for
+checking translations with the JVM's own verifier.
+
