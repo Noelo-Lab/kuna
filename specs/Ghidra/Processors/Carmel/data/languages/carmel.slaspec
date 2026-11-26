@@ -224,6 +224,16 @@ define context contextreg
     tpl_73_77 = (50,54) noflow
     mac_hi = (50,54) noflow
     mac_guard = (50,54) noflow
+    cliw_mac1_acc_lo = (45,49) noflow
+    cliw_mac1_acc_hi = (45,49) noflow
+    cliw_mac1_acc_guard = (45,49) noflow
+    cliw_shared_rn = (79,80) noflow
+    cliw_mac2_op = (81,85) noflow
+    cliw_mac2_left = (86,89) noflow
+    cliw_mac2_right = (90,93) noflow
+    cliw_mac2_addend_hi = (94,95) noflow
+    cliw_mac2_addend_lo = (96,98) noflow
+    cliw_mac2_dest = (99,103) noflow
     tpl_67_72 = (55,60) noflow
     tpl_62_63 = (64,65) noflow
     tpl_64_66 = (61,63) noflow
@@ -796,6 +806,10 @@ attach variables [mac_right] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
 attach variables [mac_lo] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
 attach variables [mac_hi] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0H A1H A2H A3H A4H A5H _ _ _ _ _ _ _ _ _ _];
 attach variables [mac_guard] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ GB0 GB1 GB2 GB3 GB4 GB5 _ _ _ _ _ _ _ _ _ _];
+attach variables [cliw_mac1_acc_lo] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
+attach variables [cliw_mac1_acc_hi] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0H A1H A2H A3H A4H A5H _ _ _ _ _ _ _ _ _ _];
+attach variables [cliw_mac1_acc_guard] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ GB0 GB1 GB2 GB3 GB4 GB5 _ _ _ _ _ _ _ _ _ _];
+attach variables [cliw_shared_rn] [RN4 RN5 RN6 RN7];
 attach variables [cliw_alu_62_acc_4_0] [A0L A1L A2L A3L];
 attach variables [cliw_alu_62_acc_4_1] [A0H A1H A2H A3H];
 attach variables [cliw_alu_62_acc_4_2] [GB0 GB1 GB2 GB3];
@@ -1468,7 +1482,7 @@ macro divide_accumulator(lo, hi, guard, value) {
     value = (zext(guard ^ 0x80) << 32) | (zext(hi) << 16) | zext(lo);
 }
 
-macro divide_write(lo, hi, guard, result) {
+macro write_accumulator40(lo, hi, guard, result) {
     lo = result:2;
     hi = result(2);
     guard = result(4);
@@ -1486,7 +1500,7 @@ macro divide_step(lo, hi, guard, divisor) {
     if (lhs < rhs) goto <publish>;
     result = (lhs - rhs) | 1;
     <publish>
-    divide_write(lo, hi, guard, result);
+    write_accumulator40(lo, hi, guard, result);
 }
 
 macro divide_trace(lo, hi, guard, div_lo, div_hi, div_guard, btr) {
@@ -1501,7 +1515,7 @@ macro divide_trace(lo, hi, guard, div_lo, div_hi, div_guard, btr) {
     dividend = dividend - divisor;
     <publish>
     local result:8 = dividend * 2;
-    divide_write(lo, hi, guard, result);
+    write_accumulator40(lo, hi, guard, result);
     btr = trace;
 }
 :DIVIDE div_step_dst,div_step_src "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_8_22=0x3023 & (slot_7_7=0 | slot_6_7=2) & div_step_dst & div_step_dst_lo & div_step_dst_hi & div_step_dst_guard & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & div_step_src); (slot_mode=0 & nop_right) { divide_step(div_step_dst_lo, div_step_dst_hi, div_step_dst_guard, div_step_src); }
@@ -8629,6 +8643,153 @@ macro cliw_alu_packed(left, right, minimum, old1, old2, result, trace1, trace2) 
     trace1 = (old1 << 1) | zext(take_high);
     trace2 = (old2 << 1) | zext(take_low);
 }
+
+# Immutable templates with no active DATA ports. Match the invocation's
+# address and predicate fields independently of the template index.
+@define CLIW_EXT_CALL "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_20_22=5 & cliw_address_bank=12 & wide_34_46=0x318 & wide_0_0=0 & wide_10_14=24 & wide_3_7=24 & wide_8_9=1 & wide_1_2=1 & carmel_cliw_known=1 & template_index"
+@define CLIW_EXT_NO_LOADS "tpl_49_51=0 & tpl_0_2=0"
+@define CLIW_EXT_IDLE_2 "tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff"
+@define CLIW_EXT_ALU1_NOP "tpl_52_63=0xfff & tpl_64_72=0xff"
+
+# The shared selector crosses the MAC2/ALU1 seam. Both lanes read the same
+# RN word; MAC2 latches it into X2 before the accumulator writebacks.
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) &
+    tpl_73_95=0x3fffff & tpl_3_23=0xfffff & cliw_shared_rn &
+    tpl_67_72=36 & tpl_64_66=3 & tpl_62_63=3 & tpl_57_61=31 & tpl_52_56=16 &
+    cliw_mac2_op=16 & cliw_mac2_left=14 & cliw_mac2_right=2 &
+    cliw_mac2_addend_hi=3 & cliw_mac2_addend_lo=7 & cliw_mac2_dest=17 {
+    local source:2 = cliw_shared_rn;
+    local factor:2 = A2L;
+    local moved:8 = ((zext(source) ^ 0x8000) - 0x8000) & 0xffffffffff;
+    local alu_flags:2;
+    cliw_alu_status(moved, alu_flags);
+    X2 = source;
+    local mac_flags:2;
+    signed_product_result(A1L, A1H, GB1, source, factor, mac_flags);
+    write_accumulator40(A0L, A0H, GB0, moved);
+    publish_alu_ce((EST & 0xc106) | alu_flags | (mac_flags << 6));
+}
+
+@define CLIW_EXT_MAC1_ACC_DEST "tpl_73_77>=16 & tpl_73_77<=21 & mac_lo & mac_hi & mac_guard"
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_NOP) & $(CLIW_EXT_MAC1_ACC_DEST) &
+    tpl_91_95=4 & tpl_87_90=15 & tpl_83_86=15 & tpl_78_82=23 {
+    local pair:4 = zext(FF1) * 0x10000 + zext(FF2);
+    local value:8 = ((zext(pair) ^ 0x80000000) - 0x80000000) & 0xffffffffff;
+    local flags:2;
+    cliw_alu_status(value, flags);
+    write_accumulator40(mac_lo, mac_hi, mac_guard, value);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+macro cliw_arithmetic_write(lo, hi, guard, exact, raw) {
+    local value:8;
+    local flags:2;
+    raw_mac_finish(exact, raw, 0:1, 0:1, 0:1, value, flags);
+    write_accumulator40(lo, hi, guard, value);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+@define CLIW_EXT_MAC1_WORD "tpl_87_90=15 & tpl_83_86<8 & mac_right & tpl_78_82>=16 & tpl_78_82<=21 & cliw_mac1_acc_lo & cliw_mac1_acc_hi & cliw_mac1_acc_guard"
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_NOP) & $(CLIW_EXT_MAC1_ACC_DEST) & $(CLIW_EXT_MAC1_WORD) & tpl_91_95=5 {
+    local base:8;
+    cliw_alu_sample(cliw_mac1_acc_lo, cliw_mac1_acc_hi, cliw_mac1_acc_guard, base);
+    local word:8 = (zext(mac_right) ^ 0x8000) - 0x8000;
+    local exact:8 = ((base ^ 0x8000000000) - 0x8000000000) + word;
+    cliw_arithmetic_write(mac_lo, mac_hi, mac_guard, exact, base + (word & 0xffffffffff));
+}
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_NOP) & $(CLIW_EXT_MAC1_ACC_DEST) & $(CLIW_EXT_MAC1_WORD) & tpl_91_95=8 {
+    local base:8;
+    cliw_alu_sample(cliw_mac1_acc_lo, cliw_mac1_acc_hi, cliw_mac1_acc_guard, base);
+    local word:8 = (zext(mac_right) ^ 0x8000) - 0x8000;
+    local exact:8 = ((base ^ 0x8000000000) - 0x8000000000) - word;
+    cliw_arithmetic_write(mac_lo, mac_hi, mac_guard, exact, base + (~word & 0xffffffffff) + 1);
+}
+@undef CLIW_EXT_MAC1_WORD
+@undef CLIW_EXT_MAC1_ACC_DEST
+@undef CLIW_EXT_ALU1_NOP
+
+cliw_ext_alu1_left: is tpl_64_66=4 & cliw_alu_62_acc_4_0 & cliw_alu_62_acc_4_1 & cliw_alu_62_acc_4_2 {
+    local value:8;
+    cliw_alu_sample(cliw_alu_62_acc_4_0, cliw_alu_62_acc_4_1, cliw_alu_62_acc_4_2, value);
+    export value;
+}
+cliw_ext_alu1_left: is tpl_64_66=5 & tpl_62_63<2 & cliw_alu_62_acc_5_0 & cliw_alu_62_acc_5_1 & cliw_alu_62_acc_5_2 {
+    local value:8;
+    cliw_alu_sample(cliw_alu_62_acc_5_0, cliw_alu_62_acc_5_1, cliw_alu_62_acc_5_2, value);
+    export value;
+}
+@define CLIW_EXT_ALU1_ACC "tpl_73_95=0x3fffff & cliw_ext_alu1_left & tpl_57_61>=16 & tpl_57_61<=21 & cliw_alu_57_acc_0_0 & cliw_alu_57_acc_0_1 & cliw_alu_57_acc_0_2 & tpl_52_56>=16 & tpl_52_56<=21 & cliw_alu_52_acc_0_0 & cliw_alu_52_acc_0_1 & cliw_alu_52_acc_0_2"
+
+# These rounded ALU routes use the fixed upward tie bias, even with
+# ECFG.R set. Carry is from the biased adder, before clearing the low word.
+macro cliw_round_write(lo, hi, guard, exact, raw) {
+    local value:8;
+    local flags:2;
+    raw_mac_finish((exact + 0x8000) & 0xffffffffffff0000, raw + 0x8000, 0:1, 0:1, 0:1, value, flags);
+    lo = 0;
+    hi = value(2);
+    guard = value(4);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+macro cliw_round_subtract(lo, hi, guard, left, right) {
+    local exact:8 = ((left ^ 0x8000000000) - 0x8000000000) - ((right ^ 0x8000000000) - 0x8000000000);
+    cliw_round_write(lo, hi, guard, exact, left + (~right & 0xffffffffff) + 1);
+}
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_ACC) & tpl_67_72=46 {
+    local left:8 = cliw_ext_alu1_left;
+    local right:8;
+    cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right);
+    local exact:8 = ((left ^ 0x8000000000) - 0x8000000000) + ((right ^ 0x8000000000) - 0x8000000000);
+    cliw_round_write(cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2, exact, left + right);
+}
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_ACC) & tpl_67_72=18 {
+    local right:8;
+    cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right);
+    cliw_round_subtract(cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2, cliw_ext_alu1_left, right);
+}
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_ACC) & tpl_67_72=19 {
+    local right:8;
+    cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right);
+    cliw_round_subtract(cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2, right, cliw_ext_alu1_left);
+}
+
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_ACC) & tpl_67_72=7 {
+    local right:8;
+    cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right);
+    # Compare 2*dividend with the full signed divisor scaled by 2^16.
+    # Bias both sides by 2^40 + 2^55 to keep the trial in unsigned C.
+    local doubled:8 = (cliw_ext_alu1_left ^ 0x8000000000) * 2;
+    local lhs:8 = doubled + 0x80000000000000;
+    local rhs:8 = ((right ^ 0x8000000000) << 16) + 0x10000000000;
+    local value:8 = doubled;
+    if (lhs < rhs) goto <write>;
+    value = (lhs - rhs) | 1;
+  <write>
+    write_accumulator40(cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2, value);
+    publish_alu_ce(EST & 0xcfff);
+}
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    $(CLIW_EXT_ALU1_ACC) & tpl_67_72=6 {
+    local left:8 = cliw_ext_alu1_left;
+    local right:8;
+    cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right);
+    local take:1 = (left ^ 0x8000000000) >= (right ^ 0x8000000000);
+    local value:8 = (left - right * zext(take)) * 2;
+    write_accumulator40(cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2, value);
+    BTR1 = (BTR1 << 1) | zext(take);
+    publish_alu_ce(EST & 0xcfff);
+}
+@undef CLIW_EXT_ALU1_ACC
+@undef CLIW_EXT_IDLE_2
+@undef CLIW_EXT_NO_LOADS
+@undef CLIW_EXT_CALL
 
 # Only the qualified short MA1/MA2 write ports are visible to DATA.
 cliw_ma1_clear: is cliw_ma1_write=0 { }

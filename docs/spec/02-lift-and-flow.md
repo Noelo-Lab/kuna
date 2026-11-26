@@ -4520,6 +4520,25 @@ reference. Located TASKING images and XML can supply such a bank. Raw CODE
 and writable, partial, or ambiguous banks retain the encoded index in
 disassembly and produce `unimpl`.
 
+For the covered register-only CLIW forms, template bits 48:47 jointly
+select `RN4`–`RN7` for an ALU1 sign-extending move and the first MAC2
+multiplicand. Both lanes sample the same word; MAC2 also updates `X2`
+before accumulator writeback. The two lanes update their own status bits.
+The MAC1 `FF12` move instead sign-extends `FF1:FF2`, with `FF1` the high
+word. The MAC1 word add and subtract use an unshifted signed register
+word and a full accumulator, independent of the fractional multiply bit.
+
+The covered ALU1 rounded add and both subtract directions round half
+ties upward even when `ECFG.R` is set. The biased adder supplies carry
+before the low result word is cleared. The divide forms both read
+distinct dividend and divisor inputs, independently of the destination.
+Plain divide tests twice the dividend minus the sign-extended divisor
+scaled by `2^16`, inserting the successful trial bit in the result.
+Divide-with-trace tests the unscaled subtraction before doubling and
+shifts the trial bit into `BTR1` instead. These two forms preserve
+arithmetic status. The covered invocation refreshes condition feedback;
+these routes neither consume DATA operands nor model other lane mixes.
+
 For the short postmodify MA1 and MA2 routes with only a register
 accumulator add active, each write-qualified port independently
 stores zero at its incoming DATA address. Read qualifiers do not

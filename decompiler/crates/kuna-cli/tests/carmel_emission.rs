@@ -5315,6 +5315,93 @@ fn carmel_wide_rotate_routes_through_carry_and_physical_writeback() {
     }
 }
 
+#[test]
+fn carmel_cliw_extended_source_ports_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let image = common::scratch_file("carmel-cliw-extended", "xml");
+    let source = image.with_extension("c");
+    let executable = image.with_extension("exe");
+    // One immutable template per image, with the same index-zero invocation.
+    // The divide pair needs a positive trial as well as distinct A0/A1/A2.
+    let rows = [
+        ("7fffff23ff00438bf17ffff8", 0x14u64, 0xfffffc16acu64, 0x14, 0x400),
+        ("7fffff23ff00c38bf17ffff8", 0xffffffff15, 0x2df59b, 0xff15, 0x10),
+        ("7fffff23ff01438bf17ffff8", 0x16, 0xfffffbb28a, 0x16, 0x400),
+        ("7fffff23ff01c38bf17ffff8", 0xffffffff17, 0x2d9179, 0xff17, 0x10),
+        ("27fde0fffff03fffff7ffff8", 0xffff050015, 0xff9000abaa, 7, 0x10),
+        ("2f8ce0fffff03fffff7ffff8", 0x1233abff, 0xff9000abaa, 7, 1),
+        ("478ce0fffff03fffff7ffff8", 0x123454ab, 0xff9000abaa, 7, 0),
+        ("7fffff7465003fffff7ffff8", 0x32350000, 0xff9000abaa, 7, 1),
+        ("7ffffe9465003fffff7ffff8", 0xfeedcc0000, 0xff9000abaa, 7, 0x31),
+        ("7ffffe9c65003fffff7ffff8", 0x112340000, 0xff9000abaa, 7, 0x20),
+        ("7ffffe3c65003fffff7ffff8", 0x40040, 0x20020, 7, 0),
+        ("7ffffe3465003fffff7ffff8", 0x2003e, 0x20020, 7, 0),
+    ];
+    let declarations = "#include <stdbool.h>\n#include <stdint.h>\n";
+    let mut c = String::from(declarations);
+    let mut calls = String::from("int main(void) {\n");
+    let target = "Carmel:BE:24:default:default";
+    let ty = |reg: &str| if reg.starts_with("GB") { "unsigned char" } else { "unsigned short" };
+    for (row, (record, a0, a1, x2, est)) in rows.into_iter().enumerate() {
+        let div = row >= 10;
+        fs::write(&image, format!(
+            "<binaryimage arch=\"{target}\">\n\
+             <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">8c6000dc61c22bd8002bec00</bytechunk>\n\
+             <bytechunk space=\"cliw\" offset=\"0\" readonly=\"true\">{record}</bytechunk>\n\
+             <symbol space=\"code\" offset=\"0\" name=\"cliw_sample\"/>\n</binaryimage>\n"
+        )).unwrap();
+        let seeds: &[(&str, u16)] = match row {
+            0..=3 => &[("RN4", 0x14), ("RN5", 0xff15), ("RN6", 0x16), ("RN7", 0xff17), ("A2L", 0xcdef)],
+            4 => &[("FF1", 0xff05), ("FF2", 0x15)],
+            5..=6 => &[("A3L", 0x55), ("A3H", 0x1234), ("GB3", 0), ("A1L", 0xabaa)],
+            7..=9 => &[("A1L", 0xabaa), ("A1H", 0x9000), ("GB1", 0xff),
+                        ("A2L", 0xcdef), ("A2H", 0xa234), ("GB2", 0)],
+            _ => &[("A1L", 0x20), ("A1H", 2), ("GB1", 0),
+                   ("A2L", 1), ("A2H", 1), ("GB2", 0), ("BTR1", 0x8001)],
+        };
+        let mut outputs = vec![("A0L", a0 as u16), ("A0H", (a0 >> 16) as u16),
+                               ("GB0", (a0 >> 32) as u16), ("EST", est)];
+        if row < 4 {
+            outputs.extend([("A1L", a1 as u16), ("A1H", (a1 >> 16) as u16),
+                            ("GB1", (a1 >> 32) as u16), ("X2", x2)]);
+        } else if div {
+            outputs.push(("BTR1", if row == 10 { 0x8001 } else { 3 }));
+        }
+        for (reg, expected) in outputs {
+            let mut inputs = seeds.to_vec();
+            inputs.extend([("EST", 0), ("ECFG", 0), ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0)]);
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&image).args(["cliw_sample", "--target", target, "--assert-strict"]);
+            for (i, (input, _)) in inputs.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} {} in_{}", ty(input), input.to_ascii_lowercase())]);
+            }
+            kuna.args(["--assert", &format!("return %{reg} {}", ty(reg))]);
+            let output = common::process::required_output(&mut kuna);
+            let code = String::from_utf8(output.stdout).unwrap();
+            assert!(code.contains("cliw_sample(") && !code.contains("halt_") &&
+                    !code.to_ascii_lowercase().contains("warning:") &&
+                    !String::from_utf8_lossy(&output.stderr).to_ascii_lowercase().contains("warning:"),
+                    "{record} {reg}\n{code}");
+            let name = format!("cliw_{row}_{reg}");
+            let arguments = inputs.iter().map(|(_, value)| value.to_string()).collect::<Vec<_>>().join(", ");
+            writeln!(c, "#define cliw_sample {name}\n{code}\n#undef cliw_sample").unwrap();
+            let signature = inputs.iter().map(|(input, _)| ty(input)).collect::<Vec<_>>().join(", ");
+            writeln!(c, "typedef {} (*sig_{name})({signature});", ty(reg)).unwrap();
+            writeln!(c, "_Static_assert(_Generic(&{name}, sig_{name}: 1, default: 0), \"{reg} ABI\");").unwrap();
+            writeln!(calls, "if ({name}({arguments}) != {expected:#x}) return {};", row + 1).unwrap();
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [image, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
