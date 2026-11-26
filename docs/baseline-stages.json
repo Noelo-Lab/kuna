@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5524,
-    5524
+    5529,
+    5529
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -13,6 +13,7 @@
     "data:A declared extent keeps the loop back to its entry",
     "data:A final component with mixed-case digits remains a function name",
     "data:A final uppercase component remains a function name",
+    "data:A generic MIPS image keeps its genuine COP2 load",
     "data:A glibc import no table declares on MIPS keeps today's recovery",
     "data:A glibc import that returns a value keeps its argument",
     "data:A glibc-versioned void import receives the pointer it is passed in N32, O32, N64, from libpthread and under its own declared name",
@@ -779,6 +780,8 @@
     "data:DYLDCACHEOBJC #4: the second method of the list of lists' first list",
     "data:DYLDCACHEOBJC #5: the stub is named from its selector reference and typed from the method",
     "data:DYLDCACHEOBJC #6: a preattached category method of another image is named as an import",
+    "data:Declared and undeclared O64 Octeon images keep the shift without the polynomial",
+    "data:Declared and undeclared O64 Octeon images test the CRC's bit 15",
     "data:ELFALIASNAMES #1: the exported name no longer selects the PLT stub",
     "data:ELFALIASNAMES #2: the exported name decompiles the definition",
     "data:ELFALIASNAMES #3: both names reach the same body",
@@ -852,6 +855,7 @@
     "data:EXTRAPOP #3: the call sees both pushed arguments",
     "data:EXTRAPOP #4: a call through a register to g pops its arguments too",
     "data:Each forwarding wrapper takes the pointer as its parameter",
+    "data:Every O64 Octeon image passes describe's five arguments to emit",
     "data:Every PPC64 ELFv2 linker stub form names strlen for the string its caller measures",
     "data:Every PPC64 ELFv2 linker stub form, and a Power10 stub beside stub-shaped functions, names free for the pointer its caller forwards",
     "data:Explicit Go consumer preserves sign extension",
@@ -2137,6 +2141,7 @@
     "data:NULTERMINATOR #7: pad_after on closes the array one element after the terminator",
     "data:NULTERMINATOR #8: pad_after on renders buf[33] = 0",
     "data:NULTERMINATOR #9: pad_after off splits the terminator into its own char",
+    "data:No O64 Octeon image ends in bad instruction data",
     "data:No scalar writes to the whole structure",
     "data:O32 aggregate: byte member retains its value",
     "data:O32 aggregate: declared value argument",
