@@ -321,6 +321,66 @@ fn normalized_cliw_alias_retains_the_high_index_in_assembly() {
 }
 
 #[test]
+fn cliw_undriven_write_ports_store_only_qualified_words() {
+    use std::fmt::Write;
+
+    // ALU1 adds A3 + A4 into A5. The remaining lanes do not drive either port.
+    let template = "7fffff04e9503fffff7ffff8";
+    let qualifiers = (0..4).flat_map(|ma1| (0..4).map(move |ma2| (ma1, ma2)));
+    let mut code = String::new();
+    for (ma1, ma2) in qualifiers.clone() {
+        write!(code, "{:012x}", 0xdea812d0ac70u64 | ma1 << 8 | ma2 << 1).unwrap();
+    }
+    let bank = |record: &str| {
+        format!(r#"<bytechunk space="code" offset="0" readonly="true">{code}</bytechunk>
+                   <bytechunk space="cliw" offset="0xd8" readonly="true">{record}</bytechunk>"#)
+    };
+    let program = xml(&bank(template)).unwrap();
+    let arch = program.arch();
+    let data = arch.manage().get_space_by_name("data").unwrap().get_index() as u64;
+    let register = |name: &[u8]| {
+        kuna_console::engine::RawPcodeVarnode::from(&arch.translate().get_register_varnode(name).unwrap())
+    };
+    for (n, (ma1, ma2)) in qualifiers.enumerate() {
+        let offset = n as u64 * 6;
+        let (len, mnemonic, operands) = program.disassemble_at(offset).unwrap();
+        assert_eq!((len, mnemonic.as_str()), (6, "cliwexe"));
+        assert_eq!(operands.split_once('(').unwrap().0, "0x412");
+        let (len, ops) = program.raw_pcode_at(offset).unwrap();
+        assert_eq!(len, 6);
+        assert!(ops.iter().all(|op| !matches!(op.opcode, "LOAD" | "CALLOTHER")));
+        for name in [b"A3L".as_slice(), b"A3H", b"GB3", b"A4L", b"A4H", b"GB4"] {
+            let source = register(name);
+            assert!(ops.iter().any(|op| op.inputs.contains(&source)));
+        }
+        let mut stores = ops.iter().filter(|op| op.opcode == "STORE");
+        for (qualifier, name) in [(ma1, b"R3"), (ma2, b"R6")] {
+            if qualifier & 2 == 0 {
+                continue;
+            }
+            let store = stores.next().unwrap();
+            assert_eq!((store.inputs[0].space.as_str(), store.inputs[0].offset), ("const", data));
+            assert!(store.inputs[1] == register(name));
+            assert_eq!(
+                (store.inputs[2].space.as_str(), store.inputs[2].offset, store.inputs[2].size),
+                ("const", 0, 2),
+            );
+        }
+        assert!(stores.next().is_none());
+        let mut writes = ops.iter().filter_map(|op| op.output.as_ref()).filter(|v| v.space == "register");
+        for name in [b"A5L".as_slice(), b"A5H", b"GB5", b"R3", b"R6", b"R5", b"EST"] {
+            assert!(writes.next().is_some_and(|v| *v == register(name)));
+        }
+        assert!(writes.next().is_none());
+    }
+    // An ALU driving MA1 is not the undriven route.
+    assert!(matches!(
+        xml(&bank("7fffff04e9803fffff7ffff8")).unwrap().raw_pcode_at(6 * 10),
+        Err(KunaError::Unimpl { .. }),
+    ));
+}
+
+#[test]
 fn cliw_terminal_selectors_publish_updates_without_loading_data() {
     let bank = |selector: u64, template: &str, readonly| {
         let issue = 0x838142de5840u64 | (selector << 34);

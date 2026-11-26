@@ -3906,6 +3906,19 @@ port writes the high word. The long port writes the low word at `R0`
 and the high word at the next 16-bit DATA word address. Neither changes
 `R0` or `FF12`.
 
+The supported compact signed `MOVE` long DATA selectors use the
+nonmodifying `R6 + RN6` address, independent of the encoded upper selector
+group. The low word comes first, and the next word wraps in DATA space.
+Accumulator input sign-extends the two words to 40 bits; accumulator
+output uses the full 40-bit source for shifting and limiting before
+storing the two result words. A false CE2 on the covered parallel
+store preserves both words. The saved loop-address store zero-extends its
+24-bit input to the pair; the reverse route ignores the high byte and
+clears the low address bit, updating both live and saved loop starts
+even on a CE veto. The separately addressable sequential right store
+does not execute its left neighbor; on entry at that left issue, the
+qualified indexed ADDC retires as a separate read-modify-write.
+
 The supported compact paired stack routes allocate two DATA words.
 `PUSH` writes the first source at old `SP` and the second just below it;
 the open second selector supplies `0xffff`. `POP` consumes the top word
@@ -4247,6 +4260,12 @@ Only a covered immutable CLIW record in a normalized bank can specialize a
 reference. Located TASKING images and XML can supply such a bank. Raw CODE
 and writable, partial, or ambiguous banks retain the encoded index in
 disassembly and produce `unimpl`.
+
+For the short postmodify MA1 and MA2 routes with only a register
+accumulator add active, each write-qualified port independently
+stores zero at its incoming DATA address. Read qualifiers do not
+feed the add or emit a DATA read. All configured address updates run
+even when neither port writes, including the long MA34 postincrement.
 
 The marked CLIW register-product form with unqualified MA1 and MA2,
 MA2 `R4++`, and MA3 `R3+=RN3` retains both address updates alongside

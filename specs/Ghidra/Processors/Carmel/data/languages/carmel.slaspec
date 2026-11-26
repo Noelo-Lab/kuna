@@ -606,6 +606,8 @@ define token wide (48)
     minmax_ref_guard_lo = (40,41)
     minmax_ref_guard_hi = (40,41)
     minmax_ref_disp = (24,31) signed
+    cliw_ma1_write = (9,9)
+    cliw_ma2_write = (2,2)
 ;
 
 attach variables [inc_source] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
@@ -4198,6 +4200,117 @@ macro compact_ff12_store(negate, long_result) {
 :NEG "*R0:long","FF12" "||" nop_right is ($(COMPACT_FF12_DATA) & compact_unary_data_form=0x20dc); (slot_mode=0 & nop_right) { compact_ff12_store(1:8, 1:1); }
 :ABS "*R0:long","FF12" "||" nop_right is ($(COMPACT_FF12_DATA) & compact_unary_data_form=0x20fc); (slot_mode=0 & nop_right) { compact_ff12_store(0:8, 1:1); }
 
+# Signed MOVE binds these extended DATA selectors to the nonmodifying index adder.
+macro compact_move_long_address(address) {
+    address = R6 + RN6;
+}
+
+macro compact_move_long_read(low, high) {
+    local address:2;
+    compact_move_long_address(address);
+    low = *[data]:2 address;
+    local upper:2 = address + 1;
+    high = *[data]:2 upper;
+}
+
+macro compact_move_long_write(low, high) {
+    local address:2;
+    compact_move_long_address(address);
+    local upper:2 = address + 1;
+    *[data]:2 address = low;
+    *[data]:2 upper = high;
+}
+
+macro compact_move_long_from_a0(bank) {
+    local value:4 = (zext(A0H) << 16) | zext(A0L);
+    local guard:1 = GB0;
+    local shift:1 = (ECFG & 0x20) != 0;
+    if (!shift) goto <limit>;
+    value = (value >> 1) | (zext(guard & 1) << 31);
+    guard = (guard >> 1) | (guard & 0x80);
+  <limit>
+    local sign:1 = (value >= 0x80000000) * 0xff;
+    if ((ECFG & 8) == 0 || guard == sign) goto <write>;
+    value = 0x7fffffff + zext(guard >= 0x80);
+    EST = EST | (4:2 << (bank * 6));
+  <write>
+    local low:2 = value(0);
+    local high:2 = value(2);
+    compact_move_long_write(low, high);
+}
+
+@define COMPACT_MOVE_LONG_STORE "slot_9_22=0x18f5 & (slot_4_7=6 | slot_4_7=14) & slot_1_3=0"
+@define COMPACT_MOVE_LONG_LOAD "slot_7_22=0x63b0 & slot_6_6=1 & slot_1_4=6 & slot_0_0=0"
+
+:^nop_left "||" "MOVE" "*R6+RN6:long","A0" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_MOVE_LONG_STORE) & slot_0_0=0) { compact_move_long_from_a0(1:2); }
+:^nop_left "||" "MOVE" "CE2" "*R6+RN6:long","A0" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_MOVE_LONG_STORE) & slot_0_0=1) {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0) goto <status>;
+    compact_move_long_from_a0(1:2);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE "*R6+RN6:long","A0" is carmel_issue=3 & slot_mode=0 & $(COMPACT_MOVE_LONG_STORE) & slot_0_0=0 { compact_move_long_from_a0(0:2); }
+
+:MOVE "A0","*R6+RN6:long" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_MOVE_LONG_LOAD)); (slot_mode=0 & nop_right) {
+    local low:2;
+    local high:2;
+    compact_move_long_read(low, high);
+    local negative:1 = high >= 0x8000;
+    A0L = low;
+    A0H = high;
+    GB0 = negative * 0xff;
+    EST = (EST & 0xffc4) | (zext((low | high) == 0) << 3) | (zext(negative) << 4);
+}
+
+:MOVE "*R6+RN6:long","LSA1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x31e4c4); (slot_mode=0 & nop_right) {
+    local low:2 = LSA1L;
+    local high:2 = zext(LSA1H);
+    if ((ECFG & 0x20) == 0) goto <write>;
+    low = (low >> 1) | (high << 15);
+    high = high >> 1;
+  <write>
+    compact_move_long_write(low, high);
+}
+
+# The loop-start result is connected before CE gates the ordinary result port.
+:MOVE "LSA1","*R6+RN6:long" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_5_22=0x18f8a & slot_1_4=6); (slot_mode=0 & nop_right) {
+    local low:2;
+    local high:2;
+    compact_move_long_read(low, high);
+    LSA1L = low & 0xfffe;
+    LSA1H = high:1;
+    LSAL = LSA1L;
+    LSAH = LSA1H;
+}
+
+:ADDC "CE1" "*R3+=RN3","RN6" is carmel_issue=2 & slot_mode=1 & slot_0_22=0x14bb97 {
+    local enabled:2;
+    local address:2;
+    compact_rmw_r3(CECFG1, 0:1, address, enabled);
+    if (enabled == 0) goto <done>;
+    local word:2 = *[data]:2 address;
+    local signed_word:4 = sext(word);
+    local signed_increment:4 = sext(RN6);
+    local exact:4 = signed_word + signed_increment + zext(EST & 1);
+    local negative:1 = exact >= 0x80000000;
+    local extended:1 = exact + 0x8000 > 0xffff;
+    local carry_out:1 = (word >= 0x8000 && RN6 >= 0x8000) ||
+                        ((word >= 0x8000 || RN6 >= 0x8000) && !negative);
+    local flags:2 = zext(carry_out) | (zext(exact == 0) << 3) |
+                    (zext(negative) << 4) | (zext(extended) << 5);
+    local result:2 = exact:2;
+    if (!extended) goto <write>;
+    flags = flags | 4;
+    if ((ECFG & 0x28) != 8 && (ECFG & 4) == 0) goto <write>;
+    result = 0x7fff + zext(negative);
+  <write>
+    *[data]:2 address = result;
+    publish_alu_ce((EST & 0xcfc4) | flags);
+  <done>
+}
+
 macro raw_mac_flags(flags, active, shift) {
     flags = (flags & ~(0x3b:2 << shift)) | (active << shift);
 }
@@ -6245,6 +6358,13 @@ macro cliw_alu_finish(value, carry_out, overflow, config, word, result, flags) {
     flags = flags | 4;
     <cliw_alu_finish_done>
 }
+macro cliw_alu_add(left, right, result, flags) {
+    local sum:8 = left + right;
+    local value:8 = sum & 0xffffffffff;
+    local carry_out:1 = sum > 0xffffffffff;
+    local overflow:1 = (left ^ right) < 0x8000000000 && (left ^ value) >= 0x8000000000;
+    cliw_alu_finish(value, carry_out, overflow, ECFG, 0:1, result, flags);
+}
 macro cliw_alu_cmp(left, right, config, flags) {
     local diff:8 = (left - right) & 0xffffffffff;
     local negative:1 = diff >= 0x8000000000;
@@ -6333,7 +6453,49 @@ macro cliw_alu_packed(left, right, minimum, old1, old2, result, trace1, trace2) 
     trace1 = (old1 << 1) | zext(take_high);
     trace2 = (old2 << 1) | zext(take_low);
 }
-:CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_73_95=0x3fffff & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_49_51=0x0 & tpl_0_2=0x0 & tpl_3_23=0xfffff & tpl_67_72=0x20 & (tpl_62_63=0 | tpl_62_63=1 | tpl_62_63=2 | tpl_62_63=3) & tpl_64_66=0x4 & cliw_alu_62_acc_4_0 & cliw_alu_62_acc_4_1 & cliw_alu_62_acc_4_2 & (tpl_57_61=16 | tpl_57_61=17 | tpl_57_61=18 | tpl_57_61=19 | tpl_57_61=20 | tpl_57_61=21) & cliw_alu_57_acc_0_0 & cliw_alu_57_acc_0_1 & cliw_alu_57_acc_0_2 & (tpl_52_56=16 | tpl_52_56=17 | tpl_52_56=18 | tpl_52_56=19 | tpl_52_56=20 | tpl_52_56=21) & cliw_alu_52_acc_0_0 & cliw_alu_52_acc_0_1 & cliw_alu_52_acc_0_2 { local left:8; cliw_alu_sample(cliw_alu_62_acc_4_0, cliw_alu_62_acc_4_1, cliw_alu_62_acc_4_2, left); local right:8; cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right); local incoming:2 = EST; local flags:2; local result:8; local sum:8 = left + right; local value:8 = sum & 0xffffffffff; local carry_out:1 = sum > 0xffffffffff; local overflow:1 = (left ^ right) < 0x8000000000 && (left ^ value) >= 0x8000000000; cliw_alu_finish(value, carry_out, overflow, ECFG, 0:1, result, flags); cliw_alu_52_acc_0_0 = result:2; cliw_alu_52_acc_0_1 = result(2); cliw_alu_52_acc_0_2 = result(4); EST = (incoming & 0xffc4) | (flags << 0); }
+
+# Only the qualified short MA1/MA2 write ports are visible to DATA.
+cliw_ma1_clear: is cliw_ma1_write=0 { }
+cliw_ma1_clear: is cliw_ma1_write=1 { *[data]:2 R3 = 0:2; }
+cliw_ma2_clear: is cliw_ma2_write=0 { }
+cliw_ma2_clear: is cliw_ma2_write=1 { *[data]:2 R6 = 0:2; }
+
+# Bank 0: MA1 (*R3++), MA2 (*R6--), MA34 (long *R5++). The invocation
+# predicates apply only to the inactive MAC lanes.
+:CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_20_22=5 &
+    cliw_address_bank=0 & wide_34_46=0x17aa & wide_0_0=0 & wide_10_14=11 & wide_3_7=14 &
+    template_index & carmel_cliw_known=1 & cliw_ma1_clear & cliw_ma2_clear &
+    tpl_73_95=0x3fffff & tpl_49_51=0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0 &
+    tpl_67_72=0x20 & tpl_64_66=4 & cliw_alu_62_acc_4_0 & cliw_alu_62_acc_4_1 & cliw_alu_62_acc_4_2 &
+    (tpl_57_61=16 | tpl_57_61=17 | tpl_57_61=18 | tpl_57_61=19 | tpl_57_61=20 | tpl_57_61=21) &
+    cliw_alu_57_acc_0_0 & cliw_alu_57_acc_0_1 & cliw_alu_57_acc_0_2 &
+    (tpl_52_56=16 | tpl_52_56=17 | tpl_52_56=18 | tpl_52_56=19 | tpl_52_56=20 | tpl_52_56=21) &
+    cliw_alu_52_acc_0_0 & cliw_alu_52_acc_0_1 & cliw_alu_52_acc_0_2 {
+    local next3:2;
+    local next6:2;
+    local next5:2;
+    transfer_address_word(R3, RM2, RL2, 6, 1:2, next3);
+    transfer_address_word(R6, RM6, RL6, 12, 0xffff:2, next6);
+    transfer_address_word(R5, RM4, RL4, 10, 2:2, next5);
+    local left:8;
+    local right:8;
+    cliw_alu_sample(cliw_alu_62_acc_4_0, cliw_alu_62_acc_4_1, cliw_alu_62_acc_4_2, left);
+    cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right);
+    local flags:2;
+    local result:8;
+    cliw_alu_add(left, right, result, flags);
+    cliw_alu_52_acc_0_0 = result:2;
+    cliw_alu_52_acc_0_1 = result(2);
+    cliw_alu_52_acc_0_2 = result(4);
+    build cliw_ma1_clear;
+    build cliw_ma2_clear;
+    R3 = next3;
+    R6 = next6;
+    R5 = next5;
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+:CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_73_95=0x3fffff & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_49_51=0x0 & tpl_0_2=0x0 & tpl_3_23=0xfffff & tpl_67_72=0x20 & (tpl_62_63=0 | tpl_62_63=1 | tpl_62_63=2 | tpl_62_63=3) & tpl_64_66=0x4 & cliw_alu_62_acc_4_0 & cliw_alu_62_acc_4_1 & cliw_alu_62_acc_4_2 & (tpl_57_61=16 | tpl_57_61=17 | tpl_57_61=18 | tpl_57_61=19 | tpl_57_61=20 | tpl_57_61=21) & cliw_alu_57_acc_0_0 & cliw_alu_57_acc_0_1 & cliw_alu_57_acc_0_2 & (tpl_52_56=16 | tpl_52_56=17 | tpl_52_56=18 | tpl_52_56=19 | tpl_52_56=20 | tpl_52_56=21) & cliw_alu_52_acc_0_0 & cliw_alu_52_acc_0_1 & cliw_alu_52_acc_0_2 { local left:8; cliw_alu_sample(cliw_alu_62_acc_4_0, cliw_alu_62_acc_4_1, cliw_alu_62_acc_4_2, left); local right:8; cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right); local flags:2; local result:8; cliw_alu_add(left, right, result, flags); cliw_alu_52_acc_0_0 = result:2; cliw_alu_52_acc_0_1 = result(2); cliw_alu_52_acc_0_2 = result(4); EST = (EST & 0xffc4) | flags; }
 :CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_73_95=0x3fffff & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_49_51=0x0 & tpl_0_2=0x0 & tpl_3_23=0xfffff & tpl_67_72=0x20 & (tpl_62_63=0 | tpl_62_63=1) & tpl_64_66=0x5 & cliw_alu_62_acc_5_0 & cliw_alu_62_acc_5_1 & cliw_alu_62_acc_5_2 & (tpl_57_61=16 | tpl_57_61=17 | tpl_57_61=18 | tpl_57_61=19 | tpl_57_61=20 | tpl_57_61=21) & cliw_alu_57_acc_0_0 & cliw_alu_57_acc_0_1 & cliw_alu_57_acc_0_2 & (tpl_52_56=16 | tpl_52_56=17 | tpl_52_56=18 | tpl_52_56=19 | tpl_52_56=20 | tpl_52_56=21) & cliw_alu_52_acc_0_0 & cliw_alu_52_acc_0_1 & cliw_alu_52_acc_0_2 { local left:8; cliw_alu_sample(cliw_alu_62_acc_5_0, cliw_alu_62_acc_5_1, cliw_alu_62_acc_5_2, left); local right:8; cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right); local incoming:2 = EST; local flags:2; local result:8; local sum:8 = left + right; local value:8 = sum & 0xffffffffff; local carry_out:1 = sum > 0xffffffffff; local overflow:1 = (left ^ right) < 0x8000000000 && (left ^ value) >= 0x8000000000; cliw_alu_finish(value, carry_out, overflow, ECFG, 0:1, result, flags); cliw_alu_52_acc_0_0 = result:2; cliw_alu_52_acc_0_1 = result(2); cliw_alu_52_acc_0_2 = result(4); EST = (incoming & 0xffc4) | (flags << 0); }
 :CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_73_95=0x3fffff & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_49_51=0x0 & tpl_0_2=0x0 & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_18_23=0x20 & (tpl_13_17=16 | tpl_13_17=17 | tpl_13_17=18 | tpl_13_17=19 | tpl_13_17=20 | tpl_13_17=21) & cliw_alu_13_acc_0_0 & cliw_alu_13_acc_0_1 & cliw_alu_13_acc_0_2 & (tpl_8_12=16 | tpl_8_12=17 | tpl_8_12=18 | tpl_8_12=19 | tpl_8_12=20 | tpl_8_12=21) & cliw_alu_8_acc_0_0 & cliw_alu_8_acc_0_1 & cliw_alu_8_acc_0_2 & (tpl_3_7=16 | tpl_3_7=17 | tpl_3_7=18 | tpl_3_7=19 | tpl_3_7=20 | tpl_3_7=21) & cliw_alu_3_acc_0_0 & cliw_alu_3_acc_0_1 & cliw_alu_3_acc_0_2 { local left:8; cliw_alu_sample(cliw_alu_13_acc_0_0, cliw_alu_13_acc_0_1, cliw_alu_13_acc_0_2, left); local right:8; cliw_alu_sample(cliw_alu_8_acc_0_0, cliw_alu_8_acc_0_1, cliw_alu_8_acc_0_2, right); local incoming:2 = EST; local flags:2; local result:8; local sum:8 = left + right; local value:8 = sum & 0xffffffffff; local carry_out:1 = sum > 0xffffffffff; local overflow:1 = (left ^ right) < 0x8000000000 && (left ^ value) >= 0x8000000000; cliw_alu_finish(value, carry_out, overflow, ECFG, 0:1, result, flags); cliw_alu_3_acc_0_0 = result:2; cliw_alu_3_acc_0_1 = result(2); cliw_alu_3_acc_0_2 = result(4); EST = (incoming & 0xf13f) | (flags << 6); }
 :CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_73_95=0x3fffff & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_49_51=0x0 & tpl_0_2=0x0 & tpl_3_23=0xfffff & tpl_67_72=0x20 & (tpl_62_63=0 | tpl_62_63=1 | tpl_62_63=2 | tpl_62_63=3) & tpl_64_66=0x2 & cliw_alu_62_high_2_0 & (tpl_57_61=16 | tpl_57_61=17 | tpl_57_61=18 | tpl_57_61=19 | tpl_57_61=20 | tpl_57_61=21) & cliw_alu_57_acc_0_0 & cliw_alu_57_acc_0_1 & cliw_alu_57_acc_0_2 & (tpl_52_56=16 | tpl_52_56=17 | tpl_52_56=18 | tpl_52_56=19 | tpl_52_56=20 | tpl_52_56=21) & cliw_alu_52_acc_0_0 & cliw_alu_52_acc_0_1 & cliw_alu_52_acc_0_2 { local left:8 = sext(cliw_alu_62_high_2_0) & 0xffffffffff; local right:8; cliw_alu_sample(cliw_alu_57_acc_0_0, cliw_alu_57_acc_0_1, cliw_alu_57_acc_0_2, right); local incoming:2 = EST; local flags:2; local result:8; local sum:8 = left + right; local value:8 = sum & 0xffffffffff; local carry_out:1 = sum > 0xffffffffff; local overflow:1 = (left ^ right) < 0x8000000000 && (left ^ value) >= 0x8000000000; cliw_alu_finish(value, carry_out, overflow, ECFG, 0:1, result, flags); cliw_alu_52_acc_0_0 = result:2; cliw_alu_52_acc_0_1 = result(2); cliw_alu_52_acc_0_2 = result(4); EST = (incoming & 0xffc4) | (flags << 0); }

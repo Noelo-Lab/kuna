@@ -1002,6 +1002,81 @@ fn carmel_packed_short_results_and_extrema_sinks_preserve_independent_lanes() {
 }
 
 #[test]
+fn carmel_compact_signed_long_data_uses_the_connected_ports() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-signed-long-data", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short low_word, high_word;\n",
+    );
+    for (name, packet, storage, ty) in [
+        ("store_ce", [0x2b, 0xec, 0, 0x31, 0xea, 0x61], "R6", "unsigned short"),
+        ("store_routed_ea", [0x2b, 0xec, 0, 0x31, 0xea, 0xe0], "R6", "unsigned short"),
+        ("store_routed_eb", [0x2b, 0xec, 0, 0x31, 0xeb, 0xe0], "R6", "unsigned short"),
+        ("load_guard", [0x31, 0xd8, 0x6c, 0x2b, 0xec, 0], "GB0", "unsigned char"),
+        ("store_address", [0x31, 0xe4, 0xc4, 0x2b, 0xec, 0], "R6", "unsigned short"),
+        ("load_address", [0x31, 0xf1, 0x4d, 0x2b, 0xec, 0], "LSAL", "unsigned short"),
+        ("load_address_high", [0x31, 0xf1, 0x4d, 0x2b, 0xec, 0], "LSA1H", "unsigned char"),
+    ] {
+        let image = [
+            [0x80, 0x80, 0x48, 0xc6, 0x42, 0x98], // MOVE R6,0x8048
+            [0x80, 0, 3, 0xc6, 0x42, 0xb8],       // MOVE RN6,3
+            packet,
+            [0x2b, 0xd8, 0, 0x2b, 0xec, 0],
+        ];
+        fs::write(&binary, image.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base",
+            "0", "--json", "--assert-strict", "--assert", &format!("return %{storage} {ty}"),
+            "--assert", "data [data,0x804b] volatile unsigned short low_word",
+            "--assert", "data [data,0x804c] volatile unsigned short high_word",
+        ]);
+        for (i, (input, ty)) in [
+            ("A0L", "unsigned short"), ("A0H", "unsigned short"), ("GB0", "unsigned char"),
+            ("LSA1L", "unsigned short"), ("LSA1H", "unsigned char"), ("EST", "unsigned short"),
+            ("ECFG", "unsigned short"), ("CECFG1", "unsigned short"), ("CECFG2", "unsigned short"),
+            ("CETBL", "unsigned short"),
+        ].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{input} {ty} in_{}", input.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let c = function["code"].as_str().unwrap();
+        assert!(!c.contains("halt_"), "{function}");
+        writeln!(emitted, "{}", c.replace("sub_0", name)).unwrap();
+    }
+    emitted.push_str(
+        "#define INPUTS(config,table) 0x1234,0x5678,0xea,0x4567,0x9a,0,config,0x1000,0x1000,table\n\
+         int main(void) {\n\
+         low_word = 0x81ab; high_word = 0xeefa;\n\
+         if (store_ce(INPUTS(0,0xff)) != 0x8048 || low_word != 0x81ab || high_word != 0xeefa) return 1;\n\
+         if (load_guard(INPUTS(0,0)) != 0xff || low_word != 0x81ab || high_word != 0xeefa) return 2;\n\
+         if (load_address(INPUTS(0,0)) != 0x81aa || load_address_high(INPUTS(0,0)) != 0xfa) return 3;\n\
+         if (store_ce(INPUTS(0,0xff00)) != 0x8048 || low_word != 0x1234 || high_word != 0x5678) return 4;\n\
+         if (store_ce(INPUTS(8,0xff00)) != 0x8048 || low_word != 0 || high_word != 0x8000) return 5;\n\
+         if (store_address(INPUTS(0,0)) != 0x8048 || low_word != 0x4567 || high_word != 0x9a) return 6;\n\
+         if (store_routed_ea(INPUTS(0,0)) != 0x8048 || low_word != 0x1234 || high_word != 0x5678) return 7;\n\
+         low_word = 0x81ab; high_word = 0xeefa;\n\
+         if (store_routed_eb(INPUTS(0,0)) != 0x8048 || low_word != 0x1234 || high_word != 0x5678) return 8;\n\
+         return 0;\n\
+         }\n",
+    );
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_wide_paired_stack_separates_stride_and_operand_ports() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
