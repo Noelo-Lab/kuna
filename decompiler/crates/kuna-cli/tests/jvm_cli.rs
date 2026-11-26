@@ -540,24 +540,14 @@ fn kuna_fix_class() -> String {
 }
 
 #[test]
-fn kuna_fixes_are_on_by_default_and_compat_turns_them_off() {
+fn kuna_fixes_have_no_switch() {
     let class = kuna_fix_class();
     let method = "pkg.TestMethodRefWildcardReceiver.objects";
     let fixed = jvm(&["decompile", &class, method]);
     assert!(ok(&fixed).contains("return this.types.map(factory::create);"), "{}", stdout(&fixed));
     assert!(!stderr(&fixed).contains("warning:"), "{}", stderr(&fixed));
 
-    let failed_method = |out: &Output| {
-        assert_eq!(out.status.code(), Some(1), "a failed method exits 1: {}", stderr(out));
-        stdout(out)
-    };
-    let compat = jvm(&["decompile", &class, method, "--option", "jvm_vineflower_compat", "on"]);
-    let text = failed_method(&compat);
-    assert!(text.contains("// $VF: Couldn't be decompiled"), "{text}");
-    assert!(text.contains("// Please report this to the Vineflower issue tracker"), "{text}");
-    assert!(stderr(&compat).contains("NullPointerException: returnType"), "{}", stderr(&compat));
-
-    for name in ["jvm_fix_lambda_wildcard_return", "jvm_fix_report_to_kuna"] {
+    for name in ["jvm_vineflower_compat", "jvm_fix_lambda_wildcard_return", "jvm_fix_report_to_kuna"] {
         let unknown = kuna(&["decompile", &class, method, "--option", name, "off"]);
         assert_eq!(unknown.status.code(), Some(2), "{}", stderr(&unknown));
         assert!(stderr(&unknown).contains(&format!("unknown JVM option {name}")), "{}", stderr(&unknown));
@@ -570,8 +560,6 @@ fn kuna_fixes_are_on_by_default_and_compat_turns_them_off() {
         doc["functions"].as_array().unwrap().iter().filter(|f| !f["error"].is_null()).count()
     };
     assert_eq!(failed(&[]), 0);
-    assert_eq!(failed(&["--option", "jvm_vineflower_compat", "on"]), 2);
-    assert_eq!(kuna(&["decompile", &class, method, "--option", "jvm_vineflower_compat", "maybe"]).status.code(), Some(2));
 }
 
 #[test]
@@ -586,11 +574,10 @@ fn docs_embed_the_jvm_topics() {
 #[test]
 fn test_jvm_runs_corpus_cases() {
     let text = ok(&kuna(&["test", "--jvm", "--name", "default/pkg/TestEnhancedForLoops"]));
-    assert!(text.starts_with("jvm: 2/2 cases matched"), "{text}");
+    assert!(text.starts_with("jvm: 1/1 cases matched"), "{text}");
     let doc: Value = serde_json::from_str(&ok(&kuna(&["test", "--jvm", "--name", "TestEnhancedForLoops", "--json"]))).unwrap();
-    let ids = ["jvm:default/pkg/TestEnhancedForLoops", "jvm:kuna/default/pkg/TestEnhancedForLoops"];
-    assert_eq!(doc["passing"], serde_json::json!(ids));
-    assert_eq!(doc["jvm_footer"], serde_json::json!([2, 2]));
+    assert_eq!(doc["passing"], serde_json::json!(["jvm:default/pkg/TestEnhancedForLoops"]));
+    assert_eq!(doc["jvm_footer"], serde_json::json!([1, 1]));
     let miss = kuna(&["test", "--jvm", "--name", "no-such-case"]);
     assert_eq!(miss.status.code(), Some(2));
     assert_eq!(kuna(&["test", "--jvm", "--datatests"]).status.code(), Some(2));
@@ -598,8 +585,8 @@ fn test_jvm_runs_corpus_cases() {
     assert_eq!(kuna(&["test", "--save-digests"]).status.code(), Some(2));
 }
 
-/// A copy of the manifest with one case's two digests broken: `--out` writes both runs' text,
-/// `--save-digests` restores the `kuna` digest and never the `vineflower` one.
+/// A copy of the manifest with one case's digest broken: `--out` writes the run's text,
+/// `--save-digests` restores the digest.
 #[test]
 fn test_jvm_writes_texts_and_re_records_kuna_digests() {
     let id = "default/pkg/TestEnhancedForLoops";
@@ -607,10 +594,10 @@ fn test_jvm_writes_texts_and_re_records_kuna_digests() {
     let text = std::fs::read_to_string(tests_jvm.join("cases.tsv")).unwrap();
     let at = text.find(&format!("case\t{id}\t")).unwrap();
     let digest_at = |record: &str| at + text[at..].find(&format!("\n{record}\t")).unwrap() + record.len() + 2;
-    let (v, k) = (digest_at("vineflower"), digest_at("kuna"));
+    let k = digest_at("kuna");
     let pinned = &text[k..k + 16];
     let zero = "0000000000000000";
-    let broken = format!("{}{zero}{}{zero}{}", &text[..v], &text[v + 16..k], &text[k + 16..]);
+    let broken = format!("{}{zero}{}", &text[..k], &text[k + 16..]);
     let header = "kuna-jvm-corpus\t1\n";
     let broken = broken.replacen(header, &format!("{header}root\t{}\n", tests_jvm.display()), 1);
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("jvm-corpus-{}", std::process::id()));
@@ -623,16 +610,13 @@ fn test_jvm_writes_texts_and_re_records_kuna_digests() {
 
     let red = run(&["--out", &out, "--save-digests"]);
     assert_eq!(red.status.code(), Some(1), "{}", stderr(&red));
-    assert!(stdout(&red).contains(&format!("[jvm] kuna/{id}: Mismatch digest {pinned}, pinned {zero}")), "{}", stdout(&red));
-    assert!(stdout(&red).contains(&format!("[jvm] {id}: Mismatch digest ")), "{}", stdout(&red));
-    assert!(stderr(&red).contains(&format!("kuna/{id}: {zero} -> {pinned}")), "{}", stderr(&red));
-    for run_id in [id.to_string(), format!("kuna/{id}")] {
-        assert!(dir.join("out").join(format!("{run_id}.java")).is_file(), "{run_id}");
-    }
+    assert!(stdout(&red).contains(&format!("[jvm] {id}: Mismatch digest {pinned}, pinned {zero}")), "{}", stdout(&red));
+    assert!(stderr(&red).contains(&format!("{id}: {zero} -> {pinned}")), "{}", stderr(&red));
+    assert!(dir.join("out").join(format!("{id}.java")).is_file());
     let saved = std::fs::read_to_string(&manifest).unwrap();
     assert_eq!(saved, broken.replacen(&format!("kuna\t{zero}"), &format!("kuna\t{pinned}"), 1));
-    let red = run(&[]);
-    assert!(stdout(&red).starts_with("jvm: 1/2 cases matched"), "{}", stdout(&red));
+    let green = run(&[]);
+    assert!(stdout(&green).starts_with("jvm: 1/1 cases matched"), "{}", stdout(&green));
     assert_eq!(run(&["--out", &out]).status.code(), Some(2), "a used --out directory");
 }
 
@@ -819,71 +803,8 @@ fn decompile_project_writes_kotlin_classes_as_kt_files() {
     assert!(summary.contains(": 1 .java files, 1 .kt files ("), "{summary}");
 }
 
-/// `tests/fixtures/jvm/failures`: classes the engine fails on in Vineflower's
-/// way, so every run pins `jvm_vineflower_compat on` (a later fix keeps them failing there).
-const COMPAT: [&str; 2] = ["--option", "jvm_vineflower_compat"];
-
-fn failing(args: &[&str]) -> Output {
-    let mut all: Vec<&str> = args.to_vec();
-    all.extend(COMPAT);
-    all.push("on");
-    jvm(&all)
-}
-
-fn failures_dir(sub: &str) -> String {
-    fixtures().join("failures").join(sub).display().to_string()
-}
-
 fn warnings(out: &Output) -> Vec<String> {
     stderr(out).lines().filter(|l| l.starts_with("warning: ")).map(str::to_string).collect()
-}
-
-#[test]
-fn a_failure_inside_a_lambda_or_anonymous_class_fails_the_enclosing_method() {
-    let dir = failures_dir("classes");
-    let escape = failing(&["decompile", &dir, "com.ex.fail.Nested.escape"]);
-    assert_eq!(escape.status.code(), Some(1), "its only selected method failed: {}", stderr(&escape));
-    assert!(stdout(&escape).contains("// $VF: Couldn't be decompiled"), "{}", stdout(&escape));
-    assert_eq!(
-        warnings(&escape),
-        ["warning: com.ex.fail.Nested.escape(Ljava/lang/CharSequence;)Ljava/lang/String;: in \
-          com.ex.fail.Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: \
-          Ljava/lang/Object; with value \\\""]
-    );
-    let later = failing(&["decompile", &dir, "com.ex.fail.Nested.later"]);
-    assert_eq!(later.status.code(), Some(1));
-    assert!(warnings(&later)[0].contains(": in com.ex.fail.Nested$1.run()V: RuntimeException"), "{}", stderr(&later));
-
-    let class = failing(&["decompile", &dir, "com.ex.fail.Nested"]);
-    assert_eq!(class.status.code(), Some(0), "a class target exits 0 when the class was written");
-    let told = warnings(&class);
-    assert_eq!(told.len(), 5, "each failed body once: {told:#?}");
-    assert!(told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested$1.run()V: RuntimeException")));
-    assert!(!told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested.later")), "{told:#?}");
-    assert!(told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0")));
-
-    let doc = json(&failing(&["decompile-all", &dir, "--json"]));
-    let record = |name: &str| {
-        doc["functions"].as_array().unwrap().iter().find(|f| f["name"] == name).cloned().unwrap()
-    };
-    let escape = record("com.ex.fail.Nested.escape");
-    assert!(escape["error"].as_str().unwrap().starts_with("in com.ex.fail.Nested.lambda$escape$1("), "{escape}");
-    assert_eq!(escape["nested_errors"].as_array().unwrap().len(), 1);
-    assert_eq!(record("com.ex.fail.Nested.both")["nested_errors"].as_array().unwrap().len(), 2);
-    assert_eq!(record("com.ex.fail.Nested.later")["nested_errors"][0]["body"], "com.ex.fail.Nested$1.run()V");
-    assert!(record("com.ex.fail.Nested$1.run")["nested_errors"].as_array().unwrap().is_empty());
-    assert!(record("com.ex.fail.Nested.plain")["error"].is_null());
-    let class = &doc["classes"][0];
-    assert_eq!(class["status"], "decompiled");
-    assert!(class["error"].is_null());
-    assert_eq!(class["nested_errors"].as_array().unwrap().len(), 1, "the field initializer's lambda: {class}");
-
-    let out = scratch_dir("jvm-nested-failures");
-    let summary = ok(&failing(&["decompile-project", &dir, "-o", &out.display().to_string()]));
-    assert!(
-        summary.ends_with("; classes: 1 ok, 0 failed; methods: 1 ok, 4 failed; outside methods: 1 failed\n"),
-        "{summary}"
-    );
 }
 
 #[test]
@@ -900,54 +821,3 @@ fn a_flagged_vf_comment_is_a_warning_not_a_failure() {
     assert_eq!(plain["functions"][0]["warnings"], serde_json::json!([]));
 }
 
-#[test]
-fn a_class_the_kotlin_writer_gives_up_on_is_failed_not_hidden() {
-    let dir = failures_dir("kotlin/classes");
-    let reason = "Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents";
-    let class = failing(&["decompile", &dir, "com.ex.ktfail.Lens"]);
-    assert_eq!(class.status.code(), Some(1));
-    assert!(stdout(&class).contains("$VF: Unable to decompile class"), "{}", stdout(&class));
-    assert!(stderr(&class).contains(&format!("error: could not decompile com.ex.ktfail.Lens: {reason}")), "{}", stderr(&class));
-    let method = failing(&["decompile", &dir, "com.ex.ktfail.Lens.getLens"]);
-    assert_eq!(method.status.code(), Some(1));
-    assert!(stderr(&method).contains(reason), "{}", stderr(&method));
-    assert!(!stderr(&method).contains("no declaration of its own"), "{}", stderr(&method));
-
-    let all = failing(&["decompile-all", &dir, "--json"]);
-    assert!(stderr(&all).contains(&format!("warning: could not decompile com.ex.ktfail.Lens: {reason}")));
-    let doc = json(&all);
-    let status = |name: &str| {
-        let c = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == name).cloned().unwrap();
-        (c["status"].as_str().unwrap().to_string(), c["error"].clone())
-    };
-    assert_eq!(status("com.ex.ktfail.Lens"), ("failed".into(), serde_json::json!(reason)));
-    assert_eq!(status("com.ex.ktfail.Plain"), ("decompiled".into(), Value::Null));
-
-    let lens = fixtures().join("failures/kotlin/classes/com/ex/ktfail/Lens.class").display().to_string();
-    let only = failing(&["decompile-all", &lens, "--json"]);
-    assert_eq!(only.status.code(), Some(1), "no class decompiled");
-    let doc: Value = serde_json::from_str(&stdout(&only)).unwrap();
-    assert_eq!(doc["error"], serde_json::json!(format!("no class of {lens} could be decompiled")));
-
-    let out = scratch_dir("jvm-kotlin-failed-class");
-    let summary = ok(&failing(&["decompile-project", &dir, "-o", &out.display().to_string()]));
-    assert!(summary.ends_with("; classes: 3 ok, 1 failed; methods: 5 ok, 1 failed\n"), "{summary}");
-}
-
-#[test]
-fn an_anonymous_class_the_engine_keeps_apart_is_its_own_unit() {
-    let dir = failures_dir("kotlin/classes");
-    let inlined = "com.ex.ktfail.InlKt$sortNames$$inlined$byLength$1";
-    let text = ok(&failing(&["decompile", &dir, inlined]));
-    assert!(text.starts_with("package com.ex.ktfail\n"), "{text}");
-    let doc = json(&failing(&["decompile-all", &dir, "--functions", inlined, "--json"]));
-    assert_eq!(doc["classes"][0]["status"], "decompiled");
-    assert_eq!(doc["classes"][0]["path"], "com/ex/ktfail/InlKt$sortNames$$inlined$byLength$1.kt");
-
-    let hidden = "com.ex.ktfail.InlKt$byLength$1";
-    let doc = json(&failing(&["decompile-all", &dir, "--functions", hidden, "--json"]));
-    let class = &doc["classes"][0];
-    assert_eq!(class["status"], "hidden");
-    assert!(class["error"].is_null() && class["code"].is_null());
-    assert!(class["note"].as_str().unwrap().contains("is not in the decompiled source"), "{class}");
-}

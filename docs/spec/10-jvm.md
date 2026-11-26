@@ -33,10 +33,9 @@ fixes of Vineflower's defects applies (section 10.16). The port therefore keeps
 Vineflower's pass order, its iteration orders (including the iteration order of Java's
 hash collections, which reaches the output), its id counters (which reach the output as
 `var10000` and `label7`) and its failure behaviour. Where this chapter describes a
-heuristic that looks arbitrary, it is Vineflower's, kept for that reason.
-`jvm_vineflower_compat` turns every fix off, which gives Vineflower's text exactly, and with
-them kuna's options of form, which choose the source's form of equivalent code over
-Vineflower's (`jvm_source_locals` and `jvm_source_patterns`, section 10.10).
+heuristic that looks arbitrary, it is Vineflower's, kept for that reason. kuna's options of
+form choose the source's form of equivalent code over Vineflower's (`jvm_source_locals` and
+`jvm_source_patterns`, section 10.10).
 
 ## 10.1 The phase folders and the schedule
 
@@ -60,7 +59,7 @@ phase, but the order of execution is the engine's own:
 | `infra/` | the per-method schedule, pass hooks, the parallel driver and the debugging aids |
 | `plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins (this section, below) |
 | `kotlin/` | Vineflower's Kotlin plugin: metadata decoding, its pass schedule, expression and statement layer and writer (section 10.15) |
-| `fixes/` | (kuna) the fixes of Vineflower's defects, one module per family of `fixes.toml`, called from the gated sites of the folders above (section 10.16) |
+| `fixes/` | (kuna) the fixes of Vineflower's defects, one module per family, called from the folders above (section 10.16) |
 
 The schedule has two levels. **Per input**, `decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs
 (Fernflower::decompile_context)` loads the class universe and nests classes (section
@@ -563,8 +562,7 @@ switch simplification once more (`FinalSimplifySwitches`) and, with `jvm_prettif
 the removal of an `else` after a branch that always returns or throws
 (`IfHelper::prettify_ifs`).
 
-**javac's block layout (kuna).** With `jvm_javac_layout` (on by default, off under
-`jvm_vineflower_compat`), the `if` and exit structuring of a method javac compiled (its
+**javac's block layout (kuna).** With `jvm_javac_layout` (on by default), the `if` and exit structuring of a method javac compiled (its
 class carries no `kotlin.Metadata` and names no `.kt` source file, the one test of
 `decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs (kotlinc_class)` that the
 options reading javac's code shapes and the fix `switch_case_order` share) follows the order javac
@@ -759,8 +757,8 @@ merged into one where the merge cannot change what a read sees; and local types 
 are experimental, stricter merge checks: the second computes, with an extra SSA pass,
 which assignments each read can see, and refuses any merge that would change it.
 
-**Source locals (kuna).** With `jvm_source_locals` (on by default; off under
-`jvm_vineflower_compat on`), `decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs`
+**Source locals (kuna).** With `jvm_source_locals` (on by default),
+`decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs`
 keeps the local variables the class file records for the source. javac writes one
 `LocalVariableTable` entry per local of the source and none for the temporaries it adds
 itself (a `finally`'s or `synchronized` block's saved return value, a for-each's iterator,
@@ -830,8 +828,8 @@ assignment, javac's `x = a++`, has no store), and `inline_ppi_and_mmi` and
 when all of the increment's code comes before the next statement's and the table puts the two on
 different lines (`own_statement`). Classes kotlinc compiled are left alone.
 
-**Source patterns (kuna).** With `jvm_source_patterns` (on by default; off under
-`jvm_vineflower_compat on`), `IfPatternMatchProcessor::check_branch` makes no pattern from an
+**Source patterns (kuna).** With `jvm_source_patterns` (on by default),
+`IfPatternMatchProcessor::check_branch` makes no pattern from an
 `instanceof` and the cast stored after it when the class file's `LineNumberTable` shows the cast
 as a statement of its own
 (`decompiler/nonnative/kuna-jvm/src/p8_structure/kuna_source_patterns.rs (keeps_cast)`), in a
@@ -950,8 +948,8 @@ Numbers print with the JDK's own algorithms (section 10.13).
 
 **Failed methods.** A method whose schedule threw is written as its signature and a body
 of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then the
-`error-message` note (a request to report the class to kuna's tracker, Vineflower's in
-compat mode; section 10.16), the exception text and its throw location, and a listing of
+`error-message` note (a request to report the class to kuna's tracker; section 10.16), the
+exception text and its throw location, and a listing of
 the method's bytecode. The class around it is written normally. (Vineflower's
 `dump-exception-on-error`, which the corpus fixture turns off, drops the note and the
 exception.)
@@ -1065,7 +1063,7 @@ port depends on one faithful Rust shape:
   engine touches the arenas at each level, so none can pass the limit unseen by more than
   a few frames. The deepest real input measured used 150 KiB; the limit only stops
   adversarial nesting (expressions thousands deep, or lambdas whose bodies create each
-  other, which nest without end under `jvm_vineflower_compat`). The guard costs nothing
+  other, which Vineflower nests without end). The guard costs nothing
   measurable (Guava, single instance, paired runs).
 
 ## 10.14 Front-end support (kuna)
@@ -1113,15 +1111,14 @@ reads class files under their new names (`decompiler/nonnative/kuna-jvm/src/p0_k
 members it reads again (its companion's overrides and forwarders, the `INSTANCE` and companion
 fields); a single run processes every class before writing any, so an engine kept for another batch
 takes those marks back when its batch ends (`decompiler/nonnative/kuna-jvm/src/kotlin/kt_attrs.rs
-(undo_marks)`): in compat mode `r.size` on a class whose companion overrides `size` came out
+(undo_marks)`): otherwise `r.size` on a class whose companion overrides `size` could come out
 `r.getSize()` once that class's batch had run on the same engine. `ClassWrapper::init` pairs
 the logger's `start_method` with its `end_method` also when the method throws before its body
 (a malformed descriptor), which Vineflower leaves unpaired; the CLI's stall watch reads the pairs.
 The detector exempts `getSyntheticParametersMask` reading a root class's own node except when
 the root does not declare the constructor asked for: that call throws while the root is
 processed and answers no mask otherwise (the Kotlin plugin asks for a superclass's
-default-arguments constructor without its marker parameter; kotlinx-coroutines'
-`BroadcastChannelImpl` in compat mode).
+default-arguments constructor without its marker parameter).
 Results reach the caller in root order,
 whatever the number of workers, and the call returns after the last delivery while the
 workers drop their engines. Each engine instance runs on a thread with a 512 MiB
@@ -1136,7 +1133,7 @@ the crate's build script. Keys the front end sets itself (thread count, time lim
 selection, logging, line separator, line mapping, class-path keys a JVM would serve), and
 the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
 there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins` (no row), `jvm_vineflower_compat` and
+their own names; `Fernflower::new` takes `jvm_plugins` (no row) and the form options such as
 `jvm_javac_layout` (section 10.9, stored in the context and copied to the per-class
 contexts) off the property list before the rest becomes Vineflower's option map (section
 10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
@@ -1390,31 +1387,13 @@ them share. A fix longer than a few lines lives in its family's module,
 `decompiler/nonnative/kuna-jvm/src/fixes/<family>.rs`, or, in a family with a folder, in
 `decompiler/nonnative/kuna-jvm/src/fixes/<family>/<id>.rs`.
 
-**The gate.** `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_fixes.rs (KunaFix)`
-names each fix; `KunaFix::id` gives its id (the name the table and the `fix` field of
-`tests/jvm/kuna-fixes/cases.json` use). A fix is a correction, not a judgement call, so it
-has no option of its own and is always on. The one switch is `jvm_vineflower_compat` (off
-by default), which turns every fix off at once; with it on, the engine is the plain port
-and prints Vineflower's text, failures included: methods Vineflower fails on are written as
-its failure comment, code it prints wrong is printed as it prints it, and the failure note
-names Vineflower's tracker. Every site where a fix changes behaviour asks
-`kuna_fixes::enabled(KunaFix::..)` and keeps the Java's behaviour verbatim in the other
-branch. `Fernflower::new`
-(`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs`) takes the switch off the
-custom property list, resolves it into the set of active fixes (every fix, or none when
-the last `jvm_vineflower_compat` pair is on) and stores it in the decompilation context;
-installing a context (`DecompilerContext::set_current_context`) makes its set the one
-`enabled` answers from on that thread, which costs one thread-local read per question. The
-per-class contexts of `ContextUnit::set_context` copy the set from the root context, and no
-context means every fix on. Unit tests that must isolate one fix build the set
-`KunaFixes::DEFAULT.without(KunaFix::X)` and run with it through `Fernflower::new_with_fixes`
-(or a corpus `Case`'s `fixes`); no option reaches that set. The regression corpus's runner
-(`decompiler/nonnative/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) turns compat
-on unless a case says otherwise, so its Vineflower-oracle cases test the plain port against
-a digest of the released Vineflower jar's text (each also runs with the defaults, against a
-digest of the text it printed when last reviewed), and each fix has a case that runs in both
-modes (`tests/jvm/kuna-fixes/`): in compat mode it must print the release jar's text,
-failure comment included (pinned by its digest), and by default kuna's reviewed text.
+**No switch.** A fix is a correction, not a judgement call, so it has no option and no
+gate: its code takes the place of the Java's at its site, and the engine has one mode.
+`Fernflower::new` (`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs`) sets the
+`error-message` default to kuna's note (`report_to_kuna`). The regression corpus's runner
+(`decompiler/nonnative/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) runs every case
+with the defaults: its Vineflower-oracle cases against a digest of the text kuna printed when
+last reviewed, and each fix's case (`tests/jvm/kuna-fixes/`) against kuna's reviewed text.
 
 **Invariants.**
 

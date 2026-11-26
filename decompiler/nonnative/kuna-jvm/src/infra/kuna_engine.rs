@@ -152,9 +152,7 @@ impl Engine for Jvm {
                  --option <name> <value>` (repeatable). Every Vineflower option also answers \
                  to Vineflower's long and three-letter names (its `aliases`). Booleans take \
                  `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its \
-                 bundled plugins' included. kuna's own rows have no Vineflower name; among them, \
-                 `jvm_vineflower_compat on` turns off kuna's fixes of Vineflower's defects (which \
-                 have no options of their own) for Vineflower's exact text.\n\n\
+                 bundled plugins' included. kuna's own rows have no Vineflower name.\n\n\
                  Vineflower keys kuna sets itself, so they are not options:\n\n{owned}\nThree tiers:\n\n\
                  - **Toggleable transforms** -- restructure, remove, or insert code; the on/off control surface.\n\
                  - **Input & analysis** -- what the engine reads: the class universe, libraries, the JDK.\n\

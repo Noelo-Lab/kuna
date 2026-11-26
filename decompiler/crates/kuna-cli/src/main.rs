@@ -351,11 +351,11 @@ fn usage_test() {
          {{requested,matched,missing}}, each null when that half did not run.\n\
          \n\
          --jvm [--manifest F] [--jobs N|auto] [--out D] [--save-digests] runs the JVM\n\
-         engine's corpus (tests/jvm/cases.tsv, or F: Vineflower 1.12.0's text and kuna's\n\
-         own, pinned by digest or expected file) in this process and fails on any case\n\
+         engine's corpus (tests/jvm/cases.tsv, or F: kuna's text, pinned by digest or\n\
+         expected file) in this process and fails on any case\n\
          that does not match; --name N keeps the cases whose id contains N; --out D\n\
          writes each run's text as D/<id>.java|.kt; --save-digests re-records the `kuna`\n\
-         digests of the default-mode runs (kuna/<id>) it made. With --json:\n\
+         digests of the runs it made. With --json:\n\
          {{jvm_footer,passing,returncode,failures,selection}}."
     );
 }

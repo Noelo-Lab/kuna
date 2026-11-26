@@ -1,5 +1,5 @@
 //! The JVM option table: one to one with Vineflower's options, resolution, aliases, and the
-//! kuna form options (their texts: `fix_isolation.rs`).
+//! kuna form options.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -9,7 +9,6 @@ use kuna_jvm::fernflower::Fernflower;
 use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
-use kuna_jvm::kuna_fixes::VINEFLOWER_COMPAT;
 use kuna_jvm::kuna_options::{
     self, driver_owned, find, form_enabled, resolve, rows, take_form_options, ValueKind,
     JAVAC_LAYOUT, KUNA_FORM, SOURCE_LOCALS, SOURCE_PATTERNS,
@@ -238,18 +237,11 @@ fn form_options_are_kuna_rows_on_by_default() {
             ("on|off", "on", KUNA_FORM)
         );
         assert_eq!(resolve(name, "off").unwrap(), (name, "0".to_string()));
-        let (forms, rest) = take_form_options(&pairs(&[(name, "off"), ("a", "1")]), false);
+        let (forms, rest) = take_form_options(&pairs(&[(name, "off"), ("a", "1")]));
         assert!(!forms.contains(name));
         assert_eq!(rest, pairs(&[("a", "1")]));
-        assert!(take_form_options(&[], false).0.contains(name));
-        assert!(
-            take_form_options(&pairs(&[(name, "0"), (name, "on")]), false)
-                .0
-                .contains(name)
-        );
-        assert!(!take_form_options(&pairs(&[(name, "on")]), true)
-            .0
-            .contains(name));
+        assert!(take_form_options(&[]).0.contains(name));
+        assert!(take_form_options(&pairs(&[(name, "0"), (name, "on")])).0.contains(name));
     }
 }
 
@@ -269,13 +261,8 @@ fn engine_has_source_locals(options: &[(&str, &str)]) -> bool {
 }
 
 #[test]
-fn compat_turns_the_form_options_off() {
+fn the_engine_installs_the_form_options() {
     assert!(engine_has_source_locals(&[]));
     assert!(engine_has_source_locals(&[(SOURCE_LOCALS, "1")]));
     assert!(!engine_has_source_locals(&[(SOURCE_LOCALS, "0")]));
-    assert!(!engine_has_source_locals(&[(VINEFLOWER_COMPAT, "1")]));
-    assert!(!engine_has_source_locals(&[
-        (VINEFLOWER_COMPAT, "1"),
-        (SOURCE_LOCALS, "1")
-    ]));
 }

@@ -113,7 +113,7 @@ fn a_batch_leaves_no_marks_for_the_next_one() {
     }
     std::fs::copy(data.join("User.class"), dir.join("pkg/User.class")).unwrap();
     let input = kuna_input::load(&dir, &LoadOptions::default()).unwrap();
-    let opts = options(&[("jvm_vineflower_compat", "1")]);
+    let opts = options(&[]);
     let single: Vec<(String, String)> = decompile(&input, &opts)
         .into_iter()
         .map(|u| (u.qualified_name, u.content))

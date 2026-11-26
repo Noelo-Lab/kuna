@@ -2,7 +2,7 @@
 //! run in this process, one case per big-stack engine thread, several at a time. The exit status
 //! is nonzero on any case that does not match. `--out DIR` writes each run's compared text as
 //! `DIR/<id>.java|.kt`; `--save-digests` re-records the manifest's `kuna` record of each
-//! default-mode run (`kuna/<id>`) from the text it printed.
+//! case from the text it printed.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use kuna_jvm::kuna_corpus::{
     failure_key, load_cases, run_case, text_digest, totals, unescape_field, with_engine_stack, Case,
-    CaseResult, CaseStatus, DEFAULT_RUN, DEFAULT_RUN_RECORD,
+    CaseResult, CaseStatus, DIGEST_RECORD,
 };
 use kuna_jvm::rt::try_catch;
 
@@ -68,13 +68,13 @@ fn write_texts(dir: &Path, results: &[CaseResult]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Rewrites the `kuna` record of each case whose default-mode run printed its text without an
-/// error; returns one line per changed record.
+/// Rewrites the `kuna` record of each case whose run printed its text without an error; returns
+/// one line per changed record.
 fn save_digests(manifest: &Path, results: &[CaseResult]) -> Result<Vec<String>, String> {
     let digests: BTreeMap<&str, String> = results
         .iter()
         .filter(|r| r.error.is_none())
-        .filter_map(|r| Some((r.id.strip_prefix(DEFAULT_RUN)?, text_digest(r.actual.as_deref()?))))
+        .filter_map(|r| Some((r.id.as_str(), text_digest(r.actual.as_deref()?))))
         .collect();
     let text = std::fs::read_to_string(manifest).map_err(|e| e.to_string())?;
     let mut case = String::new();
@@ -84,10 +84,10 @@ fn save_digests(manifest: &Path, results: &[CaseResult]) -> Result<Vec<String>, 
         .map(|line| {
             match line.split('\t').collect::<Vec<_>>()[..] {
                 ["case", id, ..] => case = unescape_field(id),
-                [DEFAULT_RUN_RECORD, old] => {
+                [DIGEST_RECORD, old] => {
                     if let Some(new) = digests.get(case.as_str()).filter(|new| *new != old) {
-                        changed.push(format!("{DEFAULT_RUN}{case}: {old} -> {new}"));
-                        return format!("{DEFAULT_RUN_RECORD}\t{new}");
+                        changed.push(format!("{case}: {old} -> {new}"));
+                        return format!("{DIGEST_RECORD}\t{new}");
                     }
                 }
                 _ => {}

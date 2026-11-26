@@ -178,8 +178,10 @@ fn manifest_errors_name_the_line() {
     .contains("unknown set `Nope`"));
     assert!(bad(&with("case\tq/Q\tDefault\nexpected\ty\ncompare\tz\n")).contains("no class files"));
     assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\ncompare\tz\n")).contains("no expected file"));
-    assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\nexpected\ty\nvineflower\t0\n"))
-        .contains("both `expected` and `vineflower`"));
+    assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\nexpected\ty\nkuna\t0\n"))
+        .contains("both `expected` and `kuna`"));
+    assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\nvineflower\t0\n"))
+        .contains("unknown record `vineflower`"));
     assert!(bad("kuna-jvm-corpus\t1\nopt\ta\tb\n").contains("line 2: `opt` outside a set or case"));
     assert!(
         bad("kuna-jvm-corpus\t1\nset\tS\ts\nclass\tx\n").contains("line 3: `class` outside a case")
@@ -221,33 +223,26 @@ fn the_short_form_derives_classes_expected_and_compare() {
     assert_eq!(cases[1].expected, Some(root.join("x/p/B.java")));
     assert_eq!(cases[1].compare, ["B.java"]);
 
-    let pinned = parse_cases(&format!("{text}case\ts/p/AB\tS\tc/p/AB\nvineflower\tx\n"), &root).unwrap();
+    let pinned = parse_cases(&format!("{text}case\ts/p/AB\tS\tc/p/AB\nkuna\tx\n"), &root).unwrap();
     assert_eq!((&pinned[2].expected, &pinned[2].compare[..]), (&None, &["AB.java".to_string()][..]));
 }
 
 #[test]
-fn digest_records_pin_the_compat_and_the_default_mode_run() {
+fn a_digest_record_pins_the_case() {
     let cases = parse_cases(
         &format!(
             "{SAMPLE}case\tsingle/pkg/TestD\tSingle\nclass\tjava8/pkg/TestD.class\n\
-             vineflower\tfedcba9876543210\nkuna\t0123456789abcdef\n"
+             kuna\t0123456789abcdef\n"
         ),
         Path::new("/m"),
     )
     .unwrap();
-    let (case, run) = (&cases[3], &cases[4]);
+    assert_eq!(cases.len(), 4);
+    let case = &cases[3];
     assert_eq!(case.id, "single/pkg/TestD");
     assert_eq!(
         (&case.expected, &case.compare[..], &case.digest),
-        (&None, &["TestD.java".to_string()][..], &Some("fedcba9876543210".into()))
-    );
-    assert_eq!(run.id, "kuna/single/pkg/TestD");
-    let mut options = case.options.clone();
-    options.push(("jvm_vineflower_compat".into(), "0".into()));
-    assert_eq!(run.options, options);
-    assert_eq!(
-        (&run.class_files, &run.compare, &run.expected, &run.digest),
-        (&case.class_files, &case.compare, &None, &Some("0123456789abcdef".into()))
+        (&None, &["TestD.java".to_string()][..], &Some("0123456789abcdef".into()))
     );
     assert_eq!(cases[2].digest, None);
 
@@ -520,7 +515,7 @@ fn vendored() -> Vec<Case> {
 /// A kuna-fixes case in Kotlin: it runs with the plugins and compares `<Stem>.kt` (or `.java`), then
 /// the units of its `compare_fallback` classes the same way.
 fn kotlin_fix_case(case: &Case) -> bool {
-    let kotlin = is_kuna_fix(case) && case.compare[0].ends_with(".kt");
+    let kotlin = case.set_slug == "kuna-fixes" && case.compare[0].ends_with(".kt");
     if kotlin {
         let class = case.class_files[0].file_stem().unwrap().to_string_lossy();
         assert_eq!(
@@ -534,10 +529,6 @@ fn kotlin_fix_case(case: &Case) -> bool {
     kotlin
 }
 
-fn is_kuna_fix(case: &Case) -> bool {
-    case.set_slug == "kuna-fixes" || case.set_slug == "kuna-fixes-compat"
-}
-
 fn is_digest(digest: &Option<String>) -> bool {
     digest
         .as_deref()
@@ -546,39 +537,11 @@ fn is_digest(digest: &Option<String>) -> bool {
 
 #[test]
 fn vendored_corpus_is_complete() {
-    let (default_runs, cases): (Vec<Case>, Vec<Case>) = vendored()
-        .into_iter()
-        .partition(|c| c.id.starts_with(DEFAULT_RUN));
-    assert_eq!(default_runs.len(), 603);
-    for run in &default_runs {
-        assert!(run.expected.is_none() && is_digest(&run.digest), "{}", run.id);
-    }
-    assert_eq!(cases.iter().filter(|c| !is_kuna_fix(c)).count(), 603);
-    let compat: BTreeSet<&str> = cases
-        .iter()
-        .filter_map(|c| c.id.strip_prefix("kuna-fixes-compat/"))
-        .collect();
-    let fixed: BTreeSet<&str> = cases
-        .iter()
-        .filter_map(|c| c.id.strip_prefix("kuna-fixes/"))
-        .collect();
-    assert!(!fixed.is_empty());
-    assert_eq!(compat, fixed, "every kuna-fixes case runs in both modes");
-    for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes-compat") {
-        let twin = cases
-            .iter()
-            .find(|c| c.id == case.id.replacen("kuna-fixes-compat/", "kuna-fixes/", 1))
-            .unwrap();
-        assert_eq!(case.compare, twin.compare, "{}", case.id);
-    }
-    for case in cases.iter().filter(|c| is_kuna_fix(c)) {
-        let compat = if case.set_slug == "kuna-fixes-compat" { "1" } else { "0" };
-        assert_eq!(
-            case.options.iter().find(|(k, _)| k == "jvm_vineflower_compat"),
-            Some(&("jvm_vineflower_compat".to_string(), compat.to_string())),
-            "{}",
-            case.id
-        );
+    let cases = vendored();
+    assert_eq!(cases.len(), 893);
+    assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 603);
+    assert_eq!(cases.iter().filter(|c| c.set_slug == "kuna-fixes").count(), 290);
+    for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes") {
         assert!(
             case.options
                 .contains(&("dump-exception-on-error".to_string(), "0".to_string())),

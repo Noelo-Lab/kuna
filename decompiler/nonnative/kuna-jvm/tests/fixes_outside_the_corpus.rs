@@ -1,11 +1,10 @@
-//! Kotlin fixes on classes outside the corpus, which Vineflower fails whole so that they have no
-//! compat text: kotlinc 2.0.0 classes in `data/ktinlined2` and
-//! `data/kt_anonymous_class_failure_reason` (`-jvm-target 17`), run on a kuna-fixes case's options.
+//! Kotlin fixes on classes outside the corpus, which Vineflower fails whole: kotlinc 2.0.0 classes
+//! in `data/ktinlined2` and `data/kt_anonymous_class_failure_reason` (`-jvm-target 17`), run on a
+//! kuna-fixes case's options.
 
 use std::path::{Path, PathBuf};
 
 use kuna_jvm::kuna_corpus::{count_failed_methods, load_cases, run_case, with_engine_stack, Case};
-use kuna_jvm::kuna_fixes::{KunaFix, KunaFixes};
 
 fn fix_case(id: &str) -> Case {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
@@ -16,8 +15,7 @@ fn fix_case(id: &str) -> Case {
         .unwrap_or_else(|| panic!("no case kuna-fixes/{id}"))
 }
 
-fn run(mut case: Case, fixes: KunaFixes) -> Option<String> {
-    case.fixes = Some(fixes);
+fn run(case: Case) -> Option<String> {
     with_engine_stack(move || run_case(&case).actual)
 }
 
@@ -46,7 +44,7 @@ fn companion_case() -> Case {
 
 #[test]
 fn a_companion_beside_an_anonymous_class_is_found() {
-    let fixed = run(companion_case(), KunaFixes::DEFAULT).expect("the class's unit");
+    let fixed = run(companion_case()).expect("the class's unit");
     for text in [
         "public class TestCompanionNamelessClass(start: Int) {",
         "this.apply(object : CompanionAction {",
@@ -55,12 +53,6 @@ fn a_companion_beside_an_anonymous_class_is_found() {
     ] {
         assert!(fixed.contains(text), "{text}\n{fixed}");
     }
-
-    let without = run(
-        companion_case(),
-        KunaFixes::DEFAULT.without(KunaFix::KtCompanionNamelessClass),
-    );
-    assert!(without.is_none(), "{without:?}");
 }
 
 const NAMELESS: &[&str] = &[
@@ -76,11 +68,7 @@ const NAMELESS: &[&str] = &[
 /// kotlin-stdlib 2.2.20: the local the copy captures stays a local.
 #[test]
 fn a_nameless_local_a_copy_captures_stays_a_local() {
-    let fixed = run(
-        own_case(NAMELESS, "TestNamelessCapture.kt"),
-        KunaFixes::DEFAULT,
-    )
-    .expect("unit");
+    let fixed = run(own_case(NAMELESS, "TestNamelessCapture.kt")).expect("unit");
     for text in [
         "      val var1: NamelessContext = NamelessEmpty\n      return object : NamelessSink {",
         "               return var1\n",
@@ -89,18 +77,6 @@ fn a_nameless_local_a_copy_captures_stays_a_local() {
         assert!(fixed.contains(text), "{text}\n{fixed}");
     }
     assert!(!fixed.contains("$context"), "{fixed}");
-
-    let without = run(
-        own_case(NAMELESS, "TestNamelessCapture.kt"),
-        KunaFixes::DEFAULT.without(KunaFix::UnlistedAnonymousClass),
-    )
-    .expect("unit");
-    assert!(
-        without.contains(
-            "return TestNamelessCapture$sink$$inlined$namelessSink$1(NamelessEmpty, this)"
-        ),
-        "{without}"
-    );
 }
 
 const GUARDS: &[&str] = &[
@@ -115,17 +91,13 @@ const GUARDS: &[&str] = &[
 
 #[test]
 fn copies_written_without_their_arguments_stay_classes() {
-    let site = run(
-        own_case(GUARDS, "TestUnlistedGuards.kt"),
-        KunaFixes::DEFAULT,
-    )
-    .expect("unit");
+    let site = run(own_case(GUARDS, "TestUnlistedGuards.kt")).expect("unit");
     assert!(
         site.contains("return TestUnlistedGuards$later$$inlined$guardSuspend$1(null, this, step)"),
         "{site}"
     );
     let unit = "TestUnlistedGuardsKt$typedSource$$inlined$guardSource$1.kt";
-    assert!(run(own_case(GUARDS, unit), KunaFixes::DEFAULT).is_some());
+    assert!(run(own_case(GUARDS, unit)).is_some());
 }
 
 const CAPTURED_ARRAY: &[&str] = &[
@@ -139,11 +111,7 @@ const CAPTURED_ARRAY: &[&str] = &[
 /// debug name `values$iv`; the creator declares it by its own name.
 #[test]
 fn a_captured_variable_is_read_by_the_name_its_creator_declares() {
-    let fixed = run(
-        own_case(CAPTURED_ARRAY, "TestCapturedArrayNameKt.kt"),
-        KunaFixes::DEFAULT,
-    )
-    .expect("unit");
+    let fixed = run(own_case(CAPTURED_ARRAY, "TestCapturedArrayNameKt.kt")).expect("unit");
     for text in [
         "   val var6: Array<Int> = arrayOf(a, b, c)\n   return object : ArraySource {",
         "         val var2: Array<Int> = var6\n",
@@ -152,24 +120,11 @@ fn a_captured_variable_is_read_by_the_name_its_creator_declares() {
         assert!(fixed.contains(text), "{text}\n{fixed}");
     }
     assert!(!fixed.contains("values$iv"), "{fixed}");
-
-    let without = run(
-        own_case(CAPTURED_ARRAY, "TestCapturedArrayNameKt.kt"),
-        KunaFixes::DEFAULT.without(KunaFix::UnlistedAnonymousClass),
-    )
-    .expect("unit");
-    assert!(
-        without.contains(
-            "return TestCapturedArrayNameKt$spread$$inlined$arraySource$1(arrayOf(a, b, c), k)"
-        ),
-        "{without}"
-    );
 }
 
 /// `tests/data/kt_anonymous_class_failure_reason/` (kotlinc 2.0.0, `-jvm-target 17`) run as a
 /// kuna-fixes Kotlin case: it has no case of its own, because what its fix changes is printed
-/// only with `dump-exception-on-error` on, where the compat text cannot be Vineflower's (its
-/// stack trace).
+/// only with `dump-exception-on-error` on.
 fn unwritable_case() -> Case {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/kt_anonymous_class_failure_reason/pkg");
@@ -196,45 +151,23 @@ fn unwritable_case() -> Case {
 }
 
 /// The unwritable classes' text with the exception in failure comments.
-fn unwritable_text(fixes: KunaFixes) -> String {
+fn unwritable_text() -> String {
     let mut case = unwritable_case();
     case.options.retain(|(k, _)| k != "dump-exception-on-error");
     case.options
         .push(("dump-exception-on-error".into(), "1".into()));
-    run(case, fixes).expect("the compared unit")
+    run(case).expect("the compared unit")
 }
 
 #[test]
 fn an_unwritable_anonymous_class_says_what_it_is() {
-    let continuations = KunaFixes::DEFAULT
-        .without(KunaFix::KtSyntheticObjectSuperCall)
-        .without(KunaFix::KtSuspendStateMachine)
-        .without(KunaFix::KtForInlineCopy);
-    let fixed = unwritable_text(continuations);
-    assert_eq!(count_failed_methods(&fixed), 3, "{fixed}");
-    assert!(
-        fixed.contains(
-            "Anonymous class does not have Class Kotlin metadata: pkg.TestUnwritableObjectsKt$twoSteps$1 \
-             is the continuation of a suspend function: the method is the function's coroutine state \
-             machine, which has no Kotlin form\n"
-        ),
-        "{fixed}"
-    );
+    let fixed = unwritable_text();
+    assert_eq!(count_failed_methods(&fixed), 1, "{fixed}");
     assert!(
         fixed.contains(
             "Anonymous class does not have Class Kotlin metadata: pkg.TestUnwritableObjectsKt$localReference$1 \
              is a reference to a local function that captures variables\n"
         ),
         "{fixed}"
-    );
-
-    let unfixed = unwritable_text(continuations.without(KunaFix::KtAnonymousClassFailureReason));
-    assert_eq!(count_failed_methods(&unfixed), 3, "{unfixed}");
-    assert_eq!(
-        unfixed
-            .matches("IllegalStateException: Anonymous class does not have Class Kotlin metadata\n")
-            .count(),
-        3,
-        "{unfixed}"
     );
 }

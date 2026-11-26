@@ -281,18 +281,6 @@ opt	__dump_original_lines__	1
 opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	kt-decompile-facades	1
-set	Kuna Fixes, Vineflower compat	kuna-fixes-compat
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	dump-exception-on-error	0
-opt	jvm_vineflower_compat	1
 set	Kuna Fixes	kuna-fixes	kuna-fixes/expected
 opt	log-level	warn
 opt	decompile-generics	1
@@ -304,2836 +292,1285 @@ opt	new-line-separator	1
 opt	error-message	
 opt	include-runtime	
 opt	dump-exception-on-error	0
-opt	jvm_vineflower_compat	0
 case	complex-condys/pkg/TestComplexCondy	Complex Condys	classes/jasm/pkg/TestComplexCondy
-vineflower	b97b68c11520e1ea
 kuna	b97b68c11520e1ea
 case	default/InvalidMethodSignature	Default	classes/custom/InvalidMethodSignature
-vineflower	45d5e7c4bdc10547
 kuna	45d5e7c4bdc10547
 compare	i.java
 case	default/Java14Test	Default	classes/custom/Java14Test
-vineflower	e12428c30299e90f
 kuna	e12428c30299e90f
 case	default/JsHurt	Default	classes/custom/JsHurt
-vineflower	e92eadb12df95474
 kuna	976927c88e0801bf
 case	default/TestCorruptedSignatures	Default	classes/custom/TestCorruptedSignatures
-vineflower	323c58976ca57369
 kuna	323c58976ca57369
 compare	Signatures.java
 case	default/TestEclipseSwitchEnum	Default	classes/custom/TestEclipseSwitchEnum
-vineflower	eac49722c39a4b6d
 kuna	eac49722c39a4b6d
 case	default/TestEclipseSwitchString	Default	classes/custom/TestEclipseSwitchString
-vineflower	775d8e9e23a1c2c3
 kuna	8e93949084752e3d
 case	default/TestHotjava	Default	classes/custom/TestHotjava
-vineflower	d4f0514bd8ce8fd7
 kuna	d4f0514bd8ce8fd7
 case	default/TestIdeaNotNull	Default	classes/custom/TestIdeaNotNull
-vineflower	d2626dc394eae49b
 kuna	18fe2f11e182b588
 case	default/TestJava1Synchronized	Default	classes/custom/TestJava1Synchronized
-vineflower	d0a134f235562944
 kuna	d0a134f235562944
 case	default/TestJsr	Default	classes/custom/TestJsr
-vineflower	b84633a56dd13e26
 kuna	b84633a56dd13e26
 case	default/TestJsr2	Default	classes/custom/TestJsr2
-vineflower	c84ae4f3ac084ff7
 kuna	c84ae4f3ac084ff7
 case	default/TestStringConcatJ19	Default	classes/custom/TestStringConcatJ19
-vineflower	9acf8b59cdbba426
 kuna	9acf8b59cdbba426
 case	default/TestSwitchOnEnumWithoutEnumJ21	Default	classes/custom/TestSwitchOnEnumWithoutEnumJ21
-vineflower	c3a1e4dfbc2e266e
 kuna	240c9d04cc2c7518
 case	default/module-info	Default	classes/java9/module-info
-vineflower	3dd516a0605ce551
 kuna	3dd516a0605ce551
 case	default/pkg/MoreAnnotations	Default	classes/java8/pkg/MoreAnnotations
-vineflower	96e3c889f818a775
 kuna	96e3c889f818a775
 case	default/pkg/PermittedSubClassA	Default	classes/java16preview/pkg/PermittedSubClassA	classes/java16preview/pkg/TestSealedClasses
-vineflower	5dccb40e72fa2790
 kuna	5dccb40e72fa2790
 case	default/pkg/PermittedSubClassB	Default	classes/java16preview/pkg/PermittedSubClassB	classes/java16preview/pkg/PermittedSubClassA	classes/java16preview/pkg/TestSealedClasses
-vineflower	23e03ca98a360b86
 kuna	23e03ca98a360b86
 case	default/pkg/PermittedSubClassC	Default	classes/java16preview/pkg/PermittedSubClassC	classes/java16preview/pkg/TestSealedInterfaces
-vineflower	65cdad731cb0e1e6
 kuna	65cdad731cb0e1e6
 case	default/pkg/PermittedSubClassD	Default	classes/java16preview/pkg/PermittedSubClassD	classes/java16preview/pkg/PermittedSubClassC	classes/java16preview/pkg/TestSealedInterfaces
-vineflower	2024dd32f6f84cef
 kuna	2024dd32f6f84cef
 case	default/pkg/PermittedSubClassE	Default	classes/java16preview/pkg/PermittedSubClassE	classes/java16preview/pkg/TestSealedInterfaces
-vineflower	c4c4dbfa5b5f0036
 kuna	c4c4dbfa5b5f0036
 case	default/pkg/PermittedSubInterfaceA	Default	classes/java16preview/pkg/PermittedSubInterfaceA	classes/java16preview/pkg/TestSealedInterfaces
-vineflower	fcb6c27a34669da7
 kuna	fcb6c27a34669da7
 case	default/pkg/PermittedSubInterfaceB	Default	classes/java16preview/pkg/PermittedSubInterfaceB	classes/java16preview/pkg/PermittedSubInterfaceA	classes/java16preview/pkg/TestSealedInterfaces
-vineflower	621d0a8a7f337221
 kuna	621d0a8a7f337221
 case	default/pkg/TestAbstractMethods	Default	classes/java8/pkg/TestAbstractMethods
-vineflower	ce4fb040bed64fbc
 kuna	ce4fb040bed64fbc
 case	default/pkg/TestAccessReplace	Default	classes/java8/pkg/TestAccessReplace
-vineflower	f8abcc2066be56e6
 kuna	f8abcc2066be56e6
 case	default/pkg/TestAccidentalSwitchExpression	Default	classes/java16/pkg/TestAccidentalSwitchExpression
-vineflower	2736ce28eedfdd5f
 kuna	63775e90d0e7b050
 case	default/pkg/TestAmbiguousArraylen	Default	classes/java8/pkg/TestAmbiguousArraylen
-vineflower	278c9acc7c2b6f96
 kuna	278c9acc7c2b6f96
 case	default/pkg/TestAmbiguousCall	Default	classes/java8/pkg/TestAmbiguousCall
-vineflower	09bf9deb3b5a0fa4
 kuna	09bf9deb3b5a0fa4
 case	default/pkg/TestAnnotationFormatting	Default	classes/java8/pkg/TestAnnotationFormatting
-vineflower	021e24a4639add4a
 kuna	021e24a4639add4a
 case	default/pkg/TestAnonymousClassConstructor	Default	classes/java8/pkg/TestAnonymousClassConstructor
-vineflower	89308bb20237ac31
 kuna	89308bb20237ac31
 case	default/pkg/TestAnonymousClassJ25	Default	classes/java25/pkg/TestAnonymousClassJ25
-vineflower	e1d23ae4c4297498
 kuna	e1d23ae4c4297498
 case	default/pkg/TestAnonymousClassToLambda	Default	classes/java8/pkg/TestAnonymousClassToLambda
-vineflower	d0a6893696b9afde
 kuna	d0a6893696b9afde
 case	default/pkg/TestAnonymousObject	Default	classes/java8/pkg/TestAnonymousObject
-vineflower	10d4251e3de7fa22
 kuna	10d4251e3de7fa22
 case	default/pkg/TestAnonymousParamNames	Default	classes/java8/pkg/TestAnonymousParamNames
-vineflower	98b3086a92805a9b
 kuna	98b3086a92805a9b
 case	default/pkg/TestArrayAssign	Default	classes/java8/pkg/TestArrayAssign
-vineflower	276824cf56da5bf6
 kuna	11c5bc2519cc317c
 case	default/pkg/TestArrayAssign2	Default	classes/java8/pkg/TestArrayAssign2
-vineflower	505b39d3334afd85
 kuna	505b39d3334afd85
 case	default/pkg/TestArrayAssignmentEquals	Default	classes/java8/pkg/TestArrayAssignmentEquals
-vineflower	ccad6f9066c5554a
 kuna	ccad6f9066c5554a
 case	default/pkg/TestArrayConstructorReference	Default	classes/java8/pkg/TestArrayConstructorReference
-vineflower	9a6537df9df3c67a
 kuna	9a6537df9df3c67a
 case	default/pkg/TestArrayCopy	Default	classes/java8/pkg/TestArrayCopy
-vineflower	04604601d6c8dbda
 kuna	04604601d6c8dbda
 case	default/pkg/TestArrayDoWhile	Default	classes/java8/pkg/TestArrayDoWhile
-vineflower	de9a3fb5aad072d6
 kuna	a3ea8618ace3cd31
 case	default/pkg/TestArrayFieldAccess	Default	classes/java8/pkg/TestArrayFieldAccess
-vineflower	9889d54be643b08c
 kuna	deed739f2d056b32
 case	default/pkg/TestArrayFieldAccess1	Default	classes/java8/pkg/TestArrayFieldAccess1
-vineflower	10d37fbbf8d3e0b9
 kuna	d9e1149703eb1840
 case	default/pkg/TestArrayFieldAccess2	Default	classes/java8/pkg/TestArrayFieldAccess2
-vineflower	28d16b75fd57b978
 kuna	82fbaf8e0aab408c
 case	default/pkg/TestArrayForeach	Default	classes/java8/pkg/TestArrayForeach
-vineflower	af844986c9c7bc76
 kuna	af844986c9c7bc76
 case	default/pkg/TestArrayInitializations	Default	classes/java8/pkg/TestArrayInitializations
-vineflower	e71063e547a9c92a
 kuna	c066a45694efd0e5
 case	default/pkg/TestArrayNewAccess	Default	classes/java8/pkg/TestArrayNewAccess
-vineflower	115c787fae31ac83
 kuna	115c787fae31ac83
 case	default/pkg/TestArrayNull1	Default	classes/java8nodebug/pkg/TestArrayNull1
-vineflower	21639b3aecc83043
 kuna	21639b3aecc83043
 case	default/pkg/TestArrayNull2	Default	classes/java8nodebug/pkg/TestArrayNull2
-vineflower	10c729da77976d6b
 kuna	10c729da77976d6b
 case	default/pkg/TestArrayNullAccess	Default	classes/java8/pkg/TestArrayNullAccess
-vineflower	3a2a37f63520eabc
 kuna	3a2a37f63520eabc
 case	default/pkg/TestArrayPPMM	Default	classes/java8/pkg/TestArrayPPMM
-vineflower	309cc815be545e55
 kuna	309cc815be545e55
 case	default/pkg/TestArrayPPMM1	Default	classes/java8/pkg/TestArrayPPMM1
-vineflower	cab82560332f12a5
 kuna	cab82560332f12a5
 case	default/pkg/TestArrayTernary	Default	classes/java8/pkg/TestArrayTernary
-vineflower	4102404cf6a8d14b
 kuna	4102404cf6a8d14b
 case	default/pkg/TestArrays	Default	classes/java8/pkg/TestArrays
-vineflower	49f1521c05987492
 kuna	49f1521c05987492
 case	default/pkg/TestAssertConst	Default	classes/java8/pkg/TestAssertConst
-vineflower	30db16acbb97b9bd
 kuna	30db16acbb97b9bd
 case	default/pkg/TestAssertInterface1	Default	classes/java25/pkg/TestAssertInterface1
-vineflower	0dc5c0d2be541396
 kuna	0dc5c0d2be541396
 case	default/pkg/TestAssertInterface2	Default	classes/java25/pkg/TestAssertInterface2
-vineflower	e9b35fd420a897c3
 kuna	e9b35fd420a897c3
 case	default/pkg/TestAssertInterface3	Default	classes/java25/pkg/TestAssertInterface3
-vineflower	07e6e39140ff3f6c
 kuna	07e6e39140ff3f6c
 case	default/pkg/TestAssertJ16	Default	classes/java16/pkg/TestAssertJ16
-vineflower	8a681d9f1dc686e9
 kuna	8a681d9f1dc686e9
 case	default/pkg/TestAssertMerge	Default	classes/java8/pkg/TestAssertMerge
-vineflower	df268d326b886a18
 kuna	34037025bc98b5c2
 case	default/pkg/TestAssertPatternMatching	Default	classes/java25/pkg/TestAssertPatternMatching
-vineflower	ca436aa3580f336c
 kuna	ca436aa3580f336c
 case	default/pkg/TestAssertSwitchExpression	Default	classes/java16/pkg/TestAssertSwitchExpression
-vineflower	c5debdce1daf2b23
 kuna	c5debdce1daf2b23
 case	default/pkg/TestAsserts	Default	classes/java8/pkg/TestAsserts
-vineflower	91c63cbb0f4bf98a
 kuna	91c63cbb0f4bf98a
 case	default/pkg/TestAssertsEnabled	Default	classes/java25/pkg/TestAssertsEnabled
-vineflower	61f7eaffa76c9d3d
 kuna	8fbaf4ed849ce4d9
 case	default/pkg/TestAssignmentInDoWhile	Default	classes/java8/pkg/TestAssignmentInDoWhile
-vineflower	dd4d4828e9b8f103
 kuna	dd4d4828e9b8f103
 case	default/pkg/TestAssignmentInLoop	Default	classes/java8/pkg/TestAssignmentInLoop
-vineflower	9b7fcf9300a0670d
 kuna	9b7fcf9300a0670d
 case	default/pkg/TestAssignmentSwitchExpression1	Default	classes/java16/pkg/TestAssignmentSwitchExpression1
-vineflower	f5264f94dcc04264
 kuna	f5264f94dcc04264
 case	default/pkg/TestAssignmentSwitchExpression2	Default	classes/java16/pkg/TestAssignmentSwitchExpression2
-vineflower	a14f37db40b59674
 kuna	a14f37db40b59674
 case	default/pkg/TestAssignmentSwitchExpression3	Default	classes/java16/pkg/TestAssignmentSwitchExpression3
-vineflower	96b62d19285830e4
 kuna	1ea40a6cd4d11a80
 case	default/pkg/TestAssignmentSwitchExpression4	Default	classes/java16/pkg/TestAssignmentSwitchExpression4
-vineflower	884fabecc1fdb75c
 kuna	884fabecc1fdb75c
 case	default/pkg/TestAssignmentSwitchExpression5	Default	classes/java16/pkg/TestAssignmentSwitchExpression5
-vineflower	b86d92446189ea6e
 kuna	b86d92446189ea6e
 case	default/pkg/TestAssignmentSwitchExpression6	Default	classes/java16/pkg/TestAssignmentSwitchExpression6
-vineflower	76a8480bc3688780
 kuna	76a8480bc3688780
 case	default/pkg/TestAssignmentSwitchExpression7	Default	classes/java16/pkg/TestAssignmentSwitchExpression7
-vineflower	5f0f0e15ec4da110
 kuna	5f0f0e15ec4da110
 case	default/pkg/TestBackwardsExceptionHandler	Default	classes/jasm/pkg/TestBackwardsExceptionHandler
-vineflower	a03c47fc3656f1cd
 kuna	8bc4e201bb2848a6
 case	default/pkg/TestBinaryOperationWrapping	Default	classes/java8/pkg/TestBinaryOperationWrapping
-vineflower	ef157f8375a7e649
 kuna	ef157f8375a7e649
 case	default/pkg/TestBlankLinesSpaces	Default	classes/java8/pkg/TestBlankLinesSpaces
-vineflower	7b2974d796446e79
 kuna	7b2974d796446e79
 case	default/pkg/TestBooleanAssignment	Default	classes/java8/pkg/TestBooleanAssignment
-vineflower	8ada52f92717a231
 kuna	8ada52f92717a231
 case	default/pkg/TestBooleanExpressions	Default	classes/java8/pkg/TestBooleanExpressions
-vineflower	1f26bbff54b78792
 kuna	1f26bbff54b78792
 case	default/pkg/TestBooleanSwitchExpression1	Default	classes/java16/pkg/TestBooleanSwitchExpression1
-vineflower	bc1149b73d4f25fe
 kuna	bc1149b73d4f25fe
 case	default/pkg/TestBooleanSwitchExpression2	Default	classes/java16/pkg/TestBooleanSwitchExpression2
-vineflower	b705d2e66e3db0bb
 kuna	b705d2e66e3db0bb
 case	default/pkg/TestBooleanSwitchExpression3	Default	classes/java16/pkg/TestBooleanSwitchExpression3
-vineflower	92ced414868625f4
 kuna	92ced414868625f4
 case	default/pkg/TestBooleanSwitchExpression4	Default	classes/java16/pkg/TestBooleanSwitchExpression4
-vineflower	077b215be0ede801
 kuna	d5ee5834446488e5
 case	default/pkg/TestBooleanSwitchExpression5	Default	classes/java16/pkg/TestBooleanSwitchExpression5
-vineflower	5e53415791656ce9
 kuna	5e53415791656ce9
 case	default/pkg/TestBoxingSuperclass	Default	classes/java8/pkg/TestBoxingSuperclass
-vineflower	b994b7b42c917f78
 kuna	b994b7b42c917f78
 case	default/pkg/TestCastIntersectionJ21	Default	classes/java21/pkg/TestCastIntersectionJ21
-vineflower	41e3cb7638ce6d2a
 kuna	41e3cb7638ce6d2a
 case	default/pkg/TestCastObjectToPrimitive	Default	classes/java8/pkg/TestCastObjectToPrimitive
-vineflower	edc85c6c85c20d04
 kuna	f28ee5cd825eae63
 case	default/pkg/TestCastPrimitiveToObject	Default	classes/java8/pkg/TestCastPrimitiveToObject
-vineflower	d1fb4e88ac6a6987
 kuna	d1fb4e88ac6a6987
 case	default/pkg/TestCatchClashing	Default	classes/java8/pkg/TestCatchClashing
-vineflower	12bf53176b437595
 kuna	12bf53176b437595
 case	default/pkg/TestCatchVariable	Default	classes/java8/pkg/TestCatchVariable
-vineflower	2e68b506babcb3a2
 kuna	3814945ffe3ca498
 case	default/pkg/TestChainedCFG	Default	classes/java8/pkg/TestChainedCFG
-vineflower	a6a3bf087b85c5ba
 kuna	a6a3bf087b85c5ba
 case	default/pkg/TestClashName	Default	classes/java8/pkg/TestClashName	classes/java8/pkg/SharedName1	classes/java8/pkg/SharedName2	classes/java8/pkg/SharedName3	classes/java8/pkg/SharedName4	classes/java8/pkg/NonSharedName	classes/java8/pkg/TestClashNameParent	classes/java8/ext/TestClashNameParent	classes/java8/pkg/TestClashNameIface	classes/java8/ext/TestClashNameIface
-vineflower	a4c2dfd0b6345b41
 kuna	a4c2dfd0b6345b41
 case	default/pkg/TestClassFields	Default	classes/java8/pkg/TestClassFields
-vineflower	8dae91e63ab882b3
 kuna	8dae91e63ab882b3
 case	default/pkg/TestClassLambda	Default	classes/java8/pkg/TestClassLambda
-vineflower	d8407cc8cd71bce0
 kuna	d8407cc8cd71bce0
 case	default/pkg/TestClassLoop	Default	classes/java8/pkg/TestClassLoop
-vineflower	4b7b4f385d93c391
 kuna	0aa165d2b5d064fd
 case	default/pkg/TestClassNestedInitializer	Default	classes/java8/pkg/TestClassNestedInitializer
-vineflower	b97ac61972a4efa4
 kuna	b97ac61972a4efa4
 case	default/pkg/TestClassSwitch	Default	classes/java8/pkg/TestClassSwitch
-vineflower	a62f49087ad91f03
 kuna	7840c29a7a9f9c3d
 case	default/pkg/TestClassVar	Default	classes/java8/pkg/TestClassVar
-vineflower	4018a093ead22692
 kuna	4018a093ead22692
 case	default/pkg/TestCodeConstructs	Default	classes/java8/pkg/TestCodeConstructs
-vineflower	ef1251b0421718d1
 kuna	ef1251b0421718d1
 case	default/pkg/TestCollectionItr	Default	classes/java8/pkg/TestCollectionItr
-vineflower	5c6e02455b140591
 kuna	5c6e02455b140591
 case	default/pkg/TestComplexIfElseChain	Default	classes/java8/pkg/TestComplexIfElseChain
-vineflower	18ba0947d21666ee
 kuna	c9669eac3bef8e4c
 case	default/pkg/TestCompoundAssignment	Default	classes/java8/pkg/TestCompoundAssignment
-vineflower	bcfa52aa51ff46aa
 kuna	3d0f00155fc6d115
 case	default/pkg/TestCompoundAssignmentReplace	Default	classes/java8nodebug/pkg/TestCompoundAssignmentReplace
-vineflower	5542318cde979e85
 kuna	5542318cde979e85
 case	default/pkg/TestCondy	Default	classes/jasm/pkg/TestCondy
-vineflower	54b5bb3da706770b
 kuna	54b5bb3da706770b
 case	default/pkg/TestConflictingLvtNamer	Default	classes/custom/pkg/TestConflictingLvtNamer
-vineflower	f3efd58de8c2dd13
 kuna	f3efd58de8c2dd13
 case	default/pkg/TestConstType	Default	classes/java8/pkg/TestConstType
-vineflower	5b28ec7856e6b82c
 kuna	600d1e128982bf11
 case	default/pkg/TestConstants	Default	classes/java8/pkg/TestConstants
-vineflower	7a21caf79c03aa02
 kuna	7a21caf79c03aa02
 case	default/pkg/TestConstructorInvoc	Default	classes/java8/pkg/TestConstructorInvoc
-vineflower	e15658fd09467e28
 kuna	e15658fd09467e28
 case	default/pkg/TestConstructorReference	Default	classes/java8/pkg/TestConstructorReference
-vineflower	65cfe0909d69bac6
 kuna	65cfe0909d69bac6
 case	default/pkg/TestConstructorSwitchExpression1	Default	classes/java16/pkg/TestConstructorSwitchExpression1
-vineflower	7843022cba356b61
 kuna	cd0675297b889fda
 case	default/pkg/TestConstructorSwitchExpression2	Default	classes/java16/pkg/TestConstructorSwitchExpression2
-vineflower	2384f1b478ea61da
 kuna	2384f1b478ea61da
 case	default/pkg/TestConstructorSwitchExpression3	Default	classes/java16/pkg/TestConstructorSwitchExpression3
-vineflower	07f7c1e890d6fca2
 kuna	07f7c1e890d6fca2
 case	default/pkg/TestCustomProcessor	Default	classes/java21preview/pkg/TestCustomProcessor
-vineflower	02489aa19d0167d1
 kuna	02489aa19d0167d1
 case	default/pkg/TestDanglingBoxingCall	Default	classes/java8/pkg/TestDanglingBoxingCall
-vineflower	c9619d9c91e3e3d6
 kuna	c9619d9c91e3e3d6
 case	default/pkg/TestDebugSymbols	Default	classes/java8/pkg/TestDebugSymbols
-vineflower	fb882b8e720ab37c
 kuna	fb882b8e720ab37c
 case	default/pkg/TestDefiniteAssignment	Default	classes/java17/pkg/TestDefiniteAssignment
-vineflower	7147e5494fea771b
 kuna	71056fc2685999bf
 case	default/pkg/TestDeprecations	Default	classes/java8/pkg/TestDeprecations
-vineflower	c354531952a504a2
 kuna	c354531952a504a2
 case	default/pkg/TestDoWhileMerge	Default	classes/java8/pkg/TestDoWhileMerge
-vineflower	d13c81a5ef875534
 kuna	8da8331afd884cd4
 case	default/pkg/TestDoWhileTrue	Default	classes/java8/pkg/TestDoWhileTrue
-vineflower	ac6168c44b8b1f99
 kuna	3cabbfa24175a3bc
 case	default/pkg/TestDoubleAdd	Default	classes/java8/pkg/TestDoubleAdd
-vineflower	c2e1d7d260229a24
 kuna	c2e1d7d260229a24
 case	default/pkg/TestDoubleBraceInitializers	Default	classes/java8/pkg/TestDoubleBraceInitializers
-vineflower	d0fad2bb5a87fb84
 kuna	d0fad2bb5a87fb84
 case	default/pkg/TestDoubleBraceInitializersJ17	Default	classes/java17/pkg/TestDoubleBraceInitializersJ17
-vineflower	a958643b32c44d31
 kuna	a958643b32c44d31
 case	default/pkg/TestDoubleCast	Default	classes/jasm/pkg/TestDoubleCast
-vineflower	54b446c50290a9ff
 kuna	54b446c50290a9ff
 case	default/pkg/TestDoubleForeach	Default	classes/java17/pkg/TestDoubleForeach
-vineflower	46013c98d87c15a1
 kuna	a53d8f264af4bc07
 case	default/pkg/TestDoubleNestedClass	Default	classes/java8nodebug/pkg/TestDoubleNestedClass
-vineflower	8ebf557a34789d98
 kuna	8ebf557a34789d98
 case	default/pkg/TestDoublePopAfterJump	Default	classes/jasm/pkg/TestDoublePopAfterJump
-vineflower	83303db8bc7c39c0
 kuna	75517c3e6b35efd3
 case	default/pkg/TestDuplicateAssignmentInSwitchExpr	Default	classes/java17/pkg/TestDuplicateAssignmentInSwitchExpr
-vineflower	0d917610eac38d80
 kuna	0d917610eac38d80
 case	default/pkg/TestDuplicateLocals	Default	classes/java8nodebug/pkg/TestDuplicateLocals
-vineflower	087b186ff112fd39
 kuna	087b186ff112fd39
 case	default/pkg/TestDuplicateSwitchLocals	Default	classes/java8/pkg/TestDuplicateSwitchLocals
-vineflower	2d35f0dc24514a1f
 kuna	2d35f0dc24514a1f
 case	default/pkg/TestEmptyBlocks	Default	classes/java8/pkg/TestEmptyBlocks
-vineflower	9c45563ccf0fa139
 kuna	9c45563ccf0fa139
 case	default/pkg/TestEnhancedForLoops	Default	classes/java8/pkg/TestEnhancedForLoops
-vineflower	1f6a3e127e55726c
 kuna	7a1915dbb8cf867a
 case	default/pkg/TestEnum	Default	classes/java8/pkg/TestEnum
-vineflower	ee0c45943f0fa51d
 kuna	ee0c45943f0fa51d
 case	default/pkg/TestEnumArrayStaticInit	Default	classes/java8/pkg/TestEnumArrayStaticInit
-vineflower	029bb3e47e990b9f
 kuna	029bb3e47e990b9f
 case	default/pkg/TestEnumStaticField	Default	classes/jasm/pkg/TestEnumStaticField
-vineflower	30edca3a144f43e9
 kuna	30edca3a144f43e9
 case	default/pkg/TestEnumStaticField2	Default	classes/jasm/pkg/TestEnumStaticField2
-vineflower	d24cf424007e0535
 kuna	d24cf424007e0535
 case	default/pkg/TestEnumSwitchEmpty	Default	classes/java8/pkg/TestEnumSwitchEmpty
-vineflower	01892b62f68b1405
 kuna	01892b62f68b1405
 case	default/pkg/TestExceptionElse	Default	classes/java8/pkg/TestExceptionElse
-vineflower	7233c73951d072d4
 kuna	5bfcae60272f203e
 case	default/pkg/TestExtendingSubclass	Default	classes/java8/pkg/TestExtendingSubclass
-vineflower	2b3e195560be9d1f
 kuna	2b3e195560be9d1f
 case	default/pkg/TestExtendsList	Default	classes/java8/pkg/TestExtendsList
-vineflower	3a8718adaded57c0
 kuna	3a8718adaded57c0
 case	default/pkg/TestExtraClass	Default	classes/java8/pkg/TestExtraClass
-vineflower	2b405cd39c9b3554
 kuna	2b405cd39c9b3554
 case	default/pkg/TestExtraneousImports	Default	classes/java8/pkg/TestExtraneousImports
-vineflower	a3defb186494d2ee
 kuna	a3defb186494d2ee
 case	default/pkg/TestFieldSingleAccess	Default	classes/jasm/pkg/TestFieldSingleAccess
-vineflower	7a94f9b34b9db6bb
 kuna	3aff5e216e8fa078
 case	default/pkg/TestFinallyBlockVariableUse	Default	classes/java8/pkg/TestFinallyBlockVariableUse
-vineflower	837323be0a3b5bb3
 kuna	48ecd7bd2a9862c3
 case	default/pkg/TestFinallyThrow	Default	classes/java8/pkg/TestFinallyThrow
-vineflower	323707db327f66c1
 kuna	323707db327f66c1
 case	default/pkg/TestFinallyVarDef	Default	classes/java8/pkg/TestFinallyVarDef
-vineflower	9d6c6caedd584234
 kuna	08b0742c0d8db96a
 case	default/pkg/TestFloatInvertedIfConditionEarlyExit	Default	classes/java8/pkg/TestFloatInvertedIfConditionEarlyExit
-vineflower	0814b06d8de41269
 kuna	314dac668b0a64f3
 case	default/pkg/TestFloatOrderOfOperations	Default	classes/java8/pkg/TestFloatOrderOfOperations
-vineflower	ae6b6564077e3a19
 kuna	ae6b6564077e3a19
 case	default/pkg/TestFloatPiAdd	Default	classes/java8/pkg/TestFloatPiAdd
-vineflower	46d1b567c84516fb
 kuna	46d1b567c84516fb
 case	default/pkg/TestFmtProcessor	Default	classes/java21preview/pkg/TestFmtProcessor
-vineflower	7e690f7ac6b6caa7
 kuna	7e690f7ac6b6caa7
 case	default/pkg/TestForContinue	Default	classes/java8/pkg/TestForContinue
-vineflower	0b1b5a78736c40a7
 kuna	cd027474610e1c72
 case	default/pkg/TestForCyclicVarDef	Default	classes/java8/pkg/TestForCyclicVarDef
-vineflower	8246e911aa594d00
 kuna	bc9ef3599e3aa68f
 case	default/pkg/TestForeachMultiDimensionalArray	Default	classes/java8/pkg/TestForeachMultiDimensionalArray
-vineflower	60d2f95797b130c0
 kuna	60d2f95797b130c0
 case	default/pkg/TestForeachMultipleLoops	Default	classes/java8/pkg/TestForeachMultipleLoops
-vineflower	9d461603d42c703d
 kuna	a1ba9b290d5cab1d
 case	default/pkg/TestForeachVardef	Default	classes/java8/pkg/TestForeachVardef
-vineflower	a4751c2d31c5b86f
 kuna	a4751c2d31c5b86f
 case	default/pkg/TestGenericArgs	Default	classes/java8/pkg/TestGenericArgs
-vineflower	e10ec7bf5d2d5361
 kuna	e10ec7bf5d2d5361
 case	default/pkg/TestGenericCasts	Default	classes/java8/pkg/TestGenericCasts
-vineflower	2414b4db2382cc66
 kuna	2414b4db2382cc66
 case	default/pkg/TestGenericComparison	Default	classes/java8/pkg/TestGenericComparison
-vineflower	7a8a67c1b6592977
 kuna	7a8a67c1b6592977
 case	default/pkg/TestGenericMap	Default	classes/java8/pkg/TestGenericMap
-vineflower	e3bc0b8ef292262e
 kuna	e3bc0b8ef292262e
 case	default/pkg/TestGenericMapInput	Default	classes/java8/pkg/TestGenericMapInput
-vineflower	6e28b1776ee21e46
 kuna	6e28b1776ee21e46
 case	default/pkg/TestGenericMapping	Default	classes/java8/pkg/TestGenericMapping
-vineflower	248ad6bc29b7671c
 kuna	248ad6bc29b7671c
 case	default/pkg/TestGenericStatic	Default	classes/java8/pkg/TestGenericStatic
-vineflower	c2697a17e737bfa6
 kuna	c2697a17e737bfa6
 case	default/pkg/TestGenericStaticCall	Default	classes/java8/pkg/TestGenericStaticCall
-vineflower	b1a2ef3aa8770a88
 kuna	b1a2ef3aa8770a88
 case	default/pkg/TestGenericSuperCast	Default	classes/java8/pkg/TestGenericSuperCast
-vineflower	12e9cc6c186639e5
 kuna	12e9cc6c186639e5
 case	default/pkg/TestGenericsInvocUnchecked	Default	classes/java8/pkg/TestGenericsInvocUnchecked
-vineflower	64ce65a63a573d16
 kuna	64ce65a63a573d16
 case	default/pkg/TestGoto	Default	classes/jasm/pkg/TestGoto
-vineflower	8c3bbde3fe4f4993
 kuna	8c3bbde3fe4f4993
 case	default/pkg/TestIfElseSwitch	Default	classes/java8/pkg/TestIfElseSwitch
-vineflower	59be7163989c326b
 kuna	0a32c5a287970774
 case	default/pkg/TestIfElseTernary1	Default	classes/java8/pkg/TestIfElseTernary1
-vineflower	c5e5c0baecfb8897
 kuna	0c5237576ffd8bb3
 case	default/pkg/TestIfElseTernary1J17	Default	classes/java17/pkg/TestIfElseTernary1J17
-vineflower	83d09687b3e7a672
 kuna	f474eeca07c2a59b
 case	default/pkg/TestIfLoop	Default	classes/java8/pkg/TestIfLoop
-vineflower	9695fb34e7ee05b4
 kuna	8768e72cfe2beaea
 case	default/pkg/TestIfPatternMatchMethod	Default	classes/java16/pkg/TestIfPatternMatchMethod
-vineflower	0ff875c49069d474
 kuna	0ff875c49069d474
 case	default/pkg/TestIfTernary1	Default	classes/java8/pkg/TestIfTernary1
-vineflower	76b8e633c8ef0d71
 kuna	1bfef2e25161aee0
 case	default/pkg/TestIfTernary1J17	Default	classes/java17/pkg/TestIfTernary1J17
-vineflower	67a142559936bacb
 kuna	fa61f87f0cfd2ce8
 case	default/pkg/TestIfTernary2	Default	classes/java8/pkg/TestIfTernary2
-vineflower	9b107ec5375cb168
 kuna	86158567059dfca6
 case	default/pkg/TestIfTernary3	Default	classes/java8/pkg/TestIfTernary3
-vineflower	18378bc3d44640dc
 kuna	18378bc3d44640dc
 case	default/pkg/TestIfTernaryReturn	Default	classes/java8/pkg/TestIfTernaryReturn
-vineflower	7f2c8a4aa12deb50
 kuna	0c803c226a3be31a
 case	default/pkg/TestIffSimplification	Default	classes/java8/pkg/TestIffSimplification
-vineflower	46ea39ddaf390518
 kuna	ab52e4fbca42ff5a
 case	default/pkg/TestIllegalMethodNames	Default	classes/jasm/pkg/TestIllegalMethodNames
-vineflower	93c417de4ba9a2eb
 kuna	93c417de4ba9a2eb
 case	default/pkg/TestImplicitlySealedEnum	Default	classes/java17/pkg/TestImplicitlySealedEnum
-vineflower	1220c5bc9e20d7c5
 kuna	1220c5bc9e20d7c5
 case	default/pkg/TestInUse	Default	classes/java8/pkg/TestInUse
-vineflower	50790e367dca2d1b
 kuna	50790e367dca2d1b
 case	default/pkg/TestInfiniteLoop	Default	classes/java8/pkg/TestInfiniteLoop
-vineflower	43311514da4b66e9
 kuna	43311514da4b66e9
 case	default/pkg/TestInheritanceChainCycle	Default	classes/jasm/pkg/TestInheritanceChainCycle
-vineflower	538b637a56645387
 kuna	538b637a56645387
 case	default/pkg/TestInlineAssignments	Default	classes/java8/pkg/TestInlineAssignments
-vineflower	46023a294d052b37
 kuna	46023a294d052b37
 case	default/pkg/TestInlineNoSuccessor	Default	classes/java8/pkg/TestInlineNoSuccessor
-vineflower	a9fb1cfa721bb6c1
 kuna	23e2ee6242188667
 case	default/pkg/TestInlineSwitchExpression1	Default	classes/java16/pkg/TestInlineSwitchExpression1	classes/java16/ext/Direction
-vineflower	0b2403c6d32cd40e
 kuna	0b2403c6d32cd40e
 case	default/pkg/TestInlineSwitchExpression2	Default	classes/java16/pkg/TestInlineSwitchExpression2
-vineflower	3ab2ecfa9558e133
 kuna	3ab2ecfa9558e133
 case	default/pkg/TestInlineSwitchExpression3	Default	classes/java16/pkg/TestInlineSwitchExpression3	classes/java16/ext/Direction
-vineflower	97930c1c2406953c
 kuna	97930c1c2406953c
 case	default/pkg/TestInlineSwitchExpression4	Default	classes/java16/pkg/TestInlineSwitchExpression4
-vineflower	837bb0643717893a
 kuna	837bb0643717893a
 case	default/pkg/TestInlineSwitchExpression5	Default	classes/java16/pkg/TestInlineSwitchExpression5
-vineflower	e5c75e96f0cfa779
 kuna	12470662f5007df5
 case	default/pkg/TestInlineSwitchExpression6	Default	classes/java16/pkg/TestInlineSwitchExpression6
-vineflower	8d6deb8f59004b9f
 kuna	8d6deb8f59004b9f
 case	default/pkg/TestInlineSwitchExpression7	Default	classes/java16/pkg/TestInlineSwitchExpression7
-vineflower	50851414a79f1060
 kuna	50851414a79f1060
 case	default/pkg/TestInner2	Default	classes/java8/pkg/TestInner2
-vineflower	d35305308dfa9e9d
 kuna	d35305308dfa9e9d
 case	default/pkg/TestInnerClassConstructor	Default	classes/java8/pkg/TestInnerClassConstructor
-vineflower	6fece5e44d7c19cd
 kuna	6fece5e44d7c19cd
 case	default/pkg/TestInnerClassExtend	Default	classes/java8/pkg/TestInnerClassExtend
-vineflower	35e9298ffeb7b263
 kuna	35e9298ffeb7b263
 case	default/pkg/TestInnerClassExtendJ17	Default	classes/java17/pkg/TestInnerClassExtendJ17
-vineflower	5a4a864a212b062c
 kuna	472323a1efbe61eb
 case	default/pkg/TestInnerClassGeneric	Default	classes/java8/pkg/TestInnerClassGeneric
-vineflower	16e3b795583f3ce0
 kuna	16e3b795583f3ce0
 case	default/pkg/TestInnerClassReference	Default	classes/java8/pkg/TestInnerClassReference	classes/java8/ext/SomeOuterClass	classes/java8/ext/SomeOuterClass$SomeInner
-vineflower	4981575b66a62936
 kuna	4981575b66a62936
 case	default/pkg/TestInnerClasses2J21	Default	classes/java21/pkg/TestInnerClasses2J21
-vineflower	7e91749905f444f0
 kuna	7e91749905f444f0
 case	default/pkg/TestInnerClasses3J21	Default	classes/java21/pkg/TestInnerClasses3J21
-vineflower	2aee453424ed259d
 kuna	2aee453424ed259d
 case	default/pkg/TestInnerClasses4J21	Default	classes/java21/pkg/TestInnerClasses4J21
-vineflower	b88a055c4c8ef4e5
 kuna	b88a055c4c8ef4e5
 case	default/pkg/TestInnerClassesJ21	Default	classes/java21/pkg/TestInnerClassesJ21
-vineflower	cf006fe3f6f05eb4
 kuna	cf006fe3f6f05eb4
 case	default/pkg/TestInnerClassesJ8	Default	classes/java8/pkg/TestInnerClassesJ8
-vineflower	db47e459256dcaab
 kuna	db47e459256dcaab
 case	default/pkg/TestInnerLocal	Default	classes/java8/pkg/TestInnerLocal
-vineflower	ac572830f2bd543d
 kuna	ac572830f2bd543d
 case	default/pkg/TestInnerSignature	Default	classes/java8/pkg/TestInnerSignature
-vineflower	5cd4d408f95adc79
 kuna	5cd4d408f95adc79
 case	default/pkg/TestInstanceStaticInvoke	Default	classes/java8/pkg/TestInstanceStaticInvoke
-vineflower	caed35dee56507a4
 kuna	caed35dee56507a4
 case	default/pkg/TestIntBoolMerge	Default	classes/java8/pkg/TestIntBoolMerge
-vineflower	8ba87597abfc0687
 kuna	8ba87597abfc0687
 case	default/pkg/TestIntBoolMergeNoDebug	Default	classes/java8nodebug/pkg/TestIntBoolMergeNoDebug
-vineflower	1faf2254a1d6c5f3
 kuna	1faf2254a1d6c5f3
 case	default/pkg/TestInterfaceFields	Default	classes/java8/pkg/TestInterfaceFields
-vineflower	ee52d7897f7f3f74
 kuna	ee52d7897f7f3f74
 case	default/pkg/TestInterfaceLambdaCast	Default	classes/java8/pkg/TestInterfaceLambdaCast
-vineflower	dbcddcb4d3d08f35
 kuna	dbcddcb4d3d08f35
 case	default/pkg/TestInterfaceMethods	Default	classes/java8/pkg/TestInterfaceMethods
-vineflower	2c5520a7525bbf00
 kuna	2c5520a7525bbf00
 case	default/pkg/TestInterfaceNullInvoc	Default	classes/java8/pkg/TestInterfaceNullInvoc
-vineflower	13d1faf72181832d
 kuna	13d1faf72181832d
 case	default/pkg/TestInterfaceSubclass	Default	classes/java8/pkg/TestInterfaceSubclass
-vineflower	1a82cf39d6a573f2
 kuna	1a82cf39d6a573f2
 case	default/pkg/TestInterfaceSuper	Default	classes/java8/pkg/TestInterfaceSuper
-vineflower	c4790b6fc5ee6e20
 kuna	c4790b6fc5ee6e20
 case	default/pkg/TestInvertedFloatComparison	Default	classes/java8/pkg/TestInvertedFloatComparison
-vineflower	b165055c5a9a711b
 kuna	b165055c5a9a711b
 case	default/pkg/TestIrreducible	Default	classes/jasm/pkg/TestIrreducible
-vineflower	ac507f473879eba8
 kuna	ac507f473879eba8
 case	default/pkg/TestIterationOverGenericsWithoutLvt	Default	classes/java8nodebug/pkg/TestIterationOverGenericsWithoutLvt
-vineflower	7ae4b1675fab6f01
 kuna	7ae4b1675fab6f01
 case	default/pkg/TestIterationOverGenericsWithoutLvt1	Default	classes/java8nodebug/pkg/TestIterationOverGenericsWithoutLvt1
-vineflower	24694e720fe606ba
 kuna	24694e720fe606ba
 case	default/pkg/TestJava11StringConcat	Default	classes/java11/pkg/TestJava11StringConcat
-vineflower	a6a7515d07099ff0
 kuna	a6a7515d07099ff0
 case	default/pkg/TestJava9StringConcat	Default	classes/java9/pkg/TestJava9StringConcat
-vineflower	c5410c07e64d4074
 kuna	c5410c07e64d4074
 case	default/pkg/TestLVTReassignment	Default	classes/java8/pkg/TestLVTReassignment
-vineflower	bc6c90785fb49333
 kuna	bc6c90785fb49333
 case	default/pkg/TestLVTReassignmentNoDebug	Default	classes/java8nodebug/pkg/TestLVTReassignmentNoDebug
-vineflower	1a8180f0c9d63196
 kuna	1a8180f0c9d63196
 case	default/pkg/TestLabeledBlockInConstructor	Default	classes/java8/pkg/TestLabeledBlockInConstructor
-vineflower	5e7ad9131ea87a58
 kuna	5e7ad9131ea87a58
 case	default/pkg/TestLabeledBreaks	Default	classes/java8/pkg/TestLabeledBreaks
-vineflower	0530a2075141d4da
 kuna	0530a2075141d4da
 case	default/pkg/TestLambdaLocalCapture	Default	classes/java8/pkg/TestLambdaLocalCapture
-vineflower	ea085c107da13e7f
 kuna	ea085c107da13e7f
 case	default/pkg/TestLambdaParamTypes	Default	classes/java8/pkg/TestLambdaParamTypes
-vineflower	b8870d83740feece
 kuna	b8870d83740feece
 case	default/pkg/TestLambdaParams	Default	classes/java8/pkg/TestLambdaParams
-vineflower	9596aa5f5479027c
 kuna	9596aa5f5479027c
 case	default/pkg/TestLambdaQualified	Default	classes/java8/pkg/TestLambdaQualified
-vineflower	40abcb726cb75362
 kuna	40abcb726cb75362
 case	default/pkg/TestLeakyMethod	Default	classes/jasm/pkg/TestLeakyMethod
-vineflower	b43c72b29e97f47d
 kuna	b43c72b29e97f47d
 case	default/pkg/TestListEquals	Default	classes/java8/pkg/TestListEquals
-vineflower	bdc518a6d45ab591
 kuna	bdc518a6d45ab591
 case	default/pkg/TestLocalClass	Default	classes/java8/pkg/TestLocalClass
-vineflower	1fb008a86f3b6d78
 kuna	1fb008a86f3b6d78
 case	default/pkg/TestLocalClassesSwitch	Default	classes/java8/pkg/TestLocalClassesSwitch
-vineflower	4524079927828f54
 kuna	4524079927828f54
 case	default/pkg/TestLocalEnum	Default	classes/java16/pkg/TestLocalEnum
-vineflower	890eb4e8d98dfe0a
 kuna	890eb4e8d98dfe0a
 case	default/pkg/TestLocalInterface	Default	classes/java16/pkg/TestLocalInterface
-vineflower	f884ec749774ca34
 kuna	f884ec749774ca34
 case	default/pkg/TestLocalRecord	Default	classes/java16/pkg/TestLocalRecord
-vineflower	a593c1b6d83c600d
 kuna	a593c1b6d83c600d
 case	default/pkg/TestLocalScopeClash	Default	classes/java8/pkg/TestLocalScopeClash
-vineflower	0ad407da5b6dfc53
 kuna	eec4a203ff6c59ea
 case	default/pkg/TestLocalScopes	Default	classes/java8/pkg/TestLocalScopes
-vineflower	1754569ea02bbd27
 kuna	9c66e9b7847b0a7b
 case	default/pkg/TestLocalVariableMerge	Default	classes/java8/pkg/TestLocalVariableMerge
-vineflower	abf92ff0fd8463b5
 kuna	abf92ff0fd8463b5
 case	default/pkg/TestLocalVariableMergeSwitch	Default	classes/java8/pkg/TestLocalVariableMergeSwitch
-vineflower	1c6d766b0aa806cc
 kuna	1c6d766b0aa806cc
 case	default/pkg/TestLocalsNames	Default	classes/java8/pkg/TestLocalsNames
-vineflower	bfed751ec0cbcb20
 kuna	bfed751ec0cbcb20
 case	default/pkg/TestLongMethodDeclaration	Default	classes/java8/pkg/TestLongMethodDeclaration
-vineflower	1e0fa64fac8e8019
 kuna	1e0fa64fac8e8019
 case	default/pkg/TestLongMethodInvocation	Default	classes/java8/pkg/TestLongMethodInvocation
-vineflower	a85f8a480f72df7a
 kuna	a85f8a480f72df7a
 case	default/pkg/TestLoopBreak	Default	classes/java8/pkg/TestLoopBreak
-vineflower	0d53ce823737c8ce
 kuna	08a57ef12ef048e4
 case	default/pkg/TestLoopBreak2	Default	classes/java8/pkg/TestLoopBreak2
-vineflower	55159b324888a3ee
 kuna	cb84b728efcecf1e
 case	default/pkg/TestLoopBreak3	Default	classes/java8/pkg/TestLoopBreak3
-vineflower	0aa9755ff43e2f84
 kuna	0aa9755ff43e2f84
 case	default/pkg/TestLoopBreak4	Default	classes/java8/pkg/TestLoopBreak4
-vineflower	bd7d1de97a41b15e
 kuna	bd7d1de97a41b15e
 case	default/pkg/TestLoopBreakException	Default	classes/java8/pkg/TestLoopBreakException
-vineflower	f8664c2b330b352e
 kuna	c04b4c08f1be4b50
 case	default/pkg/TestLoopFinally	Default	classes/java8/pkg/TestLoopFinally
-vineflower	32d2c863046b537f
 kuna	55aed4021f2c1a2e
 case	default/pkg/TestLoopMerging2	Default	classes/java8/pkg/TestLoopMerging2
-vineflower	80bec1d998685986
 kuna	a0fbe59f5f9df18b
 case	default/pkg/TestLoopReturn	Default	classes/java8/pkg/TestLoopReturn
-vineflower	24154619d3ee11fe
 kuna	64b8e35baaaf3d2f
 case	default/pkg/TestMemberAnnotations	Default	classes/java8/pkg/TestMemberAnnotations
-vineflower	4b9bf22fe4fef0af
 kuna	4b9bf22fe4fef0af
 case	default/pkg/TestMethodHandles	Default	classes/java8/pkg/TestMethodHandles
-vineflower	efd698a9fb24d498
 kuna	efd698a9fb24d498
 case	default/pkg/TestMethodParameters	Default	classes/java8/pkg/TestMethodParameters
-vineflower	451a1536ec3f3d79
 kuna	451a1536ec3f3d79
 case	default/pkg/TestMethodParametersAttr	Default	classes/java8/pkg/TestMethodParametersAttr
-vineflower	0240428789ca368f
 kuna	0240428789ca368f
 case	default/pkg/TestMethodParamsNoLvt	Default	classes/jasm/pkg/TestMethodParamsNoLvt
-vineflower	dc951ccf416ed078
 kuna	dc951ccf416ed078
 case	default/pkg/TestMethodReferenceJ21	Default	classes/java21/pkg/TestMethodReferenceJ21	classes/java21/ext/RefsExt
-vineflower	c180bc3b66ef451a
 kuna	c180bc3b66ef451a
 case	default/pkg/TestMethodReferenceJ25	Default	classes/java25/pkg/TestMethodReferenceJ25	classes/java25/ext/RefsExt
-vineflower	51ddca911b41a74e
 kuna	51ddca911b41a74e
 case	default/pkg/TestMethodReferenceLetterClass	Default	classes/java8/pkg/TestMethodReferenceLetterClass
-vineflower	ee55fc6c18934293
 kuna	ee55fc6c18934293
 case	default/pkg/TestMethodReferenceSameName	Default	classes/java8/pkg/TestMethodReferenceSameName
-vineflower	d587b320544146d7
 kuna	d587b320544146d7
 case	default/pkg/TestMissingConstructorCallBad	Default	classes/jasm/pkg/TestMissingConstructorCallBad
-vineflower	c2a4964b4b94f21f
 kuna	c2a4964b4b94f21f
 case	default/pkg/TestMissingConstructorCallGood	Default	classes/jasm/pkg/TestMissingConstructorCallGood
-vineflower	cc49a046cee9ff1a
 kuna	cc49a046cee9ff1a
 case	default/pkg/TestMissingLambdaBody	Default	classes/java16/pkg/TestMissingLambdaBody
-vineflower	7fc450b9590cf873
 kuna	7fc450b9590cf873
 case	default/pkg/TestMixedCompoundAssignment	Default	classes/java8/pkg/TestMixedCompoundAssignment
-vineflower	f792fa9e613d2417
 kuna	76abaa06e06cda98
 case	default/pkg/TestMultiAssignmentInDynamicBlock	Default	classes/java8/pkg/TestMultiAssignmentInDynamicBlock
-vineflower	510a176949e3f5f5
 kuna	510a176949e3f5f5
 case	default/pkg/TestMultiAssignmentInStaticBlock	Default	classes/java8/pkg/TestMultiAssignmentInStaticBlock
-vineflower	c07864bc17cdc170
 kuna	c07864bc17cdc170
 case	default/pkg/TestMultiBoolean	Default	classes/java8/pkg/TestMultiBoolean
-vineflower	930695acdb8ebd80
 kuna	930695acdb8ebd80
 case	default/pkg/TestMultiCast	Default	classes/java8/pkg/TestMultiCast
-vineflower	aae83315d2f2c82c
 kuna	aae83315d2f2c82c
 case	default/pkg/TestMultiException	Default	classes/java8/pkg/TestMultiException
-vineflower	6c9f05089d9cc2f5
 kuna	6c9f05089d9cc2f5
 case	default/pkg/TestMultipleStaticBlocks	Default	classes/java8/pkg/TestMultipleStaticBlocks
-vineflower	318a42a801469d43
 kuna	85c14f8c4942b99c
 case	default/pkg/TestNativeMethods	Default	classes/java8/pkg/TestNativeMethods
-vineflower	e3aa1933a8bd575c
 kuna	e3aa1933a8bd575c
 case	default/pkg/TestNestedAnonymousClass	Default	classes/java8/pkg/TestNestedAnonymousClass
-vineflower	29974430b6a05d98
 kuna	29974430b6a05d98
 case	default/pkg/TestNestedArrayPP	Default	classes/java8/pkg/TestNestedArrayPP
-vineflower	5cf4a373f3716007
 kuna	5cf4a373f3716007
 case	default/pkg/TestNestedFor	Default	classes/java8/pkg/TestNestedFor
-vineflower	5460cb596c1bd2f5
 kuna	5460cb596c1bd2f5
 case	default/pkg/TestNestedGenerics1	Default	classes/java8/pkg/TestNestedGenerics1
-vineflower	f0b916947febe966
 kuna	f0b916947febe966
 case	default/pkg/TestNestedGenerics2	Default	classes/java11/pkg/TestNestedGenerics2
-vineflower	b58921e07aab665f
 kuna	b58921e07aab665f
 case	default/pkg/TestNestedLambdas	Default	classes/java8/pkg/TestNestedLambdas
-vineflower	3ec0e2a3101be228
 kuna	e70ced22f00d596a
 case	default/pkg/TestNestedLoops2	Default	classes/java8/pkg/TestNestedLoops2
-vineflower	fd8f5d6551cdff4a
 kuna	f633c94b5d2c856c
 case	default/pkg/TestNestedTernaryAssign	Default	classes/java8/pkg/TestNestedTernaryAssign
-vineflower	800f3a9c5e4014fe
 kuna	e1b74f9296d2d3c1
 case	default/pkg/TestNestedTernaryCondition	Default	classes/java8/pkg/TestNestedTernaryCondition
-vineflower	88b621ebc54da53c
 kuna	31c56080a551db92
 case	default/pkg/TestNextGaussian	Default	classes/java8/pkg/TestNextGaussian
-vineflower	d9e213ca96784ba3
 kuna	d9e213ca96784ba3
 case	default/pkg/TestNoUse	Default	classes/java8nodebug/pkg/TestNoUse
-vineflower	669d8d63b42b51d2
 kuna	669d8d63b42b51d2
 case	default/pkg/TestNumberCasts	Default	classes/java8/pkg/TestNumberCasts
-vineflower	06b32afd32f9e7a0
 kuna	06b32afd32f9e7a0
 case	default/pkg/TestNumberCompareToBoolean	Default	classes/jasm/pkg/TestNumberCompareToBoolean
-vineflower	a86a3861965fe626
 kuna	a86a3861965fe626
 case	default/pkg/TestNumberDisambiguation	Default	classes/java8/pkg/TestNumberDisambiguation
-vineflower	a58c5686ba70af33
 kuna	5487592151e369ef
 case	default/pkg/TestObjectBitwise	Default	classes/java8/pkg/TestObjectBitwise
-vineflower	97d9679d704f5bf0
 kuna	97d9679d704f5bf0
 case	default/pkg/TestObjectLambda	Default	classes/java16nodebug/pkg/TestObjectLambda
-vineflower	5fc30bd05639f961
 kuna	5fc30bd05639f961
 case	default/pkg/TestObjectPhi	Default	classes/java8/pkg/TestObjectPhi
-vineflower	5f210f8cdfe6ee15
 kuna	5f210f8cdfe6ee15
 case	default/pkg/TestOldECJInner	Default	classes/jasm/pkg/TestOldECJInner
-vineflower	6813f2632d8a76a9
 kuna	6813f2632d8a76a9
 case	default/pkg/TestOperatorPrecedence	Default	classes/java8/pkg/TestOperatorPrecedence
-vineflower	288136375cb434f8
 kuna	d16e0b91e4e5142a
 case	default/pkg/TestOverloadedNull	Default	classes/java8/pkg/TestOverloadedNull
-vineflower	482ae5bcd6602b7b
 kuna	482ae5bcd6602b7b
 case	default/pkg/TestOverrideIndirect	Default	classes/java8/pkg/TestOverrideIndirect
-vineflower	5695cc01a747bc0f
 kuna	5695cc01a747bc0f
 case	default/pkg/TestPPMM	Default	classes/java8/pkg/TestPPMM
-vineflower	289e43a60fe54a7a
 kuna	45f6a1f35d969adc
 case	default/pkg/TestPPMMBoxed	Default	classes/java8/pkg/TestPPMMBoxed
-vineflower	0c0a268828899565
 kuna	e2dc650708ba17fd
 case	default/pkg/TestPPMMByte	Default	classes/java8/pkg/TestPPMMByte
-vineflower	aa927df581bce858
 kuna	aa927df581bce858
 case	default/pkg/TestPPMMIf	Default	classes/java8/pkg/TestPPMMIf
-vineflower	1120b3dee9bb630f
 kuna	78264ca39d756c14
 case	default/pkg/TestPPMMLong	Default	classes/java8/pkg/TestPPMMLong
-vineflower	d31f1afc55c3b780
 kuna	d31f1afc55c3b780
 case	default/pkg/TestPPMMLoop	Default	classes/java8/pkg/TestPPMMLoop
-vineflower	d6a08721acfa4cf9
 kuna	0100c1aaa5d514d5
 case	default/pkg/TestPPMMMath	Default	classes/java8/pkg/TestPPMMMath
-vineflower	1d32a1c83f40396e
 kuna	9925325a492ba05c
 case	default/pkg/TestPPMMOnObjectField	Default	classes/java8/pkg/TestPPMMOnObjectField
-vineflower	f6467b2a0e6cf2f8
 kuna	f6467b2a0e6cf2f8
 case	default/pkg/TestPPMMOnStaticField	Default	classes/java8/pkg/TestPPMMOnStaticField
-vineflower	9d9397c940eb8587
 kuna	9d9397c940eb8587
 case	default/pkg/TestPPMMPhi	Default	classes/java8/pkg/TestPPMMPhi
-vineflower	53d66867c33e1157
 kuna	6cd8857712a28619
 case	default/pkg/TestParameterizedTypes	Default	classes/java8/pkg/TestParameterizedTypes
-vineflower	a42de78e1ad48b1d
 kuna	a42de78e1ad48b1d
 case	default/pkg/TestPatternMatchSwitchString	Default	classes/java25/pkg/TestPatternMatchSwitchString
-vineflower	d86006e37d7a02a9
 kuna	d86006e37d7a02a9
 case	default/pkg/TestPatternMatching	Default	classes/java16/pkg/TestPatternMatching
-vineflower	c50d9ec73022a070
 kuna	ead42d83263b6ec5
 case	default/pkg/TestPatternMatching17	Default	classes/java17/pkg/TestPatternMatching17
-vineflower	b54a7276d45732ab
 kuna	7a6b0a9c9738558c
 case	default/pkg/TestPatternMatching17AlreadyUsed	Default	classes/java17/pkg/TestPatternMatching17AlreadyUsed
-vineflower	e4f63a5f876ffe2c
 kuna	0c5cf456cd0fde4e
 case	default/pkg/TestPatternMatching17Fake	Default	classes/java17/pkg/TestPatternMatching17Fake
-vineflower	5deef4a8f9419f17
 kuna	fc2eb01545d42117
 case	default/pkg/TestPatternMatching17FakeLoops	Default	classes/java17/pkg/TestPatternMatching17FakeLoops
-vineflower	6228cdddedd18726
 kuna	48bed6b9b87a3668
 case	default/pkg/TestPatternMatching17FakeLoopsInverted	Default	classes/java17/pkg/TestPatternMatching17FakeLoopsInverted
-vineflower	d65377ed9d36e308
 kuna	aeeebbfa2c17fbdd
 case	default/pkg/TestPatternMatching17FakeNew	Default	classes/java17/pkg/TestPatternMatching17FakeNew
-vineflower	1337afc99875b2dc
 kuna	b7ec12843255bbcb
 case	default/pkg/TestPatternMatchingAssign	Default	classes/java16nodebug/pkg/TestPatternMatchingAssign
-vineflower	4bda5bb14a405845
 kuna	4bda5bb14a405845
 case	default/pkg/TestPatternMatchingCompoundBool	Default	classes/java16/pkg/TestPatternMatchingCompoundBool
-vineflower	728a0f2d1d4eb189
 kuna	728a0f2d1d4eb189
 case	default/pkg/TestPatternMatchingFake	Default	classes/java16/pkg/TestPatternMatchingFake
-vineflower	c519465b57c6262e
 kuna	335728c966f0d2de
 case	default/pkg/TestPatternMatchingFakeLoops	Default	classes/java16/pkg/TestPatternMatchingFakeLoops
-vineflower	a254db100d0ada77
 kuna	6d8a301bf29e1b4e
 case	default/pkg/TestPatternMatchingFakeLoopsInverted	Default	classes/java16/pkg/TestPatternMatchingFakeLoopsInverted
-vineflower	d2cdd078367bdfb0
 kuna	2aba455f6fb3b91a
 case	default/pkg/TestPatternMatchingFakeNew	Default	classes/java16/pkg/TestPatternMatchingFakeNew
-vineflower	0d33bd8d2e8c8bff
 kuna	1521b55ff3719534
 case	default/pkg/TestPatternMatchingInline	Default	classes/java16/pkg/TestPatternMatchingInline
-vineflower	ed296ce38ef76a07
 kuna	ed296ce38ef76a07
 case	default/pkg/TestPatternMatchingInteger	Default	classes/java17/pkg/TestPatternMatchingInteger
-vineflower	d9364f5864190660
 kuna	84d31c0383745ff6
 case	default/pkg/TestPatternMatchingInvoke	Default	classes/java16/pkg/TestPatternMatchingInvoke
-vineflower	675416a768b6653b
 kuna	675416a768b6653b
 case	default/pkg/TestPatternMatchingLocalCapture	Default	classes/java16/pkg/TestPatternMatchingLocalCapture
-vineflower	f66be9b067aaba3e
 kuna	f66be9b067aaba3e
 case	default/pkg/TestPatternMatchingLoops	Default	classes/java17/pkg/TestPatternMatchingLoops
-vineflower	bbac104458e89b3e
 kuna	28c6beb9e7409b35
 case	default/pkg/TestPatternMatchingMerge	Default	classes/java16/pkg/TestPatternMatchingMerge
-vineflower	1c79da1249fc6526
 kuna	486b37d5fe48fed2
 case	default/pkg/TestPatternMatchingReturn	Default	classes/java16/pkg/TestPatternMatchingReturn
-vineflower	a9a16e09e8c1523c
 kuna	dcfd26ff3cdc2d05
 case	default/pkg/TestPatternMatchingStatic	Default	classes/java16/pkg/TestPatternMatchingStatic
-vineflower	79444b17f8e7915a
 kuna	79444b17f8e7915a
 case	default/pkg/TestPatternMatchingVariableScope	Default	classes/java16/pkg/TestPatternMatchingVariableScope
-vineflower	97a80a520d1ac845
 kuna	fc62e3a435dfca02
 case	default/pkg/TestPop2OneDoublePop2	Default	classes/jasm/pkg/TestPop2OneDoublePop2
-vineflower	85b7d10c2fe7a81b
 kuna	85b7d10c2fe7a81b
 case	default/pkg/TestPop2OneLongPop2	Default	classes/jasm/pkg/TestPop2OneLongPop2
-vineflower	6304692c7c7bd3e7
 kuna	6304692c7c7bd3e7
 case	default/pkg/TestPop2TwoIntPop2	Default	classes/jasm/pkg/TestPop2TwoIntPop2
-vineflower	862e1f9daa1a8b50
 kuna	862e1f9daa1a8b50
 case	default/pkg/TestPop2TwoIntTwoPop	Default	classes/jasm/pkg/TestPop2TwoIntTwoPop
-vineflower	23f1eee37cbdea12
 kuna	23f1eee37cbdea12
 case	default/pkg/TestPrimitiveNarrowing	Default	classes/java8/pkg/TestPrimitiveNarrowing
-vineflower	4dacddd4fe21331f
 kuna	4dacddd4fe21331f
 case	default/pkg/TestPrimitiveTypeClasses	Default	classes/java8/pkg/TestPrimitiveTypeClasses
-vineflower	7fff7cb447b728d0
 kuna	7fff7cb447b728d0
 case	default/pkg/TestPrivateClasses	Default	classes/java8/pkg/TestPrivateClasses
-vineflower	1fd4b487023369f2
 kuna	1fd4b487023369f2
 case	default/pkg/TestPrivateEmptyConstructor	Default	classes/java8/pkg/TestPrivateEmptyConstructor
-vineflower	5d0ab47bef0d0acc
 kuna	5d0ab47bef0d0acc
 case	default/pkg/TestPrivateInterfaceMethod	Default	classes/java9/pkg/TestPrivateInterfaceMethod
-vineflower	d2613337fbda822d
 kuna	d2613337fbda822d
 case	default/pkg/TestQualifiedNew	Default	classes/java8/pkg/TestQualifiedNew
-vineflower	095599d29e3959d5
 kuna	095599d29e3959d5
 case	default/pkg/TestRawProcessor	Default	classes/java21preview/pkg/TestRawProcessor
-vineflower	3d8c6e05ced5c3f7
 kuna	3d8c6e05ced5c3f7
 case	default/pkg/TestRecordAnno	Default	classes/java16/pkg/TestRecordAnno
-vineflower	d87af3cafce3d9b0
 kuna	d87af3cafce3d9b0
 case	default/pkg/TestRecordBig	Default	classes/java16/pkg/TestRecordBig
-vineflower	3706d0474b1c90f9
 kuna	3706d0474b1c90f9
 case	default/pkg/TestRecordEmpty	Default	classes/java16/pkg/TestRecordEmpty
-vineflower	6da809a1e0fd9f3a
 kuna	6da809a1e0fd9f3a
 case	default/pkg/TestRecordEmptyConstructor	Default	classes/java16/pkg/TestRecordEmptyConstructor
-vineflower	4b7f692ce6c65396
 kuna	4b7f692ce6c65396
 case	default/pkg/TestRecordGenericSuperclass	Default	classes/java16/pkg/TestRecordGenericSuperclass
-vineflower	ce28f2c05c92f53c
 kuna	ce28f2c05c92f53c
 case	default/pkg/TestRecordGenericVararg	Default	classes/java16/pkg/TestRecordGenericVararg
-vineflower	90953ea9226abbc1
 kuna	90953ea9226abbc1
 case	default/pkg/TestRecordInner	Default	classes/java16/pkg/TestRecordInner
-vineflower	0681580e1ee8d86b
 kuna	0681580e1ee8d86b
 case	default/pkg/TestRecordLocal	Default	classes/java16/pkg/TestRecordLocal
-vineflower	54cfb2c1812c6865
 kuna	54cfb2c1812c6865
 case	default/pkg/TestRecordMixup	Default	classes/java16/pkg/TestRecordMixup
-vineflower	34f6d0868139258c
 kuna	34f6d0868139258c
 case	default/pkg/TestRecordPatterns1	Default	classes/java21/pkg/TestRecordPatterns1
-vineflower	d9f612bc8298978d
 kuna	d9f612bc8298978d
 case	default/pkg/TestRecordPatterns1J25	Default	classes/java25/pkg/TestRecordPatterns1J25
-vineflower	77e604c1c072e473
 kuna	77e604c1c072e473
 case	default/pkg/TestRecordPatterns2	Default	classes/java21/pkg/TestRecordPatterns2
-vineflower	4949f9596a5193fe
 kuna	4949f9596a5193fe
 case	default/pkg/TestRecordPatterns3	Default	classes/java21/pkg/TestRecordPatterns3
-vineflower	49b8c00284cdbe92
 kuna	49b8c00284cdbe92
 case	default/pkg/TestRecordPatterns4	Default	classes/java21/pkg/TestRecordPatterns4
-vineflower	a528e55f096d08d9
 kuna	a528e55f096d08d9
 case	default/pkg/TestRecordPatterns5	Default	classes/java21/pkg/TestRecordPatterns5
-vineflower	316463a60df22bbe
 kuna	316463a60df22bbe
 case	default/pkg/TestRecordPatterns6	Default	classes/java21/pkg/TestRecordPatterns6
-vineflower	a5ed14e62fa8bab2
 kuna	bdb30291fb3de552
 case	default/pkg/TestRecordPatterns7	Default	classes/java21/pkg/TestRecordPatterns7
-vineflower	92d595b8fa1778c4
 kuna	92d595b8fa1778c4
 case	default/pkg/TestRecordPatterns8	Default	classes/java21/pkg/TestRecordPatterns8
-vineflower	2613a4eae6b6914c
 kuna	3769830366262158
 case	default/pkg/TestRecordPatterns9	Default	classes/java21/pkg/TestRecordPatterns9
-vineflower	c37ccd65b1aa95da
 kuna	7e7207797983d363
 case	default/pkg/TestRecordSimple	Default	classes/java16/pkg/TestRecordSimple
-vineflower	4ca28ab672a1ff4e
 kuna	4ca28ab672a1ff4e
 case	default/pkg/TestRecordVararg	Default	classes/java16/pkg/TestRecordVararg
-vineflower	18c893be43a83328
 kuna	18c893be43a83328
 case	default/pkg/TestRecursiveLambda	Default	classes/jasm/pkg/TestRecursiveLambda
-vineflower	7977054811e0d059
 kuna	7fd8c20e06892e40
 case	default/pkg/TestReturnIf	Default	classes/java8/pkg/TestReturnIf
-vineflower	0838dee8b8b6db88
 kuna	0838dee8b8b6db88
 case	default/pkg/TestReturnSwitchExpression1	Default	classes/java16/pkg/TestReturnSwitchExpression1
-vineflower	20c2426a9b54639d
 kuna	20c2426a9b54639d
 case	default/pkg/TestReturnSwitchExpression2	Default	classes/java16/pkg/TestReturnSwitchExpression2
-vineflower	8d50ed0ca4c15219
 kuna	8d50ed0ca4c15219
 case	default/pkg/TestReturnSwitchExpression3	Default	classes/java16/pkg/TestReturnSwitchExpression3
-vineflower	d0a7b52938e07c4e
 kuna	d0a7b52938e07c4e
 case	default/pkg/TestReturnSwitchExpression4	Default	classes/java16/pkg/TestReturnSwitchExpression4
-vineflower	8969cac1d4aaf68c
 kuna	8969cac1d4aaf68c
 case	default/pkg/TestReturnSwitchExpression5	Default	classes/java16/pkg/TestReturnSwitchExpression5
-vineflower	1793ce014318fa63
 kuna	1793ce014318fa63
 case	default/pkg/TestReturnTernaryChar	Default	classes/java8/pkg/TestReturnTernaryChar
-vineflower	e9eac04738adf642
 kuna	e9eac04738adf642
 case	default/pkg/TestSealedClasses	Default	classes/java16preview/pkg/TestSealedClasses
-vineflower	2422c80915e23e18
 kuna	2422c80915e23e18
 case	default/pkg/TestSealedFinal	Default	classes/java17/pkg/TestSealedFinal	classes/java17/pkg/SealedInterface
-vineflower	c0a3ada2e6f8b626
 kuna	c0a3ada2e6f8b626
 case	default/pkg/TestSealedInterfaces	Default	classes/java16preview/pkg/TestSealedInterfaces
-vineflower	8b9f0e7cc135266b
 kuna	8b9f0e7cc135266b
 case	default/pkg/TestSealedRecord	Default	classes/java17/pkg/TestSealedRecord	classes/java17/pkg/SealedInterface
-vineflower	002411973871f560
 kuna	002411973871f560
 case	default/pkg/TestSelfIterableLoop	Default	classes/jasm/pkg/TestSelfIterableLoop
-vineflower	31f5cde8bf1625d4
 kuna	31f5cde8bf1625d4
 case	default/pkg/TestSharedVarIndex	Default	classes/java8/pkg/TestSharedVarIndex
-vineflower	0a545799b17991b9
 kuna	e8364d9ea8d1c023
 case	default/pkg/TestShiftAssignmentInCall	Default	classes/java8/pkg/TestShiftAssignmentInCall
-vineflower	11ec9adc0a646e89
 kuna	dec17aa602f9b7be
 case	default/pkg/TestShiftLoop	Default	classes/java8/pkg/TestShiftLoop
-vineflower	b477543f9b3bf051
 kuna	b477543f9b3bf051
 case	default/pkg/TestSimpleIf	Default	classes/java8/pkg/TestSimpleIf
-vineflower	f5c8bc4188a54334
 kuna	f5c8bc4188a54334
 case	default/pkg/TestSimpleWhile	Default	classes/java8/pkg/TestSimpleWhile
-vineflower	00583c414034f7a1
 kuna	00583c414034f7a1
 case	default/pkg/TestSingleCaseStrSwitch	Default	classes/java17/pkg/TestSingleCaseStrSwitch
-vineflower	8a173d19347b82dd
 kuna	8a173d19347b82dd
 case	default/pkg/TestSplitColorComponents	Default	classes/java8/pkg/TestSplitColorComponents
-vineflower	cf3b2e2e10e83cbc
 kuna	cf3b2e2e10e83cbc
 case	default/pkg/TestStackCastParam	Default	classes/java8/pkg/TestStackCastParam
-vineflower	f2decd35309026f8
 kuna	f2decd35309026f8
 case	default/pkg/TestStaticBlockFinalField	Default	classes/java8/pkg/TestStaticBlockFinalField
-vineflower	a579f24d2fe7c784
 kuna	a579f24d2fe7c784
 case	default/pkg/TestStaticBlockNull	Default	classes/java8/pkg/TestStaticBlockNull
-vineflower	f4b1fa4c7cdb74c0
 kuna	f4b1fa4c7cdb74c0
 case	default/pkg/TestStaticInit	Default	classes/java8/pkg/TestStaticInit
-vineflower	11319a221cc3bf77
 kuna	11319a221cc3bf77
 case	default/pkg/TestStaticIterator	Default	classes/java8/pkg/TestStaticIterator
-vineflower	9c46aabee2e5e2e7
 kuna	9c46aabee2e5e2e7
 case	default/pkg/TestStaticNameClash	Default	classes/java8/pkg/TestStaticNameClash
-vineflower	3ea152b18c51d3a1
 kuna	3ea152b18c51d3a1
 case	default/pkg/TestStrProcessor	Default	classes/java21preview/pkg/TestStrProcessor
-vineflower	8da43bce941b3ccf
 kuna	8da43bce941b3ccf
 case	default/pkg/TestStringConcat	Default	classes/java8/pkg/TestStringConcat
-vineflower	3bccdab659b845ef
 kuna	3bccdab659b845ef
 case	default/pkg/TestStringLiteral	Default	classes/java8/pkg/TestStringLiteral
-vineflower	3509eb50ff1d35dc
 kuna	3509eb50ff1d35dc
 case	default/pkg/TestStringLiterals	Default	classes/java8/pkg/TestStringLiterals
-vineflower	8ce882228a73795c
 kuna	8ce882228a73795c
 case	default/pkg/TestStringSwitchTypes	Default	classes/java17/pkg/TestStringSwitchTypes
-vineflower	86c7ffc5250b38b4
 kuna	2f793004231ba0e0
 case	default/pkg/TestSuperInner	Default	classes/java8/pkg/TestSuperInner	classes/java8/pkg/TestSuperInnerBase
-vineflower	19853d912f6adcde
 kuna	19853d912f6adcde
 case	default/pkg/TestSwapException	Default	classes/jasm/pkg/TestSwapException
-vineflower	b03a8e5a3a3b7171
 kuna	b03a8e5a3a3b7171
 case	default/pkg/TestSwitchAssign	Default	classes/java8/pkg/TestSwitchAssign
-vineflower	1fc7f8d650fc8ebf
 kuna	1fc7f8d650fc8ebf
 case	default/pkg/TestSwitchDefaultBefore	Default	classes/java8/pkg/TestSwitchDefaultBefore
-vineflower	79cdb28f9f55ddf1
 kuna	79cdb28f9f55ddf1
 case	default/pkg/TestSwitchDefaultCaseReturn	Default	classes/java17/pkg/TestSwitchDefaultCaseReturn
-vineflower	67c8cc07bc749e8c
 kuna	0822819e4ae21513
 case	default/pkg/TestSwitchEmpty	Default	classes/java8/pkg/TestSwitchEmpty
-vineflower	8346119d767726e2
 kuna	8346119d767726e2
 case	default/pkg/TestSwitchExprInvoc	Default	classes/java16/pkg/TestSwitchExprInvoc
-vineflower	eaebc7dd47ca7512
 kuna	eaebc7dd47ca7512
 case	default/pkg/TestSwitchExprString1	Default	classes/java16/pkg/TestSwitchExprString1
-vineflower	3b97da2fc786a6f8
 kuna	d8e39dc777606fce
 case	default/pkg/TestSwitchExpressionFallthrough1	Default	classes/java16/pkg/TestSwitchExpressionFallthrough1
-vineflower	11f39bb1c340d79b
 kuna	11f39bb1c340d79b
 case	default/pkg/TestSwitchExpressionIfBlocks	Default	classes/java16/pkg/TestSwitchExpressionIfBlocks
-vineflower	d9281bab974e44e3
 kuna	d9281bab974e44e3
 case	default/pkg/TestSwitchExpressionNested1	Default	classes/java16/pkg/TestSwitchExpressionNested1
-vineflower	b2f1270983dd3156
 kuna	b2f1270983dd3156
 case	default/pkg/TestSwitchExpressionPPMM	Default	classes/java16/pkg/TestSwitchExpressionPPMM
-vineflower	5cfb57a2f8ef472d
 kuna	5cfb57a2f8ef472d
 case	default/pkg/TestSwitchExpressionReturnType	Default	classes/java16/pkg/TestSwitchExpressionReturnType
-vineflower	afdea5a616e0f052
 kuna	afdea5a616e0f052
 case	default/pkg/TestSwitchFinally	Default	classes/java8/pkg/TestSwitchFinally
-vineflower	a808bd08bafc514f
 kuna	a808bd08bafc514f
 case	default/pkg/TestSwitchInTry	Default	classes/java8/pkg/TestSwitchInTry
-vineflower	872f310d49846917
 kuna	872f310d49846917
 case	default/pkg/TestSwitchLoop	Default	classes/java8/pkg/TestSwitchLoop
-vineflower	2b00cb85ff5b4b7d
 kuna	b5a44fcbcfb4364b
 case	default/pkg/TestSwitchOnEnum	Default	classes/java8/pkg/TestSwitchOnEnum
-vineflower	c47eccedf81296bb
 kuna	c47eccedf81296bb
 case	default/pkg/TestSwitchOnEnumFake	Default	classes/java17/pkg/TestSwitchOnEnumFake
-vineflower	49d5b9bfa573560f
 kuna	49d5b9bfa573560f
 case	default/pkg/TestSwitchOnEnumJ21	Default	classes/java21/pkg/TestSwitchOnEnumJ21	classes/java21/ext/TestEnum2
-vineflower	75da024abe72e024
 kuna	160061aae7d2d8c8
 case	default/pkg/TestSwitchOnStrings	Default	classes/java8/pkg/TestSwitchOnStrings
-vineflower	1abb9e5cd3bf267f
 kuna	1abb9e5cd3bf267f
 case	default/pkg/TestSwitchOnlyDefault	Default	classes/java8/pkg/TestSwitchOnlyDefault
-vineflower	de528334f10a9dbe
 kuna	de528334f10a9dbe
 case	default/pkg/TestSwitchPatternMatching1	Default	classes/java17preview/pkg/TestSwitchPatternMatching1
-vineflower	e304e2688dfe1093
 kuna	e304e2688dfe1093
 case	default/pkg/TestSwitchPatternMatching10	Default	classes/java17preview/pkg/TestSwitchPatternMatching10
-vineflower	b6ad43e723c31830
 kuna	b6ad43e723c31830
 case	default/pkg/TestSwitchPatternMatching11	Default	classes/java17preview/pkg/TestSwitchPatternMatching11
-vineflower	09c819b07074f53b
 kuna	09c819b07074f53b
 case	default/pkg/TestSwitchPatternMatching12	Default	classes/java17preview/pkg/TestSwitchPatternMatching12
-vineflower	9997712644cb748d
 kuna	6b9faa842a3913c4
 case	default/pkg/TestSwitchPatternMatching13	Default	classes/java17preview/pkg/TestSwitchPatternMatching13
-vineflower	71752d4d5edff68e
 kuna	30098a19fcd6e3b6
 case	default/pkg/TestSwitchPatternMatching14	Default	classes/java17preview/pkg/TestSwitchPatternMatching14
-vineflower	3c5e3a94360052b7
 kuna	b7c8c0cb73fb7600
 case	default/pkg/TestSwitchPatternMatching15	Default	classes/java17preview/pkg/TestSwitchPatternMatching15
-vineflower	050e98393d641eff
 kuna	050e98393d641eff
 case	default/pkg/TestSwitchPatternMatching16	Default	classes/java17preview/pkg/TestSwitchPatternMatching16
-vineflower	86d97ae243071cf5
 kuna	86d97ae243071cf5
 case	default/pkg/TestSwitchPatternMatching17	Default	classes/java17preview/pkg/TestSwitchPatternMatching17
-vineflower	7203bf6ab29b03d2
 kuna	7203bf6ab29b03d2
 case	default/pkg/TestSwitchPatternMatching18	Default	classes/java17preview/pkg/TestSwitchPatternMatching18
-vineflower	669752d68fbbbd37
 kuna	f84fd6fe6971a555
 case	default/pkg/TestSwitchPatternMatching19	Default	classes/java17preview/pkg/TestSwitchPatternMatching19
-vineflower	24873e9eb7f7a644
 kuna	c234f415a9b68f76
 case	default/pkg/TestSwitchPatternMatching2	Default	classes/java17preview/pkg/TestSwitchPatternMatching2
-vineflower	35259b963cd7508c
 kuna	77a0554686fcc6e0
 case	default/pkg/TestSwitchPatternMatching20	Default	classes/java17preview/pkg/TestSwitchPatternMatching20
-vineflower	5bc61ff03752ee9c
 kuna	5bc61ff03752ee9c
 case	default/pkg/TestSwitchPatternMatching21	Default	classes/java17preview/pkg/TestSwitchPatternMatching21
-vineflower	4b19542ffa95e2af
 kuna	a75c9755b0c74e71
 case	default/pkg/TestSwitchPatternMatching22	Default	classes/java17preview/pkg/TestSwitchPatternMatching22
-vineflower	ebd4cca68917fdf8
 kuna	e9dee74dff00bfcd
 case	default/pkg/TestSwitchPatternMatching3	Default	classes/java17preview/pkg/TestSwitchPatternMatching3
-vineflower	524ec7a1e1a22db9
 kuna	524ec7a1e1a22db9
 case	default/pkg/TestSwitchPatternMatching4	Default	classes/java17preview/pkg/TestSwitchPatternMatching4
-vineflower	56c43632c05ea4f3
 kuna	56c43632c05ea4f3
 case	default/pkg/TestSwitchPatternMatching5	Default	classes/java17preview/pkg/TestSwitchPatternMatching5
-vineflower	58ab5ae316a63c8c
 kuna	c66e19ec57e57b99
 case	default/pkg/TestSwitchPatternMatching6	Default	classes/java17preview/pkg/TestSwitchPatternMatching6	classes/java17preview/ext/Direction
-vineflower	369f5b55db9b8ad9
 kuna	70dc128223333d78
 case	default/pkg/TestSwitchPatternMatching7	Default	classes/java17preview/pkg/TestSwitchPatternMatching7
-vineflower	43a3670a9e5a0fe9
 kuna	43a3670a9e5a0fe9
 case	default/pkg/TestSwitchPatternMatching8	Default	classes/java17preview/pkg/TestSwitchPatternMatching8
-vineflower	090ba6171a981d54
 kuna	090ba6171a981d54
 case	default/pkg/TestSwitchPatternMatching9	Default	classes/java17preview/pkg/TestSwitchPatternMatching9
-vineflower	5db19b752c8191d8
 kuna	5db19b752c8191d8
 case	default/pkg/TestSwitchPatternMatchingConstructor1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingConstructor1
-vineflower	48f7e2e556d25350
 kuna	22e2831fde02c9cd
 case	default/pkg/TestSwitchPatternMatchingConstructor2	Default	classes/java17preview/pkg/TestSwitchPatternMatchingConstructor2
-vineflower	7a7ac8b219a9bcfd
 kuna	7a7ac8b219a9bcfd
 case	default/pkg/TestSwitchPatternMatchingFuzz1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingFuzz1
-vineflower	9187f4176393d912
 kuna	b925f3e87c2db18b
 case	default/pkg/TestSwitchPatternMatchingInstanceof1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof1
-vineflower	d4db4842a03a695d
 kuna	2fcef0845dd420ad
 case	default/pkg/TestSwitchPatternMatchingInstanceof2	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof2
-vineflower	26ba21f0baaead80
 kuna	203d8ecdeffac6e5
 case	default/pkg/TestSwitchPatternMatchingInstanceof3	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof3
-vineflower	5ee888e486d15d86
 kuna	5ee888e486d15d86
 case	default/pkg/TestSwitchPatternMatchingInstanceof4	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof4
-vineflower	9aefca1a60883eed
 kuna	9aefca1a60883eed
 case	default/pkg/TestSwitchPatternMatchingJ21	Default	classes/java21/pkg/TestSwitchPatternMatchingJ21
-vineflower	b4637c3aa73b6774
 kuna	b4637c3aa73b6774
 case	default/pkg/TestSwitchPatternMatchingJ25	Default	classes/java25/pkg/TestSwitchPatternMatchingJ25
-vineflower	03959c2fe59e9742
 kuna	03959c2fe59e9742
 case	default/pkg/TestSwitchPatternMatchingLoop	Default	classes/java17preview/pkg/TestSwitchPatternMatchingLoop
-vineflower	f3b60154ac146aaa
 kuna	f3b60154ac146aaa
 case	default/pkg/TestSwitchPatternMatchingReturn1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingReturn1
-vineflower	97355d8d0174ccd8
 kuna	97355d8d0174ccd8
 case	default/pkg/TestSwitchPatternMatchingReturn2	Default	classes/java17preview/pkg/TestSwitchPatternMatchingReturn2
-vineflower	659e6ac5a54b29c2
 kuna	659e6ac5a54b29c2
 case	default/pkg/TestSwitchPatternMatchingWithNull	Default	classes/java17preview/pkg/TestSwitchPatternMatchingWithNull
-vineflower	dfec0f564f34ccaa
 kuna	dfec0f564f34ccaa
 case	default/pkg/TestSwitchReturn	Default	classes/java8/pkg/TestSwitchReturn
-vineflower	cc15caa1c387860e
 kuna	cc15caa1c387860e
 case	default/pkg/TestSwitchSimpleMultiLine	Default	classes/java21/pkg/TestSwitchSimpleMultiLine
-vineflower	ee14ba5c06ec7615
 kuna	0c96c5e701f96d00
 case	default/pkg/TestSwitchStringHashcodeCollision	Default	classes/java8/pkg/TestSwitchStringHashcodeCollision
-vineflower	aab9c2e4e352815c
 kuna	0fb1f1bbd51d389c
 case	default/pkg/TestSwitchTernary	Default	classes/java8/pkg/TestSwitchTernary
-vineflower	10361f9fad48debe
 kuna	10361f9fad48debe
 case	default/pkg/TestSynchronizeNull	Default	classes/java8/pkg/TestSynchronizeNull
-vineflower	36e358447cf4f6dc
 kuna	36e358447cf4f6dc
 case	default/pkg/TestSynchronized	Default	classes/java8/pkg/TestSynchronized
-vineflower	8702bb2bab8bfed2
 kuna	8702bb2bab8bfed2
 case	default/pkg/TestSynchronizedLoop	Default	classes/java8/pkg/TestSynchronizedLoop
-vineflower	3c6fbb36efa08565
 kuna	ba87128d26eb038b
 case	default/pkg/TestSynchronizedMapping	Default	classes/java8/pkg/TestSynchronizedMapping
-vineflower	6edda2785470a5cc
 kuna	6edda2785470a5cc
 case	default/pkg/TestSynchronizedTernary	Default	classes/java8/pkg/TestSynchronizedTernary
-vineflower	8d71fb033a9a87d7
 kuna	8d71fb033a9a87d7
 case	default/pkg/TestSynchronizedThrow	Default	classes/java8/pkg/TestSynchronizedThrow
-vineflower	5261d43ebed2f649
 kuna	5261d43ebed2f649
 case	default/pkg/TestSynchronizedTry	Default	classes/java8/pkg/TestSynchronizedTry
-vineflower	ebb53439cb1f70f4
 kuna	ebb53439cb1f70f4
 case	default/pkg/TestSynchronizedTryReturn	Default	classes/java8/pkg/TestSynchronizedTryReturn
-vineflower	06a34a4045a703fa
 kuna	06a34a4045a703fa
 case	default/pkg/TestSynchronizedTrySharing	Default	classes/java8/pkg/TestSynchronizedTrySharing
-vineflower	a1682a58495cebce
 kuna	a1682a58495cebce
 case	default/pkg/TestSyntheticAccess	Default	classes/java8/pkg/TestSyntheticAccess
-vineflower	a178c7ef7c9e92a8
 kuna	a178c7ef7c9e92a8
 case	default/pkg/TestTempAssign	Default	classes/java8/pkg/TestTempAssign
-vineflower	d9acdfba145a081a
 kuna	d9acdfba145a081a
 case	default/pkg/TestTernaryAssign	Default	classes/java8/pkg/TestTernaryAssign
-vineflower	890d583bf474d3d2
 kuna	890d583bf474d3d2
 case	default/pkg/TestTernaryCall	Default	classes/java8/pkg/TestTernaryCall
-vineflower	1b4a6c0a7303fa69
 kuna	0ae042b79375affd
 case	default/pkg/TestTernaryReturn	Default	classes/java8/pkg/TestTernaryReturn
-vineflower	6a44172b83aaec1b
 kuna	b82456f8c3c2ee9a
 case	default/pkg/TestTernaryReturn2	Default	classes/java16/pkg/TestTernaryReturn2
-vineflower	3ce60a1626b34142
 kuna	3ce60a1626b34142
 case	default/pkg/TestTextBlocks	Default	classes/java16/pkg/TestTextBlocks
-vineflower	de5e113d9a048975
 kuna	de5e113d9a048975
 case	default/pkg/TestThrowLoop	Default	classes/java8/pkg/TestThrowLoop
-vineflower	938a5b9db8cd7eed
 kuna	30433f0ecb666275
 case	default/pkg/TestTryCatchFinally	Default	classes/java8/pkg/TestTryCatchFinally
-vineflower	ae00b5e064a4ca41
 kuna	82e42cd8b8d86e35
 case	default/pkg/TestTryCatchNested	Default	classes/java8/pkg/TestTryCatchNested
-vineflower	e5fa390a066d0ba7
 kuna	e5fa390a066d0ba7
 case	default/pkg/TestTryFinally	Default	classes/java8/pkg/TestTryFinally
-vineflower	39190a8aaea9b0fb
 kuna	39190a8aaea9b0fb
 case	default/pkg/TestTryLoop	Default	classes/java8/pkg/TestTryLoop
-vineflower	0134bdf3c8c0834b
 kuna	29fb15a51722ad32
 case	default/pkg/TestTryLoop2	Default	classes/java8/pkg/TestTryLoop2
-vineflower	9dee4766a38f8449
 kuna	8f01540640597ac0
 case	default/pkg/TestTryLoopNoCatch	Default	classes/java8/pkg/TestTryLoopNoCatch
-vineflower	2f654a88c7b0b968
 kuna	efa7b39473cbe6d2
 case	default/pkg/TestTryLoopRecompile	Default	classes/java8/pkg/TestTryLoopRecompile
-vineflower	81a3ea893acebcc6
 kuna	81a3ea893acebcc6
 case	default/pkg/TestTryLoopReturnFinally	Default	classes/java8/pkg/TestTryLoopReturnFinally
-vineflower	f777440d868917de
 kuna	f777440d868917de
 case	default/pkg/TestTryLoopSimpleFinally	Default	classes/java8/pkg/TestTryLoopSimpleFinally
-vineflower	bc819a42516d7bbb
 kuna	bc819a42516d7bbb
 case	default/pkg/TestTryReturnNoDebug	Default	classes/java8nodebug/pkg/TestTryReturnNoDebug
-vineflower	2534978c08a31136
 kuna	2534978c08a31136
 case	default/pkg/TestTrySplit	Default	classes/java8/pkg/TestTrySplit
-vineflower	191ec572cdd7f9a3
 kuna	191ec572cdd7f9a3
 case	default/pkg/TestTrySynchronized	Default	classes/java8/pkg/TestTrySynchronized
-vineflower	41c73ff2f515b364
 kuna	40e165ac9ac990c7
 case	default/pkg/TestTryVar	Default	classes/java8/pkg/TestTryVar
-vineflower	0f833739d91aeb81
 kuna	0f833739d91aeb81
 case	default/pkg/TestTryVarNoDebug	Default	classes/java8nodebug/pkg/TestTryVarNoDebug
-vineflower	ce80c0c044cf0147
 kuna	ce80c0c044cf0147
 case	default/pkg/TestTypeAnnotations	Default	classes/java21/pkg/TestTypeAnnotations
-vineflower	79391f93ad1b8f2c
 kuna	79391f93ad1b8f2c
 case	default/pkg/TestUnicodeIdentifiers	Default	classes/java8/pkg/TestUnicodeIdentifiers
-vineflower	a3aafc8082037aeb
 kuna	a3aafc8082037aeb
 case	default/pkg/TestUnionTypeAssign	Default	classes/java8/pkg/TestUnionTypeAssign
-vineflower	61460b54f675f1fe
 kuna	61460b54f675f1fe
 case	default/pkg/TestUnknownCast	Default	classes/java8/pkg/TestUnknownCast
-vineflower	2b494e07eb8a0424
 kuna	6c87823017184109
 case	default/pkg/TestUnknownCastJ17	Default	classes/java17preview/pkg/TestUnknownCastJ17
-vineflower	ee7e224b82b4d2b0
 kuna	07ccfd5ea67a143f
 case	default/pkg/TestUnnamedVar1	Default	classes/java25/pkg/TestUnnamedVar1
-vineflower	d88fa067c8fe5ee7
 kuna	44e542637898ad78
 case	default/pkg/TestVarHandles	Default	classes/java9/pkg/TestVarHandles
-vineflower	ecbf475329496e17
 kuna	ecbf475329496e17
 case	default/pkg/TestVarIndex	Default	classes/java8nodebug/pkg/TestVarIndex
-vineflower	a655875c2865e840
 kuna	a655875c2865e840
 case	default/pkg/TestVarMergeSupertype	Default	classes/java8/pkg/TestVarMergeSupertype
-vineflower	eab2e957d1280425
 kuna	eab2e957d1280425
 case	default/pkg/TestVarRedef	Default	classes/java17/pkg/TestVarRedef
-vineflower	1845256019fad834
 kuna	353271d64eca28c2
 case	default/pkg/TestWhile1	Default	classes/java8/pkg/TestWhile1
-vineflower	1b9232cc118523a5
 kuna	1b9232cc118523a5
 case	default/pkg/TestWhileCondition	Default	classes/java8/pkg/TestWhileCondition
-vineflower	f20e117a52abea63
 kuna	c27b563469dad689
 case	default/pkg/TestWhileConditionTernary	Default	classes/java8/pkg/TestWhileConditionTernary
-vineflower	4ebd0b6450bed7f5
 kuna	4ebd0b6450bed7f5
 case	default/pkg/TestWhileForeach	Default	classes/java8/pkg/TestWhileForeach
-vineflower	b8792abde956eee5
 kuna	b8792abde956eee5
 case	default/pkg/TestWhileIterator	Default	classes/java8/pkg/TestWhileIterator
-vineflower	3a935c53da8fe7ad
 kuna	1f96ef870528ff81
 case	default/pkg/TestWhileLambda	Default	classes/java8/pkg/TestWhileLambda
-vineflower	99b58aea15c7f68c
 kuna	99b58aea15c7f68c
 case	default/pkg/TestWhileLoopPromotion	Default	classes/java8/pkg/TestWhileLoopPromotion
-vineflower	5094bad30c650e1a
 kuna	5094bad30c650e1a
 case	default/pkg/TestWhileTernary1	Default	classes/java8/pkg/TestWhileTernary1
-vineflower	ec26cd404ae8e935
 kuna	3b79aebe01970897
 case	default/pkg/TestWhileTernary10	Default	classes/java8/pkg/TestWhileTernary10
-vineflower	fd68d520e9393899
 kuna	fd68d520e9393899
 case	default/pkg/TestWhileTernary2	Default	classes/java8/pkg/TestWhileTernary2
-vineflower	d65773297bf79755
 kuna	d65773297bf79755
 case	default/pkg/TestWhileTernary3	Default	classes/java8/pkg/TestWhileTernary3
-vineflower	7868cd1df8ade233
 kuna	7868cd1df8ade233
 case	default/pkg/TestWhileTernary4	Default	classes/java8/pkg/TestWhileTernary4
-vineflower	62f0496ae8fdee0d
 kuna	62f0496ae8fdee0d
 case	default/pkg/TestWhileTernary5	Default	classes/java8/pkg/TestWhileTernary5
-vineflower	c42e0e93c1f24fd8
 kuna	c42e0e93c1f24fd8
 case	default/pkg/TestWhileTernary6	Default	classes/java8/pkg/TestWhileTernary6
-vineflower	8732d336cb14bf85
 kuna	8732d336cb14bf85
 case	default/pkg/TestWhileTernary7	Default	classes/java8/pkg/TestWhileTernary7
-vineflower	f9781ebb43e04615
 kuna	f9781ebb43e04615
 case	default/pkg/TestWhileTernary8	Default	classes/java8/pkg/TestWhileTernary8
-vineflower	d56211090fb836a6
 kuna	d56211090fb836a6
 case	default/pkg/TestWhileTernary9	Default	classes/java8/pkg/TestWhileTernary9
-vineflower	381435214fd34c1f
 kuna	3f4c78dd881f7fa5
 case	default/pkg/TestWhileTernaryFake	Default	classes/java8/pkg/TestWhileTernaryFake
-vineflower	c7528cfe7a5b9693
 kuna	c7528cfe7a5b9693
 case	default/pkg/TypeAnnotations	Default	classes/java8/pkg/TypeAnnotations
-vineflower	7d88b1afd64f862d
 kuna	7d88b1afd64f862d
 case	default/pkg/package-info	Default	classes/java8/pkg/package-info
-vineflower	4a519486cd06d31b
 kuna	4a519486cd06d31b
 case	default/v11/TestInnerClassConstructor	Default	classes/custom/v11/TestInnerClassConstructor
-vineflower	ca99a4bfd62046c0
 kuna	ca99a4bfd62046c0
 case	javadoc/pkg/TestJavadoc	Javadoc	classes/java8/pkg/TestJavadoc
-vineflower	537f34ce29395ab0
 kuna	537f34ce29395ab0
 case	lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass	Lambda to Anonymous Class	classes/java8/pkg/TestLambdaToAnonymousClass
-vineflower	9da7c75fa552c8d7
 kuna	9da7c75fa552c8d7
 case	lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass2	Lambda to Anonymous Class	classes/java8/pkg/TestLambdaToAnonymousClass2
-vineflower	201ce6fb43ac2cb7
 kuna	201ce6fb43ac2cb7
 case	literals/pkg/TestConstantUninlining	Literals	classes/java8/pkg/TestConstantUninlining
-vineflower	03cd8a10da9954a3
 kuna	03cd8a10da9954a3
 case	literals/pkg/TestFloatPrecision	Literals	classes/java8/pkg/TestFloatPrecision
-vineflower	4d074d2e841e2c33
 kuna	812536d93bd35ae7
 case	literals/pkg/TestNotFloatPrecision	Literals	classes/java8/pkg/TestNotFloatPrecision
-vineflower	b9305d3a1e2f218e
 kuna	b9305d3a1e2f218e
 case	literals/pkg/TestPiDivision	Literals	classes/java8/pkg/TestPiDivision
-vineflower	20a73f4927b2327b
 kuna	20a73f4927b2327b
 case	lvt/pkg/TestLVT	LVT	classes/java8/pkg/TestLVT
-vineflower	dd63b93377385e26
 kuna	dd63b93377385e26
 case	lvt/pkg/TestLVTComplex	LVT	classes/java8/pkg/TestLVTComplex
-vineflower	2bb2319561e1599f
 kuna	3875fccf30f26437
 case	lvt/pkg/TestLVTScoping	LVT	classes/java8/pkg/TestLVTScoping
-vineflower	eaf01ed39920d6ad
 kuna	eaf01ed39920d6ad
 case	lvt/pkg/TestLoopMerging	LVT	classes/java8/pkg/TestLoopMerging
-vineflower	c3ee6cce9cad46de
 kuna	c3ee6cce9cad46de
 case	lvt/pkg/TestVarType	LVT	classes/java8/pkg/TestVarType
-vineflower	f7dd84f1af9322b6
 kuna	f7dd84f1af9322b6
 case	markdown-javadoc/pkg/TestMarkdownJavadoc	Markdown Javadoc	classes/java8/pkg/TestMarkdownJavadoc
-vineflower	7f6bc7f8734b41d3
 kuna	7f6bc7f8734b41d3
 case	no-lvt/pkg/TestNoLvt	No LVT	classes/java8/pkg/TestNoLvt
-vineflower	5456e09624813377
 kuna	5456e09624813377
 case	renaming/pkg/TestRenameEntities	Renaming	classes/java8/pkg/TestRenameEntities
-vineflower	455e89ee6b6d3a99
 kuna	ba67722efe630de6
 case	synthetics-marking/pkg/TestAnonymousClassNaming	Synthetics Marking	classes/java8/pkg/TestAnonymousClassNaming
-vineflower	44a35747262c53c2
 kuna	44a35747262c53c2
 case	synthetics-marking/pkg/TestLambdaNaming	Synthetics Marking	classes/java8/pkg/TestLambdaNaming
-vineflower	cc139e1c402db370
 kuna	cc139e1c402db370
 case	synthetics-marking/pkg/TestLocalClassNaming	Synthetics Marking	classes/java8/pkg/TestLocalClassNaming
-vineflower	d1804b486d3fcbfd
 kuna	d1804b486d3fcbfd
 case	ternary-constant-simplification/pkg/TestAssignmentTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestAssignmentTernaryConstantSimplification
-vineflower	8225055d31930e25
 kuna	8225055d31930e25
 case	ternary-constant-simplification/pkg/TestReturnTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestReturnTernaryConstantSimplification
-vineflower	66af2274c4d96559
 kuna	4c118e72f071b2e9
 case	jad-naming/TestJadLvtCollision	JAD Naming	classes/plugins/variable-renaming/custom/TestJadLvtCollision
-vineflower	2bd0a2858284dcf5
 kuna	2bd0a2858284dcf5
 case	jad-naming/pkg/TestJADLocalClasses	JAD Naming	classes/plugins/variable-renaming/java8/pkg/TestJADLocalClasses
-vineflower	44896e58761901b7
 kuna	44896e58761901b7
 case	jad-naming/pkg/TestJADNaming	JAD Naming	classes/plugins/variable-renaming/java8/pkg/TestJADNaming
-vineflower	5325912d4f0db671
 kuna	5325912d4f0db671
 case	plugin-defaults/TestIdeaNotNull	Plugin Defaults	classes/custom/TestIdeaNotNull
-vineflower	3e749b4c51b4b14f
 kuna	3e749b4c51b4b14f
 case	tiny-naming/pkg/TestTinyNaming	Tiny Naming	classes/plugins/variable-renaming/java8/pkg/TestTinyNaming
-vineflower	380c56bac908f7e2
 kuna	380c56bac908f7e2
 case	with-idea-not-null/TestIdeaNotNull	With Idea Not Null	classes/custom/TestIdeaNotNull
-vineflower	4b82def0117798ab
 kuna	4b82def0117798ab
 case	kotlin-core-default/pkg/TestIllegalVarName	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestIllegalVarName
-vineflower	7dbf066914cc729a
 kuna	b1e7d789b5474db1
 compare	TestIllegalVarName.kt	TestIllegalVarName.java
 case	kotlin-core-default/pkg/TestKotlinEnumWhen	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestKotlinEnumWhen
-vineflower	92b79a3961b392c6
 kuna	92b79a3961b392c6
 compare	TestKotlinEnumWhen.kt	TestKotlinEnumWhen.java
 case	kotlin-core-default/pkg/TestRunSuspend	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestRunSuspend
-vineflower	1ca741c9a8e6528c
 kuna	1ca741c9a8e6528c
 compare	TestRunSuspend.kt	TestRunSuspend.java
 case	kotlin-core-default/pkg/TestSuspendLambdaKt	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSuspendLambdaKt
-vineflower	be1fd65a2b7a408d
 kuna	be1fd65a2b7a408d
 compare	TestSuspendLambdaKt.kt	TestSuspendLambdaKt.java
 case	kotlin-core-default/pkg/TestSynchronizedUnprotected	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSynchronizedUnprotected
-vineflower	4b0ebeab5bb53362
 kuna	4b0ebeab5bb53362
 compare	TestSynchronizedUnprotected.kt	TestSynchronizedUnprotected.java
 case	kotlin-entire-classpath/pkg/TestAnnotations	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestAnnotations
-vineflower	6dcff3fcc187b08b
 kuna	597b5ebbdf25cc31
 compare	TestAnnotations.kt	TestAnnotations.java
 case	kotlin-entire-classpath/pkg/TestAnonymousEverything	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestAnonymousEverything
-vineflower	7113e6a8f4b8557e
 kuna	43e22824b2ac53e1
 compare	TestAnonymousEverything.kt	TestAnonymousEverything.java
 case	kotlin-entire-classpath/pkg/TestAnyType	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestAnyType
-vineflower	3393b72a07852438
 kuna	7c1dd590bb2b8723
 compare	TestAnyType.kt	TestAnyType.java
 case	kotlin-entire-classpath/pkg/TestBitwiseFunctions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestBitwiseFunctions
-vineflower	7c15a6907a9f567a
 kuna	7c15a6907a9f567a
 compare	TestBitwiseFunctions.kt	TestBitwiseFunctions.java
 case	kotlin-entire-classpath/pkg/TestClassDec	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestClassDec
-vineflower	d7c9e4594fdd0146
 kuna	1ed2d4dd72d78d07
 compare	TestClassDec.kt	TestClassDec.java
 case	kotlin-entire-classpath/pkg/TestClassicStringInterpolation	Kotlin Entire Classpath	classes/kotlin/ktold/pkg/TestClassicStringInterpolation
-vineflower	fd2fea82ef46df9a
 kuna	fd2fea82ef46df9a
 compare	TestClassicStringInterpolation.kt	TestClassicStringInterpolation.java
 case	kotlin-entire-classpath/pkg/TestCompanionObject	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestCompanionObject
-vineflower	fb21055d1b3ae20a
 kuna	78bd1d52964edf44
 compare	TestCompanionObject.kt	TestCompanionObject.java
 case	kotlin-entire-classpath/pkg/TestComparison	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestComparison
-vineflower	427b57b2ab9e5ab3
 kuna	427b57b2ab9e5ab3
 compare	TestComparison.kt	TestComparison.java
 case	kotlin-entire-classpath/pkg/TestCompileTimeErrors	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestCompileTimeErrors
-vineflower	b2fa51e1eb11fafc
 kuna	5e364908af02dee2
 compare	TestCompileTimeErrors.kt	TestCompileTimeErrors.java
 case	kotlin-entire-classpath/pkg/TestConstructors	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestConstructors
-vineflower	7e7062b2ecb776a4
 kuna	7e7062b2ecb776a4
 compare	TestConstructors.kt	TestConstructors.java
 case	kotlin-entire-classpath/pkg/TestContracts	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestContracts
-vineflower	ff1cff0b49916d30
 kuna	287be7e8855de719
 compare	TestContracts.kt	TestContracts.java
 case	kotlin-entire-classpath/pkg/TestConvertedK2JOps	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestConvertedK2JOps
-vineflower	d7d310d0c08e8065
 kuna	489ecdd0489a50d2
 compare	TestConvertedK2JOps.kt	TestConvertedK2JOps.java
 case	kotlin-entire-classpath/pkg/TestDataClass	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestDataClass
-vineflower	784f7947966540a7
 kuna	52250293b62abf9f
 compare	TestDataClass.kt	TestDataClass.java
 case	kotlin-entire-classpath/pkg/TestDestructors	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestDestructors
-vineflower	2ead47b4414be305
 kuna	3e13d91503e0bbe0
 compare	TestDestructors.kt	TestDestructors.java
 case	kotlin-entire-classpath/pkg/TestEnumClass	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestEnumClass
-vineflower	54346c8b61c48efd
 kuna	50fd60ced1627d7e
 compare	TestEnumClass.kt	TestEnumClass.java
 case	kotlin-entire-classpath/pkg/TestExtensionFun	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestExtensionFun
-vineflower	bd159429c16af106
 kuna	5dafcbba02c9c6cf
 compare	TestExtensionFun.kt	TestExtensionFun.java
 case	kotlin-entire-classpath/pkg/TestForRange	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestForRange
-vineflower	08a64829180f7672
 kuna	acb3a4818cd5a5a4
 compare	TestForRange.kt	TestForRange.java
 case	kotlin-entire-classpath/pkg/TestFunVarargs	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestFunVarargs
-vineflower	ef48bbc7a965df1a
 kuna	8787e48e80c3d2be
 compare	TestFunVarargs.kt	TestFunVarargs.java
 case	kotlin-entire-classpath/pkg/TestFuncRef	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestFuncRefKt
-vineflower	b6cb5c198f370782
 kuna	45eb428b4fef9473
 compare	TestFuncRefKt.kt	TestFuncRefKt.java
 case	kotlin-entire-classpath/pkg/TestGenerics	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestGenerics
-vineflower	ad09bc0866493b3b
 kuna	2517dcb0f1cfa8aa
 compare	TestGenerics.kt	TestGenerics.java
 case	kotlin-entire-classpath/pkg/TestIfRange	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestIfRange
-vineflower	6a52fd3c7790dc01
 kuna	cdce5bc0254ec21e
 compare	TestIfRange.kt	TestIfRange.java
 case	kotlin-entire-classpath/pkg/TestInfixFun	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestInfixFun
-vineflower	128b3ee83cd23234
 kuna	de5dea41e15ef725
 compare	TestInfixFun.kt	TestInfixFun.java
 case	kotlin-entire-classpath/pkg/TestKotlinTypes	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestKotlinTypes
-vineflower	97d4ce1893bf70eb
 kuna	97d4ce1893bf70eb
 compare	TestKotlinTypes.kt	TestKotlinTypes.java
 case	kotlin-entire-classpath/pkg/TestKt	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestKt
-vineflower	b72c3b2861bb7dbf
 kuna	b72c3b2861bb7dbf
 compare	TestKt.kt	TestKt.java
 case	kotlin-entire-classpath/pkg/TestLabeledJumps	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestLabeledJumps
-vineflower	f0f8047112185a3a
 kuna	f6a36adadea9c5bf
 compare	TestLabeledJumps.kt	TestLabeledJumps.java
 case	kotlin-entire-classpath/pkg/TestNonInlineLambda	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNonInlineLambda
-vineflower	b62169c9e381c476
 kuna	5a7324258ced8242
 compare	TestNonInlineLambda.kt	TestNonInlineLambda.java
 case	kotlin-entire-classpath/pkg/TestNothingReturns	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNothingReturns
-vineflower	275708659ffcfef4
 kuna	eb16b1abe775b03c
 compare	TestNothingReturns.kt	TestNothingReturns.java
 case	kotlin-entire-classpath/pkg/TestNullable	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNullable
-vineflower	6ed91bf3041837b2
 kuna	6ed91bf3041837b2
 compare	TestNullable.kt	TestNullable.java
 case	kotlin-entire-classpath/pkg/TestNullableOperator	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNullableOperator
-vineflower	ce675a6bd557d83e
 kuna	b929d4ef092c322e
 compare	TestNullableOperator.kt	TestNullableOperator.java
 case	kotlin-entire-classpath/pkg/TestObject	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestObject
-vineflower	8b3ea94b969ab635
 kuna	8b3ea94b969ab635
 compare	TestObject.kt	TestObject.java
 case	kotlin-entire-classpath/pkg/TestParams	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestParams
-vineflower	c2c7d7fc9902b382
 kuna	94eb85c780219fd9
 compare	TestParams.kt	TestParams.java
 case	kotlin-entire-classpath/pkg/TestPoorNames	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestPoorNames
-vineflower	d7111d386d0869f1
 kuna	27cfed727d8ee97d
 compare	TestPoorNames.kt	TestPoorNames.java
 case	kotlin-entire-classpath/pkg/TestPropertyAccess	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestPropertyAccess	classes/kotlin/kt/ext/Person
-vineflower	20ea25b9d49a4c74
 kuna	20ea25b9d49a4c74
 compare	TestPropertyAccess.kt	TestPropertyAccess.java
 case	kotlin-entire-classpath/pkg/TestReflection	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestReflection
-vineflower	0a08ff1f8b2c7d63
 kuna	6093c27a66fbd1a9
 compare	TestReflection.kt	TestReflection.java
 case	kotlin-entire-classpath/pkg/TestSafeCasts	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSafeCasts
-vineflower	bf7187e95dd6ac49
 kuna	bc55ec08d4969393
 compare	TestSafeCasts.kt	TestSafeCasts.java
 case	kotlin-entire-classpath/pkg/TestSealedHierarchy	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSealedHierarchy
-vineflower	a419bfac7c1bce67
 kuna	a419bfac7c1bce67
 compare	TestSealedHierarchy.kt	TestSealedHierarchy.java
 case	kotlin-entire-classpath/pkg/TestShadowParam	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestShadowParam
-vineflower	42b91870b5d7af22
 kuna	42b91870b5d7af22
 compare	TestShadowParam.kt	TestShadowParam.java
 case	kotlin-entire-classpath/pkg/TestSmartCasts	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSmartCasts
-vineflower	87c1678d4487d32a
 kuna	a96989000fe321f3
 compare	TestSmartCasts.kt	TestSmartCasts.java
 case	kotlin-entire-classpath/pkg/TestStringInterpolation	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestStringInterpolation
-vineflower	da0df8907e08f376
 kuna	da0df8907e08f376
 compare	TestStringInterpolation.kt	TestStringInterpolation.java
 case	kotlin-entire-classpath/pkg/TestSynchronized	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSynchronized
-vineflower	4612ee78873db0a3
 kuna	4612ee78873db0a3
 compare	TestSynchronized.kt	TestSynchronized.java
 case	kotlin-entire-classpath/pkg/TestTailrecFunctions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTailrecFunctions
-vineflower	f5b4aadd9bde1d59
 kuna	4f18f05883e15107
 compare	TestTailrecFunctions.kt	TestTailrecFunctions.java
 case	kotlin-entire-classpath/pkg/TestTopLevelKt	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTopLevelKt
-vineflower	f8a074b1e3701135
 kuna	0b01069a1a7d6b82
 compare	TestTopLevelKt.kt	TestTopLevelKt.java
 case	kotlin-entire-classpath/pkg/TestTryCatchExpressions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchExpressions
-vineflower	c6a708ad995bd5ea
 kuna	80154d47df4c0ec8
 compare	TestTryCatchExpressions.kt	TestTryCatchExpressions.java
 case	kotlin-entire-classpath/pkg/TestTryCatchFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchFinally
-vineflower	da88faf1e9267348
 kuna	07fa7693580427a6
 compare	TestTryCatchFinally.kt	TestTryCatchFinally.java
 case	kotlin-entire-classpath/pkg/TestTryCatchNested	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchNested
-vineflower	d1f7e9dbc8cb0330
 kuna	0ef4563252cce7a7
 compare	TestTryCatchNested.kt	TestTryCatchNested.java
 case	kotlin-entire-classpath/pkg/TestTryCatchThrowable	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchThrowable
-vineflower	feaac61d75746536
 kuna	ec23164a0e83bbe1
 compare	TestTryCatchThrowable.kt	TestTryCatchThrowable.java
 case	kotlin-entire-classpath/pkg/TestTryFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryFinally
-vineflower	7a1de49ef370e5c5
 kuna	7a1de49ef370e5c5
 compare	TestTryFinally.kt	TestTryFinally.java
 case	kotlin-entire-classpath/pkg/TestTryFinallyExpressions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryFinallyExpressions
-vineflower	9b6b399d69a092ad
 kuna	e5127bba731c31b3
 compare	TestTryFinallyExpressions.kt	TestTryFinallyExpressions.java
 case	kotlin-entire-classpath/pkg/TestTryLoop	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoop
-vineflower	ce795283eb08c171
 kuna	b4bcf2a263392609
 compare	TestTryLoop.kt	TestTryLoop.java
 case	kotlin-entire-classpath/pkg/TestTryLoop2	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoop2
-vineflower	03844a9cea09b1ce
 kuna	ba1a1616f4ee23b7
 compare	TestTryLoop2.kt	TestTryLoop2.java
 case	kotlin-entire-classpath/pkg/TestTryLoopNoCatch	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopNoCatch
-vineflower	f07b15b44d952756
 kuna	5d0be66dc829cfa4
 compare	TestTryLoopNoCatch.kt	TestTryLoopNoCatch.java
 case	kotlin-entire-classpath/pkg/TestTryLoopRecompile	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopRecompile
-vineflower	1fd8c34e9eed7646
 kuna	596349e2f95318d4
 compare	TestTryLoopRecompile.kt	TestTryLoopRecompile.java
 case	kotlin-entire-classpath/pkg/TestTryLoopReturnFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopReturnFinally
-vineflower	5132ad4dfbe432ed
 kuna	a1380b2f38b2a9ca
 compare	TestTryLoopReturnFinally.kt	TestTryLoopReturnFinally.java
 case	kotlin-entire-classpath/pkg/TestTryLoopSimpleFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopSimpleFinally
-vineflower	c70222935270987c
 kuna	e5f3f085fced4e99
 compare	TestTryLoopSimpleFinally.kt	TestTryLoopSimpleFinally.java
 case	kotlin-entire-classpath/pkg/TestTryReturn	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryReturn
-vineflower	4806d1f12ebdc268
 kuna	18c32c40ee3a1893
 compare	TestTryReturn.kt	TestTryReturn.java
 case	kotlin-entire-classpath/pkg/TestTrySplit	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTrySplit
-vineflower	85eab7561e0ac082
 kuna	905af8a13762e724
 compare	TestTrySplit.kt	TestTrySplit.java
 case	kotlin-entire-classpath/pkg/TestTrySynchronized	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTrySynchronized
-vineflower	00261c3d8355311c
 kuna	1c0bb3788abe22de
 compare	TestTrySynchronized.kt	TestTrySynchronized.java
 case	kotlin-entire-classpath/pkg/TestTryVar	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryVar
-vineflower	fa9c0aed6caeb6e5
 kuna	e6aad20375c52b89
 compare	TestTryVar.kt	TestTryVar.java
 case	kotlin-entire-classpath/pkg/TestVarReplace	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestVarReplaceKt
-vineflower	e63e444e393f1a6c
 kuna	a435d9095cee8ca0
 compare	TestVarReplaceKt.kt	TestVarReplaceKt.java
 case	kotlin-entire-classpath/pkg/TestVars	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestVars
-vineflower	084f333f1b87618c
 kuna	8c3e9f7843428b43
 compare	TestVars.kt	TestVars.java
 case	kotlin-entire-classpath/pkg/TestWhen	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhen
-vineflower	e855043f5632ef37
 kuna	d6f5a3b8cb0a4911
 compare	TestWhen.kt	TestWhen.java
 case	kotlin-entire-classpath/pkg/TestWhenBoolean	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhenBoolean
-vineflower	2a47beb04a14dae3
 kuna	2a47beb04a14dae3
 compare	TestWhenBoolean.kt	TestWhenBoolean.java
 case	kotlin-entire-classpath/pkg/TestWhenControlFlow	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhenControlFlow
-vineflower	7914e0adc2eca726
 kuna	7914e0adc2eca726
 compare	TestWhenControlFlow.kt	TestWhenControlFlow.java
 case	kotlin-multifile-facade/pkg/TestMultifile	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile
-vineflower	d52c295002f45e96
 kuna	d52c295002f45e96
 compare	TestMultifile.kt	TestMultifile.java
 case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile__TestMultifileAKt
-vineflower	af2a31fa448e9763
 kuna	af2a31fa448e9763
 compare	TestMultifile__TestMultifileAKt.kt	TestMultifile__TestMultifileAKt.java
 case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt
-vineflower	b4654466634d8f12
 kuna	b4654466634d8f12
 compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
-case	kuna-fixes-compat/pkg/NoMetaBag	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/NoMetaBag	kuna-fixes/classes/pkg/NoMetaReader
-vineflower	bf888069c0da5f1c
-opt	jvm_plugins	1
-compare	NoMetaBag.kt	NoMetaBag.java
-case	kuna-fixes-compat/pkg/TestAbstractClassConstructor	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAbstractClassConstructor
-vineflower	0e29d87d770c462b
-opt	jvm_plugins	1
-compare	TestAbstractClassConstructor.kt	TestAbstractClassConstructor.java
-case	kuna-fixes-compat/pkg/TestAbstractFunctionBody	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAbstractFunctionBody
-vineflower	b98dac26bc4f8e64
-opt	jvm_plugins	1
-compare	TestAbstractFunctionBody.kt	TestAbstractFunctionBody.java
-case	kuna-fixes-compat/pkg/TestAccessorBackingField	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAccessorBackingField
-vineflower	0afd3e468a562080
-opt	jvm_plugins	1
-compare	TestAccessorBackingField.kt	TestAccessorBackingField.java
-case	kuna-fixes-compat/pkg/TestAccessorFieldInObject	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAccessorFieldInObject
-vineflower	6553eca2470c2956
-opt	jvm_plugins	1
-compare	TestAccessorFieldInObject.kt	TestAccessorFieldInObject.java
-case	kuna-fixes-compat/pkg/TestAmbiguousTypeVariableArgument	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument
-vineflower	b26e0cf3c4e731b8
-case	kuna-fixes-compat/pkg/TestAnnotatedInnerType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAnnotatedInnerType
-vineflower	008c7913b4dba098
-case	kuna-fixes-compat/pkg/TestAnonymousStaticCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAnonymousStaticCall
-vineflower	f95528afd363c030
-case	kuna-fixes-compat/pkg/TestArgumentGenericCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestArgumentGenericCast
-vineflower	ea801605184013e0
-case	kuna-fixes-compat/pkg/TestArrayOfArrays	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestArrayOfArrays
-vineflower	227a215b4fa77a51
-opt	jvm_plugins	1
-compare	TestArrayOfArrays.kt	TestArrayOfArrays.java
-case	kuna-fixes-compat/pkg/TestAssertDeadThrow	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAssertDeadThrow
-vineflower	62d00904582f5678
-case	kuna-fixes-compat/pkg/TestAssertExpressionPosition	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAssertExpressionPosition
-vineflower	2d561f9d0c346cf0
-case	kuna-fixes-compat/pkg/TestAssertThrowAfterIf	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestAssertThrowAfterIf
-vineflower	0e5eaa6832e2268d
-case	kuna-fixes-compat/pkg/TestBinaryNumericPromotion	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestBinaryNumericPromotion
-vineflower	1bb4e1f956d2dfa2
-opt	jvm_plugins	1
-compare	TestBinaryNumericPromotion.kt	TestBinaryNumericPromotion.java
-case	kuna-fixes-compat/pkg/TestBoundedInferenceCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestBoundedInferenceCast
-vineflower	25b0754d3e54867a
-case	kuna-fixes-compat/pkg/TestBoxedReceiverTypeArgument	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestBoxedReceiverTypeArgument
-vineflower	5ee517a7777cd2b4
-opt	jvm_plugins	1
-compare	TestBoxedReceiverTypeArgument.kt	TestBoxedReceiverTypeArgument.java
-case	kuna-fixes-compat/pkg/TestBoxedTypeVariableCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestBoxedTypeVariableCast
-vineflower	d3936bd9aa75dab7
-case	kuna-fixes-compat/pkg/TestCanonicalRecordLines	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCanonicalRecordLines
-vineflower	79501ce3e1dde162
-case	kuna-fixes-compat/pkg/TestCapturedClashName	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCapturedClashName
-vineflower	e9f5bb482ad02123
-case	kuna-fixes-compat/pkg/TestCapturedReceiverKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCapturedReceiverKt
-vineflower	01c896bf826943f1
-opt	jvm_plugins	1
-compare	TestCapturedReceiverKt.kt	TestCapturedReceiverKt.java
-case	kuna-fixes-compat/pkg/TestCastCaptureKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCastCaptureKt	kuna-fixes/classes/pkg/CastCaptureBoard	kuna-fixes/classes/pkg/CastCaptureCallback	kuna-fixes/classes/pkg/CastCaptureGate	kuna-fixes/classes/pkg/CastCaptureHandle	kuna-fixes/classes/pkg/CastCaptureHandleImpl
-vineflower	499c82bf12018848
-opt	jvm_plugins	1
-compare	TestCastCaptureKt.kt	TestCastCaptureKt.java
-case	kuna-fixes-compat/pkg/TestCatchBlockJump	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCatchBlockJump
-vineflower	24597beb89781608
-opt	jvm_plugins	1
-compare	TestCatchBlockJump.kt	TestCatchBlockJump.java
-case	kuna-fixes-compat/pkg/TestCatchLoopBack	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCatchLoopBack
-vineflower	d28b2d8530b15d85
-case	kuna-fixes-compat/pkg/TestCatchTailHoist	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCatchTailHoist
-vineflower	3138663d24c2bf21
-case	kuna-fixes-compat/pkg/TestCharIntSlot	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCharIntSlot
-vineflower	32469e87af2db11b
-case	kuna-fixes-compat/pkg/TestCharIntSlotKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCharIntSlotKt
-vineflower	eac20593165e4524
-opt	jvm_plugins	1
-compare	TestCharIntSlotKt.kt	TestCharIntSlotKt.java
-case	kuna-fixes-compat/pkg/TestCompanionPropertyInitializer	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCompanionPropertyInitializer
-vineflower	a994ef18c16b9fed
-opt	jvm_plugins	1
-compare	TestCompanionPropertyInitializer.kt	TestCompanionPropertyInitializer.java
-case	kuna-fixes-compat/pkg/TestCompoundAssignmentShape	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCompoundAssignmentShape
-vineflower	8dfe9a5439cfa6ca
-case	kuna-fixes-compat/pkg/TestCompoundBitwiseAssignment	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCompoundBitwiseAssignment
-vineflower	c11f3adc82e76643
-opt	jvm_plugins	1
-compare	TestCompoundBitwiseAssignment.kt	TestCompoundBitwiseAssignment.java
-case	kuna-fixes-compat/pkg/TestCompoundBitwiseInfixOperand	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCompoundBitwiseInfixOperand
-vineflower	3feaa882dc17cca1
-opt	jvm_plugins	1
-compare	TestCompoundBitwiseInfixOperand.kt	TestCompoundBitwiseInfixOperand.java
-case	kuna-fixes-compat/pkg/TestCompoundShiftCount	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCompoundShiftCount
-vineflower	faf553909948bdef
-case	kuna-fixes-compat/pkg/TestConcatCharArray	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestConcatCharArray
-vineflower	1c61f052a9e1427a
-case	kuna-fixes-compat/pkg/TestConcatOperandType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestConcatOperandType
-vineflower	806c1d3a001a3248
-case	kuna-fixes-compat/pkg/TestConcatOperandTypeBuilder	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestConcatOperandTypeBuilder
-vineflower	01eac783c4817782
-case	kuna-fixes-compat/pkg/TestConstructorBodyBeyondFirstBlock	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock
-vineflower	396e66d3f208bf3a
-opt	jvm_plugins	1
-compare	TestConstructorBodyBeyondFirstBlock.kt	TestConstructorBodyBeyondFirstBlock.java
-case	kuna-fixes-compat/pkg/TestConstructorDefaultSignature	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestConstructorDefaultSignature
-vineflower	1b5152ca79a6f8b1
-opt	jvm_plugins	1
-compare	TestConstructorDefaultSignature.kt	TestConstructorDefaultSignature.java
-case	kuna-fixes-compat/pkg/TestConstructorDiamond	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestConstructorDiamond
-vineflower	65432c45d9a8d7f1
-opt	jvm_plugins	1
-compare	TestConstructorDiamond.kt	TestConstructorDiamond.java
-case	kuna-fixes-compat/pkg/TestCopiedEquality	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCopiedEquality
-vineflower	8af0409a732ffff4
-opt	jvm_plugins	1
-compare	TestCopiedEquality.kt	TestCopiedEquality.java
-case	kuna-fixes-compat/pkg/TestCoroutineBoxingKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestCoroutineBoxingKt
-vineflower	4bea33e5075cc828
-opt	jvm_plugins	1
-compare	TestCoroutineBoxingKt.kt	TestCoroutineBoxingKt.java
-case	kuna-fixes-compat/pkg/TestDeadStoreConstType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDeadStoreConstType
-vineflower	c73f36c5b8c92759
-case	kuna-fixes-compat/pkg/TestDeclarationScopes	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDeclarationScopes
-vineflower	7f6feeee745ac9eb
-case	kuna-fixes-compat/pkg/TestDefaultAccessorFlags	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultAccessorFlags
-vineflower	bd9905ade97da23d
-opt	jvm_plugins	1
-compare	TestDefaultAccessorFlags.kt	TestDefaultAccessorFlags.java
-case	kuna-fixes-compat/pkg/TestDefaultArgAssignedParam	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultArgAssignedParam
-vineflower	4cad0415168ad800
-opt	jvm_plugins	1
-compare	TestDefaultArgAssignedParam.kt	TestDefaultArgAssignedParam.java
-case	kuna-fixes-compat/pkg/TestDefaultArgCompoundBranch	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch
-vineflower	6bd9137880996579
-opt	jvm_plugins	1
-compare	TestDefaultArgCompoundBranch.kt	TestDefaultArgCompoundBranch.java
-case	kuna-fixes-compat/pkg/TestDefaultArgsBridgeLookup	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup
-vineflower	ddb52e63833dd11f
-opt	jvm_plugins	1
-compare	TestDefaultArgsBridgeLookup.kt	TestDefaultArgsBridgeLookup.java
-case	kuna-fixes-compat/pkg/TestDefaultArgsCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultArgsCall	kuna-fixes/classes/pkg/TestDefaultArgsCallKt
-vineflower	cba811aac27315f9
-opt	jvm_plugins	1
-compare	TestDefaultArgsCall.kt	TestDefaultArgsCall.java
-case	kuna-fixes-compat/pkg/TestDefaultArgsCtorDescriptor	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultArgsCtorDescriptor
-vineflower	0b760cee00771b67
-opt	jvm_plugins	1
-compare	TestDefaultArgsCtorDescriptor.kt	TestDefaultArgsCtorDescriptor.java
-case	kuna-fixes-compat/pkg/TestDefaultArgsSuperCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall
-vineflower	95e21a9d66722064
-opt	jvm_plugins	1
-compare	TestDefaultArgsSuperCall.kt	TestDefaultArgsSuperCall.java
-case	kuna-fixes-compat/pkg/TestDefaultArgsSuperNamed	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed
-vineflower	aebc55010ae03ccd
-opt	jvm_plugins	1
-compare	TestDefaultArgsSuperNamed.kt	TestDefaultArgsSuperNamed.java
-case	kuna-fixes-compat/pkg/TestDefaultPropertyInitializer	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultPropertyInitializer
-vineflower	4bb0b596ccd33c29
-opt	jvm_plugins	1
-compare	TestDefaultPropertyInitializer.kt	TestDefaultPropertyInitializer.java
-case	kuna-fixes-compat/pkg/TestDefaultValueCoercionCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast
-vineflower	f7fbbedc8f864229
-opt	jvm_plugins	1
-compare	TestDefaultValueCoercionCast.kt	TestDefaultValueCoercionCast.java
-case	kuna-fixes-compat/pkg/TestDefaultValueNames	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDefaultValueNames
-vineflower	df9b952729697463
-opt	jvm_plugins	1
-compare	TestDefaultValueNames.kt	TestDefaultValueNames.java
-case	kuna-fixes-compat/pkg/TestDelegatedMemberDefault	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDelegatedMemberDefault
-vineflower	759be8660fe60b0e
-opt	jvm_plugins	1
-compare	TestDelegatedMemberDefault.kt	TestDelegatedMemberDefault.java
-case	kuna-fixes-compat/pkg/TestDelegationArguments	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDelegationArguments	kuna-fixes/classes/pkg/DelegationBase	kuna-fixes/classes/pkg/DelegationJava
-vineflower	b7bc01ff35662cc7
-opt	jvm_plugins	1
-compare	TestDelegationArguments.kt	TestDelegationArguments.java
-case	kuna-fixes-compat/pkg/TestDelegationOrder	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDelegationOrder	kuna-fixes/classes/pkg/DelegationJava
-vineflower	05048b8e99efd742
-opt	jvm_plugins	1
-compare	TestDelegationOrder.kt	TestDelegationOrder.java
-case	kuna-fixes-compat/pkg/TestDiamondArgumentConflict	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDiamondArgumentConflict
-vineflower	ad2fc3a5e899d92c
-case	kuna-fixes-compat/pkg/TestDiamondExternalClass	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDiamondExternalClass
-vineflower	e63f1e17aa305a0f
-case	kuna-fixes-compat/pkg/TestDisjointGenericCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDisjointGenericCast
-vineflower	9ce5999986e052fa
-case	kuna-fixes-compat/pkg/TestDoubleConstantLiteral	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestDoubleConstantLiteral
-vineflower	5caff85c28c1922e
-opt	keep-literals	0
-case	kuna-fixes-compat/pkg/TestEnumNoConstants	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestEnumNoConstants
-vineflower	410fc370d8385900
-case	kuna-fixes-compat/pkg/TestEnumValuesArray	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestEnumValuesArray
-vineflower	cb9c255fec474d93
-opt	jvm_plugins	1
-compare	TestEnumValuesArray.kt	TestEnumValuesArray.java
-case	kuna-fixes-compat/pkg/TestExplicitTypeArguments	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestExplicitTypeArguments
-vineflower	cdf697d8961e9b12
-opt	jvm_plugins	1
-compare	TestExplicitTypeArguments.kt	TestExplicitTypeArguments.java
-case	kuna-fixes-compat/pkg/TestExpressionValueCheck	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestExpressionValueCheck	kuna-fixes/classes/pkg/JavaLib
-vineflower	681043ce880863c3
-opt	jvm_plugins	1
-compare	TestExpressionValueCheck.kt	TestExpressionValueCheck.java
-case	kuna-fixes-compat/pkg/TestExpressionValueCheckLegacy	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestExpressionValueCheckLegacy	kuna-fixes/classes/pkg/JavaLib
-vineflower	68c8fb19949ebeb8
-opt	jvm_plugins	1
-compare	TestExpressionValueCheckLegacy.kt	TestExpressionValueCheckLegacy.java
-case	kuna-fixes-compat/pkg/TestExtensionCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestExtensionCall	kuna-fixes/classes/pkg/lib/ExtLib	kuna-fixes/classes/pkg/lib/ExtMulti	kuna-fixes/classes/pkg/lib/ExtMulti__TestExtensionCallMultiKt	kuna-fixes/classes/pkg/lib/ExtBox	kuna-fixes/classes/pkg/lib/ExtTools
-vineflower	6d17fa7fb5d6846d
-opt	jvm_plugins	1
-compare	TestExtensionCall.kt	TestExtensionCall.java
-case	kuna-fixes-compat/pkg/TestExtensionProperty	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestExtensionProperty
-vineflower	234c1a60fe5c2f0b
-opt	jvm_plugins	1
-compare	TestExtensionProperty.kt	TestExtensionProperty.java
-case	kuna-fixes-compat/pkg/TestExtensionReceiver	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestExtensionReceiver	kuna-fixes/classes/pkg/TestExtensionReceiverKt
-vineflower	af877db54cb82da2
-opt	jvm_plugins	1
-compare	TestExtensionReceiver.kt	TestExtensionReceiver.java
-case	kuna-fixes-compat/pkg/TestExternalSupertypeArgs	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestExternalSupertypeArgs
-vineflower	86011107ec6f3a67
-case	kuna-fixes-compat/pkg/TestFacadeCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFacadeCall	kuna-fixes/classes/pkg/lib/FacadeLib	kuna-fixes/classes/pkg/lib/FacadeMulti	kuna-fixes/classes/pkg/lib/FacadeMulti__TestFacadeCallMulti1Kt	kuna-fixes/classes/pkg/lib/FacadeMulti__TestFacadeCallMulti2Kt
-vineflower	93224a67e3c11390
-opt	jvm_plugins	1
-compare	TestFacadeCall.kt	TestFacadeCall.java
-case	kuna-fixes-compat/pkg/TestFailedMethodHidden	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFailedMethodHidden
-vineflower	9ff199500b62f6d4
-opt	jvm_plugins	1
-compare	TestFailedMethodHidden.kt	TestFailedMethodHidden.java
-case	kuna-fixes-compat/pkg/TestFieldIncrementShape	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFieldIncrementShape
-vineflower	3627b6272bfa80eb
-case	kuna-fixes-compat/pkg/TestFieldReadReuse	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFieldReadReuse
-vineflower	c3336fdd38019919
-case	kuna-fixes-compat/pkg/TestFileClassConstructor__FileClassSizesKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassSizesKt	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt	kuna-fixes/classes/pkg/TestFileClassConstructor
-vineflower	3ec4304d3ea26635
-opt	jvm_plugins	1
-compare	TestFileClassConstructor__FileClassSizesKt.kt	TestFileClassConstructor__FileClassSizesKt.java
-case	kuna-fixes-compat/pkg/TestFileStaticInitializer	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFileStaticInitializer
-vineflower	f4e5b8e0d3ac600e
-opt	jvm_plugins	1
-compare	TestFileStaticInitializer.kt	TestFileStaticInitializer.java
-case	kuna-fixes-compat/pkg/TestFinallyExitVersions	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFinallyExitVersions
-vineflower	515280261d9a432f
-case	kuna-fixes-compat/pkg/TestForInlineCopyKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestForInlineCopyKt	kuna-fixes/classes/pkg/InlineSink	kuna-fixes/classes/pkg/InlineFlow
-vineflower	bec25f662804dfe0
-opt	jvm_plugins	1
-compare	TestForInlineCopyKt.kt	TestForInlineCopyKt.java
-case	kuna-fixes-compat/pkg/TestForLoopContinueUpdate	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestForLoopContinueUpdate
-vineflower	9cc2ae5ac1bce859
-opt	jvm_plugins	1
-compare	TestForLoopContinueUpdate.kt	TestForLoopContinueUpdate.java
-case	kuna-fixes-compat/pkg/TestForLoopDefinitions	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestForLoopDefinitions
-vineflower	eacc96016a9a46a1
-opt	jvm_plugins	1
-compare	TestForLoopDefinitions.kt	TestForLoopDefinitions.java
-case	kuna-fixes-compat/pkg/TestForLoopExitCondition	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestForLoopExitCondition
-vineflower	5255d97f7334e595
-opt	jvm_plugins	1
-compare	TestForLoopExitCondition.kt	TestForLoopExitCondition.java
-case	kuna-fixes-compat/pkg/TestForRangeCounter	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestForRangeCounter
-vineflower	eeb659fb7043d140
-opt	jvm_plugins	1
-compare	TestForRangeCounter.kt	TestForRangeCounter.java
-case	kuna-fixes-compat/pkg/TestForRangeExclusiveBound	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestForRangeExclusiveBound
-vineflower	ff08186825f07cb8
-opt	jvm_plugins	1
-compare	TestForRangeExclusiveBound.kt	TestForRangeExclusiveBound.java
-case	kuna-fixes-compat/pkg/TestForRangeUnmatchedBound	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound
-vineflower	b48ff0e091bd4523
-opt	jvm_plugins	1
-compare	TestForRangeUnmatchedBound.kt	TestForRangeUnmatchedBound.java
-case	kuna-fixes-compat/pkg/TestFreeGenericArgument	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestFreeGenericArgument
-vineflower	c05e1ca667b437ec
-case	kuna-fixes-compat/pkg/TestGeneratedConstructors	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestGeneratedConstructors
-vineflower	5169be8f94133cb8
-opt	jvm_plugins	1
-compare	TestGeneratedConstructors.kt	TestGeneratedConstructors.java
-case	kuna-fixes-compat/pkg/TestGenericSlotReuse	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestGenericSlotReuse
-vineflower	97860f5efa397648
-case	kuna-fixes-compat/pkg/TestHiddenEmptySuperCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall
-vineflower	1dd4b7386638c8fe
-opt	jvm_plugins	1
-compare	TestHiddenEmptySuperCall.kt	TestHiddenEmptySuperCall.java
-case	kuna-fixes-compat/pkg/TestIfDenestFallthrough	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestIfDenestFallthrough
-vineflower	e7e0af29ccb4e803
-case	kuna-fixes-compat/pkg/TestImplicitOuterInstance	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestImplicitOuterInstance
-vineflower	1320f3aed8063a57
-case	kuna-fixes-compat/pkg/TestImplicitWideningArithmetic	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestImplicitWideningArithmetic
-vineflower	b406e215008ad8b2
-case	kuna-fixes-compat/pkg/TestIncrementStatements	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestIncrementStatements
-vineflower	28c5a6890c66f802
-case	kuna-fixes-compat/pkg/TestInheritedMemberType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestInheritedMemberType	kuna-fixes/classes/pkg/TestInheritedMemberBase
-vineflower	0bceea1c6656c32a
-case	kuna-fixes-compat/pkg/TestInlineClassConstructorAccessor	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor
-vineflower	61835521c2321fdd
-opt	jvm_plugins	1
-compare	TestInlineClassConstructorAccessor.kt	TestInlineClassConstructorAccessor.java
-case	kuna-fixes-compat/pkg/TestInlineMarkerFinally	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestInlineMarkerFinally
-vineflower	5197653e0cfd4656
-opt	jvm_plugins	1
-compare	TestInlineMarkerFinally.kt	TestInlineMarkerFinally.java
-case	kuna-fixes-compat/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1	Kuna Fixes, Vineflower compat
-vineflower	99f7012138fb7b05
-opt	jvm_plugins	1
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$1.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$2.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1$1.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$1$1.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1.class
-class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1$drain$1.class
-class	kuna-fixes/classes/pkg/Sink.class
-class	kuna-fixes/classes/pkg/Source.class
-compare	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.java	TestInlinedObjectCaptureKt.kt	TestInlinedObjectCaptureKt.java
-case	kuna-fixes-compat/pkg/TestInnerMethodArgumentShift	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift
-vineflower	e4df92413c1b4cc6
-case	kuna-fixes-compat/pkg/TestInnerOfGenericOuter	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestInnerOfGenericOuter
-vineflower	82151b9622a05578
-case	kuna-fixes-compat/pkg/TestInterfaceCompanionField	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestInterfaceCompanionField
-vineflower	4c788f4536030746
-opt	jvm_plugins	1
-compare	TestInterfaceCompanionField.kt	TestInterfaceCompanionField.java
-case	kuna-fixes-compat/pkg/TestIrreducibleTry	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestIrreducibleTry
-vineflower	04524ae02c254861
-case	kuna-fixes-compat/pkg/TestJavaCastSyntax	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavaCastSyntax
-vineflower	0e180b2ed6e6bb7e
-opt	jvm_plugins	1
-compare	TestJavaCastSyntax.kt	TestJavaCastSyntax.java
-case	kuna-fixes-compat/pkg/TestJavaClassLiteral	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavaClassLiteral
-vineflower	88cd9b29c88be2c1
-opt	jvm_plugins	1
-compare	TestJavaClassLiteral.kt	TestJavaClassLiteral.java
-case	kuna-fixes-compat/pkg/TestJavaKeywordNames	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavaKeywordNames
-vineflower	1e9a373ebf74ba50
-opt	jvm_plugins	1
-compare	TestJavaKeywordNames.kt	TestJavaKeywordNames.java
-case	kuna-fixes-compat/pkg/TestJavaReferenceCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavaReferenceCast
-vineflower	1dafc9e567663397
-opt	jvm_plugins	1
-compare	TestJavaReferenceCast.kt	TestJavaReferenceCast.java
-case	kuna-fixes-compat/pkg/TestJavaStatementJump	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavaStatementJump
-vineflower	25a1a18096f30ad4
-opt	jvm_plugins	1
-compare	TestJavaStatementJump.kt	TestJavaStatementJump.java
-case	kuna-fixes-compat/pkg/TestJavaTypeSyntax	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavaTypeSyntax
-vineflower	7ae740b8532575b8
-opt	jvm_plugins	1
-compare	TestJavaTypeSyntax.kt	TestJavaTypeSyntax.java
-case	kuna-fixes-compat/pkg/TestJavacBooleanCompare	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavacBooleanCompare
-vineflower	7057bd0192af1ebb
-case	kuna-fixes-compat/pkg/TestJavacLayout	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavacLayout
-vineflower	70a03c69e012f081
-case	kuna-fixes-compat/pkg/TestJavacLoops	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavacLoops
-vineflower	0e43c326dc59b9ad
-case	kuna-fixes-compat/pkg/TestJavacTails	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJavacTails
-vineflower	040e6df188ab5f8d
-case	kuna-fixes-compat/pkg/TestJumpToNonLoopLabel	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel
-vineflower	aeeb0448e1ea86b6
-opt	jvm_plugins	1
-compare	TestJumpToNonLoopLabel.kt	TestJumpToNonLoopLabel.java
-case	kuna-fixes-compat/pkg/TestJvmNameCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJvmNameCall	kuna-fixes/classes/pkg/lib/Counter	kuna-fixes/classes/pkg/lib/SubCounter	kuna-fixes/classes/pkg/lib/Meters
-vineflower	bbab99037461bb03
-opt	jvm_plugins	1
-compare	TestJvmNameCall.kt	TestJvmNameCall.java
-case	kuna-fixes-compat/pkg/TestJvmOverloads	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestJvmOverloads
-vineflower	1c491c98b321d1d5
-opt	jvm_plugins	1
-compare	TestJvmOverloads.kt	TestJvmOverloads.java
-case	kuna-fixes-compat/pkg/TestKtClassHeaderMetadata	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata
-vineflower	35a063b2ec5ab9eb
-opt	jvm_plugins	1
-compare	TestKtClassHeaderMetadata.kt	TestKtClassHeaderMetadata.java
-case	kuna-fixes-compat/pkg/TestKtCompanionOverride	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtCompanionOverride
-vineflower	a332f606acea2e23
-opt	jvm_plugins	1
-compare	TestKtCompanionOverride.kt	TestKtCompanionOverride.java
-case	kuna-fixes-compat/pkg/TestKtConstructorAccessorCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall
-vineflower	2b1cc8e2826fa76d
-opt	jvm_plugins	1
-compare	TestKtConstructorAccessorCall.kt	TestKtConstructorAccessorCall.java
-case	kuna-fixes-compat/pkg/TestKtContractImport	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtContractImport
-vineflower	356c600e731578c0
-opt	jvm_plugins	1
-compare	TestKtContractImport.kt	TestKtContractImport.java
-case	kuna-fixes-compat/pkg/TestKtDataClassPropertyParameters	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters
-vineflower	e8524066bc38ff4a
-opt	jvm_plugins	1
-compare	TestKtDataClassPropertyParameters.kt	TestKtDataClassPropertyParameters.java
-case	kuna-fixes-compat/pkg/TestKtDefaultImplsDelegate	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate
-vineflower	af6cc7abf719a5fa
-opt	jvm_plugins	1
-compare	TestKtDefaultImplsDelegate.kt	TestKtDefaultImplsDelegate.java
-case	kuna-fixes-compat/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor
-vineflower	54e4b93aae1dcd1c
-opt	jvm_plugins	1
-compare	TestKtEmptyPrimaryConstructor.kt	TestKtEmptyPrimaryConstructor.java
-case	kuna-fixes-compat/pkg/TestKtEnclosingTypeParameter	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter
-vineflower	2e7f89f1e64ce3d3
-opt	jvm_plugins	1
-compare	TestKtEnclosingTypeParameter.kt	TestKtEnclosingTypeParameter.java
-case	kuna-fixes-compat/pkg/TestKtEnumWhenMappings	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtEnumWhenMappings
-vineflower	5990b42359c16919
-opt	jvm_plugins	1
-compare	TestKtEnumWhenMappings.kt	TestKtEnumWhenMappings.java
-case	kuna-fixes-compat/pkg/TestKtEscapedClassName	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtEscapedClassName
-vineflower	2d1916ef9a321df9
-opt	jvm_plugins	1
-compare	TestKtEscapedClassName.kt	TestKtEscapedClassName.java
-case	kuna-fixes-compat/pkg/TestKtExtensionMemberType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtExtensionMemberType	kuna-fixes/classes/pkg/TestKtExtensionMemberTypeKt
-vineflower	4b9935b0110efc37
-opt	jvm_plugins	1
-compare	TestKtExtensionMemberType.kt	TestKtExtensionMemberType.java
-case	kuna-fixes-compat/pkg/TestKtFieldReadOnce	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtFieldReadOnce
-vineflower	682813e2a3b814a8
-opt	jvm_plugins	1
-compare	TestKtFieldReadOnce.kt	TestKtFieldReadOnce.java
-case	kuna-fixes-compat/pkg/TestKtFieldReadPaths	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtFieldReadPaths
-vineflower	8d274b1286c18195
-opt	jvm_plugins	1
-compare	TestKtFieldReadPaths.kt	TestKtFieldReadPaths.java
-case	kuna-fixes-compat/pkg/TestKtFinallyExitVersions	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtFinallyExitVersions
-vineflower	2d74b70ebbc3c2ce
-opt	jvm_plugins	1
-compare	TestKtFinallyExitVersions.kt	TestKtFinallyExitVersions.java
-case	kuna-fixes-compat/pkg/TestKtFinallySemaphore	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtFinallySemaphore
-vineflower	f5583ba85110af40
-opt	jvm_plugins	1
-compare	TestKtFinallySemaphore.kt	TestKtFinallySemaphore.java
-case	kuna-fixes-compat/pkg/TestKtFunctionParameterName	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtFunctionParameterName
-vineflower	e902e9aa572e9b3f
-opt	jvm_plugins	1
-compare	TestKtFunctionParameterName.kt	TestKtFunctionParameterName.java
-case	kuna-fixes-compat/pkg/TestKtHeadDefinitionScope	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope
-vineflower	c4995a61b178fd1b
-case	kuna-fixes-compat/pkg/TestKtImplicitWidening	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtImplicitWidening
-vineflower	34d62aca9fd8a0dc
-opt	jvm_plugins	1
-compare	TestKtImplicitWidening.kt	TestKtImplicitWidening.java
-case	kuna-fixes-compat/pkg/TestKtInlineClassValue	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtInlineClassValue
-vineflower	4e4024708df00242
-opt	jvm_plugins	1
-compare	TestKtInlineClassValue.kt	TestKtInlineClassValue.java
-case	kuna-fixes-compat/pkg/TestKtInlineEvaluationOrder	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder
-vineflower	95a7a7c85c59815e
-opt	jvm_plugins	1
-compare	TestKtInlineEvaluationOrder.kt	TestKtInlineEvaluationOrder.java
-case	kuna-fixes-compat/pkg/TestKtInlineHeapRead	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtInlineHeapRead
-vineflower	b3814ddc7ee06437
-opt	jvm_plugins	1
-compare	TestKtInlineHeapRead.kt	TestKtInlineHeapRead.java
-case	kuna-fixes-compat/pkg/TestKtInlineLockLocal	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtInlineLockLocal
-vineflower	8f697ab9fbb11f97
-opt	jvm_plugins	1
-compare	TestKtInlineLockLocal.kt	TestKtInlineLockLocal.java
-case	kuna-fixes-compat/pkg/TestKtInlinedStdlibCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtInlinedStdlibCall
-vineflower	843ff9c0905772aa
-opt	jvm_plugins	1
-compare	TestKtInlinedStdlibCall.kt	TestKtInlinedStdlibCall.java
-case	kuna-fixes-compat/pkg/TestKtInnerClassConstructor	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtInnerClassConstructor
-vineflower	a353677dbac826ae
-opt	jvm_plugins	1
-compare	TestKtInnerClassConstructor.kt	TestKtInnerClassConstructor.java
-case	kuna-fixes-compat/pkg/TestKtJvmFieldSetter	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtJvmFieldSetter
-vineflower	bdc1402c6db21309
-opt	jvm_plugins	1
-compare	TestKtJvmFieldSetter.kt	TestKtJvmFieldSetter.java
-case	kuna-fixes-compat/pkg/TestKtLegacyCheckBranchingDelegation	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation
-vineflower	8a25f280b4506147
-opt	jvm_plugins	1
-compare	TestKtLegacyCheckBranchingDelegation.kt	TestKtLegacyCheckBranchingDelegation.java
-case	kuna-fixes-compat/pkg/TestKtLegacyFunctionChecks	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks
-vineflower	cd98586da52860b0
-opt	jvm_plugins	1
-compare	TestKtLegacyFunctionChecks.kt	TestKtLegacyFunctionChecks.java
-case	kuna-fixes-compat/pkg/TestKtLegacyToTypedArray	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtLegacyToTypedArray
-vineflower	aeecaf8bdb907e17
-opt	jvm_plugins	1
-compare	TestKtLegacyToTypedArray.kt	TestKtLegacyToTypedArray.java
-case	kuna-fixes-compat/pkg/TestKtMemberExtensionReceiver	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver
-vineflower	71e5e2b4c0d2dde6
-opt	jvm_plugins	1
-compare	TestKtMemberExtensionReceiver.kt	TestKtMemberExtensionReceiver.java
-case	kuna-fixes-compat/pkg/TestKtNarrowConstantTemps	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtNarrowConstantTemps
-vineflower	c7434851d91aa6af
-opt	jvm_plugins	1
-compare	TestKtNarrowConstantTemps.kt	TestKtNarrowConstantTemps.java
-case	kuna-fixes-compat/pkg/TestKtObjectMonitorCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtObjectMonitorCall
-vineflower	cc19546a8f27135a
-opt	jvm_plugins	1
-compare	TestKtObjectMonitorCall.kt	TestKtObjectMonitorCall.java
-case	kuna-fixes-compat/pkg/TestKtPropertyFieldFlags	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags
-vineflower	9aa42db28725c152
-opt	jvm_plugins	1
-compare	TestKtPropertyFieldFlags.kt	TestKtPropertyFieldFlags.java
-case	kuna-fixes-compat/pkg/TestKtRawGenericType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtRawGenericType
-vineflower	8076421e29b3eaf0
-opt	jvm_plugins	1
-compare	TestKtRawGenericType.kt	TestKtRawGenericType.java
-case	kuna-fixes-compat/pkg/TestKtReusedInlineObject	Kuna Fixes, Vineflower compat
-vineflower	8955aab35f921fba
-opt	jvm_plugins	1
-class	kuna-fixes/classes/pkg/TestKtReusedInlineObject.class
-class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Label.class
-class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Order.class
-class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt.class
-class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderBy$1.class
-class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderByDescending$1.class
-class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$labelBy$1.class
-compare	TestKtReusedInlineObject.kt	TestKtReusedInlineObject.java
-case	kuna-fixes-compat/pkg/TestKtSafeCallFieldRead	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead
-vineflower	129d39ada2b24397
-case	kuna-fixes-compat/pkg/TestKtUnlabeledSequenceBreak	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestKtUnlabeledSequenceBreak
-vineflower	ce6957cf4e44f2fe
-opt	jvm_plugins	1
-compare	TestKtUnlabeledSequenceBreak.kt	TestKtUnlabeledSequenceBreak.java
-case	kuna-fixes-compat/pkg/TestLabelledContinueOuterEnd	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd
-vineflower	3837e7d3bb400582
-case	kuna-fixes-compat/pkg/TestLambdaArgumentOverload	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLambdaArgumentOverload
-vineflower	3503c8e3ea961f22
-case	kuna-fixes-compat/pkg/TestLambdaCatchVarRename	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLambdaCatchVarRename
-vineflower	fdb99a5d16885274
-case	kuna-fixes-compat/pkg/TestLambdaPertinence	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLambdaPertinence
-vineflower	9de57fcc5e25998b
-case	kuna-fixes-compat/pkg/TestLambdaReturnTypeArgument	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument
-vineflower	0a39a8889ed47ea6
-case	kuna-fixes-compat/pkg/TestLambdaSingletonReturnsKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt
-vineflower	a0df6d56b6699cce
-opt	jvm_plugins	1
-compare	TestLambdaSingletonReturnsKt.kt	TestLambdaSingletonReturnsKt.java
-case	kuna-fixes-compat/pkg/TestLambdaTypeVariableTarget	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget
-vineflower	010e107aaf5389e4
-case	kuna-fixes-compat/pkg/TestLegacyParameterChecks	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLegacyParameterChecks
-vineflower	492fca042a49fa06
-opt	jvm_plugins	1
-compare	TestLegacyParameterChecks.kt	TestLegacyParameterChecks.java
-case	kuna-fixes-compat/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass
-vineflower	274a590e569e4a86
-case	kuna-fixes-compat/pkg/TestLocalFinalWrites	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLocalFinalWrites
-vineflower	b89e6e66913dc0d8
-opt	jvm_plugins	1
-compare	TestLocalFinalWrites.kt	TestLocalFinalWrites.java
-case	kuna-fixes-compat/pkg/TestLocalVisibilityComment	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLocalVisibilityComment
-vineflower	01623c6a0a104e7a
-opt	jvm_plugins	1
-compare	TestLocalVisibilityComment.kt	TestLocalVisibilityComment.java
-case	kuna-fixes-compat/pkg/TestLoopFirstIfExit	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestLoopFirstIfExit
-vineflower	1e1ddda783fe273e
-case	kuna-fixes-compat/pkg/TestMappedJavaMember	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMappedJavaMember
-vineflower	340191daa3fb1faf
-opt	jvm_plugins	1
-compare	TestMappedJavaMember.kt	TestMappedJavaMember.java
-case	kuna-fixes-compat/pkg/TestMappedJavaType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMappedJavaType
-vineflower	901e54e2b6a9bad9
-opt	jvm_plugins	1
-compare	TestMappedJavaType.kt	TestMappedJavaType.java
-case	kuna-fixes-compat/pkg/TestMemberExtensionProperty	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMemberExtensionProperty
-vineflower	cccc965e16b44593
-opt	jvm_plugins	1
-compare	TestMemberExtensionProperty.kt	TestMemberExtensionProperty.java
-case	kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1	Kuna Fixes, Vineflower compat
-vineflower	2fe0ff7aebbf29cd
-opt	jvm_plugins	1
-class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.class
-class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1.class
-class	kuna-fixes/classes/pkg/NoMetaFeed.class
-compare	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.java	TestMembersWithoutMetadataKt$counting$$inlined$feed$1.kt	TestMembersWithoutMetadataKt$counting$$inlined$feed$1.java
-case	kuna-fixes-compat/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1	kuna-fixes/classes/pkg/NoMetaCell
-vineflower	47e4a98b5426cf35
-opt	jvm_plugins	1
-compare	TestMembersWithoutMetadataKt$named$$inlined$cell$1.kt	TestMembersWithoutMetadataKt$named$$inlined$cell$1.java
-case	kuna-fixes-compat/pkg/TestMethodObjectReturnType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMethodObjectReturnType
-vineflower	89871c40826e4ab1
-opt	jvm_plugins	1
-compare	TestMethodObjectReturnType.kt	TestMethodObjectReturnType.java
-case	kuna-fixes-compat/pkg/TestMethodRefWildcardReceiver	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver
-vineflower	f32584ef6f1ad732
-case	kuna-fixes-compat/pkg/TestMisplacedModality	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMisplacedModality	kuna-fixes/classes/pkg/TestMisplacedModalityKt
-vineflower	ac996588b6ecf680
-opt	jvm_plugins	1
-compare	TestMisplacedModality.kt	TestMisplacedModality.java
-case	kuna-fixes-compat/pkg/TestMissedOverride	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMissedOverride
-vineflower	02f79612f6303e53
-opt	jvm_plugins	1
-compare	TestMissedOverride.kt	TestMissedOverride.java
-case	kuna-fixes-compat/pkg/TestMixedTypeReassociation	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestMixedTypeReassociation
-vineflower	425557f509b76693
-case	kuna-fixes-compat/pkg/TestNarrowBitwiseOperand	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNarrowBitwiseOperand
-vineflower	82f9e6b14388fb76
-opt	jvm_plugins	1
-compare	TestNarrowBitwiseOperand.kt	TestNarrowBitwiseOperand.java
-case	kuna-fixes-compat/pkg/TestNegatedEquality	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNegatedEquality
-vineflower	83c3e2315f40be29
-opt	jvm_plugins	1
-compare	TestNegatedEquality.kt	TestNegatedEquality.java
-case	kuna-fixes-compat/pkg/TestNegatedPatternLayout	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNegatedPatternLayout
-vineflower	bd71100d8a2a35d3
-case	kuna-fixes-compat/pkg/TestNestedAnnotationArgument	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNestedAnnotationArgument
-vineflower	9eac0af03be8a5c7
-opt	jvm_plugins	1
-compare	TestNestedAnnotationArgument.kt	TestNestedAnnotationArgument.java
-case	kuna-fixes-compat/pkg/TestNestedParamRename	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNestedParamRename
-vineflower	41a7f0f5fda08162
-case	kuna-fixes-compat/pkg/TestNonPublicNestedImport	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNonPublicNestedImport
-vineflower	da947f05fc764619
-case	kuna-fixes-compat/pkg/TestNotNullAssertion	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNotNullAssertion
-vineflower	c3e3f5f333110985
-opt	jvm_plugins	1
-compare	TestNotNullAssertion.kt	TestNotNullAssertion.java
-case	kuna-fixes-compat/pkg/TestNotNullAssertionLegacy	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy
-vineflower	5236ab943c02359d
-opt	jvm_plugins	1
-compare	TestNotNullAssertionLegacy.kt	TestNotNullAssertionLegacy.java
-case	kuna-fixes-compat/pkg/TestNothingValueThrowKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNothingValueThrowKt	kuna-fixes/classes/pkg/NothingSource
-vineflower	208c4cbda05cfd2e
-opt	jvm_plugins	1
-compare	TestNothingValueThrowKt.kt	TestNothingValueThrowKt.java
-case	kuna-fixes-compat/pkg/TestNullCheckConstantValue	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNullCheckConstantValue
-vineflower	d54a65b1e4394d9d
-case	kuna-fixes-compat/pkg/TestNullableCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNullableCast
-vineflower	93b438feeaf20436
-opt	jvm_plugins	1
-compare	TestNullableCast.kt	TestNullableCast.java
-case	kuna-fixes-compat/pkg/TestNullableLocal	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestNullableLocal
-vineflower	b193d339a2f73a14
-opt	jvm_plugins	1
-compare	TestNullableLocal.kt	TestNullableLocal.java
-case	kuna-fixes-compat/pkg/TestObjectInstance	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestObjectInstance
-vineflower	ebf92ae02bcb0680
-opt	jvm_plugins	1
-compare	TestObjectInstance.kt	TestObjectInstance.java
-case	kuna-fixes-compat/pkg/TestObjectInstanceLocal	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestObjectInstanceLocal
-vineflower	82cdc359b10013ea
-opt	jvm_plugins	1
-compare	TestObjectInstanceLocal.kt	TestObjectInstanceLocal.java
-case	kuna-fixes-compat/pkg/TestObjectSuperCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestObjectSuperCall
-vineflower	53d0f6cc6f47406d
-opt	jvm_plugins	1
-compare	TestObjectSuperCall.kt	TestObjectSuperCall.java
-case	kuna-fixes-compat/pkg/TestOperatorLineBreak	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestOperatorLineBreak
-vineflower	2fcb0d28dbae0013
-opt	jvm_plugins	1
-compare	TestOperatorLineBreak.kt	TestOperatorLineBreak.java
-case	kuna-fixes-compat/pkg/TestOperatorPrecedence	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestOperatorPrecedence
-vineflower	dbcdfce6b4b7e90b
-opt	jvm_plugins	1
-compare	TestOperatorPrecedence.kt	TestOperatorPrecedence.java
-case	kuna-fixes-compat/pkg/TestOuterOnlySignature	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestOuterOnlySignature
-vineflower	d70b5858a0cb1ba0
-case	kuna-fixes-compat/pkg/TestOuterThis	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestOuterThis
-vineflower	e1fea292fefe3ed2
-opt	jvm_plugins	1
-compare	TestOuterThis.kt	TestOuterThis.java
-case	kuna-fixes-compat/pkg/TestOverlappingRanges	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestOverlappingRanges
-vineflower	768cac8f1f131042
-opt	jvm_plugins	1
-compare	TestOverlappingRanges.kt	TestOverlappingRanges.java
-case	kuna-fixes-compat/pkg/TestOverrideInaccessible	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestOverrideInaccessible	kuna-fixes/classes/ext/TestOverrideInaccessibleBase
-vineflower	66d78ed5bdde83a8
-case	kuna-fixes-compat/pkg/TestPartialInline	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestPartialInline
-vineflower	6986091779141514
-opt	jvm_plugins	1
-compare	TestPartialInline.kt	TestPartialInline.java
-case	kuna-fixes-compat/pkg/TestPatternBindingShape	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestPatternBindingShape
-vineflower	d824c3d6e8967f6a
-case	kuna-fixes-compat/pkg/TestPatternSubjectLocal	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestPatternSubjectLocal
-vineflower	29c495c2c8989bf0
-case	kuna-fixes-compat/pkg/TestPatternVariableScope	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestPatternVariableScope
-vineflower	ac3ac887b1a4f757
-case	kuna-fixes-compat/pkg/TestPropertyInitializerKey	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestPropertyInitializerKey	kuna-fixes/classes/pkg/TestPropertyInitializerKeyKt
-vineflower	34d39fb3f652c637
-opt	jvm_plugins	1
-compare	TestPropertyInitializerKey.kt	TestPropertyInitializerKey.java
-case	kuna-fixes-compat/pkg/TestPropertyReferencesKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestPropertyReferencesKt
-vineflower	74495be559a129ff
-opt	jvm_plugins	1
-compare	TestPropertyReferencesKt.kt	TestPropertyReferencesKt.java
-case	kuna-fixes-compat/pkg/TestProtectedBackEdge	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestProtectedBackEdge
-vineflower	0d34dc13e8528cb8
-case	kuna-fixes-compat/pkg/TestQualifiedSuperCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestQualifiedSuperCall
-vineflower	62efd67ad3cf399e
-case	kuna-fixes-compat/pkg/TestQualifiedSuperExternal	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestQualifiedSuperExternal
-vineflower	902639827cd46321
-case	kuna-fixes-compat/pkg/TestRangeOperandPrecedenceKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestRangeOperandPrecedenceKt
-vineflower	f02437c3b231900c
-opt	jvm_plugins	1
-compare	TestRangeOperandPrecedenceKt.kt	TestRangeOperandPrecedenceKt.java
-case	kuna-fixes-compat/pkg/TestRawReceiverErasure	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestRawReceiverErasure
-vineflower	c260310c6cfc5c3a
-case	kuna-fixes-compat/pkg/TestReceiverTypeArguments	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestReceiverTypeArguments
-vineflower	20f32267a689a96b
-case	kuna-fixes-compat/pkg/TestRecordComputedFields	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestRecordComputedFields
-vineflower	afdc8d6f52e410f2
-case	kuna-fixes-compat/pkg/TestRecordPatternInTry	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestRecordPatternInTry
-vineflower	94226bec0aa9ad97
-case	kuna-fixes-compat/pkg/TestReferenceClassesKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestReferenceClassesKt
-vineflower	673913235800bf79
-opt	jvm_plugins	1
-compare	TestReferenceClassesKt.kt	TestReferenceClassesKt.java
-case	kuna-fixes-compat/pkg/TestReferenceInequality	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestReferenceInequality
-vineflower	326b5ba4a94a1f79
-opt	jvm_plugins	1
-compare	TestReferenceInequality.kt	TestReferenceInequality.java
-case	kuna-fixes-compat/pkg/TestReferenceMangledKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestReferenceMangledKt	kuna-fixes/classes/pkg/MangledHolder	kuna-fixes/classes/pkg/MangledTag
-vineflower	0a4fd544ba89a302
-opt	jvm_plugins	1
-compare	TestReferenceMangledKt.kt	TestReferenceMangledKt.java
-case	kuna-fixes-compat/pkg/TestReferenceUnboxing	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestReferenceUnboxing
-vineflower	faaca30bd1104bc0
-case	kuna-fixes-compat/pkg/TestRefreshPrintedVarNames	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestRefreshPrintedVarNames	kuna-fixes/classes/pkg/RefreshCountdown
-vineflower	5e6db3e461116f5c
-opt	jvm_plugins	1
-compare	TestRefreshPrintedVarNames.kt	TestRefreshPrintedVarNames.java
-case	kuna-fixes-compat/pkg/TestReturnOutsideLambdaKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt
-vineflower	2a8e9c2e50908055
-opt	jvm_plugins	1
-compare	TestReturnOutsideLambdaKt.kt	TestReturnOutsideLambdaKt.java
-case	kuna-fixes-compat/pkg/TestSamWrapperObjectKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSamWrapperObjectKt
-vineflower	740664e3d6feeb9c
-opt	jvm_plugins	1
-compare	TestSamWrapperObjectKt.kt	TestSamWrapperObjectKt.java
-case	kuna-fixes-compat/pkg/TestSealedPrivatePermits	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSealedPrivatePermits
-vineflower	724132475ee33ff1
-case	kuna-fixes-compat/pkg/TestSecondaryConstructorLine	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSecondaryConstructorLine
-vineflower	b831d00e0a8df6b6
-opt	jvm_plugins	1
-compare	TestSecondaryConstructorLine.kt	TestSecondaryConstructorLine.java
-case	kuna-fixes-compat/pkg/TestSelfReferencingLambda	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSelfReferencingLambda
-vineflower	7977054811e0d059
-case	kuna-fixes-compat/pkg/TestSetterParameterName	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSetterParameterName	kuna-fixes/classes/pkg/TestSetterParameterNameKt
-vineflower	4e8b5567cc76b896
-opt	jvm_plugins	1
-compare	TestSetterParameterName.kt	TestSetterParameterName.java
-case	kuna-fixes-compat/pkg/TestShadowedTypeVariable	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestShadowedTypeVariable
-vineflower	63ebca50e76780e7
-case	kuna-fixes-compat/pkg/TestSneakyThrowCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSneakyThrowCast
-vineflower	62aa8da808bc6048
-case	kuna-fixes-compat/pkg/TestSourceLocals	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSourceLocals
-vineflower	942169f9705a8921
-case	kuna-fixes-compat/pkg/TestSourceLocalsKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSourceLocalsKt
-vineflower	8ddaf607d7666b61
-opt	jvm_plugins	1
-compare	TestSourceLocalsKt.kt	TestSourceLocalsKt.java
-case	kuna-fixes-compat/pkg/TestSourceNullCheck	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSourceNullCheck
-vineflower	6e152ac20760c810
-case	kuna-fixes-compat/pkg/TestSourcePatterns	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSourcePatterns
-vineflower	cd45df214ed66f2c
-case	kuna-fixes-compat/pkg/TestSplitConstructorCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSplitConstructorCall	kuna-fixes/classes/pkg/SplitEntry	kuna-fixes/classes/pkg/SplitFormat	kuna-fixes/classes/pkg/SplitPart
-vineflower	9bb0c22f17713c15
-case	kuna-fixes-compat/pkg/TestSplitConstructorCallKotlin	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSplitConstructorCallKotlin	kuna-fixes/classes/pkg/SplitPair
-vineflower	37a69664122dcc7a
-opt	jvm_plugins	1
-compare	TestSplitConstructorCallKotlin.kt	TestSplitConstructorCallKotlin.java
-case	kuna-fixes-compat/pkg/TestStaticInitializer	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestStaticInitializer
-vineflower	bfed9cc47aac6aeb
-opt	jvm_plugins	1
-compare	TestStaticInitializer.kt	TestStaticInitializer.java
-case	kuna-fixes-compat/pkg/TestStaticTypeVariableScope	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestStaticTypeVariableScope
-vineflower	6d1151d58111050a
-case	kuna-fixes-compat/pkg/TestStringLiteralEscape	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestStringLiteralEscape
-vineflower	e491623049ef91f0
-opt	jvm_plugins	1
-compare	TestStringLiteralEscape.kt	TestStringLiteralEscape.java
-case	kuna-fixes-compat/pkg/TestSuperPropertyAccess	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuperPropertyAccess
-vineflower	69258cebdc4aad2b
-opt	jvm_plugins	1
-compare	TestSuperPropertyAccess.kt	TestSuperPropertyAccess.java
-case	kuna-fixes-compat/pkg/TestSupertypeTypeArguments	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSupertypeTypeArguments
-vineflower	b8b3adc301a58715
-opt	jvm_plugins	1
-compare	TestSupertypeTypeArguments.kt	TestSupertypeTypeArguments.java
-case	kuna-fixes-compat/pkg/TestSuspendConditionalFinally	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendConditionalFinally
-vineflower	db9916e9060129e9
-opt	jvm_plugins	1
-compare	TestSuspendConditionalFinally.kt	TestSuspendConditionalFinally.java
-case	kuna-fixes-compat/pkg/TestSuspendContinuationKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendContinuationKt	kuna-fixes/classes/pkg/SuspendSink	kuna-fixes/classes/pkg/SuspendSource
-vineflower	573ab09a69d8fcaf
-opt	jvm_plugins	1
-compare	TestSuspendContinuationKt.kt	TestSuspendContinuationKt.java
-case	kuna-fixes-compat/pkg/TestSuspendFinallyKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendFinallyKt
-vineflower	352ea2216478ddd5
-case	kuna-fixes-compat/pkg/TestSuspendFunctionType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendFunctionType
-vineflower	9820a8b27b2171bf
-opt	jvm_plugins	1
-compare	TestSuspendFunctionType.kt	TestSuspendFunctionType.java
-case	kuna-fixes-compat/pkg/TestSuspendImpl	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendImpl	kuna-fixes/classes/pkg/ImplSource	kuna-fixes/classes/pkg/TestSuspendImplDoubler
-vineflower	6d4c95721ce0efb3
-opt	jvm_plugins	1
-compare	TestSuspendImpl.kt	TestSuspendImpl.java
-case	kuna-fixes-compat/pkg/TestSuspendLambdaKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendLambdaKt	kuna-fixes/classes/pkg/LambdaSource	kuna-fixes/classes/pkg/LambdaSink	kuna-fixes/classes/pkg/LambdaMode
-vineflower	0ff5a6e87bcd601b
-opt	jvm_plugins	1
-compare	TestSuspendLambdaKt.kt	TestSuspendLambdaKt.java
-case	kuna-fixes-compat/pkg/TestSuspendLoopFinally	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendLoopFinally
-vineflower	43fe425965fbfa77
-case	kuna-fixes-compat/pkg/TestSuspendLoopTry	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendLoopTry
-vineflower	db4e5a1bae9a938e
-case	kuna-fixes-compat/pkg/TestSuspendMemberMachine	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendMemberMachine	kuna-fixes/classes/pkg/MemberSource
-vineflower	5997cb82c3424db8
-opt	jvm_plugins	1
-compare	TestSuspendMemberMachine.kt	TestSuspendMemberMachine.java
-case	kuna-fixes-compat/pkg/TestSuspendResultCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendResultCast
-vineflower	d1277dcc445b3cd9
-case	kuna-fixes-compat/pkg/TestSuspendSamKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendSamKt	kuna-fixes/classes/pkg/SamSink	kuna-fixes/classes/pkg/SamIntSink	kuna-fixes/classes/pkg/SamFlow	kuna-fixes/classes/pkg/SamIntFlow
-vineflower	ec2dd5945f8e67a2
-opt	jvm_plugins	1
-compare	TestSuspendSamKt.kt	TestSuspendSamKt.java
-case	kuna-fixes-compat/pkg/TestSuspendStateMachineKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendStateMachineKt	kuna-fixes/classes/pkg/StateSource
-vineflower	d21413cd182bac52
-opt	jvm_plugins	1
-compare	TestSuspendStateMachineKt.kt	TestSuspendStateMachineKt.java
-case	kuna-fixes-compat/pkg/TestSuspendTailCallKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSuspendTailCallKt	kuna-fixes/classes/pkg/TailSource
-vineflower	28b1426d8f62a592
-opt	jvm_plugins	1
-compare	TestSuspendTailCallKt.kt	TestSuspendTailCallKt.java
-case	kuna-fixes-compat/pkg/TestSwitchAssignNotYield	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchAssignNotYield
-vineflower	713f8bea29ae246c
-case	kuna-fixes-compat/pkg/TestSwitchCaseOrder	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchCaseOrder
-vineflower	1984bb9d37609970
-case	kuna-fixes-compat/pkg/TestSwitchCaseScope	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchCaseScope
-vineflower	bb9e63a0f0902b0e
-case	kuna-fixes-compat/pkg/TestSwitchExprConstLub	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchExprConstLub
-vineflower	b3a72d5dc925122c
-case	kuna-fixes-compat/pkg/TestSwitchExprPolyCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchExprPolyCast
-vineflower	3a4b76b9d7383538
-case	kuna-fixes-compat/pkg/TestSwitchExpressionArmClash	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash
-vineflower	0aed267067ac892d
-case	kuna-fixes-compat/pkg/TestSwitchFillerFloor	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchFillerFloor
-vineflower	884f4295576f613e
-case	kuna-fixes-compat/pkg/TestSwitchHeadIndent	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchHeadIndent
-vineflower	a43a6a6c709a68bb
-opt	jvm_plugins	1
-compare	TestSwitchHeadIndent.kt	TestSwitchHeadIndent.java
-case	kuna-fixes-compat/pkg/TestSwitchSyntheticDefault	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault
-vineflower	0957b6d34c4acfab
-case	kuna-fixes-compat/pkg/TestSwitchTableFillers	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSwitchTableFillers
-vineflower	23e89cec7bf99266
-case	kuna-fixes-compat/pkg/TestSynchronizedAccessor	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSynchronizedAccessor
-vineflower	6d1b05feb7994c55
-opt	jvm_plugins	1
-compare	TestSynchronizedAccessor.kt	TestSynchronizedAccessor.java
-case	kuna-fixes-compat/pkg/TestSynchronizedBreakExit	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSynchronizedBreakExit
-vineflower	7aaf605997ec495a
-opt	jvm_plugins	1
-compare	TestSynchronizedBreakExit.kt	TestSynchronizedBreakExit.java
-case	kuna-fixes-compat/pkg/TestSynchronizedLockAssignment	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSynchronizedLockAssignment
-vineflower	b71bea531237ecbb
-case	kuna-fixes-compat/pkg/TestSyntheticAccessorCall	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestSyntheticAccessorCall	kuna-fixes/classes/pkg/TestSyntheticAccessorCallKt
-vineflower	0b12aef9fffeeb5d
-opt	jvm_plugins	1
-compare	TestSyntheticAccessorCall.kt	TestSyntheticAccessorCall.java
-case	kuna-fixes-compat/pkg/TestTernaryNumericArms	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTernaryNumericArms
-vineflower	538e790d2b73eb03
-case	kuna-fixes-compat/pkg/TestThrowableCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestThrowableCast
-vineflower	2f87ff1af9f07a6e
-opt	jvm_plugins	1
-compare	TestThrowableCast.kt	TestThrowableCast.java
-case	kuna-fixes-compat/pkg/TestThrowsClassName	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestThrowsClassName
-vineflower	8acf204cf9c56aea
-opt	jvm_plugins	1
-compare	TestThrowsClassName.kt	TestThrowsClassName.java
-case	kuna-fixes-compat/pkg/TestTopLevelModality	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTopLevelModality
-vineflower	ee2826455c4b5362
-opt	jvm_plugins	1
-compare	TestTopLevelModality.kt	TestTopLevelModality.java
-case	kuna-fixes-compat/pkg/TestTryCatchNotFlag	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTryCatchNotFlag
-vineflower	c5fdfac097419af3
-case	kuna-fixes-compat/pkg/TestTwrClassVersion	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTwrClassVersion
-vineflower	245cfd575ee91f32
-case	kuna-fixes-compat/pkg/TestTwrDesugaringShape	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTwrDesugaringShape
-vineflower	0ba59d736e3a3a17
-case	kuna-fixes-compat/pkg/TestTwrLibraryResource	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTwrLibraryResource
-vineflower	4b0969df081a3d01
-case	kuna-fixes-compat/pkg/TestTypeAnnotationArgumentScope	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope
-vineflower	5aeb137d32e1d783
-case	kuna-fixes-compat/pkg/TestTypeAnnotationQualifiedName	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName
-vineflower	ab99daf680671a27
-case	kuna-fixes-compat/pkg/TestTypeParameterId	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTypeParameterId
-vineflower	7636f131af535d47
-opt	jvm_plugins	1
-compare	TestTypeParameterId.kt	TestTypeParameterId.java
-case	kuna-fixes-compat/pkg/TestTypeSwitchEnumLabel	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel
-vineflower	4ef321b59ed91f56
-case	kuna-fixes-compat/pkg/TestTypeSwitchLabelLookup	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup
-vineflower	df77b641e33571d6
-case	kuna-fixes-compat/pkg/TestTypeSwitchPatternType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestTypeSwitchPatternType
-vineflower	41f780c7bf018f9a
-case	kuna-fixes-compat/pkg/TestUnboxedArgumentType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUnboxedArgumentType
-vineflower	95cedddaa9f063e2
-case	kuna-fixes-compat/pkg/TestUnboxingCastType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUnboxingCastType
-vineflower	88bfb3beca3f1ae8
-opt	jvm_plugins	1
-compare	TestUnboxingCastType.kt	TestUnboxingCastType.java
-case	kuna-fixes-compat/pkg/TestUncheckedCallResultCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUncheckedCallResultCast
-vineflower	316a949c692f6903
-case	kuna-fixes-compat/pkg/TestUncheckedGenericCast	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUncheckedGenericCast
-vineflower	bd888cd49e2ec461
-case	kuna-fixes-compat/pkg/TestUncheckedTypePattern	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUncheckedTypePattern
-vineflower	993ef72efdf091eb
-case	kuna-fixes-compat/pkg/TestUnderscoreNames	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUnderscoreNames
-vineflower	3aa2b1bd1ce92ee5
-opt	jvm_plugins	1
-compare	TestUnderscoreNames.kt	TestUnderscoreNames.java
-case	kuna-fixes-compat/pkg/TestUnescapedNames	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUnescapedNames
-vineflower	911d76ae30989966
-opt	jvm_plugins	1
-compare	TestUnescapedNames.kt	TestUnescapedNames.java
-case	kuna-fixes-compat/pkg/TestUnlistedAnonymousClass	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUnlistedAnonymousClass	kuna-fixes/classes/pkg/UnlistedQueue	kuna-fixes/classes/pkg/UnlistedTask	kuna-fixes/classes/pkg/UnlistedHandler	kuna-fixes/classes/pkg/UnlistedSink	kuna-fixes/classes/pkg/UnlistedSource
-vineflower	b8e4151599a34b96
-opt	jvm_plugins	1
-compare	TestUnlistedAnonymousClass.kt	TestUnlistedAnonymousClass.java
-case	kuna-fixes-compat/pkg/TestUnrepresentableType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUnrepresentableType
-vineflower	fc7948a97544bfda
-opt	jvm_plugins	1
-compare	TestUnrepresentableType.kt	TestUnrepresentableType.java
-case	kuna-fixes-compat/pkg/TestUnseenClassOverload	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestUnseenClassOverload
-vineflower	5d7c54687d9d77aa
-case	kuna-fixes-compat/pkg/TestVarMergeLiveness	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarMergeLiveness
-vineflower	1a78b7f8410e7629
-opt	jvm_plugins	1
-compare	TestVarMergeLiveness.kt	TestVarMergeLiveness.java
-case	kuna-fixes-compat/pkg/TestVarMergeLostDefinition	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarMergeLostDefinition
-vineflower	6038272875204cc8
-case	kuna-fixes-compat/pkg/TestVarMergeLvtWidening	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarMergeLvtWidening
-vineflower	fc612cf0222965a6
-case	kuna-fixes-compat/pkg/TestVarMergeNarrowing	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarMergeNarrowing
-vineflower	84dcb139c5256c8a
-case	kuna-fixes-compat/pkg/TestVarMergeUnrelatedType	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarMergeUnrelatedType
-vineflower	55a3cc493da9bc7c
-case	kuna-fixes-compat/pkg/TestVarargArrayLength	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarargArrayLength
-vineflower	13ecceab89c0b4ad
-case	kuna-fixes-compat/pkg/TestVarargFromMetadata	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarargFromMetadata
-vineflower	c54952e7dad78ed4
-opt	jvm_plugins	1
-compare	TestVarargFromMetadata.kt	TestVarargFromMetadata.java
-case	kuna-fixes-compat/pkg/TestVarargsSpreadResolution	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestVarargsSpreadResolution
-vineflower	80c7c8b449bc76c1
-case	kuna-fixes-compat/pkg/TestWhenBreak	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestWhenBreak
-vineflower	5edbd9c3bbb5c6cf
-opt	jvm_plugins	1
-compare	TestWhenBreak.kt	TestWhenBreak.java
-case	kuna-fixes-compat/pkg/TestWhenCaseTypeKt	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestWhenCaseTypeKt
-vineflower	9b118527edec4fa1
-opt	jvm_plugins	1
-compare	TestWhenCaseTypeKt.kt	TestWhenCaseTypeKt.java
-case	kuna-fixes-compat/pkg/TestWildcardArrayBound	Kuna Fixes, Vineflower compat	kuna-fixes/classes/pkg/TestWildcardArrayBound
-vineflower	828a44e47c026b52
 case	kuna-fixes/pkg/NoMetaBag	Kuna Fixes	kuna-fixes/classes/pkg/NoMetaBag	kuna-fixes/classes/pkg/NoMetaReader
 opt	jvm_plugins	1
 case	kuna-fixes/pkg/TestAbstractClassConstructor	Kuna Fixes	kuna-fixes/classes/pkg/TestAbstractClassConstructor

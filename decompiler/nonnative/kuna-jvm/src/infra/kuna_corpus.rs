@@ -3,17 +3,13 @@
 //!
 //! A case is run the way Vineflower's `SingleClassesTest` fixture runs it: the option pairs go to
 //! [`Fernflower::new`] (which overlays them on the defaults) with no plugin loaded (`jvm_plugins`
-//! off unless the case sets it) and in Vineflower-compatible mode (`jvm_vineflower_compat` on
-//! unless the case sets it, as the kuna-fixes cases' default pass does; see [`engine_options`]),
-//! every class file is added as a source
+//! off unless the case sets it; see [`engine_options`]), every class file is added as a source
 //! in manifest order, the context is decompiled and then cleared. The fixture's saver writes every
 //! class of a class-file source flat into one directory, so the compared text is the *last*
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
 //! text after the fixture's `getContent` normalization (`\r\n` to `\n`, then `String.trim()`), or,
-//! for a case with a `vineflower` record, its normalized text must have that digest
-//! ([`text_digest`]). A case with a `kuna` record also runs with kuna's defaults, as `kuna/<id>`,
-//! and that text must have the record's digest. The manifest format is described in
-//! `tests/jvm/README.md`.
+//! for a case with a `kuna` record, its normalized text must have that digest ([`text_digest`]).
+//! The manifest format is described in `tests/jvm/README.md`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,7 +21,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::jdk_runtime::JdkRuntime;
-use crate::kuna_fixes::{KunaFixes, VINEFLOWER_COMPAT};
 use crate::kuna_plugins::JVM_PLUGINS;
 use crate::rt::{self, try_catch, Caught};
 use crate::struct_class::StructClass;
@@ -37,10 +32,8 @@ use sha2::{Digest, Sha256};
 pub const MANIFEST_HEADER: &str = "kuna-jvm-corpus";
 pub const MANIFEST_VERSION: &str = "1";
 pub const FAILED_METHOD_MARKER: &str = "$VF: Couldn't be decompiled";
-/// The id prefix of a case's default-mode run (its `kuna` record).
-pub const DEFAULT_RUN: &str = "kuna/";
-/// The manifest record that pins a default-mode run's digest.
-pub const DEFAULT_RUN_RECORD: &str = "kuna";
+/// The manifest record that pins a case's digest.
+pub const DIGEST_RECORD: &str = "kuna";
 /// Stack for threads that run the engine. The recursion guard (`rt::stack`)
 /// lets the engine use `rt::stack::DEPTH_LIMIT` of it; the rest is headroom.
 pub const ENGINE_STACK_BYTES: usize = 512 << 20;
@@ -121,10 +114,6 @@ pub struct Case {
     pub jdks: Vec<JdkNeed>,
     /// The pinned [`text_digest`] of the compared text, checked instead of an expected file.
     pub digest: Option<String>,
-    /// The fix set to run with instead of the one the options give: a test
-    /// hook for isolating one fix (`KunaFixes::without`).
-    #[doc(hidden)]
-    pub fixes: Option<KunaFixes>,
 }
 
 #[derive(Default)]
@@ -144,18 +133,13 @@ struct RawCase {
     libs: Vec<String>,
     expected: Option<String>,
     compare: Vec<String>,
-    vineflower: Option<String>,
-    kuna: Option<String>,
+    digest: Option<String>,
 }
 
 /// The option pairs the engine runs `case` with: the fixture registers no plugin, so
-/// `jvm_plugins` is off unless the case sets it, and the oracle is Vineflower's text, so
-/// `jvm_vineflower_compat` is on unless the case sets it.
+/// `jvm_plugins` is off unless the case sets it.
 pub fn engine_options(case: &Case) -> Vec<(String, String)> {
-    let mut options = vec![
-        (JVM_PLUGINS.to_string(), "0".to_string()),
-        (VINEFLOWER_COMPAT.to_string(), "1".to_string()),
-    ];
+    let mut options = vec![(JVM_PLUGINS.to_string(), "0".to_string())];
     for (key, value) in &case.options {
         overlay_option(&mut options, key, value);
     }
@@ -269,8 +253,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                     libs: Vec::new(),
                     expected: None,
                     compare: Vec::new(),
-                    vineflower: None,
-                    kuna: None,
+                    digest: None,
                 });
                 at = At::Case;
             }
@@ -291,7 +274,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                     _ => scoped.current_jdk = Some(args[0].clone()),
                 }
             }
-            "class" | "lib" | "expected" | "compare" | "vineflower" | DEFAULT_RUN_RECORD => {
+            "class" | "lib" | "expected" | "compare" | DIGEST_RECORD => {
                 need(1)?;
                 if !matches!(at, At::Case) {
                     return err(&format!("`{tag}` outside a case"));
@@ -301,8 +284,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                     "class" => case.classes.push(args[0].clone()),
                     "lib" => case.libs.push(args[0].clone()),
                     "expected" => case.expected = Some(args[0].clone()),
-                    "vineflower" => case.vineflower = Some(args[0].clone()),
-                    DEFAULT_RUN_RECORD => case.kuna = Some(args[0].clone()),
+                    DIGEST_RECORD => case.digest = Some(args[0].clone()),
                     _ => case.compare = args.iter().filter(|a| !a.is_empty()).cloned().collect(),
                 }
             }
@@ -345,8 +327,8 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
         if class_files.is_empty() {
             return err("no class files".to_string());
         }
-        let expected = match (&raw.vineflower, raw.expected.as_deref()) {
-            (Some(_), Some(_)) => return err("both `expected` and `vineflower`".to_string()),
+        let expected = match (&raw.digest, raw.expected.as_deref()) {
+            (Some(_), Some(_)) => return err(format!("both `expected` and `{DIGEST_RECORD}`")),
             (Some(_), None) => None,
             (None, Some(path)) => Some(resolve(path)),
             (None, None) => {
@@ -396,7 +378,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                 current: true,
             });
         }
-        let case = Case {
+        out.push(Case {
             id: raw.id,
             set: raw.set,
             set_slug: slug.clone(),
@@ -407,18 +389,8 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
             compare,
             javadoc: raw.scoped.javadoc.or_else(|| set.javadoc.clone()),
             jdks,
-            digest: raw.vineflower,
-            fixes: None,
-        };
-        let default_run = raw.kuna.map(|digest| {
-            let mut run = case.clone();
-            run.id = format!("{DEFAULT_RUN}{}", case.id);
-            overlay_option(&mut run.options, VINEFLOWER_COMPAT, "0");
-            run.expected = None;
-            run.digest = Some(digest);
-            run
+            digest: raw.digest,
         });
-        out.extend(std::iter::once(case).chain(default_run));
     }
     Ok(out)
 }
@@ -660,10 +632,7 @@ pub fn execute(case: &Case) -> EngineRun {
     });
     let mut units = Vec::new();
     let outcome = try_catch(|| {
-        let mut fernflower = match case.fixes {
-            Some(fixes) => Fernflower::new_with_fixes(&engine_options(case), logger.clone(), fixes),
-            None => Fernflower::new(&engine_options(case), logger.clone()),
-        };
+        let mut fernflower = Fernflower::new(&engine_options(case), logger.clone());
         if let Some(provider) = case
             .javadoc
             .as_deref()

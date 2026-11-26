@@ -60,8 +60,6 @@ mod fernflower_driver;
 mod fixes_outside_the_corpus;
 #[path = "fix_helpers.rs"]
 mod fix_helpers;
-#[path = "fix_isolation.rs"]
-mod fix_isolation;
 #[path = "kotlin_metadata.rs"]
 mod kotlin_metadata;
 #[path = "logger.rs"]

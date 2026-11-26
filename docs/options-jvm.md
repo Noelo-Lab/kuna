@@ -2,7 +2,7 @@
 
 **Generated** by `kuna catalog --markdown --engine jvm` from `decompiler/nonnative/kuna-jvm/options.toml` -- do not edit by hand; edit the table row and regenerate.
 
-These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes to Java, and classes compiled from Kotlin to Kotlin. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every Vineflower option also answers to Vineflower's long and three-letter names (its `aliases`). Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its bundled plugins' included. kuna's own rows have no Vineflower name; among them, `jvm_vineflower_compat on` turns off kuna's fixes of Vineflower's defects (which have no options of their own) for Vineflower's exact text.
+These options steer the JVM engine (`kuna-jvm`, a port of Vineflower 1.12.0), which decompiles class files, jars and directories of classes to Java, and classes compiled from Kotlin to Kotlin. They apply to those inputs only, as the options of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main --option <name> <value>` (repeatable). Every Vineflower option also answers to Vineflower's long and three-letter names (its `aliases`). Booleans take `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its bundled plugins' included. kuna's own rows have no Vineflower name.
 
 Vineflower keys kuna sets itself, so they are not options:
 
@@ -21,7 +21,7 @@ Vineflower keys kuna sets itself, so they are not options:
 - `__dump_original_lines__` -- corpus runner only
 - `indent-string` -- fixed at Vineflower's default, three spaces
 - `preferred-line-length` -- fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests
-- `error-message` -- fixed: the note under a failure comment asks for reports to kuna's tracker (Vineflower's in compat mode); the corpus fixture sets it empty
+- `error-message` -- fixed: the note under a failure comment asks for reports to kuna's tracker; the corpus fixture sets it empty
 - `dump-bytecode-on-error` -- fixed on: a failed method's comment lists its bytecode
 - `dump-exception-on-error` -- fixed on: a failure comment names the exception; the corpus fixture turns it off
 - `kt-unknown-defaults` -- fixed at the Kotlin plugin's default: ... stands for a default argument the $default stub does not reveal
@@ -176,11 +176,6 @@ Three tiers:
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
 | need the class file of an anonymous class | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
-| output differs from Vineflower 1.12.0 | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
-| need Vineflower's exact text, failure comments included | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
-| a method decompiles in kuna but fails in Vineflower | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
-| failure comment names the kuna issue tracker instead of Vineflower's | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
-| a kuna fix is suspected of changing a method | [`jvm_vineflower_compat`](#jvm_vineflower_compat----on--off-default-off) |
 | Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...) | [`jvm_kt_enable`](#jvm_kt_enable----on--off-default-on) |
 | a Kotlin class is written as .kt but Java output is wanted | [`jvm_kt_enable`](#jvm_kt_enable----on--off-default-on) |
 | Kotlin output of a class is wrong or failed | [`jvm_kt_enable`](#jvm_kt_enable----on--off-default-on) |
@@ -435,7 +430,7 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 ### `jvm_source_patterns` -- on | off, default `on`
 
 - **Symptoms:** instanceof pattern where the source has an instanceof test and a cast; x instanceof T v printed for if (x instanceof T) { T v = (T) x;; want Vineflower's type patterns.
-- **What it does:** In classes javac compiled (no kotlin.Metadata), keep an instanceof test and the cast after it, if (x instanceof T) { T v = (T) x; ..}, as the source wrote them where the LineNumberTable gives the cast a source line of its own, instead of the type pattern if (x instanceof T v). javac compiles both forms of a local x to the same instructions; a pattern whose multi-line condition puts its binding on a later line without more of the condition on that line reads the same way and is then printed as a test and a cast (the program is the same). Vineflower makes the pattern; jvm_vineflower_compat on turns this off.
+- **What it does:** In classes javac compiled (no kotlin.Metadata), keep an instanceof test and the cast after it, if (x instanceof T) { T v = (T) x; ..}, as the source wrote them where the LineNumberTable gives the cast a source line of its own, instead of the type pattern if (x instanceof T v). javac compiles both forms of a local x to the same instructions; a pattern whose multi-line condition puts its binding on a later line without more of the condition on that line reads the same way and is then printed as a test and a cast (the program is the same). Vineflower makes the pattern.
 - **When to flip:** Leave on to read instanceof tests the way the source wrote them; turn off for Vineflower's type patterns, e.g. to compare with Vineflower's output or where the pattern reads better.
 - **Where / provenance:** p8_structure/kuna_source_patterns, if_pattern_match_processor · kuna · kuna-form
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_source_patterns off`
@@ -443,15 +438,15 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 ### `jvm_source_locals` -- on | off, default `on`
 
 - **Symptoms:** a local variable of the source is missing; x = e; return x; printed as return e;; declarations reordered against the source; recompiled bytecode uses other local slots; a declaration inside a loop or try where the source has it before; a local printed as var3 next to the source's name; a[i] = i++ where the source has a[i] = i; i++;; want Vineflower's folded form of locals.
-- **What it does:** Keep the local variables the class file records for the source. A local the LocalVariableTable names is not folded into its one use: x = e; return x; stays two statements, a named array keeps its element stores instead of becoming new T[]{..}, and a named iterable, iterator or index is not folded into a for-each. In Java output, a declaration without an initializer moves up, or a declaration is split into T v; and v = e;, so that javac numbers the locals' slots as the class file does: also out of a loop, branch, try or synchronized block Vineflower narrowed it into, where the slots prove the source declared it outside; one local the table names that Vineflower split in two (x and var3) is one variable again, and two locals it names differently are not merged. An x++, x-- or x = x + 1 the bytecode shows as a statement of its own stays one (a[i] = i; i++; not a[i] = i++;, m--; f(m); not f(--m);). Vineflower folds such locals, declares each variable at its first use and folds increments into the next expression; jvm_vineflower_compat on turns this off.
-- **When to flip:** Leave on to read a method with the locals its author wrote and to recompile it to the same bytecode; turn off for Vineflower's shorter form (return e; for x = e; return x;) without the compat switch's other effects.
+- **What it does:** Keep the local variables the class file records for the source. A local the LocalVariableTable names is not folded into its one use: x = e; return x; stays two statements, a named array keeps its element stores instead of becoming new T[]{..}, and a named iterable, iterator or index is not folded into a for-each. In Java output, a declaration without an initializer moves up, or a declaration is split into T v; and v = e;, so that javac numbers the locals' slots as the class file does: also out of a loop, branch, try or synchronized block Vineflower narrowed it into, where the slots prove the source declared it outside; one local the table names that Vineflower split in two (x and var3) is one variable again, and two locals it names differently are not merged. An x++, x-- or x = x + 1 the bytecode shows as a statement of its own stays one (a[i] = i; i++; not a[i] = i++;, m--; f(m); not f(--m);). Vineflower folds such locals, declares each variable at its first use and folds increments into the next expression.
+- **When to flip:** Leave on to read a method with the locals its author wrote and to recompile it to the same bytecode; turn off for Vineflower's shorter form (return e; for x = e; return x;).
 - **Where / provenance:** p6_variables/kuna_source_locals, kuna_source_scopes, kuna_source_increments, simplify_exprents_helper, p_pand_mm_helper, merge_helper, var_definition_helper · kuna · kuna-form
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_source_locals off`
 
 ### `jvm_javac_layout` -- on | off, default `on`
 
 - **Symptoms:** if condition negated against the source with the branches swapped; early return or continue missing and the rest of the method nested in an if; return c ? a : b where the source has two returns; return c; where the source has if (c) return true; return false;; else branch after an if that returns; !x where the source has false == x; a negated condition (!a && !b) where the source compares the condition with false.
-- **What it does:** Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). A comparison with a boolean literal whose bytecode is its own stays a comparison: false == x (the literal on the left), x == true, (a || b) == false (javac compiles x == false like !x, which stays !x). Off gives Vineflower's structuring; jvm_vineflower_compat on turns it off.
+- **What it does:** Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). A comparison with a boolean literal whose bytecode is its own stays a comparison: false == x (the literal on the left), x == true, (a || b) == false (javac compiles x == false like !x, which stays !x). Off gives Vineflower's structuring.
 - **When to flip:** Turn off to get Vineflower's if/else orientation, nested ifs instead of early exits and ternary returns, !x for false == x, e.g. to compare with Vineflower's output on Java classes, or where the condensed form reads better.
 - **Where / provenance:** p8_structure/kuna_javac_layout, if_helper, simplify_exprents_helper, kuna_javac_boolean_compare, secondary_functions_helper · kuna · kuna-form
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_javac_layout off`
@@ -660,14 +655,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `mark-corresponding-synthetics`, `mcs`
 - **Example:** `kuna decompile app.jar com.ex.Handlers --option jvm_mark_corresponding_synthetics on`
-
-### `jvm_vineflower_compat` -- on | off, default `off`
-
-- **Symptoms:** output differs from Vineflower 1.12.0; need Vineflower's exact text, failure comments included; a method decompiles in kuna but fails in Vineflower; failure comment names the kuna issue tracker instead of Vineflower's; a kuna fix is suspected of changing a method.
-- **What it does:** Turn off every kuna-only fix and print exactly what Vineflower 1.12.0 prints, its failures included: a method Vineflower fails on is written as its // $VF: Couldn't be decompiled comment instead of being decompiled, code Vineflower prints wrong (such as a statement skipped after a denested if, or a Kotlin supertype call with default-argument placeholders) is printed as Vineflower prints it, and the note under a failure comment asks for reports to Vineflower's tracker instead of kuna's. The fixes have no options of their own (docs/jvm.md lists them).
-- **When to flip:** Turn on to compare with Vineflower byte for byte, to check whether a difference from Vineflower comes from a kuna fix, or to reproduce a Vineflower failure for an upstream report; the regression corpus's Vineflower cases run this way. Off, every fix is on; each only replaces a failure or code Vineflower gets wrong.
-- **Where / provenance:** p0_knowledge/kuna_fixes, fernflower · kuna · kuna-compat
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_vineflower_compat on`
 
 ### `jvm_kt_enable` -- on | off, default `on`
 

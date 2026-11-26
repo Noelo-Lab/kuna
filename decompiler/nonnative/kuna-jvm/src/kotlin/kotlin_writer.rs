@@ -1360,7 +1360,6 @@ impl KotlinWriter {
                 }
                 let message = failure_comments::message(node);
                 jthrow!(IllegalStateException; "{}", message);
-                jthrow!(IllegalStateException; "Anonymous class does not have Class Kotlin metadata");
             };
 
             buffer.append("object");

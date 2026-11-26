@@ -5,8 +5,8 @@
 //! Fixtures in `tests/jvm/stackguard/`: `TestDeepExpression` (javac 21.0.12
 //! `--release 17 -g`, a sum 300 terms deep) and `TestLambdaCycle`
 //! (asmtools-core 7.0.b10-ea jasm on JDK 17.0.20.1: two synthetic lambda
-//! bodies that create each other's lambdas, which nests without end under
-//! `jvm_vineflower_compat`).
+//! bodies that create each other's lambdas, which Vineflower nests without
+//! end).
 
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -65,21 +65,16 @@ fn an_expression_deeper_than_the_stack_fails_only_its_method() {
 }
 
 #[test]
-fn an_endless_lambda_nesting_fails_its_class_and_the_run_goes_on() {
+fn a_lambda_cycle_does_not_nest_without_end() {
     let dir = fixture(
         "stackguard-cycle",
         &["TestLambdaCycle.class", "TestLambdaCycle$Task.class", "TestDeepExpression.class"],
     );
-    let results = run(&dir, &[("jvm_vineflower_compat", "1")], Some(8 << 20));
+    let results = run(&dir, &[], Some(8 << 20));
     let cycle = text(&results, "pkg/TestLambdaCycle");
-    assert!(cycle.contains("// $VF: Couldn't be decompiled"), "{cycle}");
-    assert!(cycle.contains("StackOverflowError"), "{cycle}");
+    assert!(!cycle.contains("StackOverflowError"), "{cycle}");
     let other = text(&results, "pkg/TestDeepExpression");
     assert!(other.contains("return a + 1;"), "{other}");
-
-    let fixed = run(&dir, &[], Some(8 << 20));
-    let cycle = text(&fixed, "pkg/TestLambdaCycle");
-    assert!(!cycle.contains("StackOverflowError"), "{cycle}");
 }
 
 #[test]

@@ -2,11 +2,9 @@
 //! kuna: finished classes are handed to a callback instead of an
 //! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
 //! by the custom property `jvm_plugins`) instead of the class path; the
-//! switch of the kuna-only fixes (`kuna_fixes`: `jvm_vineflower_compat`) and
-//! the `kuna-form` options (`kuna_options`) are taken off the property list
-//! and the resulting sets stored in the context,
-//! and with fix `report_to_kuna` an `error-message` the caller did not set
-//! names kuna's tracker; renamer
+//! `kuna-form` options (`kuna_options`) are taken off the property list and
+//! their set stored in the context, and an `error-message` the caller did not
+//! set names kuna's tracker; renamer
 //! class loading has no Rust counterpart, and `include-classpath` adds the
 //! current JDK runtime (the system-module half of `ClasspathScanner`; the
 //! JVM's own class path has no analogue here).
@@ -36,7 +34,6 @@ use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
 use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
-use crate::kuna_fixes::{self, KunaFix, KunaFixes};
 use crate::kuna_options;
 use crate::kuna_partition::RootSelection;
 use crate::kuna_plugins;
@@ -70,7 +67,7 @@ pub struct DecompiledClass {
 /// `JrtFinder.CURRENT`.
 const JRT_CURRENT: &str = "current";
 
-/// The `error-message` default under fix `report_to_kuna` (kuna).
+/// The `error-message` default (kuna).
 pub const KUNA_ERROR_MESSAGE: &str = "Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)";
 
 pub struct Fernflower {
@@ -113,44 +110,13 @@ impl Fernflower {
         plugin_sources: Vec<Rc<dyn PluginSource>>,
     ) -> Fernflower {
         let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
-        let (fixes, custom_properties) = kuna_fixes::take_switches(&custom_properties);
-        Fernflower::build(&custom_properties, logger, plugin_sources, fixes)
-    }
-
-    /// [`Fernflower::new`] with `fixes` as the active set, whatever
-    /// `jvm_vineflower_compat` says: a test hook for isolating one fix.
-    #[doc(hidden)]
-    pub fn new_with_fixes(
-        custom_properties: &[(String, String)],
-        logger: Rc<dyn IFernflowerLogger>,
-        fixes: KunaFixes,
-    ) -> Fernflower {
-        let (plugins, custom_properties) = kuna_plugins::take_switch(custom_properties);
-        let (_, custom_properties) = kuna_fixes::take_switches(&custom_properties);
-        Fernflower::build(
-            &custom_properties,
-            logger,
-            kuna_plugins::plugin_sources(plugins),
-            fixes,
-        )
-    }
-
-    fn build(
-        custom_properties: &[(String, String)],
-        logger: Rc<dyn IFernflowerLogger>,
-        plugin_sources: Vec<Rc<dyn PluginSource>>,
-        fixes: KunaFixes,
-    ) -> Fernflower {
-        let (forms, custom_properties) =
-            kuna_options::take_form_options(custom_properties, fixes == KunaFixes::COMPAT);
+        let (forms, custom_properties) = kuna_options::take_form_options(&custom_properties);
         let custom_properties = &custom_properties[..];
         let mut properties = IFernflowerPreferences::DEFAULTS();
-        if fixes.contains(KunaFix::ReportToKuna) {
-            properties.put(
-                IFernflowerPreferences::ERROR_MESSAGE.to_string(),
-                KUNA_ERROR_MESSAGE.to_string(),
-            );
-        }
+        properties.put(
+            IFernflowerPreferences::ERROR_MESSAGE.to_string(),
+            KUNA_ERROR_MESSAGE.to_string(),
+        );
         for (key, value) in custom_properties {
             if key.jlen() == 3 {
                 OptionParser::parse_short(&format!("-{key}={value}"), &mut properties);
@@ -206,10 +172,7 @@ impl Fernflower {
             class_processor,
             interceptor,
         );
-        context.with_mut(|d| {
-            d.kuna_fixes = fixes;
-            d.kuna_forms = forms;
-        });
+        context.with_mut(|d| d.kuna_forms = forms);
         DecompilerContext::set_current_context(Some(context.clone()));
 
         let plugins = struct_context.get_plugin_context();
