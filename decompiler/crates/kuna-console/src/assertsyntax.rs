@@ -172,6 +172,28 @@ fn take_token(s: &str) -> (&str, &str) {
     }
 }
 
+pub(crate) fn parse_data(rest: &str) -> Result<(Option<&str>, u64, &str), &'static str> {
+    let (location, decl) = take_token(rest);
+    let (space, addr) = if let Some(explicit) = location.strip_prefix('[') {
+        let (space, addr) = explicit
+            .strip_suffix(']')
+            .and_then(|pair| pair.split_once(','))
+            .filter(|(space, _)| {
+                !space.is_empty()
+                    && space.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.'))
+            })
+            .ok_or("data needs [space,hex-address]")?;
+        (Some(space), addr)
+    } else {
+        (None, location)
+    };
+    let addr = parse_vma(addr).ok_or("data needs a hex <addr>")?;
+    if decl.is_empty() {
+        return Err("data needs a C type declaration naming the symbol");
+    }
+    Ok((space, addr, decl))
+}
+
 pub(crate) fn jump_targets(text: &str) -> Result<(u64, Vec<u64>), String> {
     let mut tokens = text.split_whitespace();
     let site = tokens.next().and_then(parse_vma).ok_or("jumptable needs a hex branch address")?;
@@ -236,12 +258,8 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             Body::Prototype { func: func.to_string(), decl: decl.to_string() }
         }
         "data" => {
-            let (addr, decl) = take_token(rest);
-            let addr = parse_vma(addr).ok_or_else(|| bad("data needs a hex <addr>"))?;
-            if decl.is_empty() {
-                return Err(bad("data needs a C type declaration naming the symbol"));
-            }
-            Body::Data { addr, decl: decl.to_string() }
+            let (space, addr, decl) = parse_data(rest).map_err(bad)?;
+            Body::Data { addr, space: space.map(str::to_owned), decl: decl.to_string() }
         }
         "param" => {
             let (index, rest) = take_token(rest);

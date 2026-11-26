@@ -277,6 +277,7 @@ fn volatile_writer_tables_keep_runtime_writes() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn unchanged_write_expressions_append_native_bytes_and_preserve_success() {
     use crate::common;
     use std::process::Command;

@@ -22,7 +22,8 @@ pub struct ExitLeafFacts {
     /// artificial halt `RETURN` (`op_mark_halt`).  Absent for a block whose
     /// tail is a genuine `RETURN` or is not a `RETURN` at all.
     pub halt: BTreeMap<BlockId, uint4>,
-    /// Start address offset of each block, for the trace only.
+    /// Start address offset of each block, for the trace and the layout rules
+    /// (`guardarm`, `loopcondhoist`).
     pub addr: BTreeMap<BlockId, u64>,
 }
 
@@ -72,7 +73,7 @@ pub fn trace_enabled() -> bool {
 }
 
 //===========================================================================
-// Option parse (`guardarm off|auto|on`, `loopcondhoist on|off`).
+// Option parse (`guardarm off|auto|on`).
 //===========================================================================
 
 /// The `guardarm` mode: where the layout tie-break applies.
@@ -124,22 +125,6 @@ impl OptionGuardArm {
             GuardArmMode::On => "on",
         };
         Ok((mode, format!("If-no-exit guard-arm layout tie-break turned {prop}")))
-    }
-}
-
-/// The `loopcondhoist on|off` ArchOption - defer a loop head in the
-/// `ruleBlockIfNoExit` scan so `ruleBlockWhileDo` keeps its head test.
-pub struct OptionLoopCondHoist;
-
-impl OptionLoopCondHoist {
-    /// The option name.
-    pub const NAME: &'static str = "loopcondhoist";
-
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> kuna_base::error::KunaResult<(bool, String)> {
-        let val = crate::options::on_or_off(p1)?;
-        let prop = if val { "on" } else { "off" };
-        Ok((val, format!("If-no-exit loop-head deferral turned {prop}")))
     }
 }
 

@@ -15,24 +15,23 @@ struct Edge {
 }
 
 impl Edge {
-    fn json(&self) -> Json {
+    fn json(&self, region: &Region) -> Json {
+        let target = self.target.map(|addr| region.address(addr));
         Json::Object(vec![
             ("kind".into(), Json::Str(self.kind.into())),
             (
                 "target".into(),
-                self.target
-                    .map_or(Json::Null, |t| Json::Number(t.to_string())),
+                target.map_or(Json::Null, |t| Json::Number(t.to_string())),
             ),
             (
                 "target_hex".into(),
-                self.target
-                    .map_or(Json::Null, |t| Json::Str(format!("0x{t:x}"))),
+                target.map_or(Json::Null, |t| Json::Str(format!("0x{t:x}"))),
             ),
         ])
     }
 
-    fn text(&self) -> String {
-        match self.target {
+    fn text(&self, region: &Region) -> String {
+        match self.target.map(|addr| region.address(addr)) {
             Some(t) => format!("{} 0x{t:x}", self.kind),
             None => self.kind.to_string(),
         }
@@ -58,38 +57,36 @@ impl Issue {
         }
     }
 
-    fn json(&self) -> Json {
+    fn json(&self, region: &Region) -> Json {
+        let address = region.address(self.address);
+        let target = self.target.map(|addr| region.address(addr));
         let mut members = vec![
             ("reason".into(), Json::Str(self.reason.into())),
-            ("address".into(), Json::Number(self.address.to_string())),
-            (
-                "address_hex".into(),
-                Json::Str(format!("0x{:x}", self.address)),
-            ),
+            ("address".into(), Json::Number(address.to_string())),
+            ("address_hex".into(), Json::Str(format!("0x{address:x}"))),
         ];
         match &self.message {
             Some(message) => members.push(("message".into(), Json::Str(message.clone()))),
             None => {
                 members.push((
                     "target".into(),
-                    self.target
-                        .map_or(Json::Null, |t| Json::Number(t.to_string())),
+                    target.map_or(Json::Null, |t| Json::Number(t.to_string())),
                 ));
                 members.push((
                     "target_hex".into(),
-                    self.target
-                        .map_or(Json::Null, |t| Json::Str(format!("0x{t:x}"))),
+                    target.map_or(Json::Null, |t| Json::Str(format!("0x{t:x}"))),
                 ));
             }
         }
         Json::Object(members)
     }
 
-    fn text(&self) -> String {
-        match (&self.message, self.target) {
-            (Some(message), _) => format!("{} at 0x{:x}: {message}", self.reason, self.address),
-            (None, Some(t)) => format!("{} at 0x{:x} -> 0x{t:x}", self.reason, self.address),
-            (None, None) => format!("{} at 0x{:x}", self.reason, self.address),
+    fn text(&self, region: &Region) -> String {
+        let address = region.address(self.address);
+        match (&self.message, self.target.map(|addr| region.address(addr))) {
+            (Some(message), _) => format!("{} at 0x{address:x}: {message}", self.reason),
+            (None, Some(t)) => format!("{} at 0x{address:x} -> 0x{t:x}", self.reason),
+            (None, None) => format!("{} at 0x{address:x}", self.reason),
         }
     }
 }
@@ -183,7 +180,7 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
     require_mapped(args, prog, &region)?;
     let notes = data_notes(prog, &region);
     if region.end.is_none() {
-        let extent = prog.function_extent_at(region.start);
+        let extent = if args.raw_base.is_some() { 0 } else { prog.function_extent_at(region.start) };
         let span = if extent > 0 {
             extent
         } else {
@@ -207,7 +204,7 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
             issues.push(Issue::at("instruction_limit", addr));
             break;
         }
-        let lifted = match lift(prog, addr, Some(end)) {
+        let lifted = match lift(prog, &region, addr, Some(end)) {
             Ok(lifted) => lifted,
             Err(message) => {
                 issues.push(Issue {
@@ -243,9 +240,9 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
             }
         }
         let row = if args.json {
-            dumps_indent2(&lifted.json())
+            dumps_indent2(&lifted.json(&region))
         } else {
-            lifted.text()
+            lifted.text(&region)
         };
         nodes.insert(
             addr,
@@ -283,8 +280,9 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
         }
         let (mut current, mut rows) = (start, Vec::new());
         let mut last: &[Edge] = &[];
+        let address = region.address(start);
         if !args.json {
-            text.push_str(&format!("block 0x{start:x}:\n"));
+            text.push_str(&format!("block 0x{address:x}:\n"));
         }
         while let Some(node) = nodes.get(&current) {
             if !seen.insert(current) {
@@ -310,16 +308,16 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
         }
         if args.json {
             let members = vec![
-                ("start".into(), Json::Number(start.to_string())),
-                ("start_hex".into(), Json::Str(format!("0x{start:x}"))),
+                ("start".into(), Json::Number(address.to_string())),
+                ("start_hex".into(), Json::Str(format!("0x{address:x}"))),
                 (
                     "successors".into(),
-                    Json::Array(last.iter().map(Edge::json).collect()),
+                    Json::Array(last.iter().map(|edge| edge.json(&region)).collect()),
                 ),
             ];
             blocks.push(object_with_rows(members, "instructions", &rows));
         } else {
-            let edges: Vec<String> = last.iter().map(Edge::text).collect();
+            let edges: Vec<String> = last.iter().map(|edge| edge.text(&region)).collect();
             let edges = if edges.is_empty() {
                 "none".to_string()
             } else {
@@ -336,18 +334,17 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
         .map(|first| {
             format!("{} instruction(s) in the walk did not lift; the first: {first}", failed.len())
         });
+    let start = region.address(region.start);
+    let range_end = region.end_address(end);
     let text = if args.json {
         let doc = vec![
             ("binary".into(), Json::Str(args.binary.clone())),
             ("kind".into(), Json::Str("flow".into())),
             ("target".into(), target_json(&region)),
-            ("start".into(), Json::Number(region.start.to_string())),
-            (
-                "start_hex".into(),
-                Json::Str(format!("0x{:x}", region.start)),
-            ),
-            ("range_end".into(), Json::Number(end.to_string())),
-            ("range_end_hex".into(), Json::Str(format!("0x{end:x}"))),
+            ("start".into(), Json::Number(start.to_string())),
+            ("start_hex".into(), Json::Str(format!("0x{start:x}"))),
+            ("range_end".into(), Json::Number(range_end.to_string())),
+            ("range_end_hex".into(), Json::Str(format!("0x{range_end:x}"))),
             ("complete".into(), Json::Bool(complete)),
             (
                 "instruction_count".into(),
@@ -361,7 +358,7 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
             ),
             (
                 "issues".into(),
-                Json::Array(issues.iter().map(Issue::json).collect()),
+                Json::Array(issues.iter().map(|issue| issue.json(&region)).collect()),
             ),
         ];
         object_with_rows(doc, "blocks", &blocks) + "\n"
@@ -372,14 +369,13 @@ fn walk(args: &DisArgs, prog: &ConsoleProgram, mut region: Region) -> Result<Out
             "instructions"
         };
         let mut out = format!(
-            "# {} {plural} reached from {} (window 0x{:x}..0x{end:x})\n",
+            "# {} {plural} reached from {} (window 0x{start:x}..0x{range_end:x})\n",
             nodes.len(),
             label(&region),
-            region.start
         );
         out.push_str(&text);
         if !complete {
-            let issues: Vec<String> = issues.iter().map(Issue::text).collect();
+            let issues: Vec<String> = issues.iter().map(|issue| issue.text(&region)).collect();
             out.push_str(&format!("# incomplete: {}\n", issues.join("; ")));
         }
         out

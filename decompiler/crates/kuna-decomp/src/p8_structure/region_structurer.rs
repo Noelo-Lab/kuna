@@ -148,15 +148,8 @@ impl OptionRegionStructure {
 pub fn run_region_structurer(
     data: &mut Funcdata,
     deadline: Option<std::time::Instant>,
-) -> KunaResult<(bool, Vec<BlockId>)> {
-    // ---- 1. Region identification over the real CFG (W7 adapter proof) --------
-    // recursive_structurer._analyze runs the RegionIdentifier first; here it both
-    // proves build_from_block_graph().compute() on a live function and supplies a
-    // deterministic node order (by block start address) the virtualize fallback
-    // uses for tie-breaking.  A failure to identify regions is non-fatal: the
-    // structurer still runs on the sblocks topology (honest-partial).
-    let mut ri = crate::p7_regions::kuna_regionid::KunaRegionIdentifier::new();
-    let _ = ri.build_from_block_graph(data).and_then(|()| ri.compute().map(|_| ()));
+    loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
+) -> KunaResult<(bool, Vec<BlockId>, bool)> {
 
     // ---- 1b. Precompute the switch/jump-table maps over bblocks (Inc 4) -------
     // The switch-case schema (`match_acyclic_switch_cases`) needs the same two maps
@@ -214,7 +207,17 @@ pub fn run_region_structurer(
     // switch-case successors a structural natural-loop walk on the sblocks graph
     // misses) and exit frontier, so the refinement virtualizes exactly the
     // secondary exits.  Empty (and skipped) when refinement is off.
-    let cyclic_loops = if loop_refine { ri.cyclic_loops() } else { Vec::new() };
+    // Region identification over the real CFG supplies the loops' bodies and
+    // exits (`regionlooprefine`); only its cyclic regions are read.  A failure to
+    // identify regions is non-fatal: the structurer still runs on the sblocks
+    // topology (honest-partial).
+    let cyclic_loops = if loop_refine {
+        let mut ri = crate::p7_regions::kuna_regionid::KunaRegionIdentifier::new();
+        let _ = ri.build_from_block_graph(data).and_then(|()| ri.compute_cyclic());
+        ri.cyclic_loops()
+    } else {
+        Vec::new()
+    };
 
     // The `cyclic_loops` are keyed by basic-block start ADDRESS, but the structuring
     // graph's `BlockCopy` leaves carry only the bblocks `BlockId` they copy (their
@@ -242,13 +245,15 @@ pub fn run_region_structurer(
         .with_complex_blocks(complex_blocks)
         .with_condfold_sets(condfold_sets)
         .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
-        .with_edge_order(edge_order);
+        .with_edge_order(edge_order)
+        .with_loop_cond(loop_cond);
     let ok = st.structure(deadline)?;
     let flips = if ok { st.take_pending_flips() } else { Vec::new() };
+    let changed = st.cond_used.get();
     if std::env::var_os("KUNA_RS_DEBUG").is_some() {
         eprintln!("[rs] structure -> ok={ok} flips={}", flips.len());
     }
-    Ok((ok, flips))
+    Ok((ok, flips, changed))
 }
 
 /// Precompute the bblocks switch-block → jumpvec-slot map and the per-switch
@@ -400,6 +405,10 @@ struct RegionStructurer<'a> {
     /// body components through this set and absorbs them into a `BlockInfLoop` once
     /// the switch + conditionals have folded.
     pending_body_addrs: std::collections::BTreeMap<uintb, std::collections::BTreeSet<uintb>>,
+    /// (kuna, `option loopcondhoist`) how this function's loop conditions are found.
+    loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
+    /// (kuna, `option loopcondhoist`) set when a loop's condition exit was kept.
+    cond_used: std::cell::Cell<bool>,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -419,7 +428,15 @@ impl<'a> RegionStructurer<'a> {
             edge_order: false,
             pending_inf_loops: std::collections::BTreeSet::new(),
             pending_body_addrs: std::collections::BTreeMap::new(),
+            loop_cond: None,
+            cond_used: std::cell::Cell::new(false),
         }
+    }
+
+    /// Attach the loop-condition rule (`loopcondhoist`).
+    fn with_loop_cond(mut self, rule: Option<crate::p8_structure::kuna_loopcond::Rule>) -> Self {
+        self.loop_cond = rule;
+        self
     }
 
     /// Attach the last-resort edge-virtualization ordering gate (`regionedgeorder`).
@@ -2558,7 +2575,16 @@ impl<'a> RegionStructurer<'a> {
         //      back-edge → while/do-while/inf-loop); `scopeBreak` then lowers the
         //      virtualized loop-exit gotos to `break;`.
         if exit_edges.len() > 1 {
-            let keep = self.choose_structural_exit(head, &exit_edges, normal_exit);
+            let upstream = self.choose_structural_exit(head, &exit_edges, normal_exit);
+            let keep = match self.condition_exit(head, &exit_edges) {
+                Some(k) => {
+                    if Some(k) != upstream {
+                        self.cond_used.set(true);
+                    }
+                    Some(k)
+                }
+                None => upstream,
+            };
             for &(src, e, _dst) in exit_edges.iter() {
                 if Some((src, e)) == keep {
                     continue;
@@ -2573,6 +2599,28 @@ impl<'a> RegionStructurer<'a> {
         } else {
             LoopRefineOutcome::NoChange
         })
+    }
+
+    /// (kuna, `option loopcondhoist`) The exit edge of the block whose test is the
+    /// loop's condition, see [`crate::p8_structure::kuna_loopcond`].
+    fn condition_exit(&self, head: BlockId, exit_edges: &[(BlockId, int4, BlockId)]) -> Option<(BlockId, int4)> {
+        use crate::p8_structure::kuna_loopcond::{condition, Cond};
+        let rule = self.loop_cond?;
+        let exit_of = |bl: BlockId| exit_edges.iter().find(|&&(s, _, _)| s == bl).map(|&(s, e, _)| (s, e));
+        let hb = self.graph.block(head);
+        let mut latches: Vec<BlockId> = Vec::new();
+        for j in 0..hb.size_in() {
+            let l = hb.get_in(j);
+            if hb.is_back_edge_in(j) && !hb.is_goto_in(j) && l != head && !latches.contains(&l) {
+                latches.push(l);
+            }
+        }
+        let info = |bl: BlockId| (self.component_addr(bl), self.graph.block(bl).size_out() == 2 && exit_of(bl).is_some());
+        let latch_info: Vec<(Option<u64>, bool)> = latches.iter().map(|&l| info(l)).collect();
+        match condition(rule, info(head), &latch_info)? {
+            Cond::Head => exit_of(head),
+            Cond::Latch(i) => exit_of(latches[i]),
+        }
     }
 
     /// Choose the loop's normal exit target.  With the region identifier's exit

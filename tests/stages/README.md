@@ -11,6 +11,12 @@ unbounded 32-bit count as well, `never` drops the 64-bit shifts' guards,
 `always` restores all three 32-bit guards, and with `armconstshift on` a
 guard-free shift of a signed literal keeps its unsigned conversion.
 
+`kuna-elfv1-symbolextent.xml` checks that the gap walk (`aif`) names no function
+inside the code of a sized PowerPC64 ELFv1 symbol, 28 or 24 bytes long, in both byte
+orders. It keeps a routine with no symbol, a symbol, a call target and a descriptor's
+code inside other functions, and a routine behind a descriptor symbol that states the
+descriptor's size beside a `.name` symbol.
+
 `kuna-returndup-auto.xml` checks option `returndup` (default `auto`) on gcc -O0
 x86-64: a guard clause `if (!c) return 0;` keeps its own return, a body that
 shares the epilogue's `return 3` prints one return, a void `if (c) return;`
@@ -45,6 +51,25 @@ bytes. A three-case switch over a struct field that gcc loads into a register
 once re-rolls too: the install reads the switch value from that load through
 the register copy and its zero extension.
 
+`kuna-loopcondhoist.xml` checks option `loopcondhoist` (default `on`) on
+gcc x86-64. In three -O0 functions the loop's condition, read from the layout,
+is the loop's exit: a `for` whose `break` carries two stores keeps them in the
+break arm, a `while` with an early `return` prints as a `for` with the return
+inside, and a `break` to the return after the loop stays a `break`. The -O2
+build of the third prints as a `while` on its bottom test. Under `option
+loopcondhoist off` the first two and the -O2 one are `while( true )` with the
+condition inside (the third keeps its loop through `loopcontinue auto`); under
+`auto` only the -O2 one is.
+
+`kuna-latchjoin.xml` checks option `dedupitetail` (default `latch`) on gcc
+-O2 x86-64. gcc copies `p = p->next; if (p) goto top;` into both paths of a
+`while (p) { if (p->cls == cls) ...; p = p->next; }` loop; by default the
+copies are joined and `visit` and `count` print that one loop, with `count`'s
+sum (which gcc scheduled between the load and the test of one copy) left in the
+`if`. A busy-wait inside a `for` loop shares the outer loop's header but has a
+latch of its own, and stays a loop inside the loop. Under `option dedupitetail
+on` the two copies print as a `while` loop inside a `do` loop.
+
 `kuna-guardauto.xml` checks option `guardarm` (default `auto`) on two x86-64
 functions. In a gcc -O0 `unget`, whose parameters live in frame slots, the
 default prints the source's flat guard `if (c == -1 || ...) return -1;`, and
@@ -59,6 +84,59 @@ updates memory stays a flag. A `cmovg` and an `__builtin_add_overflow` flag
 that is set by a jump and only tested still fold. `kuna-boolbranch-thumb.xml`
 checks the same on Thumb: an `ite gt` block folds under both values, a `ble`
 over two `movs` keeps its `if` under `keep`.
+
+`kuna-boolret.xml` checks option `boolbranch` (default `return`) on gcc -O0
+x86-64: a function that only returns `p != 0 && p[0] == '/'` prints one return
+of the condition, and one whose guard returns 0 returns the condition's
+negation, where `keep` prints a guard and two returns; a simple condition, two
+guards and a guard after a store keep their `if`s. `kuna-boolret-thumb.xml`
+checks the same on two hand-assembled Thumb functions in gcc -O2's layout, one
+return per path.
+
+`kuna-ptrchain.xml` checks option `truthycond` (default `ptrchain`) on gcc
+-O0 x86-64: a pointer parameter tested as an operand of `&&` or `||` prints
+`p != NULL`, or `p == NULL` for `!p`, in an `if` and in a returned chain, while
+the integer, the call and the field `s->next` beside it, a stand-alone
+`if (p)` and a chain that is a loop's condition stay truthy. Under `option
+truthycond on` every test is truthy.
+
+`kuna-ptrfromuse-faroffset.xml` checks option `ptrfromuse` on a parameter
+read only at field offsets of 0x1000 or more, in an x86-64 shared object, the
+same object stripped, an x86-64 non-PIE executable and an AArch64 shared
+object (`tests/fixtures/field-offset-pointers/`). Reads at 0x1000 and at
+0x48a0 make the parameter `void *`, as reads at 0xff8 always did, and the field
+at 0x1000 in the x86-64 shared object, whose first function also sits at
+0x1000, prints through the parameter instead of as `&near_leaf[a0]`. A
+parameter that indexes a `.data`, `.bss` or `.text` table, named or not, stays
+an integer. A fifth object has no data section at all, and its one function,
+at 0x1000, reads its own record at that offset. Two more images
+(`absolute.c`) pin the limits of the reading: a read of the absolute address
+0x40020000 at an offset in the parameter, a byte table at the start of
+`.rodata` indexed from a character (`letters[c - 'a']`), and a relocatable
+object's extern table each keep an integer parameter.
+
+`kuna-rangetest.xml` checks option `rangetest` (default `auto`) on gcc -O2
+x86-64, which folds two comparisons of one value into one unsigned comparison
+of a subtraction. By default an inside range on an `unsigned char` (95
+values), an outside range on an `int` (30 values), a range test that is an
+operand of `&&` and a returned one print as their two comparisons, while a
+stand-alone test of ten values and a loop condition stay merged; `option
+rangetest split` splits those two as well. `x >= -16 && x < 16`, whose range
+wraps past zero, stays merged under every value, and `option rangetest merged`
+prints every test as compiled. A split `||` that heads an `&&` chain nested as
+the second clause of an `||` keeps its own parentheses, since that clause
+prints none. `kuna-rangetest-thumb.xml` checks clang -O2
+Thumb: the bound check that clang emits before a `tbb` switch table prints
+before the recovered `switch` and keeps its one comparison under every value.
+
+`kuna-sdivpow2.xml` checks signed divisions by a power of two whose
+correction of a negative dividend gcc x86-64 emits as a conditional move
+(`lea; test; cmovs; sar`): `x / 8` at -O0 and `x / 1024` of a `long` at -O2
+print with no branch, as do `(bytes + 512) / 1024`, whose offset gcc folds
+into both values, `x / 8 * 8`, which gcc rounds with `and $-8`, and a store of
+`x / 256` through `mov %ah`. An add of 7 before a shift by 2 is not a division
+and keeps its `if`. `kuna-sdivpow2-thumb.xml` checks gcc's two Thumb forms: an
+`it lt; addlt` and an add taken out of line by `blt`.
 
 `kuna-wsignload-a64.xml` checks that an AArch64 sign-extending byte or
 halfword load into a `W` register (`ldrsb`, `ldrsh`, `ldursb`, `ldursh` in
@@ -116,6 +194,21 @@ fixture, `outer` calls `free` through a real stub, then an exported function
 shaped like a `pld` stub, which keeps its name, and a local one that loads a
 GOT entry instead of a PLT slot, which stays `sub_`. The fixtures and their
 recipe are in `tests/fixtures/ppc64-plt-stubs/`.
+
+`kuna-ppc32picimports-aggressive.xml` loads a small PPC32 secure-PLT PIC
+image twice. With the catalog defaults its PIC stub stays `sub_1800`; after
+`mode aggressive`, which sets `ppc32picimports abi` and which `auto` selects
+for files under 500 KiB, the same call prints as the import `extra`.
+
+`kuna-mips-octeon-elf32-o64.xml` loads big-endian Octeon ELF32 images without a
+target: one declaring O64, one declaring no ABI with GCC's `.mdebug.abiO64`
+marker, and one declaring no ABI at all. Each now loads with the Octeon O64
+model, so `bbit0` keeps the CRC's bit-15 test and `describe` passes its five
+arguments, the fifth from the stack slot at SP + 32; they used to load as
+generic MIPS32, which read `bbit0` as a COP2 load and stopped at `sd ra`. A
+generic MIPS image with the same encoding keeps its COP2 load. A strict fix
+with one pass. The fixtures and their recipe are in
+`tests/fixtures/octeon-elf32/`.
 
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
@@ -536,6 +629,8 @@ writeup, not here.
 | `kuna-strlenscan.xml` | gcc 9 expands `strlen` inline as `repnz scasb`, which printed as a do/while over the string and `~count - 1` (authored C, Ubuntu 20.04 gcc 9.4 -O1) | P3 simplification-quiescence, inline string length | `option strlenscan on\|off` |
 | `kuna-opaquepredicate.xml` | a branch on a comparison that is constant for every input (`x * (x + 1) & 1`, `x * x & 3`, `(x \| y) - (x & y) != (x ^ y)`) kept its dead arm (authored C, clang -O0) | P3 simplification-quiescence, constant comparisons | `option opaquepredicate on\|off` |
 | `kuna-rettriangle.xml` | `returndup` split the shared return after a one-block `if`, printing `if (c) f(); return 0;` as `if (!c) return 0; f(); return 0;` (authored C, gcc -O0, stack-protected) | P8 goto-quality, return duplication | `option rettriangle on\|off` |
+| `kuna-retshape-guards.xml` | an optimized function printed its source's `if (a \|\| b \|\| c) return 0;` as three guards with the same `return 0` (authored C, gcc -O2, the fixture loaded whole); two guards each checking a call's result stay two | P8 goto-quality, print-tree edit after final structuring | `option returndup auto\|record` |
+| `kuna-retshape-arms.xml` | an optimized function printed `if (c) v = f(); else { ...; v = -1; } return v;` where the source returns in each arm, the arms joined by the stack-protector check (authored C, gcc -O2, the fixture loaded whole); a one-armed update keeps its one return | P8 goto-quality, return-block split before the final structuring | `option returndup auto\|record` |
 | `kuna-tailform.xml` | the function-tail `if` printed in the form the return layout picked: `if (a0) return; note();` for `if (a == 0) note();`, a guard and a second `return 0` for a wrapped two-call body, the arm repeating the final `return 0`, a six-statement void body wrapped, and a list walk whose guard `looptest` owns (authored C, gcc -O2) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on\|<n>\|<void>,<value>` |
 | `kuna-tailform-noreturn.xml` | a function ending in a call that does not return printed with that call last and the other side's return inside the `if`: `if (v2) return v2 + 7; __fprintf_chk(..); exit(2);`, a merged two-test `abort` and the test after a loop the same way, and a void store-and-return arm before `abort();` (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform off\|on` |
 | `kuna-tailform-model.xml` | the C runtime's `__do_global_dtors_aux` (`if (completed) return; ...`) printed as the guard clause by the default `model`, which still wraps a one-call tail; `option tailform on` keeps the four-line tail wrapped by the size threshold (authored C, gcc -O2, the fixture loaded whole) | P8 goto-quality, print-tree edit after final structuring | `option tailform model\|on` |
@@ -698,6 +793,8 @@ with undefined-behavior checks and exercises every case and signed boundaries.
 - `kuna-sparc-double-sign.xml`, `kuna-sparc64-double-sign.xml`: binary64 negation from a high-word `fnegs`, without a numeric high-word cast.
 
 - `kuna-sparc-register-pair.xml`: a SPARC32 register pair loaded whole by `ldd` on one path and set as two 32-bit values on the other keeps a loop index and a counter as separate locals (always on; without it they fuse into one 64-bit local updated with `CONCAT44`).
+
+- `kuna-sparc-trap-resume.xml`: a `ta 0x10` in the delay slot of `ba` lifts to the trap's `call` followed by the branch's `goto`, and a function is declared at the branch target. The `goto` is where the trap resumes, so the function prints the trap once and returns the resumed code's `3`, with no call to the declared function (always on; one pass, a strict fix).
 
 - `kuna-integer-float-rounding.xml`, `kuna-integer-float-rounding64.xml`, `kuna-integer-float-rounding-x87.xml`: an integer-to-float conversion keeps its rounding through a later float conversion or a narrower float trace (always on), while exact intermediates, x87 extended conversions and `fld1` still combine.
 

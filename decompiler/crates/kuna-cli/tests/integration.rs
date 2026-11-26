@@ -8,6 +8,8 @@ mod return_branch_cli;
 #[path = "riscv_zcmp.rs"]
 mod riscv_zcmp;
 mod common;
+#[path = "android_jni.rs"]
+mod android_jni;
 #[path = "rust_signature_summary.rs"]
 mod rust_signature_summary;
 #[path = "sparc_prologue_start.rs"]
@@ -51,6 +53,8 @@ mod archive_members_cli;
 
 #[path = "assert_callee.rs"]
 mod assert_callee;
+#[path = "assert_named_data.rs"]
+mod assert_named_data;
 #[path = "stated_jump_targets.rs"]
 mod stated_jump_targets;
 
@@ -167,6 +171,8 @@ mod caller_stack_cli;
 
 #[path = "castnarrow_round_trip.rs"]
 mod castnarrow_round_trip;
+#[path = "sdivpow2_round_trip.rs"]
+mod sdivpow2_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
 #[path = "repstring_round_trip.rs"]
@@ -334,11 +340,22 @@ mod libgcc_divdi3;
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
 
+#[path = "retshape_round_trip.rs"]
+mod retshape_round_trip;
+
+#[path = "boolret_round_trip.rs"]
+mod boolret_round_trip;
+
+#[path = "rangetest_round_trip.rs"]
+mod rangetest_round_trip;
+
 #[path = "tailform_round_trip.rs"]
 mod tailform_round_trip;
 
 #[path = "tailform_noreturn_round_trip.rs"]
 mod tailform_noreturn_round_trip;
+#[path = "fatalchain_round_trip.rs"]
+mod fatalchain_round_trip;
 
 #[path = "return_copy_clone.rs"]
 mod return_copy_clone;
@@ -835,6 +852,8 @@ mod ppc32_pic_calls;
 
 #[path = "ppc32_pic_abi.rs"]
 mod ppc32_pic_abi;
+#[path = "ppc32_pic_note.rs"]
+mod ppc32_pic_note;
 
 #[path = "compact_json.rs"]
 mod compact_json;
@@ -909,6 +928,8 @@ mod high_address_branches;
 
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
+#[path = "octeon_elf32.rs"]
+mod octeon_elf32;
 
 #[path = "qualified_call.rs"]
 mod qualified_call;
@@ -954,3 +975,6 @@ mod types_header;
 mod assert_storage_names;
 #[path = "bounds_checked_prototypes.rs"]
 mod bounds_checked_prototypes;
+
+#[path = "post_call_resume.rs"]
+mod post_call_resume;

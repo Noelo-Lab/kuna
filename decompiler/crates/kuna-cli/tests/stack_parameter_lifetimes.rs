@@ -124,6 +124,7 @@ const VIEW_CASES: [(&str, [i32; 2]); 4] = [
 const VIEW_FIXTURE: &str = "lifetimes_parameter_views_x86_64";
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn shared_parameter_views_preserve_input_bytes_stores_and_escaped_addresses() {
     common::process::required_output(&mut Command::new(common::fixture(VIEW_FIXTURE)));
     for (function, expected) in VIEW_CASES {
@@ -253,6 +254,7 @@ fn execute_variant(function: &str, code: &str) {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn parameter_backing_preserves_equal_width_multiple_and_interior_values() {
     common::process::required_output(&mut Command::new(common::fixture(VARIANT_FIXTURE)));
     for (function, expected) in VARIANT_CASES {
@@ -388,6 +390,7 @@ fn incoming_parameter_names_swap_without_changing_storage() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn narrow_input_is_read_before_full_width_storage_reuse() {
     common::process::required_output(&mut Command::new(common::fixture(
         "lifetimes_parameter_x86_64",

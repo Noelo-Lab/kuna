@@ -174,6 +174,22 @@ pub(super) fn of(
     Provenance { segments, ranges }
 }
 
+/// A headerless image has only file-backed bytes and no object segments.
+pub(super) fn raw(base: u64, start: u64, end: u64) -> Provenance {
+    let mut ranges = Vec::new();
+    if start < end {
+        ranges.push(Range {
+            start,
+            end,
+            source: Source::File,
+            file_offset: Some(start - base),
+            segment: None,
+            overlaps: Vec::new(),
+        });
+    }
+    Provenance { segments: Vec::new(), ranges }
+}
+
 /// The image's segments in the loader's order, with the extent the loader
 /// serves from each (`ObjectLoadImage::from_bytes` and its
 /// `clamp_virtual_tails`): an executable segment serves only its file bytes, any
@@ -463,7 +479,7 @@ impl Provenance {
     }
 
     /// `provenance`, for the byte view's JSON document.
-    pub(super) fn json_fields(&self) -> Vec<(String, Json)> {
+    pub(super) fn json_fields(&self, region: &super::Region) -> Vec<(String, Json)> {
         let rows = self
             .ranges
             .iter()
@@ -481,10 +497,10 @@ impl Provenance {
                     })
                     .collect();
                 Json::Object(vec![
-                    ("start".into(), number(r.start)),
-                    ("start_hex".into(), hex(r.start)),
-                    ("end".into(), number(r.end)),
-                    ("end_hex".into(), hex(r.end)),
+                    ("start".into(), number(region.address(r.start))),
+                    ("start_hex".into(), hex(region.address(r.start))),
+                    ("end".into(), number(region.end_address(r.end))),
+                    ("end_hex".into(), hex(region.end_address(r.end))),
                     ("size".into(), number(r.end - r.start)),
                     ("source".into(), Json::Str(r.source.as_str().into())),
                     ("file_offset".into(), r.file_offset.map_or(Json::Null, number)),

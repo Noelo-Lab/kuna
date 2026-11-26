@@ -1,13 +1,16 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-f7dbabeb8770",
+  "probe_id": "p-77d5d5685648",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
     "decompile",
     "{{BIN}}",
     "0x2620",
-    "--addr"
+    "--addr",
+    "--option",
+    "loopcondhoist",
+    "off"
   ],
   "cwd": "{{WORK}}",
   "env": {

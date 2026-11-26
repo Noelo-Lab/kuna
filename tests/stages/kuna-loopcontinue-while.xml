@@ -18,6 +18,8 @@
     Pass 3 is the default in Rust, whose do-while is `loop { ..; if !(c)
     { break; } }`: a `continue;` there would skip the test, so the jump keeps
     its goto marker.
+    The script pins `option dedupitetail on`: the default `latch` joins a loop
+    latch gcc duplicated here, which changes the shape these asserts pin.
 -->
 <bytechunk space="ram" offset="0x407f50">
 f30f1efa4989c84839d60f83290100004889d04829f04883f8010f841f0100004889f00fb6480184c975250fb60880bc0f880000001577200fb68c0f88000000
@@ -36,6 +38,7 @@ a87f400000000000a87f400000000000a87f400000000000a87f400000000000a87f400000000000
 <symbol space="ram" offset="0x407cb0" name="little2_scanRef"/>
 </binaryimage>
 <script>
+  <com>option dedupitetail on</com>
   <com>lo fu little2_attributeValueTok</com>
   <com>decompile</com>
   <com>print C</com>

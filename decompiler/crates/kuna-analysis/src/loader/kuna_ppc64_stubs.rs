@@ -63,6 +63,7 @@ fn opens(w: u32) -> bool {
 /// The `.plt` slot a stub at `off` loads, the stub's length in bytes, and
 /// whether pc-relative callers enter it one word in, past its TOC save.
 /// `toc_base` is the TOC pointer, if the image has a TOC.
+#[inline]
 pub(super) fn stub_at(word: impl Fn(usize) -> Option<u32>, vma: u64, off: usize, toc_base: Option<u64>) -> Option<(u64, usize, bool)> {
     let mut at = off;
     let first = word(at)?;

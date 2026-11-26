@@ -1,0 +1,69 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default:default">
+<!--
+    kuna analysis (option aif): no gap-walk function starts inside the code of a
+    sized PowerPC64 ELFv1 symbol, whose value is a descriptor in .opd.
+
+    Twenty-five leaves open with std 4,-8(1); addis 5,3,1; addi 3,5,n.  The same
+    three instructions occur inside sample, which a symbol in .dynsym sizes at 28
+    bytes:
+        0x1068  cmpdi 3,0 / beq 0x1080 / nop
+        0x1074  std 4,-8(1) / addis 5,3,1 / addi 3,5,7
+        0x1080  blr
+    The size was read as that of the bytes at the descriptor, so the gap walk
+    named sub_1074 and sample ended there without its result.  exact24 is the same
+    shape in 24 bytes with no .name symbol.
+
+    These keep their starts: the routine behind sample that has no symbol
+    (0x1084), inner, a symbol inside outer (0x10a0), the routine behind the 8
+    bytes of dotted (0x10d4), whose descriptor symbol states the 24 bytes of its
+    descriptor and whose .dotted symbol the 8, as the dot-symbol ABI does, the code
+    a descriptor with no symbol names inside local (0x1144), and the target of a
+    call from caller, which nothing calls, inside reached (0x1128).
+
+    Stage: P1 program prep (code/data partition), option aif (the drivers' default
+    on every architecture but x86-64).  Single pass per byte order.
+
+    Images: decompiler/crates/kuna-analysis/tests/fixtures/
+    elfv1_symbol_extent_be.so and elfv1_symbol_extent_le.so
+    (elfv1_symbol_extent.S).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">4e80002000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfv1_symbol_extent_be.so</com>
+  <com>option listing on</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>lo fu sample</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu exact24</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfv1_symbol_extent_le.so</com>
+  <com>option listing on</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>lo fu sample</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu exact24</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="elfv1-symbolextent #1: sample and exact24 are listed" min="4" max="4">0x10(68 sample|e4 exact24)</stringmatch>
+<stringmatch name="elfv1-symbolextent #2: no start inside sample or exact24" min="0" max="0">sub_10(74|ec)</stringmatch>
+<stringmatch name="elfv1-symbolextent #3: sample and exact24 keep their results" min="4" max="4">a0 \+= 0x1000[7f];|return a0 \+ 0x1000[7f];</stringmatch>
+<stringmatch name="elfv1-symbolextent #4: the routine behind sample is a start" min="2" max="2">0x1084 sub_1084</stringmatch>
+<stringmatch name="elfv1-symbolextent #5: a symbol inside outer is a start" min="2" max="2">0x10a0 inner</stringmatch>
+<stringmatch name="elfv1-symbolextent #6: a descriptor's own size bounds no code" min="2" max="2">0x10d4 sub_10d4</stringmatch>
+<stringmatch name="elfv1-symbolextent #7: a descriptor with no symbol names a start" min="2" max="2">0x1144 sub_1144</stringmatch>
+<stringmatch name="elfv1-symbolextent #8: a call from an uncalled export names a start" min="2" max="2">0x1128 sub_1128</stringmatch>
+</decompilertest>
