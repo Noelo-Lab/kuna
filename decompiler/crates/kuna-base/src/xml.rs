@@ -2333,7 +2333,8 @@ mod tests {
         // and kuna-latchjoin / a loop latch the compiler copied into each path is joined into one
         // and kuna-sdivpow2(-thumb) / a signed power-of-two division corrected by a conditional add
         // and kuna-boolret(-thumb) / a function that only tests a short-circuit condition returns it
-        assert_eq!(count, 927, "corpus file count drifted");
+        // and kuna-rangetest(-thumb) / a merged range test prints as its two comparisons, a switch bound check keeps it
+        assert_eq!(count, 929, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

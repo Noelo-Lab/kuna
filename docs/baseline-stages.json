@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5474,
-    5474
+    5489,
+    5489
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2403,6 +2403,21 @@
     "data:Pool fall-through #2",
     "data:Pool fall-through #3",
     "data:Pool fall-through #4",
+    "data:RANGETEST #10: merged keeps the unsigned char test",
+    "data:RANGETEST #11: merged keeps the int test",
+    "data:RANGETEST #12: merged keeps the returned test",
+    "data:RANGETEST #1: an inside range on an unsigned char prints as two comparisons under auto and split",
+    "data:RANGETEST #2: an outside range on an int prints as two comparisons joined by ||",
+    "data:RANGETEST #3: a stand-alone test of ten values stays merged under auto",
+    "data:RANGETEST #4: split splits the ten-value test",
+    "data:RANGETEST #5: a range test that is an operand of && splits",
+    "data:RANGETEST #6: a returned range test splits",
+    "data:RANGETEST #7: a wrapping range stays merged under every value",
+    "data:RANGETEST #8: a loop condition stays merged under auto",
+    "data:RANGETEST #9: split splits the loop condition",
+    "data:RANGETEST-THUMB #1: the bound check of a tbb switch keeps its one comparison under every value",
+    "data:RANGETEST-THUMB #2: the switch it guards is recovered under every value",
+    "data:RANGETEST-THUMB #3: no value prints the check as two comparisons",
     "data:REALTYPES #1: signature uses real C types, not xunknown8",
     "data:REALTYPES #2: 1-byte stack buffer is char[8], not xunknown1[8]",
     "data:REALTYPES #3: 4-byte temp is unsigned int, not xunknown4",
