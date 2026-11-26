@@ -24,7 +24,6 @@ impl IFernflowerPreferences {
     pub const UNDEFINED_PARAM_TYPE_OBJECT: &str = "undefined-as-object";
     pub const USE_DEBUG_VAR_NAMES: &str = "use-lvt-names";
     pub const USE_METHOD_PARAMETERS: &str = "use-method-parameters";
-    pub const REMOVE_EMPTY_RANGES: &str = "remove-empty-try-catch";
     pub const FINALLY_DEINLINE: &str = "decompile-finally";
     pub const LAMBDA_TO_ANONYMOUS_CLASS: &str = "lambda-to-anonymous-class";
     pub const BYTECODE_SOURCE_MAPPING: &str = "bytecode-source-mapping";
@@ -103,7 +102,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT, "1".to_string()),
             (IFernflowerPreferences::USE_DEBUG_VAR_NAMES, "1".to_string()),
             (IFernflowerPreferences::USE_METHOD_PARAMETERS, "1".to_string()),
-            (IFernflowerPreferences::REMOVE_EMPTY_RANGES, "1".to_string()),
             (IFernflowerPreferences::FINALLY_DEINLINE, "1".to_string()),
             (IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS, "0".to_string()),
             (IFernflowerPreferences::BYTECODE_SOURCE_MAPPING, "0".to_string()),
@@ -206,7 +204,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "UNDEFINED_PARAM_TYPE_OBJECT", key: IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT, short_name: Some("uto"), name: Some("Treat Undefined Param Type As Object"), description: Some("Treat nameless types as java.lang.Object."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "USE_DEBUG_VAR_NAMES", key: IFernflowerPreferences::USE_DEBUG_VAR_NAMES, short_name: Some("udv"), name: Some("Use LVT Names"), description: Some("Use LVT names for local variables and parameters instead of var<index>_<version>."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "USE_METHOD_PARAMETERS", key: IFernflowerPreferences::USE_METHOD_PARAMETERS, short_name: Some("ump"), name: Some("Use Method Parameters"), description: Some("Use method parameter names, as given in the MethodParameters attribute."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "REMOVE_EMPTY_RANGES", key: IFernflowerPreferences::REMOVE_EMPTY_RANGES, short_name: Some("rer"), name: Some("Remove Empty try-catch blocks"), description: Some("Remove try-catch blocks with no code."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "FINALLY_DEINLINE", key: IFernflowerPreferences::FINALLY_DEINLINE, short_name: Some("fdi"), name: Some("Decompile Finally"), description: Some("Decompile finally blocks."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "LAMBDA_TO_ANONYMOUS_CLASS", key: IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS, short_name: Some("lac"), name: Some("Decompile Lambdas as Anonymous Classes"), description: Some("Decompile lambda expressions as anonymous classes."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "BYTECODE_SOURCE_MAPPING", key: IFernflowerPreferences::BYTECODE_SOURCE_MAPPING, short_name: Some("bsm"), name: Some("Bytecode to Source Mapping"), description: Some("Map Bytecode to source lines."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

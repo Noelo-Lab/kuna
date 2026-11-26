@@ -278,7 +278,7 @@ and `DeadCodeHelper`:
    covers its protected blocks, that instruction is split into a block of its own and put
    back into the outer range, so a nested `try` stays inside the outer one. Ranges with
    the same handler and exception types are considered together.
-3. `remove_empty_ranges` (with `jvm_remove_empty_try_catch`) - a range that protects no
+3. `remove_empty_ranges` - a range that protects no
    instructions is dropped together with its exception edges, and the method gets a
    `$VF: Removed empty exception range` comment.
 4. `DeadCodeHelper::extend_synchronized_range_to_monitorexit` - when some path out of a `monitorenter` region
@@ -1246,8 +1246,8 @@ hands the method to the spec's passes, declared in
 `decompiler/nonnative/kuna-jvm/src/kotlin/kotlin_plugin.rs`, and returns; none of the Java
 schedule after that point runs, nor any plugin pass registered at the Java pass locations
 (IdeaNotNull's, for one). The CFG pass is the exception-range repairs of section 10.4 in
-the same order, step 8 as `decompiler/nonnative/kuna-jvm/src/kotlin/obfuscated_exceptions_pass.rs`,
-except that step 3 always runs, whatever `jvm_remove_empty_try_catch` says. The statement tree comes from the same dominator-based recovery (10.5), and the
+the same order, step 8 as `decompiler/nonnative/kuna-jvm/src/kotlin/obfuscated_exceptions_pass.rs`.
+The statement tree comes from the same dominator-based recovery (10.5), and the
 main pass is the Java schedule of sections 10.6-10.10 with these differences: the
 `finally` loop, the initial stack-variable loop and the loop-merge step are plugin passes
 (`java_finally_pass.rs`, `stack_var_initial_pass.rs`, `k_merge_pass.rs`, which recognizes

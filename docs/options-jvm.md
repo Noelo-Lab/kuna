@@ -50,8 +50,6 @@ Three tiers:
 | access$000(this) calls left in the output | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
 | this$0 or val$name fields printed in inner classes | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
 | class$ helper calls remain in old class files | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
-| exception handler code missing from the output | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch----on--off-default-on) |
-| empty try { } catch blocks wanted for inspection | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch----on--off-default-on) |
 | "Could not verify finally blocks" comment with a semaphore variable | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
 | cleanup code duplicated after every return | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
 | catch (Throwable var) { ...; throw var; } instead of finally (option is off) | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
@@ -190,15 +188,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p8_structure/nested_class_processor, nested_member_access, class_reference14_processor · vineflower · vineflower-option
 - **Also spelled:** `synthetic-not-set`, `nns`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_synthetic_not_set on`
-
-### `jvm_remove_empty_try_catch` -- on | off, default `on`
-
-- **Symptoms:** exception handler code missing from the output; empty try { } catch blocks wanted for inspection.
-- **What it does:** Drop exception-table ranges that protect no instructions (and the handlers they alone reach) before the control flow is structured.
-- **When to flip:** Turn off to keep every exception range of the class file, e.g. when an obfuscator uses empty ranges and their handlers to hide code.
-- **Where / provenance:** infra/method_processor, dead_code_helper · vineflower · vineflower-option
-- **Also spelled:** `remove-empty-try-catch`, `rer`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_remove_empty_try_catch off`
 
 ### `jvm_decompile_finally` -- on | off, default `on`
 

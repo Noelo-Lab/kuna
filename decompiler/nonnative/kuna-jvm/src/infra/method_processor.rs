@@ -248,9 +248,7 @@ impl MethodProcessor {
 
         ExceptionDeobfuscator::restore_pop_ranges(graph);
 
-        if DecompilerContext::get_option(IFernflowerPreferences::REMOVE_EMPTY_RANGES) {
-            ExceptionDeobfuscator::remove_empty_ranges(graph);
-        }
+        ExceptionDeobfuscator::remove_empty_ranges(graph);
 
         DeadCodeHelper::extend_synchronized_range_to_monitorexit(graph);
 

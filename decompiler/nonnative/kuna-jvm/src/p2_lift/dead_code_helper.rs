@@ -15,8 +15,6 @@ use crate::code_constants::{
     OPC_MONITORENTER, OPC_MONITOREXIT, OPC_RETURN, OPC_SIPUSH,
 };
 use crate::control_flow_graph::ControlFlowGraph;
-use crate::decompiler_context::DecompilerContext;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
 use crate::p8_structure::kuna_javac_layout;
 use crate::rt::{JHashSet, JavaListExt};
@@ -149,16 +147,10 @@ impl DeadCodeHelper {
                     let lst = range.get_protected_range();
 
                     if lst.len() == 1 && lst.get(0) == block {
-                        if DecompilerContext::get_option(
-                            IFernflowerPreferences::REMOVE_EMPTY_RANGES,
-                        ) {
-                            block.remove_successor_exception(range.get_handler());
-                            lst_ranges.remove_at(i);
+                        block.remove_successor_exception(range.get_handler());
+                        lst_ranges.remove_at(i);
 
-                            deleted_ranges = true;
-                        } else {
-                            return false;
-                        }
+                        deleted_ranges = true;
                     }
                 }
 
