@@ -14,7 +14,6 @@
     ["ignore-invalid-bytecode", "1"],
     ["verify-anonymous-classes", "1"],
     ["include-classpath", "0"],
-    ["ternary-in-if", "1"],
     ["force-jsr-inline", "1"]
    ]
   },

@@ -386,28 +386,6 @@ tier = "transform"
 symptoms = "while (true) with a try inside that does not match the bytecode|loop condition moved into a try block"
 
 [[option]]
-option = "jvm_ternary_in_if"
-vineflower = "ternary-in-if"
-short = "tco"
-aliases = ["ternary-in-if", "tco"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p8_structure"
-subphase = "if_helper"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "Collapse nested if statements that a ternary inside a condition compiles to (if (a ? b : c)) back into one if with the ternary condition."
-use_when = "Turn off when a collapsed condition reads wrong; the nested ifs are what the branches really are."
-example = "kuna decompile app.jar com.ex.Rules --option jvm_ternary_in_if off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.TERNARY_CONDITIONS (ternary-in-if, -tco)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "if (a ? b : c) condition hard to read|duplicated if bodies where a ternary condition was compiled (option is off)"
-
-[[option]]
 option = "jvm_decompile_switch_expressions"
 vineflower = "decompile-switch-expressions"
 short = "swe"

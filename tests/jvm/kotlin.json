@@ -83,10 +83,6 @@
      "0"
     ],
     [
-     "ternary-in-if",
-     "1"
-    ],
-    [
      "force-jsr-inline",
      "1"
     ],

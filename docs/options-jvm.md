@@ -61,8 +61,6 @@ Three tiers:
 | pattern variable reconstructed wrongly | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
 | while (true) with a try inside that does not match the bytecode | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
 | loop condition moved into a try block | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
-| if (a ? b : c) condition hard to read | [`jvm_ternary_in_if`](#jvm_ternary_in_if----on--off-default-on) |
-| duplicated if bodies where a ternary condition was compiled (option is off) | [`jvm_ternary_in_if`](#jvm_ternary_in_if----on--off-default-on) |
 | switch statement assigning a temporary in every case where a switch expression was written | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
 | yield statements misplaced | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
 | var10000 temporaries everywhere (option is off) | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
@@ -217,15 +215,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p7_regions/dec_helper · vineflower · vineflower-option
 - **Also spelled:** `try-loop-fix`, `tlf`
 - **Example:** `kuna decompile app.jar com.ex.Retry --option jvm_try_loop_fix off`
-
-### `jvm_ternary_in_if` -- on | off, default `on`
-
-- **Symptoms:** if (a ? b : c) condition hard to read; duplicated if bodies where a ternary condition was compiled (option is off).
-- **What it does:** Collapse nested if statements that a ternary inside a condition compiles to (if (a ? b : c)) back into one if with the ternary condition.
-- **When to flip:** Turn off when a collapsed condition reads wrong; the nested ifs are what the branches really are.
-- **Where / provenance:** p8_structure/if_helper · vineflower · vineflower-option
-- **Also spelled:** `ternary-in-if`, `tco`
-- **Example:** `kuna decompile app.jar com.ex.Rules --option jvm_ternary_in_if off`
 
 ### `jvm_decompile_switch_expressions` -- on | off, default `on`
 

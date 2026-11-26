@@ -6,10 +6,8 @@
 //! leave two tests that jump on their own apart.
 
 use crate::assert_processor::AssertProcessor;
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_node::{EdgeType, IfNode};
 use crate::if_statement::IfStatement;
 use crate::jthrow;
@@ -101,9 +99,7 @@ impl IfHelper {
                             continue 'loop_;
                         }
 
-                        if DecompilerContext::get_option(IFernflowerPreferences::TERNARY_CONDITIONS)
-                            && Self::collapse_ternary(&rtnode)
-                        {
+                        if Self::collapse_ternary(&rtnode) {
                             res = true;
                             ValidationHelper::validate_statement(stat.get_top_parent());
                             continue 'loop_;

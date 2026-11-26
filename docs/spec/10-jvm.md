@@ -467,8 +467,8 @@ and most changes restart the loop from the top, so the order below is a priority
    `decompiler/nonnative/kuna-jvm/src/p8_structure/loop_extract_helper.rs` moves code that
    always leaves the loop out of it; and
    `decompiler/nonnative/kuna-jvm/src/p8_structure/if_helper.rs (IfHelper::merge_all_ifs)`
-   merges nested `if`s into `&&`/`||` conditions and builds `if`-`else`. With
-   `jvm_ternary_in_if` it also collapses the nested ifs a ternary inside a condition
+   merges nested `if`s into `&&`/`||` conditions and builds `if`-`else`. It
+   also collapses the nested ifs a ternary inside a condition
    compiles to (`if (a ? b : c)`).
 3. Stack variables are simplified and variable versions recomputed again, and
    `LabelHelper::identify_labels` decides which jumps need an explicit label.

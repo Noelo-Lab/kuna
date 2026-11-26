@@ -35,7 +35,6 @@ opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	include-classpath	0
-opt	ternary-in-if	1
 opt	force-jsr-inline	1
 opt	verify-pre-post-merges	1
 set	Javadoc	javadoc
@@ -65,7 +64,6 @@ opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	include-classpath	0
-opt	ternary-in-if	1
 opt	force-jsr-inline	1
 opt	lambda-to-anonymous-class	1
 opt	verify-pre-post-merges	1
@@ -195,7 +193,6 @@ opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	include-classpath	0
-opt	ternary-in-if	1
 opt	force-jsr-inline	1
 set	Plugin Defaults	plugin-defaults
 opt	jvm_plugins	1
@@ -216,7 +213,6 @@ opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	include-classpath	0
-opt	ternary-in-if	1
 opt	force-jsr-inline	1
 opt	verify-pre-post-merges	1
 set	Kotlin Entire Classpath	kotlin-entire-classpath
