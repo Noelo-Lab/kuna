@@ -1483,10 +1483,6 @@ with : hw_loop_phase=1 {
 :^left_a5h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a5h; build right_a4h; commit_half(A5H, left_a5h, 0); commit_half(A4H, right_a4h, 6); }
 :^left_a5h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) unimpl
 
-:"CMP" cmp_lhs,cmp_rhs is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xffc7) | (flags << 0); }
-:"CMP" cmp_lhs,cmp_rhs "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs); (slot_mode=0 & nop_right) { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xffc7) | (flags << 0); }
-:^nop_left "||" "CMP" cmp_lhs,cmp_rhs is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs) { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xf1ff) | (flags << 6); }
-
 # Do not materialize a 40-bit C temporary to compare two accumulators.
 macro compare_full(lhs_lo, lhs_hi, lhs_guard, rhs_lo, rhs_hi, rhs_guard, shift) {
     local a:8 = sext(lhs_guard) * 0x100000000 + zext(lhs_hi) * 0x10000 + zext(lhs_lo);
@@ -2151,6 +2147,26 @@ compact_cmpu: "CMPU" cmpu_lhs,cmpu_rhs is slot_0_0=0 & slot_10_22=0x82e
 :^nop_left "||" compact_cmpu is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_cmpu) {
     build compact_cmpu;
     publish_ce_feedback((EST & 0xcdbf) | (compact_cmpu << 6), EST);
+}
+
+compact_cmp: "CMP" cmp_lhs,cmp_rhs is slot_0_0=0 & slot_10_22=0x826
+    & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14)
+    & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs {
+    local flags:2 = (zext(cmp_lhs == cmp_rhs) << 3) | (zext(cmp_lhs s< cmp_rhs) << 4);
+    export flags;
+}
+
+:^compact_cmp is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_cmp {
+    build compact_cmp;
+    publish_ce_feedback((EST & 0xcfe5) | compact_cmp, EST);
+}
+:^compact_cmp "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_cmp); (slot_mode=0 & nop_right) {
+    build compact_cmp;
+    publish_ce_feedback((EST & 0xcfe5) | compact_cmp, EST);
+}
+:^nop_left "||" compact_cmp is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_cmp) {
+    build compact_cmp;
+    publish_ce_feedback((EST & 0xc97f) | (compact_cmp << 6), EST);
 }
 
 macro bank_pointer(active, shadow, increment, shadow_increment, mask) {
@@ -3640,6 +3656,12 @@ wide_load_execute: "LEA1","*R1:long" is wide_0_9=0x34d & wide_40_45=1 & wide_loa
     wide_load_loop_address(R1, address);
     wide_load_saved_bound(address, LEA1W, LEA2W, LEA3W, LEA4W);
     publish_loop_word(address, LEAH, LEAL);
+}
+
+:LOAD "EST","*"^wide_load_literal_bits is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_0_22=0x436304 & wide_40_45>=0x38 & wide_load_literal_bits {
+    local address:2 = wide_load_literal_bits;
+    EST = (*[data]:2 address) & 0x7fff;
 }
 
 @define WIDE_LOAD_CE1_PORT "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_load_ce_bank=0 & wide_13_22=0x213"
@@ -8722,6 +8744,16 @@ macro single_pop_r7_ports(prefix, words, source, low_port, high_port) {
 
 stack_pair_r6: "*R6++" is stack_pair_first=0x16 { export 1:2; }
 stack_pair_r6: "*R6++:long" is stack_pair_first=0x56 { export 2:2; }
+
+stack_pop_est: "POP EST" is slot_0_22=0x302642 {
+    local top:2 = SP + 1;
+    SP = top;
+    EST = (*[data]:2 top) & 0x7fff;
+}
+
+:^stack_pop_est is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & stack_pop_est { build stack_pop_est; }
+:^stack_pop_est "||" nop_right is (carmel_issue=1 & slot_mode=0 & stack_pop_est); (slot_mode=0 & nop_right) { build stack_pop_est; }
+:^nop_left "||" stack_pop_est is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & stack_pop_est) { build stack_pop_est; }
 
 macro paired_pop_top(word) {
     local top:2 = SP + 1;

@@ -3874,6 +3874,14 @@ conversion of Carmel indirect CODE-word operands to byte offsets: the SLEIGH
 translator does not rescale an indirect target for an unrelated three-byte
 code space.
 
+Compact signed half-register `CMP` sets Z and M from the signed comparison
+and clears V in its issue lane. It preserves the lane's other arithmetic
+bits and the other lane. CE feedback samples the incoming flags before
+the comparison replaces Z and M. An unqualified compact `POP EST` or wide
+absolute DATA `LOAD EST` instead replaces the low fifteen status bits
+with a DATA word. `POP EST` reads at the incremented word-addressed `SP`.
+The new flags are visible to a conditional branch in the next issue.
+
 Wide extended and unbound guard-source `CALLABS` reads only DATA word
 `0xffff` and zero-extends it to a CODE word address. The encoded literal
 and adjacent DATA word do not drive the target. CE1/CE2 address enable

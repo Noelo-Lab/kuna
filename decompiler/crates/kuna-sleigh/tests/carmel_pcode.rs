@@ -232,6 +232,44 @@ fn compact_half_compare_uses_signed_order_and_the_physical_lane() {
 }
 
 #[test]
+fn signed_compact_compare_preserves_flags_and_samples_incoming_feedback() {
+    for (fetch, a, b, ce, old, after, next) in [
+        ((0x209a02, NOP), 7, 7, 0x0888, 0x4fe7, 0x4fed, 0x7fed),
+        ((NOP, 0x209a02), 0x8000, 1, 0x0999, 0x4fff, 0x7d7f, 0x4d7f),
+    ] {
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 6), (4, 1, 0)], None);
+        m.seed(&[("A0L", a), ("A1L", b), ("CETBL", 0x8080), ("CECFG1", ce), ("CECFG2", ce), ("EST", old)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg("EST"), after);
+        assert_eq!(m.step(), 12);
+        assert_eq!(m.reg("EST"), next);
+    }
+}
+
+#[test]
+fn explicit_status_loads_drive_the_next_conditional_transfer() {
+    let mut pop = Machine::new(0, &[(0xb02642, 0x281c0c), (INC_A2, NOP), (0x21ace6, NOP), (NOP, NOP)],
+                               &[(0, 2, 3), (1, 3, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)], None);
+    pop.seed(&[("SP", 0xffff), ("EST", 0x10)]);
+    pop.seed_data(0, 0x8009);
+    pop.seed_data(1, 0x4567);
+    pop.start(0).unwrap();
+    assert_eq!(pop.step(), 3);
+    assert_eq!((pop.reg("SP"), pop.reg("EST"), pop.data(1)), (0, 9, 0x4567));
+    assert_eq!(pop.step(), 12);
+
+    let mut load = Machine::new(0, &[(0xbf1234, 0xc36304), (0x281c10, NOP), (INC_A2, NOP), (0x21ace6, NOP)],
+                                &[(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)], None);
+    load.seed(&[("SP", 0x4000), ("EST", 0x10)]);
+    load.seed_data(0x1234, 0x8009);
+    load.start(0).unwrap();
+    assert_eq!(load.step(), 6);
+    assert_eq!((load.reg("SP"), load.reg("EST"), load.data(0x1234)), (0x4000, 9, 0x8009));
+    assert_eq!(load.step(), 18);
+}
+
+#[test]
 fn wide_signed_literal_to_whole_accumulator_replaces_the_guard() {
     for (literal, expected, est) in [
         (0, 0, 8),
