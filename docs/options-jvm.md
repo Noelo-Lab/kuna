@@ -42,8 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| constructor shows no super() call | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
-| need to see the implicit superclass constructor invocation | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
 | public Foo() {} constructor missing from the output | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
 | class seems to have no constructor | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
 | var = x; inside try followed by return var after the catch | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
@@ -172,15 +170,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_hide_empty_super` -- on | off, default `on`
-
-- **Symptoms:** constructor shows no super() call; need to see the implicit superclass constructor invocation.
-- **What it does:** Drop a constructor's leading super() call when it passes no arguments, as source code leaves it implicit.
-- **When to flip:** Turn off to show every super() call, e.g. to check which superclass constructor runs first.
-- **Where / provenance:** p8_structure/initializer_processor · vineflower · vineflower-option
-- **Also spelled:** `hide-empty-super`, `hes`
-- **Example:** `kuna decompile app.jar com.ex.Child --option jvm_hide_empty_super off`
 
 ### `jvm_hide_default_constructor` -- on | off, default `on`
 

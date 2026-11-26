@@ -9,12 +9,10 @@ use std::thread::LocalKey;
 
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::INIT_NAME;
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
 use crate::fixes::kt_delegation_calls::kt_default_args_super_call;
 use crate::fixes::util::all_exprents;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::invocation_exprent::InvocationExprent;
 use crate::k_element::KElement;
 use crate::k_type::KType;
@@ -166,8 +164,7 @@ fn super_arguments(
             }),
     };
     let Some(call) = call else {
-        let hidden = node.with(|d| d.super_invocation.is_none())
-            && DecompilerContext::get_option(IFernflowerPreferences::HIDE_EMPTY_SUPER);
+        let hidden = node.with(|d| d.super_invocation.is_none());
         return hidden.then(TextBuffer::new);
     };
 

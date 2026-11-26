@@ -880,7 +880,7 @@ tree, the late method passes of section 10.9 and then the class-level rewrites o
 `ClassWriter::invoke_processors`:
 `decompiler/nonnative/kuna-jvm/src/p8_structure/initializer_processor.rs` moves field
 initializers out of `<clinit>` and the constructors into the field declarations and drops
-a constructor's leading argument-less `super()` (`jvm_hide_empty_super`);
+a constructor's leading argument-less `super()`;
 `decompiler/nonnative/kuna-jvm/src/p4_calls/class_reference14_processor.rs` turns the
 Java 1.4 class-literal cache into `X.class`;
 `decompiler/nonnative/kuna-jvm/src/p8_structure/enum_processor.rs` removes `$VALUES`,
