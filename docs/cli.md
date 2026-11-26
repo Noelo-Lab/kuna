@@ -182,23 +182,20 @@ kuna test --jvm                                        # the JVM engine's corpus
 
 `--jvm` runs the JVM engine's differential corpus (`tests/jvm/cases.tsv`, `docs/jvm.md`)
 in process: each case decompiles its class files with its pinned options and must print
-its expected text, pinned by a digest or an expected file. The Vineflower-oracle cases run
-with `jvm_vineflower_compat on` and expect Vineflower's exact text, and again with the
-defaults (`kuna/<id>`) against a pinned digest of kuna's text; each kuna-fixes case runs
-twice, in compat mode against Vineflower's text (failure comment included) and with the
-defaults against kuna's reviewed text. It has no baseline: every case must match, and
+its expected text, pinned by a digest or an expected file: the Vineflower-oracle cases by a
+digest of kuna's text, the kuna-fixes cases by kuna's reviewed text. It has no baseline: every case must match, and
 `--baseline`/`--save-baseline` are refused (exit `2`). Its `--json` results use `jvm:`
 keys, and it needs neither the SLEIGH specs nor a JDK. `--name N` keeps the cases whose id
 contains `N`, `--jobs N|auto` sets how many run at once (default: the core count, at most
 16), `--manifest FILE` runs another manifest (such as the external one `tests/jvm/regen.py
 --full-manifest` writes), `--out DIR` (new or empty) writes each run's compared text as
 `DIR/<id>.java` or `.kt`, and `--save-digests` re-records in the manifest the `kuna`
-digest of each default-mode run it made, once a change of kuna's text is reviewed. A digest
+digest of each run it made, once a change of kuna's text is reviewed. A digest
 mismatch prints both digests; `tests/jvm/README.md`, "When a case does not match", puts
 Vineflower's text beside kuna's. The datatest flags (`--all`, `--unittests`,
 `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`) are refused next to it, and
 `--jobs`, `--manifest`, `--out` and `--save-digests` without it (exit `2`). The summary line reads
-`jvm: 1786/1786 cases matched (0 mismatch, 0 error, 0 unsupported) in 5.2 s`. `--all`
+`jvm: 893/893 cases matched (0 mismatch, 0 error, 0 unsupported) in 5.2 s`. `--all`
 stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,

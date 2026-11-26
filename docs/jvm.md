@@ -331,10 +331,9 @@ named kuna option that is off by default.
 
 A fix corrects a method Vineflower 1.12.0 fails on (the port fails it too, writing it as
 `// $VF: Couldn't be decompiled`) or code Vineflower prints wrong. A fix is a correction, not
-a judgement call, so it has no option of its own: every fix is always on, and
-`jvm_vineflower_compat` turns them all off at once. There are 250 fixes, 143 of them for
-Kotlin output. This table is the description of each; its id names the fix in the code
-(`KunaFix::id`), the spec and `tests/jvm/kuna-fixes/cases.json`:
+a judgement call, so it has no option of its own: every fix is always on. There are 250
+fixes, 143 of them for Kotlin output. This table is the description of each; its id names
+the fix in the spec:
 
 | Fix id | Vineflower 1.12.0 defect | What kuna does |
 |---|---|---|
