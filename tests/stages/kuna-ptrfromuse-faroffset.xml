@@ -1,0 +1,177 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A pointer parameter read only at field offsets of 0x1000 or more
+    (`option ptrfromuse`, `kuna_ptrfromuse.rs (const_base_evidence)`).
+
+    Issue: `p->field` and `table[i]` lower to the same INT_ADD of a value and a
+    constant, and ptrfromuse's walk treated every constant at or above the data
+    space's pointer lower bound (0x1000 on x86-64 and AArch64) as a possible
+    global address. A parameter dereferenced only at such offsets never reached
+    its loads, so it stayed an integer, and in a shared object whose first
+    function sits at 0x1000 the field read at that offset printed as
+    `*(int4 *)&near_leaf[a0]`, a subscript of a function.
+
+    Stage / sub-stage: P5 type recovery, the `ptrfromuse` seed. When the image
+    reports its data sections (the `globalref` ranges), a constant in none of
+    them and not in code is a field offset, and so is a function's entry in
+    code; a data section, and the rest of code, keep the old grades, and an
+    image that reports no sections keeps them all (`kuna-ptrfromuse.xml`).
+
+    Fixtures: `tests/fixtures/field-offset-pointers/` (built from `fields.c`,
+    see its README): an x86-64 shared object, the same object stripped, an
+    x86-64 non-PIE executable and an AArch64 shared object. `page_leaf` reads
+    fields at 0x1000 and 0x1004, `conn_leaf` at 0x48a0..0x48a8, `near_leaf` at
+    0xff8 and 0xffc (below the bound, the control). `get_data`, `put_bss`,
+    `get_code` and `get_local` index a `.data`, a `.bss`, a `.text` and a local
+    `.bss` table, unnamed in the stripped object, with their parameter, which
+    stays an integer. In the AArch64 object `code_table` sits at 0x450, below
+    the bound, where `get_code`'s parameter was a pointer before this change.
+    `code_only_x86_64.so` (`code_only.c`) has no data section at all, and its
+    one function, `update`, sits at 0x1000 and reads its record there.
+    `absolute_x86_64.so` and `absolute_x86_64.o` (`absolute.c`) are the
+    controls for the two limits: `read_reg` reads a peripheral-style absolute
+    address 0x40020000 past 1 MiB, `letter_rank` indexes a byte table at the
+    start of `.rodata` from a character (`&letters - 0x61`, just below the
+    section), and in the relocatable object `get_ext` indexes an extern table
+    whose slot sits outside every section. Each parameter stays an integer.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/fields_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1070</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/fields_x86_64_stripped.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1070</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x10b0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/fields_x86_64</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401020</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401040</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401070</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401080</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401090</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x4010a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/fields_aarch64.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x380</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3a0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3c0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x3f0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x400</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x420</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x430</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/code_only_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/absolute_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1010</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/absolute_x86_64.o</com>
+  <com>read symbols</com>
+  <com>load addr 0x400030</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="A parameter read only at 0x1000 and 0x1004 is a pointer" min="4" max="4">bool page_leaf\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="A parameter read only past 0x48a0 is a pointer" min="4" max="4">bool conn_leaf\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="No field offset prints as a subscript of a function" min="0" max="0">&amp;(near_leaf|update)\[</stringmatch>
+<stringmatch name="An image with no data sections reads the field through the parameter" min="1" max="1">bool update\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="The field at 0x1000 is read through the parameter" min="5" max="5">return \(\(int4 \*\)a0\)\[0x400\] == a1;</stringmatch>
+<stringmatch name="Fields below the bound keep their pointer" min="4" max="4">bool near_leaf\(void \*a0,int4 a1\)</stringmatch>
+<stringmatch name="A subscript of a data table stays an integer" min="4" max="4">get_data\(int8 a0\)</stringmatch>
+<stringmatch name="A subscript of a bss table stays an integer" min="4" max="4">put_bss\(int8 a0,char a1\)</stringmatch>
+<stringmatch name="A subscript of a table linked into code stays an integer" min="3" max="3">get_code\(int8 a0\)</stringmatch>
+<stringmatch name="A subscript of a local table stays an integer" min="4" max="4">get_local\(int8 a0\)</stringmatch>
+<stringmatch name="An absolute address past 1 MiB outside every section is no field offset" min="1" max="1">read_reg\(int8 a0\)</stringmatch>
+<stringmatch name="A byte table indexed from a character just below its section stays an integer" min="1" max="1">letter_rank\(int8 a0\)</stringmatch>
+<stringmatch name="An index into the extern table of a relocatable object stays an integer" min="1" max="1">get_ext\(int8 a0\)</stringmatch>
+</decompilertest>
