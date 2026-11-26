@@ -48,6 +48,9 @@ impl Registry {
                     row.option
                 ));
             }
+            if settable.iter().any(|s: &Settable| s.option == row.option) {
+                return Err(format!("phases.d/{name}: option `{}` already has a row", row.option));
+            }
             settable.push(row);
         }
         Ok(Registry {
@@ -197,5 +200,12 @@ mod tests {
         ] {
             assert!(parse(&tables, &[(name, text.clone())]).is_err(), "accepted {name}: {text}");
         }
+    }
+
+    #[test]
+    fn an_option_has_one_file() {
+        let tables = format!("{OTHER_TABLES}group = []\n");
+        let both = [("0001-a.toml", row("a")), ("0002-a.toml", row("a"))];
+        assert!(parse(&tables, &both).is_err(), "two branches each added option `a`");
     }
 }
