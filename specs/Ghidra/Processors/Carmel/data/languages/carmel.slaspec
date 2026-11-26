@@ -1195,9 +1195,7 @@ with : hw_loop_phase=1 {
     arm_block_loop(0:2, 12:1, $(ARM_LOOP_PLAN));
 }
 
-:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left { }
 :^complete_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(COMPACT_COMPUTE) & complete_left { build complete_left; }
-:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & nop_right) { }
 :^complete_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & nop_right) { build complete_left; }
 :^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; }
 
@@ -1759,8 +1757,8 @@ macro shift_limit(result, flags) {
 :"ASHIFT" shift_0_dst,shift_0_src,shift_count is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_16_22=0x3c & (slot_15_15=0 | slot_14_15=2) & (slot_10_12=4 | slot_9_12=10 | slot_10_12=6 | slot_9_12=14) & shift_0_dst & shift_0_src & shift_count & (slot_1_7=89 | slot_2_7=45 | slot_3_7=23 | slot_6_7=3) & shift_count_encoding & shift_0_dst_lo & shift_0_dst_hi & shift_0_dst_guard { local input:8 = sext(shift_0_src); local n:4 = 128 - shift_count_encoding; local carry_bit:1 = ((input >> (n - 1)) & 1) != 0; local result:8 = (input s>> n) & 0xffffffffff; local flags:2; shift_flags(result, carry_bit, flags); shift_limit(result, flags); shift_write(shift_0_dst_lo, shift_0_dst_hi, shift_0_dst_guard, result, flags); }
 :"ASHIFT" shift_0_dst,shift_0_src,shift_count "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_16_22=0x3c & (slot_15_15=0 | slot_14_15=2) & (slot_10_12=4 | slot_9_12=10 | slot_10_12=6 | slot_9_12=14) & shift_0_dst & shift_0_src & shift_count & (slot_1_7=89 | slot_2_7=45 | slot_3_7=23 | slot_6_7=3) & shift_count_encoding & shift_0_dst_lo & shift_0_dst_hi & shift_0_dst_guard); (slot_mode=0 & nop_right) { local input:8 = sext(shift_0_src); local n:4 = 128 - shift_count_encoding; local carry_bit:1 = ((input >> (n - 1)) & 1) != 0; local result:8 = (input s>> n) & 0xffffffffff; local flags:2; shift_flags(result, carry_bit, flags); shift_limit(result, flags); shift_write(shift_0_dst_lo, shift_0_dst_hi, shift_0_dst_guard, result, flags); }
 
-# CE predicates consume the incoming execution feedback. General per-issue
-# publication of CE1/CE2 (including across NOP and flow) is outside this lift.
+# CE predicates consume the incoming execution feedback. Both banks sample
+# the same flags before either makes its feedback visible.
 # The four-bit CECFG selectors map V,V2,C,C2,L,L2,M,M2,Z,Z2,E,E2,CE1,CE2.
 macro unary_ce_select(cfg, est, shift, bit) {
     local selector:2 = (cfg >> shift) & 0xf;
@@ -1987,6 +1985,32 @@ macro publish_alu_ce(flags) {
     unary_ce(CECFG1, feedback, CETBL, 0, first);
     unary_ce(CECFG2, feedback, CETBL, 1, second);
     EST = flags | (first << 12) | (second << 13);
+}
+
+:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left {
+    publish_alu_ce(EST & 0xcfff);
+}
+:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & nop_right) {
+    publish_alu_ce(EST & 0xcfff);
+}
+
+wide_ce_prefix: is wide_left_mode=1 { local kind:2 = 0; export kind; }
+wide_ce_prefix: "CE1" is wide_left_mode=0 & unary_wide_ce_bank=0 { local kind:2 = 1; export kind; }
+wide_ce_prefix: "CE2" is wide_left_mode=0 & unary_wide_ce_bank=1 { local kind:2 = 2; export kind; }
+
+macro wide_issue_enable(prefix, result, address) {
+    result = 1;
+    address = 1;
+    local kind:2 = prefix;
+    if (kind == 0) goto <done>;
+    if (kind == 2) goto <second>;
+    unary_ce(CECFG1, EST, CETBL, 0:2, result);
+    address = zext(result != 0 || (CECFG1 & 0x1000) != 0);
+    goto <done>;
+  <second>
+    unary_ce(CECFG2, EST, CETBL, 1:2, result);
+    address = zext(result != 0 || (CECFG2 & 0x1000) != 0);
+  <done>
 }
 
 @define COMPACT_LOAD_WORD "slot_12_22=0x2c0 & slot_10_11=0"
@@ -3181,12 +3205,58 @@ unary_right: "ABS" "A5H","FF12" is slot_0_22=0x20e6de { local result:8; local fl
 :LSHIFT "CE2" "discard","CETBL","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7183e9 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CETBL; local carry_bit:2 = input & 1; EST = (EST & 0xfffe) | carry_bit; <config_shift_veto> }
 :LSHIFT "CE2" "CETBL","CETBL","-1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & config_shift_ce_bank=1 & wide_0_22=0x7189e9 & wide_40_45=0xe { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <config_shift_veto>; local input:2 = CETBL; local carry_bit:2 = input & 1; local word:2 = input >> 1; CETBL = word; EST = (EST & 0xffc6) | carry_bit | (zext(word == 0) << 3); <config_shift_veto> }
 
-# Load configuration regardless of the wide prefix. A static load samples the incoming EST for both CE banks before publishing either.
+# Address qualification enables the configuration ports. Static destinations
+# sample the pre-writeback feedback before either CE latch is replaced.
 ce_config_value: config is ce_config_bits_0 & ce_config_bits_6 [ config = ce_config_bits_0 | (ce_config_bits_6 << 6); ] { export *[const]:2 config; }
 ce_truth_value: ce_truth_bits is ce_truth_bits { export *[const]:2 ce_truth_bits; }
-:LOADCE1 ce_config_value,ce_truth_value is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & wide_7_7=0x1 & wide_9_10=0x0 & wide_13_22=0x26f & ce_config_value & ce_truth_value { local incoming:2 = EST; local config:2 = ce_config_value; local truth:2 = ce_truth_value; CECFG1 = config; CETBL = (CETBL & 0xff00) | truth; local select_config:2 = config & 0x1fff; local published:2 = 0; local feedback_1:2; unary_ce(select_config, incoming, CETBL, 0, feedback_1); published = published | (feedback_1 << 12); EST = (incoming & 0xefff) | published; }
-:LOADCE ce_config_value,ce_truth_value is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & wide_7_7=0x1 & wide_9_10=0x2 & wide_13_22=0x26f & ce_config_value & ce_truth_value { local incoming:2 = EST; local config:2 = ce_config_value; local truth:2 = ce_truth_value; CECFG1 = config; CECFG2 = config; CETBL = truth * 0x101; local select_config:2 = config & 0x1fff; local published:2 = 0; local feedback_1:2; unary_ce(select_config, incoming, CETBL, 0, feedback_1); published = published | (feedback_1 << 12); local feedback_2:2; unary_ce(select_config, incoming, CETBL, 1, feedback_2); published = published | (feedback_2 << 13); EST = (incoming & 0xcfff) | published; }
-:"LOADCE.NOT" ce_config_value,ce_truth_value is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & wide_7_7=0x1 & wide_9_10=0x3 & wide_13_22=0x26f & ce_config_value & ce_truth_value { local incoming:2 = EST; local config:2 = ce_config_value; local truth:2 = ce_truth_value; CECFG1 = config; CECFG2 = config; CETBL = truth | ((truth ^ 0xff) << 8); local select_config:2 = config & 0x1fff; local published:2 = 0; local feedback_1:2; unary_ce(select_config, incoming, CETBL, 0, feedback_1); published = published | (feedback_1 << 12); local feedback_2:2; unary_ce(select_config, incoming, CETBL, 1, feedback_2); published = published | (feedback_2 << 13); EST = (incoming & 0xcfff) | published; }
+
+macro load_ce_ports(prefix, config, truth, low, high, invert) {
+    local incoming:2 = EST;
+    local new_config:2 = config;
+    local table_byte:2 = truth;
+    local first_config:2 = CECFG1;
+    local second_config:2 = CECFG2;
+    local result_enabled:2;
+    local address_enabled:2;
+    local write_lo:1 = low;
+    local write_hi:1 = high;
+    local invert_hi:2 = invert;
+    wide_issue_enable(prefix, result_enabled, address_enabled);
+    if (address_enabled == 0) goto <feedback>;
+    if (write_lo == 0) goto <write_upper>;
+    CECFG1 = new_config;
+    CETBL = (CETBL & 0xff00) | table_byte;
+    first_config = new_config & 0x1fff;
+  <write_upper>
+    if (write_hi == 0) goto <feedback>;
+    CECFG2 = new_config;
+    CETBL = (CETBL & 0x00ff) | ((table_byte ^ invert_hi) << 8);
+    second_config = new_config & 0x1fff;
+  <feedback>
+    local first:2;
+    local second:2;
+    unary_ce(first_config, incoming, CETBL, 0:2, first);
+    unary_ce(second_config, incoming, CETBL, 1:2, second);
+    EST = (incoming & 0xcfff) | (first << 12) | (second << 13);
+}
+
+@define WIDE_LOADCE "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_13_22=0x26f & wide_ce_prefix & ce_config_value & ce_truth_value"
+:LOADCE1 wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=0 {
+    build wide_ce_prefix;
+    load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 1:1, 0:1, 0:2);
+}
+:LOADCE2 wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=1 {
+    build wide_ce_prefix;
+    load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 0:1, 1:1, 0:2);
+}
+:LOADCE wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=2 {
+    build wide_ce_prefix;
+    load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 1:1, 1:1, 0:2);
+}
+:"LOADCE.NOT" wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=3 {
+    build wide_ce_prefix;
+    load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 1:1, 1:1, 0xff:2);
+}
 
 # LOAD's fixed word/long stride uses the old mode field, not the
 # newly programmed PACFG field. No RN or reversal port feeds this increment.
@@ -8238,30 +8308,13 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 :MOVE "*R0++",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
 
-@define WIDE_MOVS_IMMEDIATE "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_14_22=0x119 & literal_word & wide_movs_prefix"
-wide_movs_prefix: is wide_left_mode=1 { local kind:2 = 0; export kind; }
-wide_movs_prefix: "CE1" is wide_left_mode=0 & unary_wide_ce_bank=0 { local kind:2 = 1; export kind; }
-wide_movs_prefix: "CE2" is wide_left_mode=0 & unary_wide_ce_bank=1 { local kind:2 = 2; export kind; }
+@define WIDE_MOVS_IMMEDIATE "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_14_22=0x119 & literal_word & wide_ce_prefix"
 
-macro wide_movs_enable(prefix, result, address) {
-    result = 1;
-    address = 1;
-    if (prefix == 0) goto <done>;
-    if (prefix == 2) goto <second>;
-    unary_ce(CECFG1, EST, CETBL, 0:2, result);
-    address = zext(result != 0 || (CECFG1 & 0x1000) != 0);
-    goto <done>;
-  <second>
-    unary_ce(CECFG2, EST, CETBL, 1:2, result);
-    address = zext(result != 0 || (CECFG2 & 0x1000) != 0);
-  <done>
-}
-
-:MOVE wide_movs_prefix "*R0+=RN0",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0x08 {
+:MOVE wide_ce_prefix "*R0+=RN0",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0x08 {
     local result:2;
     local address_enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, address_enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, address_enabled);
     if (address_enabled == 0) goto <done>;
     local address:2 = R0;
     modify_ptr(R0, RN0, RM0, RL0, 0, 1);
@@ -8279,80 +8332,95 @@ macro movs_accumulator_flags(word, result, flags) {
   <done>
 }
 
-:MOVE wide_movs_prefix "OP3",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0x8e {
+movs_ce_low: "A0L" is wide_2_11=0x90 { export A0L; }
+movs_ce_low: "A1L" is wide_2_11=0x91 { export A1L; }
+:MOVE wide_ce_prefix movs_ce_low,literal_word is $(WIDE_MOVS_IMMEDIATE) & carmel_issue=4 & movs_ce_low {
     local result:2;
     local address_enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, address_enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, address_enabled);
+    local flags:2 = EST & 0xcfff;
+    movs_accumulator_flags(literal_word, result, flags);
+    if (result == 0) goto <feedback>;
+    movs_ce_low = literal_word;
+  <feedback>
+    publish_alu_ce(flags);
+}
+
+:MOVE wide_ce_prefix "OP3",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0x8e {
+    local result:2;
+    local address_enabled:2;
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, address_enabled);
     local flags:2 = EST & 0xcfff;
     movs_accumulator_flags(literal_word, result, flags);
     publish_alu_ce(flags);
 }
 
 # System-port qualification follows the address gate, not DATA writeback.
-:MOVE wide_movs_prefix "MINMAX",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xba {
+:MOVE wide_ce_prefix "MINMAX",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xba {
     local result:2; local enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, enabled);
     if (enabled == 0) goto <done>;
     MINMAX = literal_word;
   <done>
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE wide_movs_prefix "ECFG",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc0 {
+:MOVE wide_ce_prefix "ECFG",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc0 {
     local result:2; local enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, enabled);
     if (enabled == 0) goto <done>;
     ECFG = literal_word & 0x3f;
   <done>
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE wide_movs_prefix "EST",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc1 {
-    build wide_movs_prefix;
+:MOVE wide_ce_prefix "EST",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc1 {
+    build wide_ce_prefix;
     # This port writes only the transient EX debugger view.
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE wide_movs_prefix "CECFG1",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc2 {
+:MOVE wide_ce_prefix "CECFG1",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc2 {
     local result:2; local enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, enabled);
     if (enabled == 0) goto <done>;
     CECFG1 = literal_word & 0x3fff;
   <done>
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE wide_movs_prefix "CETBL",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc4 {
+:MOVE wide_ce_prefix "CETBL",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc4 {
     local result:2; local enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, enabled);
     if (enabled == 0) goto <done>;
     CETBL = literal_word;
   <done>
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE wide_movs_prefix "PSTATUS",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xd5 {
+:MOVE wide_ce_prefix "PSTATUS",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xd5 {
     local result:2; local enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, enabled);
     if (enabled == 0) goto <done>;
     select_saved_loop_frame(literal_word);
   <done>
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE wide_movs_prefix "USER_IO",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xd7 {
+:MOVE wide_ce_prefix "USER_IO",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xd7 {
     local result:2; local enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, enabled);
     if (enabled == 0) goto <done>;
     USER_IO = literal_word;
   <done>
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE wide_movs_prefix "PACFG",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xda {
+:MOVE wide_ce_prefix "PACFG",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xda {
     local result:2; local enabled:2;
-    build wide_movs_prefix;
-    wide_movs_enable(wide_movs_prefix, result, enabled);
+    build wide_ce_prefix;
+    wide_issue_enable(wide_ce_prefix, result, enabled);
     if (enabled == 0) goto <done>;
     PACFG = literal_word;
   <done>

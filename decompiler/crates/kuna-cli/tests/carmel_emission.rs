@@ -5402,6 +5402,86 @@ fn carmel_cliw_extended_source_ports_execute_in_emitted_c() {
     }
 }
 
+#[test]
+fn carmel_loadce_writes_address_qualified_banks_and_samples_feedback_once() {
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let ce1 = [0x1d, 0xf8, 0x4b, 0xcd, 0xf9, 0x7b];
+    let ce2 = [0x08, 0, 1, 0xcd, 0xe2, 0x09];
+    let not = [0x2f, 0, 1, 0xcd, 0xe6, 0x3f];
+    let ce1_addr = [0x40, 0, 1, 0xcd, 0xe0, 0x80];
+    let latch_both = [0x8c, 0, 1, 0xcd, 0xe4, 0xb3];
+    let markers = [[0, 0x12, 0x34, 0xc6, 0x42, 0x40], [0x40, 0x23, 0x45, 0xc6, 0x42, 0x44]];
+    let cases = [
+        (ce1, 0, 0x1000, 0, [0x1edd, 0x1000, 0x004b, 0x1000]),
+        (ce1, 3, 0x1000, 0xffff, [0x1edd, 0x1000, 0xff4b, 0x3000]),
+        (ce2, 0, 0x1000, 0, [0x1000, 0x0248, 0x0100, 0x2000]),
+        (ce2, 3, 0x1000, 0xffff, [0x1000, 0x0248, 0x01ff, 0x3000]),
+        (not, 0, 0x1000, 0, [0x0fef, 0x0fef, 0xfe01, 0x1000]),
+        (ce1_addr, 0, 0x0ccc, 0x8000, [0x1000, 0x0ccc, 0x8000, 0]),
+        (ce1_addr, 0, 0x1ccc, 0x8000, [0x2000, 0x1ccc, 0x8001, 0x3000]),
+        (ce1_addr, 10, 0x0ccc, 0x8001, [0x2000, 0x0ccc, 0x8001, 0x3000]),
+        (latch_both, 0, 0x1000, 0xffff, [0x2ccc, 0x2ccc, 0x0101, 0x3000]),
+        (latch_both, 3, 0x1000, 0xffff, [0x2ccc, 0x2ccc, 0x0101, 0]),
+    ];
+    let binary = common::scratch_file("carmel-loadce-feedback", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let specs = binary.with_extension("specs");
+    let mut c = String::from("#include <stdint.h>\n#include <stdbool.h>\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (i, (fetch, warm, cfg2, table, expected)) in cases.into_iter().enumerate() {
+        let outputs = ["CECFG1", "CECFG2", "CETBL", "EST", "A0L", "A1L"];
+        let mut body = vec![NOP; warm];
+        body.push(fetch);
+        let mut accumulator = [0, 0];
+        if fetch == latch_both {
+            body.extend(markers);
+            if warm == 0 {
+                accumulator = [0x1234, 0x2345];
+            }
+        }
+        body.extend([NOP, NOP, NOP, NOP, RET]);
+        fs::write(&binary, body.as_slice().as_flattened().repeat(outputs.len())).unwrap();
+        tracked_carmel_entry_specs(&specs, &[("CECFG1", 0x1000), ("CECFG2", cfg2),
+            ("CETBL", table), ("EST", 0), ("A0L", 0), ("A1L", 0)], 0x1000, 0);
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile-all").arg(&binary).args([
+            "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000",
+            "--json", "--jobs", "1", "--assert-strict",
+        ]);
+        let names = std::array::from_fn::<_, 6, _>(|j| {
+            let addr = 0x1000 + 2 * j * body.len();
+            let name = format!("sub_{addr:x}");
+            kuna.args(["--addr", &format!("{addr:#x}"), "--assert",
+                       &format!("return {name}::%{} unsigned short", outputs[j])]);
+            name
+        });
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let functions = json["functions"].as_array().unwrap();
+        assert_eq!(functions.len(), outputs.len(), "{json}");
+        assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+        let expected = expected.into_iter().chain(accumulator);
+        for (j, ((function, name), value)) in functions.iter().zip(names).zip(expected).enumerate() {
+            assert_eq!(function["name"], name, "{function}");
+            let text = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+            let unique = format!("loadce_{i}_{j}");
+            writeln!(c, "#define {name} {unique}\n{text}\n#undef {name}").unwrap();
+            writeln!(calls, "if ({unique}() != {value:#x}) return {};", i * outputs.len() + j + 1).unwrap();
+        }
+        fs::remove_dir_all(&specs).unwrap();
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
