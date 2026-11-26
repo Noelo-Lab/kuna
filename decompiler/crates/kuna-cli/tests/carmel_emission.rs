@@ -5535,6 +5535,43 @@ fn carmel_loadce_writes_address_qualified_banks_and_samples_feedback_once() {
     }
 }
 
+#[test]
+fn carmel_secondary_shifter_reserves_physical_preg_reads() {
+    let binary = common::scratch_file("carmel-secondary-shifter", "bin");
+    let specs = binary.with_extension("specs");
+    let source = binary.with_extension("c");
+    let exe = binary.with_extension("exe");
+    let mut c = String::from("#include <stdint.h>\n#include <stdbool.h>\n\
+                             volatile unsigned short first = 0x4567, second = 0x2345;\n");
+    tracked_carmel_entry_specs(&specs, &[
+        ("R4", 0x40), ("R0", 0xc040), ("PACFG", 0), ("ECFG", 0),
+        ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff), ("EST", 0),
+    ], 0x1000, 0);
+    for (selector, name) in [(0x4f, "preg"), (0x4b, "ff")] {
+        fs::write(&binary, [0x19, 0x17, 1, 0x39, selector, 0x26, 0x2b, 0xd8, 0, 0x2b, 0xec, 0]).unwrap();
+        let result = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict", "--assert", "return %A2L unsigned short",
+                "--assert", "data [data,0x40] volatile unsigned short first",
+                "--assert", "data [data,0xc040] volatile unsigned short second",
+            ]));
+        let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{json}");
+        let text = function["code"].as_str().unwrap();
+        assert!(!text.contains("halt_") && !text.contains("carmel_data_read_conflict"), "{text}");
+        writeln!(c, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+    }
+    c.push_str("int main(void) { return preg() != 0x4567 || ff() != 0x68ac; }\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &exe, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, exe] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

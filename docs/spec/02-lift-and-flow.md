@@ -4086,6 +4086,15 @@ Without that binding the DATA-destination form remains unlifted: a third
 high-bus read can stop at operand fetch after the AGU advances and
 before either lane writes back.
 
+A secondary compact `LSHIFT` with an `OP1` or `OP2` selector requests both
+temporary DATA words but writes neither its encoded destination nor its
+flag bank. The paired accumulator `ADDABS` has only its first direct
+input connected; the paired word `ADDABS` has both connected. With `FF1`
+the shifter requests no temporary reads, and both direct inputs reach
+either left ALU form. These requests use the incoming addresses even
+when the AGU updates the pointers. A bus-capacity or single-port conflict
+stops after the address updates, before the left result or flags publish.
+
 Covered wide `LOAD` forms distinguish accumulator writeback from pointer
 and `PACFG` setup. An operand that initializes a pointer does not also
 overwrite the encoded bound register.

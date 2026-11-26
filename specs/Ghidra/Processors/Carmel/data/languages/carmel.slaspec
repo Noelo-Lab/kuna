@@ -435,6 +435,7 @@ define token slot (24)
     shift_word_literal_bits = (1,6)
     shift_literal_dst = (12,15)
     shift_literal_src = (7,11)
+    slot_7_11 = (7,11)
     shift_word_dst = (10,13)
     shift_word_src = (5,9)
     shift_rn_src = (8,12)
@@ -459,6 +460,7 @@ define token slot (24)
     slot_9_13 = (9,13)
     slot_6_10 = (6,10)
     slot_4_8 = (4,8)
+    slot_5_8 = (5,8)
     slot_1_5 = (1,5)
     slot_1_3 = (1,3)
     compact_frame_delta = (1,8) signed
@@ -5663,6 +5665,112 @@ compact_mpy_direct_second: "FF2" is slot_1_5=23 { export FF2; }
 }
 
 define pcodeop carmel_data_read_conflict;
+
+parallel_shift_source: "FF1" is slot_7_11=22 { export 0:1; }
+parallel_shift_source: "OP1" is slot_7_11=30 { export 1:1; }
+parallel_shift_source: "OP2" is slot_7_11=31 { export 1:1; }
+parallel_right_shift: "LSHIFT" shift_literal_dst,parallel_shift_source,shift_word_literal is
+    slot_mode=0 & slot_16_22=0x39 & slot_0_0=0 &
+    (slot_13_14=0 | slot_13_14=1 | slot_13_14=2) & shift_literal_dst &
+    parallel_shift_source & shift_word_literal {
+    build parallel_shift_source;
+    export parallel_shift_source;
+}
+
+# A right shifter does not publish a result. OP1/OP2 nevertheless request
+# both PReg words at OF, in addition to the connected left ALU inputs.
+macro parallel_shift_fetch(a, b, copy_preg, word_result, first, second) {
+    if (copy_preg == 0) goto <direct>;
+    local region:2 = a & 0xc000;
+    local peer:2 = b & 0xc000;
+    if (((a ^ b) & 0x8000) == 0) goto <stopped>;
+    if (region == 0x4000 || region == 0x8000) goto <stopped>;
+    if (word_result == 0 || peer == 0 || peer == 0xc000) goto <fetch_copy>;
+    goto <stopped>;
+  <direct>
+    if (((a ^ b) & 0xc001) != 0) goto <fetch_direct>;
+    region = a & 0xc000;
+    if (region == 0 || region == 0xc000) goto <fetch_direct>;
+  <stopped>
+    carmel_data_read_conflict();
+    goto <stopped>;
+  <fetch_copy>
+    local preg_first:2 = *[data]:2 a;
+    local preg_second:2 = *[data]:2 b;
+    first = *[data]:2 a;
+    second = 0;
+    if (word_result == 0) goto <fetched>;
+    second = *[data]:2 b;
+    goto <fetched>;
+  <fetch_direct>
+    first = *[data]:2 a;
+    second = *[data]:2 b;
+  <fetched>
+}
+
+@define PARALLEL_SHIFT_ADDABS "carmel_issue=1 & slot_mode=0 & slot_0_0=1"
+
+:ADDABS "CE1" "*R3+=RN3","*R6--","*R7--" "||" parallel_right_shift is
+    ($(PARALLEL_SHIFT_ADDABS) & slot_16_22=0x1d & slot_9_13=31 & slot_5_8=14 & slot_1_4=15);
+    parallel_right_shift {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local flags:2 = EST & 0xcfff;
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <publish>;
+    local destination:2 = R3;
+    local a:2 = R6;
+    local b:2 = R7;
+    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
+    modify_ptr(R6, 0:2, RM6, RL6, 12, 3);
+    modify_ptr(R7, 0:2, RM6, RL6, 14, 3);
+    local first:2;
+    local second:2;
+    parallel_shift_fetch(a, b, parallel_right_shift, 1:1, first, second);
+    if (enabled == 0) goto <publish>;
+    local magnitude:8 = (zext(first) ^ 0x8000) - 0x8000;
+    if (first < 0x8000) goto <add>;
+    magnitude = -magnitude;
+  <add>
+    local rhs:8 = ((zext(second) ^ 0x8000) - 0x8000) << 16;
+    local lhs:8 = magnitude << 16;
+    local result:8;
+    local active:2;
+    raw_mac_finish(lhs + rhs, lhs + (rhs & 0xffffffffff), 1:1, 0:1, 1:1, result, active);
+    *[data]:2 destination = result(2);
+    raw_mac_flags(flags, active, 0);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:ADDABS "CE1" "A2","*R4--","*R0" "||" parallel_right_shift is
+    ($(PARALLEL_SHIFT_ADDABS) & slot_16_22=0x19 & slot_11_13=2 & slot_6_10=28 &
+    slot_1_5=0 & slot_14_15=0); parallel_right_shift {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local flags:2 = EST & 0xcfff;
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <publish>;
+    local a:2 = R4;
+    local b:2 = R0;
+    modify_ptr(R4, 0:2, RM4, RL4, 8, 3);
+    local first:2;
+    local second:2;
+    parallel_shift_fetch(a, b, parallel_right_shift, 0:1, first, second);
+    if (enabled == 0) goto <publish>;
+    local magnitude:8 = (zext(second) ^ 0x8000) - 0x8000;
+    if (second < 0x8000) goto <add>;
+    magnitude = -magnitude;
+  <add>
+    local lhs:8 = (zext(first) ^ 0x8000) - 0x8000;
+    local result:8;
+    local active:2;
+    raw_mac_finish(lhs + magnitude, (lhs & 0xffffffffff) + magnitude, 0:1, 0:1, 0:1, result, active);
+    A2L = result:2;
+    A2H = result(2);
+    GB2 = result(4);
+    raw_mac_flags(flags, active, 0);
+  <publish>
+    publish_alu_ce(flags);
+}
 
 :MPY "A0","*R0++","*R1++" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x10610 & slot_1_5=17); (slot_mode=0 & nop_right) {
     local first_address:2 = R0;
