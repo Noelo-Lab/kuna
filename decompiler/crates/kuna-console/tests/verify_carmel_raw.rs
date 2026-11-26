@@ -381,7 +381,7 @@ fn cliw_undriven_write_ports_store_only_qualified_words() {
 }
 
 #[test]
-fn cliw_terminal_selectors_publish_updates_without_loading_data() {
+fn cliw_terminal_selectors_read_bound_ports_before_publishing_updates() {
     let bank = |selector: u64, template: &str, readonly| {
         let issue = 0x838142de5840u64 | (selector << 34);
         format!(r#"<bytechunk space="code" offset="0" readonly="true">{issue:012x}</bytechunk>
@@ -396,7 +396,9 @@ fn cliw_terminal_selectors_publish_updates_without_loading_data() {
         let (len, ops) = program.raw_pcode_at(0).unwrap();
         assert_eq!(len, 6);
         assert!(ops.iter().any(|op| op.opcode == "INT_MULT"));
-        assert!(!ops.iter().any(|op| matches!(op.opcode, "LOAD" | "STORE" | "CALLOTHER")));
+        let loads = ops.iter().filter(|op| op.opcode == "LOAD").count();
+        assert_eq!(loads, if matches!(selector, 24 | 27) { 1 } else { 2 }, "MA4 {selector}");
+        assert!(!ops.iter().any(|op| matches!(op.opcode, "STORE" | "CALLOTHER")));
         let register = |name: &str| program.arch().get_register_varnode(name.as_bytes()).unwrap();
         let mut expected: Vec<_> = ["R3", "R4", "A0L", "A0H", "GB0", "EST"].into_iter()
             .chain(terminal).map(|name| {
@@ -424,5 +426,70 @@ fn cliw_terminal_selectors_publish_updates_without_loading_data() {
     }
     for image in [bank(25, mac, false), bank(25, "0097e0fffff03fffff7ffff8", true)] {
         assert!(matches!(xml(&image).unwrap().raw_pcode_at(0), Err(KunaError::Unimpl { .. })), "{image}");
+    }
+}
+
+#[test]
+fn cliw_terminal_prefix_uses_the_bound_pair_or_mode6_update() {
+    let mac = "8097e0fffff03fffff7ffff8";
+    let ma3 = "7fffff26bf003fffff7ffff8";
+    let ma4 = "7fffff26ff003fffff7ffff8";
+    let image = |ma3_selector: u64, ma4_selector: u64, template, template_offset, readonly| {
+        // Encoded slot 0x6a5 resolves to 0x2a5 in the immutable one-bank image.
+        let issue = 0x800000ded840u64 | (ma3_selector << 39) | (ma4_selector << 34) | (0x2a5 << 24);
+        format!(r#"<bytechunk space="code" offset="0" readonly="true">{issue:012x}</bytechunk>
+            <bytechunk space="cliw" offset="{template_offset:#x}" readonly="{readonly}">{template}</bytechunk>"#)
+    };
+    let offset = 0x2a5 * 12;
+    for (ma3_sel, ma4_sel, template, pointer, updates_r3, sp_delta) in [
+        (28, 0, ma3, Some("R0"), false, 0),
+        (28, 29, ma4, Some("R1"), false, 0),
+        (7, 28, ma4, Some("R0"), true, 0),
+        (28, 24, mac, None, false, 0),
+        (28, 25, mac, None, false, 2),
+        (28, 26, mac, None, false, 1),
+        (28, 27, mac, None, false, 0),
+    ] {
+        let program = xml(&image(ma3_sel, ma4_sel, template, offset, true)).unwrap();
+        let (_, _, operands) = program.disassemble_at(0).unwrap();
+        assert_eq!(operands.split_once('(').unwrap().0, "0x6a5");
+        let (len, ops) = program.raw_pcode_at(0).unwrap();
+        assert_eq!(len, 6);
+        assert_eq!(ops.iter().filter(|op| op.opcode == "LOAD").count(), 2 * usize::from(pointer.is_some()) + usize::from(updates_r3 || sp_delta != 0));
+        assert!(ops.iter().all(|op| !matches!(op.opcode, "STORE" | "CALLOTHER")));
+        let register = |name: &str| {
+            kuna_console::engine::RawPcodeVarnode::from(
+                &program.arch().get_register_varnode(name.as_bytes()).unwrap(),
+            )
+        };
+        for name in ["R0", "R1", "R3"] {
+            let reg = register(name);
+            assert_eq!(ops.iter().any(|op| op.opcode == "LOAD" && op.inputs.last() == Some(&reg)),
+                       pointer == Some(name) || (name == "R3" && updates_r3));
+        }
+        let mut actual: Vec<_> = ops.iter().filter_map(|op| op.output.as_ref())
+            .filter(|op| op.space == "register").map(|op| (op.offset, op.size)).collect();
+        let mut expected: Vec<_> = ["A0L", "A0H", "GB0", "EST", "R4"].into_iter()
+            .chain(updates_r3.then_some("R3")).chain((sp_delta != 0).then_some("SP"))
+            .map(|name| { let r = register(name); (r.offset, r.size) }).collect();
+        actual.sort_unstable();
+        expected.sort_unstable();
+        assert_eq!(actual, expected, "MA3 {ma3_sel}, MA4 {ma4_sel}");
+        if sp_delta != 0 {
+            let sp = register("SP");
+            assert!(ops.iter().any(|op| op.opcode == "INT_ADD" && op.output.as_ref() == Some(&sp)
+                && op.inputs.iter().any(|v| v.space == "const" && v.offset == sp_delta)));
+        }
+    }
+    for rejected in [
+        image(28, 0, ma4, offset, true),
+        image(28, 29, ma4, offset, false),
+        image(7, 28, ma4, offset + 12, true),
+        image(28, 28, mac, offset, true),
+    ] {
+        if let Err(KunaError::Unimpl { .. }) = xml(&rejected).unwrap().raw_pcode_at(0) {
+            continue;
+        }
+        panic!("expected an unimplemented CLIW issue: {rejected}");
     }
 }

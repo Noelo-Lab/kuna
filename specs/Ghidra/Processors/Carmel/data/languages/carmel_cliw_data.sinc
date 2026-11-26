@@ -253,6 +253,46 @@ macro cliw_dm_move_write(value, lo, hi, guard, cfg, predicate, bank, keep, statu
   <move_done>
 }
 
+@define CLIW_DM_TERMINAL_MOVE "$(CLIW_DM) & cliw_address_bank=14 & wide_10_14=22 & wide_8_9=0 & wide_3_7=8 & wide_1_2=0 & wide_0_0=0 & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_3_23=0xfffff & $(CLIW_DM_MOVE1) & tpl_64_66=6 & tpl_52_56=16"
+macro cliw_terminal_move(low, high) {
+    local negative:1 = high s< 0;
+    A0L = low;
+    A0H = high;
+    GB0 = -zext(negative);
+    local flags:2 = (zext((low | high) == 0) << 3) | (zext(negative) << 4);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+# A normal terminal suffix completes a long MA3 input at the MA3 base.
+:CLIW template_index is $(CLIW_DM_TERMINAL_MOVE) & cliw_terminal_ma3_condition=28 &
+    cliw_terminal_ma4=0 & tpl_62_63=2 {
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    local low:2;
+    local high:2;
+    cliw_dm_sample_pair(R0, low, high);
+    cliw_terminal_move(low, high);
+}
+# A terminal prefix supplies its own long input, not MA3's base.
+:CLIW template_index is $(CLIW_DM_TERMINAL_MOVE) & cliw_terminal_ma3_condition=28 &
+    cliw_terminal_ma4=29 & tpl_62_63=3 {
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    local low:2;
+    local high:2;
+    cliw_dm_sample_pair(R1, low, high);
+    cliw_terminal_move(low, high);
+}
+:CLIW template_index is $(CLIW_DM_TERMINAL_MOVE) & cliw_terminal_ma3_condition=7 &
+    cliw_terminal_ma4=28 & tpl_62_63=3 {
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    local low:2;
+    local high:2;
+    cliw_dm_sample_pair(R0, low, high);
+    cliw_read_discarded(R3);
+    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
+    cliw_terminal_move(low, high);
+}
+@undef CLIW_DM_TERMINAL_MOVE
+
 # Bank 15 uses the low pointer bank for both word ports. Zero access
 # qualifiers do not suppress an operand explicitly sourced by the template.
 :CLIW template_index is $(CLIW_DM_EXT_END) & cliw_address_bank=15 & wide_8_9=0 & wide_1_2=0 &

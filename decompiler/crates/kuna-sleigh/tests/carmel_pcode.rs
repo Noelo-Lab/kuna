@@ -857,6 +857,35 @@ fn link_uses_address_enable_before_its_independently_predicated_store() {
 }
 
 #[test]
+fn disconnected_wide_link_uses_selected_ce_and_stores_at_old_sp() {
+    let old_sp = 0x8030;
+    let new_sp = 0xd24e;
+    for (left, selected, unselected, bit) in [
+        (0x2d521e, "CECFG1", "CECFG2", 0x0001),
+        (0x6d521e, "CECFG2", "CECFG1", 0x0100),
+    ] {
+        for (cfg, table, sp, saved, flags) in [
+            (0, 0x0101 ^ bit, old_sp, 0xbe27, 0),
+            (0x1000, 0x0101 ^ bit, new_sp, 0xbe27, 0),
+            (0, bit, new_sp, 0xffff, 0x4000),
+        ] {
+            let mut m = Machine::new(0, &[(left, 0xc62fc0), (NOP, NOP)],
+                                     &[(0, 4, 6), (2, 1, 0)], None);
+            m.seed(&[("SP", old_sp), (selected, cfg), (unselected, 0x1000), ("CETBL", table),
+                     ("ECFG", 0x10), ("R0", 0x3456), ("A0", 0x123456789a)]);
+            m.seed_data(old_sp, 0xbe27);
+            m.seed_data(new_sp, 0x932d);
+            m.start(0).unwrap();
+            assert_eq!(m.step(), 6);
+            assert_eq!((m.reg("SP"), m.data(old_sp), m.data(new_sp)), (sp, saved, 0x932d));
+            assert_eq!((m.reg("R0"), m.reg("A0")), (0x3456, 0x123456789a));
+            assert_eq!((m.reg(selected), m.reg(unselected), m.reg("CETBL")), (cfg, 0x1000, table));
+            assert_eq!(m.reg("EST") & 0xcfff, flags);
+        }
+    }
+}
+
+#[test]
 fn link_rechecks_the_store_predicate_after_writing_ce_controls() {
     for (left, right, reg, sp, table, saved, flags) in [
         (0x3ffffc, 0xc6030b, "CECFG1", 0x6011, 0x0101, 0x5aa5, 0x2000),
@@ -1699,6 +1728,46 @@ fn wide_product_machine(packet: u64) -> Machine {
     let mode = if packet >> 47 == 0 { 4 } else { 5 };
     Machine::new(0, &[((packet >> 24) as u32, (packet & 0xffffff) as u32), (NOP, NOP)],
                  &[(0, mode, 6), (2, 1, 0)], None)
+}
+
+#[test]
+fn wide_abs_uses_the_connected_result_bank() {
+    for (packet, input, config, expected, flags) in [
+        (0xe0269bc22a23, 0xea433809a4, 0, 0x15bcc7f65c, 0x20),
+        (0xe0269bc22a23, 0, 0, 0, 0x08),
+        (0xe0269bc22a23, 0x8000000000, 0, 0x8000000000, 0x36),
+        (0xe0269bc22a23, 0x8000000000, 8, 0x8000000000, 0x32),
+        (0xe0269bc22a23, 0xff80000000, 4, 0x7fffffff, 0x24),
+        (0xe6269bc22a23, 0xea433809a4, 4, 1, 0),
+    ] {
+        let mut m = wide_product_machine(packet);
+        m.seed(&[("A0", input), ("ECFG", config), ("CETBL", 0xffff), ("FF2", 0xf678)]);
+        m.seed_data(0xffff, 0x9876);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("EST")), (expected, 0x3000 | flags));
+        assert_eq!((m.reg("FF2"), m.data(0xffff)), (0xf678, 0x9876));
+    }
+
+    for (word, config, expected, flags) in [
+        (0xf678, 0, 0x0988, 0),
+        (0, 0, 0, 8),
+        (0x8000, 0, 0x8000, 0x24),
+        (0x8000, 4, 0x7fff, 0x24),
+    ] {
+        let mut m = wide_product_machine(0xe7269bc22a5f);
+        m.seed(&[("FF2", word), ("A0", 0x123456789a), ("ECFG", config), ("CETBL", 0xffff)]);
+        m.seed_data(0xffff, 0x9876);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("FF2"), m.reg("EST")), (expected, 0x3000 | flags));
+        assert_eq!((m.reg("A0"), m.data(0xffff)), (0x123456789a, 0x9876));
+    }
+
+    for packet in [0xfd269bc229d7, 0xff269bc229d7, 0xfd269bc228d7, 0xe7269bc22a23] {
+        let mut m = wide_product_machine(packet);
+        assert!(matches!(m.start(0), Err(KunaError::Unimpl { .. })));
+    }
 }
 
 #[test]

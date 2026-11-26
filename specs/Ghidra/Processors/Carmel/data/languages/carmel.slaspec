@@ -4672,6 +4672,45 @@ wide_unary_gate: "CE2" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank
     local gate:2 = enabled | ((CECFG2 >> 11) & 2);
     export gate;
 }
+
+# A wide ABS extended selector can drive different inputs for different result banks.
+# The DATA routes are not fixed by the instruction bits.
+@define WIDE_ABS_REGISTER "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_10_22=0x108a & wide_0_1=3"
+
+wide_abs_acc_source: "A0" is wide_40_45=0x20 {
+    local bits:8;
+    compact_long_sample(A0L, A0H, GB0, bits);
+    export bits;
+}
+wide_abs_acc_source: "-1" is wide_40_45=0x26 { export 0xffffffffff:8; }
+
+:ABS "A0",wide_abs_acc_source is $(WIDE_ABS_REGISTER) & wide_2_9=0x88 & wide_abs_acc_source {
+    local source:8 = wide_abs_acc_source;
+    local magnitude:8 = (source - ((source << 1) * zext(source >= 0x8000000000))) & 0xffffffffff;
+    local result:8;
+    local flags:2;
+    compact_long_finish(magnitude, 0:1, source == 0x8000000000, 0:1, 0:1, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+:ABS "FF2","FF2" is $(WIDE_ABS_REGISTER) & wide_2_9=0x97 & wide_40_45=0x27 {
+    local word:2 = FF2;
+    local magnitude:2 = word - ((word << 1) * zext(word >= 0x8000));
+    local bits:8 = zext(magnitude) << 16;
+    local result:8;
+    local flags:2;
+    compact_long_finish(bits, 0:1, 0:1, 0:1, 0:1, result, flags);
+    if ((flags & 0x20) == 0 || (ECFG & 0x28) == 8) goto <publish>;
+    flags = flags | 4;
+  <publish>
+    FF2 = result(2);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+@undef WIDE_ABS_REGISTER
+
 wide_bit_index: "#"^index is wide_40_45 & wide_0_1 [ index = wide_40_45 | (wide_0_1 << 6); ] {
     export *[const]:1 index;
 }
@@ -10508,6 +10547,8 @@ frame_displacement: encoded is wide_frame_delta_0 & wide_frame_delta_22 [ encode
 :LINK "open",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xe8 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { local old_sp:2 = SP; local saved:2 = 0xffff; SP = old_sp + frame_displacement; frame_store(old_sp, saved); }
 :LINK "CE1" "open",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_2_9=0xe8 & wide_14_22=0x118 & (link_qualifier=0 | link_qualifier=2) & frame_displacement { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local old_sp:2 = SP; local saved:2 = 0xffff; SP = old_sp + frame_displacement; if (enabled == 0) goto <stack_done>; frame_store(old_sp, saved); <stack_done> }
 :LINK "CE2" "open",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_2_9=0xe8 & wide_14_22=0x118 & (link_qualifier=0 | link_qualifier=2) & frame_displacement { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local old_sp:2 = SP; local saved:2 = 0xffff; SP = old_sp + frame_displacement; if (enabled == 0) goto <stack_done>; frame_store(old_sp, saved); <stack_done> }
+:LINK "CE1" "open",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_2_9=0xf0 & wide_14_22=0x118 & link_qualifier=0xb & frame_displacement { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local old_sp:2 = SP; SP = old_sp + frame_displacement; if (enabled == 0) goto <stack_done>; frame_store(old_sp, 0xffff:2); <stack_done> }
+:LINK "CE2" "open",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_2_9=0xf0 & wide_14_22=0x118 & link_qualifier=0xb & frame_displacement { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local old_sp:2 = SP; SP = old_sp + frame_displacement; if (enabled == 0) goto <stack_done>; frame_store(old_sp, 0xffff:2); <stack_done> }
 :LINK "open",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xff & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { local old_sp:2 = SP; local saved:2 = 0xffff; SP = old_sp + frame_displacement; frame_store(old_sp, saved); }
 :PUSH "GB0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x0 { local address:2 = SP; SP = address - 1; local saved:2 = sext(GB0); *[data]:2 address = saved; }
 :PUSH "CE1" "GB0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x0 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = sext(GB0); *[data]:2 address = saved; <stack_done> }
@@ -12473,21 +12514,43 @@ template_index: encoded is index_low_0 & index_high_0 [ encoded = index_low_0 | 
 @define CLIW_SIGNED_MAC1 "tpl_52_63=0xfff & tpl_64_72=0xff & tpl_49_51=0x0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0x0 & tpl_91_95=0x10 & tpl_78_82=0x1f & (tpl_87_90=0 | tpl_87_90=1 | tpl_87_90=2 | tpl_87_90=3 | tpl_87_90=4 | tpl_87_90=5 | tpl_87_90=6 | tpl_87_90=7) & mac_left & (tpl_83_86=0 | tpl_83_86=1 | tpl_83_86=2 | tpl_83_86=3 | tpl_83_86=4 | tpl_83_86=5 | tpl_83_86=6 | tpl_83_86=7) & mac_right & (tpl_73_77=16 | tpl_73_77=17 | tpl_73_77=18 | tpl_73_77=19 | tpl_73_77=20 | tpl_73_77=21) & mac_lo & mac_hi & mac_guard"
 :CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & $(CLIW_SIGNED_MAC1) { signed_product(mac_lo, mac_hi, mac_guard, mac_left, mac_right); }
 
-cliw_ma4_update: is cliw_terminal_ma4=8 { modify_ptr(R0, RN0, RM0, RL0, 0, 2); }
-cliw_ma4_update: is cliw_terminal_ma4=14 { modify_ptr(R2, RN2, RM2, RL2, 4, 3); }
-cliw_ma4_update: is cliw_terminal_ma4=25 { SP = SP + 2; }
-cliw_ma4_update: is cliw_terminal_ma4=26 { SP = SP + 1; }
-cliw_ma4_update: is cliw_terminal_ma4=24 | cliw_terminal_ma4=27 | cliw_terminal_ma4=28 | cliw_terminal_ma4=29 | cliw_terminal_ma4=30 | cliw_terminal_ma4=31 { }
+# A bound DATA port is fetched even when the template does not use its word.
+macro cliw_read_discarded(address) {
+    local discarded:2 = *[data]:2 address;
+}
 
-# MA2 and MA3 update independently of MAC1's register sources and MA4.
-:CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_20_22=5 & cliw_address_bank=14 & wide_10_14=22 & wide_8_9=0 & wide_3_7=8 & wide_1_2=0 & wide_0_0=0 & cliw_terminal_ma3_condition=7 & cliw_ma4_update & $(CLIW_SIGNED_MAC1) {
-    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
-    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
-    build cliw_ma4_update;
+cliw_ma4_access: is cliw_terminal_ma4=8 { cliw_read_discarded(R0); modify_ptr(R0, RN0, RM0, RL0, 0, 2); }
+cliw_ma4_access: is cliw_terminal_ma4=14 { cliw_read_discarded(R2); modify_ptr(R2, RN2, RM2, RL2, 4, 3); }
+cliw_ma4_access: is cliw_terminal_ma4=25 { local address:2 = SP + 1; cliw_read_discarded(address); SP = SP + 2; }
+cliw_ma4_access: is cliw_terminal_ma4=26 { local address:2 = SP + 1; cliw_read_discarded(address); SP = SP + 1; }
+cliw_ma4_access: is cliw_terminal_ma4=24 | cliw_terminal_ma4=27 { }
+cliw_ma4_access: is cliw_terminal_ma4=28 { cliw_read_discarded(R0); }
+cliw_ma4_access: is cliw_terminal_ma4=29 { cliw_read_discarded(R1); }
+cliw_ma4_access: is cliw_terminal_ma4=30 { cliw_read_discarded(R2); }
+cliw_ma4_access: is cliw_terminal_ma4=31 { cliw_read_discarded(R3); }
+
+@define CLIW_TERMINAL_MAC "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_20_22=5 & cliw_address_bank=14 & wide_10_14=22 & wide_8_9=0 & wide_3_7=8 & wide_1_2=0 & wide_0_0=0 & $(CLIW_SIGNED_MAC1)"
+macro cliw_terminal_product(lo, hi, guard, left, right) {
     local flags:2;
-    signed_product_result(mac_lo, mac_hi, mac_guard, mac_left, mac_right, flags);
+    signed_product_result(lo, hi, guard, left, right, flags);
     publish_alu_ce((EST & 0xcfc4) | flags);
 }
+
+:CLIW template_index is $(CLIW_TERMINAL_MAC) & cliw_terminal_ma3_condition=7 & cliw_ma4_access {
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    cliw_read_discarded(R3);
+    build cliw_ma4_access;
+    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
+    cliw_terminal_product(mac_lo, mac_hi, mac_guard, mac_left, mac_right);
+}
+
+:CLIW template_index is $(CLIW_TERMINAL_MAC) & cliw_terminal_ma3_condition=28 &
+    cliw_terminal_ma4>=24 & cliw_terminal_ma4<=27 & cliw_ma4_access {
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    build cliw_ma4_access;
+    cliw_terminal_product(mac_lo, mac_hi, mac_guard, mac_left, mac_right);
+}
+@undef CLIW_TERMINAL_MAC
 @undef CLIW_SIGNED_MAC1
 
 # CLIW: sample one physical ALU lane, compute, then publish its result and EST bits.

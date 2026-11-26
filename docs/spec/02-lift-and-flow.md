@@ -4434,6 +4434,15 @@ extension to `0x7fff`; saturation mode alone suppresses a new sticky
 still read both DATA words when address generation is enabled, but
 publish neither a result nor arithmetic flags.
 
+Wide `ABS` binds an extended source selector together with its result
+bank. The covered accumulator forms take a signed 40-bit `A0` or the
+signed constant `-1`. The covered `FF2` form takes a signed word,
+computes the magnitude in the upper word of the 40-bit ALU, and writes
+back that word. Flags describe the magnitude before automatic limiting;
+an input at the negative 40-bit limit wraps and sets overflow. The
+implicit DATA forms remain unimplemented: identical CODE and architectural
+inputs can produce different sampled words after older issues have run.
+
 Covered wide accumulating multiply forms distinguish guard and control
 writeback. The guard adds its unsigned byte at bit 16, or at bit zero
 for the shifted-addend variant, and takes bits 16–23 of the sum. It
@@ -4992,6 +5001,11 @@ controls enable the address phase. The store then evaluates the selected
 predicate using the updated controls; it still saves the old register
 word at the old `SP`. A static predicate samples the incoming CE latch.
 
+For a wide `LINK` with a disconnected frame port, address enable changes
+only `SP`. The selected CE bank independently gates a 16-bit all-ones
+store at the old `SP`, not the computed one. The store can set sticky
+high-word status when `ECFG` bit four is set.
+
 Covered wide paired `PUSH` and `POP` reserve two DATA words on `SP`
 when address processing is enabled, independent of the execution
 predicate and of the short or long `R6` postincrement. The disconnected
@@ -5099,6 +5113,20 @@ once and steps by two. The low DATA word becomes FF2 and the next word
 becomes FF1; an ALU in the same issue reads the old FF1:FF2 pair.
 Inactive address selectors, including the alternate unbound encoding,
 do not introduce DATA effects.
+
+Bank-14 CLIW terminal addressing separates the template's DATA source from
+the terminal selector. A normal MA4 suffix completes the long MA3 input
+at MA3's base; a long MA4 prefix supplies its own base. The admitted ALU1
+moves read the low word and its wrapping successor, then sign-extend into
+the accumulator guard. MA2 postincrement still runs. An indexed MA3 also
+reads at its incoming pointer before publishing its pointer update.
+
+A register-MAC template takes both operands from registers. It can still
+issue DATA reads for bound MA3 and MA4 ports. Terminal selectors 24 and 27
+leave MA4 unbound; 25 and 26 read one word at incoming `SP+1` and then advance
+`SP` by two and one word respectively. An unconsumed DATA read does not feed
+the product. Nonvolatile DATA reads whose values are discarded can be removed
+from emitted C. A missing, writable, or unsupported template still stops lift.
 
 The supported dual destinations write a DATA operand and the physical
 accumulator for the producing lane. Short MAC1 drives only A0H and one
