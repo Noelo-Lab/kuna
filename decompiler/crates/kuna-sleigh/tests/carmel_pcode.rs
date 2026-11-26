@@ -1326,6 +1326,50 @@ fn cliw_nop_and_signed_mac_specialize_the_same_code_word() {
 }
 
 #[test]
+fn cliw_mac1_register_compute_ports() {
+    let run = |mac1: u32, extra: &[(&str, u64)], expected| {
+        let template = [(mac1 << 8) | 0xff, 0xfff03fff, 0xff7ffff8];
+        let mut m = Machine::new(0, &[CLIW, (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], Some(template));
+        m.seed(&[("A0", 0x12342744), ("A1", 0xff9000abaa), ("A2", 0xa234cdef),
+                 ("A3", 0x12340055), ("X1", 5), ("X2", 7), ("FF1", 0xff05), ("FF2", 0x15)]);
+        m.seed(extra);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6, "{mac1:06x}");
+        assert_eq!((m.reg("A0"), m.reg("EST"), m.reg("X1"), m.reg("X2")),
+                   expected, "{mac1:06x}");
+    };
+    for (word, result, flags) in [
+        (0x8797e0, 0xffffff05ab, 0x10), // signed, first input already in X1
+        (0x9097e0, 0xffde6d65b6, 0x10), // unsigned first
+        (0x8897e0, 0xffbc2865b6, 0x10), // unsigned second
+        (0x9897e0, 0x008a1765b6, 0x20), // both unsigned
+        (0xc09420, 0x0022b28cfa, 0),
+        (0xe09420, 0x0001b5c18e, 1),
+        (0xc094e0, 0x0022b2660b, 0),
+        (0x0094e0, 0x0022b20000, 0),
+        (0xa897e0, 0x00107e0000, 0),
+        (0x8097d0, 0x00107e2744, 0),
+    ] {
+        run(word, &[], (result, flags, 5, 7));
+    }
+    // The first FF1 input latches; the FF1 second input does not.
+    run(0x8617e0, &[("A2L", 0xffff)], (0xfb, 0, 0xff05, 7));
+    run(0x87e7e0, &[("X1", 0xfffe)], (0x1f6, 0, 0xfffe, 7));
+    let factors = [("A1L", 0x8000), ("A2L", 0x8000), ("ECFG", 5)];
+    run(0x8097d0, &factors, (0x007fff2744, 0x24, 5, 7));
+    run(0x8097d0, &[("A0", 0x815678abcd), ("A1L", 5), ("A2L", 1)], (0x810000abcd, 8, 5, 7));
+    run(0x9897e0, &[("A1L", 0xffff), ("A2L", 0xffff), ("ECFG", 5)], (0x01fffc0002, 0x20, 5, 7));
+    run(0xe09420, &[("A0", 15), ("A1L", 5), ("A2L", 3)], (0, 9, 5, 7));
+    for mac1 in [0x0094e0, 0xa897e0] {
+        run(mac1, &[("A1L", 0x8000), ("A2L", 0xffff), ("A3", 0), ("ECFG", 2)], (0x10000, 0, 5, 7));
+        run(mac1, &[("A1L", 0x8000), ("A2L", 1), ("A3", 0), ("ECFG", 2)], (0, 9, 5, 7));
+    }
+    run(0x9097e0, &[("A1L", 0), ("EST", 0x249), ("CECFG1", 0x222), ("CECFG2", 0x888),
+                   ("CETBL", 0x8080)], (0, 0x3248, 5, 7));
+    run(0x8797e0, &[("A2L", 0x8000), ("ECFG", 1), ("EST", 0x24)], (0xfffffb0000, 0x14, 5, 7));
+}
+
+#[test]
 fn cliw_extended_address_destination_ports() {
     const INPUT: &[(&str, u64)] = &[
         ("A0", 0x12342744), ("A1", 0xff9000abaa), ("A2L", 1),

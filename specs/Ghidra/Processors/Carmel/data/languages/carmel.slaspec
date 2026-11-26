@@ -227,6 +227,7 @@ define context contextreg
     tpl_73_77 = (50,54) noflow
     mac_hi = (50,54) noflow
     mac_guard = (50,54) noflow
+    cliw_mac1_high_dest = (50,54) noflow
     cliw_mac1_acc_lo = (45,49) noflow
     cliw_mac1_acc_hi = (45,49) noflow
     cliw_mac1_acc_guard = (45,49) noflow
@@ -1045,6 +1046,7 @@ attach values [cliw_ma3_shift] [8 10 12 14];
 attach variables [mac_lo] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
 attach variables [mac_hi] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0H A1H A2H A3H A4H A5H _ _ _ _ _ _ _ _ _ _];
 attach variables [mac_guard] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ GB0 GB1 GB2 GB3 GB4 GB5 _ _ _ _ _ _ _ _ _ _];
+attach variables [cliw_mac1_high_dest] [_ _ _ _ _ _ _ _ A0H A1H A2H A3H A4H A5H _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
 attach variables [cliw_mac1_acc_lo] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
 attach variables [cliw_mac1_acc_hi] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0H A1H A2H A3H A4H A5H _ _ _ _ _ _ _ _ _ _];
 attach variables [cliw_mac1_acc_guard] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ GB0 GB1 GB2 GB3 GB4 GB5 _ _ _ _ _ _ _ _ _ _];
@@ -12201,10 +12203,13 @@ cliw_ext_alu1_left: is tpl_64_66=5 & tpl_62_63<2 & cliw_alu_62_acc_5_0 & cliw_al
 
 # These rounded ALU routes use the fixed upward tie bias, even with
 # ECFG.R set. Carry is from the biased adder, before clearing the low word.
+macro cliw_round_finish(exact, raw, value, flags) {
+    raw_mac_finish((exact + 0x8000) & 0xffffffffffff0000, raw + 0x8000, 0:1, 0:1, 0:1, value, flags);
+}
 macro cliw_round_write(lo, hi, guard, exact, raw) {
     local value:8;
     local flags:2;
-    raw_mac_finish((exact + 0x8000) & 0xffffffffffff0000, raw + 0x8000, 0:1, 0:1, 0:1, value, flags);
+    cliw_round_finish(exact, raw, value, flags);
     lo = 0;
     hi = value(2);
     guard = value(4);
@@ -12214,6 +12219,124 @@ macro cliw_round_subtract(lo, hi, guard, left, right) {
     local exact:8 = ((left ^ 0x8000000000) - 0x8000000000) - ((right ^ 0x8000000000) - 0x8000000000);
     cliw_round_write(lo, hi, guard, exact, left + (~right & 0xffffffffff) + 1);
 }
+
+# Register-only MAC1: select and latch the OF input before publishing a result.
+cliw_mac1_first: is tpl_87_90<8 & mac_left { export mac_left; }
+cliw_mac1_first: is tpl_87_90=12 { X1 = FF1; export FF1; }
+cliw_mac1_first: is tpl_87_90=13 { X1 = FF2; export FF2; }
+cliw_mac1_first: is tpl_87_90=15 { export X1; }
+cliw_mac1_second: is tpl_83_86<8 & mac_right { export mac_right; }
+cliw_mac1_second: is tpl_83_86=12 { export FF1; }
+cliw_mac1_second: is tpl_83_86=13 { export FF2; }
+
+# Plain signed products from two accumulator halves already have a route.
+cliw_mac1_product_signs: is tpl_91_95=16 & (tpl_87_90>=12 | tpl_83_86>=12) { export 3:1; }
+cliw_mac1_product_signs: is tpl_91_95=17 { export 1:1; }
+cliw_mac1_product_signs: is tpl_91_95=18 { export 2:1; }
+cliw_mac1_product_signs: is tpl_91_95=19 { export 0:1; }
+
+cliw_mac1_accumulate: is tpl_91_95=24 { export 0:1; }
+cliw_mac1_accumulate: is tpl_91_95=28 { export 1:1; }
+
+macro cliw_mac1_status(flags) {
+    publish_ce_feedback((EST & 0xcfc4) | flags, EST);
+}
+
+macro cliw_mac1_wide_product(left, right, signs, product) {
+    local a:8 = zext(left);
+    local b:8 = zext(right);
+    if ((signs & 1) == 0) goto <left_ready>;
+    a = sext(left);
+  <left_ready>
+    if ((signs & 2) == 0) goto <right_ready>;
+    b = sext(right);
+  <right_ready>
+    product = a * b * (1 + zext(ECFG & 1));
+}
+
+macro cliw_mac1_rounded_write(lo, hi, guard, exact, raw) {
+    local value:8;
+    local flags:2;
+    cliw_round_finish(exact, raw, value, flags);
+    lo = 0;
+    hi = value(2);
+    guard = value(4);
+    cliw_mac1_status(flags);
+}
+
+@define CLIW_EXT_MAC1_FACTORS "cliw_mac1_first & cliw_mac1_second"
+@define CLIW_EXT_MAC1_FULL "tpl_73_77>=16 & tpl_73_77<=21 & mac_lo & mac_hi & mac_guard"
+@define CLIW_EXT_MAC1_ADDEND "tpl_78_82>=16 & tpl_78_82<=21 & cliw_mac1_acc_lo & cliw_mac1_acc_hi & cliw_mac1_acc_guard"
+
+cliw_mac1_compute: is $(CLIW_EXT_MAC1_FACTORS) & $(CLIW_EXT_MAC1_FULL) &
+    tpl_78_82=31 & cliw_mac1_product_signs {
+    build cliw_mac1_first;
+    local signs:1 = cliw_mac1_product_signs;
+    local product:8;
+    cliw_mac1_wide_product(cliw_mac1_first, cliw_mac1_second, signs, product);
+    local value:8;
+    local flags:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 0:1, 0:1, 0:1, signs == 3, value, flags);
+    write_accumulator40(mac_lo, mac_hi, mac_guard, value);
+    cliw_mac1_status(flags);
+}
+
+cliw_mac1_compute: is $(CLIW_EXT_MAC1_FACTORS) & tpl_91_95=16 & tpl_78_82=31 &
+    tpl_73_77>=8 & tpl_73_77<=13 & cliw_mac1_high_dest {
+    build cliw_mac1_first;
+    local product:8;
+    raw_mac_product(cliw_mac1_first, cliw_mac1_second, 1:1, 1:1, product);
+    local value:8;
+    local flags:2;
+    raw_mac_finish(product, product & 0xffffffffff, 1:1, 1:1, 0:1, value, flags);
+    cliw_mac1_high_dest = value(2);
+    cliw_mac1_status(flags);
+}
+
+cliw_mac1_compute: is $(CLIW_EXT_MAC1_FACTORS) & $(CLIW_EXT_MAC1_FULL) &
+    $(CLIW_EXT_MAC1_ADDEND) & cliw_mac1_accumulate {
+    build cliw_mac1_first;
+    local product:8;
+    raw_mac_product(cliw_mac1_first, cliw_mac1_second, 1:1, 1:1, product);
+    local base:8;
+    cliw_alu_sample(cliw_mac1_acc_lo, cliw_mac1_acc_hi, cliw_mac1_acc_guard, base);
+    local carry_in:8 = zext(cliw_mac1_accumulate);
+    local term:8 = product ^ -carry_in;
+    local exact:8 = ((base ^ 0x8000000000) - 0x8000000000) + term + carry_in;
+    local value:8;
+    local flags:2;
+    raw_mac_finish(exact, base + (term & 0xffffffffff) + carry_in, 0:1, 0:1, 0:1, value, flags);
+    write_accumulator40(mac_lo, mac_hi, mac_guard, value);
+    cliw_mac1_status(flags);
+}
+
+cliw_mac1_compute: is $(CLIW_EXT_MAC1_FACTORS) & $(CLIW_EXT_MAC1_FULL) &
+    tpl_91_95=0 & $(CLIW_EXT_MAC1_ADDEND) {
+    build cliw_mac1_first;
+    local product:8;
+    raw_mac_product(cliw_mac1_first, cliw_mac1_second, 1:1, 1:1, product);
+    local base:8;
+    cliw_alu_sample(cliw_mac1_acc_lo, cliw_mac1_acc_hi, cliw_mac1_acc_guard, base);
+    local exact:8 = ((base ^ 0x8000000000) - 0x8000000000) + product;
+    cliw_mac1_rounded_write(mac_lo, mac_hi, mac_guard, exact, base + (product & 0xffffffffff));
+}
+
+cliw_mac1_compute: is $(CLIW_EXT_MAC1_FACTORS) & $(CLIW_EXT_MAC1_FULL) &
+    tpl_91_95=21 & tpl_78_82=31 {
+    build cliw_mac1_first;
+    local product:8;
+    raw_mac_product(cliw_mac1_first, cliw_mac1_second, 1:1, 1:1, product);
+    cliw_mac1_rounded_write(mac_lo, mac_hi, mac_guard, product, product & 0xffffffffff);
+}
+
+:CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
+    tpl_52_63=0xfff & tpl_64_72=0xff & cliw_mac1_compute {
+    build cliw_mac1_compute;
+}
+@undef CLIW_EXT_MAC1_FACTORS
+@undef CLIW_EXT_MAC1_FULL
+@undef CLIW_EXT_MAC1_ADDEND
+
 :CLIW template_index is $(CLIW_EXT_CALL) & $(CLIW_EXT_NO_LOADS) & $(CLIW_EXT_IDLE_2) &
     $(CLIW_EXT_ALU1_ACC) & tpl_67_72=46 {
     local left:8 = cliw_ext_alu1_left;

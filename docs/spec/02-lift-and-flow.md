@@ -4979,6 +4979,21 @@ The MAC1 `FF12` move instead sign-extends `FF1:FF2`, with `FF1` the high
 word. The MAC1 word add and subtract use an unshifted signed register
 word and a full accumulator, independent of the fractional multiply bit.
 
+The covered standalone MAC1 multiply routes select the two word inputs
+before writeback. A first flag-register input loads `X1`; an accumulator
+half or `X1` itself bypasses that latch, as does the second input. The
+opcode controls each factor's signedness independently. `ECFG.MS`
+doubles the product, and plain products with an unsigned factor bypass
+automatic limiting. The multiply-add and multiply-subtract read their
+own full 40-bit addend, even when it also names the destination.
+Subtraction reports carry out of the 40-bit complement adder. Rounded
+products and multiply-adds use the upward half-tie bias and clear the low
+word after limiting. A high-word result writes only the selected half;
+its zero flag ignores the discarded low word but includes the guard.
+MAC1 publishes its own arithmetic status and sticky limit, leaving the
+other lane's arithmetic status intact.
+Dynamic CE feedback samples the incoming flags, not this MAC's result.
+
 The covered ALU1 rounded add and both subtract directions round half
 ties upward even when `ECFG.R` is set. The biased adder supplies carry
 before the low result word is cleared. The divide forms both read
