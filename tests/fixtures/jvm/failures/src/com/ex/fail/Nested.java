@@ -4,7 +4,7 @@ import java.util.function.IntFunction;
 
 public class Nested {
     static final IntFunction<Runnable> QUOTE = x -> new Runnable() {
-        @Mark('空')
+        @Mark('\u7a7a')
         int mark;
 
         public void run() {
@@ -13,7 +13,7 @@ public class Nested {
 
     static Runnable escape(int c) {
         IntFunction<Runnable> make = x -> new Runnable() {
-            @Mark('空')
+            @Mark('\u7a7a')
             public void run() {
             }
         };
@@ -22,12 +22,12 @@ public class Nested {
 
     static Runnable both(int c) {
         IntFunction<Runnable> one = x -> new Runnable() {
-            @Mark('空')
+            @Mark('\u7a7a')
             public void run() {
             }
         };
         IntFunction<Runnable> two = x -> new Runnable() {
-            @Mark('空')
+            @Mark('\u7a7a')
             public void run() {
             }
         };
@@ -36,7 +36,7 @@ public class Nested {
 
     static Runnable later(StringBuilder b) {
         return new Runnable() {
-            @Mark('空')
+            @Mark('\u7a7a')
             public void run() {
                 b.append('"');
             }

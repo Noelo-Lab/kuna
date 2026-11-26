@@ -5,7 +5,7 @@ failure: `kuna-cli/tests/jvm_cli.rs`, `kuna-jvm/tests/kuna_spans.rs` and
 `tests/cli/jvm-nested-body-failure.json`.
 
 `regen.sh` compiles `src/com/ex/fail/*.java` (javac 21.0.13.1, `-g --release 17`) into
-`classes/` and then retags the constant of every `@Mark('空')` (a `CONSTANT_Integer`
+`classes/` and then retags the constant of every `@Mark('\u7a7a')` (a `CONSTANT_Integer`
 `0x7a7a`) as a `CONSTANT_Float`. Writing such an annotation throws `ClassCastException`, so:
 
 - `Nested.escape` and `Nested.both` write one and two lambdas whose anonymous class carries the

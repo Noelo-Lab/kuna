@@ -1,6 +1,6 @@
 #!/bin/sh
 # Rebuilds classes/ from src/ (javac 17+ on PATH or JAVA_HOME), then breaks every
-# @Mark('空') annotation by retagging its CONSTANT_Integer 0x7a7a as a
+# @Mark('\u7a7a') annotation by retagging its CONSTANT_Integer 0x7a7a as a
 # CONSTANT_Float. The engine throws ClassCastException where it writes such an
 # annotation, so the class files fail to decompile by construction.
 set -eu

@@ -1,7 +1,7 @@
 package com.ex.fail;
 
 public class Whole {
-    @Mark('空')
+    @Mark('\u7a7a')
     int broken;
 
     int size() {
