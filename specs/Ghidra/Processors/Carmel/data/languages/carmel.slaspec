@@ -7337,6 +7337,31 @@ macro wide_extract_zero(source, width, offset, result) {
     result = (source s>> start) & mask;
 }
 
+wide_bitfield_data: "*"^short_alu_src_ptr is packed_lhs_group=0 & short_alu_src_ptr {
+    local low:2 = *[data]:2 short_alu_src_ptr;
+    local source:4 = sext(low);
+    export source;
+}
+
+wide_bitfield_data: "long *"^short_alu_src_ptr is packed_lhs_group=8 & short_alu_src_ptr {
+    local next:2 = short_alu_src_ptr + 1;
+    local low:2 = *[data]:2 short_alu_src_ptr;
+    local high:2 = *[data]:2 next;
+    local source:4 = (zext(high) << 16) | zext(low);
+    export source;
+}
+
+:EXTRACTZ "A0",wide_bitfield_data,bitfield_descriptor is $(WIDE_ORIGINAL_BITS) & packed_opcode=0xee & packed_dst=0x10 & wide_0_0=1 & wide_40_45=0xf & wide_bitfield_data & bitfield_descriptor {
+    local field:2 = bitfield_descriptor;
+    local result:4;
+    wide_extract_zero(wide_bitfield_data, field >> 8, field, result);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = 0;
+    local flags:2 = zext(result == 0) << 3;
+    publish_alu_ce(flags);
+}
+
 :EXTRACTZ "long *R2","GB2","long *R6+=RN6" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0xe & wide_0_22=0x768504 {
     local dest:2 = R2;
     local dest_high:2 = dest + 1;

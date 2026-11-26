@@ -1010,10 +1010,10 @@ fn carmel_original_wide_bitfield_ports_execute_in_emitted_c() {
     let mut emitted = String::from(
         "#include <stdbool.h>\n#include <stdint.h>\n\
          #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
-         volatile unsigned short word_0040, word_0048, word_02ca, word_02cb, word_8012,\n\
+         volatile unsigned short word_0000, word_0040, word_0041, word_0048, word_02ca, word_02cb, word_8012,\n\
          word_804a, word_c048, word_c049, word_c04f, word_ffff;\n",
     );
-    let routes: [([u8; 6], Option<(u8, u16)>, &[&str], &[u16], &[&str]); 7] = [
+    let routes: [([u8; 6], Option<(u8, u16)>, &[&str], &[u16], &[&str]); 11] = [
         ([0xe9, 0xb4, 0x0a, 0xf6, 0x31, 0xb1], Some((0, 0x40)),
             &["PACFG", "RM0", "RL0", "FF1", "FF2"], &[0x40, 0xffff], &["EST", "R0"]),
         ([0xb0, 0xe3, 0x11, 0xf2, 0x11, 0xfb], Some((0, 0x40)),
@@ -1028,6 +1028,14 @@ fn carmel_original_wide_bitfield_ports_execute_in_emitted_c() {
             &["PACFG", "RM4", "RL4", "BTR1"], &[0x48], &["EST", "R4"]),
         ([0xed, 0xe2, 0x07, 0xf3, 0x88, 0xef], Some((7, 0xc048)),
             &["PACFG", "RM6", "RL6", "RN5", "ECFG"], &[0xc048, 0xc049, 0xc04f], &["EST", "R7", "CETBL"]),
+        ([0xcf, 0x14, 0x20, 0xf7, 0x10, 0x01], Some((0, 0x40)),
+            &[], &[0x40, 0x41], &["A0L", "A0H", "EST"]),
+        ([0xcf, 0x14, 0x20, 0xf7, 0x10, 0x81], Some((0, 0x40)),
+            &[], &[0x40, 0x41], &["A0L", "A0H", "EST"]),
+        ([0xcf, 0x14, 0x20, 0xf7, 0x10, 0x8f], Some((7, 0xffff)),
+            &[], &[0xffff, 0], &["A0L", "A0H", "R7"]),
+        ([0xcf, 0, 0x12, 0xf7, 0x10, 0x01], Some((0, 0x40)),
+            &[], &[0x40], &["A0L", "EST"]),
     ];
     for (route, (packet, pointer, inputs, cells, outputs)) in routes.into_iter().enumerate() {
         let mut code = Vec::new();
@@ -1098,6 +1106,16 @@ int main(void) {
     if (route_6_cetbl(0x1000,0x1000,0,0,0,0,0,1,4) != 0x7fff ||
         route_6_est(0x1000,0x1000,0,0,0,0,0,1,4) != 0x3024) return 17;
     if (route_2_est(0x1000,0x1000,0xffff,9,0xffff,0) != 0x3009) return 18;
+    word_0040 = 0x802b; word_0041 = 0x4321;
+    if (route_7_a0l(0x1000,0x1000,0,1) != 0x802b || route_7_a0h(0x1000,0x1000,0,1) != 0xf ||
+        route_7_est(0x1000,0x1000,0,0xcf37) != 0) return 19;
+    if (route_8_a0l(0x1000,0x1000,0,1) != 0x802b || route_8_a0h(0x1000,0x1000,0,1) != 1 ||
+        route_8_est(0x1000,0x1000,0xffff,0x15) != 0x3000) return 20;
+    word_ffff = 0x712d; word_0000 = 0xcab1;
+    if (route_9_a0l(0x1000,0x1000,0,0) != 0x712d || route_9_a0h(0x1000,0x1000,0,0) != 1 ||
+        route_9_r7(0x1000,0x1000,0,0) != 0xffff) return 21;
+    if (route_10_a0l(0x1000,0x1000,0,0) != 0 ||
+        route_10_est(0x1000,0x1000,0xffff,0x15) != 0x3008) return 22;
     return 0;
 }
 ");

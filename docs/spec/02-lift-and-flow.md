@@ -4490,6 +4490,12 @@ zero at the next DATA address. The flag-word route writes the low word to
 `FF1`; the signed displacement postmodifies the descriptor pointer, not the
 address used to fetch the descriptor.
 
+The immediate-descriptor `EXTRACTZ` into `A0` reads through the selected
+address register without changing it. A short source is sign-extended.
+A long source takes its high word from the wrapped next DATA address.
+The result is zero-extended from the selected field, and `Z` replaces
+the arithmetic flags.
+
 The covered CE1 short store uses `FF2` for width and `FF1` for offset, not
 `X1`. CE1 enables the store and flag write, while its address-override bit
 can enable postmodify alone. The enabled zero-extending forms update `Z`
