@@ -87,3 +87,20 @@ fn narrow_unsigned_multiplication_matches_machine_low_words() {
         assert!(output.status.success(), "{opt}: {}\n{c}", String::from_utf8_lossy(&output.stderr));
     }
 }
+
+#[test]
+fn word_product_under_the_go_integer_model_keeps_c_arithmetic() {
+    let dir = tempfile::tempdir().unwrap();
+    let image = dir.path().join("go-multiply.xml");
+    fs::write(&image, r#"<binaryimage arch="x86:LE:64:default:golang">
+<bytechunk space="ram" offset="0x1000" readonly="true">0fafc3c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="mul_word"/>
+</binaryimage>"#).unwrap();
+    let output = process::required_output(
+        Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&image).arg("mul_word")
+            .args(["--assert-strict", "--assert", "prototype mul_word uint4 mul_word(uint4 a,uint4 b)"]),
+    );
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("return a * b;"), "{text}");
+}

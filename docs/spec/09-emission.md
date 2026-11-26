@@ -854,19 +854,30 @@ converts this one itself). Expressions narrower than `int` are left to the
 upstream integer-promotion checks (`checkIntPromotionForCompare`,
 `checkIntPromotionForExtension`). This is a correctness fix with no option.
 
-**Narrow unsigned products (kuna).** Two unsigned operands narrower
-than C `int` can both promote to signed `int`. If their product can
-exceed `INT_MAX`, `a * b` is undefined even when the machine only keeps
-the low word. `decompiler/crates/kuna-decomp/src/p9_emit/kuna_narrowmultiply.rs`
-checks the printed unsigned operand types and bounds their possible
-bits to their machine widths. The overflow check covers both the
-target's integer model and compilation with a 32-bit C `int`: an
-`unsigned short` from a 16-bit model can promote to signed `int` on
-another host. It converts one operand to an unsigned type at least
-as wide as either `int`, then casts the result back to its machine width.
-That keeps a later consumer from observing the discarded high bits. A
-compound assignment that needs this conversion uses the ordinary
-assignment form. The p-code and other output languages are unchanged.
+**Narrow unsigned products (kuna).** C promotes two unsigned operands
+narrower than `int` to signed `int`, so when their product can exceed
+`INT_MAX`, `a * b` is undefined even though the machine keeps only the low
+word: `unsigned short` 43946 * 52719 overflows a 32-bit `int`.
+`decompiler/crates/kuna-decomp/src/p9_emit/kuna_narrowmultiply.rs` takes an
+`INT_MULT` of one or two bytes whose operands both print as non-enum
+unsigned integers of its own width, neither with a `U` suffix, and bounds
+the product by the operands' nonzero-bit masks. The bound is checked
+against the narrowest `int` the C may be compiled with: the target's when
+it is 16 bits (0xff * 0xff overflows a 16-bit `int`), and otherwise a
+32-bit one, which also covers an `unsigned short` from a 16-bit model
+compiled on an ordinary host. No C host has a wider `int`: the eight-byte
+`int` of the Go compiler specs is Go's, so a four-byte product is left
+alone there. A product that fits is left alone. Otherwise the first
+operand is converted to an unsigned type at least as wide as either `int`,
+and the result is cast back to the product's own width so that a later
+reader does not see the discarded high bits. Where that reader is itself a
+printed cast to an integer of the same width, the reader's cast truncates
+and the product's own is left out:
+`(unsigned short)((unsigned int)a * b) >> 3`, not
+`(unsigned short)(unsigned short)((unsigned int)a * b) >> 3`. A compound
+assignment that needs the conversion prints as an ordinary assignment. The
+p-code and the other output languages are unchanged. This is a correctness
+fix with no option.
 
 **A switch on an expression narrower than `int` (kuna).** A `BRANCHIND`
 selector of one or two bytes is computed at its own width, so a byte
