@@ -11,6 +11,7 @@ use kuna_jvm::kuna_corpus::*;
 const SAMPLE: &str = "\
 # a comment
 kuna-jvm-corpus\t1
+root\tdata
 set\tDefault\tdefault
 opt\tlog-level\twarn
 opt\terror-message\t
@@ -103,14 +104,14 @@ fn manifest_sets_cases_and_overlays() {
     assert_eq!(
         a.class_files,
         vec![
-            PathBuf::from("/m/java8/pkg/TestA.class"),
-            PathBuf::from("/m/java8/pkg/TestA$1.class")
+            PathBuf::from("/m/data/java8/pkg/TestA.class"),
+            PathBuf::from("/m/data/java8/pkg/TestA$1.class")
         ]
     );
     assert_eq!(a.libraries, vec![PathBuf::from("/abs/lib.jar")]);
     assert_eq!(
         a.expected,
-        Some(PathBuf::from("/m/expected/default/pkg/TestA.java"))
+        Some(PathBuf::from("/m/data/expected/default/pkg/TestA.java"))
     );
     assert_eq!(
         a.compare,
@@ -156,7 +157,6 @@ fn manifest_errors_name_the_line() {
     assert!(bad("kuna-jvm-corpus\t1\nset\tS\ts\nset\tS\ts\n").contains("defined twice"));
     assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\nkuna\t0\njavadoc\tfancy\n"))
         .contains("javadoc provider `fancy`"));
-    assert!(bad(&with("root\tdata\n")).contains("unknown record `root`"));
 }
 
 #[test]

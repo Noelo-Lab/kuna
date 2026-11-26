@@ -50,11 +50,11 @@ text (`\r\n` -> `\n`, then trims), and compares it with the pinned digest or exp
 ## Format of `cases.tsv`
 
 Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a comment line.
-Relative paths are relative to the manifest's directory.
 
 | Record | Meaning |
 |---|---|
 | `kuna-jvm-corpus` `1` | format header (first record) |
+| `root` `DIR` | base of relative paths (default: the manifest's directory), for a manifest kept elsewhere |
 | `set` `NAME` `SLUG` [`DIR`] | starts a test set; the `opt`/`javadoc` lines after it are the set's; its cases' expected texts, if any, are `DIR/<ID without SLUG/>.java` (or `.kt` when only that exists; default `DIR`: `expected/SLUG`) |
 | `case` `ID` `SET` [`STEM`...] | starts a case of set `SET`; following `opt`/`javadoc` lines overlay the set's; each `STEM` (a path without `.class`) adds `STEM.class`, then its `STEM$*.class` siblings in name order |
 | `kuna` `HEX` | the case's text is pinned by this digest instead of an expected file: the first 16 hex digits of the SHA-256 of the normalized text |

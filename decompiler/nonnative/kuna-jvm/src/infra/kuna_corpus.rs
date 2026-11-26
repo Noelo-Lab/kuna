@@ -167,9 +167,10 @@ pub fn load_cases(path: &Path) -> Result<Vec<Case>, String> {
     parse_cases(&text, base).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Parses a manifest; relative paths resolve against `base_dir`.
+/// Parses a manifest; relative paths resolve against `root` (default: `base_dir`).
 pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
     let mut header = false;
+    let mut root: Option<String> = None;
     let mut sets: BTreeMap<String, (String, String, Scoped)> = BTreeMap::new();
     let mut cases: Vec<RawCase> = Vec::new();
     enum At {
@@ -207,6 +208,10 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
             }
         };
         match tag {
+            "root" => {
+                need(1)?;
+                root = Some(args[0].clone());
+            }
             "set" => {
                 need(1)?;
                 let name = args[0].clone();
@@ -276,7 +281,8 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
         return Err("empty manifest".to_string());
     }
 
-    let resolve = |p: &str| -> PathBuf { base_dir.join(p) };
+    let root = base_dir.join(root.unwrap_or_default());
+    let resolve = |p: &str| -> PathBuf { root.join(p) };
 
     let mut seen = BTreeSet::new();
     let mut listings = Listings::default();
