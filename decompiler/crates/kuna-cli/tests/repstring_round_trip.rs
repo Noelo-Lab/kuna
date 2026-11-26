@@ -125,3 +125,28 @@ fn repeated_string_instructions_round_trip_through_the_printed_builtins() {
         }
     }
 }
+
+/// A `rep stosd` and a `rep movsd` of 32-bit code on the 64-bit model
+/// (`x86:LE:64:compat32`) step the program's own 4-byte pointers, so they are
+/// still a fill and a copy; the same `rep stosd` with an x86-64 address-size
+/// override steps EDI, which wraps at 4 GiB, and keeps its loop.
+#[test]
+fn a_pointer_as_wide_as_the_programs_pointers_still_matches() {
+    let cases: [(&str, &[u8], bool); 3] = [
+        ("x86:LE:64:compat32:gcc", &[0xf3, 0xab, 0xc3], true),
+        ("x86:LE:64:compat32:gcc", &[0xf3, 0xa5, 0xc3], true),
+        ("x86:LE:64:default:gcc", &[0xf3, 0x67, 0xab, 0xc3], false),
+    ];
+    for (target, code, builtin) in cases {
+        let path = common::scratch_file("repstring-width", "bin");
+        std::fs::write(&path, code).unwrap();
+        let path = path.to_str().unwrap();
+        let args = ["decompile", path, "--raw-image", "--target", target, "--base", "0x1000", "--addr", "0x1000"];
+        let (text, err, rc) = common::run_kuna(&args);
+        assert_eq!(rc, 0, "{target} {code:02x?}: {err}");
+        assert!(
+            text.contains("builtin_mem") == builtin && text.contains("while (") != builtin,
+            "{target} {code:02x?}:\n{text}"
+        );
+    }
+}
