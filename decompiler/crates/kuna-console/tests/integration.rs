@@ -7,6 +7,9 @@ mod verify_goextensions;
 #[path = "verify_gobyteextract.rs"]
 mod verify_gobyteextract;
 
+#[path = "verify_op_sizes.rs"]
+mod verify_op_sizes;
+
 #[path = "verify_gobyteview.rs"]
 mod verify_gobyteview;
 
@@ -580,3 +583,6 @@ mod indirect_dispatch_flow;
 
 #[path = "verify_immutable_got.rs"]
 mod verify_immutable_got;
+
+#[path = "export_unit_calls.rs"]
+mod export_unit_calls;

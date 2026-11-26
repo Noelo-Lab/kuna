@@ -355,6 +355,7 @@ fn incomplete_call_and_stack_evidence_prevent_recovery() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn emitted_literals_and_primitive_macros_reproduce_native_streams() {
     use crate::common;
     use std::process::Command;

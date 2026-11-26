@@ -56,9 +56,9 @@ f30f1efa85f6742789f0488d0c07b800000000669066662e0f1f8400000000000fb61701d04883c7
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="KUNA-POSTINC #1: the step folds into the load (default)" min="1" max="1">^      v2 \+= \(uint4\)\*a0\+\+;$</stringmatch>
+<stringmatch name="KUNA-POSTINC #1: the step folds into the load (default)" min="1" max="1">^ +v2 \+= \(uint4\)\*a0\+\+;$</stringmatch>
 <stringmatch name="KUNA-POSTINC #2: the step folds into the store (default)" min="1" max="1">^    \*a0\+\+ = a2;$</stringmatch>
-<stringmatch name="KUNA-POSTINC #3: a step through a copy the loop compares is left" min="1" max="1">^      a0 = v2;$</stringmatch>
+<stringmatch name="KUNA-POSTINC #3: a step through a copy the loop compares is left" min="1" max="1">^ +a0 = v2;$</stringmatch>
 <stringmatch name="KUNA-POSTINC #4: postinc off keeps each step as its own statement" min="2" max="2">a0 = &amp;a0\[1\];</stringmatch>
 <stringmatch name="KUNA-POSTINC #5: postinc off prints no post-increment" min="2" max="2">\+\+</stringmatch>
 </decompilertest>

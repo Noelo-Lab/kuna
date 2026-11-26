@@ -2294,10 +2294,54 @@ mod tests {
         // and kuna-calleepreservesargs / a register a leaf callee leaves alone carries a value to the next call
         // and kuna-framepublish-seh / a published SEH record holds only the frame writes at or above it
         // and kuna-switcharmorder / default and no-return switch arms print last, no default: return; at a void tail
+        // and kuna-loweredswitch-small / small compare-lowered switches re-roll by default (option loweredswitch)
         // and kuna-thumb-stmia-writeback / Thumb stmia writes its base back when the base is in the list
         // and kuna-varargsave / the x86-64 System V variadic register-save prologue
         // and kuna-boolbranch, kuna-boolbranch-thumb / a branch instruction selecting 1 or 0 keeps its if
-        assert_eq!(count, 883, "corpus file count drifted");
+        // and kuna-wsignload-a64 / AArch64 W-register sign-extending loads zero bits 63:32
+        // and kuna-thumb2-logical-carry / Thumb-2 ands/bics/movs/mvns set C from the shifter
+        // and kuna-ppc32picimports-abi-isolation / one file's load-time option never reaches the next file's loads
+        // and kuna-tailform-noreturn / a call that does not return prints as the if body before the return
+        // and kuna-expandload-opsize / a widened AND flag test keeps its op sizes
+        // and kuna-switchcond / a folded switch is never printed where a condition belongs
+        // and kuna-guardauto / the guardarm layout tie-break applies by default only to unoptimized code
+        // and kuna-stated-jump / caller-stated computed branch destinations
+        // and kuna-passthroughslot / forwarded registers fill their slots ahead of a loaded argument
+        // and kuna-passthroughslot-arm / an ARM pad or a register the callee does not take is no filled slot
+        // and gh1916-stackpadarg-x86 / a stack slot's pushed pad is not part of its int argument
+        // and kuna-tailform-model / saved weights choose the function-tail form
+        // and kuna-tailform-voidreturn / a void tail if drops the return the function end repeats
+        // and kuna-calloverlap-floatret / a call's float result inside a wider XMM range
+        // and gh1922-declared-caller-readarg-thumb / a declared fixed caller's pushed r3 is no va-save
+        // and kuna-stated-jump-placement / stated destinations a segment, a narrow offset or a DOS load cannot label
+        // and kuna-stated-jump-owners / stated destinations stay in the declared function that holds the jump
+        // and kuna-armshiftguard / an ARM register LSL prints no range guard unless a lowered 64-bit shift relies on it
+        // and gh1922-pushpad-caller-readarg-thumb / r3 pushed beneath lr is no va-save
+        // and kuna-retvalue / a result its callers read is returned though stored or loaded through
+        // and kuna-rex-before-prefix / an x86-64 REX prefix that a legacy prefix follows is ignored
+        // and kuna-returndup-auto / an unoptimized function keeps the returns its binary records
+        // and kuna-iteregion-auto / an unoptimized function keeps the ?: or if/else its binary records
+        // and kuna-glibcvoidimport / a glibc-versioned MIPS void import receives its arguments
+        // and kuna-vcmp-carry / ARM vcmp sets the carry for unordered operands
+        // and kuna-loweredswitch-auto / an unoptimized function keeps the switch or if-chain its tests record
+        // and kuna-ppc64-plt-stubs / every PPC64 ELFv2 linker stub form names its import
+        // and kuna-ppc32picimports-aggressive / the aggressive preset names PPC32 PIC imports
+        // and kuna-loopcontinue-auto(-thumb) / an unoptimized function keeps the continue/break tests its binary records
+        // and kuna-looptest-zerotrip / a guard drops when its skip path is the loop's exit path run zero times
+        // and kuna-looptest-entry / an empty body, a frame counter, a reused or recomputed value test at the top
+        // and kuna-loopcondhoist / the test that is a loop's condition is the loop's exit
+        // and kuna-latchjoin / a loop latch the compiler copied into each path is joined into one
+        // and kuna-sdivpow2(-thumb) / a signed power-of-two division corrected by a conditional add
+        // and kuna-boolret(-thumb) / a function that only tests a short-circuit condition returns it
+        // and kuna-elfv1-symbolextent / a descriptor symbol's size bounds the code behind it
+        // and kuna-rangetest(-thumb) / a merged range test prints as its two comparisons, a switch bound check keeps it
+        // and kuna-jump-as-call-liveness / only a reachable fallback call keeps its warning
+        // and kuna-scalar-stack-pointer / a locked integer SP projects its value; ordinary frames keep locals
+        // and kuna-mips-octeon-elf32-o64 / an Octeon ELF32 image declaring O64 or no ABI loads as Octeon O64
+        // and kuna-word-index-scalar / a word index matching a global stays numeric without pointer evidence
+        // and kuna-sparc-trap-resume / a branch after a delay-slot trap is the trap's resume
+        // and kuna-ptrfromuse-faroffset / a parameter read only at field offsets of 0x1000 or more is a pointer
+        assert_eq!(count, 938, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

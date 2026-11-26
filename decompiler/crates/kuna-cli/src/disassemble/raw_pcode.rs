@@ -78,6 +78,11 @@ fn with_target<R>(
 ) -> Result<R, String> {
     let (mut prog, region) = load_target(args, ViewRequest::Code, bounded)?;
     kuna_decomp::kuna_mipsunaligned::paint(prog.arch_mut());
+    if args.raw_base.is_some() {
+        // The raw loader requires a single ARM32 mode and resolve_region has
+        // already normalized a Thumb pointer in that mode.
+        return walk(&prog, args, region);
+    }
     let Some(vma) = thumb_pointer(&prog, args)? else {
         return walk(&prog, args, region);
     };
@@ -120,7 +125,7 @@ fn data_notes(prog: &ConsoleProgram, region: &Region) -> Vec<String> {
     vec![format!(
         "0x{:x} is in a non-executable data section; its bytes are lifted as \
          instructions anyway -- `kuna read` shows them as bytes",
-        region.start
+        region.address(region.start)
     )]
 }
 
@@ -136,9 +141,13 @@ struct Lift {
 
 /// Lift the instruction at `addr`, refusing one that does not decode or that
 /// would run past `stop`.
-fn lift(prog: &ConsoleProgram, addr: u64, stop: Option<u64>) -> Result<Lift, String> {
+fn lift(prog: &ConsoleProgram, region: &Region, addr: u64, stop: Option<u64>) -> Result<Lift, String> {
+    let address = region.address(addr);
+    if region.word_size > 1 && !addr.is_multiple_of(region.word_size) {
+        return Err(format!("cannot lift instruction at 0x{address:x}: not a CODE word boundary"));
+    }
     let (size, ops) = prog.raw_pcode_at(addr).map_err(|error| {
-        let mut message = format!("cannot lift instruction at 0x{addr:x}: {error}");
+        let mut message = format!("cannot lift instruction at 0x{address:x}: {error}");
         if matches!(error, kuna_base::error::KunaError::BadData { .. }) {
             let hint = kuna_decomp::kuna_decodehalt::powerpc_isa_hint(
                 prog.arch().get_description(), addr, |word| {
@@ -160,21 +169,21 @@ fn lift(prog: &ConsoleProgram, addr: u64, stop: Option<u64>) -> Result<Lift, Str
     let size = u64::try_from(size)
         .ok()
         .filter(|&n| n > 0)
-        .ok_or_else(|| format!("invalid instruction length at 0x{addr:x}"))?;
+        .ok_or_else(|| format!("invalid instruction length at 0x{address:x}"))?;
     let next = addr
         .checked_add(size)
         .ok_or("instruction address overflow")?;
     if stop.is_some_and(|end| next > end) {
         return Err(format!(
-            "instruction at 0x{addr:x} crosses the requested or mapped boundary"
+            "instruction at 0x{address:x} crosses the requested or mapped boundary"
         ));
     }
     let (_, mnemonic, operands) = prog
         .disassemble_at(addr)
-        .map_err(|e| format!("cannot disassemble 0x{addr:x}: {e}"))?;
+        .map_err(|e| format!("cannot disassemble 0x{address:x}: {e}"))?;
     let bytes = prog
         .read_bytes(addr, size as usize)
-        .ok_or_else(|| format!("cannot read instruction bytes at 0x{addr:x}"))?;
+        .ok_or_else(|| format!("cannot read instruction bytes at 0x{address:x}"))?;
     Ok(Lift {
         addr,
         size,
@@ -191,8 +200,9 @@ impl Lift {
     }
 
     /// `0xADDR: BYTES  MNEMONIC operands`, then one indented line per op.
-    fn text(&self) -> String {
-        let mut out = format!("0x{:x}: {}  {}", self.addr, hex(&self.bytes), self.mnemonic);
+    fn text(&self, region: &Region) -> String {
+        let address = region.address(self.addr);
+        let mut out = format!("0x{address:x}: {}  {}", hex(&self.bytes), self.mnemonic);
         if !self.operands.is_empty() {
             out.push(' ');
             out.push_str(&self.operands);
@@ -215,7 +225,8 @@ impl Lift {
         out
     }
 
-    fn json(&self) -> Json {
+    fn json(&self, region: &Region) -> Json {
+        let address = region.address(self.addr);
         let ops = self
             .ops
             .iter()
@@ -234,11 +245,8 @@ impl Lift {
             })
             .collect();
         Json::Object(vec![
-            ("address".into(), Json::Number(self.addr.to_string())),
-            (
-                "address_hex".into(),
-                Json::Str(format!("0x{:x}", self.addr)),
-            ),
+            ("address".into(), Json::Number(address.to_string())),
+            ("address_hex".into(), Json::Str(format!("0x{address:x}"))),
             ("size".into(), Json::Number(self.size.to_string())),
             ("bytes".into(), Json::Str(hex(&self.bytes))),
             ("mnemonic".into(), Json::Str(self.mnemonic.clone())),
@@ -301,7 +309,7 @@ fn render(args: &DisArgs) -> Result<Output, String> {
             let (mut text, mut rows) = (String::new(), Vec::new());
             let mut failure = None;
             while listed < limit && stop.is_none_or(|end| addr < end) {
-                let lifted = match lift(prog, addr, stop) {
+                let lifted = match lift(prog, &region, addr, stop) {
                     Ok(lifted) => lifted,
                     Err(message) => {
                         failure = Some(message);
@@ -309,9 +317,9 @@ fn render(args: &DisArgs) -> Result<Output, String> {
                     }
                 };
                 if args.json {
-                    rows.push(dumps_indent2(&lifted.json()));
+                    rows.push(dumps_indent2(&lifted.json(&region)));
                 } else {
-                    text.push_str(&lifted.text());
+                    text.push_str(&lifted.text(&region));
                 }
                 listed += 1;
                 addr = lifted.end();
@@ -331,11 +339,12 @@ fn render(args: &DisArgs) -> Result<Output, String> {
                 "instruction_limit" => args.count.is_none(),
                 _ => false,
             };
+            let address = region.address(addr);
             let text = if args.json {
                 let error = failure.as_ref().map_or(Json::Null, |message| {
                     Json::Object(vec![
-                        ("address".into(), Json::Number(addr.to_string())),
-                        ("address_hex".into(), Json::Str(format!("0x{addr:x}"))),
+                        ("address".into(), Json::Number(address.to_string())),
+                        ("address_hex".into(), Json::Str(format!("0x{address:x}"))),
                         ("message".into(), Json::Str(message.clone())),
                     ])
                 });
@@ -351,16 +360,16 @@ fn render(args: &DisArgs) -> Result<Output, String> {
                     "instructions"
                 };
                 let mut out = format!(
-                    "# {listed} {plural} at {} (0x{:x}..0x{addr:x}, {} bytes)\n",
+                    "# {listed} {plural} at {} (0x{:x}..0x{address:x}, {} bytes)\n",
                     label(&region),
-                    region.start,
+                    region.address(region.start),
                     addr - region.start
                 );
                 out.push_str(&text);
                 if let Some(message) = &failure {
-                    out.push_str(&format!("# stopped at 0x{addr:x}: {message}\n"));
+                    out.push_str(&format!("# stopped at 0x{address:x}: {message}\n"));
                 } else if truncated {
-                    out.push_str(&format!("# truncated at 0x{addr:x} ({stop_reason})\n"));
+                    out.push_str(&format!("# truncated at 0x{address:x} ({stop_reason})\n"));
                 }
                 out
             };
@@ -379,7 +388,8 @@ fn usage() {
          \x20                [--count N] [--bytes N] [--follow] [--json] \\\n\
          \x20                [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                [--define-function S[-E][=N]|@FILE].. \\\n\
-         \x20                [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D] \\\n\
+         \x20                [--raw-image --target T --base ADDRESS]\n\
          \n\
          Each instruction's SLEIGH p-code with its bytes, before any decompiler pass.\n\
          The target and its extent are `kuna disassemble`'s. The walk stops at the\n\

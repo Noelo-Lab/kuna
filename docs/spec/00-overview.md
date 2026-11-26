@@ -2442,7 +2442,7 @@ lowering) and applied by
 | `function <start>[-<end>][=<name>]` | `function bounds` | P1, the `--define-function` spelling |
 | `typedef <C declaration>` | `parse line` | P5 type-propagation |
 | `prototype <func> <C declaration>` | `map prototype` | P4 prototype-source |
-| `data <addr> <C typedeclaration>` | `map address` | P5 const-pointer |
+| `data <addr\|[space,addr]> <C typedeclaration>` | `map address` | P5 const-pointer |
 | `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
@@ -2470,6 +2470,14 @@ anything after a name or number other than a complete `:size`, `:size+offset` or
 exact lookup as written, then in upper and lower case, so `rax` is x86's `RAX`. A
 number is still read in C notation (`%4000` is decimal), and its suffix is read
 from where the number ends.
+
+A data assertion with `[space,addr]` resolves the named processor space and
+scales the hexadecimal address by that space's word size before inserting the
+symbol. The mapping and any outer `volatile` qualifier apply only to that
+space. Bare addresses keep the existing default mapping. The console lowering
+is `map address data [space,addr] <C typedeclaration>`, a form `map address`
+recognizes before its machine-address grammar; it always maps a global. An
+unknown space's rejection lists the target's processor spaces.
 
 `map address` retains an object's outer `volatile` qualifier and marks a
 global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`

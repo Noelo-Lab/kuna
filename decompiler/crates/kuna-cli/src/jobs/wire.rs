@@ -14,7 +14,7 @@ use kuna_decomp::kuna_structsynth::shard::FunctionRecord;
 use super::TargetSpec;
 
 const SPEC_MAGIC: &[u8; 12] = b"KUNAJOBSPEC3";
-pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES12";
+pub(super) const RESULT_MAGIC: &[u8; 12] = b"KUNAJOBRES13";
 
 /// Result-stream frame kinds.  The envelope is what lets a truncated tail be
 /// dropped rather than guessed.
@@ -381,6 +381,11 @@ pub(crate) fn encode_result(r: &FuncResult) -> Vec<u8> {
         }
     }
     put_u64s(&mut body, &r.callee_hints);
+    put_u32(&mut body, r.ranges.len() as u32);
+    for &(start, end) in &r.ranges {
+        put_u64(&mut body, start);
+        put_u64(&mut body, end);
+    }
     match &r.synth {
         Some(record) => {
             body.push(1);
@@ -565,6 +570,11 @@ pub(crate) fn decode_result(body: &[u8]) -> Option<FuncResult> {
         field_calls.push(kuna_decomp::kuna_calltargettype::FieldDecl { record, field, declaration });
     }
     let callee_hints = r.u64s()?;
+    let nr = r.u32()? as usize;
+    let mut ranges = r.sized(nr);
+    for _ in 0..nr {
+        ranges.push((r.u64()?, r.u64()?));
+    }
     let synth = match r.u8()? {
         0 => None,
         1 => {
@@ -618,6 +628,7 @@ pub(crate) fn decode_result(body: &[u8]) -> Option<FuncResult> {
         aliases,
         object_location,
         callee_hints,
+        ranges,
         synth,
         pointerargs,
         warnings,

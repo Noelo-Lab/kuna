@@ -1,0 +1,45 @@
+<decompilertest>
+<!-- Original sources: tests/fixtures/octeon-elf32/calls.c and cop2.S -->
+<binaryimage arch="MIPS:BE:64:octeon-32addr:o64">
+  <bytechunk space="ram" offset="0x1000" readonly="true">03e0000800000000</bytechunk>
+  <symbol space="ram" offset="0x1000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-elf32/o64.elf</com>
+  <com>read symbols</com>
+  <com>load function crc16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function describe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-elf32/noabi.elf</com>
+  <com>read symbols</com>
+  <com>load function crc16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function describe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-elf32/bare.elf</com>
+  <com>read symbols</com>
+  <com>load function describe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/octeon-elf32/cop2.elf</com>
+  <com>read symbols</com>
+  <com>load function load</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="Declared and undeclared O64 Octeon images test the CRC's bit 15" min="2" max="2">if \(v1 &gt;&gt; 0xf\)</stringmatch>
+<stringmatch name="Declared and undeclared O64 Octeon images keep the shift without the polynomial" min="2" max="2">v1 = \(v1 &amp; 0x7fff\) &lt;&lt; 1;</stringmatch>
+<stringmatch name="Every O64 Octeon image passes describe's five arguments to emit" min="3" max="3">emit\(a0,0x40,0x[0-9a-f]+,a1 &gt;&gt; 0x23 &amp; 0x3ff,\(uint4\)\(a1 &gt;&gt; 3\) &amp; 7\)</stringmatch>
+<stringmatch name="No O64 Octeon image ends in bad instruction data" min="0" max="0">halt_baddata</stringmatch>
+<stringmatch name="A generic MIPS image keeps its genuine COP2 load" min="1" max="1">setCopReg\(2,</stringmatch>
+</decompilertest>

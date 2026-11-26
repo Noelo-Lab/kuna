@@ -230,7 +230,7 @@ fn a_function_s_original_name_comment_is_not_a_warning() {
 fn both_warning_styles_report_the_same_warnings() {
     let pe = common::fixture("explicit_branch_assertion_pe_i386.exe");
     let mut args = vec!["decompile-all", &pe, "--json", "--omit", "line_mappings,variables,types"];
-    args.extend(["--addr", "0x418764", "--addr", "0x406de0", "--addr", "0x44a0c6"]);
+    args.extend(["--addr", "0x418764", "--addr", "0x406de0", "--addr", "0x44a0c6", "--option", "tailform", "off"]);
     let inline = document(&args);
     let workers = document(&[&args[..], &["--jobs", "2"]].concat());
     assert_eq!(workers["functions"], inline["functions"], "a --jobs worker's records carry them");
@@ -249,8 +249,8 @@ fn both_warning_styles_report_the_same_warnings() {
     assert!(seen.contains(&("branch-flip".into(), json!(0x406e9f))), "{seen:?}");
     assert_eq!(instruction(&pe, 0x406e9f).0, "JZ");
     let joined = placed(&inline["functions"][1]);
-    let line50: Vec<&Value> = joined.iter().filter(|w| w["line"] == 50).map(|w| &w["address"]).collect();
-    assert_eq!(line50, [&json!(0x406eba), &json!(0x406ed9)], "{joined:?}");
+    let line49: Vec<&Value> = joined.iter().filter(|w| w["line"] == 49).map(|w| &w["address"]).collect();
+    assert_eq!(line49, [&json!(0x406eba), &json!(0x406ed9)], "{joined:?}");
 
     let stripped = common::fixture("pe_imports_stripped.exe");
     let doc = document(&["decompile", &stripped, "0x140001b30", "--json"]);

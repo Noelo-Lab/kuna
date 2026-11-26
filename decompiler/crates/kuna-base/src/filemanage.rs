@@ -3,9 +3,14 @@
 //! listing used to find SLEIGH spec files (`sleigh_arch.cc`,
 //! `slgh_compile.cc`, `consolemain.cc`, `test.cc`).
 //!
-//! Only the POSIX branch of the C++ `#ifdef _WINDOWS` pairs is ported (kuna
-//! targets Linux); the Windows branches (`FindFirstFileA`,
-//! `GetCurrentDirectoryA`, the `'\\'` separator) are intentionally dropped.
+//! The POSIX branch of the C++ `#ifdef _WINDOWS` pairs is ported, and of the
+//! Windows branch what a Windows path needs: `'\\'` is a separator too, and a
+//! drive path (`C:\`, `C:/`) is absolute. Paths are still joined with `'/'`,
+//! which the Win32 API accepts, so a path built here reads the same on both.
+//! The one Windows path that does not accept `'/'` is a verbatim one
+//! (`\\?\C:\...`, what `std::fs::canonicalize` returns), so it is turned into
+//! its plain form where it enters (`\\?\C:\x` becomes `C:\x`, and
+//! `\\?\UNC\host\share` becomes `\\host\share`).
 //! Implementation is `std::fs` based but keeps the C++ string-typed API
 //! surface, including the out-parameter accumulation style (`res` vectors
 //! are appended to across calls) and the "empty string means not found"
@@ -28,6 +33,41 @@ use std::fs::File;
 /// Path name separator (POSIX branch; C++ `FileManage::separator`).
 const SEPARATOR: char = '/';
 
+/// `path` without a Windows verbatim prefix, in which `'/'` is not a
+/// separator: `\\?\C:\x` is `C:\x` and `\\?\UNC\host\share` is
+/// `\\host\share`. Any other path is returned as it is, including a verbatim
+/// one that names no drive (`\\?\Volume{...}\x`), which has no plain form.
+fn plain(path: &str) -> String {
+    if !cfg!(windows) {
+        return path.to_string();
+    }
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) => match rest.strip_prefix(r"UNC\") {
+            Some(share) => format!(r"\\{share}"),
+            None if drive(rest).is_some_and(|d| d.len() < rest.len()) => rest.to_string(),
+            None => path.to_string(),
+        },
+        None => path.to_string(),
+    }
+}
+
+/// On Windows, the drive `path` starts with (`C:` of `C:\x` or of `C:\`), when
+/// a separator or nothing follows it.
+fn drive(path: &str) -> Option<&str> {
+    let b = path.as_bytes();
+    let starts = cfg!(windows) && b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':';
+    (starts && b.get(2).is_none_or(|&c| FileManage::is_separator(c as char))).then(|| &path[..2])
+}
+
+/// `dirname` in its [`plain`] form, ending in a separator.
+fn with_separator(dirname: &str) -> String {
+    let mut dirfinal = plain(dirname);
+    if !dirfinal.chars().next_back().is_some_and(FileManage::is_separator) {
+        dirfinal.push(SEPARATOR);
+    }
+    dirfinal
+}
+
 /// A list of paths to search for files, plus static path utilities
 /// (C++ `FileManage`).
 #[derive(Debug, Clone, Default)]
@@ -41,8 +81,8 @@ impl FileManage {
     /// appended if missing.  An empty path is ignored.  (C++ `addDir2Path`.)
     pub fn add_dir_2_path(&mut self, path: &str) {
         if !path.is_empty() {
-            let mut entry = path.to_string();
-            if !Self::is_separator(path.chars().next_back().unwrap()) {
+            let mut entry = plain(path);
+            if !Self::is_separator(entry.chars().next_back().unwrap()) {
                 entry.push(SEPARATOR);
             }
             self.pathlist.push(entry);
@@ -72,10 +112,9 @@ impl FileManage {
     /// verbatim.  On failure `res` is cleared: "can't find it, return empty
     /// string".  (C++ `findFile`.)
     pub fn find_file(&self, res: &mut String, name: &str) {
-        // C++ tests name[0]; on an empty string C++11 operator[] yields '\0',
-        // which is not a separator, so the else branch runs (and matches the
-        // None case here).
-        if name.chars().next().is_some_and(Self::is_separator) {
+        // C++ tests name[0], which is what is_absolute_path tests on POSIX; an
+        // empty name is not absolute, so the else branch runs, as in C++.
+        if Self::is_absolute_path(name) {
             *res = name.to_string();
             // C++ opens an ifstream purely as an existence/readability test
             if File::open(&*res).is_ok() {
@@ -101,10 +140,10 @@ impl FileManage {
         }
     }
 
-    /// Is the character a path separator?  (POSIX branch of C++
-    /// `isSeparator`; the Windows branch also accepted `'/'` and `'\\'`.)
+    /// Is the character a path separator?  (C++ `isSeparator`: `'/'`, and on
+    /// Windows `'\\'` as well.)
     pub fn is_separator(c: char) -> bool {
-        c == SEPARATOR
+        c == SEPARATOR || (cfg!(windows) && c == '\\')
     }
 
     /// Is the path an existing directory?  (POSIX branch of C++
@@ -132,10 +171,7 @@ impl FileManage {
         dirname: &str,
         allowdot: bool,
     ) {
-        let mut dirfinal = dirname.to_string();
-        if !dirfinal.ends_with(SEPARATOR) {
-            dirfinal.push(SEPARATOR);
-        }
+        let dirfinal = with_separator(dirname);
         let dir = match fs::read_dir(&dirfinal) {
             Ok(d) => d,
             Err(_) => return, // opendir failed
@@ -166,10 +202,7 @@ impl FileManage {
     /// symlink to a directory counts; `.`/`..` are excluded; dot-directories
     /// are excluded unless `allowdot`.
     pub fn directory_list(res: &mut Vec<String>, dirname: &str, allowdot: bool) {
-        let mut dirfinal = dirname.to_string();
-        if !dirfinal.ends_with(SEPARATOR) {
-            dirfinal.push(SEPARATOR);
-        }
+        let dirfinal = with_separator(dirname);
         let dir = match fs::read_dir(&dirfinal) {
             Ok(d) => d,
             Err(_) => return, // opendir failed
@@ -224,8 +257,8 @@ impl FileManage {
         Self::directory_list(&mut subdir, rootpath, false);
         for curpath in &subdir {
             // string::find_last_of(separatorClass): byte position of the last
-            // separator ('/' is single-byte, so byte indexing is UTF-8 safe)
-            let pos = match curpath.rfind(SEPARATOR) {
+            // separator (each is single-byte, so byte indexing is UTF-8 safe)
+            let pos = match curpath.rfind(Self::is_separator) {
                 Some(p) => p + 1,
                 None => 0,
             };
@@ -280,23 +313,32 @@ impl FileManage {
         }
     }
 
-    /// Is the path absolute (begins with the separator)?  An empty string is
-    /// not.  (C++ `isAbsolutePath`.)
+    /// Is the path absolute (begins with a separator, or on Windows with a
+    /// drive: `C:\`, `C:/`)?  An empty string is not.  (C++
+    /// `isAbsolutePath`.)
     pub fn is_absolute_path(full: &str) -> bool {
         if full.is_empty() {
             return false;
         }
-        Self::is_separator(full.as_bytes()[0] as char)
+        Self::is_separator(full.as_bytes()[0] as char) || drive(full).is_some_and(|d| d.len() < full.len())
     }
 
     /// Build an absolute path using elements from `pathels`, in reverse
-    /// order, up to and including `pathels[level]`.  (C++ `buildPath`.)
+    /// order, up to and including `pathels[level]`.  (C++ `buildPath`.)  On
+    /// Windows the outermost element of a drive path is the drive (`C:\`),
+    /// which starts the path without a separator before it.
     fn build_path(pathels: &[String], level: i32) -> String {
         let mut s = String::new();
         let mut i = pathels.len() as i32 - 1;
         while i >= level {
-            s.push(SEPARATOR);
-            s.push_str(&pathels[i as usize]);
+            let el = &pathels[i as usize];
+            match drive(el).filter(|_| s.is_empty()) {
+                Some(d) => s.push_str(d),
+                None => {
+                    s.push(SEPARATOR);
+                    s.push_str(el);
+                }
+            }
             i -= 1;
         }
         s
@@ -457,6 +499,13 @@ mod tests {
     fn sorted(mut v: Vec<String>) -> Vec<String> {
         v.sort();
         v
+    }
+
+    /// The path with each separator spelled `/`: a root rebuilt from its
+    /// elements joins them with `/`, while the temporary directory reads
+    /// `C:\Users\...` on Windows.
+    fn same_path(p: &str) -> String {
+        p.chars().map(|c| if FileManage::is_separator(c) { '/' } else { c }).collect()
     }
 
     #[test]
@@ -677,7 +726,51 @@ mod tests {
         assert!(FileManage::is_absolute_path("/"));
         assert!(!FileManage::is_absolute_path("x/y"));
         assert!(FileManage::is_separator('/'));
-        assert!(!FileManage::is_separator('\\')); // POSIX branch only
+        assert_eq!(FileManage::is_separator('\\'), cfg!(windows));
+        // a drive path is absolute on Windows; a bare drive or a
+        // drive-relative path is not
+        assert_eq!(FileManage::is_absolute_path(r"C:\x"), cfg!(windows));
+        assert_eq!(FileManage::is_absolute_path("C:/x"), cfg!(windows));
+        assert!(!FileManage::is_absolute_path("C:"));
+        assert!(!FileManage::is_absolute_path("C:x"));
+    }
+
+    #[test]
+    fn test_filemanage_verbatim_paths_take_their_plain_form() {
+        if cfg!(windows) {
+            assert_eq!(plain(r"\\?\C:\specs"), r"C:\specs");
+            assert_eq!(plain(r"\\?\UNC\host\share\specs"), r"\\host\share\specs");
+            let volume = r"\\?\Volume{1b3b1146-4076-11e1-84aa-806e6f6e6963}\specs";
+            assert_eq!(plain(volume), volume);
+        } else {
+            assert_eq!(plain(r"\\?\C:\specs"), r"\\?\C:\specs");
+        }
+        assert_eq!(plain("/usr/share/specs"), "/usr/share/specs");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_filemanage_lists_through_a_verbatim_path() {
+        let t = TempTree::new("verbatim");
+        t.mkdir("Ghidra/Processors");
+        t.mkfile("Ghidra/x86.ldefs");
+        let verbatim = t.root.canonicalize().unwrap();
+        let verbatim = verbatim.to_str().unwrap();
+        assert!(verbatim.starts_with(r"\\?\"), "{verbatim}");
+        let mut res: Vec<String> = Vec::new();
+        FileManage::scan_directory_recursive(&mut res, "Processors", verbatim, 2);
+        assert_eq!(res.len(), 1, "{res:?}");
+        let mut res: Vec<String> = Vec::new();
+        FileManage::scan_directory_recursive(&mut res, "Ghidra", &format!(r"{verbatim}\"), 1);
+        assert_eq!(res.len(), 1, "{res:?}");
+        let mut res: Vec<String> = Vec::new();
+        FileManage::match_list_dir(&mut res, ".ldefs", true, &format!("{verbatim}/Ghidra"), false);
+        assert_eq!(res.len(), 1, "{res:?}");
+        let mut fm = FileManage::default();
+        fm.add_dir_2_path(&format!(r"{verbatim}\Ghidra"));
+        let mut found = String::new();
+        fm.find_file(&mut found, "x86.ldefs");
+        assert!(!found.is_empty());
     }
 
     #[test]
@@ -719,15 +812,15 @@ mod tests {
 
         let argv0 = format!("{}/devroot/ghidra.master.git/Ghidra/bin/decomp", t.path());
         assert_eq!(
-            FileManage::discover_ghidra_root(&argv0),
-            format!("{}/devroot", t.path())
+            same_path(&FileManage::discover_ghidra_root(&argv0)),
+            same_path(&format!("{}/devroot", t.path()))
         );
 
         // "." path elements are skipped while walking argv0
         let dotted = format!("{}/devroot/ghidra.master.git/./Ghidra/bin/decomp", t.path());
         assert_eq!(
-            FileManage::discover_ghidra_root(&dotted),
-            format!("{}/devroot", t.path())
+            same_path(&FileManage::discover_ghidra_root(&dotted)),
+            same_path(&format!("{}/devroot", t.path()))
         );
     }
 
@@ -740,7 +833,10 @@ mod tests {
         t.mkdir("inst/server/server.conf");
 
         let argv0 = format!("{}/inst/Ghidra/bin/decomp", t.path());
-        assert_eq!(FileManage::discover_ghidra_root(&argv0), format!("{}/inst", t.path()));
+        assert_eq!(
+            same_path(&FileManage::discover_ghidra_root(&argv0)),
+            same_path(&format!("{}/inst", t.path()))
+        );
     }
 
     #[test]

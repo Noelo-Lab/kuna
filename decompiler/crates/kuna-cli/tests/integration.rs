@@ -51,6 +51,10 @@ mod archive_members_cli;
 
 #[path = "assert_callee.rs"]
 mod assert_callee;
+#[path = "assert_named_data.rs"]
+mod assert_named_data;
+#[path = "stated_jump_targets.rs"]
+mod stated_jump_targets;
 
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
@@ -165,6 +169,8 @@ mod caller_stack_cli;
 
 #[path = "castnarrow_round_trip.rs"]
 mod castnarrow_round_trip;
+#[path = "sdivpow2_round_trip.rs"]
+mod sdivpow2_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
 #[path = "repstring_round_trip.rs"]
@@ -334,6 +340,23 @@ mod libgcc_divdi3;
 
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
+
+#[path = "retshape_round_trip.rs"]
+mod retshape_round_trip;
+
+#[path = "boolret_round_trip.rs"]
+mod boolret_round_trip;
+
+#[path = "rangetest_round_trip.rs"]
+mod rangetest_round_trip;
+
+#[path = "tailform_round_trip.rs"]
+mod tailform_round_trip;
+
+#[path = "tailform_noreturn_round_trip.rs"]
+mod tailform_noreturn_round_trip;
+#[path = "fatalchain_round_trip.rs"]
+mod fatalchain_round_trip;
 
 #[path = "return_copy_clone.rs"]
 mod return_copy_clone;
@@ -513,6 +536,8 @@ mod repeated_global_pointer_stores;
 
 #[path = "stored_return_values.rs"]
 mod stored_return_values;
+#[path = "forced_return_callers.rs"]
+mod forced_return_callers;
 
 #[path = "strings_cli.rs"]
 mod strings_cli;
@@ -740,6 +765,9 @@ mod float_literal_width;
 #[path = "project_call_declarations.rs"]
 mod project_call_declarations;
 
+#[path = "project_unit_calls.rs"]
+mod project_unit_calls;
+
 #[path = "parameter_spill_reuse.rs"]
 mod parameter_spill_reuse;
 
@@ -825,9 +853,13 @@ mod ppc32_pic_calls;
 
 #[path = "ppc32_pic_abi.rs"]
 mod ppc32_pic_abi;
+#[path = "ppc32_pic_note.rs"]
+mod ppc32_pic_note;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+#[path = "coverage_cli.rs"]
+mod coverage_cli;
 
 #[path = "rust_probestack.rs"]
 mod rust_probestack;
@@ -897,6 +929,8 @@ mod high_address_branches;
 
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
+#[path = "octeon_elf32.rs"]
+mod octeon_elf32;
 
 #[path = "qualified_call.rs"]
 mod qualified_call;
@@ -938,3 +972,6 @@ mod types_header;
 mod assert_storage_names;
 #[path = "bounds_checked_prototypes.rs"]
 mod bounds_checked_prototypes;
+
+#[path = "post_call_resume.rs"]
+mod post_call_resume;

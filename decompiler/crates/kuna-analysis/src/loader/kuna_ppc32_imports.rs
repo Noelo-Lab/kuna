@@ -145,6 +145,16 @@ pub(super) fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
     }
 }
 
+/// The complete r30-relative stubs of an image whose `.plt` holds validated
+/// relocation slots: the import calls only `ppc32picimports abi` can name.
+pub fn pic_stub_count(file: &object::File<'_>) -> usize {
+    let (bss, slots) = slots(file);
+    if bss || slots.is_empty() {
+        return 0;
+    }
+    stubs(file).iter().filter(|(_, form)| matches!(form, Stub::Pic(_))).count()
+}
+
 /// Every complete stub in the word-aligned executable sections.
 pub(super) fn stubs(file: &object::File<'_>) -> Vec<(u64, Stub)> {
     let mut out = Vec::new();
@@ -160,14 +170,19 @@ pub(super) fn stubs(file: &object::File<'_>) -> Vec<(u64, Stub)> {
         let Ok(bytes) = section.data() else {
             continue;
         };
+        let little = file.is_little_endian();
+        let read = |b: &[u8]| {
+            let b: [u8; 4] = b[..4].try_into().unwrap();
+            if little { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) }
+        };
         for off in (0..bytes.len()).step_by(4) {
             let Some(code) = bytes.get(off..off.saturating_add(16)) else {
                 break;
             };
-            if !matches!(word(file, code) & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000 | 0x3d60_0000) {
+            if !matches!(read(code) & 0xffff_0000, 0x817e_0000 | 0x3d7e_0000 | 0x3d60_0000) {
                 continue;
             }
-            let words: [u32; 4] = std::array::from_fn(|i| word(file, &code[4 * i..]));
+            let words: [u32; 4] = std::array::from_fn(|i| read(&code[4 * i..]));
             if let Some(form) = stub(&words) {
                 out.push((section.address() + off as u64, form));
             }

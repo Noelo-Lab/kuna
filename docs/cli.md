@@ -268,7 +268,7 @@ flag, and exit 1 instead of spinning on.
 
 `--json` emits the `decompile-all` document for the one selected function (see
 *The JSON documents* under `decompile-all`), and takes the same record
-selection: `--no-vars` and `--omit aliases,line_mappings,variables,types` behave as they
+selection: `--no-vars` and `--omit aliases,ranges,line_mappings,variables,types` behave as they
 do there. Without `--json` both are refused, since the C text carries none of
 those collections.
 
@@ -616,9 +616,10 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | the form the constant read by the instruction at `<addr>` is printed in |
 | `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
-| `data <addr> <C typedeclaration>` | a named, typed global at an address |
+| `data <addr\|[space,addr]> <C typedeclaration>` | a named, typed global, optionally in a named processor space |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
+| `jumptable <site> <target> [<target> ...]` | every taken destination of a computed branch, in hexadecimal code addresses |
 | `callee [<func>::]<callsite> <name\|address>` | the indirect call at this instruction goes to this function |
 | `callproto [<func>::]<callsite> <C declaration>` | the arguments and return of the one call made by the instruction at `<callsite>` |
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
@@ -640,6 +641,14 @@ including a `typedef` you asserted earlier in the same run.
 A `data` declaration replaces inferred strings that overlap its byte range,
 including one that runs past either end. Interior named data and previous
 explicit declarations retain their mappings.
+
+The bare address retains the default mapping. To select another processor space,
+use `[space,addr]` as one token with the exact, case-sensitive space name. The
+hexadecimal address is in that space's addressable units: `[mem,0x181]` on AVR
+means byte `0x181` in `mem`, while `[code,0x181]` means word `0x181` (byte `0x302`)
+in `code`. An unknown space or out-of-range address is reported as a rejected
+assertion, and an unknown space's message lists the target's processor spaces;
+`--assert-strict` exits nonzero.
 
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
@@ -1023,6 +1032,67 @@ second `callee` for the same call site replaces the first, which is reported
 rejected. A call site the function's flow never reaches is refused after the
 decompile, and the run exits non-zero. In the console the same fact is
 `override indirect <callsite> <name|address>`, given after `load function`.
+
+**Known computed-branch destinations.** Use `jumptable SITE TARGET [TARGET ...]`
+when you know every taken destination of one computed jump. Supply hexadecimal
+code addresses in the default code space, using ELF/object byte VMAs or the
+selected raw target's address units. List only the taken destinations. The
+instruction's guard still determines whether its fall-through executes.
+The case values are the computed destination operand in addressable units.
+The list can be unordered and can repeat a destination.
+
+From a Kuna checkout, this example uses the linked fixture included with the tests.
+
+```sh
+image=tests/fixtures/stated-jump/dispatch.elf
+kuna decompile "$image" dispatch --assert 'jumptable 401009 401050 401020 401030'
+```
+
+The switch selects addresses `0x401020`, `0x401030` and `0x401050`. A guard
+miss returns 77. Repeat `--assert` to name additional sites, or put one
+directive per line in a file and pass `--assert @FILE` to either command.
+`decompile-all --jobs N` accepts a file containing only these directives.
+The console spelling is `override jumptable SITE TARGET [TARGET ...]`.
+
+Kuna checks that the site decodes to one indirect branch, every destination
+is mapped and instruction-aligned in code-space units, and the distinct count fits
+`jumptablemax`. Trap or exception-handler transfers are rejected. PowerPC classic CTR/LR
+branches discard the low two selector bits. For a classic PPC32 branch through
+LR, the directive identifies a computed jump even when the incoming LR value
+is unknown. Sites without a directive use ordinary return and jump recovery.
+AArch64 BR uses the lifted
+register value. A switch on a live pointer needs its runtime value, so the
+directive is rejected for code that may run at another address: a PIE, a
+shared object, a relocatable object, a PE or UEFI TE image with base
+relocations, a Mach-O PIE, and an MZ executable, whose segment DOS chooses. A
+raw image runs at its stated `--base`. It is also rejected for a branch whose
+target Kuna cannot label: any computed branch of a 16-bit x86 language,
+near or far, whose destination prints as an offset in its code segment, a
+destination wider than the value the jump takes (a 32-bit `jmp ax` cannot
+reach 0x401003), ARM32 interworking, AArch64
+other than BR, and PowerPC other than classic CTR/LR. In MIPS16e and microMIPS languages only a
+4-aligned standard-mode destination can be stated. The site then keeps
+ordinary recovery. Batch summaries report rejected image-wide assertions and
+honor `--assert-strict`.
+
+The destinations must belong to the jumping function. One that is the entry
+of another function declared by the symbol table, `--define-function` or a
+`function` directive anywhere in the list rejects the set; state a single
+tail-call destination with `callee` instead. A function holds the site when
+its symbol size or declared extent covers it. A destination stays in that
+function when the extent covers it too, unless only the symbol table gives
+the extent and the caller declared a function at the destination. The
+holder's own entry is a loop, and a part GCC split off it (`f.cold`) is
+part of it. A symbol without a size, as PE exports and Mach-O symbols are,
+holds no site, so a loop to its entry needs a declared extent such as
+`--define-function START-END=NAME`. Entries that only discovery found do not
+count, because discovery also names address-taken case blocks as functions.
+In the console a later `function bounds` that would make an installed
+destination another function's entry is refused, as a conflicting second
+set is. A conflicting second set is rejected and the first accepted set stays active.
+The JSON status `applied` records installation for this image. Each function
+uses the fact only when its flow reaches the site. As with other program
+assertions, `--assert-strict` makes a rejected fact fail the command.
 
 **A `call` override follows the RET-call chain it starts.** `push
 <continuation>; push <target>; ret` is a call written without a `call`
@@ -1465,9 +1535,10 @@ object-file view and refuse it with a capability error, as for a TE.
 `--raw-image` loads a file that has no object header. It is separate from
 `decompile --raw`, which still means “also print raw p-code.” A raw image must
 name its decoder with `--target <SLEIGH-language-id>`, map file offset zero with
-`--base <address>`, and supply at least one numeric entry. `decompile` uses its
-positional address; the other supported commands accept repeatable `--entry` or
-`--addr` values.
+`--base <address>`. Decompilation and inventory also need a numeric entry:
+`decompile` uses its positional address, and the inventory commands accept
+repeatable `--entry` or `--addr` values. `disassemble`, `read`, and `raw-pcode`
+take a numeric address or range instead and do not discover functions.
 
 ```bash
 kuna decompile payload.bin 0x4001 --raw-image \
@@ -1512,12 +1583,10 @@ $ kuna functions fw.bin --json --raw-image \
 still does both, so it remains the way to narrow a raw run to named addresses.
 A function no direct call reaches and no seed names is still undiscovered;
 `--define-function` asserts it. Named `--functions`, section-relative selectors,
-`--slice`, `--summary`, and `--reachable-from` are rejected. Support is limited
-to `decompile` (text and JSON), `decompile-all`, `functions`, and
-`decompile-project`; `fid query` also accepts a raw image with explicit mapping.
-`decompile-graph`, `disassemble`/`read`, `xrefs`, and `strings` require object
-metadata. A headerless file used without `--raw-image`
-reports the required raw-image command shape, including when its first byte is
+`--slice`, `--summary`, and `--reachable-from` are rejected. `fid query` also
+accepts a raw image with an explicit mapping. `decompile-graph`, `xrefs`, and
+`strings` still require object metadata. A headerless file used without
+`--raw-image` reports the required command shape, including when its first byte is
 `<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
 console filenames preserve paths containing whitespace; the interactive spelling
 is `load raw <target> <base> <entry[,entry...]> <filename>`, where the target may
@@ -2011,6 +2080,7 @@ function application uses the in-process engine for text and JSON and rejects
   | `upx` / `neolite` / `pklite` | `UPX0`/`UPX1` sections, `UPX!` in the first 4 KiB or a UPX PackHeader; the NEOLite stub; a PKLITE stub at the DOS entry point | `UPX packed: run 'kuna unpack'` |
   | `twinbasic` / `vb6` | `twinBASIC` / an `MSVBVM60.DLL` import name in a PE | the runtime model and what to use for P-Code |
   | `go` / `rust` | the toolchain verdict the loader already makes | informational (`actionable: false`); a `rust` row says `Rust binary (rustc 1.95.0): …` when the compiler is known |
+  | `ppc32-pic-imports` | a PPC32 ELF whose `.plt` holds validated slots and whose code has r30-relative PIC stubs, in a run of a subcommand that prints import names (every noted one but `strings` and `read`) whose `--option`, mode preset (each subcommand's default mode, `auto`'s choice included) or `KUNA_PPC32PICIMPORTS` leaves `ppc32picimports` short of `abi` | `3 PPC32 PIC import stubs print as sub_; --option ppc32picimports abi may name them by proving r30 at every call (…)` |
 
   A `rust` row carries two more facts. `version` is the compiler release: the
   `rustc version` record of `.comment` (prerelease suffix kept, `1.89.0-nightly`),
@@ -2047,7 +2117,7 @@ numbers a caller orients by are the ones `kuna functions` reports.
 `--json` emits
 `{binary,count,functions:[{name,address,address_hex,aliases,object_location,size,code,error,
 unstructured_gotos,warnings:[{kind,message,line,address}],
-line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
+ranges:[{start,start_hex,end,end_hex}],line_mappings:[{line_number,addresses}],variables:[{name,type,kind,arg_index,
 stack_offset,size,line_numbers,addresses}],types:[{name,definition,size}]}]}` (`kuna functions --json` emits
 `name`/`address`/`address_hex`/`aliases`/`object_location`/`size` per function; with
 `--reachable-from`, which already walks the image, it also carries a top-level `limits`
@@ -2151,7 +2221,57 @@ span is still contiguous from the entry and never longer than the clip: a switch
 table between reached instructions counts, one laid out after the last instruction
 (as Turbo C and Borland C place theirs) does not. An entry whose flow meets a
 computed branch nothing resolves keeps the clip, and an address past the end of its
-function's flow reports `0`. A caller needing the exact body must still decompile.
+function's flow reports `0`. A caller needing the exact body must still decompile,
+and the record's `ranges` is that body.
+
+`ranges` lists the bytes of every instruction the decompile decoded for the
+function, as half-open `{start,start_hex,end,end_hex}` ranges in address order,
+joined where they touch, in the units of `address`. That takes in a branch's delay
+slot, and code the decompile went on to prove dead, which the C leaves out. Where
+`size` runs on through the alignment padding to the next entry, `ranges` stops at
+the last instruction the flow reached, and a body laid out around another function
+lists each piece. The instructions of a callee it inlines whole count as its own; a
+callee with no branch or call, folded onto the call, adds none. Two records' ranges
+can overlap, as a function's and its split-off `.cold` part's do where each jumps
+into the other. A function whose C failed to render was decoded all the same and
+keeps its ranges; one whose decompile failed has none. `--omit ranges` leaves the
+key out.
+
+`decompile-all --json --coverage` also carries a top-level `coverage` object after
+`count`: how much of the image's executable code the run lifted and decompiled. It
+measures the whole binary, so the run must keep every discovered function:
+`--coverage` is refused with `--functions` or `--addr`, and with a triage filter that
+drops a function. A byte that several records cover counts once.
+
+- `executable_bytes` is what the image holds of its CODE sections. Where it has no
+  section table, it counts the executable load segments, the same spans the `size`
+  clip uses.
+- `lifted_bytes` is the part of those bytes that some record's `ranges` cover.
+- `decompiled_bytes` is the part covered by the `ranges` of the records whose
+  `error` is `null`.
+- `unlifted_nul_bytes` counts the NUL bytes no record covers. These are alignment
+  fill and zero-filled tails far more often than code. Fill of any other byte, such
+  as the NOPs and `INT3`s x86 compilers pad with, stays in the total, as does data
+  laid out in the code (a literal pool, a switch table).
+- `lifted_share` and `decompiled_share` are those two byte counts over
+  `executable_bytes` minus `unlifted_nul_bytes`, to four places. They are `null`
+  when that total is 0.
+- `functions`, `decompiled_functions` and `unlifted_functions` count the records,
+  the records with a `null` `error`, and the records with no `ranges`.
+
+Without `--coverage` the document carries no `coverage`, so it stays the one
+`kuna decompile --json` gives for the same selection. `--jobs` reports the same
+figures as a serial run.
+
+```bash
+kuna decompile-all ./fauxware --json --coverage
+#   {"binary": "./fauxware", "language": "c-language", "count": 21,
+#    "coverage": {"executable_bytes": 990, "unlifted_nul_bytes": 32, "lifted_bytes": 853,
+#                 "decompiled_bytes": 853, "lifted_share": 0.8904, "decompiled_share": 0.8904,
+#                 "functions": 21, "decompiled_functions": 21, "unlifted_functions": 0},
+#    "error": null, "functions": [..., {"name": "main", ..., "size": 195, ...,
+#      "ranges": [{"start": 4196125, "start_hex": "0x40071d", "end": 4196309, "end_hex": "0x4007d5"}], ...}]}
+```
 
 Per-function `code` can include whole-batch inference and pointer-argument casts
 that standalone `kuna decompile` cannot derive (elsewhere, see the injected
@@ -2164,7 +2284,7 @@ what `--omit variables` below is for.
 **`--omit KEY[,KEY]...`** (repeatable, `decompile-all --json` and
 `decompile --json`) leaves whole collections out of every record, for a caller
 that wants the function's identity, `code` and `error` and not the rest. The keys
-are `aliases`, `line_mappings`, `variables` and `types`; `variables` also withholds
+are `aliases`, `ranges`, `line_mappings`, `variables` and `types`; `variables` also withholds
 `stack_objects`, which `--no-vars` already ties to it. `aliases` is for an entry
 exported under many names: the record keeps its primary `name` and address, and
 `kuna functions --json` (which takes no `--omit`) still lists every alias. An
@@ -2629,9 +2749,10 @@ Behaviors specific to `decompile-all`:
     only write end its parent holds; end-of-pipe means the parent is gone by any
     route including SIGKILL, and the worker deletes the shared scratch directory
     (0700, holding the symbol inventory and every function's C) and exits.
-  - `--assert` and `--raw-image` are refused with `--jobs > 1` **on the pool
-    surfaces**: assertion outcomes are per-load state a pool cannot merge, and a
-    raw image's entry seeds are its load. `kuna functions --jobs N` spawns no
+  - With `--jobs > 1`, `decompile-all` can replay image-wide `jumptable`
+    assertions in every worker. Other assertions require one worker because
+    their outcomes depend on per-load state. The pool also requires an object
+    image because a raw image's entry seeds are its load. `kuna functions --jobs N` spawns no
     pool, so both combinations work there — the lanes read the parent's own
     overlaid bytes, and a raw image simply runs no discovery walk.
 
@@ -3097,6 +3218,11 @@ a `0xstart-0xend` range bound the walk; a derived walk stops at 1024
 instructions. A window the caller bounded is answered without the whole-image
 discovery walk when that walk could not change it, as for `disassemble`.
 
+For a headerless file, use `--raw-image --target T --base ADDRESS` and a
+numeric address or range, as in `disassemble`. Listing and `--follow` addresses
+use the selected target's CODE units; p-code varnode offsets keep the
+translator's representation.
+
 The straight line is lifted forward from the start and never guessed: it stops
 at the first instruction that does not lift or that would cross the end of the
 window or of mapped memory, keeps what it lifted on stdout (text `# stopped at`,
@@ -3181,6 +3307,24 @@ overrides the derived extent, and a listing stops at whichever limit it reaches
 first. Also accepted: `--as`, `--follow`, `--json`, plus the shared `--mode`,
 `--option N V`, `--slice`, `--target`, `--sleighpath`.
 
+For a headerless image, use a numeric address or range with `--raw-image`,
+`--target`, and `--base`. For example, these AVR bytes contain `NOP; RET`:
+
+```bash
+printf '\000\000\010\225' > avr.bin
+kuna disassemble avr.bin 0x100-0x102 --raw-image --target avr8:LE:16:default --base 0x100
+kuna read avr.bin 0x101 --bytes 2 --raw-image --target avr8:LE:16:default --base 0x100
+```
+
+Address `0x101` selects file offset `2`. Numeric addresses, displayed row
+addresses, and span endpoints are in CODE units; `--bytes`, `size`, and file
+offsets are always bytes. A partial final word rounds the displayed exclusive
+end up, not the byte count. Operand text is the language's own rendering and is
+not rescaled: AVR prints branch targets as byte offsets, so a `rjmp 0x2` row at
+`0x0` jumps to the row at `0x1`. Reads have file provenance and no object fixups.
+For raw ARM32, specify `--isa arm|thumb`. A single odd code address denotes a
+Thumb pointer; explicit ranges and data addresses are literal.
+
 ```
 $ kuna disassemble ./fauxware main --count 9
 # 9 instructions at main @ 0x40071d (0x40071d..0x40073e, 33 bytes)
@@ -3228,6 +3372,7 @@ rather than a `.byte 0xb8` at `0x10020` followed by rows at `0x10021`, `0x10025`
 and `0x10029` — addresses no ARM instruction can begin at. The grid is the
 alignment the rows already decoded all share, so an ARM listing of 4-byte rows
 resumes on 4 and a Thumb listing that has decoded a 2-byte row resumes on 2.
+In raw word-addressed images an undecoded row runs to the next CODE word.
 Staying on the grid is also what lets the literal pool below be recognized at
 all: a pool word is only folded when it starts a decoded row.
 
@@ -4169,6 +4314,14 @@ verdict is taken only after the `.c`, `.h`, `.asm`, README and, under `--stream`
 `decompile-all`: every rejection is printed on stderr, `--assert-strict` makes one exit
 `1`, and a directive the pipeline refused exits `1` on its own, again only after the
 artifacts are written.
+
+The completion line of a whole-binary export ends with how much of the image's
+executable code the export covers. It is measured as `decompile-all --coverage`
+measures it, with the NUL bytes no function lifted left out of the total:
+`functions: 21 ok, 0 failed; code: 89.0% lifted, 89.0% decompiled of 958 bytes`
+(fauxware above).
+A share short of 100% never rounds up to it. The clause is left out when the
+image publishes no executable bytes.
 
 Writes a project folder — default `<binary-filename>.kuna/` next to the binary,
 `-o/--output DIR` overrides — of four artifacts designed so a human or LLM can study the

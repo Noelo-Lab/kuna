@@ -80,6 +80,43 @@ fn spacebase_marks_input_stack_pointer() {
 }
 
 #[test]
+fn spacebase_preserves_only_an_exact_locked_integer_parameter() {
+    use crate::dtype::{Datatype, type_metatype};
+    use crate::fspec::ParameterPieces;
+
+    for (offset, size, meta, locked, is_spacebase) in [
+        (SP_OFF, SP_SIZE, type_metatype::TYPE_INT, true, false),
+        (SP_OFF, SP_SIZE, type_metatype::TYPE_UINT, true, false),
+        (SP_OFF, SP_SIZE, type_metatype::TYPE_UINT, false, true),
+        (SP_OFF, SP_SIZE / 2, type_metatype::TYPE_UINT, true, true),
+        (SP_OFF + 1, SP_SIZE, type_metatype::TYPE_UINT, true, true),
+    ] {
+        let mut fd = build_fd();
+        let sp = make_sp_in(&mut fd);
+        let addr = reg_addr(&fd, offset);
+        let proto = fd.get_func_proto_mut();
+        proto.attach_internal_store(Rc::new(Datatype::new(0, type_metatype::TYPE_VOID)));
+        proto.set_param(
+            0,
+            "input_sp",
+            &ParameterPieces {
+                addr,
+                type_: Some(Rc::new(Datatype::new(size, meta))),
+                flags: 0,
+            },
+        );
+        proto.set_input_lock(locked);
+
+        fd.spacebase();
+        assert_eq!(
+            fd.vbank().get(sp).unwrap().is_spacebase(),
+            is_spacebase,
+            "offset {offset:#x}, size {size}, {meta:?}, locked {locked}"
+        );
+    }
+}
+
+#[test]
 fn spacebase_leaves_free_varnodes_unmarked() {
     let mut fd = build_fd();
     // A free Varnode at the SP location (not input, not written) must be skipped

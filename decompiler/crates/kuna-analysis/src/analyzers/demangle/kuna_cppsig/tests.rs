@@ -224,6 +224,7 @@ fn msvc_gate_picks_one_reading_of_an_msvc_name() {
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     };
     let facts = || CppSigFacts {
         proven: vec![(0x10, pieces("itanium"))],

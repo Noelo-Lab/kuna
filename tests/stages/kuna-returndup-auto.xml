@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option returndup` value `auto` (the default), P8 goto-quality: in
+    a function the per-function detector (p3_dataflow/kuna_unoptimized.rs)
+    calls unoptimized, the return statements read from the raw block graph
+    (p8_structure/kuna_o0returns.rs) decide which shared epilogues are split.
+
+    gcc 11 -O0 (-fno-pic -fno-stack-protector -fcf-protection=none) of
+        extern void use(int);
+        int guard(int c) { if (!c) return 0; use(1); return 0; }
+        int wrapped(int c) { if (c) { use(2); } return 3; }
+        void vguard(int c) { if (c) return; use(4); }
+        int pick(int c, int a, int b) { if (c) return a; return b; }
+    guard's first return is its own "mov eax,0; jmp" block, wrapped's epilogue
+    sets eax itself, vguard's return is a nop the test jumps to, and pick's two
+    returns each load eax before the epilogue.
+
+    Pass 1 (default auto): guard keeps its guard clause (#1, #2), wrapped
+    keeps one return (#3), vguard keeps its bare return (#4) and pick returns
+    each parameter (#5). Pass 2 (option returndup on, the old default): guard
+    and vguard are wrapped under the size rule (#6, #7) and pick merges its
+    returns into one variable (#8).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e54883ec10897dfc837dfc007507b800000000eb0fbf01000000e866000000b800000000c9c3554889e54883ec10897dfc837dfc00740abf02000000e844000000b803000000c9c3554889e54883ec10897dfc837dfc00750cbf04000000e822000000eb0190c9c3554889e5897dfc8975f88955f4837dfc0074058b45f8eb038b45f45dc3554889e5897dfc905dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="guard"/>
+<symbol space="ram" offset="0x100029" name="wrapped"/>
+<symbol space="ram" offset="0x10004b" name="vguard"/>
+<symbol space="ram" offset="0x10006b" name="pick"/>
+<symbol space="ram" offset="0x100088" name="use"/>
+</binaryimage>
+<script>
+  <com>lo fu guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wrapped</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vguard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option returndup on</com>
+  <com>lo fu guard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vguard</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RETURNDUP AUTO #1: guard's first return stays its own statement (pass 1)" min="1" max="1">^    return 0;$</stringmatch>
+<stringmatch name="RETURNDUP AUTO #2: guard's call is not nested under the condition (pass 1)" min="1" max="1">^  use\(1\);$</stringmatch>
+<stringmatch name="RETURNDUP AUTO #3: wrapped's shared return is printed once (pass 1)" min="1" max="1">^  return 3;$</stringmatch>
+<stringmatch name="RETURNDUP AUTO #4: vguard keeps its bare return (pass 1)" min="1" max="1">^    return;$</stringmatch>
+<stringmatch name="RETURNDUP AUTO #5: pick returns each parameter from its own return (pass 1)" min="1" max="1">^    return a1;$</stringmatch>
+<stringmatch name="RETURNDUP AUTO #6: with returndup on guard is wrapped (pass 2)" min="1" max="1">^    use\(1\);$</stringmatch>
+<stringmatch name="RETURNDUP AUTO #7: with returndup on vguard is wrapped (pass 2)" min="1" max="1">^    use\(4\);$</stringmatch>
+<stringmatch name="RETURNDUP AUTO #8: with returndup on pick merges its returns (pass 2)" min="1" max="1">^    a2 = a1;$</stringmatch>
+</decompilertest>

@@ -1681,6 +1681,10 @@ impl RuleExpandLoad {
     /// Change the size and data-type of all the AND/EQUAL constants in these
     /// expressions: replace the input `oldVn` with the bigger `newVn` and shift
     /// each constant up by `offset` *bytes*.
+    ///
+    /// (kuna) Each AND also gets a fresh output of the widened size, which the
+    /// compare then reads; upstream keeps the narrow output, leaving an AND
+    /// whose output is narrower than its inputs.
     fn modify_and_comparison(
         data: &mut Funcdata,
         old_vn: VarnodeId,
@@ -1702,6 +1706,10 @@ impl RuleExpandLoad {
             data.vbank_mut().get_mut(new_and_const).expect("mac: stale new and const").update_type(Rc::clone(dt));
             data.op_set_input(and_op, new_vn, 0).expect("mac: opSetInput and 0");
             data.op_set_input(and_op, new_and_const, 1).expect("mac: opSetInput and 1");
+            data.op_unset_output(and_op);
+            let new_and_out = data.new_unique_out_unlaned(dt_size, and_op).expect("mac: and out");
+            data.op_set_input(comp_op, new_and_out, 0).expect("mac: opSetInput comp 0");
+            data.delete_varnode(and_out).expect("mac: delete narrow and out");
             let comp_c = data.obank().get(comp_op).expect("mac: stale comp").get_in(1).expect("mac: comp in1");
             let comp_off = data.vbank().get(comp_c).expect("mac: stale comp const").get_offset();
             let new_comp_off = comp_off << shift;

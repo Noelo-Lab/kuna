@@ -76,6 +76,9 @@ fn run(
         specs.to_str().unwrap(),
         "--assert",
         prototype,
+        "--option",
+        "returndup",
+        "record",
     ]);
     for assertion in assertions {
         args.extend(["--assert", assertion]);

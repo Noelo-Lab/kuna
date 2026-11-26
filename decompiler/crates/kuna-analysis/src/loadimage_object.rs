@@ -97,6 +97,52 @@ fn distinct_aliases(primary: &[FuncSym], aliases: Vec<FuncSym>) -> Vec<FuncSym> 
 /// would fold the demangler's own output twice.  It still runs before
 /// `find_create_scope_from_symbol_name`, so the sanitizer and `symbolnamerepair`
 /// never contend over the same empty component.
+/// The raw name of the function that GCC or LLVM hot/cold splitting cut the
+/// part `raw` from: `f` for `f.cold` or `f.cold.1`, `_ZN1n1fEv` for
+/// `_ZN1n1fEv.cold`.
+pub fn split_part_parent(raw: &[u8]) -> Option<&[u8]> {
+    let numbered = raw.windows(6).rposition(|w| w == b".cold.").filter(|&at| {
+        let digits = &raw[at + 6..];
+        !digits.is_empty() && digits.iter().all(u8::is_ascii_digit)
+    });
+    let at = numbered.or_else(|| raw.ends_with(b".cold").then(|| raw.len() - 5))?;
+    (at > 0).then(|| &raw[..at])
+}
+
+/// Pair each split part with the defined function symbols named as its
+/// parent, reading the symbol table again only when a part exists.
+fn resolve_split_parts(
+    file: &object::File,
+    parts: Vec<(u64, Vec<u8>)>,
+    code_address: impl Fn(u64) -> u64,
+) -> Vec<(u64, u64)> {
+    if parts.is_empty() {
+        return Vec::new();
+    }
+    let mut parents: kuna_decomp::kuna_fasthash::FxHashMap<&[u8], Vec<u64>> =
+        parts.iter().map(|(_, parent)| (parent.as_slice(), Vec::new())).collect();
+    for sym in file.symbols() {
+        if sym.kind() != SymbolKind::Text || sym.is_undefined() {
+            continue;
+        }
+        let Ok(name) = sym.name_bytes() else { continue };
+        let name = match name.iter().position(|&b| b == b'@') {
+            Some(at) if name.first() != Some(&b'?') => &name[..at],
+            _ => name,
+        };
+        if let Some(entries) = parents.get_mut(name) {
+            entries.push(code_address(sym.address()));
+        }
+    }
+    let mut out: Vec<(u64, u64)> = parts
+        .iter()
+        .flat_map(|(part, parent)| parents[parent.as_slice()].iter().map(move |&entry| (*part, entry)))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 fn demangle_funcsym_name(name: Vec<u8>, mode: NameChars) -> Vec<u8> {
     let name = match std::str::from_utf8(&name) {
         Ok(s) => match crate::demangle::demangle_name(s) {
@@ -440,6 +486,8 @@ struct FuncSym {
 pub struct ElfFunctionProvenance {
     pub definitions: HashSet<u64>,
     pub imports: HashSet<u64>,
+    /// The MIPS imports whose symbol version binds them to glibc, by name.
+    pub glibc_imports: std::collections::HashMap<u64, String>,
 }
 
 /// One **data** symbol: a defined `.symtab`/`.dynsym` `STT_OBJECT` entry (the BFD
@@ -477,6 +525,8 @@ struct DataSym {
 /// exactly as `LoadImageBfd` reads from BFD's section contents.
 #[derive(Debug)]
 pub struct ObjectLoadImage {
+    /// The mapped code addresses may move before execution.
+    pub runtime_code_relocation: bool,
     /// Name of the loadimage (the `LoadImage` base-class `filename` member).
     filename: String,
     /// (kuna) The ARM container states the VFP procedure-call standard
@@ -485,6 +535,9 @@ pub struct ObjectLoadImage {
     /// (kuna) The container's floating-point argument convention
     /// ([`crate::loader::kuna_floatabi::float_arg_registers`]).
     float_arg_registers: Option<bool>,
+    /// (kuna) clang built the image
+    /// ([`crate::loader::kuna_spillselects::built_by_clang`]).
+    built_by_clang: bool,
     /// (kuna) Whether the container states floating-point register hardware
     /// ([`crate::loader::kuna_armfloatabi::fp_hardware`]).
     float_hardware: Option<bool>,
@@ -532,6 +585,9 @@ pub struct ObjectLoadImage {
     /// ELF function names that share an address with an earlier name in
     /// [`Self::funcsyms`]; see [`ObjectLoadImage::func_symbol_aliases`].
     funcsym_aliases: Vec<FuncSym>,
+    /// `(part, parent)` entries of split function parts; see
+    /// [`ObjectLoadImage::func_split_parts`].
+    func_split_parts: Vec<(u64, u64)>,
     /// Relocatable-object section coordinates. Empty for linked images.
     reloc_sections: Vec<crate::loader::reloc_object::RelocSectionInfo>,
     /// Relocatable-object function provenance. Empty for linked images.
@@ -676,6 +732,20 @@ fn patch_segments(segments: &mut [Segment], vma: u64, value: u64, width: usize, 
     false
 }
 
+fn runtime_code_relocation(file: &object::File<'_>) -> bool {
+    let pe_directories = match file {
+        object::File::Pe32(pe) => Some(pe.data_directories()),
+        object::File::Pe64(pe) => Some(pe.data_directories()),
+        _ => None,
+    };
+    if let Some(directories) = pe_directories {
+        return directories.get(object::pe::IMAGE_DIRECTORY_ENTRY_BASERELOC)
+            .is_some_and(|dir| dir.size.get(object::LittleEndian) != 0);
+    }
+    matches!(file.kind(), object::ObjectKind::Dynamic | object::ObjectKind::Relocatable)
+        || matches!(file.flags(), object::FileFlags::MachO { flags } if flags & object::macho::MH_PIE != 0)
+}
+
 impl ObjectLoadImage {
     pub fn elf_function_provenance(&self) -> &ElfFunctionProvenance {
         &self.elf_functions
@@ -796,7 +866,11 @@ impl ObjectLoadImage {
         if emit_diagnostics {
             for note in crate::loader::kuna_mipstarget::notes(
                 &file, &String::from_utf8_lossy(&archtype), target.is_some(),
-            ) {
+            )
+            .into_iter()
+            .chain(crate::loader::kuna_mipsocteon::notes(
+                &file, &String::from_utf8_lossy(&archtype), target.is_some(),
+            )) {
                 kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
             }
         }
@@ -963,6 +1037,7 @@ impl ObjectLoadImage {
         let mut aliases: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
         let mut elf_functions = ElfFunctionProvenance::default();
+        let mut split_candidates: Vec<(u64, Vec<u8>)> = Vec::new();
         let is_elf = file.format() == object::BinaryFormat::Elf;
         let is_macho = file.format() == object::BinaryFormat::MachO;
         // The data half of the same two symbol tables (`STT_OBJECT`), collected in
@@ -1017,6 +1092,9 @@ impl ObjectLoadImage {
             if name.is_empty() {
                 continue;
             }
+            if let Some(parent) = split_part_parent(&name) {
+                split_candidates.push((addr, parent.to_vec()));
+            }
             let name = demangle_funcsym_name(name, namechars);
             let size = sym.size();
             if seen.insert(addr) || !elfv1.0.is_empty() {
@@ -1025,6 +1103,7 @@ impl ObjectLoadImage {
                 aliases.push(FuncSym { addr, name, size });
             }
         }
+        let func_split_parts = resolve_split_parts(&file, split_candidates, |addr| elfv1.code_address(addr));
 
         // A Mach-O export-trie name in code the symbol table lacks (a dylib
         // after `strip -N`), spelled as the symbol table spells its names; at an
@@ -1066,8 +1145,12 @@ impl ObjectLoadImage {
         // spelling (`audit_export_a` for `_audit_export_a`), which lookup accepts
         // anyway; it is a second name only where this stream named the address.
         let mut named_by_imports: HashSet<u64> = HashSet::new();
+        let glibc_names = if is_elf { crate::loader::elf_plt::mips_glibc_import_names(&file) } else { HashSet::new() };
         for p in fmt.resolve_imports(&file, bytes) {
             if is_elf { elf_functions.imports.insert(if arm32_decoder { p.addr & !1 } else { p.addr }); }
+            if glibc_names.contains(&p.name) {
+                elf_functions.glibc_imports.insert(p.addr, String::from_utf8_lossy(&p.name).into_owned());
+            }
             if seen.insert(p.addr) {
                 if is_macho {
                     named_by_imports.insert(p.addr);
@@ -1158,9 +1241,11 @@ impl ObjectLoadImage {
             dynrelocs.const_ranges.into_iter().filter(|(lo, _)| applied.contains(lo)).collect();
 
         Ok(ObjectLoadImage {
+            runtime_code_relocation: runtime_code_relocation(&file),
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
@@ -1174,6 +1259,7 @@ impl ObjectLoadImage {
             inaccessible_segments,
             funcsyms,
             funcsym_aliases,
+            func_split_parts,
             reloc_sections: Vec::new(),
             reloc_symbols: Vec::new(),
             datasyms,
@@ -1340,9 +1426,11 @@ impl ObjectLoadImage {
         }
 
         Ok(ObjectLoadImage {
+            runtime_code_relocation: true,
             filename: filename.to_string(),
             arm_vfp_args: crate::loader::kuna_armfloatabi::vfp_args(&file),
             float_arg_registers: crate::loader::kuna_floatabi::float_arg_registers(&file),
+            built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
             archtype,
@@ -1359,6 +1447,7 @@ impl ObjectLoadImage {
             inaccessible_segments: Vec::new(),
             funcsyms,
             funcsym_aliases,
+            func_split_parts: Vec::new(),
             reloc_sections,
             reloc_symbols,
             datasyms,
@@ -1558,6 +1647,14 @@ impl ObjectLoadImage {
             .collect()
     }
 
+    /// The `(part, parent)` entries of each function part a compiler split
+    /// off another function (`f.cold`, `f.cold.1`), matched on the raw
+    /// symbol names, which demangling can make equal. Raw addresses, ISA
+    /// bit included, rebased as [`Self::func_symbols`] is.
+    pub fn func_split_parts(&self) -> &[(u64, u64)] {
+        &self.func_split_parts
+    }
+
     /// The original section coordinates retained for a relocatable object.
     /// Empty for a linked image.
     pub fn reloc_sections(&self) -> &[crate::loader::reloc_object::RelocSectionInfo] {
@@ -1644,6 +1741,8 @@ impl LoadImage for ObjectLoadImage {
     fn arm_vfp_args(&self) -> bool { self.arm_vfp_args }
 
     fn float_arg_registers(&self) -> Option<bool> { self.float_arg_registers }
+
+    fn built_by_clang(&self) -> bool { self.built_by_clang }
 
     fn float_hardware(&self) -> Option<bool> { self.float_hardware }
 
@@ -1806,8 +1905,14 @@ impl LoadImage for ObjectLoadImage {
             .map(|addr| addr.wadd(badjust)).collect();
         self.elf_functions.imports = self.elf_functions.imports.drain()
             .map(|addr| addr.wadd(badjust)).collect();
+        self.elf_functions.glibc_imports = self.elf_functions.glibc_imports.drain()
+            .map(|(addr, name)| (addr.wadd(badjust), name)).collect();
         for s in self.funcsyms.iter_mut().chain(&mut self.funcsym_aliases) {
             s.addr = s.addr.wadd(badjust);
+        }
+        for (part, parent) in &mut self.func_split_parts {
+            *part = part.wadd(badjust);
+            *parent = parent.wadd(badjust);
         }
         for s in &mut self.section_metadata {
             s.vma = s.vma.wadd(badjust);
@@ -2322,6 +2427,46 @@ mod alias_tests;
 mod tests {
     use super::*;
     use kuna_base::space::{addrspace_flags, spacetype, AddrSpaceManager, ConstantSpace};
+
+    #[test]
+    fn split_parts_pair_with_their_raw_parent_names() {
+        for (raw, parent) in [
+            ("f.cold", Some("f")),
+            ("f.cold.1", Some("f")),
+            ("_ZN1n1fEv.cold", Some("_ZN1n1fEv")),
+            ("f.constprop.0.cold", Some("f.constprop.0")),
+            ("f.cold.", None),
+            ("f.cold.x", None),
+            ("f.colder", None),
+            (".cold", None),
+            ("f.part.0", None),
+        ] {
+            assert_eq!(split_part_parent(raw.as_bytes()), parent.map(str::as_bytes), "{raw}");
+        }
+        let mut obj = object::write::Object::new(
+            object::BinaryFormat::Elf,
+            object::Architecture::X86_64,
+            object::Endianness::Little,
+        );
+        let text = obj.add_section(vec![], b".text".to_vec(), object::SectionKind::Text);
+        obj.append_section_data(text, &[0xc3; 0x60], 1);
+        for (name, value) in [("f.cold", 0x0), ("f", 0x10), ("_ZN1n1fEv", 0x30), ("_ZN1n1fEv.cold.2", 0x40)] {
+            obj.add_symbol(object::write::Symbol {
+                name: name.as_bytes().to_vec(),
+                value,
+                size: 1,
+                kind: SymbolKind::Text,
+                scope: object::SymbolScope::Linkage,
+                weak: false,
+                section: object::write::SymbolSection::Section(text),
+                flags: object::SymbolFlags::None,
+            });
+        }
+        let bytes = obj.write().expect("write synthetic ELF");
+        let file = object::File::parse(bytes.as_slice()).expect("parse");
+        let parts = vec![(0x0, b"f".to_vec()), (0x40, b"_ZN1n1fEv".to_vec()), (0x50, b"missing".to_vec())];
+        assert_eq!(resolve_split_parts(&file, parts, |addr| addr), [(0x0, 0x10), (0x40, 0x30)]);
+    }
 
     /// (kuna `goabi`) A Go-marked image composes the `:golang` compiler field;
     /// the same image without the marker keeps the platform model; a Go image

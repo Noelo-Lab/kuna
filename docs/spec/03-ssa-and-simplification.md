@@ -901,14 +901,41 @@ result. Argument trials still pass through normal use scoring. The output
 guard kills the surrounding bytes independently; it does not preserve unknown
 upper bits across a call or narrow other uses of the physical register.
 Floating-point slots, ambiguous contained entries, unnamed ranges, other
-address widths and memory ranges are excluded, with one exception: a range
-that holds exactly one model input slot, a float slot at its low end, gets that
+address widths and memory ranges are excluded, with one exception on each
+side. On the input side, a range that holds exactly one model input slot, a float slot at its low end, gets that
 slot's trial where the direct callee stated nothing and its body reads the slot
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (guard_call_read_float_input)`, chapter 04 *Callee-read float argument*). The
 trial is as wide as the callee reads, never less than the slot's minimum: an
 `xmm0` the caller wrote whole with `pxor` and then `cvtsi2ss` passes the four
 bytes a `movss %xmm0,g` callee reads, which simplify to the converted float.
+The output side has the mirror exception
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calloverlap.rs
+(auto_float_output)`): a call whose output is not locked gets the output guard
+when the only model return slot inside the range is the model's first float
+return slot and sits at the range's low end, and nothing in the run states or
+has recovered a returned value for the callee. gcc -O2 findutils `pred_newer`
+moves the `double` result of an unprototyped `difftime` with `movapd
+%xmm0,%xmm1`, a 16-byte read, and before this rule printed the sum of a
+variable nothing assigns after a bare `difftime();`. The guard proposes the
+return slot only; the output trial becomes the call's result where a read after
+the call reaches it, and dead-code elimination removes it everywhere else, so a
+call whose `xmm0` the caller overwrites first gains no result. A range holding
+several return slots, a later float slot (x86-64 `XMM1_Qa`, the second half of
+a two-double return) and general slots keep the legacy behavior. So does a
+callee `decompile-all` recovered returning a value (its callee-first ledger,
+chapter 04 `voidret`): a caller that keeps such a callee's float as integer
+bits (`movq %xmm0,%rbx`) has the output trial dropped there, and the guard
+having marked the range unaffected, the pre-call `xmm0` would then pass
+through the call. A callee recovered `void` still takes the guard; the read it
+files is the evidence `voidret` redoes the callee with. Its callers are then
+decompiled again against the recovered return, which they state, so the guard
+does not run there a second time: in the default callee-first `decompile-all`
+an ELF import's PLT entry gains the `double` return (`double difftime(void)`)
+and its callers keep the read unassigned. A single-function decompile, a
+`decompile-all` with `protoorder off`, and a call through a PE import's IAT
+slot or a function pointer have no ledger entry for the callee, and connect
+the result.
 `off` disables the partial-range guards; `in` and `full` retain their broader
 opt-in behavior.
 
@@ -1414,6 +1441,42 @@ nine argument slots, as a cdecl struct push does, and `indexaliasguard off`
 turns the expansion off with the other stack guards. A larger move, a move
 whose destination is not the stack pointer, one whose count is not a constant,
 and one no call takes as its arguments stay loops.
+
+Right after the first heritage pass, `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_unoptimized.rs
+(detect)` decides once per decompile whether the function's code is
+unoptimized and caches the verdict on the function for the later phases
+(chapter 08's `guardarm auto` reads it). An unoptimizing compiler gives every
+parameter a home in the frame and keeps no value in a callee-saved register;
+an optimizing one computes with the argument registers and keeps values live
+across calls in callee-saved registers. The evidence
+(`kuna_unoptimized.rs (evidence)`) comes from the raw frame accesses, which
+the stack's heritage has not yet turned into variables: an address is followed
+back through copies and constant additions (a constant may itself sit in a
+copied temporary, as ARM's `sub sp,#8` leaves it) to the entry stack pointer.
+An incoming register the prototype model could pass a parameter in is *live*
+when something computes with it, meaning any use but a move, a call argument, a
+merge, the preserved high part of a partial write or a store; it is *spilled*
+when its only uses are stores to slots of the function's own frame in the
+entry block and some frame load reads such a slot into a different register. A
+store to the caller's side of the entry stack pointer (a register parameter's
+home or save area, as PowerPC64 ELFv1 and Windows x64 provide) is neither:
+optimized code uses those slots too. A push and pop of the same
+register is a save and restore, not a reload, and a load made at a call
+instruction is the callee's stack argument. A callee-saved register is
+*reused* when its incoming value is stored to the frame and the body writes it
+with something other than a frame address, a reload from the frame or the
+return address a call sets. The function is unoptimized when no parameter
+register is live and either some is spilled while at most one callee-saved
+register is reused (an unoptimizing compiler uses one, at most, for a
+temporary that spans a call), or no parameter register reaches the frame at
+all, a frame pointer (a callee-saved register holding a frame address)
+addresses the frame and no callee-saved register is reused. Anything else,
+including a function with no parameters and no frame pointer, is not. The
+detector reads no symbol and no type. Measured against the O0 and O2 builds of
+the decbench projects (x86-64 gcc, ARM Thumb gcc and i386 mingw; three ARM
+projects whose O0 builds are themselves optimized left out), its precision is
+0.998 or better on each architecture and its recall 0.85 on x86-64, 0.73 on ARM and 0.79
+on i386 PE.
 
 The guard's second family guards a slot the function writes with any value,
 against indexed STOREs of any width. A stack range whose writes include one
@@ -2004,6 +2067,37 @@ that quotient. `RuleDivOpt` substitutes `(x / 3) * 2` only when the same
 and `RuleModOpt` rules can then recover `x % 3`. Other masks, reciprocals, widths, wide divisions, and
 multiply-without-a-matching-quotient forms are declined.
 
+A signed division by a power of two rounds toward zero by adding `2^n - 1` to
+a negative dividend before the arithmetic shift. When the compiler makes that
+add conditional — gcc's `lea 7(%rax),%rdx; test %rax,%rax; cmovs %rdx,%rax;
+sar $3,%rax` at -O0, the `cmovns` form gcc and clang use at -O2, ARM gcc's
+`it lt; addlt` or a `blt` to an out-of-line `add` — the shift reads a
+MULTIEQUAL of `x` and `x + (2^n - 1)` at the join of a branch on the sign of
+`x`, which printed as `if (x < 0) x += 2^n - 1; ... x >> n`. `RuleDivOpt`
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_sdivpow2.rs`) recognizes
+that join when all of these hold: it has two inputs, the same root plus two
+constants that differ by `2^n - 1` (so `(bytes + 512) / 1024`, whose offset gcc
+folds into both values, divides `bytes + 512`); `n` is at most `8 * size - 2`,
+the largest power whose divisor is positive at the operand's size; each input
+arrives over a different out edge of one CBRANCH block, directly or through a
+block on that edge alone; the branch tests exactly the sign of the dividend
+(`x s< 0`, `x s<= -1`, `-1 s< x` or `0 s<= x`, or the BOOL_NEGATE of one, read
+through the branch's boolean flip); and the add's edge is the one taken when
+the dividend is negative. Each read of the join that is a function of the
+quotient is then rewritten where it stands: `M s>> n` becomes
+`INT_SDIV(x, 2^n)`; so does `M >> n` when every read of its result truncates it
+to at most `8 * size - n` bits, where the logical and the arithmetic shift
+agree; byte `n / 8` of the join becomes the low bytes of a new
+`INT_SDIV(x, 2^n)`; and `M & -2^n` becomes that quotient times `2^n`. Every
+rewrite computes the binary's value for every input, the most negative one
+included, so it is not an option. Once no read of the join is left, dead-code
+removal deletes it and the add, and the `deadcontrolflow` actions remove the
+emptied arm and the branch. A read of another kind (an unsigned comparison of
+the join, a shift by another amount) keeps the join and its branch. A join of
+one byte of each arm (`mov %ah` after which `%eax` stays live), the
+conditional remainder ARM gcc emits (`x & 7`, or `-(-x & 7)` when `-x` is not
+negative) and `abs` are not recognized.
+
 The cleanup pool's `RuleExpandLoad` is upstream's rewrite of a LOAD narrower
 than its pointer's pointee into a LOAD of the whole pointee, with the loaded
 bytes taken back out either as the least-significant truncation or inside the
@@ -2029,7 +2123,11 @@ through pointer arithmetic, copies and casts alone
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_narrowload.rs (widens_into_declared_field)`).
 There the declaration attests the whole field, and the compare can name the
 field's own enum constants, `(p->flagfield & (HIGH_2|HIGH_1)) != 0`, which a
-byte of the field cannot; that is what `enum.xml` #4 pins. A bare pointer's
+byte of the field cannot; that is what `enum.xml` #4 pins. The rewrite widens
+the whole test, not only its constants: each AND gets a fresh output of the
+field's size and the compare reads it, where upstream kept the AND's narrow
+output (`AL:1 = u:4 & #0x3000:4`), an op whose output is narrower than its
+inputs that a reader trusting op sizes cannot evaluate. A bare pointer's
 target is attested only at the bytes the program reads, even when the pointer
 is declared, and a synthesized record attests only the accesses it was built
 from, so both keep the narrow read,
@@ -3288,7 +3386,7 @@ ARM predicated code: a `moveq`/`movne` pair ahead of the re-tested branch
 `MultiPredicate` zero-slot analysis) collapses to a COPY of the other operand.
 
 (kuna) **Which 0/1 selects fold into their condition** (`option boolbranch
-fold|keep`, default keep,
+fold|keep|return`, default return,
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_boolbranch.rs (keeps_branch)`).
 `ruleaction_7.rs (RuleConditionalMove)` (group `conditionalexe`) turns a
 two-input MULTIEQUAL whose inputs are both boolean, under a CBRANCH root whose
@@ -3333,6 +3431,10 @@ is upstream's rule. On the decbench corpus the default turns 171 functions at
 IT block) into exact matches of the source's control flow and loses 3, where the
 source wrote `return c ? 1 : 0;` or kept a flag the new output also shows
 (`tests/stages/kuna-boolbranch.xml`, `tests/stages/kuna-boolbranch-thumb.xml`).
+`return` is `keep` at this rule; it adds one re-spelling on the final tree,
+for a function whose whole body is a guard on a short-circuit condition that
+returns 1 or 0, which this rule cannot fold under any value (§8, *boolbranch
+return*).
 
 **Conditional constants.** `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionConditionalConst)` (mainloop tail, wrapper over
@@ -3660,7 +3762,22 @@ one instruction address, `H` is entered from one block outside and from `B`,
 and `B` is entered only from `H`. `H` must hold only its branch, the zero test
 of the count (`n == 0` taking the exit or `n != 0` taking the body) and phis.
 No other target lifts an instruction to this shape, so the action is inert
-there.
+there. Every pointer the loop steps (the destination, and the source or both
+compared operands) must be as wide as an address of the default data space or
+as a pointer of the compiler spec. An x86-64 instruction with an address-size
+override (`67 f3 ab`) steps EDI and ESI, which wrap within 4 GiB: with `EDI =
+0xfffffffc` and `ECX = 2`, `rep stosd` stores its second dword at `0x0` and
+leaves `RDI = 4`. No `memcpy`, `memset` or `memcmp` can wrap, so such a loop
+is left alone and prints with its 32-bit pointer arithmetic, as it does with
+the option off; that includes gcc `-mx32` code read under an x86-64 target,
+whose compiler specs have 8-byte pointers. On i386 the pointers are 32 bits
+wide, as wide as the address space, and under `x86:LE:64:compat32` (32-bit
+code on the 64-bit model, whose compiler specs have 4-byte pointers) they are
+the program's own pointers, which wrap only where its address space does, so
+both still match. 16-bit code is unchanged: a `DI`/`SI` instruction stores
+through `segment(ES,DI)`, which is not a stepped pointer, so it never matched,
+and one with an address-size override steps EDI and ESI, as wide as an address
+of `x86-16.sla`.
 
 *Copies and fills.* `B` leaves only to `H`, and `H`'s phis are the count, the
 destination and, for a copy, the source. `B` must step the count down by one
@@ -3736,9 +3853,13 @@ returned, compares used for equality, for order and with a run-time length, a
 compare with no flags set up before it, and a compare whose final pointer is
 returned, which keeps its loop; the x86-64 file adds a gcc 15 `-O2` fill of a
 global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
+`tests/stages/kuna-rex-before-prefix.xml` pins a `rep stosd`, a `rep movsq`
+and a `repz cmpsb` with 32-bit addresses as loops, and a `rep stosw` through
+RDI as `builtin_memset16`.
 `kuna-cli/tests/repstring_round_trip.rs`
 compiles the printed x86-64 functions beside the source and checks they compute
-the same values.
+the same values, and checks that a `rep stosd` and a `rep movsd` under
+`x86:LE:64:compat32` still print as builtins.
 
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs

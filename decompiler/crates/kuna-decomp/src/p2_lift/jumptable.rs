@@ -5785,6 +5785,21 @@ pub struct JumpTable {
     flow_addresses_proven: bool,
 }
 
+/// How a stated jump's case labels follow from its branch operand: the operand
+/// is the destination itself, or a classic PowerPC CTR/LR value whose two low
+/// bits the transfer discards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatedSelector {
+    Address,
+    PowerPcAligned,
+}
+
+#[derive(Debug)]
+pub struct StatedJump {
+    pub targets: Vec<Address>,
+    pub selector: StatedSelector,
+}
+
 impl JumpTable {
     /// Construct with the address of the BRANCHIND being modeled
     /// (C++ `JumpTable::JumpTable(Address ad)`, `jumptable.cc:2534`).
@@ -5818,6 +5833,18 @@ impl JumpTable {
             kuna_lowered_var: None,
             flow_addresses_proven: false,
         }
+    }
+
+    /// Build the flow table directly from the complete stated set. The
+    /// BRANCHIND operand remains the selector in its native addressable units.
+    pub(crate) fn from_stated_targets(op: OpId, site: Address, fact: &StatedJump) -> Self {
+        let units = u64::from(site.get_space().expect("code space").get_word_size());
+        let values = fact.targets.iter().map(|a| a.get_offset() / units).collect();
+        let mut table = Self::new(site);
+        table.indirect = Some(op);
+        table.addresstable = fact.targets.clone();
+        table.jmodel = Some(Box::new(crate::kuna_constselectjump::JumpModelConstSelect::stated(values, fact.selector)));
+        table
     }
 
     /// Clone from another table (C++ `JumpTable::JumpTable(const JumpTable*)`,

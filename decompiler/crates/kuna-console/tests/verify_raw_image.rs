@@ -127,7 +127,7 @@ fn raw_arm_data_addresses_preserve_their_low_bit() {
     program.set_assertions(vec![
         Directive {
             raw: "data 0x4001 char odd_data".into(),
-            body: Body::Data { addr: 0x4001, decl: "char odd_data".into() },
+            body: Body::Data { addr: 0x4001, space: None, decl: "char odd_data".into() },
         },
         Directive {
             raw: "volatile 0x4001+1".into(),

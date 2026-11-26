@@ -40,6 +40,8 @@ c4205bc3e8bf0e000000000000000000
 <symbol space="ram" offset="0x101008" name="__stack_chk_fail"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this upstream test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <!-- kuna: stackguard default-on (DIV-14); this upstream test pins the pre-stackguard rendering (keeps the canary epilogue) -->
   <com>option stackguard off</com>
   <com>option noreturn __stack_chk_fail</com>

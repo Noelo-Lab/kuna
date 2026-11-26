@@ -181,7 +181,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
         "infloopstyle" => if conf.print().options.inf_loop_top { "while" } else { "do" },
-        "loopcontinue" => on_off(conf.loop_continue),
+        "loopcontinue" => if conf.loop_continue_record { "auto" } else { on_off(conf.loop_continue) },
         "postinc" => on_off(conf.post_increment),
         "compareform" => {
             if conf.present_lessequal {
@@ -198,7 +198,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "stackstruct" => on_off(conf.stack_struct),
         "globalarrayanchor" => on_off(conf.global_array_anchor),
         "opaquepredicate" => on_off(conf.opaque_predicate),
-        "boolbranch" => if conf.bool_branch_keep { "keep" } else { "fold" },
+        "boolbranch" => if conf.bool_ret { "return" } else if conf.bool_branch_keep { "keep" } else { "fold" },
         "memsetrecover" => on_off(conf.memset_recover),
         "rodatastring" => on_off(conf.rodata_string),
         "returnpair" => {
@@ -347,6 +347,8 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         "aif" => conf.analysis_aif.as_str(),
         "aifpoolslide" => on_off(conf.analysis_aifpoolslide),
         "armconstshift" => conf.arm_constant_shift.as_str(),
+        "armshiftguard" => conf.arm_shift_guard.as_str(),
+        "rangetest" => conf.range_test.as_str(),
         // (PR-8) Mach-O arm64e spec selection: reflects the recorded requested
         // state (the live spec-selection gate is the load-time env var, but the
         // catalog `current` mirrors the `option macho-arm64e on|off` request).

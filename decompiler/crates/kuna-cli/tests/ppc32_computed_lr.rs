@@ -865,6 +865,51 @@ fn lr_target_low_bits_do_not_change_the_instruction_address() {
 }
 
 #[test]
+fn stated_lr_destinations_dispatch_on_the_effective_address() {
+    let words = [
+        0x7d8802a6, // mflr r12
+        0x7c6803a6, // mtlr r3
+        0x4e800020, // blr
+        0x3860000b, 0x7d8803a6, 0x4e800020, // return 11 via saved LR
+        0x38600016, 0x7d8803a6, 0x4e800020, // return 22 via saved LR
+    ];
+    let prototype = "prototype 0x1000 int sub_1000(unsigned int target)";
+    for order in ["BE", "LE"] {
+        for model in ["default", "e500"] {
+            let plain = decompile_saved_lr(&words, order, model, "fast", &["--assert", prototype]);
+            assert!(
+                !plain.contains("case 0x100c:") && !plain.contains("case 0x1018:"),
+                "{plain}"
+            );
+            let c = decompile_saved_lr(
+                &words,
+                order,
+                model,
+                "fast",
+                &[
+                    "--assert",
+                    prototype,
+                    "--assert",
+                    "jumptable 1008 1018 100c",
+                    "--assert-strict",
+                ],
+            );
+            assert!(
+                c.contains("case 0x100c:") && c.contains("case 0x1018:"),
+                "{c}"
+            );
+            assert_eq!(c.matches("case ").count(), 2, "{c}");
+            let caller = "int check(int i) { return sub_1000((i < 0 ? 0x100cU : 0x1018U) | ((unsigned)i & 3U)); }";
+            check_runtime_with_flags(
+                &format!("{c}\n{caller}"),
+                "i < 0 ? 11 : 22",
+                &["-Wno-error=return-type"],
+            );
+        }
+    }
+}
+
+#[test]
 fn explicit_return_assertion_retains_precedence() {
     for little in [false, true] {
         let code = vec![

@@ -904,13 +904,13 @@ impl Action for ActionConstantPtr {
 
 /// C++ `ActionConstantPtr::searchForSpaceAttribute` (coreaction.cc:972): from a
 /// constant, walk forward through INT_ADD/COPY/INDIRECT/MULTIEQUAL (up to 3 hops)
-/// looking for a LOAD/STORE whose space-id constant names the access space, or a
-/// pointer data-type carrying a space attribute.  Returns the discovered space or
+/// looking for the address operand of a LOAD or STORE, or a pointer data-type
+/// carrying a space attribute. Returns the discovered space or
 /// `None`.
 fn search_for_space_attribute(data: &Funcdata, mut vn: VarnodeId, mut op: OpId) -> Option<Rc<AddrSpace>> {
     for _ in 0..3 {
         // If the Varnode is explicitly a pointer carrying a space attribute, use it.
-        let dt = Rc::clone(data.vbank().get(vn)?.get_type());
+        let dt = data.vbank().get(vn)?.get_type();
         if dt.get_metatype() == type_metatype::TYPE_PTR {
             if let Some(spc) = dt.get_pointer_space() {
                 if spc.get_addr_size() as int4 == data.vbank().get(vn)?.get_size() {
@@ -934,34 +934,22 @@ fn search_for_space_attribute(data: &Funcdata, mut vn: VarnodeId, mut op: OpId) 
                     None => break,
                 }
             }
-            OpCode::CPUI_LOAD => {
-                let in0 = data.obank().get(op)?.get_in(0)?;
-                return Some(space_from_const(data, in0));
-            }
-            OpCode::CPUI_STORE => {
-                let in1 = data.obank().get(op)?.get_in(1)?;
-                if in1 == vn {
-                    let in0 = data.obank().get(op)?.get_in(0)?;
-                    return Some(space_from_const(data, in0));
+            OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
+                let access = data.obank().get(op)?;
+                if access.get_in(1) != Some(vn) {
+                    return None;
                 }
-                return None;
+                return Some(space_from_const(data, access.get_in(0)?));
             }
             _ => return None,
         }
     }
-    // C++ tail descend scan: any LOAD/STORE reading vn directly.
-    let descend: Vec<OpId> = data.vbank().get(vn)?.descend_iter().collect();
-    for op in descend {
-        let opc = data.obank().get(op)?.code();
-        if opc == OpCode::CPUI_LOAD {
-            let in0 = data.obank().get(op)?.get_in(0)?;
-            return Some(space_from_const(data, in0));
-        } else if opc == OpCode::CPUI_STORE {
-            let in1 = data.obank().get(op)?.get_in(1)?;
-            if in1 == vn {
-                let in0 = data.obank().get(op)?.get_in(0)?;
-                return Some(space_from_const(data, in0));
-            }
+    for op in data.vbank().get(vn)?.descend_iter() {
+        let access = data.obank().get(op)?;
+        if matches!(access.code(), OpCode::CPUI_LOAD | OpCode::CPUI_STORE)
+            && access.get_in(1) == Some(vn)
+        {
+            return Some(space_from_const(data, access.get_in(0)?));
         }
     }
     None
@@ -1072,6 +1060,45 @@ fn check_call_input(data: &Funcdata, op: OpId, slot: int4) -> bool {
     data.get_arch().infer_pointers()
 }
 
+/// Whether a constant in a word-addressed `spc` has neither an address use in
+/// `spc` nor an exact function entry (accepted on the function-entry escape's
+/// two readings).
+fn lacks_word_address_use(
+    data: &Funcdata,
+    spc: &Rc<AddrSpace>,
+    vn: VarnodeId,
+    op: OpId,
+    opc: OpCode,
+    numeric: &HashSet<uintb>,
+    op_addr: &Address,
+) -> bool {
+    let Some(constant) = data.vbank().get(vn) else {
+        return false;
+    };
+    let (offset, size) = (constant.get_offset(), constant.get_size());
+    search_for_space_attribute(data, vn, op).is_none_or(|access| access.get_index() != spc.get_index())
+        && !(crate::kuna_inferfuncentry::entry_escape_applies(opc, numeric.contains(&offset))
+            && kuna_const_is_function_entry(data, spc, offset, size, op_addr))
+}
+
+/// Whether `op` COPYs into the unlocked stack-base register. That register's
+/// inferred pointer type is not by itself an address use.
+fn copies_to_inferred_stack_base(data: &Funcdata, op: OpId) -> bool {
+    let Some(copy) = data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_COPY) else {
+        return false;
+    };
+    let Some(out) = copy.get_out().and_then(|id| data.vbank().get(id)) else {
+        return false;
+    };
+    let Some(base) = data.get_arch().manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok()) else {
+        return false;
+    };
+    !out.is_type_lock()
+        && out.get_size() as u32 == base.size
+        && out.get_offset() == base.offset
+        && out.get_addr().get_space().zip(base.space.as_ref()).is_some_and(|(a, b)| a.get_index() == b.get_index())
+}
+
 /// C++ `ActionConstantPtr::isPointer` (coreaction.cc:1085): determine if the given
 /// constant Varnode might be a pointer; if so return the global Symbol it points
 /// to and the resolved Address (the C++ `rampoint`).  `full_encoding` receives the
@@ -1092,9 +1119,15 @@ fn is_pointer(
 
     let mut needexacthit;
     let rampoint;
-    // Are we explicitly marked as a pointer?
-    let read_facing_meta = data.vbank().get(vn)?.get_type_read_facing(op).get_metatype();
-    if read_facing_meta == type_metatype::TYPE_PTR {
+    let constant = data.vbank().get(vn)?;
+    if constant.get_type_read_facing(op).get_metatype() == type_metatype::TYPE_PTR {
+        if spc.get_word_size() != 1
+            && !constant.is_type_lock()
+            && copies_to_inferred_stack_base(data, op)
+            && lacks_word_address_use(data, spc, vn, op, OpCode::CPUI_COPY, numeric, &op_addr)
+        {
+            return None;
+        }
         rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;
         needexacthit = false;
     } else {
@@ -1183,6 +1216,9 @@ fn is_pointer(
             _ => true,
         };
         if !declared_ok {
+            return None;
+        }
+        if spc.get_word_size() != 1 && lacks_word_address_use(data, spc, vn, op, opc, numeric, &op_addr) {
             return None;
         }
         rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;

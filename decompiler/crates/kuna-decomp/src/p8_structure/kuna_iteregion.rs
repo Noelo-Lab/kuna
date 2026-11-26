@@ -96,8 +96,9 @@ pub struct IteAssignMatch {
     /// condition is true).  Its RHS renders as the `?` value.
     pub true_op: OpId,
     /// The single `COPY` op of the **else** clause.  Its RHS renders as the `:`
-    /// value.
-    pub else_op: OpId,
+    /// value.  `None` for an `if` without an `else` that `iteregion auto`
+    /// prints as a conditional value: the `:` value is `dest` itself.
+    pub else_op: Option<OpId>,
     /// The assignment target (`true_op`'s output; storage-equal to `else_op`'s).
     pub dest: VarnodeId,
 }
@@ -192,11 +193,17 @@ fn collect_nodes(data: &Funcdata, root: BlockId) -> Vec<BlockId> {
 /// Shared by [`ActionIteRegion::apply`] (which marks the `CBRANCH`) and the printer
 /// (which re-derives the same match to emit the ternary), so the schema is defined
 /// once.
+///
+/// Under `iteregion auto` the branch's record in an unoptimized function
+/// decides ([`crate::p8_structure::kuna_o0select`]): a recorded statement never
+/// matches, and a recorded conditional value matches with computed arms, with
+/// arms that write the same variable through different storage, and as an `if`
+/// without an `else` (`v = c ? A : v`).
 pub fn match_ite_assignment(data: &Funcdata, n: BlockId) -> Option<IteAssignMatch> {
     let g = data.sblocks_ref();
     let blk = g.block(n);
-    // 3-component if/else (cond / true / else) with no own unstructured goto.
-    if blk.get_type() != BlockType::If || blk.get_size() != 3 {
+    // 2- or 3-component if (cond / true / else) with no own unstructured goto.
+    if blk.get_type() != BlockType::If || !(2..=3).contains(&blk.get_size()) {
         return None;
     }
     if blk.get_if_goto_target().is_some() {
@@ -204,25 +211,38 @@ pub fn match_ite_assignment(data: &Funcdata, n: BlockId) -> Option<IteAssignMatc
     }
     let cond_block = blk.get_block(0);
     let true_clause = blk.get_block(1);
-    let else_clause = blk.get_block(2);
 
     // Condition leaf: a leaf block whose terminator (last printed op) is the
     // CBRANCH.  Leading statements are allowed (e.g. the `flags &= ~IFF_x` that
     // precedes each `_PF` diamond) — the printer emits them normally *before* the
     // ternary, so nothing is lost.
     let cbranch = cond_cbranch(data, cond_block)?;
-
-    // Each arm: a single leaf whose only printed op is a pure value assignment.
-    let (true_op, dest_true) = single_assign_arm(data, true_clause)?;
-    let (else_op, dest_else) = single_assign_arm(data, else_clause)?;
-
-    // Both arms must write the SAME variable (the post-SSA merge target), so the
-    // ternary has one well-defined destination.
-    if !same_storage(data, dest_true, dest_else) {
+    use crate::p8_structure::kuna_o0select::{form_of, Form};
+    let form = form_of(data, cbranch);
+    let value = form == Some(Form::Value);
+    if form == Some(Form::Statement) || blk.get_size() == 2 && !value {
         return None;
     }
 
-    Some(IteAssignMatch { cond_block, cbranch, true_op, else_op, dest: dest_true })
+    // Each arm: a single leaf whose only printed op is a pure value assignment.
+    let (true_op, dest_true) = single_assign_arm(data, true_clause, value)?;
+    if blk.get_size() == 2 {
+        return Some(IteAssignMatch { cond_block, cbranch, true_op, else_op: None, dest: dest_true });
+    }
+    let (else_op, dest_else) = single_assign_arm(data, blk.get_block(2), value)?;
+
+    // Both arms must write the SAME variable (the post-SSA merge target), so the
+    // ternary has one well-defined destination.
+    if !same_storage(data, dest_true, dest_else) && !(value && same_high(data, dest_true, dest_else)) {
+        return None;
+    }
+
+    Some(IteAssignMatch { cond_block, cbranch, true_op, else_op: Some(else_op), dest: dest_true })
+}
+
+fn same_high(data: &Funcdata, a: VarnodeId, b: VarnodeId) -> bool {
+    let high = |v: VarnodeId| data.vbank().get(v).filter(|v| !v.is_implied()).and_then(|v| v.get_high());
+    high(a).is_some() && high(a) == high(b)
 }
 
 /// The single basic block underlying a structured leaf `id`, descending through a
@@ -286,8 +306,9 @@ fn cond_cbranch(data: &Funcdata, id: BlockId) -> Option<OpId> {
 /// `printed_ops` already inlines, so the arm remains one statement.  Only ops that
 /// carry a **side effect** or **control flow** (a `STORE`, a call, a branch, an
 /// `INDIRECT`/`MULTIEQUAL` bookkeeping op) are rejected — those cannot be a ternary
-/// branch expression.
-fn single_assign_arm(data: &Funcdata, id: BlockId) -> Option<(OpId, VarnodeId)> {
+/// branch expression.  In a recorded conditional value (`value`) any pure op is
+/// an arm, and so is a call whose result the arm assigns.
+fn single_assign_arm(data: &Funcdata, id: BlockId, value: bool) -> Option<(OpId, VarnodeId)> {
     let bb = leaf_bblock(data, id)?;
     let ops = printed_ops(data, bb);
     if ops.len() != 1 {
@@ -303,14 +324,13 @@ fn single_assign_arm(data: &Funcdata, id: BlockId) -> Option<(OpId, VarnodeId)> 
     // bookkeeping ops (a `STORE`, a call, a branch, an `INDIRECT`/`MULTIEQUAL`)
     // can never be a ternary branch expression and are always rejected.
     if o.code() != OpCode::CPUI_COPY {
-        if !data.get_arch().iteexpr {
+        if !data.get_arch().iteexpr && !value {
             return None;
         }
-        if matches!(
+        let call = matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND);
+        if call && !value || matches!(
             o.code(),
             OpCode::CPUI_STORE
-                | OpCode::CPUI_CALL
-                | OpCode::CPUI_CALLIND
                 | OpCode::CPUI_CALLOTHER
                 | OpCode::CPUI_RETURN
                 | OpCode::CPUI_BRANCH
@@ -382,10 +402,19 @@ impl OptionIteRegion {
     /// The option name.
     pub const NAME: &'static str = "iteregion";
 
-    /// Parse `on`/`off`, returning the bool value + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, String)> {
+    /// Parse `on`/`off`/`auto`, returning whether diamonds fold, whether the
+    /// recorded conditional values decide unoptimized functions, and a
+    /// confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, String)> {
+        if p1 == "auto" {
+            return Ok((
+                true,
+                true,
+                "ITE-region ?: recovery turned on, recorded conditional values in unoptimized functions".to_string(),
+            ));
+        }
         let val = on_or_off(p1)?;
         let prop = if val { "on" } else { "off" };
-        Ok((val, format!("ITE-region assignment-diamond -> ?: ternary recovery turned {prop}")))
+        Ok((val, false, format!("ITE-region assignment-diamond -> ?: ternary recovery turned {prop}")))
     }
 }

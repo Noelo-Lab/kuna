@@ -130,6 +130,7 @@ typedef unsigned char uint1; typedef unsigned short uint2; typedef unsigned int 
 typedef signed char int1; typedef short int2; typedef int int4;
 typedef unsigned char xunknown1; typedef unsigned int xunknown4;
 typedef _Bool bool;
+#define NULL ((void *)0)
 _Static_assert(sizeof(void *) == 4, "ARM pointer width");
 unsigned int valid(unsigned int *);
 unsigned int candidate(unsigned int *);

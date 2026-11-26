@@ -182,7 +182,7 @@ pub fn plan(fd: &Funcdata, arch: &Architecture, on: bool, is_c: bool) -> Plan {
                 pointees.insert(off, Seen::merge(seen, to, arch.elem_ptr));
             }
         } else if data_space.is_some() && v.get_addr().get_space().map(|s| s.get_index()) == data_space {
-            let unnamed = in_ranges(&arch.globalref_ranges, v.get_offset())
+            let unnamed = !v.is_annotation()
                 && fd.get_arch().query_container_global(v.get_addr(), v.get_size(), &Address::new_invalid()).is_none();
             // (kuna `elemptr`) A global the rule typed, or whose fold names its
             // pointee and which nothing uses as a number, is used only as that

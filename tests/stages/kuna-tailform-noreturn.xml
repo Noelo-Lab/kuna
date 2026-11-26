@@ -1,0 +1,96 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `tailform`, the no-return form: in a statement list that ends in a
+    call that does not return, `if (c) { X } T..; f();`, where `X` leaves (a
+    return of any value, statements and a return, a jump), prints as
+    `if (!c) { T..; f(); } X`.  Neither path reaches the end of the list, so
+    `X` still runs only when `c` holds; authors write the fatal arm as the
+    `if` body (`if (n < 0) xalloc_die(); return n;`), while the binary's
+    layout often leaves it as the function's trailing statement.
+
+    Stage / sub-stage: P8 "goto-quality", a print-tree edit after final
+    structuring, part of `option tailform` (no threshold applies).
+
+    The image is decompiler/crates/kuna-analysis/tests/fixtures/
+    tailnoret_gcc_O2_x86_64 (tailnoret.c, gcc 11.4 -O2
+    -fno-reorder-blocks-and-partition), loaded whole so `abort` and `exit`
+    are known not to return: scaled (a two-statement fatal arm before
+    `return r + 7;`), pick (two fatal tests the compiler merged), lookup (the
+    fatal test after a loop) and store (a void function whose other arm is a
+    store and a `return;`).
+
+    Pass 1 runs with `option tailform off` and prints the binary's form: the
+    valued return inside the `if`, the fatal call last.  Pass 2 (`option
+    tailform on`; the default `model` prints these four the same) prints the
+    fatal arm as the `if` body and the return after it.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/tailnoret_gcc_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>option truthycond on</com>
+  <!-- loopcondhoist (default on) makes lookup's head test its loop condition and
+       keeps the fatal test inside the loop; kept off so the tail if is checked. -->
+  <com>option loopcondhoist off</com>
+  <!-- condfold (default noreturn) prints pick's merged chain with the fatal call
+       as its body in both passes; kept off so tailform's rule is checked. -->
+  <com>option condfold off</com>
+  <com>option tailform off</com>
+  <com>load function scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function lookup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option tailform on</com>
+  <com>load function scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function lookup</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function store</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="tailform no-return #1: off, scaled returns inside the if and ends in exit" min="1" max="1">^  if \(v2\)$
+^    return v2 \+ 7;$</stringmatch>
+<stringmatch name="tailform no-return #2: on, scaled's two-statement fatal arm is the if body" min="1" max="1">^  if \(!v2\) \{$
+^    __fprintf_chk\(.*$
+^    exit\(2\);.*$
+^  \}$
+^  return v2 \+ 7;$</stringmatch>
+<stringmatch name="tailform no-return #3: on, pick tests the merged fatal condition and returns after it" min="1" max="1">^  if \(\(!a0\) \|\| \(a1 &gt;= a2\)\)$
+^    abort\(\);.*$
+^  return a0\[a1\];$</stringmatch>
+<stringmatch name="tailform no-return #4: on, the fatal test after lookup's loop is the if body" min="1" max="1">^  if \(0 &gt; \(\(int4 \*\)a0\)\[3\]\)$
+^    abort\(\);.*$
+^  return \(\(int4 \*\)a0\)\[3\];$</stringmatch>
+<stringmatch name="tailform no-return #5: off, store's store and return are the if body" min="1" max="1">^  if \(a0\) \{$
+^    \*a0 = a1;$
+^    return;$</stringmatch>
+<stringmatch name="tailform no-return #6: on, store tests the fatal arm and stores after it" min="1" max="1">^  if \(!a0\)$
+^    abort\(\);.*$
+^  \*a0 = a1;$
+^}</stringmatch>
+<stringmatch name="tailform no-return #7: every call to abort and exit is printed in both passes" min="8" max="8">^ *(abort|exit)\(.*\);</stringmatch>
+<stringmatch name="tailform no-return #8: off, pick returns inside the if and abort ends it" min="1" max="1">^  if \(\(a0\) &amp;&amp; \(a1 &lt; a2\)\)$
+^    return a0\[a1\];$
+^  abort\(\);</stringmatch>
+<stringmatch name="tailform no-return #9: off, lookup returns inside the if after its loop and abort ends it" min="1" max="1">^  if \(0 &lt;= \(\(int4 \*\)a0\)\[3\]\)$
+^    return \(\(int4 \*\)a0\)\[3\];$
+^  abort\(\);</stringmatch>
+</decompilertest>

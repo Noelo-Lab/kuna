@@ -447,6 +447,9 @@ pub struct PrintCOptions {
     /// `option truthycond`).  Float compares, enum-typed and equate-named
     /// zeros are excluded; value contexts (`v = (x != 0)`) never normalize.
     pub truthy_cond: bool,
+    /// (kuna `truthycond ptrchain`) Under `truthy_cond`, a bare pointer variable
+    /// that is an operand of `&&`/`||` keeps its comparison (`p != NULL`).
+    pub truthy_ptr_chain: bool,
     /// (kuna) A single-statement if-body drops its braces and prints the
     /// statement indented on the next line (DIV-38, `option braceelide`).
     /// Copy-leaf single-statement bodies only; labels/comments keep braces.
@@ -510,6 +513,7 @@ impl PrintCOptions {
             unplaced: false,
             array_notation: true, // (kuna) DIV-2 default-on (GH-558)
             truthy_cond: true, // (kuna) DIV-37; no upstream equivalent
+            truthy_ptr_chain: true,
             brace_elide: true, // (kuna) DIV-38; no upstream equivalent
             inf_loop_top: true,
             warn_inline: true, // (kuna) DIV-39; no upstream equivalent
@@ -560,6 +564,12 @@ impl PrintCOptions {
     /// (kuna) Current truthy-condition rendering flag.
     pub fn truthy_cond(&self) -> bool {
         self.truthy_cond
+    }
+    /// (kuna) Set both truthy-condition flags from a `truthycond` value.
+    pub fn set_truthy_mode(&mut self, mode: crate::kuna_truthycond::TruthyCond) {
+        use crate::kuna_truthycond::TruthyCond;
+        self.truthy_cond = mode != TruthyCond::Off;
+        self.truthy_ptr_chain = mode == TruthyCond::PtrChain;
     }
     /// (kuna) Toggle single-statement if-body brace elision (`option
     /// braceelide`, DIV-38).
@@ -1573,6 +1583,9 @@ pub struct PrintC {
     /// [`emit_function_body`](PrintC::emit_function_body) and cleared after, so it
     /// is live only for that function's emission.
     void_tail_return: Option<OpId>,
+    /// (kuna `tailform`) The `RETURN` of the leaf being emitted that the leaf
+    /// leaves out ([`crate::p8_structure::kuna_tailform::skipped_return`]).
+    tailform_skip: Option<OpId>,
     /// (kuna `voidtailreturn`) The `default:` arm (switch, case index) of the
     /// switch a void function ends with, when that arm only returns.
     void_tail_default: Option<(BlockId, usize)>,
@@ -1652,9 +1665,18 @@ pub struct PrintC {
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
     named_globals: crate::kuna_namedglobals::References,
+    /// The helpers and user-defined operations this function's C calls. See
+    /// [`crate::kuna_unitcalls`].
+    unit_calls: crate::kuna_unitcalls::Calls,
     /// Per-body spelling of a goto-target leaf whose address label another
     /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
     label_names: std::collections::BTreeMap<BlockId, String>,
+    /// (kuna `rangetest`) The unsigned comparison being pushed and the print
+    /// modifiers it was reached with, before its dispatch scopes them off.
+    pub(crate) range_entry: Option<(OpId, uint4)>,
+    /// (kuna `rangetest`) The operator of the `&&`/`||` chain whose first
+    /// clause is printing.
+    pub(crate) range_chain_head: Option<&'static crate::printlanguage::OpToken>,
 }
 
 impl Default for PrintC {
@@ -1680,6 +1702,7 @@ impl PrintC {
             pending: 0,
             commsorter: crate::comment::CommentSorter::new(),
             void_tail_return: None,
+            tailform_skip: None,
             void_tail_default: None,
             goto_rewrites: Default::default(),
             switch_plans: Default::default(),
@@ -1706,7 +1729,10 @@ impl PrintC {
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
+            unit_calls: crate::kuna_unitcalls::Calls::default(),
             label_names: std::collections::BTreeMap::new(),
+            range_entry: None,
+            range_chain_head: None,
         }
     }
 
@@ -2119,6 +2145,12 @@ impl PrintC {
             }
         }
         self.revpol.push(ReversePolish { tok, visited: 0, paren, op, id, id2: 0 });
+    }
+
+    /// Whether no operator is waiting for operands: the next push starts an
+    /// expression.
+    pub(crate) fn rpn_is_empty(&self) -> bool {
+        self.revpol.is_empty()
     }
 
     /// C++ `PrintLanguage::pushAtom` (printlanguage.cc:162).  Push a leaf token,
@@ -2784,6 +2816,7 @@ impl PrintC {
         // type-name chokepoint below reads `self.rt_ctx`.
         self.rt_ctx = RealTypeCtx::for_function(fd, arch, self.out_lang);
         self.named_globals = crate::kuna_namedglobals::References::default();
+        self.unit_calls = crate::kuna_unitcalls::Calls::default();
         self.globalref = crate::kuna_globalref::plan(
             fd,
             arch,
@@ -4040,7 +4073,7 @@ impl PrintC {
     /// Resolve the emitted name plus the symbol-relative geometry used to render
     /// partial accesses. Independently declared fallback pieces deliberately have
     /// no shared-symbol geometry: their declared identifier denotes the piece.
-    fn emitted_high_symbol(
+    pub(crate) fn emitted_high_symbol(
         &self,
         fd: &Funcdata,
         high: crate::context::HighVariableId,
@@ -4382,11 +4415,14 @@ impl PrintC {
         } else {
             Default::default()
         };
-        self.loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
-            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test)
+        let loop_tests = if matches!(self.lang().forms.do_while, crate::kuna_lang::DoWhileForm::CDoWhile) {
+            crate::p8_structure::kuna_looptest::loop_tests(fd, sroot, arch.loop_test, &|high| {
+                self.sign_plan.decl_type(high).cloned()
+            })
         } else {
             Default::default()
         };
+        self.loop_tests = loop_tests;
         if let Some(&ret) = self.void_tail_return.and_then(|op| self.loop_tests.tail_returns.get(&op)) {
             self.void_tail_return = Some(ret);
         }
@@ -4450,6 +4486,12 @@ impl PrintC {
     /// `FlowBlock::emit(PrintLanguage*)` -> `PrintC::emitBlock*`).
     pub(crate) fn emit_block(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId) {
         use crate::block::BlockType;
+        if self.context.is_set(modifiers::ONLY_BRANCH | modifiers::COMMA_SEPARATE)
+            && !crate::kuna_switchcond::renders_branch(fd.sblocks_ref(), blk)
+        {
+            self.emit_misplaced_condition();
+            return;
+        }
         match fd.sblocks_ref().block(blk).get_type() {
             BlockType::Copy if self.loop_tests.hidden.contains(&blk) => {} // (kuna looptest)
             BlockType::Copy => self.emit_block_copy(fd, arch, blk),
@@ -4475,6 +4517,16 @@ impl PrintC {
                 }
             }
         }
+    }
+
+    /// A condition slot holding a block with no branch to print (see
+    /// [`crate::kuna_switchcond`]): its statements already printed, so print a
+    /// warning where the condition belongs rather than the statements again.
+    fn emit_misplaced_condition(&mut self) {
+        let warning = crate::kuna_switchcond::MISPLACED_CONDITION_WARNING;
+        let text = format!("/* {warning} */");
+        self.emit.print(&text, SyntaxHighlight::CommentColor);
+        self.record_warning(crate::kuna_functionwarnings::Warning::new(None, warning), &text);
     }
 
     /// C++ `PrintC::emitBlockCondition` (printc.cc:2985): emit a `BlockCondition`
@@ -4514,29 +4566,37 @@ impl PrintC {
                 return;
             }
 
-            let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
-            self.emit_block(fd, arch, b0);
-            self.context.push_mod();
-            self.context.unset_mod(modifiers::ONLY_BRANCH);
-            // comma_separate is placed only on the second block.
-            self.context.set_mod(modifiers::COMMA_SEPARATE);
-
-            // Emit the && / || token as if it were on the RPN stack (C++ builds a
-            // ReversePolish with op==0, visited==1, and calls emitOp).
             let tok: &'static crate::printlanguage::OpToken = if opc == OpCode::CPUI_BOOL_AND {
                 &tokens::BOOLEAN_AND
             } else {
                 &tokens::BOOLEAN_OR
             };
+            let id = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            self.context.push_mod();
+            self.mark_chain_operand(fd, b0);
+            let head = self.range_chain_head.replace(tok);
+            self.emit_block(fd, arch, b0);
+            self.range_chain_head = head;
+            self.context.pop_mod();
+            self.context.push_mod();
+            self.context.unset_mod(modifiers::ONLY_BRANCH);
+            // comma_separate is placed only on the second block.
+            self.context.set_mod(modifiers::COMMA_SEPARATE);
+            self.mark_chain_operand(fd, b1);
+
+            // Emit the && / || token as if it were on the RPN stack (C++ builds a
+            // ReversePolish with op==0, visited==1, and calls emitOp).
             let pol = ReversePolish { tok, visited: 1, paren: false, op: None, id: 0, id2: 0 };
             self.emit_op(&pol);
 
             let id2 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
+            let head = self.range_chain_head.take();
             if self.out_lang == crate::kuna_lang::OutLang::Go {
                 self.emit_go_condition_expression(fd, arch, b1);
             } else {
                 self.emit_block(fd, arch, b1);
             }
+            self.range_chain_head = head;
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id2);
             self.context.pop_mod();
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id);
@@ -4554,8 +4614,18 @@ impl PrintC {
         // to an enclosing loop head (`isLabelBumpUp`).
         self.emit_any_label_statement(fd, blk);
         if let Some(under) = fd.sblocks_ref().block(blk).get_copy() {
+            // (kuna tailform) A leaf that prints only its return.
+            if let Some(ret) = crate::p8_structure::kuna_tailform::only_return(fd, blk) {
+                self.emit.tag_line();
+                self.emit_statement(fd, arch, ret);
+                self.flush_eol_warnings();
+                return;
+            }
+            let skip = crate::p8_structure::kuna_tailform::skipped_return(fd, blk);
+            let saved = std::mem::replace(&mut self.tailform_skip, skip);
             // The copy's `copy` field is a *bblocks* BlockId.
             self.emit_basic_block_ops(fd, arch, under, true);
+            self.tailform_skip = saved;
         }
     }
 
@@ -4881,6 +4951,10 @@ impl PrintC {
             self.emit_block_if_bool(fd, arch, m);
             return;
         }
+        if let Some((ret, negate)) = crate::p8_structure::kuna_boolret::returned(fd, blk) {
+            self.emit_block_if_return(fd, arch, blk, ret, negate);
+            return;
+        }
         if let Some(m) = self.ite_ternary_match(fd, arch, blk) {
             self.emit_block_if_ite(fd, arch, m);
             return;
@@ -5112,6 +5186,7 @@ impl PrintC {
         let Some(under) = fd.sblocks_ref().block(body).get_copy() else {
             return false;
         };
+        let tailform_skip = crate::p8_structure::kuna_tailform::skipped_return(fd, body);
         let mut printed = 0;
         let mut cur = fd.bb_op_head(under);
         while let Some(inst) = cur {
@@ -5120,7 +5195,7 @@ impl PrintC {
                 Some(o) => o,
                 None => continue,
             };
-            if self.is_suppressed_statement(fd, inst) {
+            if self.is_suppressed_statement(fd, inst) || Some(inst) == tailform_skip {
                 continue;
             }
             // The body always prints under NO_BRANCH: every branch op is skipped.
@@ -5190,11 +5265,11 @@ impl PrintC {
             .get(m.cbranch)
             .map(|o| (o.get_addlflags() & crate::op::pcodeop_addlflags::kuna_iteregion) != 0)
             .unwrap_or(false);
+        let arms = [Some(m.true_op), m.else_op];
         if marked
-            && !self.needs_storage_assignment(fd, m.true_op)
-            && !self.needs_storage_assignment(fd, m.else_op)
-            && !self.converts_storage_load(fd, arch, m.true_op)
-            && !self.converts_storage_load(fd, arch, m.else_op)
+            && arms.into_iter().flatten().all(|op| {
+                !self.needs_storage_assignment(fd, op) && !self.converts_storage_load(fd, arch, op)
+            })
         {
             Some(m)
         } else {
@@ -5318,6 +5393,40 @@ impl PrintC {
         self.context.pop_mod();
     }
 
+    /// (kuna `boolbranch return`) Emit a flagged guard `if` as `return ( cond );`
+    /// (`return !( cond );` when `negate`), the condition through the same
+    /// `ONLY_BRANCH` renderer as the `if` header and the statement anchored on
+    /// the guard's `RETURN`.
+    fn emit_block_if_return(&mut self, fd: &Funcdata, arch: &Architecture, blk: BlockId, ret: OpId, negate: bool) {
+        use crate::prettyprint::Emit;
+
+        let cond = fd.sblocks_ref().block(blk).get_block(0);
+        self.context.push_mod();
+        self.context.unset_mod(modifiers::NO_BRANCH | modifiers::ONLY_BRANCH | modifiers::PENDING_BRACE);
+        self.context.push_mod();
+        self.context.set_mod(modifiers::NO_BRANCH);
+        self.emit_block(fd, arch, cond);
+        self.context.pop_mod();
+        self.emit_comment_block_tree(fd, cond);
+
+        self.emit.tag_line();
+        let markup = self.op_markup(fd, ret);
+        let sid = self.emit.begin_statement(&markup);
+        self.emit.tag_op(self.lang().kw_return, SyntaxHighlight::KeywordColor, &markup);
+        self.emit.spaces(1, 0);
+        if negate {
+            self.emit.tag_op(tokens::BOOLEAN_NOT.print1, SyntaxHighlight::NoColor, &MarkupRef::none());
+        }
+        self.context.push_mod();
+        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.emit_block(fd, arch, cond);
+        self.context.pop_mod();
+        self.emit.end_statement(sid);
+        self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
+        self.flush_eol_warnings();
+        self.context.pop_mod();
+    }
+
     /// (kuna) Emit an `iteregion`-selected assignment diamond as a single ternary
     /// statement `dest = ( cond ) ? A : B;` (angr `ITERegionConverter`).  Reuses the
     /// existing renderers: the LHS via `push_vn_explicit_ir`, the condition via the
@@ -5416,7 +5525,10 @@ impl PrintC {
             &MarkupRef::none(),
         );
         self.emit.spaces(1, 0);
-        self.op_push_ir(fd, arch, m.else_op, None);
+        match m.else_op {
+            Some(op) => self.op_push_ir(fd, arch, op, None),
+            None => self.push_vn_explicit_ir(fd, arch, m.dest, m.true_op),
+        }
         self.cast_implied.set_arm_drops(Vec::new());
         if !ternary {
             self.recurse();
@@ -5544,14 +5656,21 @@ impl PrintC {
             self.emit_default_case_label(case.label, &case_markup);
         } else {
             // case <label>: — one line per index targeting this case.
+            let char_selector = lowered_char_selector(fd, blk);
             for i in 0..self.switch_case_label_count(fd, blk, &case) {
                 let (val, sz, signed) = self.switch_case_label(fd, arch, blk, &case, i);
-                self.emit_numeric_case_label(
-                    val,
-                    sz,
-                    signed,
-                    firstop.or_else(|| self.any_op(fd, case.block)),
-                );
+                let op = firstop.or_else(|| self.any_op(fd, case.block));
+                if let (Some((ct, vn)), Some(op)) = (char_selector.as_ref().filter(|_| val < 0x80), op) {
+                    self.emit.tag_line();
+                    self.emit.print(self.lang().kw_case, SyntaxHighlight::KeywordColor);
+                    self.emit.spaces(1, 0);
+                    self.push_char_constant_ir(fd, ct, val, op, *vn);
+                    self.recurse();
+                    self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
+                    self.emit.note_label();
+                    continue;
+                }
+                self.emit_numeric_case_label(val, sz, signed, op);
             }
         }
     }
@@ -5871,7 +5990,10 @@ impl PrintC {
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the conditional statement (the condition block, comma-separated).
+        self.context.push_mod();
+        self.context.set_mod(modifiers::LOOP_CONDITION);
         self.emit_block(fd, arch, cond_block);
+        self.context.pop_mod();
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         self.emit.spaces(1, 0);
         // Emit the iterator statement.
@@ -5953,7 +6075,7 @@ impl PrintC {
             self.emit.spaces(1, 0);
             let id1 = self.emit.open_paren(crate::printlanguage::OPEN_PAREN, 0);
             self.context.push_mod();
-            self.context.set_mod(modifiers::COMMA_SEPARATE);
+            self.context.set_mod(modifiers::COMMA_SEPARATE | modifiers::LOOP_CONDITION);
             self.emit_block(fd, arch, cond_block);
             self.context.pop_mod();
             self.emit.close_paren(crate::printlanguage::CLOSE_PAREN, id1);
@@ -6007,7 +6129,7 @@ impl PrintC {
         self.emit.spaces(1, 0);
         self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
-        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.context.set_mod(modifiers::ONLY_BRANCH | modifiers::LOOP_CONDITION);
         self.emit_block(fd, arch, body);
         self.emit.print(self.lang().kw_semicolon, SyntaxHighlight::NoColor);
         // (kuna warnstyle, DIV-39) body/condition warnings still pending land
@@ -6128,6 +6250,13 @@ impl PrintC {
             return;
         }
         let mut separator = false;
+        // (kuna `truthycond ptrchain`) A chain clause that prints statements is a
+        // comma expression: its branch is no longer the `&&`/`||` operand.
+        let chain_clause =
+            self.context.is_set(modifiers::CHAIN_OPERAND) && self.context.is_set(modifiers::COMMA_SEPARATE);
+        if chain_clause {
+            self.context.push_mod();
+        }
         let mut cur = if bblocks { fd.bb_op_head(bb) } else { sblocks_basic_head(fd, bb) };
         while let Some(inst) = cur {
             if crate::decompile_drive::deadline_passed_in("rendering C") {
@@ -6147,7 +6276,7 @@ impl PrintC {
             // and a structural divergence.  Elided only when
             // `elidable_void_tail_return` proved it is the LAST statement of a void
             // function reached on exactly one structured path.
-            if Some(inst) == self.void_tail_return {
+            if Some(inst) == self.void_tail_return || Some(inst) == self.tailform_skip {
                 continue;
             }
             if o.is_branch() {
@@ -6179,6 +6308,13 @@ impl PrintC {
                 self.emit_comment_group(fd, Some(inst));
                 self.emit.tag_line();
             }
+            if chain_clause {
+                if separator || !o.is_branch() {
+                    self.context.unset_mod(modifiers::CHAIN_OPERAND);
+                } else {
+                    self.context.set_mod(modifiers::CHAIN_OPERAND);
+                }
+            }
             if let Some(last) = self.emit_rust_array_init(fd, arch, inst) {
                 cur = fd.bb_op_next(last);
             } else {
@@ -6193,6 +6329,9 @@ impl PrintC {
                 self.flush_eol_warnings();
             }
             separator = true;
+        }
+        if chain_clause {
+            self.context.pop_mod();
         }
         // emitCommentGroup(None): any remaining comments in the block.
         if !self.context.is_set(modifiers::COMMA_SEPARATE) {
@@ -6493,25 +6632,39 @@ impl PrintC {
     /// printc.cc:806-830); every other override ignores it.
     pub(crate) fn op_push_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, read_op: Option<OpId>) {
         let opc = fd.obank().get(op).expect("op_push_ir: stale op").code();
+        if matches!(opc, OpCode::CPUI_INT_LESS | OpCode::CPUI_INT_LESSEQUAL) {
+            self.range_entry = Some((op, self.context.mods()));
+        }
         // (kuna truthycond, DIV-37) CONDITION_CONTEXT only survives through the
         // boolean-preserving operators; any other operator's operands are value
         // context, so scope the bit off across this dispatch (the mod-stack
-        // frame restores it for our siblings).
-        let scope_off_cond = self.context.is_set(modifiers::CONDITION_CONTEXT)
-            && !matches!(
-                opc,
-                OpCode::CPUI_INT_EQUAL
-                    | OpCode::CPUI_INT_NOTEQUAL
-                    | OpCode::CPUI_FLOAT_EQUAL
-                    | OpCode::CPUI_FLOAT_NOTEQUAL
-                    | OpCode::CPUI_BOOL_AND
-                    | OpCode::CPUI_BOOL_OR
-                    | OpCode::CPUI_BOOL_NEGATE
-                    | OpCode::CPUI_CBRANCH
-            );
+        // frame restores it for our siblings).  CHAIN_OPERAND survives only
+        // into the comparison it marks (and the branch or absorbed `!` that
+        // carries it there).
+        let mut clear = 0;
+        if !matches!(
+            opc,
+            OpCode::CPUI_INT_EQUAL
+                | OpCode::CPUI_INT_NOTEQUAL
+                | OpCode::CPUI_FLOAT_EQUAL
+                | OpCode::CPUI_FLOAT_NOTEQUAL
+                | OpCode::CPUI_BOOL_AND
+                | OpCode::CPUI_BOOL_OR
+                | OpCode::CPUI_BOOL_NEGATE
+                | OpCode::CPUI_CBRANCH
+        ) {
+            clear |= modifiers::CONDITION_CONTEXT;
+        }
+        if !matches!(
+            opc,
+            OpCode::CPUI_INT_EQUAL | OpCode::CPUI_INT_NOTEQUAL | OpCode::CPUI_BOOL_NEGATE | OpCode::CPUI_CBRANCH
+        ) {
+            clear |= modifiers::CHAIN_OPERAND;
+        }
+        let scope_off_cond = self.context.mods() & clear != 0;
         if scope_off_cond {
             self.context.push_mod();
-            self.context.unset_mod(modifiers::CONDITION_CONTEXT);
+            self.context.unset_mod(clear);
         }
         self.op_push_ir_inner(fd, arch, op, read_op, opc);
         if scope_off_cond {
@@ -6590,6 +6743,9 @@ impl PrintC {
                 if use_negate_token {
                     self.context.set_mod(modifiers::NEGATETOKEN);
                 }
+                if booleanflip {
+                    self.context.unset_mod(modifiers::CHAIN_OPERAND);
+                }
                 if let Some(vn) = in1 {
                     self.push_vn_ir(fd, arch, vn, op);
                 }
@@ -6643,6 +6799,7 @@ impl PrintC {
                 // decode is a pseudo-call naming the failure, not a return.
                 let halt = fd.obank().get(op).map(|o| o.get_halt_type()).unwrap_or(0);
                 if let Some(nm) = crate::kuna_decodehalt::halt_call_name(halt) {
+                    self.unit_calls.record(fd, op, nm);
                     self.emit.tag_func_name(nm, SyntaxHighlight::FuncnameColor, &kw_markup);
                     self.emit.print(crate::printlanguage::OPEN_PAREN, SyntaxHighlight::NoColor);
                     self.emit.print(crate::printlanguage::CLOSE_PAREN, SyntaxHighlight::NoColor);
@@ -6742,7 +6899,7 @@ impl PrintC {
                 // Table-driven binary / unary / functional forms.
                 match op_emit_kind(opc) {
                     OpEmitKind::Binary(tok) => {
-                        let tok = self.lang_token(tok);
+                        let tok = self.lang_token(self.loop_tests.token(op).unwrap_or(tok)); // (kuna looptest)
                         self.op_binary_ir(fd, arch, tok, op)
                     }
                     OpEmitKind::Unary(tok) => {
@@ -6819,6 +6976,12 @@ impl PrintC {
         } else {
             tok
         };
+        if self.out_lang == crate::kuna_lang::OutLang::C {
+            if let Some(split) = self.range_split(fd, arch, op, tok.print1) {
+                self.emit_range_split(fd, arch, op, split);
+                return;
+            }
+        }
         if self.out_lang == crate::kuna_lang::OutLang::Go && self.op_go_binary(fd, arch, tok, op) {
             return;
         }
@@ -6838,16 +7001,24 @@ impl PrintC {
         if self.context.is_set(modifiers::CONDITION_CONTEXT)
             && (tok.print1 == "==" || tok.print1 == "!=")
         {
-            self.context.unset_mod(modifiers::CONDITION_CONTEXT);
+            let chain_operand = self.context.is_set(modifiers::CHAIN_OPERAND);
+            self.context.unset_mod(modifiers::CONDITION_CONTEXT | modifiers::CHAIN_OPERAND);
             // (kuna outlang) truthycond (DIV-37) renders `x != 0` as `x`, which is
             // not a condition in a language without implicit bool conversion.
             if self.options.truthy_cond && self.lang().caps.implicit_bool_conditions {
-                if let Some(other) = self.truthy_other_operand(fd, op) {
+                if let Some(other) = self.truthy_other_operand(fd, op).filter(|&other| {
+                    !(chain_operand
+                        && self.options.truthy_ptr_chain
+                        && self.bare_pointer_variable(fd, other, op))
+                }) {
                     if tok.print1 == "==" {
                         self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
                     }
                     self.context.push_mod();
                     self.context.set_mod(modifiers::CONDITION_CONTEXT);
+                    if chain_operand && tok.print1 == "!=" {
+                        self.context.set_mod(modifiers::CHAIN_OPERAND);
+                    }
                     self.push_vn_ir(fd, arch, other, op);
                     self.context.pop_mod();
                     return;
@@ -6866,6 +7037,9 @@ impl PrintC {
                 if boolean_operands {
                     self.context.push_mod();
                     self.context.set_mod(modifiers::CONDITION_CONTEXT);
+                    if !self.context.is_set(modifiers::LOOP_CONDITION) {
+                        self.context.set_mod(modifiers::CHAIN_OPERAND);
+                    }
                     self.push_vn_ir(fd, arch, v, op);
                     self.context.pop_mod();
                 } else {
@@ -6952,7 +7126,7 @@ impl PrintC {
         }
     }
 
-    fn printed_operand_type(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> std::rc::Rc<crate::dtype::Datatype> {
+    pub(crate) fn printed_operand_type(&self, fd: &Funcdata, vn: VarnodeId, op: OpId) -> std::rc::Rc<crate::dtype::Datatype> {
         fd.vbank().get(vn).and_then(|v| (!v.is_implied()).then_some(v.get_high()).flatten())
             .and_then(|high| self.declared_local(high)).and_then(|local| local.ty.clone())
             .or_else(|| declared_variable_type(fd, vn))
@@ -7145,6 +7319,7 @@ impl PrintC {
             self.push_op(&tokens::BOOLEAN_NOT, Some(op_key(op)));
             self.context.push_mod();
             self.context.set_mod(modifiers::CONDITION_CONTEXT);
+            self.context.unset_mod(modifiers::CHAIN_OPERAND);
             if let Some(vn) = in0 {
                 self.push_vn_ir(fd, arch, vn, op);
             }
@@ -7191,6 +7366,7 @@ impl PrintC {
             return;
         }
         let name = func_operator_name(fd, op, opc);
+        self.unit_calls.record(fd, op, &name);
         self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
         // The name is pushed as an *operator* token (C++ `optoken`, no_color).
         self.push_atom(&Atom::with_op(
@@ -7296,6 +7472,7 @@ impl PrintC {
                 (false, Some(op)) => String::from_utf8_lossy(op.get_name()).into_owned(),
                 (false, None) => format!("CALLOTHER[{:#x}]", in0_off),
             };
+            self.unit_calls.record(fd, op, &nm);
             self.push_op(&tokens::FUNCTION_CALL, Some(op_key(op)));
             self.push_atom(&Atom::with_op(
                 nm,
@@ -8563,12 +8740,13 @@ impl PrintC {
         arch: &Architecture,
         m: &crate::p8_structure::kuna_iteregion::IteAssignMatch,
     ) -> Vec<OpId> {
+        let Some(else_op) = m.else_op else { return Vec::new() };
         if !self.cast_implied.arms_enabled() || !self.lang().caps.ternary {
             return Vec::new();
         }
         let Some(strat) = cast_strategy_for(arch) else { return Vec::new() };
         let view = ImpliedView { pc: self, fd, arch, strat };
-        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, m.else_op], m.dest)
+        crate::kuna_castternary::arm_drops(&self.cast_implied, &view, fd, [m.true_op, else_op], m.dest)
     }
 
     /// C++ `PrintC::pushType` (printc.cc:1540) for a base type, reduced to the
@@ -8586,8 +8764,16 @@ impl PrintC {
     /// `push_cast_open` / `push_cast_close` rather than emitting the type inline.
     /// Map a token from the opcode table onto the active language's spelling and
     /// precedence (`LangProfile::map_token`).
-    fn lang_token(&self, tok: &'static OpToken) -> &'static OpToken {
+    pub(crate) fn lang_token(&self, tok: &'static OpToken) -> &'static OpToken {
         (self.lang().map_token)(tok)
+    }
+
+    /// (kuna outlang) Whether the operator on top of the stack is a comparison.
+    pub(crate) fn top_is_comparison(&self) -> bool {
+        self.revpol.last().is_some_and(|top| {
+            top.tok.token_type == crate::printlanguage::TokenType::Binary
+                && matches!(top.tok.print1, "==" | "!=" | "<" | "<=" | ">" | ">=")
+        })
     }
 
     /// Push the operator for a field reached THROUGH a pointer.
@@ -9195,6 +9381,10 @@ impl PrintC {
             (v.is_implied(), v.has_implied_field(), v.get_def())
         };
         if implied {
+            if let Some(to) = self.loop_tests.printed_as(vn) {
+                self.push_vn_explicit_ir(fd, arch, to, op); // (kuna looptest)
+                return;
+            }
             // C++ `PrintLanguage::recurse` (printlanguage.cc:533): an implied
             // Varnode carrying a resolved union/struct field renders as
             // `<def-expr>.field` via `pushImpliedField`; otherwise just expand the
@@ -11095,7 +11285,9 @@ impl PrintC {
             // by `push_float` (the decimal literal), every other metatype reaches
             // `push_integer` with `ct->getDisplayFormat()` as its `displayFormat`.
             let ct = fd.vn_type_read_facing(vn, op);
-            if self.out_lang == crate::kuna_lang::OutLang::Go && ct.get_metatype() == type_metatype::TYPE_BOOL {
+            if (self.out_lang == crate::kuna_lang::OutLang::Go && ct.get_metatype() == type_metatype::TYPE_BOOL)
+                || (self.out_lang == crate::kuna_lang::OutLang::Rust && self.rust_boolean_constant(fd, arch, vn, op))
+            {
                 self.push_atom(&Atom::with_op_vn(if off == 0 { "false" } else { "true" },
                     TagType::VarToken, crate::printlanguage::SyntaxHighlight::const_color,
                     op_key(op), vn_key(vn)));
@@ -11736,6 +11928,11 @@ impl PrintC {
         &self.globalref
     }
 
+    /// The helpers and user-defined operations the last function printed calls.
+    pub fn unit_calls(&self) -> &crate::kuna_unitcalls::Calls {
+        &self.unit_calls
+    }
+
     fn push_member_base_ir(
         &mut self,
         fd: &Funcdata,
@@ -12202,7 +12399,7 @@ impl PrintC {
 
     /// (kuna indirectargs) Is `vn` the ABI pointer input of a parameter printed
     /// as its value, so that `&name` stands for it and `name` for its target?
-    fn is_value_indirect_input(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
+    pub(crate) fn is_value_indirect_input(&self, fd: &Funcdata, vn: VarnodeId) -> bool {
         self.out_lang == crate::kuna_lang::OutLang::C
             && fd.vbank().get(vn).is_some_and(|v| {
                 v.is_input()
@@ -12952,6 +13149,21 @@ fn sblocks_basic_head(fd: &Funcdata, bb: BlockId) -> Option<OpId> {
         BlockKind::Basic(b) => b.op_head,
         _ => None,
     }
+}
+
+/// (kuna `loweredswitch`) The selector of the re-rolled switch `blk` and its
+/// `char` type, when the selector is a one-byte character, or of no known type
+/// and so read as the `char` its equality compares read it as.
+fn lowered_char_selector(fd: &Funcdata, blk: BlockId) -> Option<(std::rc::Rc<crate::dtype::Datatype>, VarnodeId)> {
+    let jt = fd.get_jump_table(fd.sblocks_ref().block(blk).switch_jt_index()? as int4);
+    jt.kuna_lowered_var()?;
+    let op = jt.get_indirect_op()?;
+    let vn = fd.obank().get(op)?.get_in(0)?;
+    let mut ct = fd.vn_type_read_facing(vn, op);
+    if ct.get_metatype() == type_metatype::TYPE_UNKNOWN {
+        ct = crate::p5_types::coreaction_infertypes::input_type_local(fd, op, 0);
+    }
+    (ct.get_size() == 1 && ct.is_char_print()).then_some((ct, vn))
 }
 
 /// Tail op of an sblocks-arena basic block.
