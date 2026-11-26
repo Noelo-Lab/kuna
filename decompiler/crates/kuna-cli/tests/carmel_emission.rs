@@ -2894,6 +2894,71 @@ fn tracked_carmel_entry_specs(destination: &Path, tracked: &[(&str, u16)], site:
 }
 
 #[test]
+fn carmel_wide_logic_extended_input_banks() {
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    const BASE: &str = "0x1860";
+    let binary = common::scratch_file("carmel-wide-logic-input", "bin");
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let split = [0x6d, 0x21, 0x9b, 0xe9, 0x3b, 0xed];
+    fs::write(&binary, [split, ret].as_flattened()).unwrap();
+    for base in ["0x1000", BASE] {
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), base, "--addr", "--raw-image", "--target", TARGET,
+            "--base", base, "--count", "1", "--json",
+        ]);
+        let out: Value = serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{stdout}\n{stderr}"));
+        assert_eq!(status, 1, "{out}");
+        assert!(out["instructions"].as_array().unwrap().is_empty(), "{out}");
+    }
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        fs::remove_file(binary).unwrap();
+        return;
+    }
+
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (name, packet, output, regs, checks) in [
+        ("qualified_or", [0x36, 0x74, 0x9a, 0xe2, 0xd3, 0xda], "RL4",
+            &["RM4", "RL4", "EST", "CECFG1", "CECFG2", "CETBL"][..],
+            &[("0x745, 0x2345, 0, 0x1000, 0x1000, 0xffff", 0x745),
+              ("0x745, 0x2345, 0, 0x1000, 0x1000, 0", 0x2345)][..]),
+        ("address_bank", [0x91, 0xcd, 0x6a, 0xea, 0xd3, 0x9a], "RL4",
+            &["A1L", "RM4"][..], &[("0x60, 0x745", 0x725)][..]),
+        ("config_bank", [0x91, 0xcd, 0x6a, 0xeb, 0x03, 0x92], "ECFG",
+            &["A1L", "CETBL"][..], &[("0x60, 0xffff", 0xff9f)][..]),
+    ] {
+        fs::write(&binary, [packet, ret].as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            BASE, "--addr", "--raw-image", "--target", TARGET, "--base", BASE, "--json",
+            "--assert-strict", "--assert", &format!("return %{output} unsigned short"),
+        ]);
+        for (i, register) in regs.iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{register} unsigned short in_{i}")]);
+        }
+        let run = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&run.stdout).unwrap();
+        let function = &json["functions"][0];
+        let code = function["code"].as_str().unwrap();
+        assert!(function["error"].is_null() && !code.contains("halt_"), "{function}");
+        assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+        writeln!(c, "#define sub_1860 logic_{name}\n{code}\n#undef sub_1860").unwrap();
+        for (args, expected) in checks {
+            writeln!(calls, "if (logic_{name}({args}) != {expected}) return 1;").unwrap();
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_held_out_wide_arithmetic_ports_execute_in_emitted_c() {
     const TARGET: &str = "Carmel:BE:24:default:default";
     let binary = common::scratch_file("carmel-held-out-wide-arithmetic", "bin");

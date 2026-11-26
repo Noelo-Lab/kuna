@@ -4508,6 +4508,20 @@ repeat-active bit is set. A low-word destination instead publishes the
 result's zero flag. A postincremented DATA destination stores at the
 original address, before the updated pointer is used by another issue.
 
+In the covered three-operand wide logical forms, the result bank also
+selects the extended first word input: `RL4` selects the address/flag
+bank (`RM4`, `MINMAX`, `FF1`); `ECFG` selects the configuration bank
+(`EST`, `CETBL`, `BTR1`). The register-result XOR is unqualified, while
+the covered OR reads `RM4` twice and writes `RL4` only when CE1 enables it.
+The logic updates zero, minus and extension flags without replacing
+carry or loss; CE feedback is published separately.
+
+The indexed DATA-result forms remain unlifted. The extended first
+selector can reserve a second operand-fetch word without encoding its
+address. A direct `0x8f` selector requests a word, even with a long
+result. Neither the first input's address nor whether all requests fit
+the available DATA ports follows from the instruction's CODE address.
+
 A compact word `MOVE` through postincremented `R3` addresses the old pointer.
 The CE address override can commit the increment without the DATA write;
 the result uses an arithmetic right shift by one when `ECFG.SR1` is set.

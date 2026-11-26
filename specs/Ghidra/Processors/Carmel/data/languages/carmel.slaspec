@@ -2948,6 +2948,37 @@ macro wide_logic_ce1(dst, lhs, rhs, op) {
 }
 
 @define WIDE_LOGIC_CE "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_20_22=6 & wide_logic_rmw_operator"
+
+# These selectors take their word input from the result's register bank.
+:^wide_logic_rmw_operator "CE1" "RL4","RM4","RM4" is $(WIDE_LOGIC_CE) & unary_wide_ce_bank=0
+    & wide_alias_logic_dst=0xb4 & wide_alias_logic_lhs=0xf6 & wide_40_45=0x36 & wide_0_1=2 & wide_logic_rmw_op=0 {
+    wide_logic_ce1(RL4, RM4, RM4, wide_logic_rmw_operator);
+}
+
+wide_logic_address_input: "RM4" is wide_alias_logic_lhs=0xe6 { export RM4; }
+wide_logic_address_input: "MINMAX" is wide_alias_logic_lhs=0xea { export MINMAX; }
+wide_logic_address_input: "FF1" is wide_alias_logic_lhs=0xee { export FF1; }
+wide_logic_config_input: "EST" is wide_alias_logic_lhs=0xe1 { export EST; }
+wide_logic_config_input: "CETBL" is wide_alias_logic_lhs=0xe4 { export CETBL; }
+wide_logic_config_input: "BTR1" is wide_alias_logic_lhs=0xe6 { export BTR1; }
+
+macro wide_logic_word_xor(dst, lhs, rhs) {
+    local result:2 = lhs ^ rhs;
+    dst = result;
+    publish_alu_ce((EST & 0xcfc7) | (zext(result == 0) << 3));
+}
+
+@define WIDE_LOGIC_WORD "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_20_22=6 & wide_logic_rmw_operator & wide_logic_rmw_op=2 & wide_40_45=0x11 & wide_0_1=2"
+:^wide_logic_rmw_operator "RL4",wide_logic_address_input,"A1L" is $(WIDE_LOGIC_WORD)
+    & wide_alias_logic_dst=0xb4 & wide_logic_address_input {
+    wide_logic_word_xor(RL4, wide_logic_address_input, A1L);
+}
+:^wide_logic_rmw_operator "ECFG",wide_logic_config_input,"A1L" is $(WIDE_LOGIC_WORD)
+    & wide_alias_logic_dst=0xc0 & wide_logic_config_input {
+    wide_logic_word_xor(ECFG, wide_logic_config_input, A1L);
+}
+@undef WIDE_LOGIC_WORD
+
 @define WIDE_LOGIC_CONTROL_INPUT "$(WIDE_LOGIC_CE) & unary_wide_ce_bank=0 & wide_40_45=0x1e"
 :^wide_logic_rmw_operator "CE1" "INTBASE","IO","X1" is $(WIDE_LOGIC_CONTROL_INPUT) & wide_logic_rmw_route=0x35be2 {
     wide_logic_ce1(INTBASE, 0:2, X1, wide_logic_rmw_operator);
