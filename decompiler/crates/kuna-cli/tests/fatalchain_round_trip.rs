@@ -1,12 +1,14 @@
-//! (kuna `condfold noreturn`) A chain of tests that all branch to one call that
-//! does not return prints as one `if` over the `||` chain with the call as its
-//! body and the rest after it.  Each image is printed with `condfold off` and
-//! with the default, the chains must print the form each setting gives, and the
-//! printed C is compiled beside the fixture source (functions renamed
-//! `s_<name>`, `put` and `fatal` kept) under gcc and clang at -O0 and -O2.
-//! `put` fails at each of its calls in turn and `exit` (inside `fatal`) is a
-//! `longjmp`; every printed function must return, store, stop and pass `fatal`
-//! the value the source does, and make the same `put` calls in the same order.
+//! (kuna `condfold`) A chain of tests that all branch to one call that does not
+//! return prints as one `if` over the `||` chain with the call as its body and
+//! the rest after it; under the default `auto` an optimized function also folds a
+//! chain into any block only it enters.  Each image is printed with the setting
+//! that leaves the chains alone and with the default, the chains must print the
+//! form each setting gives, and the printed C is compiled beside the fixture
+//! source (functions renamed `s_<name>`, the helpers kept) under gcc and clang at
+//! -O0 and -O2.  `put` fails at each of its calls in turn and `exit` (inside
+//! `fatal`) is a `longjmp`; every printed function must return, store, stop and
+//! pass on the value the source does, and make the same `put` calls in the same
+//! order.
 use crate::common;
 use common::process;
 use std::process::Command;
@@ -121,6 +123,104 @@ fn a_chain_into_a_no_return_call_round_trips_through_the_printed_c() {
             for cc in &compilers {
                 for level in ["-O0", "-O2"] {
                     let src = common::scratch_file(&format!("fatalchain-{image}-{opt}-{cc}{level}"), "c");
+                    let exe = src.with_extension("exe");
+                    std::fs::write(&src, &program).unwrap();
+                    let out = Command::new(cc)
+                        .args(["-std=gnu11", "-w", "-fwrapv", level, "-o", exe.to_str().unwrap(), src.to_str().unwrap()])
+                        .args(common::CC_GCC15_DEMOTE)
+                        .output()
+                        .expect("spawn the C compiler");
+                    assert!(
+                        out.status.success(),
+                        "{cc} {level} rejected the printed C ({image}, condfold {opt}):\n{}\n{text}",
+                        String::from_utf8_lossy(&out.stderr)
+                    );
+                    let run = Command::new(&exe).output().expect("run the round trip");
+                    assert!(
+                        run.status.success(),
+                        "{image} printed with condfold {opt} and built by {cc} {level} behaves differently:\n{}\n{text}",
+                        String::from_utf8_lossy(&run.stdout)
+                    );
+                }
+            }
+        }
+    }
+}
+
+const CHAIN_SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/chainfold.c");
+
+const CHAIN_FUNCS: &[&str] = &["send", "store"];
+
+const CHAIN_PRELUDE: &str = r#"#include <stdio.h>
+#include <stdlib.h>
+#define CHAINFOLD_NO_MAIN
+static int buf;
+"#;
+
+const CHAIN_MAIN: &str = r#"
+#define F(ret, f) ((ret (*)())(void (*)())f)
+static int bad;
+static void check(const char *what, int i, long long got, long long want) {
+  if (got != want) { printf("%s [%d]: %llx, want %llx\n", what, i, got, want); bad++; }
+}
+#define RESET() (buf = b0, sink = 0, steps = 0, order = 0, errors = 0)
+#define RUN(call, twin) do { long long r1, r2; int b1, s1, e1; unsigned o1; \
+    RESET(); r1 = (long long)(call); b1 = buf; s1 = sink; o1 = order; e1 = errors; \
+    RESET(); r2 = (long long)(twin); \
+    check(#call, i, r1, r2); check(#call " order", i, o1, order); check(#call " errors", i, e1, errors); \
+    check(#call " buf", i, b1, buf); check(#call " sink", i, s1, sink); } while (0)
+int main(void) {
+  for (int i = 0; i < 12; i++) {
+    int b0 = (i & 1) ? 90 : 0;
+    fail_at = i / 2;
+    RUN(F(int, send)(&buf, 3, 4), s_send(&buf, 3, 4));
+    RUN((F(void, store)(&buf, 5), 0), (s_store(&buf, 5), 0));
+  }
+  return bad != 0;
+}
+"#;
+
+/// Each image, and for the functions the default re-spells there the text printed
+/// with `condfold noreturn` and with the default.
+const CHAIN_IMAGES: &[(&str, &[(&str, &str, &str)])] = &[
+    (
+        "chainfold_gcc_O2_x86_64",
+        &[("store", "  if (!v1) {\n    v1 = put(a0,(int)a1 * 2);", "  if ((!v1) && (v1 = put(a0,(int)a1 * 2), !v1)) {")],
+    ),
+    ("chainfold_gcc_O0_x86_64", &[("send", "      v1 = put(a0,a1 + a2);", "  if ((")]),
+];
+
+#[test]
+fn a_chain_into_an_ordinary_block_round_trips_through_the_printed_c() {
+    let compilers: Vec<_> = ["gcc", "clang"]
+        .into_iter()
+        .filter(|cc| process::optional_output(Command::new(cc).arg("--version")).is_some())
+        .collect();
+    assert!(!compilers.is_empty(), "the round trip requires a C compiler");
+    let mut reference = CHAIN_SOURCE.to_string();
+    for name in CHAIN_FUNCS {
+        reference = reference.replace(&format!(" {name}("), &format!(" s_{name}("));
+    }
+    let funcs = CHAIN_FUNCS.join(",");
+    for &(image, changed) in CHAIN_IMAGES {
+        let path = common::fixture(image);
+        for opt in ["noreturn", "default"] {
+            let mut args = vec!["decompile-all", path.as_str(), "--functions", funcs.as_str()];
+            if opt == "noreturn" {
+                args.extend(["--option", "condfold", "noreturn"]);
+            }
+            let (text, err, rc) = common::run_kuna(&args);
+            assert_eq!(rc, 0, "{image} condfold {opt}: {err}");
+            for &(name, old, new) in changed {
+                let body = function(&text, name);
+                let unoptimized = image.contains("_O0_");
+                let (want, not) = if opt == "noreturn" || unoptimized { (old, new) } else { (new, old) };
+                assert!(body.contains(want) && !body.contains(not), "{image} {name} condfold {opt}:\n{body}");
+            }
+            let program = format!("{CHAIN_PRELUDE}{reference}\n{text}\n{CHAIN_MAIN}");
+            for cc in &compilers {
+                for level in ["-O0", "-O2"] {
+                    let src = common::scratch_file(&format!("chainfold-{image}-{opt}-{cc}{level}"), "c");
                     let exe = src.with_extension("exe");
                     std::fs::write(&src, &program).unwrap();
                     let out = Command::new(cc)

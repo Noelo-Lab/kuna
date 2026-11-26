@@ -1,6 +1,6 @@
-//! (kuna `condfold noreturn`) A chain of tests that all branch to one call that
-//! does not return prints as one `if` over the `||` chain with the call as its
-//! body and the rest of the function after it:
+//! (kuna `condfold noreturn|auto`) A chain of tests that all branch to one call
+//! that does not return prints as one `if` over the `||` chain with the call as
+//! its body and the rest of the function after it:
 //!
 //! ```c
 //! if ((r = put(b, x)) != 0 || (r = put(b, y)) != 0) fatal(r, "compose");
@@ -12,11 +12,15 @@
 //! so `BlockBasic::isComplex` counts the call, a store and the branch and
 //! `ruleBlockOr` declines every later test: the chain prints as a ladder of
 //! nested `if`s with the call after all of them.  [`relax`] drops the later
-//! tests of such a chain from the complex set the structurer reads.  A test
-//! that then prints more statements before its comparison than the
-//! `condstmts` cap allows is caught by that option's final check, which
+//! tests of such a chain from the complex set the structurer reads.  Under
+//! `auto`, a function the unoptimized detector does not flag also relaxes a
+//! chain into any block only the chain enters (`if (a() || b()) { note(); return
+//! -1; }`).  A test that then prints more statements before its comparison than
+//! the `condstmts` cap allows is caught by that option's final check, which
 //! analyzes the function again with the test complex.  A structuring that
-//! relaxed and prints a goto is not kept.
+//! relaxed and prints a goto is not kept, and a function whose fold into an
+//! ordinary block still prints a goto after the later passes is decompiled
+//! again without such folds ([`late_gotos`]).
 //!
 //! After the tree is final, [`ActionFatalChain`] turns `if (chain) { R } f();`
 //! (where `R` does not fall through) into `if (!chain) f(); R`, at any depth.

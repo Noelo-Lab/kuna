@@ -95,6 +95,9 @@ b615820e00008850084c89e05d415c415dc366662e0f1f8400000000000f1f00
 <symbol space="ram" offset="0x1001a0" name="post"/>
 </binaryimage>
 <script>
+  <!-- condfold (default auto) folds either's guarded call into its condition;
+       kept at noreturn so the call prints as a statement. -->
+  <com>option condfold noreturn</com>
   <com>option structsynth param</com>
   <com>lo fu make</com>
   <com>decompile</com>

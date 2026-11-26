@@ -51,6 +51,9 @@
   <com>option returndup off</com>
   <!-- kuna: tailform default model; this test pins the 4-line size rule's function-tail form -->
   <com>option tailform on</com>
+  <!-- condfold (default auto) folds the guarded call into one condition; kept
+       at noreturn so the pointer test prints as written. -->
+  <com>option condfold noreturn</com>
   <com>map fun r0x5fc some_funcptr_func</com>
   <com>map fun r0x700 get_funcptr</com>
   <com>parse line extern void * get_funcptr(void *p);</com>
