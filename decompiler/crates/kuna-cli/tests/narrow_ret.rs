@@ -44,7 +44,7 @@ fn printed_c(listing: &str) -> String {
 /// controls keep theirs, as do a truth value merged with a byte truncated from
 /// a word (`pick` is no `bool`) and a byte merged with a sign-extended
 /// half-word.  On x86-64 the 32-bit `whole` is declared `int`, so it states
-/// nothing and its caller keeps `%rax` whole.
+/// nothing; its caller uses only `%eax` of the call and returns 32 bits.
 #[test]
 fn a_call_result_takes_the_width_its_callee_returns() {
     let on = decompile("narrowret_thumb_O2.o", "on");
@@ -69,7 +69,7 @@ fn a_call_result_takes_the_width_its_callee_returns() {
     }
     for option in ["on", "off"] {
         let text = decompile("narrowret_gcc_O2_x86_64.o", option);
-        assert!(text.contains("unsigned long returns_word(int a0)"), "{text}");
+        assert!(text.contains("unsigned int returns_word(int a0)"), "{text}");
     }
 }
 

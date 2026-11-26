@@ -690,9 +690,9 @@ impl SubvariableFlow {
     }
 
     /// Determine if the given subgraph variable can act as a \e created value for
-    /// the given INDIRECT/CALL op (C++ `SubvariableFlow::tryCallReturnPush`).
-    ///
-    /// STUB(W4): `fd->getCallSpecs(op)` / `isOutputLocked` / `isOutputActive`.
+    /// the given CALL op (C++ `SubvariableFlow::tryCallReturnPush`): the call's
+    /// output is narrowed to the logical value unless its prototype locks the
+    /// output or output recovery is still deciding it.
     fn try_call_return_push(
         &mut self,
         data: &Funcdata,
@@ -711,12 +711,15 @@ impl SubvariableFlow {
         if self.bitsize < 8 {
             return Ok(false); // Make sure logical value is at least a byte
         }
-        // FuncCallSpecs *fc = fd->getCallSpecs(op); if (0) ...; isOutputLocked/Active
-        let _ = op;
-        Err(KunaError::lowlevel(
-            "kuna rust port: SubvariableFlow::tryCallReturnPush needs FuncCallSpecs \
-             (isOutputLocked / isOutputActive) — STUB(W4)",
-        ))
+        let Some(idx) = data.get_call_specs_index(op) else {
+            return Ok(false);
+        };
+        let fc = data.get_call_specs(idx);
+        if fc.proto().is_output_locked() || fc.is_output_active() {
+            return Ok(false);
+        }
+        self.add_push(data, op, rvn)?;
+        Ok(true)
     }
 
     /// Determine if the subgraph variable can act as a switch variable for the

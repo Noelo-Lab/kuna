@@ -1957,7 +1957,16 @@ records the low input's size as the bytes consumed of every unlocked RETURN it
 reaches (`FuncProto::set_return_bytes_consumed`), and of each argument slot of
 an unlocked call whose inputs are settled (`set_input_bytes_consumed`). Dead
 code then consumes only those bytes and sub-variable flow trims the RETURN to
-the call's value, so the function returns `int`-width on every path. Where
+the call's value, so the function returns `int`-width on every path. A path
+that returns another call's result is narrowed with it: the RETURN pull traces
+back into that call and narrows its output (`try_call_return_push`, below), so
+a function that tail-calls a declared `int` on one path and an unlocked call on
+another (readline's `rl_forward_char`, beside `int rl_forward_byte` and its
+partner `rl_backward_char`) returns `int`, not `unsigned long` with
+`return (unsigned int)rl_forward_byte(..)`. The partner narrows only if one of
+its own paths returns a declared `int`: `rl_backward_char` tail-calls
+`rl_backward_byte`, whose prototype nothing declares, so it keeps `unsigned
+long`. Where
 another path returns all of the register, which a function returning the
 call's `int` unextended does only when it returns nothing (gnulib's `void
 version_etc_arn` leaves an unrelated 8-byte value in rax on one path), the return
@@ -2897,7 +2906,24 @@ not refuse but *patch*: the trace records a pull/push patch at the boundary
 (`try_call_pull`/`try_return_pull`/`try_switch_pull`/`try_call_return_push`),
 and `do_trace` additionally refuses to commit when **zero pull points** were
 found — a rewrite whose small value never actually escapes the shadow graph
-would churn the IR for no output gain. (kuna) A call pull whose dropped bits
+would churn the IR for no output gain. A value traced back to the output of a
+CALL is a push (`try_call_return_push`, upstream `tryCallReturnPush`): when the
+logical value is the low part, at least a byte, and nothing outside it is
+consumed, the call's output becomes the narrow value and a ZEXT of it stands in
+for the old output until dead code removes it. A call whose prototype locks its
+output, or whose output trials are still being scored, refuses. Any trace may
+end at a call this way, not only a RETURN pull: a caller that keeps only the
+low bytes of a call's result reads the call at that width, so `u_int len =
+sshbuf_len(b)` declares an `unsigned int`, a `uint32_t` caller of an unstated
+callee does not mask it (`v1 & 0xffffffff`), an ARM caller tests a `bool`
+callee's result as a byte, and a function returning a declared `int` on one
+path and an unlocked call's result on another returns `int` instead of
+printing the declared call zero-extended. An indirect call narrows the same way
+as a direct one, and the declared `int` and `unsigned` results of two calls
+beside an unlocked one give a single 4-byte return. A declared result that
+fills a register pair (i386 `long long` in `edx:eax`) marks no byte unconsumed,
+so the RETURN keeps the pair and the unlocked call beside it keeps both halves.
+(kuna) A call pull whose dropped bits
 are known zero, because the wide input's non-zero mask lies inside the logical
 mask, is recorded on the call's spec when the rewrite commits
 (`decompiler/crates/kuna-decomp/src/p9_emit/kuna_truncarg.rs (note_trimmed_arg)`),

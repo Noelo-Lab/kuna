@@ -1,0 +1,43 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:gcc">
+<!--
+    A declared 64-bit return in a register pair beside another call's
+    result (#1921).  clang 20 -O2 (i386), of
+
+        long long ext64(int c, int k);                  declared below
+        long long pair64(int c, int k) {
+            if (mb() == 1) return ext64(c, k);          jmp ext64
+            if (c < 0) return partner64(-c, k);
+            point += c; return 0;
+        }
+
+    Narrowing a returned call's output (`try_call_return_push`) acts only
+    where the RETURN consumes less than the call writes.  Here the declared
+    result fills edx:eax, so nothing marks fewer bytes consumed: the return
+    stays the whole pair and the unlocked partner's edx:eax is kept whole.
+
+    Stage / sub-stage: P3 "subvariable flow".  No option.
+-->
+<bytechunk space="ram" offset="0x401200">
+5756508b7c24148b742410e84000000083f801750a83c4045e5fe94100000085f6780f0135b422400031c031d283c404eb0ff7de83ec085756e83200000083c4
+145e5fc3cccccccccccccccccccccccca1b422400040c3660f1f8400000000008b44240803442404f72db4224000c3900fb64c2404a1b422400089c2c1fa1f0f
+a5c2d3e08b4c240809c8c1f91f09cac38b442408034424040305b4224000a3b4224000c36666662e0f1f840000000000c3
+</bytechunk>
+<symbol space="ram" offset="0x401200" name="pair64"/>
+<symbol space="ram" offset="0x401250" name="mb"/>
+<symbol space="ram" offset="0x401260" name="ext64"/>
+<symbol space="ram" offset="0x401270" name="partner64"/>
+</binaryimage>
+<script>
+  <com>parse line extern int8 ext64(int4 c,int4 k);</com>
+  <com>option protoorder off</com>
+  <com>lo fu pair64</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="tailcyclepair #1: the declared pair is the whole return" min="1" max="1">^int8 pair64\(</stringmatch>
+<stringmatch name="tailcyclepair #2: the declared call is returned as it is" min="1" max="1">^    return ext64\(a1,a2\); // tail-call$</stringmatch>
+<stringmatch name="tailcyclepair #3: the partner's result keeps edx:eax" min="1" max="1">^  uint8 v3; // edx:eax$</stringmatch>
+<stringmatch name="tailcyclepair #4: no half of the pair is dropped from the return" min="0" max="0">^u?int4 pair64|\(u?int4\)ext64</stringmatch>
+</decompilertest>

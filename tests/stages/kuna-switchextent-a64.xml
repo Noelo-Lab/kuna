@@ -46,7 +46,7 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="switchextent #1: the first unchecked table ends at the function's second and is a switch" min="1" max="1">switch\(pick\(a0\) &amp; 0xffffffff\) \{</stringmatch>
+<stringmatch name="switchextent #1: the first unchecked table ends at the function's second and is a switch" min="1" max="1">switch\(pick\(a0\)\) \{</stringmatch>
 <stringmatch name="switchextent #2: the switch has the three cases the second table's start admits, and entering its three" min="6" max="6">case [0-2]:</stringmatch>
 <stringmatch name="switchextent #3: a function's last table stays a computed call: unchecked's second, last's only, and unchecked's first with the option off (the second is then unreached)" min="3" max="3">// jump-as-call</stringmatch>
 <stringmatch name="switchextent #4: a byte array the function reads bounds nothing: last's table is still read by the computed call" min="1" max="1">\* 2UL \+ 0x1116e\) \* 4UL</stringmatch>
