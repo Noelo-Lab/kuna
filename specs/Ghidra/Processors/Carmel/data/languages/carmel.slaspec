@@ -644,6 +644,8 @@ define token wide (48)
     wide_alias_add_op = (17,22)
     wide_alias_add_dst = (9,16)
     wide_alias_add_lhs = (1,8)
+    wide_intbase_add_bank = (6,8)
+    wide_intbase_add_port = (1,4)
     wide_40_45 = (40,45)
     wide_lim8_pointer = (40,43)
     short_alu_rhs_addr = (40,42)
@@ -5222,6 +5224,84 @@ macro wide_sub_control(lhs, rhs, word) {
     wide_sub_word(word, RN7, 1:1, result);
     *[data]:2 address = result;
 }
+
+wide_add_intbase_low: "LSA1" is wide_intbase_add_port=2 {
+    local value:8 = (zext(LSA1H) << 16) | zext(LSA1L);
+    export value;
+}
+wide_add_intbase_low: "LEA1" is wide_intbase_add_port=3 {
+    local value:8 = (zext(LEA1H) << 16) | zext(LEA1L);
+    export value;
+}
+wide_add_intbase_low: "PSTATUS" is wide_intbase_add_port=5 {
+    local value:8 = sext(PSTATUS);
+    export value;
+}
+wide_add_intbase_low: "USER_IO" is wide_intbase_add_port=7 {
+    local value:8 = sext(USER_IO);
+    export value;
+}
+
+macro wide_add_intbase(left, right) {
+    local result:8;
+    wide_routed_arithmetic(left, right, 0:1, 0:1, 1:1, 0:1, result);
+    INTBASE = result(2);
+}
+
+macro wide_add_intbase_aligned(gate, source, half) {
+    if ((gate & 1) == 0) goto <veto>;
+    local left:8 = sext(source) << 16;
+    local right:8 = sext(half) << 16;
+    wide_add_intbase(left, right);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+@define WIDE_ADD_INTBASE "wide_right_mode=1 & wide_0_0=1 & wide_unary_gate & wide_alias_add_op=8 & wide_alias_add_dst=0xd6 & wide_intbase_add_bank=7"
+@define WIDE_ADD_INTBASE_HALF "wide_40_45>=0x10 & wide_40_45<=0x15 & packed_rhs_lo"
+:ADD wide_unary_gate "INTBASE",wide_add_intbase_low,packed_rhs_lo
+is $(WIDE_ADD_INTBASE) & $(WIDE_ADD_INTBASE_HALF) & wide_add_intbase_low {
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    build wide_add_intbase_low;
+    local right:8 = sext(packed_rhs_lo);
+    wide_add_intbase(wide_add_intbase_low, right);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+:ADD wide_unary_gate "INTBASE","LC1",packed_rhs_lo
+is $(WIDE_ADD_INTBASE) & $(WIDE_ADD_INTBASE_HALF) & wide_intbase_add_port=4 {
+    wide_add_intbase_aligned(wide_unary_gate, LC1, packed_rhs_lo);
+}
+:ADD wide_unary_gate "INTBASE","INTBASE",packed_rhs_lo
+is $(WIDE_ADD_INTBASE) & $(WIDE_ADD_INTBASE_HALF) & wide_intbase_add_port=6 {
+    wide_add_intbase_aligned(wide_unary_gate, INTBASE, packed_rhs_lo);
+}
+:ADD wide_unary_gate "INTBASE","0",packed_rhs_lo
+is $(WIDE_ADD_INTBASE) & $(WIDE_ADD_INTBASE_HALF) & wide_intbase_add_port=8 {
+    wide_add_intbase_aligned(wide_unary_gate, 0:2, packed_rhs_lo);
+}
+:ADD wide_unary_gate "INTBASE","PACFG",packed_rhs_lo
+is $(WIDE_ADD_INTBASE) & $(WIDE_ADD_INTBASE_HALF) & wide_intbase_add_port=10 {
+    wide_add_intbase_aligned(wide_unary_gate, PACFG, packed_rhs_lo);
+}
+:ADD wide_unary_gate "INTBASE","0",packed_rhs_acc
+is $(WIDE_ADD_INTBASE) & wide_40_45>=8 & wide_40_45<=13 & wide_intbase_add_port=8
+    & packed_rhs_acc & packed_rhs_lo & packed_rhs_hi & packed_rhs_guard {
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    local right:8;
+    compact_long_sample(packed_rhs_lo, packed_rhs_hi, packed_rhs_guard, right);
+    wide_add_intbase(0:8, right);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+@undef WIDE_ADD_INTBASE_HALF
+@undef WIDE_ADD_INTBASE
 
 macro compact_rmw_r3(cfg, bank, address, enabled) {
     address = R3;

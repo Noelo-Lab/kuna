@@ -2454,3 +2454,44 @@ fn compact_word_multiply_samples_the_qualified_round_peer() {
                    (first, second, 0x0786, 0xfedc));
     }
 }
+
+#[test]
+fn wide_intbase_add_control_ports() {
+    for (left, right, a0l, est, table, config, expected, flags) in [
+        (0x0daa23, 0x91add1, 0xffff,     0, 0xffff, 0, 0xd1dd, 0x3034),
+        (0x0daa23, 0x91adf1, 0xffff,     0, 0xffff, 4, 0xd1dd, 0x3030),
+        (0x104250, 0x91adc5, 0xffff, 0x264, 0xffff, 0, 0x0080, 0x3245),
+        (0x10aa23, 0x91ade7, 0xffff,     0, 0xffff, 0, 0x0020, 0x3001),
+        (0x10aa23, 0x91adc9, 0x1234,     0, 0xffff, 0, 0x6385, 0x3000),
+        (0x10aa23, 0x91adcb, 0xffff,     0, 0xffff, 0, 0x0000, 0x3009),
+        (0x10aa23, 0x91adcf, 0xffff,     0, 0xffff, 0, 0x0000, 0x3009),
+        (0x10aa23, 0x91adf1, 0xffff,     0, 0xffff, 0, 0xffff, 0x3010),
+        (0x11aa23, 0x91ade9, 0xffff,     0, 0xffff, 0, 0x431f, 0x3001),
+        (0x11aa23, 0x91aded, 0xffff,     0, 0xffff, 0, 0x8133, 0x3010),
+        (0x11aa23, 0x91adf5, 0xffff,     0, 0xffff, 0, 0x5190, 0x3000),
+        (0x10aa23, 0x91adc5, 0xffff,     0, 0xff00, 0, 0x8123, 0x2000),
+        (0x50aa23, 0x91adc5, 0xffff,     0, 0x00ff, 0, 0x8123, 0x1000),
+        (0x90aa23, 0x91adc5, 0xffff,     0,      0, 0, 0x0080, 0x0001),
+    ] {
+        let mode = if left & SEQUENTIAL == 0 { 4 } else { 5 };
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, mode, 6), (2, 1, 0)], None);
+        let count = if right == 0x91ade9 { 0xfffe } else { 0x5151 };
+        let a1l = if right == 0x91ade9 { 0x4321 } else { 0x10 };
+        m.seed(&[("A0L", a0l), ("A1L", a1l), ("A5", 0x89d1dd24b5),
+                 ("LSA1", 0x807726), ("LEA1", 0x20df32), ("LC1", count),
+                 ("PSTATUS", 0x10), ("USER_IO", 7), ("PACFG", 0x5180), ("INTBASE", 0x8123),
+                 ("ECFG", config), ("EST", est), ("CETBL", table)]);
+        m.seed_data(0, 0xd35e);
+        m.seed_data(0xffff, 0xa5b3);
+        m.start(0).unwrap_or_else(|err| panic!("{left:06x}{right:06x}: {err:?}"));
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("INTBASE"), m.reg("EST")), (expected, flags), "{left:06x}{right:06x}");
+        assert_eq!((m.reg("A0L"), m.reg("A1L"), m.reg("LC1")), (a0l, a1l, count));
+        assert_eq!((m.data(0), m.data(0xffff)), (0xd35e, 0xa5b3));
+    }
+
+    let mut hole = Machine::new(0, &[(0x10aa23, 0x91adc1), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
+    assert!(matches!(hole.start(0), Err(KunaError::BadData { .. })));
+    let mut data = Machine::new(0, &[(0x10aa23, 0x91ad1f), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
+    assert!(matches!(data.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })));
+}

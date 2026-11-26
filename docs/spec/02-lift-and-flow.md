@@ -4425,6 +4425,19 @@ The `io_space` selector can drive word flags without accessing IO. The
 covered MSU `LC` selector updates the saved `LC1`, not the active counter.
 An MSU word DATA result tests for zero without its discarded low bits.
 
+The covered wide `ADD` routes drive the real `INTBASE` result and the
+primary arithmetic flags. `LSA1` and `LEA1` contribute unsigned 24-bit
+values in the low arithmetic lane; `PSTATUS` and `USER_IO` contribute
+signed words there. `LC1`, `INTBASE`, and `PACFG` use the aligned signed
+word lane. The mirrored open selector supplies zero, leaving an
+accumulator input at its full 40-bit width. The result takes the upper
+word after ALU limiting; the flags see the sum before limiting, and
+zero tests the bits above the discarded low word. Conditional forms
+can veto the register and arithmetic flags without suppressing CE
+feedback. The bare DATA selector does not read the extension literal;
+its address is not determined by the instruction and its lift remains
+unsupported.
+
 Covered wide accumulating multiplier control routes also take the high
 result word without driving arithmetic flags or applying ALU limiting.
 Rounded control results break half ties upward, regardless of the ALU
