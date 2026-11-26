@@ -22,6 +22,7 @@ pub(crate) mod kuna_stackloadcover;
 pub mod kuna_stackobjectasserts;
 pub mod kuna_stackobjectalias;
 pub mod kuna_stackparamviews;
+pub(crate) mod kuna_paramareaslot;
 pub mod kuna_stackobjectinfo;
 pub mod kuna_stackranges;
 pub mod kuna_undefname;

@@ -1751,6 +1751,34 @@ With the spec's ranges the escaping address makes the slot an open range up to
 the end of the home area, the `code *local_res18 [2]` the stock decompiler
 prints, and a spill there that nothing reads is a dead local store.
 
+**An address-taken slot no parameter claims
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_paramareaslot.rs`, always
+on).** Clearing the parameter range out of `MapState` leaves every slot there to
+a parameter symbol, so a slot the final prototype does not claim had no symbol
+at all. That is an incoming stack slot past the recovered parameters which the
+function uses as scratch, typically as an out-parameter it hands a callee: the
+`PTRSUB(spacebase, #off)` that takes its address printed as raw storage while
+its reads and writes printed as a separate, never-assigned variable,
+`fill(a0,0,0x10,&Stack0000000000000038); v1 = *(code **)(*v2 + 8);`. Once
+`ActionInputPrototype` has fixed the prototype, `name_local_highs_angr` maps
+each such slot as a local, right after `link_proto_params` and before any high
+is named. A slot qualifies when a stack `PTRSUB` resolves to it, it lies in the
+parameter range and in the local scope's window, no symbol (a parameter's
+included) overlaps it, some Varnode starting there is defined or read by an op
+other than an `INDIRECT` (so the body prints it), every variable holding such
+a Varnode takes its name from the slot (its name representative is stored
+there, so the naming walk binds it to the new symbol rather than to a register
+it was merged with), and no Varnode straddles its first byte. The symbol is an
+`undefined<N>` as wide as the widest Varnode starting there, so the reference
+and the accesses bind to one name, `&v2` and `*v2`, and `variables` reports the
+slot. The decision waits for the final
+prototype because during `mainloop` the parameter list is not yet known, and
+mapping the slot then would claim a stack parameter's storage as a local. A
+reference to the start of an object whose accesses all lie past its first byte
+(the callee fills a record, the body reads only a later field) maps nothing:
+there the reference keeps its storage name, as an open range in the local frame
+keeps its own.
+
 **RangeHint gathering.** Each `mainloop` pass,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs
 (ActionRestructureVarnode)` rebuilds the frame layout from scratch:
