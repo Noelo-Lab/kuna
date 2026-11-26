@@ -766,6 +766,45 @@ define token wide (48)
     minmax_store_lhs_hi = (0,3)
     minmax_store_dst = (4,11) hex
     minmax_store_dst_bank = (9,11)
+    minmax_store_dst_group = (8,11)
+    minmax_store_dst_word = (4,7)
+    minmax_store_dst_guard = (4,6)
+    minmax_store_dst_index = (4,6)
+    minmax_store_data_mode = (7,9)
+    minmax_store_is_register = (11,11)
+    minmax_store_is_long = (10,10)
+    minmax_store_base = (4,6)
+    minmax_store_mod = (4,6)
+    minmax_store_bound = (4,6)
+    minmax_store_shift = (4,6)
+    minmax_lhs_group = (2,3)
+    minmax_lhs_pair = (0,1)
+    minmax_lhs_even_guard = (0,1)
+    minmax_lhs_odd_guard = (0,1)
+    minmax_lhs_even_lo = (0,1)
+    minmax_lhs_odd_lo = (0,1)
+    minmax_lhs_even_hi = (0,1)
+    minmax_lhs_odd_hi = (0,1)
+    minmax_lhs_parity = (45,45)
+    minmax_rhs_group = (43,44)
+    minmax_rhs_index = (40,42)
+    minmax_rhs_guard = (40,42)
+    minmax_rhs_lo = (40,42)
+    minmax_rhs_hi = (40,42)
+    minmax_rhs_selector = (40,44)
+    minmax_pair_variant = (10,13)
+    minmax_pair_trace = (13,13)
+    minmax_pair_dst = (2,9)
+    minmax_pair_dst_group = (6,9)
+    minmax_pair_dst_word = (2,5)
+    minmax_pair_dst_ptr = (2,5)
+    minmax_pair_rhs_group = (44,45)
+    minmax_pair_rhs_word = (40,43)
+    minmax_pair_rhs_ptr = (40,43)
+    minmax_pair_rhs_acc = (40,42)
+    minmax_pair_rhs_acc_lo = (40,42)
+    minmax_pair_rhs_acc_hi = (40,42)
+    minmax_pair_rhs_acc_guard = (40,42)
     minmax_dst_group = (10,11)
     minmax_dst_acc = (7,9)
     minmax_dst_lo = (7,9)
@@ -7621,6 +7660,24 @@ attach values [minmax_ref_shift_lo] [0 2 4 6];
 attach values [minmax_ref_shift_hi] [8 10 12 14];
 attach variables [minmax_ref_guard_lo] [GB0 GB1 GB2 GB3];
 attach variables [minmax_ref_guard_hi] [GB4 GB5 _ _];
+attach variables [minmax_store_dst_word minmax_pair_dst_word minmax_pair_rhs_word]
+    [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
+attach variables [minmax_pair_dst_ptr minmax_pair_rhs_ptr] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [minmax_pair_trace] [BTR1 BTR2];
+attach variables [minmax_pair_rhs_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [minmax_pair_rhs_acc_lo minmax_rhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [minmax_pair_rhs_acc_hi minmax_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [minmax_pair_rhs_acc_guard minmax_rhs_guard minmax_store_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [minmax_store_base] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [minmax_store_mod] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [minmax_store_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [minmax_store_shift] [0 2 4 6 8 10 12 14];
+attach variables [minmax_lhs_even_guard] [GB0 GB2 GB4 _];
+attach variables [minmax_lhs_odd_guard] [GB1 GB3 GB5 _];
+attach variables [minmax_lhs_even_lo] [A0L A2L A4L _];
+attach variables [minmax_lhs_odd_lo] [A1L A3L A5L _];
+attach variables [minmax_lhs_even_hi] [A0H A2H A4H _];
+attach variables [minmax_lhs_odd_hi] [A1H A3H A5H _];
 
 minmax_predicate: is carmel_issue=5 & wide_left_mode=1 { export 3:2; }
 minmax_predicate: "CE1" is carmel_issue=4 & wide_left_mode=0 & minmax_ce_bank=0 {
@@ -7828,11 +7885,365 @@ macro compact_maxm_a0l_r0() {
     publish_alu_ce(EST & 0xcfff);
 }
 
+macro minmax_extend(src, unsigned_compare, extended) {
+    extended = zext(src);
+    if (unsigned_compare != 0) goto <minmax_extended>;
+    extended = sext(src);
+  <minmax_extended>
+}
+
+macro minmax_select(left, right, maximum, selected, better) {
+    better = (maximum != 0 && left s< right) || (maximum == 0 && right s< left);
+    selected = left;
+    if (!better) goto <minmax_selected>;
+    selected = right;
+  <minmax_selected>
+}
+
+macro minmax_compare_flags(left, right, unsigned_compare) {
+    if (unsigned_compare != 0) goto <unsigned_flags>;
+    minmax_signed_flags(left, right);
+    goto <compared>;
+  <unsigned_flags>
+    minmax_unsigned_flags(left, right);
+  <compared>
+}
+
+minmax_pair_op: "MINBTR1" is minmax_pair_variant=0 { export 0:1; }
+minmax_pair_op: "MINUBTR1" is minmax_pair_variant=1 { export 1:1; }
+minmax_pair_op: "MAXUBTR2" is minmax_pair_variant=15 { export 3:1; }
+
+minmax_pair_word: minmax_pair_rhs_word is minmax_ref_type=2 & minmax_pair_rhs_group=1 & minmax_pair_rhs_word { export minmax_pair_rhs_word; }
+minmax_pair_word: minmax_pair_rhs_ptr is minmax_ref_type=2 & minmax_pair_rhs_group=2 & minmax_pair_rhs_ptr { export minmax_pair_rhs_ptr; }
+
+# These control inputs compare as words but drive the extended result lane.
+minmax_pair_control: "PSTATUS" is minmax_ref_type=3 & wide_40_45=0x15 { export PSTATUS; }
+minmax_pair_control: "USER_IO" is minmax_ref_type=3 & wide_40_45=0x17 { export USER_IO; }
+
+minmax_pair_data: "*"^wide_move_base is minmax_ref_type<2 & minmax_ref_mode=0 & wide_move_base { export wide_move_base; }
+
+minmax_pair_rhs: minmax_pair_word is minmax_pair_word & minmax_pair_op {
+    local value:8;
+    minmax_extend(minmax_pair_word, minmax_pair_op & 1, value);
+    export value;
+}
+minmax_pair_rhs: minmax_pair_control is minmax_pair_control & minmax_pair_op {
+    local value:8;
+    minmax_extend(minmax_pair_control, minmax_pair_op & 1, value);
+    export value;
+}
+minmax_pair_rhs: minmax_pair_rhs_acc is minmax_ref_type=2 & minmax_ref_mode=1 & minmax_rhs_index<6
+    & minmax_pair_rhs_acc & minmax_pair_rhs_acc_lo & minmax_pair_rhs_acc_hi & minmax_pair_rhs_acc_guard & minmax_pair_op {
+    local guard:8;
+    minmax_extend(minmax_pair_rhs_acc_guard, minmax_pair_op & 1, guard);
+    local value:8 = guard * 0x100000000 + zext(minmax_pair_rhs_acc_hi) * 0x10000 + zext(minmax_pair_rhs_acc_lo);
+    export value;
+}
+minmax_pair_rhs: minmax_pair_data is minmax_ref_type=0 & minmax_pair_data & minmax_pair_op {
+    local word:2 = *[data]:2 minmax_pair_data;
+    local value:8;
+    minmax_extend(word, minmax_pair_op & 1, value);
+    export value;
+}
+minmax_pair_rhs: "long" minmax_pair_data is minmax_ref_type=1 & minmax_pair_data & minmax_pair_op {
+    local address:2 = minmax_pair_data;
+    local upper:2 = address + 1;
+    local lo:2 = *[data]:2 address;
+    local hi:2 = *[data]:2 upper;
+    local high:8;
+    minmax_extend(hi, minmax_pair_op & 1, high);
+    local value:8 = high * 0x10000 + zext(lo);
+    export value;
+}
+minmax_pair_lane: is minmax_pair_word { export 0:1; }
+minmax_pair_lane: is minmax_pair_control { export 16:1; }
+minmax_pair_lane: is minmax_ref_type=2 & minmax_ref_mode=1 & minmax_rhs_index<6 { export 16:1; }
+minmax_pair_lane: is minmax_pair_data & minmax_ref_type=0 { export 0:1; }
+minmax_pair_lane: is minmax_pair_data & minmax_ref_type=1 { export 16:1; }
+
+minmax_pair_address_word: minmax_pair_dst_ptr is minmax_pair_dst_group=0xa & minmax_pair_dst_ptr { export minmax_pair_dst_ptr; }
+minmax_pair_address_word: "LC1" is minmax_pair_dst=0xd4 { export LC1; }
+
+macro minmax_pair_traced(dst, rhs, kind, trace, lane, left, right) {
+    minmax_extend(dst, kind & 1, left);
+    right = rhs;
+    local selected:8;
+    local better:1;
+    minmax_select(left, right, kind & 2, selected, better);
+    trace = (trace << 1) | zext(better);
+    local word:8 = selected >> lane;
+    dst = word:2;
+}
+
+@define WIDE_EXTREMA_PAIR "$(WIDE_MINMAX) & wide_14_22=0x10a"
+:minmax_pair_op minmax_predicate minmax_pair_dst_word,minmax_pair_rhs is $(WIDE_EXTREMA_PAIR)
+    & minmax_pair_dst_group=9 & minmax_pair_dst & minmax_pair_dst_word & minmax_pair_op & minmax_pair_rhs & minmax_pair_lane & minmax_pair_trace {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    build minmax_pair_rhs;
+    local left:8;
+    local right:8;
+    minmax_pair_traced(minmax_pair_dst_word, minmax_pair_rhs, minmax_pair_op, minmax_pair_trace, minmax_pair_lane, left, right);
+    local destination:1 = minmax_pair_dst;
+    if ((destination & 7) >= 6) goto <feedback>;
+    minmax_compare_flags(left, right, minmax_pair_op & 1);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_pair_op minmax_predicate minmax_pair_address_word,minmax_pair_rhs is $(WIDE_EXTREMA_PAIR)
+    & minmax_pair_address_word & minmax_pair_op & minmax_pair_rhs & minmax_pair_lane & minmax_pair_trace {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    build minmax_pair_rhs;
+    local left:8;
+    local right:8;
+    minmax_pair_traced(minmax_pair_address_word, minmax_pair_rhs, minmax_pair_op, minmax_pair_trace, minmax_pair_lane, left, right);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MINMU minmax_predicate minmax_pair_address_word,minmax_pair_data is $(WIDE_EXTREMA_PAIR)
+    & minmax_pair_variant=3 & minmax_pair_address_word & minmax_ref_type=0 & minmax_pair_data {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local address:2 = minmax_pair_data;
+    local word:2 = *[data]:2 address;
+    if (word >= minmax_pair_address_word) goto <feedback>;
+    minmax_pair_address_word = word;
+    MINMAX = address;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+@undef WIDE_EXTREMA_PAIR
+
 macro minmax_store_long(address, value) {
     local upper:2 = address + 1;
     *[data]:2 address = value:2;
     *[data]:2 upper = value(2);
 }
+
+minmax_min_store_op: "MIN" is wide_12_22=0x484 { export 0:1; }
+minmax_min_store_op: "MINU" is wide_12_22=0x485 { export 1:1; }
+minmax_min_addr_op: "MINM" is wide_12_22=0x482 { export 0:1; }
+minmax_min_addr_op: "MINMU" is wide_12_22=0x483 { export 1:1; }
+minmax_min_signedness: is (wide_12_22=0x482 | wide_12_22=0x484) { export 0:1; }
+minmax_min_signedness: is (wide_12_22=0x483 | wide_12_22=0x485) { export 1:1; }
+
+# The left selector's low bit is in the first slot. The remaining four
+# bits share the second slot with the result selector.
+minmax_extrema_lhs_word: minmax_lhs_even_lo is minmax_lhs_group=2 & minmax_lhs_pair<3 & minmax_lhs_parity=0 & minmax_lhs_even_lo { export minmax_lhs_even_lo; }
+minmax_extrema_lhs_word: minmax_lhs_odd_lo is minmax_lhs_group=2 & minmax_lhs_pair<3 & minmax_lhs_parity=1 & minmax_lhs_odd_lo { export minmax_lhs_odd_lo; }
+minmax_extrema_lhs_word: minmax_lhs_even_hi is minmax_lhs_group=3 & minmax_lhs_pair<3 & minmax_lhs_parity=0 & minmax_lhs_even_hi { export minmax_lhs_even_hi; }
+minmax_extrema_lhs_word: minmax_lhs_odd_hi is minmax_lhs_group=3 & minmax_lhs_pair<3 & minmax_lhs_parity=1 & minmax_lhs_odd_hi { export minmax_lhs_odd_hi; }
+minmax_extrema_lhs_guard: minmax_lhs_even_guard is minmax_lhs_group=0 & minmax_lhs_pair<3 & minmax_lhs_parity=0 & minmax_lhs_even_guard { export minmax_lhs_even_guard; }
+minmax_extrema_lhs_guard: minmax_lhs_odd_guard is minmax_lhs_group=0 & minmax_lhs_pair<3 & minmax_lhs_parity=1 & minmax_lhs_odd_guard { export minmax_lhs_odd_guard; }
+
+minmax_extrema_lhs: minmax_extrema_lhs_word is minmax_extrema_lhs_word & minmax_min_signedness {
+    local value:8;
+    minmax_extend(minmax_extrema_lhs_word, minmax_min_signedness, value);
+    export value;
+}
+minmax_extrema_lhs: minmax_extrema_lhs_guard is minmax_extrema_lhs_guard {
+    local value:8 = zext(minmax_extrema_lhs_guard);
+    export value;
+}
+minmax_extrema_lhs_lane: is minmax_extrema_lhs_word { export 0:1; }
+minmax_extrema_lhs_lane: is minmax_extrema_lhs_guard { export 16:1; }
+
+@define MINMAX_RHS_WORD_SELECTOR "(minmax_rhs_group>=2 | minmax_rhs_selector=0xf)"
+minmax_extrema_rhs_word: minmax_rhs_lo is minmax_rhs_group=2 & minmax_rhs_index<6 & minmax_rhs_lo { export minmax_rhs_lo; }
+minmax_extrema_rhs_word: minmax_rhs_hi is minmax_rhs_group=3 & minmax_rhs_index<6 & minmax_rhs_hi { export minmax_rhs_hi; }
+minmax_extrema_rhs_word: "#"^absolute_data_addr is minmax_rhs_selector=0xf & absolute_data_addr { export *[const]:2 absolute_data_addr; }
+
+minmax_extrema_rhs: minmax_extrema_rhs_word is $(MINMAX_RHS_WORD_SELECTOR) & minmax_extrema_rhs_word & minmax_min_signedness {
+    local value:8;
+    minmax_extend(minmax_extrema_rhs_word, minmax_min_signedness, value);
+    export value;
+}
+minmax_extrema_rhs: minmax_rhs_guard is minmax_rhs_group=0 & minmax_rhs_index<6 & minmax_rhs_guard {
+    local value:8 = zext(minmax_rhs_guard);
+    export value;
+}
+minmax_extrema_rhs: "#0xffffffffff" is minmax_rhs_selector=0xe & minmax_min_signedness {
+    local value:8 = 0xffffffffff;
+    if (minmax_min_signedness != 0) goto <extended>;
+    value = -1;
+  <extended>
+    export value;
+}
+minmax_extrema_rhs_lane: is $(MINMAX_RHS_WORD_SELECTOR) { export 0:1; }
+minmax_extrema_rhs_lane: is (minmax_rhs_group=0 & minmax_rhs_index<6) | minmax_rhs_selector=0xe { export 16:1; }
+@undef MINMAX_RHS_WORD_SELECTOR
+
+minmax_extrema_data: "*"^minmax_store_base is minmax_store_is_register=0 & minmax_store_data_mode=0 & minmax_store_base {
+    export minmax_store_base;
+}
+minmax_extrema_data: "*"^minmax_store_base^"++" is minmax_store_is_register=0 & minmax_store_is_long=0 & minmax_store_data_mode=2
+    & minmax_store_base & minmax_store_mod & minmax_store_bound & minmax_store_shift {
+    local address:2;
+    minmax_ref_update(minmax_store_base, minmax_store_mod, minmax_store_bound, minmax_store_shift, 1:2, address);
+    export address;
+}
+minmax_extrema_data: "*"^minmax_store_base^"++" is minmax_store_is_register=0 & minmax_store_is_long=1
+    & minmax_store_data_mode=2 & minmax_store_base & minmax_store_mod & minmax_store_bound & minmax_store_shift {
+    local address:2;
+    minmax_ref_update(minmax_store_base, minmax_store_mod, minmax_store_bound, minmax_store_shift, 2:2, address);
+    export address;
+}
+minmax_extrema_data: "*"^minmax_store_base^"+="^minmax_ref_disp is minmax_store_is_register=0 & minmax_store_data_mode=6
+    & minmax_store_base & minmax_store_mod & minmax_store_bound & minmax_store_shift & minmax_ref_disp {
+    local address:2;
+    minmax_ref_update(minmax_store_base, minmax_store_mod, minmax_store_bound, minmax_store_shift, minmax_ref_disp, address);
+    export address;
+}
+
+macro minmax_store_min(lhs, rhs, unsigned_compare, selected) {
+    local left:8 = lhs;
+    local right:8 = rhs;
+    local better:1;
+    minmax_select(left, right, 0:1, selected, better);
+    minmax_compare_flags(right, left, unsigned_compare);
+}
+
+@define WIDE_EXTREMA_MIN_STORE "$(WIDE_MINMAX) & minmax_min_store_op & minmax_extrema_lhs & minmax_extrema_rhs"
+@define WIDE_EXTREMA_STORE_ADDR "if ((minmax_predicate & 2) == 0) goto <feedback>; build minmax_extrema_data; if ((minmax_predicate & 1) == 0) goto <feedback>;"
+:minmax_min_store_op minmax_predicate minmax_extrema_data,minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_STORE)
+    & minmax_store_is_long=0 & minmax_extrema_data & minmax_extrema_lhs_lane & minmax_extrema_rhs_lane {
+    $(WIDE_EXTREMA_STORE_ADDR)
+    local selected:8;
+    minmax_store_min(minmax_extrema_lhs, minmax_extrema_rhs, minmax_min_store_op, selected);
+    local word:8 = selected >> (minmax_extrema_lhs_lane | minmax_extrema_rhs_lane);
+    *[data]:2 minmax_extrema_data = word:2;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_min_store_op minmax_predicate "long" minmax_extrema_data,minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_STORE)
+    & minmax_store_is_long=1 & minmax_extrema_data {
+    $(WIDE_EXTREMA_STORE_ADDR)
+    local selected:8;
+    minmax_store_min(minmax_extrema_lhs, minmax_extrema_rhs, minmax_min_store_op, selected);
+    local result:4 = selected:4;
+    minmax_store_long(minmax_extrema_data, result);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_min_store_op minmax_predicate minmax_store_dst_word,minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_STORE)
+    & minmax_store_dst_group=9 & minmax_store_dst_word & minmax_extrema_lhs_lane & minmax_extrema_rhs_lane {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local selected:8;
+    minmax_store_min(minmax_extrema_lhs, minmax_extrema_rhs, minmax_min_store_op, selected);
+    local word:8 = selected >> (minmax_extrema_lhs_lane | minmax_extrema_rhs_lane);
+    minmax_store_dst_word = word:2;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_min_store_op minmax_predicate "<discard>",minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_STORE)
+    & (minmax_store_dst=0xb8 | minmax_store_dst=0xd8) {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    minmax_compare_flags(minmax_extrema_rhs, minmax_extrema_lhs, minmax_min_store_op);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+@undef WIDE_EXTREMA_MIN_STORE
+
+# A reference can force an upper-word result without winning the comparison.
+# MINMAX still observes only strict replacement and uses the reference's low word.
+macro minmax_record_min(left, right, reference, selected, better) {
+    minmax_select(left, right, 0:1, selected, better);
+    if (!better) goto <recorded>;
+    MINMAX = reference:2;
+  <recorded>
+}
+
+@define WIDE_EXTREMA_MIN_ADDR "$(WIDE_MINMAX) & minmax_min_addr_op & minmax_extrema_lhs & minmax_extrema_rhs"
+:minmax_min_addr_op minmax_predicate minmax_extrema_data,minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_ADDR)
+    & minmax_store_is_long=0 & minmax_extrema_data & minmax_extrema_rhs_lane {
+    $(WIDE_EXTREMA_STORE_ADDR)
+    local address:2 = minmax_extrema_data;
+    local word:2 = *[data]:2 address;
+    local left:8;
+    minmax_extend(word, minmax_min_addr_op, left);
+    local selected:8;
+    local better:1;
+    minmax_record_min(left, minmax_extrema_lhs, minmax_extrema_rhs, selected, better);
+    if (!better && minmax_extrema_rhs_lane == 0) goto <flags>;
+    local result:8 = selected >> minmax_extrema_rhs_lane;
+    *[data]:2 address = result:2;
+  <flags>
+    minmax_compare_flags(left, minmax_extrema_lhs, minmax_min_addr_op);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_min_addr_op minmax_predicate "long" minmax_extrema_data,minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_ADDR)
+    & minmax_store_is_long=1 & minmax_extrema_data {
+    $(WIDE_EXTREMA_STORE_ADDR)
+    local address:2 = minmax_extrema_data;
+    local upper:2 = address + 1;
+    local lo:2 = *[data]:2 address;
+    local hi:2 = *[data]:2 upper;
+    local high:8;
+    minmax_extend(hi, minmax_min_addr_op, high);
+    local left:8 = high * 0x10000 + zext(lo);
+    if (!(minmax_extrema_lhs s< left)) goto <flags>;
+    MINMAX = minmax_extrema_rhs:2;
+    local result:4 = minmax_extrema_lhs:4;
+    minmax_store_long(address, result);
+  <flags>
+    minmax_compare_flags(left, minmax_extrema_lhs, minmax_min_addr_op);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_min_addr_op minmax_predicate minmax_store_dst_guard,minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_ADDR)
+    & minmax_store_dst_group=8 & minmax_store_dst<0x86 & minmax_store_dst_index<6 & minmax_store_dst_guard {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = zext(minmax_store_dst_guard);
+    local selected:8;
+    local better:1;
+    minmax_record_min(left, minmax_extrema_lhs, minmax_extrema_rhs, selected, better);
+    minmax_store_dst_guard = selected(4);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+minmax_extrema_addr_word: minmax_store_dst_word is minmax_store_dst_group=9 & minmax_store_dst_word { export minmax_store_dst_word; }
+minmax_extrema_addr_word: "LC1" is minmax_store_dst=0xd4 { export LC1; }
+
+:minmax_min_addr_op minmax_predicate minmax_extrema_addr_word,minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_ADDR)
+    & minmax_extrema_addr_word & minmax_store_dst & minmax_extrema_lhs_lane & minmax_extrema_rhs_lane {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8;
+    minmax_extend(minmax_extrema_addr_word, minmax_min_addr_op, left);
+    local selected:8;
+    local better:1;
+    minmax_record_min(left, minmax_extrema_lhs, minmax_extrema_rhs, selected, better);
+    local result:8 = selected >> (minmax_extrema_lhs_lane | minmax_extrema_rhs_lane);
+    minmax_extrema_addr_word = result:2;
+    local destination:1 = minmax_store_dst;
+    if ((destination >> 4) != 9 || (destination & 7) >= 6) goto <feedback>;
+    minmax_compare_flags(left, minmax_extrema_lhs, minmax_min_addr_op);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_min_addr_op minmax_predicate "<discard>",minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_ADDR)
+    & minmax_store_dst=0xd8 {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    if (!(minmax_extrema_lhs s< 0)) goto <feedback>;
+    MINMAX = minmax_extrema_rhs:2;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_min_addr_op minmax_predicate "CECFG2",minmax_extrema_lhs,minmax_extrema_rhs is $(WIDE_EXTREMA_MIN_ADDR)
+    & minmax_store_dst=0xc3 & minmax_extrema_lhs_lane & minmax_extrema_rhs_lane {
+    # Feedback observes the old configuration, before the word result is published.
+    publish_alu_ce(EST & 0xcfff);
+    if ((minmax_predicate & 1) == 0) goto <done>;
+    local left:8;
+    minmax_extend(CECFG2, minmax_min_addr_op, left);
+    local selected:8;
+    local better:1;
+    minmax_record_min(left, minmax_extrema_lhs, minmax_extrema_rhs, selected, better);
+    local result:8 = selected >> (minmax_extrema_lhs_lane | minmax_extrema_rhs_lane);
+    CECFG2 = result:2;
+  <done>
+}
+@undef WIDE_EXTREMA_MIN_ADDR
+@undef WIDE_EXTREMA_STORE_ADDR
 
 macro minmax_signed_max_word(lhs, rhs, selected) {
     local left:8 = sext(lhs);

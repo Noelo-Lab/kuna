@@ -4611,6 +4611,33 @@ the first; `Z` reports equality at the input widths. The two extended
 result banks drive neither writeback nor `C`/`Z`. CE feedback remains
 independent of the result bank.
 
+For the wide traced word extrema, `MINBTR1` and `MINUBTR1` shift a
+strict right-hand win into `BTR1`; `MAXUBTR2` uses `BTR2`. The trace
+compares full inputs before writeback selects the result lane. A full
+accumulator, long DATA operand, `USER_IO`, or `PSTATUS` can select the
+upper word even when the left operand wins. The control inputs compare
+as words with the operation's signedness. Address, loop, flag-word, and
+X-register destinations do not publish new comparison flags. The loop
+result is `LC1`, not `LC`.
+
+For the covered stored `MIN` and `MINU`, guard operands are unsigned
+bytes even in signed comparisons. The extra literal in the second
+source is a word; the all-ones source is 40 bits. Short results take
+the upper word when either operand is wider or narrower than a word,
+whereas long DATA stores publish the selected low 32 bits, low word
+first. A disconnected stored result can still publish comparison
+flags. The postdisplacement DATA port writes the captured word address;
+its signed displacement updates the pointer at the address stage and
+does not depend on whether CE allows writeback.
+
+In the covered split-source `MINM` and `MINMU`, the left input is the
+old destination and the right input determines the comparison. The
+separate reference supplies `MINMAX` only on strict replacement; its
+width can select the upper result word without changing the comparison.
+Guard destinations take bits 32–39, and a disconnected word result can
+still update `MINMAX`. A `CECFG2` result does not feed its own CE
+feedback; the following issue can observe the new configuration.
+
 For covered wide shift routes, the word result uses the upper half of
 the low 32-bit lane. The word and long carry taps differ, and the guard
 can keep the zero flag clear when the written word is zero.

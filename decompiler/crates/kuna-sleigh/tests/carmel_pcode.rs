@@ -1938,3 +1938,115 @@ fn compact_arithmetic_fft_survives_a_later_below_threshold_issue() {
     }
     assert_eq!(m.reg("EST"), 0x7930);
 }
+
+#[test]
+fn wide_extrema_trace_is_independent_of_the_word_result_lane() {
+    let seed = [("CETBL", 0xffff), ("R1", 0x1234), ("A0", 0xa58f61c253),
+                ("A1", 0x2243217654), ("USER_IO", 0x9234), ("BTR1", 3), ("BTR2", 9)];
+    for (left, right, reg, value, btr1, btr2, est) in [
+        (0x88e52d, 0xc2be86, "R1",  0x8f61, 3,      0x13, 0x3000),
+        (0x88e52d, 0xc28686, "R1",  0,      6,      9,    0x3000),
+        (0x88e52d, 0xc2be66, "A1H", 0x8f61, 3,      0x13, 0x3001),
+        (0x97e52d, 0xc28243, "A0L", 0xffff, 7,      9,    0x3010),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&seed);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg(reg), m.reg("BTR1"), m.reg("BTR2"), m.reg("EST")),
+                   (value, btr1, btr2, est), "{left:06x}{right:06x}");
+        assert_eq!(m.reg("GB1"), 0x22);
+    }
+}
+
+#[test]
+fn wide_extrema_trace_load_and_minmax_address_use_different_ports() {
+    for (left, right, value, reference, btr2) in [
+        (0x82e52d, 0xc28e80, 0x0039, 0x0040, 9),
+        (0x81e52d, 0xc2be81, 0x1000, 0x1234, 0x13),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x6000), ("R1", 0x20), ("R2", 0x40), ("BTR2", 9),
+                 ("MINMAX", 0x1234), ("CETBL", 0xffff)]);
+        m.seed_data(0x20, 0x27);
+        m.seed_data(0x21, 0x1000);
+        m.seed_data(0x40, 0x39);
+        m.seed_data(0x41, 0x2000);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R0"), m.reg("MINMAX"), m.reg("BTR2"), m.reg("EST")),
+                   (value, reference, btr2, 0x3000));
+    }
+}
+
+#[test]
+fn wide_extrema_stored_inputs_keep_guard_and_literal_widths() {
+    for (left, right, words, est) in [
+        (0xc18743, 0xc84400, (0x17, 0), 0x10),
+        (0xef8743, 0xc84402, (0x8743, 0xffff), 0),
+        (0xce8743, 0xc84408, (0xffff, 0xffff), 0),
+        (0xce8743, 0xc85408, (0x1234, 0), 0),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0x1712341234), ("A1", 0x2209871234), ("GB5", 0xf5), ("R0", 0x100)]);
+        m.seed_data(0xffff, 0x718d);
+        m.seed_data(0x100, 0x1111);
+        m.seed_data(0x101, 0x2222);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.data(0x100), m.data(0x101)), words);
+        assert_eq!(m.data(0xffff), 0x718d);
+        assert_eq!(m.reg("EST"), est);
+    }
+}
+
+#[test]
+fn wide_extrema_stored_postdisplacement_has_independent_ce_address_gate() {
+    let mut m = Machine::new(0, &[(0x258011, 0xc84742), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
+    for (ce, table, pointer, words, est) in [
+        (0,      0,      0x48, (0x1111, 0x2222), 0),
+        (0x1000, 0,      0x59, (0x1111, 0x2222), 0),
+        (0,      0xffff, 0x59, (0x89, 0),        0x3008),
+    ] {
+        m.seed(&[("R4", 0x48), ("GB5", 0x89), ("CECFG1", ce), ("CETBL", table), ("EST", 0)]);
+        m.seed_data(0x48, 0x1111);
+        m.seed_data(0x49, 0x2222);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.data(0x48), m.data(0x49)), words);
+        assert_eq!((m.reg("R4"), m.reg("EST")), (pointer, est));
+    }
+}
+
+#[test]
+fn wide_extrema_minmax_reg_and_guard_results_use_reference_width() {
+    for (left, right, a1, acc, reference, est) in [
+        (0xae5ed6, 0xc82908, 0xfffe, 0x331234ffff, 0xffff, 0x3010),
+        (0xae5ed6, 0xc83908, 0x2000, 0x3312340000, 0xbaba, 0x3001),
+        (0xb25ed6, 0xc82808, 0xaaaa, 0xff12341000, 0xdada, 0x3000),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0x3312341000), ("A1L", a1), ("A2L", 0xdada), ("MINMAX", 0xbaba), ("CETBL", 0xffff)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("MINMAX"), m.reg("EST")), (acc, reference, est));
+    }
+}
+
+#[test]
+fn wide_extrema_control_result_does_not_feed_its_own_ce() {
+    let mut m = Machine::new(0, &[(0xee5ed6, 0xc83c3d), (NOP, NOP), (NOP, NOP)],
+                             &[(0, 5, 6), (2, 1, 6), (4, 1, 0)], None);
+    m.seed(&[("A3H", 0x1234), ("CECFG2", 0x2323), ("MINMAX", 0xbaba), ("CETBL", 0xffff)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("CECFG2"), m.reg("MINMAX"), m.reg("EST")), (0, 0xffff, 0x1000));
+    assert_eq!(m.step(), 12);
+    assert_eq!(m.reg("EST"), 0x3000);
+}
+
+#[test]
+fn wide_extrema_reserved_result_still_rejects_lift() {
+    let mut m = Machine::new(0, &[(0xc58743, 0xc84ca2), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    assert!(matches!(m.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })));
+}
