@@ -9270,6 +9270,66 @@ wide_bitfield_data: "long *"^short_alu_src_ptr is packed_lhs_group=8 & short_alu
     export source;
 }
 
+@define WIDE_LSHIFT_ROUTED "$(WIDE_ORIGINAL_BITS) & wide_shift_opcode=0x38"
+@define WIDE_LSHIFT_LONG "$(WIDE_LSHIFT_ROUTED) & wide_shift_source_tail=0x8b & wide_bitfield_data"
+
+:LSHIFT "discard",wide_bitfield_data,"A2H" is $(WIDE_LSHIFT_LONG) & wide_shift_destination=0xe1 & wide_40_45=0x1a {
+    local input:8 = zext(wide_bitfield_data);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, A2H, 32:4, 0:4, 0:1, result, flags);
+    publish_alu_ce((EST & 0xcffe) | (flags & 1));
+}
+
+:LSHIFT "flags",wide_bitfield_data,"A0L" is $(WIDE_LSHIFT_LONG) & wide_shift_destination=0xd8 & wide_40_45=0x10 {
+    local input:8 = zext(wide_bitfield_data);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, A0L, 32:4, 16:4, 0:1, result, flags);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:LSHIFT "flags","USER_IO","*(R4+"^wide_shift_dst_disp^")" is $(WIDE_LSHIFT_ROUTED) & wide_shift_destination=0xd8 & wide_40_45=0x24 & wide_shift_source_tail=0x1ee & wide_shift_dst_disp {
+    local address:2 = R4 + sext(wide_shift_dst_disp:1);
+    local count:2 = *[data]:2 address;
+    local input:8 = zext(USER_IO);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 16:4, 0:1, result, flags);
+    # This input preserves the bit-zero tap beyond the word boundary.
+    if (((count & 0x7f) - 33) > 30) goto <publish>;
+    flags = flags | (USER_IO & 1);
+  <publish>
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:LSHIFT "A0",wide_bitfield_data,"A0L" is $(WIDE_LSHIFT_LONG) & wide_shift_destination=0x88 & wide_40_45=0x10 {
+    local input:8 = zext(wide_bitfield_data);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, A0L, 40:4, 0:4, 0:1, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+wide_lshift_intbase_src: "LC1" is wide_shift_source_tail=0x1e9 { export LC1; }
+wide_lshift_intbase_src: "INTBASE" is wide_shift_source_tail=0x1ed { export INTBASE; }
+wide_lshift_intbase_src: "PACFG" is wide_shift_source_tail=0x1d5 { export PACFG; }
+
+:LSHIFT "INTBASE",wide_lshift_intbase_src,"A0L" is $(WIDE_LSHIFT_ROUTED) & wide_shift_destination=0xd6 & wide_40_45=0x10 & wide_lshift_intbase_src {
+    local input:8 = zext(wide_lshift_intbase_src) << 16;
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, A0L, 32:4, 16:4, 0:1, result, flags);
+    INTBASE = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+@undef WIDE_LSHIFT_LONG
+@undef WIDE_LSHIFT_ROUTED
+
 :EXTRACTZ "A0",wide_bitfield_data,bitfield_descriptor is $(WIDE_ORIGINAL_BITS) & packed_opcode=0xee & packed_dst=0x10 & wide_0_0=1 & wide_40_45=0xf & wide_bitfield_data & bitfield_descriptor {
     local field:2 = bitfield_descriptor;
     local result:4;

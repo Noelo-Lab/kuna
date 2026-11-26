@@ -4710,6 +4710,25 @@ feedback; the following issue can observe the new configuration.
 For covered wide shift routes, the word result uses the upper half of
 the low 32-bit lane. The word and long carry taps differ, and the guard
 can keep the zero flag clear when the written word is zero.
+The supported wide `LSHIFT` long DATA input takes its low word through
+`R5` and its high word at the wrapped next address. A flags-only word
+result ignores the low half for `Z` and takes right-shift carry from the
+upper half. A whole `A0` result includes both halves and the guard and
+uses the 40-bit left carry tap. The carry-only result discards the
+shifter value, takes left carry at the 32-bit tap and right carry from
+the low lane, and does not change `Z`, `M`, or `E`.
+
+The `USER_IO` input to the flags-only word result enters unaligned.
+Its count is read from `R4` plus the signed displacement, without
+modifying `R4`. A nonzero `USER_IO` can set `Z` at small counts because
+the result's low half is not tested; the extra field is not a second
+literal input or an unaddressed DATA read.
+For positive counts above 32 this input retains the bit-zero carry
+tap, unlike the long DATA input.
+
+The `INTBASE` word result takes the upper shifter word. Its `LC1`,
+`PACFG`, and `INTBASE` inputs are zero-extended words aligned at bit
+16, and the logical operation does not apply arithmetic limiting.
 
 The covered memory-result `EXTRACTZ` takes its field descriptor from
 `FF2:FF1`, but the unbound `IOSPACE` source supplies zero. It still writes

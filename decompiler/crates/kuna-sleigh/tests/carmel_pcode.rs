@@ -2495,3 +2495,87 @@ fn wide_intbase_add_control_ports() {
     let mut data = Machine::new(0, &[(0x10aa23, 0x91ad1f), (NOP, NOP)], &[(0, 4, 6), (2, 1, 0)], None);
     assert!(matches!(data.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })));
 }
+
+#[test]
+fn wide_lshift_control_aliases() {
+    for (left, right, count, input, expected, flags) in [
+        (0x9a097e, 0xf1c28b, 8, 0x01000000, None, 0x3001),
+        (0x9a097e, 0xf1c28b, 0x7f, 0x80000001, None, 0x3001),
+        (0x9a097e, 0xf1c28b, 0x60, 0x80000000, None, 0x3001),
+        (0x9a097e, 0xf1c28b, 0x58, 0x80000000, None, 0x3000),
+        (0xd0097e, 0xf1b08b, 0, 1, None, 0x3008),
+        (0xd0097e, 0xf1b08b, 0x7f, 0x10000, None, 0x3009),
+        (0xd0097e, 0xf1b08b, 0x7f, 0x80000001, None, 0x3000),
+        (0xd0097e, 0xf1b08b, 1, 0x80000000, None, 0x3021),
+        (0xd0097e, 0xf1b08b, 33, 1, None, 0x3020),
+        (0xd0097e, 0xf1108b, 0, 1, Some(1), 0x3000),
+        (0xd0097e, 0xf1108b, 0x7f, 0x80000001, Some(0x40000000), 0x3001),
+        (0xd0097e, 0xf1108b, 1, 0x80000000, Some(0x100000000), 0x3020),
+        (0xd0097e, 0xf1108b, 0x3f, 0x80010001, Some(0), 0x3009),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        let a0 = 0xe9ab000000 | count;
+        m.seed(&[("A0", a0), ("A2H", count), ("R5", 0x4048), ("ECFG", 4), ("CETBL", 0xffff)]);
+        m.seed_data(0x4048, input & 0xffff);
+        m.seed_data(0x4049, input >> 16);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("EST")), (expected.unwrap_or(a0), flags));
+        assert_eq!(m.reg("R5"), 0x4048);
+        assert_eq!((m.data(0x4048), m.data(0x4049)), (input & 0xffff, input >> 16));
+    }
+
+    for (left, address, user_io, count, table, old, flags) in [
+        (0xe42e2d, 0x75, 0x1111, 1, 0xffff, 0, 0x3008),
+        (0xe42e2d, 0x75, 0x1111, 8, 0xffff, 0, 0x3000),
+        (0xe42e2d, 0x75, 0, 8, 0xffff, 0, 0x3008),
+        (0xe42e2d, 0x75, 0x8000, 1, 0, 0, 0),
+        (0xe42e2d, 0x75, 0x1111, 0x80, 0xffff, 1, 0x3009),
+        (0xe42e2d, 0x75, 1, 33, 0xffff, 0, 0x3021),
+        (0xe42e2d, 0x75, 1, 63, 0xffff, 0, 0x3009),
+        (0xe48081, 0xffc9, 0x1111, 8, 0xffff, 0, 0x3000),
+    ] {
+        let mut m = Machine::new(0, &[(left, 0xf1b1ee), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("R4", 0x48), ("USER_IO", user_io), ("A0L", 7), ("CETBL", table), ("EST", old)]);
+        m.seed_data(address, count);
+        m.seed_data(0xffff, 0x4780);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("USER_IO"), m.reg("R4"), m.reg("A0L")), (flags, user_io, 0x48, 7));
+        assert_eq!((m.data(address), m.data(0xffff)), (count, 0x4780));
+    }
+
+    let mut m = Machine::new(0, &[(0xd0097e, 0xf1108b), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A0L", 1), ("R5", 0xffff), ("CETBL", 0)]);
+    m.seed_data(0xffff, 1);
+    m.seed_data(0, 0x8001);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A0"), m.reg("R5"), m.reg("EST")), (0x100020002, 0xffff, 0x20));
+
+    for (right, source, input, count, result, flags) in [
+        (0xf1ade9, "LC1", 0x5566, 1, 0xaacc, 0x3020),
+        (0xf1ade9, "LC1", 0x8001, 0x7f, 0x4000, 0x3001),
+        (0xf1ade9, "LC1", 0x7fff, 16, 0, 0x3031),
+        (0xf1add5, "PACFG", 0x4499, 0x7f, 0x224c, 0x3001),
+        (0xf1add5, "PACFG", 0xffff, 1, 0xfffe, 0x3021),
+        (0xf1aded, "INTBASE", 0xa561, 0x7f, 0x52b0, 0x3001),
+    ] {
+        let mut m = Machine::new(0, &[(0xd0097e, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("A0L", count), ("INTBASE", 0x3421), ("CETBL", 0xffff), ("ECFG", 4), (source, input)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("INTBASE"), m.reg("EST")), (result, flags), "{source}");
+        assert_eq!(m.reg("A0L"), count);
+        if source != "INTBASE" {
+            assert_eq!(m.reg(source), input);
+        }
+    }
+
+    let mut m = Machine::new(0, &[(0x9a097e, 0xf1c28b), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A2H", 0), ("R5", 0x4048), ("EST", 9), ("CETBL", 0xffff)]);
+    m.seed_data(0x4048, 1);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!(m.reg("EST"), 0x3009);
+}
