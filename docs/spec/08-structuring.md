@@ -511,7 +511,8 @@ case applies: the `condstmts` width cap, the comment check, the target entered
 only from the chain, and `ActionBlockStructure::structure_held`'s goto
 fallback. That fallback structures again only when a relaxed block actually
 folded (otherwise the two collapses made the same choices), and once a fold
-into an ordinary block has fallen back, later structurings of the same
+into an ordinary block has fallen back in a function of 64 or more blocks
+(`kuna_fatalchain.rs (GIVE_UP_BLOCKS)`), later structurings of the same
 analysis do not relax at all, so a large function re-structured many times
 pays for the comparison once. Such a fold is not reoriented, since its target
 can fall through.
