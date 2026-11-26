@@ -9257,6 +9257,7 @@ link_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xffffff;
 resume_1_1: word_address is epsilon [ word_address = (inst_start + 3) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_1_2: word_address is epsilon [ word_address = (inst_start + 5) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_1_3: word_address is epsilon [ word_address = (inst_start + 7) & 0xffffff; ] { export *[code]:3 word_address; }
+resume_2_0: word_address is epsilon [ word_address = (inst_start + 2) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_1: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_2: word_address is epsilon [ word_address = (inst_start + 6) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_3: word_address is epsilon [ word_address = (inst_start + 8) & 0xffffff; ] { export *[code]:3 word_address; }
@@ -9382,6 +9383,116 @@ wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 
 :"CALLABS (R0)" "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13db & wide_24_45=0x0 & link_2_5 & resume_2_5 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_5); delayslot(5); call [target]; goto resume_2_5; }
 :"CALLABS (R0)" "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13dd & wide_24_45=0x0 & link_2_6 & resume_2_6 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_6); delayslot(5); call [target]; goto resume_2_6; }
 :"CALLABS (R0)" "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x1 & wide_10_22=0x13df & wide_24_45=0x0 & link_2_7 & resume_2_7 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_7); delayslot(5); call [target]; goto resume_2_7; }
+
+@define WIDE_SHORT_CALLABS "wide_right_mode=1 & ((wide_0_1=3 & wide_40_45>=32) | (wide_0_1=2 & (wide_40_45=6 | wide_40_45=7)))"
+
+short_call_mode: is carmel_issue=5 & wide_left_mode=1 { export 3:1; }
+short_call_mode: "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_goto_ce_bank=0 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local mode:1 = (zext(enabled != 0) << 1) | zext(enabled != 0 || (CECFG1 & 0x1000) != 0);
+    export mode;
+}
+short_call_mode: "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_goto_ce_bank=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    local mode:1 = (zext(enabled != 0) << 1) | zext(enabled != 0 || (CECFG2 & 0x1000) != 0);
+    export mode;
+}
+
+macro prepare_short_call(mode, old_sp, target) {
+    old_sp = SP;
+    target = 0;
+    if (mode == 0) goto <done>;
+    SP = old_sp - 2;
+    local low:2 = *[data]:2 0xffff:2;
+    target = zext(low);
+  <done>
+}
+
+macro complete_short_call(mode, old_sp, target, link, resume) {
+    if (mode == 0) goto <done>;
+    if ((mode & 2) == 0) goto <address_only>;
+    store_link(old_sp, link);
+    call [target];
+    goto resume;
+  <address_only>
+    goto [target];
+  <done>
+}
+
+:"CALLABS (*0xffff)" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13d1
+    & short_call_mode & link_2_0 & resume_2_0 {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    complete_short_call(mode, old_sp, target, link_2_0, resume_2_0);
+}
+:"CALLABS (*0xffff)" "delay 1" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13d3
+    & short_call_mode & link_2_1 & resume_2_1 [ carmel_counted_delay=1; ] {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    delayslot(1);
+    complete_short_call(mode, old_sp, target, link_2_1, resume_2_1);
+}
+:"CALLABS (*0xffff)" "delay 2" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13d5
+    & short_call_mode & link_2_2 & resume_2_2 [ carmel_counted_delay=1; ] {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    delayslot(2);
+    complete_short_call(mode, old_sp, target, link_2_2, resume_2_2);
+}
+:"CALLABS (*0xffff)" "delay 3" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13d7
+    & short_call_mode & link_2_3 & resume_2_3 [ carmel_counted_delay=1; ] {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    delayslot(3);
+    complete_short_call(mode, old_sp, target, link_2_3, resume_2_3);
+}
+:"CALLABS (*0xffff)" "delay 4" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13d9
+    & short_call_mode & link_2_4 & resume_2_4 [ carmel_counted_delay=1; ] {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    delayslot(4);
+    complete_short_call(mode, old_sp, target, link_2_4, resume_2_4);
+}
+:"CALLABS (*0xffff)" "delay 5" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13db
+    & short_call_mode & link_2_5 & resume_2_5 [ carmel_counted_delay=1; ] {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    delayslot(5);
+    complete_short_call(mode, old_sp, target, link_2_5, resume_2_5);
+}
+:"CALLABS (*0xffff)" "delay 6" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13dd
+    & short_call_mode & link_2_6 & resume_2_6 [ carmel_counted_delay=1; ] {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    delayslot(5);
+    complete_short_call(mode, old_sp, target, link_2_6, resume_2_6);
+}
+:"CALLABS (*0xffff)" "delay 7" short_call_mode is $(WIDE_SHORT_CALLABS) & wide_10_22=0x13df
+    & short_call_mode & link_2_7 & resume_2_7 [ carmel_counted_delay=1; ] {
+    local mode:1 = short_call_mode;
+    local old_sp:2;
+    local target:4;
+    prepare_short_call(mode, old_sp, target);
+    delayslot(5);
+    complete_short_call(mode, old_sp, target, link_2_7, resume_2_7);
+}
+
 :"CALLABS (R0)" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bca00); (slot_mode=0 & nop_right)) & link_2_0 { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_0); call [target]; }
 :"CALLABS (R0)" "delay 1" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bca02); (slot_mode=0 & nop_right)) & link_2_1 & resume_2_1 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_1); delayslot(1); call [target]; goto resume_2_1; }
 :"CALLABS (R0)" "delay 2" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bca04); (slot_mode=0 & nop_right)) & link_2_2 & resume_2_2 [ carmel_counted_delay=1; ] { local low:2 = *[data]:2 R0; local high_addr:2 = R0 + 1; local high:2 = *[data]:2 high_addr; local target:4 = zext(low) | (zext(high) << 16); push_link(link_2_2); delayslot(2); call [target]; goto resume_2_2; }

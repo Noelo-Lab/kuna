@@ -1323,6 +1323,39 @@ fn wide_callabs_reads_both_data_words_and_returns_to_the_encoded_link() {
 }
 
 #[test]
+fn wide_short_callabs_zero_extends_and_gates_stack_publish() {
+    let base = 0xffe0;
+    let start = 0x10000;
+    let target = 0xfff0;
+    let count = 5;
+    let link = start + 16;
+    let mut issues = vec![(16, 1, 6)];
+    issues.extend((17..23).map(|i| (i * 2, 1, 6)));
+    for (left, right, mode, cetbl, ce1, ce2, taken, stored) in [
+        (0xe2e956, 0xcf7c2b, 5, 0, 0, 0, true, true),
+        (0x06e956, 0xcf7c2a, 4, 0, 0, 0, false, false),
+        (0x06e956, 0xcf7c2a, 4, 0, 0x1000, 0, true, false),
+        (0x62e956, 0xcf7c2b, 4, 0xff00, 0, 0, true, true),
+    ] {
+        let mut fetches = [(NOP, NOP); 24];
+        fetches[16] = (left, right);
+        fetches[17..23].fill((INC_A0, NOP));
+        let mut context = issues.clone();
+        context.push((32, mode, 6));
+        let mut m = Machine::new(base, &fetches, &context, None);
+        m.seed(&[("A0L", 0x8110), ("SP", 0x4040), ("CETBL", cetbl), ("CECFG1", ce1), ("CECFG2", ce2)]);
+        for (word, value) in [(0xffff, target), (0, 0x7654), (0xe956, 0x1018), (0x4040, 0x1234), (0x403f, 0x5678)] {
+            m.seed_data(word, value);
+        }
+        m.start(start).unwrap();
+        assert_eq!(m.step(), 3 * if taken { target } else { start + 2 * (count + 1) });
+        assert_eq!((m.reg("A0L"), m.reg("SP")), (0x8110 + count, if taken { 0x403e } else { 0x4040 }));
+        assert_eq!((m.data(0x4040), m.data(0x403f)), if stored { (1, link & 0xffff) } else { (0x1234, 0x5678) });
+        assert_eq!((m.data(0xffff), m.data(0)), (target, 0x7654));
+    }
+}
+
+#[test]
 fn compact_callabs_selects_its_encoded_source_before_delay_updates_a0() {
     let base = 0x11000;
     let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6),

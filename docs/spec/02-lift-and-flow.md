@@ -3874,6 +3874,13 @@ conversion of Carmel indirect CODE-word operands to byte offsets: the SLEIGH
 translator does not rescale an indirect target for an unrelated three-byte
 code space.
 
+Wide extended and unbound guard-source `CALLABS` reads only DATA word
+`0xffff` and zero-extends it to a CODE word address. The encoded literal
+and adjacent DATA word do not drive the target. CE1/CE2 address enable
+can redirect and decrement `SP` by two without writing a link. Execution
+enable also writes the link to old `SP` and `SP-1`. The call retires
+at most five exposed issues but saves two CODE words per encoded delay.
+
 Compact `TRAP` in either sequential slot or with an inactive parallel peer
 stacks the ordinary next CODE word address, high word at old `SP` and low
 word at `SP-1`, then uses the decremented stack pointer. Sources 2 and 3
