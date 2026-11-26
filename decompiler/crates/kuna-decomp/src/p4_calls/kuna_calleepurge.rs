@@ -82,6 +82,42 @@ const BP: usize = 5;
 const CALLER_SAVED: [usize; 3] = [0, 1, 2];
 const CALLEE_SAVED: [usize; 4] = [3, 5, 6, 7];
 
+/// What a direct callee's extrapop rests on, strongest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PopEvidence {
+    /// Every return the walk reaches finds the stack pointer exactly at its
+    /// entry value ([`callee_extra_pop`]).
+    Proven(int4),
+    /// Every return the walk reaches takes the same immediate, the walk
+    /// followed every path, and the stack pointer there is imprecise only
+    /// through calls it could not read, never through the callee's own code
+    /// ([`callee_return_pop`]).
+    ReturnImmediate(int4),
+    /// What a declared parameter list implies under a model that leaves the
+    /// extrapop unknown (`FuncProto::resolve_extra_pop`).
+    Declared(int4),
+    Unknown,
+}
+
+impl PopEvidence {
+    /// The extrapop the evidence states, if any.
+    pub fn extra_pop(self) -> Option<int4> {
+        match self {
+            PopEvidence::Proven(ep) | PopEvidence::ReturnImmediate(ep) | PopEvidence::Declared(ep) => Some(ep),
+            PopEvidence::Unknown => None,
+        }
+    }
+
+    /// The evidence the callee's own code gives for call spec `fc`.
+    pub fn of_call(fc: &crate::fspec::FuncCallSpecs) -> PopEvidence {
+        match (fc.callee_purge(), fc.callee_return_immediate()) {
+            (Some(ep), _) => PopEvidence::Proven(ep),
+            (None, Some(ep)) => PopEvidence::ReturnImmediate(ep),
+            (None, None) => PopEvidence::Unknown,
+        }
+    }
+}
+
 /// The extrapop (`4 + purge`) of the direct call target `entry`, when the
 /// language is x86-32 under a default model that leaves extrapop unknown and
 /// the callee's own returns prove it.
@@ -95,17 +131,6 @@ pub fn callee_extra_pop(arch: &Architecture, entry: &Address) -> Option<int4> {
     }
 }
 
-/// The extrapop of the direct call target `entry` that its returns' own
-/// constants state where a call the walk cannot read leaves the stack pointer
-/// unplaced at them, so [`callee_extra_pop`] proves none.
-pub fn callee_returns_extra_pop(arch: &Architecture, entry: &Address) -> Option<int4> {
-    if !applies(arch) || entry.is_invalid() {
-        return None;
-    }
-    let s = summary(arch, entry, DEPTH);
-    if s.effect == Effect::Unknown { s.own_pop } else { None }
-}
-
 /// Does every call in `data` have a pop its prototype states or its callee's
 /// returns prove or state? One only the returns' constants state counts where
 /// no call [`shares_cleanup`].
@@ -117,7 +142,7 @@ pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
             return true;
         }
         stated = true;
-        fc.callee_returns_purge().is_some()
+        fc.callee_return_immediate().is_some()
     });
     all && !(stated && shares_cleanup(data))
 }

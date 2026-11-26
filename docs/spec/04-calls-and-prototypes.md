@@ -1786,8 +1786,9 @@ that machinery.
   bounded but unplaced, so the callee's returns are then proven only by
   restoring it from a frame pointer the callee set itself (`mov esp,ebp`,
   `leave`). Where none restores it, the `RET`'s own constant still states
-  the extrapop (`kuna_calleepurge.rs (callee_returns_extra_pop)`, recorded on
-  the call spec apart from a proven one): a callee returns to its caller only once the stack pointer is
+  the extrapop: the *return immediate* evidence of
+  `kuna_calleepurge.rs (PopEvidence)`, recorded on the call spec at flow apart
+  from a *proven* pop and weaker than it. A callee returns to its caller only once the stack pointer is
   back at the return address, so `push [esp+4]; call [p]; add esp,4; ret 4`
   pops 8 whatever `p` does. That reading needs every reached return to add the
   same constant, every path followed, and no path that ran into a software

@@ -7027,9 +7027,7 @@ pub struct FuncCallSpecs {
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
-    /// (kuna) The extrapop the direct callee's returns' constants state where
-    /// its own returns prove none. See [`crate::p4_calls::kuna_calleepurge`].
-    callee_returns_purge: Option<int4>,
+    callee_return_immediate: Option<int4>,
     /// (kuna) The stack bytes the caller removes right after the direct call,
     /// recorded where the callee pops above its return address. See
     /// [`crate::p4_calls::kuna_calleepurge::shares_cleanup`].
@@ -7087,7 +7085,7 @@ impl FuncCallSpecs {
             callee_reg_model: None,
             callee_arg_registers: 0,
             callee_purge: None,
-            callee_returns_purge: None,
+            callee_return_immediate: None,
             caller_cleanup: 0,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
@@ -7129,7 +7127,7 @@ impl FuncCallSpecs {
         res.callee_reg_model = self.callee_reg_model.clone();
         res.callee_arg_registers = self.callee_arg_registers;
         res.callee_purge = self.callee_purge;
-        res.callee_returns_purge = self.callee_returns_purge;
+        res.callee_return_immediate = self.callee_return_immediate;
         res.caller_cleanup = self.caller_cleanup;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
@@ -7523,16 +7521,17 @@ impl FuncCallSpecs {
         self.callee_purge = extrapop;
     }
 
-    /// Record the extrapop the direct callee's returns' constants state where
-    /// its returns prove none.
-    pub fn set_callee_returns_purge(&mut self, extrapop: Option<int4>) {
-        self.callee_returns_purge = extrapop;
+    /// The extrapop every return the direct callee reaches takes (`ret 0xc`),
+    /// when the walk of its code followed every path, if read: the
+    /// [`crate::p4_calls::kuna_calleepurge::PopEvidence::ReturnImmediate`]
+    /// evidence.
+    pub fn callee_return_immediate(&self) -> Option<int4> {
+        self.callee_return_immediate
     }
 
-    /// The extrapop the direct callee's returns' constants state where its
-    /// returns prove none.
-    pub fn callee_returns_purge(&self) -> Option<int4> {
-        self.callee_returns_purge
+    /// Record the extrapop every reached return of the direct callee takes.
+    pub fn set_callee_return_immediate(&mut self, extrapop: Option<int4>) {
+        self.callee_return_immediate = extrapop;
     }
 
     /// Record the stack bytes the caller removes right after the direct call.
@@ -7544,12 +7543,6 @@ impl FuncCallSpecs {
     /// the callee pops above its return address.
     pub fn caller_cleanup(&self) -> u32 {
         self.caller_cleanup
-    }
-
-    /// The extrapop the direct callee's returns prove, or else state by their
-    /// constants.
-    pub fn settled_purge(&self) -> Option<int4> {
-        self.callee_purge.or(self.callee_returns_purge)
     }
 
     /// The stack-argument bytes the direct callee reads, if measured.

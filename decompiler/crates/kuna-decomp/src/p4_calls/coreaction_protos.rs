@@ -777,7 +777,7 @@ impl Action for ActionExtraPopSetup {
             if extrapop == EXTRAPOP_UNKNOWN && exact {
                 // (kuna) A pop the callee's own returns prove; see
                 // [`crate::p4_calls::kuna_calleepurge`].
-                if let Some(ep) = data.get_call_specs(i).settled_purge() {
+                if let Some(ep) = crate::p4_calls::kuna_calleepurge::PopEvidence::of_call(data.get_call_specs(i)).extra_pop() {
                     data.get_call_specs_mut(i).proto_mut().set_extra_pop(ep);
                     extrapop = ep;
                 }
