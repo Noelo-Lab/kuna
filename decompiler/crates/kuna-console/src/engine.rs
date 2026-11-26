@@ -4621,7 +4621,7 @@ pub(crate) fn bootstrap_raw_image(
     path: &str,
     target: &str,
     base: u64,
-    entries: &[u64],
+    entries: Option<&[u64]>,
     isa: Option<ArmIsa>,
     languages: &(impl Languages + ?Sized),
     bytes: Option<Vec<u8>>,
@@ -4631,11 +4631,13 @@ pub(crate) fn bootstrap_raw_image(
             "raw image input requires --target <SLEIGH-language-id>",
         ));
     }
-    if entries.is_empty() {
-        return Err(KunaError::lowlevel(
+    let entries = match entries {
+        Some([]) => return Err(KunaError::lowlevel(
             "raw image input requires at least one --entry or --addr",
-        ));
-    }
+        )),
+        Some(entries) => entries,
+        None => &[],
+    };
 
     let registry = build_registry();
     let capability = RawBinaryArchitectureCapability::new();
@@ -4883,7 +4885,7 @@ pub(crate) fn bootstrap_mz_bytes(
         path,
         target,
         image.base,
-        &[entry],
+        Some(&[entry]),
         isa,
         languages,
         Some(image.module.clone()),
