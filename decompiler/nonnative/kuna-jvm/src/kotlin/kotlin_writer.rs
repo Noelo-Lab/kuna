@@ -3094,36 +3094,6 @@ impl KotlinWriter {
             }
         }
     }
-
-    pub fn append_type_parameters(
-        buffer: &mut TextBuffer,
-        parameters: &[String],
-        bounds: &[Vec<VarType>],
-    ) {
-        buffer.append("<");
-
-        for i in 0..parameters.len() {
-            if i > 0 {
-                buffer.append(", ");
-            }
-
-            buffer.append(&parameters[i]);
-
-            let parameter_bounds = &bounds[i];
-            if parameter_bounds.len() > 1
-                || parameter_bounds[0].value.as_deref() != Some("java/lang/Object")
-            {
-                buffer.append(" extends ");
-                buffer.append(&ExprProcessor::get_cast_type_name(&parameter_bounds[0]));
-                for bound in &parameter_bounds[1..] {
-                    buffer.append(" & ");
-                    buffer.append(&ExprProcessor::get_cast_type_name(bound));
-                }
-            }
-        }
-
-        buffer.append(">");
-    }
 }
 
 impl StatementWriter for KotlinWriter {

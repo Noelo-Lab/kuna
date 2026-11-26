@@ -17,7 +17,6 @@ impl BytecodeVersion {
     pub const MAJOR_7: i32 = 51;
     pub const MAJOR_8: i32 = 52;
     pub const MAJOR_9: i32 = 53;
-    pub const MAJOR_11: i32 = 55;
     pub const MAJOR_15: i32 = 59;
     pub const MAJOR_16: i32 = 60;
     pub const MAJOR_17: i32 = 61;
@@ -80,10 +79,6 @@ impl BytecodeVersion {
 
     pub fn has14_class_references(&self) -> bool {
         self.major <= Self::MAJOR_1_4
-    }
-
-    pub fn has_new_try_with_resources(&self) -> bool {
-        self.major >= Self::MAJOR_11
     }
 
     pub fn predates_java(&self) -> bool {

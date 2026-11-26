@@ -598,11 +598,6 @@ impl Statement {
         false
     }
 
-    /// Java: toJava()
-    pub fn to_java_default(self) -> TextBuffer {
-        self.to_java(0)
-    }
-
     /// Java: toJava(int)
     pub fn to_java(self, indent: i32) -> TextBuffer {
         crate::rt::stack::guard();
