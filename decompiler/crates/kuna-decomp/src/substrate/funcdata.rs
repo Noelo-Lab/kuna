@@ -310,6 +310,11 @@ pub struct Funcdata {
     /// (kuna `condstmts`) Block start addresses the final structure folded into a
     /// condition operand over the cap.
     kuna_condstmts_hits: std::collections::BTreeSet<Address>,
+    /// (kuna `condfold noreturn`) Block starts structured as not complex because
+    /// they test a chain into a no-return call.
+    kuna_fatalchain_relaxed: std::collections::BTreeSet<Address>,
+    /// (kuna `condfold noreturn`) Set while a structuring must not relax.
+    kuna_fatalchain_hold: bool,
     /// (kuna `earlyrestart`) Set when heritage bumped a space's dead-code delay
     /// in this pass: the analysis is about to be thrown away and redone.
     kuna_restart_now: bool,
@@ -869,6 +874,8 @@ impl Funcdata {
             stack_byte_copy_ops: Default::default(),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
+            kuna_fatalchain_relaxed: std::collections::BTreeSet::new(),
+            kuna_fatalchain_hold: false,
             kuna_restart_now: false,
             dead_wave_log: None,
             dead_cascade_now: false,
@@ -2783,6 +2790,31 @@ impl Funcdata {
         self.kuna_condstmts_hits.insert(addr);
     }
 
+    /// (kuna `condfold noreturn`) Block starts structured as not complex.
+    pub fn fatalchain_relaxed(&self) -> &std::collections::BTreeSet<Address> {
+        &self.kuna_fatalchain_relaxed
+    }
+
+    /// (kuna `condfold noreturn`) Record a block start structured as not complex.
+    pub fn add_fatalchain_relaxed(&mut self, addr: Address) {
+        self.kuna_fatalchain_relaxed.insert(addr);
+    }
+
+    /// (kuna `condfold noreturn`) Replace the relaxed block starts.
+    pub fn set_fatalchain_relaxed(&mut self, set: std::collections::BTreeSet<Address>) {
+        self.kuna_fatalchain_relaxed = set;
+    }
+
+    /// (kuna `condfold noreturn`) Whether structuring must not relax.
+    pub fn fatalchain_held(&self) -> bool {
+        self.kuna_fatalchain_hold
+    }
+
+    /// (kuna `condfold noreturn`) Hold or release the relaxation.
+    pub fn set_fatalchain_hold(&mut self, hold: bool) {
+        self.kuna_fatalchain_hold = hold;
+    }
+
     /// (kuna `stackstoreguard`) Turn the guard off for the rest of this
     /// function's analysis.
     pub fn withdraw_stack_store_guard(&self) {
@@ -4542,6 +4574,7 @@ impl Funcdata {
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
         self.kuna_hiddenret_vetoed.clear();
         self.kuna_condstmts_hits.clear();
+        self.kuna_fatalchain_relaxed.clear();
         self.kuna_restart_now = false;
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow() (funcdata.cc:95):

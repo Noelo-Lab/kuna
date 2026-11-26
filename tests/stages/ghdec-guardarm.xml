@@ -47,6 +47,9 @@
 <script>
   <com>option truthycond on</com>
   <com>option tailform off</com>
+  <!-- condfold (default noreturn) orients a chain into a no-return call the same
+       way in both passes; kept off so the guardarm tie-break is checked. -->
+  <com>option condfold off</com>
   <com>lo fu victim</com>
   <com>decompile</com>
   <com>print C</com>

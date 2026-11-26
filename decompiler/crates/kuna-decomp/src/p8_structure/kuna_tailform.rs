@@ -625,7 +625,7 @@ pub(crate) fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)
 }
 
 /// An `if` with one arm and no `goto`.
-fn plain_if(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn plain_if(data: &Funcdata, b: BlockId) -> bool {
     let b = data.sblocks_ref().block(b);
     b.get_type() == BlockType::If && b.get_size() == 2 && b.get_if_goto_target().is_none()
 }
@@ -794,7 +794,7 @@ pub(crate) fn labelled(data: &Funcdata, b: BlockId) -> bool {
 
 /// Whether control can leave `b` at its bottom (not a return, a no-return call
 /// or a goto).
-fn falls_through(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn falls_through(data: &Funcdata, b: BlockId) -> bool {
     let g = data.sblocks_ref();
     match g.block(b).get_type() {
         BlockType::Ls | BlockType::Graph => g.block(b).get_list().last().is_none_or(|&l| falls_through(data, l)),
