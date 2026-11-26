@@ -3896,6 +3896,16 @@ instead reads DATA and writes the word to the original destination
 address when CE2 permits. Other peer and operand routes can exhaust the
 physical read ports and are not inferred from these forms.
 
+Covered compact indexed multiply forms select the short DATA pointer bank
+opposite the long DATA destination. The physical issue lane independently
+selects the `X` latch and the `EST` flag bank. Only the first input loads
+that latch, even when a second DATA input is fetched. A qualified veto
+suppresses the product and its flags; the address override still permits
+operand fetch, the first-input latch, and the encoded pointer update.
+Paired operations read their inputs before either lane writes DATA, and
+the long result uses the captured destination rather than the advanced
+pointer.
+
 Covered wide `LOAD` forms distinguish accumulator writeback from pointer
 and `PACFG` setup. An operand that initializes a pointer does not also
 overwrite the encoded bound register.
@@ -3937,6 +3947,15 @@ aliased control registers. `PSTATUS` keeps its two depth bits only when the
 repeat-active bit is set. A low-word destination instead publishes the
 result's zero flag. A postincremented DATA destination stores at the
 original address, before the updated pointer is used by another issue.
+
+The covered qualified wide `SUB` requires an explicitly established reset
+operand-fetch route. The first input reads `DATA[0xffff]`, not the encoded
+extension word. The other input reads `DATA[R2]`; a reused DATA result
+writes that same word only when CE1 enables it. The word and flag-only
+destinations compute extension and loss for the word lane, while a whole
+accumulator receives the sign-extended difference. The EST destination
+publishes status, not a copy of the result word. The lift does not infer
+the reset route from the CODE address; an unknown input route is unimplemented.
 
 In the covered qualified wide logic forms, the undriven I/O operand is
 zero, not `USER_IO`. The CE1 word routes write `INTBASE` or saved `LC1`

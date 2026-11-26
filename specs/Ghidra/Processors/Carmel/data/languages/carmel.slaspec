@@ -235,6 +235,16 @@ define token slot (24)
     mac_preg_dst = (11,15)
     mac_preg_src = (6,10)
     mac_preg_data = (1,5)
+    indexed_mpy_form = (12,22)
+    indexed_mpy_low_form = (11,22)
+    indexed_mpy_high_dst = (8,11)
+    indexed_mpy_low_dst = (7,10)
+    indexed_mpy_short = (1,5)
+    indexed_mpy_post_first = (3,6)
+    indexed_mpy_index_second = (1,2)
+    indexed_peer_sub_dst = (11,14)
+    indexed_peer_sub_first = (6,10)
+    indexed_peer_shift_count = (1,6) signed
     slot_5_6 = (5,6)
     cmp_full_lhs_full = (4,6)
     cmp_full_lhs_lo = (4,6)
@@ -430,6 +440,9 @@ define token wide (48)
     wide_call_offset_0 = (24,45) hex
     wide_call_offset_22 = (0,1) hex
     wide_9_22 = (9,22)
+    wide_subtract_opcode = (17,22)
+    wide_subtract_destination = (9,16)
+    wide_subtract_left = (1,8)
     wide_goto_offset_0 = (24,45) hex
     wide_goto_offset_22 = (0,1) hex
     wide_goto_ce_bank = (46,46)
@@ -1337,6 +1350,84 @@ macro publish_alu_ce(flags) {
     unary_ce(CECFG1, feedback, CETBL, 0, first);
     unary_ce(CECFG2, feedback, CETBL, 1, second);
     EST = flags | (first << 12) | (second << 13);
+}
+
+# Qualified SUB with a proven reset operand-fetch route. The extension word
+# is not the address of the first input in this route.
+@define WIDE_SUBTRACT_COLD "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & logic_ce_bank=0 & wide_subtract_opcode=0 & wide_0_0=0 & wide_40_45=2 & carmel_of_route=2"
+
+macro wide_subtract_cold(address, word_lane, data_result, enabled, result, flags) {
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    flags = EST & 0xcfff;
+    result = 0;
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <done>;
+    local lhs:2 = *[data]:2 0xffff:2;
+    local rhs:2 = *[data]:2 address;
+    if (enabled == 0) goto <done>;
+    local left:4 = zext(lhs ^ 0x8000);
+    local right:4 = zext(rhs ^ 0x8000);
+    result = left - right;
+    # Two signed words cannot overflow 40 bits. Only the aligned word
+    # lane can extend past bit 31, with E/L determined before writeback.
+    local negative:1 = result >= 0x80000000;
+    local extended:1 = word_lane != 0 && result + 0x8000 > 0xffff;
+    local saturated:1 = (ECFG & 0x28) == 8;
+    local auto_limit:1 = (ECFG & 4) != 0;
+    local clipped:1 = extended && (auto_limit || (data_result != 0 && saturated));
+    local loss:1 = extended && (!saturated || clipped);
+    flags = (flags & 0xffc4) | zext(lhs >= rhs) | (zext(loss) << 2) |
+            (zext(result == 0) << 3) | (zext(negative) << 4) | (zext(extended) << 5);
+    if (!clipped) goto <done>;
+    result = 0x7fff;
+    if (!negative) goto <done>;
+    result = 0xffff8000;
+  <done>
+}
+
+:SUB "CE1" "RMW2","OF","*R2" is $(WIDE_SUBTRACT_COLD) & wide_subtract_destination=0x8e &
+    (wide_subtract_left=0x8f | wide_subtract_left=0xe7 | wide_subtract_left=0xf7) {
+    local address:2 = R2;
+    local enabled:2;
+    local result:4;
+    local flags:2;
+    wide_subtract_cold(address, 1:1, 1:1, enabled, result, flags);
+    if (enabled == 0) goto <publish>;
+    *[data]:2 address = result:2;
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:SUB "CE1" "A0","OF","*R2" is $(WIDE_SUBTRACT_COLD) & wide_subtract_destination=0x88 &
+    (wide_subtract_left=0x8f | wide_subtract_left=0xe7) {
+    local enabled:2;
+    local result:4;
+    local flags:2;
+    wide_subtract_cold(R2, 0:1, 0:1, enabled, result, flags);
+    if (enabled == 0) goto <publish>;
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = 0 - (result >= 0x80000000);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:SUB "CE1" "FF1","OF","*R2" is $(WIDE_SUBTRACT_COLD) & wide_subtract_destination=0xbe & wide_subtract_left=0x8f {
+    local enabled:2;
+    local result:4;
+    local flags:2;
+    wide_subtract_cold(R2, 1:1, 0:1, enabled, result, flags);
+    if (enabled == 0) goto <publish>;
+    FF1 = result:2;
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:SUB "CE1" "EST","OF","*R2" is $(WIDE_SUBTRACT_COLD) & wide_subtract_destination=0xc1 & wide_subtract_left=0x8f {
+    local enabled:2;
+    local result:4;
+    local flags:2;
+    wide_subtract_cold(R2, 1:1, 0:1, enabled, result, flags);
+    publish_alu_ce(flags);
 }
 
 macro compact_extract_bits(word, count, offset, signed_result, result) {
@@ -2774,6 +2865,173 @@ mac_preg_src_name: "OP2" is mac_preg_src=31 { }
     flags = (flags & 0xf1ff) | (zext(word == 0) << 9);
   <publish>
     publish_alu_ce(flags);
+}
+
+# The long DATA result selects the opposite pointer bank for these short
+# inputs. The physical issue lane, not that pointer bank, selects X and EST.
+macro compact_indexed_store(address, a, b, shift, flags) {
+    local product:8 = a * b * (1 + zext(ECFG & 1));
+    local result:8;
+    local product_flags:2;
+    compact_long_finish(product & 0xffffffffff, 0:1, 0:1, 1:1, 1:1, result, product_flags);
+    local upper:2 = address + 1;
+    *[data]:2 address = result:2;
+    *[data]:2 upper = result(2);
+    local lane:4 = shift;
+    flags = (flags & ~(0x3b:2 << lane)) | (product_flags << lane);
+}
+
+macro compact_indexed_sub_pair(destination, delta, modulo, bound, shift, index, stride) {
+    local address:2 = destination;
+    local left_addr:2 = R4;
+    local right_addr:2 = R5;
+    local indexed_addr:2 = index + stride;
+    local first:2 = *[data]:2 left_addr;
+    local second:2 = *[data]:2 right_addr;
+    local word:2 = *[data]:2 indexed_addr;
+    local multiplier:8 = zext(R1);
+    modify_ptr(destination, delta, modulo, bound, shift, 1);
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    modify_ptr(R5, RN5, RM4, RL4, 10, 2);
+    X2 = word;
+    local mask:8 = 0xffffffffff;
+    local lhs:8 = (sext(first) & 0xffffff) << 16;
+    local rhs:8 = (sext(second) & 0xffffff) << 16;
+    local borrow_in:8 = (1 - zext(EST & 1)) << 16;
+    local raw:8 = lhs - rhs - borrow_in;
+    local result:8;
+    local sub_flags:2;
+    compact_long_finish(raw & mask, lhs >= rhs + borrow_in, 0:1, 0:1, 0:1, result, sub_flags);
+    if ((sub_flags & 0x20) == 0 || (ECFG & 4) != 0 || (ECFG & 0x28) == 8) goto <sub_store>;
+    sub_flags = sub_flags | 4;
+  <sub_store>
+    *[data]:2 left_addr = result(2);
+    local sample:8 = sext(word);
+    local flags:2 = (EST & 0xcfc4) | sub_flags;
+    compact_indexed_store(address, sample, multiplier, 6, flags);
+    publish_alu_ce(flags);
+}
+
+macro compact_indexed_move_pair(destination, index, stride) {
+    local mpy_on:2;
+    local move_on:2;
+    unary_ce(CECFG1, EST, CETBL, 0, mpy_on);
+    unary_ce(CECFG2, EST, CETBL, 1, move_on);
+    local flags:2 = EST & 0xcfff;
+    local move_word:2 = A2H;
+    if (mpy_on == 0 && (CECFG1 & 0x1000) == 0) goto <move>;
+    local address:2 = index + stride;
+    local word:2 = *[data]:2 address;
+    X1 = word;
+    if (mpy_on == 0) goto <move>;
+    local a:8 = zext(word);
+    local b:8 = zext(A3H);
+    compact_indexed_store(destination, a, b, 0, flags);
+  <move>
+    if (move_on == 0) goto <status>;
+    A0L = move_word;
+    flags = (flags & 0xc13f) | (zext(move_word == 0) << 9) | (zext(move_word >= 0x8000) << 10);
+  <status>
+    publish_alu_ce(flags);
+}
+
+macro compact_indexed_shift_peer(count, flags) {
+    local n:4 = count;
+    local input:8 = sext(FF2);
+    local result:8 = input;
+    local carry_bit:1 = (EST & 1) != 0;
+    if (n == 0) goto <align>;
+    if (n s< 0) goto <right>;
+    carry_bit = ((input >> (40 - n)) & 1) != 0;
+    result = (input & 0xffffff) << n;
+    goto <align>;
+  <right>
+    carry_bit = ((input >> (15 - n)) & 1) != 0;
+    result = input s>> (0 - n);
+  <align>
+    result = (result & 0xffffff) << 16;
+    local shifted_flags:2;
+    shift_flags(result, carry_bit, shifted_flags);
+    shift_limit(result, shifted_flags);
+    A4H = result(2);
+    flags = (EST & 0xcfc6) | shifted_flags;
+}
+
+macro compact_indexed_shift_pair(destination, index, stride, post, step, modulo, bound, shift, count) {
+    local address:2 = index + stride;
+    local first:2 = *[data]:2 address;
+    local second:2 = *[data]:2 post;
+    modify_ptr(post, step, modulo, bound, shift, 2);
+    X2 = first;
+    local flags:2;
+    compact_indexed_shift_peer(count, flags);
+    local a:8 = zext(first);
+    local b:8 = sext(second);
+    compact_indexed_store(destination, a, b, 6, flags);
+    publish_alu_ce(flags);
+}
+
+macro compact_indexed_mpy_seq(destination, post, step, modulo, bound, shift, index, stride) {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local flags:2 = EST & 0xcfff;
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <status>;
+    local address:2 = index + stride;
+    local first:2 = *[data]:2 post;
+    local second:2 = *[data]:2 address;
+    modify_ptr(post, step, modulo, bound, shift, 2);
+    X1 = first;
+    if (enabled == 0) goto <status>;
+    local a:8 = zext(first);
+    local b:8 = zext(second);
+    compact_indexed_store(destination, a, b, 0, flags);
+  <status>
+    publish_alu_ce(flags);
+}
+
+@define INDEXED_SUB_PEER "slot_15_22=0x13 & indexed_peer_sub_dst=6 & indexed_peer_sub_first=20 & indexed_mpy_short=21 & slot_0_0=0"
+@define INDEXED_MOVE_PEER "slot_5_22=0x18d50 & move_source=10 & slot_0_0=1"
+@define INDEXED_SHIFT_PEER "slot_7_22=0x7b97 & indexed_peer_shift_count & slot_0_0=0"
+@define INDEXED_MPYSU "indexed_mpy_form=0x444 & slot_6_7=3 & indexed_mpy_short=1 & slot_0_0=0"
+@define INDEXED_MPYUU "indexed_mpy_form=0x4c4 & slot_6_7=3 & indexed_mpy_short=27 & slot_0_0=1"
+@define INDEXED_MPYUS "indexed_mpy_low_form=0x90a & slot_5_6=1 & move_source=11 & slot_0_0=0"
+@define INDEXED_MPYUU_SEQ "carmel_issue=3 & slot_mode=0 & indexed_mpy_low_form=0x99c & indexed_mpy_post_first=11 & indexed_mpy_index_second=1 & slot_0_0=1"
+
+:"SUBC" "RMW1","*R4++","*R5++" "||" "MPYSU" "*R2+=RN2","*R7+RN7","R1" is (carmel_issue=1 & slot_mode=0 & $(INDEXED_SUB_PEER)); (slot_mode=0 & $(INDEXED_MPYSU) & indexed_mpy_high_dst=10) {
+    compact_indexed_sub_pair(R2, RN2, RM2, RL2, 4, R7, RN7);
+}
+:"SUBC" "RMW1","*R4++","*R5++" "||" "MPYSU" "*R6+=RN6","*R3+RN3","R1" is (carmel_issue=1 & slot_mode=0 & $(INDEXED_SUB_PEER)); (slot_mode=0 & $(INDEXED_MPYSU) & indexed_mpy_high_dst=14) {
+    compact_indexed_sub_pair(R6, RN6, RM6, RL6, 12, R3, RN3);
+}
+:"MPYUU CE1" "*R3","*R7+RN7","A3H" "||" "MOVE CE2" "A0L","A2H" is (carmel_issue=1 & slot_mode=0 & $(INDEXED_MPYUU) & indexed_mpy_high_dst=3); (slot_mode=0 & $(INDEXED_MOVE_PEER)) {
+    compact_indexed_move_pair(R3, R7, RN7);
+}
+:"MPYUU CE1" "*R7","*R3+RN3","A3H" "||" "MOVE CE2" "A0L","A2H" is (carmel_issue=1 & slot_mode=0 & $(INDEXED_MPYUU) & indexed_mpy_high_dst=7); (slot_mode=0 & $(INDEXED_MOVE_PEER)) {
+    compact_indexed_move_pair(R7, R3, RN3);
+}
+:"ASHIFT" "A4H","FF2",indexed_peer_shift_count "||" "MPYUS" "*R2","*R5+RN5","*R7++" is (carmel_issue=1 & slot_mode=0 & $(INDEXED_SHIFT_PEER)); (slot_mode=0 & $(INDEXED_MPYUS) & indexed_mpy_low_dst=2) {
+    compact_indexed_shift_pair(R2, R5, RN5, R7, RN7, RM6, RL6, 14, indexed_peer_shift_count);
+}
+:"ASHIFT" "A4H","FF2",indexed_peer_shift_count "||" "MPYUS" "*R6","*R1+RN1","*R3++" is (carmel_issue=1 & slot_mode=0 & $(INDEXED_SHIFT_PEER)); (slot_mode=0 & $(INDEXED_MPYUS) & indexed_mpy_low_dst=6) {
+    compact_indexed_shift_pair(R6, R1, RN1, R3, RN3, RM2, RL2, 6, indexed_peer_shift_count);
+}
+:"EXTRACTZ" "A3","A1","*R0" is carmel_issue=2 & slot_mode=1 & slot_9_22=0x1b79 & slot_5_7=1 & slot_8_9=3 & indexed_mpy_short=16 & slot_0_0=0 {
+    local descriptor:2 = R0 + 1;
+    local count:2 = *[data]:2 R0;
+    local offset:2 = *[data]:2 descriptor;
+    local input:8 = sext(GB1) * 0x100000000 + (zext(A1H) << 16) + zext(A1L);
+    local mask:8 = (1 << (count & 31)) - 1;
+    local result:8 = (input s>> (offset & 31)) & mask;
+    A3L = result:2;
+    A3H = result(2);
+    GB3 = 0;
+    publish_alu_ce((EST & 0xcfe7) | (zext(result == 0) << 3));
+}
+:"MPYUU CE1" "*R0","*R7++","*R5+RN5" is $(INDEXED_MPYUU_SEQ) & indexed_mpy_low_dst=0 {
+    compact_indexed_mpy_seq(R0, R7, RN7, RM6, RL6, 14, R5, RN5);
+}
+:"MPYUU CE1" "*R4","*R3++","*R1+RN1" is $(INDEXED_MPYUU_SEQ) & indexed_mpy_low_dst=4 {
+    compact_indexed_mpy_seq(R4, R3, RN3, RM2, RL2, 6, R1, RN1);
 }
 
 macro compact_long_postmodify(pointer) {
