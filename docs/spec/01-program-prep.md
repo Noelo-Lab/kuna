@@ -7658,14 +7658,22 @@ none. A stripped shared object
 keeps the sizes of its exported functions in `.dynsym`, and those filter the same
 way; an image with no sized function symbol (a fully stripped executable, Mach-O)
 is unchanged. A PowerPC64 ELFv1 symbol names a function descriptor in `.opd` and states
-the size of the code, so its extent starts at the descriptor's validated code word. One
-that states 24 bytes is left out: the dot-symbol ABI (GCC's `-mcall-aixdesc`, GMP's
-assembly) gives every descriptor its own size, and the `.name` symbol at the code states
-the function's. A function whose code is itself 24 bytes then filters nothing, as before.
-The rule trusts the size: a symbol-less routine that hand-written
-assembly places inside another function's `.size`, and that only a data pointer
-reaches, loses its pattern start. One with an FDE or a direct call is still found
-by those passes.
+the size of the code, so its extent starts at the descriptor's validated code word; a
+descriptor symbol whose word does not validate gives none. Where a sized symbol at the
+code word states its own size, as the `.name` symbols of the dot-symbol ABI (GCC's
+`-mcall-aixdesc`, GMP's assembly) do, the descriptor symbol states the descriptor's 24
+bytes and is left out. A function whose code is itself 24 bytes is filtered like any
+other; so is a dot-symbol function whose `.name` symbol a stripped image did not keep,
+which under-protects a longer one and lets the descriptor's 24 bytes cover what follows a
+shorter one. The Listing walk is not seeded with the code behind ELFv1 symbols, so a call
+an exported body makes, or a descriptor with no symbol, may be seen by nothing but the
+guesses the rule drops: a start that the code word of a descriptor at any aligned
+`.opd` word names, or that a `bl` in executable code targets, is kept
+(`entry/mod.rs (elfv1_named_starts)`). The rule trusts the size: a symbol-less routine
+that hand-written assembly places inside another function's `.size`, and that only a
+data pointer reaches, loses its pattern start, as does one behind an ELFv1 descriptor
+symbol that states more than its code, such as 24 or 16 bytes for 8, with no `.name`
+symbol beside it. One with an FDE or a direct call is still found by those passes.
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its

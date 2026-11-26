@@ -1,8 +1,12 @@
 /* PowerPC64 ELFv1 functions behind descriptors whose dynamic symbols state the
    size of the code. Every leaf opens with the same three instructions, which also
-   occur inside `sample`, `outer` and `entered`, behind `sample` in a routine that
-   has no symbol, and behind the 8 bytes of `dotted`, whose symbol states the 24
-   bytes of its descriptor as the dot-symbol ABI does. */
+   occur inside `sample` and `exact24`, behind `sample` in a routine that has no
+   symbol, inside `outer` under the symbol `inner`, inside `entered` and `reached`
+   at a call target, inside `local` at the code of a descriptor that has no symbol,
+   and behind the 8 bytes of `dotted`, whose descriptor symbol states the 24 bytes of
+   its descriptor and whose `.dotted` symbol the 8, as the dot-symbol ABI does. Only
+   `driver`, the entry, calls `entered`; nothing calls `caller`, which calls
+   `reached`. */
 .abiversion 1
 .macro descriptor name
 .section ".opd","aw"
@@ -92,10 +96,59 @@ blr
 .size entered,.-.Lentered
 
 descriptor dotted
+.globl .dotted
+.type .dotted,@function
+.dotted:
 li 3,1
 blr
+.size .dotted,.-.dotted
 .size dotted,24
 prefix 14
 blr
+
+/* exactly 24 bytes, with no `.name` symbol */
+descriptor exact24
+cmpdi 3,0
+beq 1f
+prefix 15
+1:
+blr
+.size exact24,.-.Lexact24
+
+descriptor caller
+mflr 0
+stdu 1,-112(1)
+std 0,16(1)
+bl .Linreached
+ld 0,16(1)
+addi 1,1,112
+mtlr 0
+blr
+.size caller,.-.Lcaller
+
+descriptor reached
+cmpdi 3,0
+beq 1f
+nop
+.Linreached:
+prefix 16
+1:
+blr
+.size reached,.-.Lreached
+
+/* a descriptor with no symbol names the code inside */
+descriptor local
+cmpdi 3,0
+beq 1f
+nop
+.section ".opd","aw"
+.balign 8
+.quad .Lnamed,.TOC.@tocbase,0
+.text
+.Lnamed:
+prefix 17
+1:
+blr
+.size local,.-.Llocal
 
 leaf 25
