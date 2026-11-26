@@ -197,6 +197,244 @@ macro cliw_dm_word_add(left, right, word, flags) {
   <maxm_done>
 }
 
+@define CLIW_DM_EXT_BASE "$(CLIW_DM) & cliw_terminal_ma4=24"
+@define CLIW_DM_EXT_END "$(CLIW_DM_EXT_BASE) & cliw_terminal_ma3=24"
+@define CLIW_DM_MOVE1 "tpl_67_72=36 & tpl_57_61=31"
+@define CLIW_DM_MOVE2 "tpl_18_23=36 & tpl_8_12=31"
+@define CLIW_DM_NOP_ALU1 "tpl_67_72=31 & tpl_52_56=31"
+@define CLIW_DM_NOP_ALU2 "tpl_18_23=31 & tpl_3_7=31"
+@define CLIW_DM_ACC1 "tpl_52_56>=16 & tpl_52_56<=21 & cliw_alu_52_acc_0_0 & cliw_alu_52_acc_0_1 & cliw_alu_52_acc_0_2"
+@define CLIW_DM_ACC2 "tpl_3_7>=16 & tpl_3_7<=21 & cliw_alu_3_acc_0_0 & cliw_alu_3_acc_0_1 & cliw_alu_3_acc_0_2"
+@define CLIW_DM_DISTINCT_ACC "(tpl_52_56=16 & tpl_3_7>16 | tpl_52_56=17 & (tpl_3_7<17 | tpl_3_7>17) | tpl_52_56=18 & (tpl_3_7<18 | tpl_3_7>18) | tpl_52_56=19 & (tpl_3_7<19 | tpl_3_7>19) | tpl_52_56=20 & (tpl_3_7<20 | tpl_3_7>20) | tpl_52_56=21 & tpl_3_7<21)"
+
+cliw_word_post_ma1: is wide_10_14>=8 & wide_10_14<=11 &
+    cliw_ma1_low & cliw_ma1_mod & cliw_ma1_bound & cliw_ma1_shift {
+    local address:2 = cliw_ma1_low;
+    modify_ptr(cliw_ma1_low, 0:2, cliw_ma1_mod, cliw_ma1_bound, cliw_ma1_shift, 2);
+    export address;
+}
+cliw_word_post_ma2: is wide_3_7>=8 & wide_3_7<=11 &
+    cliw_ma2_low & cliw_ma2_mod & cliw_ma2_bound & cliw_ma2_shift {
+    local address:2 = cliw_ma2_low;
+    modify_ptr(cliw_ma2_low, 0:2, cliw_ma2_mod, cliw_ma2_bound, cliw_ma2_shift, 2);
+    export address;
+}
+cliw_long_post_ma12: is wide_10_14>=28 & wide_3_7>=8 & wide_3_7<=11 &
+    cliw_ma1_low & cliw_ma1_mod & cliw_ma1_bound & cliw_ma1_shift {
+    local address:2 = cliw_ma1_low;
+    modify_ptr_scaled(cliw_ma1_low, 0:2, cliw_ma1_mod, cliw_ma1_bound, cliw_ma1_shift, 2, 2:2);
+    export address;
+}
+cliw_long_post_ma34: is cliw_terminal_ma3>=28 & cliw_terminal_ma4>=8 & cliw_terminal_ma4<=11 &
+    cliw_ma3_high & cliw_ma3_mod & cliw_ma3_bound & cliw_ma3_shift {
+    local address:2 = cliw_ma3_high;
+    modify_ptr_scaled(cliw_ma3_high, 0:2, cliw_ma3_mod, cliw_ma3_bound, cliw_ma3_shift, 2, 2:2);
+    export address;
+}
+
+macro cliw_dm_sample_pair(address, low, high) {
+    local upper:2 = address + 1;
+    low = *[data]:2 address;
+    high = *[data]:2 upper;
+}
+macro cliw_dm_sign_pair(low, high, value) {
+    value = (sext(high) * 0x10000 + zext(low)) & 0xffffffffff;
+}
+macro cliw_dm_move_write(value, lo, hi, guard, cfg, predicate, bank, keep, status) {
+    local enabled:2;
+    local pred:1 = predicate;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    if (pred != 0 && enabled == 0) goto <move_done>;
+    local flags:2;
+    cliw_alu_status(value, flags);
+    write_accumulator40(lo, hi, guard, value);
+    local shift:4 = 6 * bank;
+    status = (status & keep) | (flags << shift);
+  <move_done>
+}
+
+# Bank 15 uses the low pointer bank for both word ports. Zero access
+# qualifiers do not suppress an operand explicitly sourced by the template.
+:CLIW template_index is $(CLIW_DM_EXT_END) & cliw_address_bank=15 & wide_8_9=0 & wide_1_2=0 &
+    cliw_word_post_ma1 & cliw_word_post_ma2 &
+    (wide_10_14=8 & wide_3_7>8 | wide_10_14=9 & (wide_3_7<9 | wide_3_7>9) |
+     wide_10_14=10 & (wide_3_7<10 | wide_3_7>10) | wide_10_14=11 & wide_3_7<11) &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) &
+    $(CLIW_DM_MOVE1) & tpl_64_66=6 & tpl_62_63=0 & $(CLIW_DM_ACC1) &
+    $(CLIW_DM_MOVE2) & tpl_13_17=25 & $(CLIW_DM_ACC2) & $(CLIW_DM_DISTINCT_ACC) &
+    wide_0_0 & cliw_alu2_predicate {
+    local first:2 = *[data]:2 cliw_word_post_ma1;
+    local second:2 = *[data]:2 cliw_word_post_ma2;
+    local value1:8 = sext(first) & 0xffffffffff;
+    local value2:8 = sext(second) & 0xffffffffff;
+    local status:2 = EST & 0xcfff;
+    cliw_dm_move_write(value1, cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2,
+                      CECFG1, wide_0_0, 0, 0xffc6, status);
+    cliw_dm_move_write(value2, cliw_alu_3_acc_0_0, cliw_alu_3_acc_0_1, cliw_alu_3_acc_0_2,
+                      CECFG2, cliw_alu2_predicate, 1, 0xf1bf, status);
+    publish_alu_ce(status);
+}
+
+# Selectors 24 and 27 leave a port unbound even with a read qualifier.
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 &
+    (wide_10_14=24 | wide_10_14=27) & (wide_3_7=24 | wide_3_7=27) &
+    (cliw_terminal_ma3=24 | cliw_terminal_ma3=27) & (cliw_terminal_ma4=24 | cliw_terminal_ma4=27) &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & $(CLIW_DM_NOP_ALU2) &
+    $(CLIW_DM_MOVE1) & cliw_ext_alu1_left & $(CLIW_DM_ACC1) & wide_0_0 {
+    local status:2 = EST & 0xcfff;
+    cliw_dm_move_write(cliw_ext_alu1_left, cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2,
+                      CECFG1, wide_0_0, 0, 0xffc6, status);
+    publish_alu_ce(status);
+}
+
+# Long MA23 uses MA2's base without modifying it. MA3 is a continuation,
+# not another pointer operation, even when its encoded mode is nonzero.
+@define CLIW_DM_MA23 "$(CLIW_DM_EXT_BASE) & cliw_address_bank=15 & (wide_10_14=24 | wide_10_14=27) & wide_3_7>=28 & cliw_terminal_ma3>=8 & cliw_terminal_ma3<=11 & cliw_ma2_low"
+:CLIW template_index is $(CLIW_DM_MA23) & wide_1_2=1 &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & $(CLIW_DM_NOP_ALU2) &
+    $(CLIW_DM_MOVE1) & tpl_64_66=6 & tpl_62_63=1 & $(CLIW_DM_ACC1) & wide_0_0 {
+    local low:2;
+    local high:2;
+    cliw_dm_sample_pair(cliw_ma2_low, low, high);
+    local value:8;
+    cliw_dm_sign_pair(low, high, value);
+    local status:2 = EST & 0xcfff;
+    cliw_dm_move_write(value, cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2,
+                      CECFG1, wide_0_0, 0, 0xffc6, status);
+    publish_alu_ce(status);
+}
+
+@define CLIW_DM_MA34 "$(CLIW_DM) & cliw_address_bank=13 & wide_10_14=24 & wide_3_7=24 & cliw_long_post_ma34 & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NOP_ALU1)"
+:CLIW template_index is $(CLIW_DM_MA34) & $(CLIW_DM_NO_LOADS) &
+    $(CLIW_DM_MOVE2) & tpl_13_17=26 & $(CLIW_DM_ACC2) & cliw_alu2_predicate {
+    local low:2;
+    local high:2;
+    cliw_dm_sample_pair(cliw_long_post_ma34, low, high);
+    local value:8;
+    cliw_dm_sign_pair(low, high, value);
+    local status:2 = EST & 0xcfff;
+    cliw_dm_move_write(value, cliw_alu_3_acc_0_0, cliw_alu_3_acc_0_1, cliw_alu_3_acc_0_2,
+                      CECFG2, cliw_alu2_predicate, 1, 0xf1bf, status);
+    publish_alu_ce(status);
+}
+:CLIW template_index is $(CLIW_DM_MA34) & tpl_49_51=0 & $(CLIW_DM_NOP_ALU2) & tpl_0_2=6 {
+    local low:2;
+    local high:2;
+    cliw_dm_sample_pair(cliw_long_post_ma34, low, high);
+    FF1 = high;
+    FF2 = low;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+# The ALU samples the old FF pair before the two LOAD lanes publish the
+# single latched MA12 input. The continuation is not a second AGU update.
+:CLIW template_index is $(CLIW_DM_EXT_END) & cliw_address_bank=13 & wide_8_9=1 &
+    cliw_long_post_ma12 & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_LOAD12) & $(CLIW_DM_NOP_ALU2) &
+    $(CLIW_DM_MOVE1) & tpl_64_66=5 & tpl_62_63=3 & $(CLIW_DM_ACC1) & wide_0_0 {
+    local value:8;
+    cliw_dm_sign_pair(FF2, FF1, value);
+    local low:2;
+    local high:2;
+    cliw_dm_sample_pair(cliw_long_post_ma12, low, high);
+    local status:2 = EST & 0xcfff;
+    cliw_dm_move_write(value, cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2,
+                      CECFG1, wide_0_0, 0, 0xffc6, status);
+    FF1 = high;
+    FF2 = low;
+    publish_alu_ce(status);
+}
+
+macro cliw_dm_dual_product(left, right, word_port, accumulator, data_result, flags) {
+    local product:8;
+    raw_mac_product(left, right, 1:1, 1:1, product);
+    data_result = product & 0xffffffffff;
+    raw_mac_finish(product, data_result, word_port, 0:1, 0:1, accumulator, flags);
+    if ((ECFG & 0x20) == 0) goto <saturate_store>;
+    data_result = (data_result >> 1) | (data_result & 0x8000000000);
+    goto <store_done>;
+  <saturate_store>
+    if ((ECFG & 8) == 0 || (flags & 0x20) == 0) goto <store_done>;
+    local limited:8;
+    cliw_alu_limit32(data_result, limited);
+    data_result = limited;
+    flags = flags | 4;
+  <store_done>
+}
+
+# A dual destination drives its lane's fixed accumulator and the selected
+# DATA port. Register limiting and DATA saturation/SR1 are separate paths.
+:CLIW template_index is $(CLIW_DM_EXT_END) & cliw_address_bank=12 & wide_10_14<=3 &
+    wide_8_9=2 & wide_3_7=24 & cliw_ma1_low & cliw_mac1_predicate &
+    $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & $(CLIW_DM_NOP_ALU1) & $(CLIW_DM_NOP_ALU2) &
+    tpl_91_95=16 & tpl_87_90<8 & tpl_83_86<8 & mac_left & mac_right & tpl_78_82=31 & tpl_73_77=28 {
+    local status:2 = EST & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local pred:1 = cliw_mac1_predicate;
+    if (pred != 0 && enabled == 0) goto <write_done>;
+    local acc:8;
+    local value:8;
+    local flags:2;
+    cliw_dm_dual_product(mac_left, mac_right, 1:1, acc, value, flags);
+    A0H = acc(2);
+    *[data]:2 cliw_ma1_low = value(2);
+    status = (status & 0xffc4) | flags;
+  <write_done>
+    publish_alu_ce(status);
+}
+:CLIW template_index is $(CLIW_DM_MA23) & wide_1_2=2 &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_NO_LOADS) & $(CLIW_DM_NOP_ALU1) & $(CLIW_DM_NOP_ALU2) &
+    cliw_mac2_op=16 & cliw_mac2_left<8 & cliw_mac2_right<8 & cliw_mac2_left_word & cliw_mac2_right_word &
+    cliw_mac2_addend_hi=3 & cliw_mac2_addend_lo=7 & cliw_mac2_dest=29 & cliw_mac2_predicate {
+    local status:2 = EST & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    local pred:1 = cliw_mac2_predicate;
+    if (pred != 0 && enabled == 0) goto <write_done>;
+    local acc:8;
+    local value:8;
+    local flags:2;
+    cliw_dm_dual_product(cliw_mac2_left_word, cliw_mac2_right_word, 0:1, acc, value, flags);
+    local upper:2 = cliw_ma2_low + 1;
+    write_accumulator40(A1L, A1H, GB1, acc);
+    *[data]:2 cliw_ma2_low = value:2;
+    *[data]:2 upper = value(2);
+    status = (status & 0xf13f) | (flags << 6);
+  <write_done>
+    publish_alu_ce(status);
+}
+:CLIW template_index is $(CLIW_DM_EXT_END) & cliw_address_bank=13 & wide_10_14>=28 & wide_3_7<=3 &
+    wide_8_9=2 & cliw_ma1_low & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) &
+    $(CLIW_DM_NOP_ALU2) & $(CLIW_DM_MOVE1) & cliw_ext_alu1_left & tpl_52_56=28 & wide_0_0 {
+    local status:2 = EST & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local pred:1 = wide_0_0;
+    if (pred != 0 && enabled == 0) goto <write_done>;
+    local value:8 = cliw_ext_alu1_left;
+    local upper:2 = cliw_ma1_low + 1;
+    local flags:2;
+    cliw_alu_status(value, flags);
+    write_accumulator40(A0L, A0H, GB0, value);
+    *[data]:2 cliw_ma1_low = value:2;
+    *[data]:2 upper = value(2);
+    status = (status & 0xffc6) | flags;
+  <write_done>
+    publish_alu_ce(status);
+}
+
+@undef CLIW_DM_MA34
+@undef CLIW_DM_MA23
+@undef CLIW_DM_DISTINCT_ACC
+@undef CLIW_DM_ACC2
+@undef CLIW_DM_ACC1
+@undef CLIW_DM_NOP_ALU2
+@undef CLIW_DM_NOP_ALU1
+@undef CLIW_DM_MOVE2
+@undef CLIW_DM_MOVE1
+@undef CLIW_DM_EXT_END
+@undef CLIW_DM_EXT_BASE
+
 # Without the left wide marker the D2 skip width replaces MA1's immediate.
 # Count only the AGU records after MA1, including any stack records.
 cliw_skip_unmarked: is wide_left_mode=0 { local value:2 = 1; export value; }

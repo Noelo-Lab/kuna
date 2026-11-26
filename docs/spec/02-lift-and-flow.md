@@ -4955,6 +4955,24 @@ calls to the same template see the published updates. The covered
 `MAXM` form records the effective DATA word address in `MINMAX` on
 replacement. These routes do not invoke peripheral plug-ins.
 
+The covered bank-15 word operands are read by the template even when the
+invocation has zero DATA access qualifiers; their distinct pointers step
+by one. MA23 uses the MA2 base for a two-word indirect access without
+updating either pointer. A long MA34 or MA12 postincrement uses its base
+once and steps by two. The low DATA word becomes FF2 and the next word
+becomes FF1; an ALU in the same issue reads the old FF1:FF2 pair.
+Inactive address selectors, including the alternate unbound encoding,
+do not introduce DATA effects.
+
+The supported dual destinations write a DATA operand and the physical
+accumulator for the producing lane. Short MAC1 drives only A0H and one
+DATA word; long MAC2 drives A1 and both DATA words. Register limiting,
+DATA saturation and the DATA-only right shift are independent. The
+ALU1 full-accumulator move copies the low and high words into the
+addressed pair; the continuation qualifier does not create another
+store. An execution predicate vetoes both writebacks of a dual
+destination, not an independently configured address update or LOAD.
+
 For the covered CLIW address layouts without a left wide marker, MA1's
 first immediate is replaced by the encoded byte length of the trailing
 address records. An indirect MA1 uses this length as a DATA displacement;

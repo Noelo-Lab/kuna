@@ -1310,6 +1310,75 @@ fn cliw_nop_and_signed_mac_specialize_the_same_code_word() {
 }
 
 #[test]
+fn cliw_extended_address_destination_ports() {
+    const INPUT: &[(&str, u64)] = &[
+        ("A0", 0x12342744), ("A1", 0xff9000abaa), ("A2L", 1),
+        ("R0", 0x100), ("R1", 0x110), ("R4", 0x140), ("FF1", 0xff05), ("FF2", 0x15),
+    ];
+    const MEMORY: &[(u64, u64)] = &[
+        (0x100, 0x8123), (0x101, 0xabcd), (0x110, 0xfedc), (0x111, 0x9876),
+        (0x140, 0x4567), (0x141, 0x1234),
+    ];
+    let rows: &[((u32, u32), [u32; 3], &[(&str, u64)], &[(u64, u64)])] = &[
+        ((0x8c6000, 0xdf2048), [0x7fffff26, 0x3f003fff, 0xff933f88],
+            &[("R0", 0x101), ("R1", 0x111), ("A0", 0xffffff8123), ("A1", 0xfffffffedc), ("EST", 0x410)], &[]),
+        ((0x8dec00, 0xdc6dda), [0x7fffff24, 0x7f003fff, 0xff7ffff8],
+            &[("A0", 0xff9000abaa), ("EST", 0x10)], &[]),
+        ((0x846000, 0xdf61ea), [0x7fffff26, 0x7f003fff, 0xff7ffff8],
+            &[("A0", 0xff9876fedc), ("EST", 0x10)], &[]),
+        ((0x8e2000, 0xdd61c2), [0x7ffffeff, 0xfff03fff, 0xff935f88],
+            &[("R4", 0x142), ("A1", 0x12344567)], &[]),
+        ((0x8e2000, 0xdd61c2), [0x7ffffeff, 0xfff03fff, 0xff7ffffe],
+            &[("R4", 0x142), ("FF1", 0x1234), ("FF2", 0x4567)], &[]),
+        ((0x8c6000, 0xdc02c2), [0x8097f8ff, 0xfff03fff, 0xff7ffff8],
+            &[("A0", 0xffff2744), ("EST", 0x10)], &[(0x100, 0xffff)]),
+        ((0x846000, 0xdf61ec), [0x7ffffeff, 0xfff0404b, 0xfd7ffff8],
+            &[("A1", 0xffffffabaa), ("EST", 0x400)], &[(0x110, 0xabaa), (0x111, 0xffff)]),
+        ((0x8c6000, 0xdd7204), [0x7fffff24, 0x7fc03fff, 0xff7ffff8],
+            &[("A0", 0xff9000abaa), ("EST", 0x10)], &[(0x100, 0xabaa), (0x101, 0x9000)]),
+        ((0x8c6000, 0xdd7142), [0x7fffff25, 0xff083fff, 0xff7ffffd],
+            &[("R0", 0x102), ("A0", 0xffff050015), ("FF1", 0xabcd), ("FF2", 0x8123), ("EST", 0x10)], &[]),
+    ];
+    let run = |fetch, template, extra: &[(&str, u64)], output: &[(&str, u64)], writes: &[(u64, u64)]| {
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], Some(template));
+        m.seed(INPUT);
+        m.seed(extra);
+        for &(address, value) in MEMORY {
+            m.seed_data(address, value);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        for &(name, value) in INPUT.iter().chain(&[("EST", 0)]).chain(extra) {
+            let expected = output.iter().rev().chain(extra.iter().rev())
+                .find(|&&(reg, _)| reg == name).map_or(value, |&(_, result)| result);
+            assert_eq!(m.reg(name), expected, "{fetch:06x?} {name}");
+        }
+        for &(reg, expected) in output {
+            assert_eq!(m.reg(reg), expected, "{fetch:06x?} {reg}");
+        }
+        for &(address, before) in MEMORY {
+            let expected = writes.iter().find(|&&(a, _)| a == address).map_or(before, |&(_, v)| v);
+            assert_eq!(m.data(address), expected, "{fetch:06x?} DATA[{address:x}]");
+        }
+    };
+    for &(fetch, template, output, writes) in rows {
+        run(fetch, template, &[], output, writes);
+    }
+    // The same long product drives different bits to DATA and the accumulator.
+    run(rows[6].0, rows[6].1, &[("A1", 0x8000), ("A2L", 0x8000), ("ECFG", 5)],
+        &[("A1", 0x7fffffff), ("EST", 0x900)], &[(0x110, 0), (0x111, 0x8000)]);
+    run(rows[6].0, rows[6].1, &[("A1", 0x8000), ("A2L", 0x8000), ("ECFG", 9)],
+        &[("A1", 0x80000000), ("EST", 0x900)], &[(0x110, 0xffff), (0x111, 0x7fff)]);
+    // CE1 inhibits the ALU, not the two-word load or one postincrement.
+    run((0x8c6000, 0xdd7143), rows[8].1, &[],
+        &[("R0", 0x102), ("FF1", 0xabcd), ("FF2", 0x8123)], &[]);
+    run((0x8c6000, 0xdd7205), rows[7].1, &[], &[], &[]);
+    // An alternate local selector uses the bank-13 R5 AGU.
+    run((0x8ea000, 0xdd61c2), rows[4].1, &[("R5", 0x140)],
+        &[("R5", 0x142), ("FF1", 0x1234), ("FF2", 0x4567)], &[]);
+}
+
+#[test]
 fn tasking_compiled_addone_returns_the_c_result() {
     let code: String = include_str!("../../../../tests/fixtures/carmel/compiler-o2.hex")
         .split_whitespace()

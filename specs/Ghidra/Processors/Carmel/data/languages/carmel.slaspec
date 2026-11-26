@@ -234,6 +234,8 @@ define context contextreg
     cliw_mac2_op = (81,85) noflow
     cliw_mac2_left = (86,89) noflow
     cliw_mac2_right = (90,93) noflow
+    cliw_mac2_left_word = (86,89) noflow
+    cliw_mac2_right_word = (90,93) noflow
     cliw_mac2_addend_hi = (94,95) noflow
     cliw_mac2_addend_lo = (96,98) noflow
     cliw_mac2_dest = (99,103) noflow
@@ -752,6 +754,21 @@ define token wide (48)
     wide_34_46 = (34,46)
     cliw_address_bank = (16,19)
     cliw_terminal_ma4 = (34,38)
+    cliw_terminal_ma3 = (39,43)
+    cliw_mac2_predicate = (44,44)
+    cliw_alu2_predicate = (45,45)
+    cliw_ma1_low = (10,11)
+    cliw_ma1_mod = (10,11)
+    cliw_ma1_bound = (10,11)
+    cliw_ma1_shift = (10,11)
+    cliw_ma2_low = (3,4)
+    cliw_ma2_mod = (3,4)
+    cliw_ma2_bound = (3,4)
+    cliw_ma2_shift = (3,4)
+    cliw_ma3_high = (39,40)
+    cliw_ma3_mod = (39,40)
+    cliw_ma3_bound = (39,40)
+    cliw_ma3_shift = (39,40)
     cliw_terminal_ma3_condition = (39,46)
     cliw_mac1_predicate = (46,46)
     swap_reg_lo = (40,42)
@@ -1010,8 +1027,15 @@ attach variables [shift_agu_rl] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
 attach values [shift_agu_mode] [0 2 4 6 8 10 12 14];
 attach variables [shift_agu_src] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [shift_agu_count] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
-attach variables [mac_left] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
-attach variables [mac_right] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
+attach variables [mac_left mac_right cliw_mac2_left_word cliw_mac2_right_word] [A0L A1L A2L A3L A0H A1H A2H A3H _ _ _ _ _ _ _ _];
+attach variables [cliw_ma1_low cliw_ma2_low] [R0 R1 R2 R3];
+attach variables [cliw_ma1_mod cliw_ma2_mod] [RM0 RM0 RM2 RM2];
+attach variables [cliw_ma1_bound cliw_ma2_bound] [RL0 RL0 RL2 RL2];
+attach values [cliw_ma1_shift cliw_ma2_shift] [0 2 4 6];
+attach variables [cliw_ma3_high] [R4 R5 R6 R7];
+attach variables [cliw_ma3_mod] [RM4 RM4 RM6 RM6];
+attach variables [cliw_ma3_bound] [RL4 RL4 RL6 RL6];
+attach values [cliw_ma3_shift] [8 10 12 14];
 attach variables [mac_lo] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
 attach variables [mac_hi] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0H A1H A2H A3H A4H A5H _ _ _ _ _ _ _ _ _ _];
 attach variables [mac_guard] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ GB0 GB1 GB2 GB3 GB4 GB5 _ _ _ _ _ _ _ _ _ _];
