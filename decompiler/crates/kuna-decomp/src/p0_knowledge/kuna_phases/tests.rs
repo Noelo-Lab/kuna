@@ -615,6 +615,10 @@ fn option_values_live_value_present_for_every_live_field_row() {
                             // (`always|needed|wide|never`) over an enum field; its
                             // live value is `Architecture::arm_shift_guard`.
                             | "armshiftguard"
+                            // (kuna) `rangetest` takes a MODE
+                            // (`merged|split|auto`) over an enum field; its
+                            // live value is `Architecture::range_test`.
+                            | "rangetest"
                             // (kuna) `constselectjump` takes a MODE
                             // (`off|reentry|on`) over an enum field, for the
                             // same reason.  Its live value is
@@ -719,6 +723,10 @@ fn option_values_live_value_present_for_every_live_field_row() {
                             // `warnstyle` and `int3pad` are here.  Its live
                             // value is `Architecture::signedness`.
                             | "signedness"
+                            // (kuna) `boolbranch` takes `fold|keep|return`
+                            // over two fields; its live value is read from
+                            // `Architecture::bool_ret` and `bool_branch_keep`.
+                            | "boolbranch"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option

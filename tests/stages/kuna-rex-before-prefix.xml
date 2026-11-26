@@ -10,15 +10,26 @@
     movs of quadwords with 32-bit addresses: the second REX.W is the last prefix),
     and rex_load is 48 67 8b 07 (mov eax,[edi]). Each matches objdump's decoding.
     Strict correctness fix, so one pass pins the output.
+
+    rex_stos, rex_movs and rex_cmps (b9 05 00 00 00 f3 48 67 a6, repz cmpsb of
+    5 bytes with 32-bit addresses, then sete) address through 32-bit EDI/ESI,
+    which wrap at 4 GiB (EDI=0xfffffffc, ECX=2 stores the second dword at 0x0
+    and leaves RDI=4), so P3 repstring keeps their loops: a builtin_memset32,
+    builtin_memcpy or builtin_memcmp over a 32-bit pointer cannot wrap. The
+    rex_stos and rex_movs prototypes still pin the element width the prefixes
+    decode to. rex_stos16 addresses through RDI and still becomes
+    builtin_memset16.
 -->
 <bytechunk space="ram" offset="0x1000" readonly="true">f34867abc3</bytechunk>
 <bytechunk space="ram" offset="0x1010" readonly="true">f34866abc3</bytechunk>
 <bytechunk space="ram" offset="0x1020" readonly="true">4867f348a5c3</bytechunk>
 <bytechunk space="ram" offset="0x1030" readonly="true">48678b07c3</bytechunk>
+<bytechunk space="ram" offset="0x1040" readonly="true">b905000000f34867a60f94c00fb6c0c3</bytechunk>
 <symbol space="ram" offset="0x1000" name="rex_stos"/>
 <symbol space="ram" offset="0x1010" name="rex_stos16"/>
 <symbol space="ram" offset="0x1020" name="rex_movs"/>
 <symbol space="ram" offset="0x1030" name="rex_load"/>
+<symbol space="ram" offset="0x1040" name="rex_cmps"/>
 </binaryimage>
 <script>
   <com>lo fu rex_stos</com>
@@ -33,10 +44,19 @@
   <com>lo fu rex_load</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu rex_cmps</com>
+  <com>decompile</com>
+  <com>print C</com>
 </script>
-<stringmatch name="REXPREFIX #1: rep stos after an ignored REX.W stores dwords" min="1" max="1">builtin_memset32\(a0,v1,a3\);</stringmatch>
+<stringmatch name="REXPREFIX #1: rep stos after an ignored REX.W stores dwords through a wrapping edi" min="1" max="1">\*a0 = v2;</stringmatch>
+<stringmatch name="REXPREFIX #1b: a 32-bit-address rep stos is no builtin_memset32" min="0" max="0">builtin_memset32</stringmatch>
+<stringmatch name="REXPREFIX #1c: the rep stos loop steps a pointer to dwords" min="1" max="1">rex_stos\(unsigned int \*a0,</stringmatch>
 <stringmatch name="REXPREFIX #2: a 66 after an ignored REX.W stores words" min="1" max="1">builtin_memset16\(a0,v1,a3\);</stringmatch>
-<stringmatch name="REXPREFIX #3: the last REX.W before the opcode still moves quadwords" min="1" max="1">builtin_memcpy\(a0,a1,a3 \* 8\);</stringmatch>
+<stringmatch name="REXPREFIX #3: the last REX.W before the opcode still moves quadwords, through a wrapping esi and edi" min="1" max="1">\*a0 = \*a1;</stringmatch>
+<stringmatch name="REXPREFIX #3b: a 32-bit-address rep movs is no builtin_memcpy" min="0" max="0">builtin_memcpy</stringmatch>
+<stringmatch name="REXPREFIX #3c: the rep movs loop steps pointers to quadwords" min="1" max="1">rex_movs\(unsigned long \*a0,unsigned long \*a1,</stringmatch>
 <stringmatch name="REXPREFIX #4: a load through edi after an ignored REX.W" min="1" max="1">return \*\(unsigned int \*\)\(int8\)a0;</stringmatch>
+<stringmatch name="REXPREFIX #6: repz cmpsb after an ignored REX.W compares bytes through a wrapping esi and edi" min="1" max="1">\} while \(v2 == v4\);</stringmatch>
+<stringmatch name="REXPREFIX #6b: a 32-bit-address repz cmpsb is no builtin_memcmp" min="0" max="0">builtin_memcmp</stringmatch>
 <stringmatch name="REXPREFIX #5: no bad-instruction halt" min="0" max="0">halt_baddata</stringmatch>
 </decompilertest>

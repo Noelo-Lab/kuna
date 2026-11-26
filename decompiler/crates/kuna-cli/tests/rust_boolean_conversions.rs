@@ -114,3 +114,42 @@ fn main() {{unsafe {{
         std::fs::remove_file(path).unwrap();
     }
 }
+
+#[test]
+#[cfg(all(target_arch = "x86_64", target_os = "linux"))]
+fn a_byte_call_result_returned_as_bool_compiles_and_tests_its_low_byte() {
+    if process::optional_output(Command::new("rustc").arg("--version")).is_none() {
+        return;
+    }
+    let kuna = std::env::var_os("KUNA_TEST_BIN")
+        .unwrap_or_else(|| env!("CARGO_BIN_EXE_kuna").into());
+    let output = process::required_output(Command::new(&kuna).args([
+        "decompile", &common::fixture("scalar_call_results_x86_64"), "narrow_bool",
+        "--language", "rust", "--mode", "reliable",
+        "--assert", "prototype narrow_bool bool narrow_bool(bool skip,uint8 value)",
+    ]));
+    let rust = String::from_utf8(output.stdout).unwrap();
+    assert!(!rust.contains(" as bool"), "{rust}");
+    assert!(rust.contains("return false;"), "{rust}");
+    assert!(rust.contains("return wide_value(value) as u8 != 0;"), "{rust}");
+    let source = common::scratch_file("rust_boolean_call_result", "rs");
+    std::fs::write(&source, format!(r#"
+unsafe fn wide_value(value: u64) -> u64 {{ value }}
+{rust}
+fn main() {{unsafe {{
+  for value in [0u64, 1, 0x80, 0xff, 0x100, 0x1ff, 0xffff_ffff_ffff_ff00, u64::MAX] {{
+    for skip in [false, true] {{
+      assert_eq!(narrow_bool(skip, value), !skip && value as u8 != 0);
+    }}
+  }}
+}}}}
+"#)).unwrap();
+    let binary = source.with_extension("out");
+    process::required_output(Command::new("rustc")
+        .args(["--edition=2021", "--crate-name", "rust_boolean_call_result"])
+        .arg(&source).arg("-o").arg(&binary));
+    process::required_output(&mut Command::new(&binary));
+    for path in [source, binary] {
+        std::fs::remove_file(path).unwrap();
+    }
+}

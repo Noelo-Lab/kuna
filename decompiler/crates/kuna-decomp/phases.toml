@@ -640,7 +640,7 @@ exposure = "(kuna GH-558) option arraynotation -> PrintC::opPtradd"
 name = "condition-form"
 phase = "P9"
 decision = "render a boolean-context zero comparison explicitly (x != 0) vs truthy (x)"
-assertion = "truthycond on|off"
+assertion = "truthycond on|off|ptrchain"
 strength = "HARD"
 rewind = "P9"
 latent = false

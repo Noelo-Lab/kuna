@@ -68,13 +68,20 @@ pub(crate) fn detect(fd: &mut Funcdata) {
     if fd.get_heritage_pass() != 1 || fd.kuna_unoptimized.is_some() {
         return;
     }
-    let verdict = evidence(fd).is_some_and(|e| e.unoptimized());
-    fd.kuna_unoptimized = Some(verdict);
+    let ev = evidence(fd);
+    fd.kuna_unoptimized = Some(ev.is_some_and(|e| e.unoptimized()));
+    fd.kuna_frame_pointer = ev.is_some_and(|e| e.frame_pointer > 0);
 }
 
 /// The cached verdict; `false` before the first heritage pass.
 pub fn is_unoptimized(fd: &Funcdata) -> bool {
     fd.kuna_unoptimized == Some(true)
+}
+
+/// Whether the first heritage pass saw the function address its frame through
+/// a frame pointer, which optimizing compilers rarely keep; `false` before it.
+pub fn frame_pointer(fd: &Funcdata) -> bool {
+    fd.kuna_frame_pointer
 }
 
 fn sext(value: u64, size: int4) -> i64 {

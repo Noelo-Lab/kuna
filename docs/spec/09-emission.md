@@ -450,6 +450,113 @@ context bit, so stacked boolean comparisons collapse fully. `option
 truthycond off` restores upstream Ghidra's explicit comparisons, exercised
 by `tests/stages/kuna-cnorm-truthycond.xml`.
 
+The default value, `ptrchain`, makes one exception to the truthy form. When the
+comparison is itself an operand of a printed `&&` or `||` and the value it
+tests prints as a plain pointer variable, the comparison stays: `p && n`
+prints as `(p != NULL) && (n)` and `!p || !n` as `(p == NULL) || (!n)`. Source
+code spells a pointer test that way inside an `if`, ternary or returned chain
+more often than not. Integers, flags, stand-alone conditions such as `if (p)`
+and the chain that is a loop's condition keep the truthy form, because there
+the bare `while (p && ...)` is the common spelling. A second mod bit,
+`CHAIN_OPERAND`, marks the operand of the chain. It is set on each clause of a
+condition block (`printc.rs (PrintC::emit_block_condition)`, through
+`kuna_truthycond.rs (PrintC::mark_chain_operand)`, which covers the `if`,
+ternary and returned forms that print a chain) and on the operands of a
+`&&`/`||` operator inside one expression. The `for`, `while` and `do` emitters
+set a third bit, `LOOP_CONDITION`, while they print the loop's condition, and
+under it no operand is marked. `op_push_ir` keeps the bit only through the comparison
+itself, the branch that carries it and a `!` that is absorbed into the
+comparison. A printed `!`, any other operator and a clause that prints
+statements first (the comma form `(v = f(), !v)`) clear it, so only the direct
+operand of `&&`/`||` qualifies. `kuna_truthycond.rs
+(PrintC::bare_pointer_variable)` accepts a value that prints as a variable
+name and nothing else: not an expression, a constant, a partial or field
+access, an address-of form or a global. Its declared type must be a pointer.
+`option truthycond on` restores the truthy form everywhere. This value is
+exercised by `tests/stages/kuna-ptrchain.xml`.
+
+**Range tests (P9/`condition-form`, `option rangetest`).** An optimizing
+compiler folds the two comparisons `A <= x && x <= C` into one unsigned
+comparison of `x - A` against `C - A` (gcc's range-test folding, a
+`sub`/`lea` before `cmp`/`ja`), and `x < A || C < x` into its negation; a
+compiler also lowers a run of consecutive `case` labels sharing one body
+that way. The IR keeps the merged test, an `INT_LESS` or `INT_LESSEQUAL` of
+a constant and the subtraction (`INT_SUB` of the constant after
+`RuleAddUnsigned`, or `INT_ADD` of its negation), and upstream prints it as
+`(unsigned int)(x - A) <= B`. `RuleRangeMeld` never produces this form, since
+its `translate2Op` yields only one-sided comparisons, so every merged test
+in the output is the compiler's. Under `option rangetest`, whose default is
+`auto`, `printc.rs (PrintC::op_binary_ir)` prints the test as the two
+comparisons it stands for, `A <= x && x <= A + B`, or `x < A || A + B < x`
+for the negation, after the negate-token flip has settled which comparison
+prints. `kuna_rangetest.rs (orient)` reads the printed comparison as
+`t <= H` or `H < t` whichever side holds the constant.
+
+`kuna_rangetest.rs (PrintC::range_split)` splits only where the two
+comparisons give the merged test's truth value for every input, in the types
+the C prints. The test selects the `n`-bit values of `x` in `[A, A + H]`,
+which is one interval only when `A` is not zero and `A + H < 2^n`
+(`kuna_rangetest.rs (interval)`); a range that wraps, such as gcc's
+`(unsigned int)(x + 0x10) < 0x20` for `-16 <= x && x < 16`, keeps its
+merged form. Two C comparisons read `x`'s printed value. When the printed
+type is unsigned and `n` bits wide that value is the `n`-bit value itself.
+Otherwise, when `A + H < 2^(n-1)`, every value in the interval reads the
+same in either signedness and every other value falls outside it, negative
+or at least `2^(n-1)`, so the split is exact whatever C's promotions do
+(`kuna_rangetest.rs (exact)`). `kuna_rangetest.rs (PrintC::range_operand)`
+looks through the casts around the subtraction and, under it, through
+same-size casts, a zero extension when `A + H` fits the narrower value and a
+sign extension when it fits that value's non-negative half, and takes the
+deepest value whose printed type passes. It never takes a cast's own
+output, because `castimplied` can print a cast as its input, whose type is
+then the one C reads. An enum, pointer, float or boolean type keeps the
+merged form, as does a printed type of another width. The value prints
+twice, so it must print the same each time: a non-volatile variable, or an
+expression printed in place from copies, loads, extensions, pieces, pointer
+arithmetic and integer arithmetic within eight operations. The bound check
+of a switch stays merged: a test whose branch enters a block that ends in a
+computed jump, directly or through one block with a single exit
+(`kuna_rangetest.rs (branches_to_switch)`), or whose subtraction or value
+reaches a `BRANCHIND` within ten data-flow steps
+(`kuna_rangetest.rs (feeds_switch)`). ARM `tbb`/`tbh` dispatch prints such
+a check before its `switch`.
+
+The split prints its own `&&` or `||` where the comparison printed, so the
+operator stack parenthesizes it against an enclosing operator. One place has
+no enclosing operator to do that: the first clause of a printed `&&`/`||`
+chain, `printc.rs (PrintC::emit_block_condition)`, prints its branch with an
+empty stack, and its condition gets no parenthesis of its own when the chain
+is itself the second clause of another chain, where `COMMA_SEPARATE` is set.
+`emit_block_condition` names the chain's operator in `range_chain_head` while
+its first clause prints, and `kuna_rangetest.rs (PrintC::emit_range_split)`
+wraps a split in parentheses there when that operator binds tighter than the
+split's own, so `(x < A || C < x) && (y != 5)` keeps its grouping.
+
+`auto` splits everywhere except in two places, which the decbench corpus
+measured as the merged form's own (`kuna_rangetest.rs (PrintC::range_split_site)`).
+One is a loop's condition, where the printer has set `LOOP_CONDITION`. The
+other is a stand-alone condition, an `if` test that is not an operand of
+`&&`/`||`, whose range holds at most 16 values: a short run of values is more
+often a `switch` whose consecutive case labels share one body, or an
+`ISDIGIT`-style macro, than two comparisons the source wrote. `op_push_ir`
+records the print modifiers an unsigned comparison is reached with in
+`range_entry`, before its dispatch scopes them off; a comparison with
+`CONDITION_CONTEXT` and without `CHAIN_OPERAND` is a stand-alone condition. A
+returned or assigned test and an operand of `&&`/`||` split whatever their
+size. There is no separate rule for unoptimized code: gcc folds two
+comparisons at -O0 as well, and the case lists that print merged there are
+short. The 17-value threshold was chosen on one half of the decbench projects
+and checked on the other. Against `merged`, `auto` makes 50 more optimized
+functions (O2, no inlining) match the source's control flow exactly (54
+gained, 4 lost; +36 on the tuning half, +14 on the held-out half) and 12 more
+unoptimized ones (16 gained, 4 lost; +7 and +5), with no function lost or
+added. `split` splits every exact site and `merged` keeps the one
+comparison. The values are exercised by `tests/stages/kuna-rangetest.xml`
+and `tests/stages/kuna-rangetest-thumb.xml`, and
+`kuna-cli/tests/rangetest_round_trip.rs` compiles the printed C under gcc and
+clang at -O0 and -O2 and compares each function with its source at the
+boundary values.
+
 **Brace form (P9/`brace-form`, `option braceelide`).** A single-statement if
 body renders braceless with the statement indented on the next line (kuna
 default, DIV-38): `printc.rs (PrintC::emit_block_if)` consults
@@ -4967,16 +5074,31 @@ operations, for cosmetic cast suppression, and for other output languages.
 conversion serves explicit casts, COPY assignments, returns and typed STORE
 values. It uses the printed source type and requires a one-byte integer value
 and a one-byte Boolean destination. Enum values, nonintegers and inconsistent
-storage widths retain their existing handling. An implied call must have a
-compatible byte result in its call prototype or the verified scalar call-result
-conversion described below. Wider results must retain their
-separate narrowing operation: a byte extracted from a callback result becomes
-`callback() as u8 != 0`, not a comparison of the complete result. The expression
+storage widths retain their existing handling. An implied call takes its
+result type from its call prototype or the verified scalar call-result
+conversion described below and, when neither states one (or the prototype's
+output is `void`), from the callee's recovered return type. A Boolean result
+keeps the cast, which is valid Rust; a one-byte integer result prints
+`call() != 0`; any other result, unknown or wider, prints `call() as u8 != 0`,
+which tests the low byte the caller reads whatever the callee's printed return
+type is, where a bare `call() as bool` would not compile. Wider results must
+retain their separate narrowing operation: a byte extracted from a callback
+result becomes `callback() as u8 != 0`, not a comparison of the complete result. The expression
 also replaces the outer Boolean cast when the `boolbyte` SUBPIECE path inserts
 an intermediate unsigned-byte cast. Rust retains the intermediate cast even
 when the upper bits are proven zero, so both truncation forms yield a valid
 Boolean expression. The source is evaluated once, and the normal
-operator stack preserves surrounding Boolean and arithmetic precedence.
+operator stack preserves surrounding Boolean and arithmetic precedence. The
+comparison uses C's `!=` token, which keeps the parentheses around a bitwise
+operand (`(value as u8 & 0x55) != 0`), except directly under another
+comparison, where it takes Rust's own token: Rust comparisons do not chain, so
+`(f() != 0) != g` is parenthesised rather than printed as `f() != 0 != g`. A
+constant of Boolean type prints as `false` or `true` where what consumes it is
+Boolean too (`kuna_rustboolcast.rs (rust_boolean_constant)`): the return value
+of a function that returns `bool`, a declared `bool` variable a copy assigns
+(followed through implied copies), or the other side of `==` or `!=`. Elsewhere
+it keeps its integer spelling, because a merged variable can be declared at an
+integer type while one of its pieces is typed Boolean.
 Cosmetic cast suppression disables the conversion.
 C and Go emission are unchanged.
 

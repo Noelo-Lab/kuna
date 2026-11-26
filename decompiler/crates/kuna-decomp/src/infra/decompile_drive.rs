@@ -1160,6 +1160,7 @@ fn generate_flow(
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
     let target_snapshot = flow.target_index_snapshot();
     let mut data = flow.data;
+    data.kuna_flow_ranges = crate::flow::decoded_ranges(&data, &target_snapshot);
     data.switch_over_jump_tables(|fd, addr| {
         crate::flow::target_in(fd, &target_snapshot, addr)
     })?;
@@ -2126,7 +2127,8 @@ fn decompile_func_full_with_objects_inner(
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
-                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>|
+                       elfmain: Option<&crate::kuna_elfmaindecl::Runtime>,
+                       latch_join: bool|
      -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
@@ -2149,6 +2151,7 @@ fn decompile_func_full_with_objects_inner(
             fd.withdraw_stack_store_guard();
         }
         fd.set_condstmts_seed(condstmts_seed.clone());
+        fd.kuna_latch_join_withdrawn = !latch_join;
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -2364,28 +2367,46 @@ fn decompile_func_full_with_objects_inner(
     let mut prefollowed = prefollowed;
     let mut elfmain = elfmain_rt.as_ref();
     let result = loop {
-        // (kuna `stackstoreguard`) A function whose final layout spoiled what the
-        // guard needs is analyzed again from scratch without it.
-        let mut seed = std::collections::BTreeSet::new();
-        let mut unguarded = false;
-        let mut result = match attempt(prefollowed.take(), false, &seed, elfmain) {
-            Ok(fd) if fd.stack_store_guard_spoiled() => {
-                unguarded = true;
-                attempt(None, true, &seed, elfmain)
+        // (kuna `dedupitetail latch`) A function whose joined loop latch prints
+        // gotos is decompiled again without the join; the copy with fewer gotos wins.
+        let mut joined: Option<(KunaResult<Funcdata>, int4)> = None;
+        let result = loop {
+            let latch_join = joined.is_none();
+            // (kuna `stackstoreguard`) A function whose final layout spoiled what the
+            // guard needs is analyzed again from scratch without it.
+            let mut seed = std::collections::BTreeSet::new();
+            let mut unguarded = false;
+            let mut result = match attempt(prefollowed.take(), false, &seed, elfmain, latch_join) {
+                Ok(fd) if fd.stack_store_guard_spoiled() => {
+                    unguarded = true;
+                    attempt(None, true, &seed, elfmain, latch_join)
+                }
+                other => other,
+            };
+            // (kuna `condstmts`) A function whose final structure folded a block over the
+            // cap is analyzed again with that block complex from the first structuring on.
+            for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+                let Ok(fd) = &result else { break };
+                let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
+                seed = next;
+                match attempt(None, unguarded, &seed, elfmain, latch_join) {
+                    Ok(fd) => result = Ok(fd),
+                    Err(_) => break,
+                }
             }
-            other => other,
+            match joined.take() {
+                None => match result.as_ref().ok().and_then(crate::p8_structure::kuna_latchjoin::joined_gotos) {
+                    Some(with) if with > 0 => joined = Some((result, with)),
+                    _ => break result,
+                },
+                Some((first, with)) => {
+                    break match &result {
+                        Ok(plain) if crate::p8_structure::kuna_latchjoin::fewer_gotos(plain, with) => result,
+                        _ => first,
+                    }
+                }
+            }
         };
-        // (kuna `condstmts`) A function whose final structure folded a block over the
-        // cap is analyzed again with that block complex from the first structuring on.
-        for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
-            let Ok(fd) = &result else { break };
-            let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
-            seed = next;
-            match attempt(None, unguarded, &seed, elfmain) {
-                Ok(fd) => result = Ok(fd),
-                Err(_) => break,
-            }
-        }
         if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
             elfmain = None;
             continue;

@@ -172,9 +172,21 @@ pub struct Funcdata {
     /// (kuna `varargsave`) Set when the first heritage pass folded this
     /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
     pub(crate) kuna_vararg_save: bool,
+    /// (kuna `coverage`) The bytes of every instruction the flow decoded
+    /// ([`crate::flow::decoded_ranges`]).
+    pub(crate) kuna_flow_ranges: Vec<(u64, u64)>,
     /// (kuna) Whether the function's code is unoptimized, decided once after
     /// the first heritage pass (`p3_dataflow/kuna_unoptimized.rs`).
     pub(crate) kuna_unoptimized: Option<bool>,
+    /// (kuna `dedupitetail latch`) Loop latches joined so far, and whether this
+    /// decompile runs without the join (`p8_structure/kuna_latchjoin.rs`).
+    pub(crate) kuna_latch_joins: u32,
+    pub(crate) kuna_latch_join_withdrawn: bool,
+    /// The blocks the joined latches were placed in.
+    pub(crate) kuna_latch_blocks: Vec<crate::context::BlockId>,
+    /// (kuna) Whether that first heritage pass saw the function address its
+    /// frame through a frame pointer.
+    pub(crate) kuna_frame_pointer: bool,
     /// (kuna `returndup auto`) The return statements read at the first
     /// heritage pass (`p8_structure/kuna_o0returns.rs`).
     pub(crate) kuna_o0returns: Option<Box<crate::p8_structure::kuna_o0returns::Record>>,
@@ -298,6 +310,11 @@ pub struct Funcdata {
     /// (kuna `condstmts`) Block start addresses the final structure folded into a
     /// condition operand over the cap.
     kuna_condstmts_hits: std::collections::BTreeSet<Address>,
+    /// (kuna `condfold noreturn`) Block starts structured as not complex because
+    /// they test a chain into a no-return call.
+    kuna_fatalchain_relaxed: std::collections::BTreeSet<Address>,
+    /// (kuna `condfold noreturn`) Set while a structuring must not relax.
+    kuna_fatalchain_hold: bool,
     /// (kuna `earlyrestart`) Set when heritage bumped a space's dead-code delay
     /// in this pass: the analysis is about to be thrown away and redone.
     kuna_restart_now: bool,
@@ -814,7 +831,12 @@ impl Funcdata {
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             kuna_vararg_save: false,
+            kuna_flow_ranges: Vec::new(),
             kuna_unoptimized: None,
+            kuna_latch_joins: 0,
+            kuna_latch_join_withdrawn: false,
+            kuna_latch_blocks: Vec::new(),
+            kuna_frame_pointer: false,
             kuna_o0returns: None,
             kuna_o0select: None,
             kuna_o0switch: None,
@@ -852,6 +874,8 @@ impl Funcdata {
             stack_byte_copy_ops: Default::default(),
             kuna_condstmts_seed: std::collections::BTreeSet::new(),
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
+            kuna_fatalchain_relaxed: std::collections::BTreeSet::new(),
+            kuna_fatalchain_hold: false,
             kuna_restart_now: false,
             dead_wave_log: None,
             dead_cascade_now: false,
@@ -2766,6 +2790,31 @@ impl Funcdata {
         self.kuna_condstmts_hits.insert(addr);
     }
 
+    /// (kuna `condfold noreturn`) Block starts structured as not complex.
+    pub fn fatalchain_relaxed(&self) -> &std::collections::BTreeSet<Address> {
+        &self.kuna_fatalchain_relaxed
+    }
+
+    /// (kuna `condfold noreturn`) Record a block start structured as not complex.
+    pub fn add_fatalchain_relaxed(&mut self, addr: Address) {
+        self.kuna_fatalchain_relaxed.insert(addr);
+    }
+
+    /// (kuna `condfold noreturn`) Replace the relaxed block starts.
+    pub fn set_fatalchain_relaxed(&mut self, set: std::collections::BTreeSet<Address>) {
+        self.kuna_fatalchain_relaxed = set;
+    }
+
+    /// (kuna `condfold noreturn`) Whether structuring must not relax.
+    pub fn fatalchain_held(&self) -> bool {
+        self.kuna_fatalchain_hold
+    }
+
+    /// (kuna `condfold noreturn`) Hold or release the relaxation.
+    pub fn set_fatalchain_hold(&mut self, hold: bool) {
+        self.kuna_fatalchain_hold = hold;
+    }
+
     /// (kuna `stackstoreguard`) Turn the guard off for the rest of this
     /// function's analysis.
     pub fn withdraw_stack_store_guard(&self) {
@@ -3833,6 +3882,13 @@ impl Funcdata {
         self.vbank.num_varnodes()
     }
 
+    /// (kuna `coverage`) The bytes of every instruction the flow decoded for
+    /// this function, delay slots included: engine byte offsets, half-open,
+    /// ascending and joined where they touch. Empty before the flow runs.
+    pub fn flow_ranges(&self) -> &[(u64, u64)] {
+        &self.kuna_flow_ranges
+    }
+
     /// Get the basic blocks container (C++ `getBasicBlocks`).
     pub fn bblocks_ref(&self) -> &BlockGraph {
         &self.bblocks
@@ -4496,7 +4552,9 @@ impl Funcdata {
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;
+        self.kuna_flow_ranges.clear();
         self.kuna_unoptimized = None;
+        self.kuna_frame_pointer = false;
         self.kuna_o0returns = None;
         self.kuna_o0select = None;
         self.kuna_o0switch = None;
@@ -4516,6 +4574,7 @@ impl Funcdata {
         self.min_laned_size = self.glb.get_minimum_laned_register_size();
         self.kuna_hiddenret_vetoed.clear();
         self.kuna_condstmts_hits.clear();
+        self.kuna_fatalchain_relaxed.clear();
         self.kuna_restart_now = false;
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow() (funcdata.cc:95):

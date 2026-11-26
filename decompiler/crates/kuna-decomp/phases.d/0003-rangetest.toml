@@ -1,0 +1,18 @@
+[[settable]]
+option = "rangetest"
+values = "merged|split|auto"
+default = "auto"
+destructive = false
+phase = "P9"
+subphase = "condition-form"
+strength = "HARD"
+rewind = "P9"
+issue = "rangetest"
+summary = "Print an optimizer-merged unsigned range test `(unsigned int)(x - A) <= B` as the two comparisons it stands for, `A <= x && x <= A + B`, and its negation `B < (unsigned int)(x - A)` as `x < A || A + B < x`, where the two comparisons give the same truth value for every input in the types the C prints: the range does not wrap (`A` is not 0 and `A + B` is below 2^n for an n-bit test), and `x` prints in an unsigned n-bit type or `A + B` is below 2^(n-1); a same-size cast around `x` is looked through, as is a zero extension when `A + B` fits the narrower value and a sign extension when it fits its non-negative half. `x` must be a variable or a pure expression that prints in place, since it prints twice, and the bound check of a recovered switch keeps its one comparison. `auto` splits everywhere except in a loop's condition and in a stand-alone condition (an `if` test that is not an operand of && / ||) whose range holds at most 16 values; `split` splits every exact site; `merged` keeps the one comparison."
+use_when = "AUTO by default: a compiler folds `c >= '0' && c <= '9'` and `n < 1 || n > 30` into one unsigned subtract-and-compare (gcc does at -O0 too), and the source wrote the two comparisons far more often than the subtraction. The merged form is the source's own for a run of `switch` case labels that share one body, for an ISDIGIT-style macro and for a loop test, so auto keeps it in loop conditions and in a stand-alone condition of at most 16 values; a returned or assigned test and an operand of && / || split whatever the range. Flip to merged to see the comparison the binary performs (for example to match it against the disassembly's `sub`/`cmp`/`ja`), or to split to split every exact site."
+example = "option rangetest merged"
+source_decompiler = "kuna"
+inspiration = "decbench O2 corpus: 782 functions print a merged range test such as `if (10 <= (unsigned char)(v1 - 0x30U))` for the source's `if (c < '0' || c > '9')`; kuna matched 1.3% of them structurally, Codex 27.5%"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "(unsigned int)(x - 0x30) <= 9 where the source tests c >= '0' && c <= '9'|10 <= (unsigned char)(v - 0x30U) where the source rejects c < '0' and c > '9' separately|one unsigned comparison of a subtraction where the source compares the same variable twice|range check printed as x - A < B|need the merged range comparison the binary performs (sub/cmp/ja) instead of two comparisons"

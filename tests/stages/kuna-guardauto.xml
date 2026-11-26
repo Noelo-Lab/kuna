@@ -41,6 +41,7 @@
 <symbol space="ram" offset="0x1000c0" name="prev"/>
 </binaryimage>
 <script>
+  <com>option truthycond on</com>
   <com>option returndup on</com>
   <com>lo fu unget</com>
   <com>decompile</com>

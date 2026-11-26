@@ -18,6 +18,8 @@
   <symbol space="ram" offset="0x401005" name="ratio_clamp"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>parse line extern float scalar_min(float a,float b);</com>
   <com>parse line extern float ratio_clamp(float value,float lo,float hi);</com>
   <com>map address r0x402000 float clamp_one</com>
