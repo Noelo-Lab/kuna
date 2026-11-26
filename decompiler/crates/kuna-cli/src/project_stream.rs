@@ -1416,7 +1416,7 @@ mod tests {
                 std::fs::create_dir_all(&dir).unwrap();
                 let layout = Layout {
                     binary_path: dir.join("image"), path_label: "image".into(),
-                    file_name: "image".into(), out_dir: dir.clone(),
+                    file_name: "image".into(), out_dir: dir.clone(), selection: false,
                 };
                 let mut caller = result(0x1000, Vec::new());
                 caller.globals = vec![string("whole", 0x5000, 16), string("part", 0x5004, 8)];
@@ -1448,7 +1448,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let layout = Layout {
             binary_path: dir.join("image"), path_label: "image".into(),
-            file_name: "image".into(), out_dir: dir.clone(),
+            file_name: "image".into(), out_dir: dir.clone(), selection: false,
         };
         let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
         let mut writer = ProjectWriter::create(&layout, String::new(), BTreeSet::new()).unwrap();
@@ -1505,7 +1505,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             let layout = Layout {
                 binary_path: dir.join("image"), path_label: "image".into(),
-                file_name: "image".into(), out_dir: dir.clone(),
+                file_name: "image".into(), out_dir: dir.clone(), selection: false,
             };
             let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
             let records = wide_records();
@@ -1544,7 +1544,7 @@ mod tests {
             std::fs::create_dir_all(&dir).unwrap();
             let layout = Layout {
                 binary_path: dir.join("image"), path_label: "image".into(),
-                file_name: "image".into(), out_dir: dir.clone(),
+                file_name: "image".into(), out_dir: dir.clone(), selection: false,
             };
             let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
             let [caller, other, mut producer] = wide_records();
@@ -1619,7 +1619,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let layout = Layout {
             binary_path: image, path_label: "callwide actual records".into(),
-            file_name: "mips32_be_declared.elf".into(), out_dir: dir.clone(),
+            file_name: "mips32_be_declared.elf".into(), out_dir: dir.clone(), selection: false,
         };
         let prelude = print_c_recompile_prelude(prog.arch());
         let run = StreamRun::new(dir.clone(), ReadmeLayout::Streamed, ReadmeFacts::default(), 1);
