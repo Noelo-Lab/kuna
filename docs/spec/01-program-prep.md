@@ -3355,6 +3355,32 @@ the two is a usage error.
 
 ## 1.4 Metadata analyzers
 
+Android ELF images with an Android identification note or an Android dynamic
+linker use the Android NDK r30 JNI declarations on AArch64, ARM, x86-64 and
+i386. The public C layout describes calls made from both C and C++. Each
+JNIEnv and JavaVM function pointer occupies its NDK-defined slot at the
+target pointer width. The types preserve the JNI scalar and reference names,
+the jvalue union, and the target ABI for variadic and va_list calls. The
+loader binds the NDK's named functions to actual definitions and imports.
+The header and its ABI verification are maintained with
+`scripts/gen_android_jni.py`. An installed Kuna uses the embedded declarations.
+
+`jniregister` is on by default. Starting with the JavaVM supplied to
+JNI_OnLoad, a bounded instruction walk follows the environment through
+GetEnv or AttachCurrentThread and the class through FindClass. At a proven
+RegisterNatives call it resolves the constant table and count, checks the
+relocated name and descriptor and the executable implementation address, and
+binds each unambiguous Java method at that address. The entries are available
+to function enumeration and to single-function decompilation in a fresh
+process. A managed reference in the descriptor establishes the ordinary JNI
+ABI. A descriptor consisting entirely of primitives can also describe an
+Android critical native method, so the recovered name alone does not fix its
+native parameter list. An ordinary method's second implicit parameter is a
+generic object reference until the static/instance distinction is known.
+A JNI long export with a reference argument supplies input types while its
+return is recovered from code. A short export name alone supplies neither the
+Java descriptor nor the static/instance flag.
+
 The always-on core, in pass order (`passes.rs (passes_for)`):
 
 - **Strings** (`strings`, the `StringsAnalyzer` port,

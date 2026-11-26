@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5561,
-    5561
+    5568,
+    5568
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1559,6 +1559,13 @@
     "data:ITEREGION AUTO #7: with iteregion on arg keeps its if/else (pass 2)",
     "data:Immutable GOT graph resolution keeps the existing named C call",
     "data:Immutable GOT graph resolution keeps writable C calls indirect",
+    "data:JNI array length is called through the registered environment",
+    "data:JNI environment names the class lookup",
+    "data:JNI environment names the method registration",
+    "data:JNI invocation table yields an environment",
+    "data:JNI load hook receives the virtual machine and reserved argument",
+    "data:JNI registration disabled leaves the anonymous byte counter",
+    "data:JNI registration names and types the byte counter",
     "data:JUMPAS-CALL #1: only the live indirect path warns",
     "data:JUMPAS-CALL #2: the pruned branch does not warn on the return",
     "data:JUMPAS-CALL #3: the live indirect target still renders as a call",
