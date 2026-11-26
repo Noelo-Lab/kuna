@@ -4201,6 +4201,18 @@ request the same single-read bank. An explicit `X1` destination publishes
 the product's high word instead of the input latch, with zero and loss
 flags for the narrow result rather than the full accumulator.
 
+The covered compact register-half `MPY` forms select signedness separately
+for their DATA input and `RN` factor. The DATA input uses the address before
+postmodify and fills `X1` or `X2` according to the physical slot. The result
+changes only the selected accumulator half, and `Z` ignores the low 16
+product bits but not the guard bits. Each slot updates its own status
+bank, preserving the other bank and previously set loss bits. In the
+paired form, the rounded primary multiply samples its incoming CE1.
+The address override lets it fetch and fill `X1` without writing a result.
+Rounding adds a half-word bias, including its carry, even with `ECFG.R`
+set. The two lanes reserve the DATA reads before either commits a result;
+an oversubscribed bus stops before either result or latch is published.
+
 Covered compact indexed multiply forms select the short DATA pointer bank
 opposite the long DATA destination. The physical issue lane independently
 selects the `X` latch and the `EST` flag bank. Only the first input loads

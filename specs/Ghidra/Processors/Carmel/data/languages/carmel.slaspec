@@ -530,6 +530,9 @@ define token slot (24)
     pair_abs_source = (5,9)
     pair_word_6 = (6,10)
     pair_half_11 = (11,14)
+    compact_round_half = (11,14)
+    compact_round_half_id = (11,14)
+    compact_round_ptr_6 = (6,8)
     pair_count = (1,4)
     pair_indexed_reg = (4,8)
     pair_acc_4 = (4,6)
@@ -546,6 +549,7 @@ define token slot (24)
     pair_rl_1 = (1,3)
     pair_bank_1 = (1,3)
     pair_ptr_6 = (6,8)
+    pair_rn_6 = (6,8)
     pair_rm_6 = (6,8)
     pair_rl_6 = (6,8)
     pair_bank_6 = (6,8)
@@ -980,15 +984,15 @@ attach variables [x_alu_acc_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [x_alu_acc_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [x_alu_acc_gb] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [pair_shift_source pair_abs_source pair_word_6] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
-attach variables [pair_half_11] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [pair_half_11 compact_round_half] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [pair_count] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
 attach variables [pair_indexed_reg] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
 attach variables [pair_acc_4 pair_acc_11] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [pair_acc_4_lo pair_acc_11_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [pair_acc_4_hi pair_acc_11_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [pair_acc_4_gb pair_acc_11_gb] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
-attach variables [pair_ptr_1 pair_ptr_6 pair_ptr_7 pair_ptr_10 pair_ptr_11] [R0 R1 R2 R3 R4 R5 R6 R7];
-attach variables [pair_rn_1 pair_rn_7 pair_rn_10] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [pair_ptr_1 pair_ptr_6 pair_ptr_7 pair_ptr_10 pair_ptr_11 compact_round_ptr_6] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [pair_rn_1 pair_rn_6 pair_rn_7 pair_rn_10] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [pair_rm_1 pair_rm_6 pair_rm_7 pair_rm_10] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
 attach variables [pair_rl_1 pair_rl_6 pair_rl_7 pair_rl_10] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
 attach values [pair_bank_1 pair_bank_6 pair_bank_7 pair_bank_10] [0 2 4 6 8 10 12 14];
@@ -6703,6 +6707,117 @@ macro compact_pair_read_check(first, second) {
     carmel_data_read_conflict();
     goto <stopped>;
   <fetch>
+}
+
+compact_mpy_word_kind: "MPY"   is slot_15_22=0x84 { export 3:1; }
+compact_mpy_word_kind: "MPYSU" is slot_15_22=0x8c { export 1:1; }
+compact_mpy_word_kind: "MPYUS" is slot_15_22=0x94 { export 2:1; }
+compact_mpy_word_kind: "MPYUU" is slot_15_22=0x9c { export 0:1; }
+
+compact_mpy_word_address: "*"^pair_ptr_6 is slot_9_10=0 & pair_ptr_6 { export 0:2; }
+compact_mpy_word_address: "*"^pair_ptr_6^"+="^pair_rn_6 is slot_9_10=1 & pair_ptr_6 & pair_rn_6 { export 1:2; }
+compact_mpy_word_address: "*"^pair_ptr_6^"++" is slot_9_10=2 & pair_ptr_6 { export 2:2; }
+compact_mpy_word_address: "*"^pair_ptr_6^"--" is slot_9_10=3 & pair_ptr_6 { export 3:2; }
+
+@define COMPACT_MPY_WORD "slot_mode=0 & slot_0_0=0 & compact_mpy_word_kind & pair_half_11 & compact_mpy_word_address & pair_ptr_6 & pair_rn_6 & pair_rm_6 & pair_rl_6 & pair_bank_6 & slot_4_5=1 & logical_right"
+
+macro compact_mpy_word_result(first, second, kind, result, flags) {
+    local product:8;
+    raw_mac_product(first, second, kind & 1, kind & 2, product);
+    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 1:1, 0:1, kind == 3, result, flags);
+}
+
+macro compact_mpy_word_solo(dst, latch, bank_shift, ptr, rn, rm, rl, shift, action, factor, kind) {
+    local address:2 = ptr;
+    modify_ptr(ptr, rn, rm, rl, shift, action);
+    local first:2 = *[data]:2 address;
+    latch = first;
+    local result:8;
+    local active:2;
+    compact_mpy_word_result(first, factor, kind, result, active);
+    dst = result(2);
+    local status:2 = EST & 0xcfff;
+    raw_mac_flags(status, active, bank_shift);
+    publish_alu_ce(status);
+}
+
+:^compact_mpy_word_kind pair_half_11,compact_mpy_word_address,logical_right "||" nop_right is
+    ($(COMPACT_ROUTED_MPY) & $(COMPACT_MPY_WORD)); (slot_mode=0 & nop_right) {
+    compact_mpy_word_solo(pair_half_11, X1, 0, pair_ptr_6, pair_rn_6, pair_rm_6, pair_rl_6,
+                          pair_bank_6, compact_mpy_word_address, logical_right, compact_mpy_word_kind);
+}
+
+:^nop_left "||" compact_mpy_word_kind pair_half_11,compact_mpy_word_address,logical_right is
+    (carmel_issue=1 & slot_mode=0 & nop_left); $(COMPACT_MPY_WORD) {
+    compact_mpy_word_solo(pair_half_11, X2, 6, pair_ptr_6, pair_rn_6, pair_rm_6, pair_rl_6,
+                          pair_bank_6, compact_mpy_word_address, logical_right, compact_mpy_word_kind);
+}
+
+macro compact_mpy_three_reads(first, second, third) {
+    if ((((first ^ second) | (first ^ third)) & 0x8000) != 0) goto <check_ports>;
+  <stopped>
+    carmel_data_read_conflict();
+    goto <stopped>;
+  <check_ports>
+    compact_pair_read_check(first, second);
+    compact_pair_read_check(first, third);
+    compact_pair_read_check(second, third);
+}
+
+macro compact_mpy_round_word(first, second, result, flags) {
+    local product:8;
+    raw_mac_product(first, second, 1:1, 1:1, product);
+    # This port rounds ties upward even when ECFG.R is set; C is the bias adder's carry.
+    local rounded:8 = (product + 0x8000) & 0xffffffffffff0000;
+    local adder:8 = (product & 0xffffffffff) + 0x8000;
+    raw_mac_finish(rounded, adder, 1:1, 1:1, 0:1, result, flags);
+}
+
+# Three independent DATA sources share the packet's operand-fetch ports.
+# CE1/AEN control the rounded lane's reads, but only CE1 enables its result.
+:MPYR "CE1" compact_round_half,"*"^compact_round_ptr_6,"*"^pair_ptr_1 "||"
+    compact_mpy_word_kind pair_half_11,compact_mpy_word_address,logical_right is
+    (carmel_issue=1 & slot_mode=0 & slot_15_22=0xae & slot_0_0=1 & compact_round_half & compact_round_half_id &
+     slot_6_10<8 & slot_1_5<8 & compact_round_ptr_6 & pair_ptr_1);
+    ($(COMPACT_MPY_WORD) & slot_11_14) {
+    local a:2 = compact_round_ptr_6;
+    local b:2 = pair_ptr_1;
+    local address:2 = pair_ptr_6;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local fetch_left:1 = enabled != 0 || (CECFG1 & 0x1000) != 0;
+    modify_ptr(pair_ptr_6, pair_rn_6, pair_rm_6, pair_rl_6, pair_bank_6, compact_mpy_word_address);
+    local left_first:2 = 0;
+    local left_second:2 = 0;
+    if (!fetch_left) goto <fetch_right>;
+    compact_mpy_three_reads(a, b, address);
+    left_first = *[data]:2 a;
+    left_second = *[data]:2 b;
+  <fetch_right>
+    local first:2 = *[data]:2 address;
+    if (!fetch_left) goto <latch_right>;
+    X1 = left_first;
+  <latch_right>
+    X2 = first;
+    local result:8;
+    local active:2;
+    local right_result:8;
+    local right_flags:2;
+    compact_mpy_word_result(first, logical_right, compact_mpy_word_kind, right_result, right_flags);
+    local status:2 = EST & 0xcfff;
+    if (enabled == 0) goto <commit_right>;
+    compact_mpy_round_word(left_first, left_second, result, active);
+    compact_round_half = result(2);
+    raw_mac_flags(status, active, 0);
+  <commit_right>
+    pair_half_11 = right_result(2);
+    if (enabled != 0 && compact_round_half_id:1 == slot_11_14:1) goto <conflict>;
+    raw_mac_flags(status, right_flags, 6);
+    publish_alu_ce(status);
+    goto <done>;
+  <conflict>
+    parallel_logic_conflict();
+  <done>
 }
 
 macro compact_pair_long_store(address, result) {

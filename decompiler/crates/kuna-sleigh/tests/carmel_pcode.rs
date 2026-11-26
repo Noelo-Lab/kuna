@@ -2361,3 +2361,96 @@ fn wide_extrema_reserved_result_still_rejects_lift() {
     let mut m = Machine::new(0, &[(0xc58743, 0xc84ca2), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
     assert!(matches!(m.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })));
 }
+
+#[test]
+fn compact_word_multiply_narrows_each_signedness_variant() {
+    for (op, a, b, ecfg, word, flags) in [
+        (0x424c9a, 3, 4, 0, 0, 0x08),
+        (0x464c9a, 3, 4, 0, 0, 0x08),
+        (0x4a4c9a, 3, 4, 0, 0, 0x08),
+        (0x4e4c9a, 3, 4, 0, 0, 0x08),
+        (0x424c9a, 0xfffe, 3, 0, 0xffff, 0x10),
+        (0x4e4c9a, 0x1234, 0x2468, 0, 0x0296, 0),
+        (0x424c9a, 0xfffe, 0xfffd, 0, 0, 0x08),
+        (0x464c9a, 0xfffe, 0xfffd, 0, 0xfffe, 0x10),
+        (0x4a4c9a, 0xfffe, 0xfffd, 0, 0xfffd, 0x10),
+        (0x4e4c9a, 0xfffe, 0xfffd, 0, 0xfffb, 0x24),
+        (0x424c9a, 0x8000, 0x8000, 5, 0x7fff, 0x24),
+        (0x4e4c9a, 0x8000, 0x8000, 5, 0x8000, 0x20),
+        (0x4e4c9a, 0x8000, 0x8000, 9, 0x8000, 0x20),
+    ] {
+        let mut m = Machine::new(0, &[(op, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("A1", 0x6a834cecd0), ("R2", 0x8040), ("RN5", b), ("X1", 0xba98),
+                 ("X2", 0x5678), ("CETBL", 0xffff), ("ECFG", ecfg)]);
+        m.seed_data(0x8040, a);
+        m.seed_data(0x8041, 0x7777);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A1"), m.reg("R2"), m.reg("X1"), m.reg("X2"), m.reg("EST")),
+                   (0x6a0000ecd0 | (word << 16), 0x8041, a, 0x5678, 0x3000 | flags));
+        assert_eq!((m.data(0x8040), m.data(0x8041)), (a, 0x7777));
+    }
+}
+
+#[test]
+fn compact_word_multiply_selects_destination_source_and_address_update() {
+    for (op, dst, ptr, offset, address, input, factor, product, next) in [
+        (0x42551c, "A2H", "R4", "RN6", 0x48, 0x3456, 0x4321, 0x0db9, 0x49),
+        (0x425a56, "A3H", "R1", "RN3", 0x4040, 0x789a, 4, 1, 0x4045),
+        (0x424150, "A0H", "R5", "RN0", 0x4048, 0x4567, 0x2345, 0x098f, 0x4048),
+        (0x424e9a, "A1H", "R2", "RN5", 0x8040, 0x2222, 0x3333, 0x06d3, 0x803f),
+        (0x420c9a, "A1L", "R2", "RN5", 0x8040, 0x2222, 0x3333, 0x06d3, 0x8041),
+    ] {
+        let mut m = Machine::new(0, &[(op, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[(dst, 0x1234), (ptr, address), (offset, factor), ("RN1", 5), ("CETBL", 0xffff)]);
+        m.seed_data(address, input);
+        if address != next {
+            m.seed_data(next, 0x1111);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg(dst), m.reg(ptr), m.reg("X1"), m.reg("EST")),
+                   (product, next, input, 0x3000));
+    }
+
+    let mut m = Machine::new(0, &[(NOP, 0x4e62da), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    m.seed(&[("R3", 0xc040), ("RN3", 4), ("RN5", 4), ("A4", 0x80f4c5af94), ("EST", 0x24),
+             ("X1", 0xba98), ("CETBL", 0xffff)]);
+    m.seed_data(0xc040, 0x0786);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A4"), m.reg("R3"), m.reg("X1"), m.reg("X2"), m.reg("EST")),
+               (0x800000af94, 0xc044, 0xba98, 0x0786, 0x3224));
+}
+
+#[test]
+fn compact_word_multiply_samples_the_qualified_round_peer() {
+    for (left, first, second, ecfg, table, ce1, old, x1, a5, flags) in [
+        (0x57680f, 0xa258, 0xa25e, 0, 0xffff, 0x1000, 0, 0xa258, 0x2241, 0x3200),
+        (0x57680f, 0x0001, 0xffff, 0, 0xffff, 0x1000, 0, 0x0001, 0, 0x3209),
+        (0x57680f, 0x4000, 0x0002, 2, 0xffff, 0x1000, 0, 0x4000, 1, 0x3200),
+        (0x57680f, 0x8000, 0x8000, 5, 0xffff, 0x1000, 0, 0x8000, 0x7fff, 0x3224),
+        (0x57680f, 0xa258, 0xa25e, 0, 0, 0, 4, 0xba98, 0xd1dd, 0x0204),
+        (0x57680f, 0xa258, 0xa25e, 0, 0xff00, 0x1000, 4, 0xa258, 0xd1dd, 0x2204),
+        (0x57404d, 0x0123, 0x4567, 0, 0xffff, 0x1000, 0, 0x0123, 0x004f, 0x3200),
+        (0x57680f, 0x6000, 6, 0, 0x0202, 8, 8, 0x6000, 2, 0x0200),
+    ] {
+        let mut m = Machine::new(0, &[(left, 0x4e62da), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        let (l1, l2, dst) = if left == 0x57404d { (0x4040, 0x8048, "A0") } else { (0x40, 0xc048, "A5") };
+        m.seed(&[(dst, 0x89d1dd24b5), ("A4", 0x80f4c5af94), ("X1", 0xba98), ("X2", 0x5678),
+                 ("R0", 0x40), ("R1", 0x4040), ("R6", 0x8048), ("R7", 0xc048),
+                 ("R3", 0xc040), ("RN3", 4), ("RN5", 4), ("ECFG", ecfg), ("CETBL", table),
+                 ("CECFG1", ce1), ("EST", old)]);
+        m.seed_data(l1, first);
+        m.seed_data(l2, second);
+        m.seed_data(0xc040, 0x0786);
+        m.seed_data(0xc044, 0xfedc);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg(dst), m.reg("A4"), m.reg("R3"), m.reg("X1"), m.reg("X2"), m.reg("EST")),
+                   (0x89000024b5 | (a5 << 16), 0x800000af94, 0xc044, x1, 0x0786, flags),
+                   "{left:06x}: {first:04x} * {second:04x}, CE={ce1:04x}/{table:04x}");
+        assert_eq!((m.data(l1), m.data(l2), m.data(0xc040), m.data(0xc044)),
+                   (first, second, 0x0786, 0xfedc));
+    }
+}
