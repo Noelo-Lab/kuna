@@ -5170,7 +5170,9 @@ moves.
   to a pointer of any depth, a primitive (at its LP64/ILP32 width and with the
   sign C++ gives it, so `char16_t` is `unsigned short`), or — as a POINTEE only —
   a named opaque structure carrying the bare innermost class name (upstream's
-  placeholder structure). An aggregate passed **by value**, an array, a function pointer, a
+  placeholder structure). A struct or union the program's types already hold under
+  that name is the pointee instead, so an Android image's C++ helper that takes a
+  `_JNIEnv *` points at the NDK's `_JNIEnv`. An aggregate passed **by value**, an array, a function pointer, a
   pointer-to-member or an overloaded operator refuses the whole signature: the
   mangling carries no layout, and a wrong width shifts every following parameter.
   The **return type is deliberately not applied**. Itanium encodes one only for a
