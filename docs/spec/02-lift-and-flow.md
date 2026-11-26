@@ -4401,12 +4401,17 @@ The covered unqualified arithmetic shifts write the upper result word.
 The two short stores sample their signed input at `DATA[0xffff]`;
 the indexed store takes its count from `RL0`, while the incrementing
 store uses `RN2`. The long-source control result reads two words at the
-incoming `R7` and its wrapped successor, then publishes the word to
-`CETBL` before computing condition feedback. The disconnected register
-and long DATA result ports can still publish carry. The disconnected
-loop-address route instead only reads the count at incoming `R4` and
-postmodifies that pointer; it leaves the arithmetic flags and loop
-address unchanged. For these forms the implicit circular window starts
+incoming `R7` and its wrapped successor, then postmodifies `R7` by the
+signed displacement. The signed seven-bit count comes from `RN5`; the
+upper result word goes to the selected `CECFG1`, `CECFG2`, or `CETBL`
+port. Both CE banks sample incoming `EST`, configuration, and truth
+table before that write and the new shifter flags take effect. If a
+configuration write switches a bank to static mode, the sampled bit
+is retained; a subsequent issue can evaluate the new table in a
+dynamic bank. The disconnected register and long DATA result ports
+can still publish carry. The disconnected loop-address route only reads
+the count at incoming `R4` and postmodifies that pointer; it leaves the
+arithmetic flags and loop address unchanged. The implicit circular window starts
 at zero; the explicit window uses the programmed bound. A DATA allocation
 or decode stop is not a supported retirement.
 

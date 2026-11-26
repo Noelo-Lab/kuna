@@ -551,6 +551,9 @@ define token wide (48)
     short_alu_src_ptr = (1,3)
     wide_shift_dst_disp = (24,31) signed
     wide_shift_count_disp = (32,39) signed
+    wide_shift_opcode = (17,22)
+    wide_shift_destination = (9,16)
+    wide_shift_source_tail = (0,8)
 
     wide_0_10 = (0,10)
     wide_13_22 = (13,22)
@@ -1980,13 +1983,17 @@ macro wide_logic_bitop(op, lhs, rhs, result) {
   <done>
 }
 
-macro publish_alu_ce(flags) {
-    local feedback:2 = (EST & 0x3000) | flags;
+macro publish_ce_feedback(flags, feedback) {
     local first:2;
     local second:2;
     unary_ce(CECFG1, feedback, CETBL, 0, first);
     unary_ce(CECFG2, feedback, CETBL, 1, second);
     EST = flags | (first << 12) | (second << 13);
+}
+
+macro publish_alu_ce(flags) {
+    local feedback:2 = (EST & 0x3000) | flags;
+    publish_ce_feedback(flags, feedback);
 }
 
 :^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left {
@@ -7064,7 +7071,11 @@ macro wide_shift_carry_only(input, count) {
     publish_alu_ce(EST & 0xcfff);
 }
 
-:ASHIFT "CETBL","long *R7+="^wide_shift_dst_disp,"RN5" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x2d & wide_0_22=0x7388ef & wide_shift_dst_disp {
+shift_ce_destination: CECFG1 is wide_shift_destination=0xc2 & CECFG1 { export CECFG1; }
+shift_ce_destination: CECFG2 is wide_shift_destination=0xc3 & CECFG2 { export CECFG2; }
+shift_ce_destination: CETBL is wide_shift_destination=0xc4 & CETBL { export CETBL; }
+
+:ASHIFT shift_ce_destination,"long *R7+="^wide_shift_dst_disp,"RN5" is $(WIDE_ORIGINAL_BITS) & wide_shift_opcode=0x39 & wide_40_45=0x2d & wide_shift_source_tail=0xef & shift_ce_destination & wide_shift_dst_disp {
     local addr:2 = R7;
     local delta:2 = sext(wide_shift_dst_disp:1);
     modify_ptr_scaled_window(R7, delta, RM6, RL6, 14, 4, 1:2, 0xffff:2);
@@ -7076,8 +7087,9 @@ macro wide_shift_carry_only(input, count) {
     local flags:2;
     wide_shift_ports(input, RN5, 32:4, 16:4, 1:1, result, flags);
     shift_limit(result, flags);
-    CETBL = result(2);
-    publish_alu_ce((EST & 0xcfc6) | flags);
+    # This writeback does not drive either CE input for the same issue.
+    publish_ce_feedback((EST & 0xcfc6) | flags, EST);
+    shift_ce_destination = result(2);
 }
 
 @undef WIDE_ORIGINAL_BITS

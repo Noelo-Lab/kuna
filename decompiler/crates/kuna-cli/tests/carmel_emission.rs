@@ -886,6 +886,9 @@ fn carmel_original_wide_bitfield_ports_execute_in_emitted_c() {
             code.extend([0x80, hi, lo, 0xc6, 0x42, 0x80 + 4 * r]);
         }
         code.extend(packet);
+        if route == 6 {
+            code.extend([0x2b, 0xec, 0, 0x2b, 0xec, 0]); // Sample CETBL on the next issue.
+        }
         code.extend([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
         fs::write(&binary, code).unwrap();
         for reg in outputs {
@@ -950,6 +953,74 @@ int main(void) {
 ");
     fs::write(&source, &emitted).unwrap();
     run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_wide_shift_ce_samples_old_feedback() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-shift-ce", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short shift_low, shift_high;\n",
+    );
+    for (port_byte, port) in [(0x84, "CECFG1"), (0x86, "CECFG2"), (0x88, "CETBL")] {
+        let code = [
+            [0x80, 0xc0, 0x48, 0xc6, 0x42, 0x9c], // MOVE R7, 0xc048
+            [0xed, 0xe2, 0x07, 0xf3, port_byte, 0xef],
+            [0x2b, 0xd8, 0, 0x2b, 0xec, 0],
+        ];
+        fs::write(&binary, code.as_flattened()).unwrap();
+        for (suffix, output) in [("result", port), ("feedback", "EST")] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", &format!("return %{output} unsigned short"),
+                "--assert", "data [data,0xc048] volatile unsigned short shift_low",
+                "--assert", "data [data,0xc049] volatile unsigned short shift_high",
+            ]);
+            for (i, reg) in ["CECFG1", "CECFG2", "CETBL", "EST", "RN5", "ECFG", "PACFG", "RM6", "RL6"]
+                .into_iter().enumerate()
+            {
+                kuna.args(["--assert", &format!("param {i} %{reg} unsigned short in_{}", reg.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let label = format!("{}_{suffix}", port.to_ascii_lowercase());
+            writeln!(generated, "{}", function["code"].as_str().unwrap().replace("sub_0", &label)).unwrap();
+        }
+    }
+    generated.push_str(r"
+int main(void) {
+    /* A newly set Z must not index the incoming truth table yet. */
+    if (cecfg1_feedback(0x1888,0x1888,0x8080,0,0,0,0,0,0) != 8 ||
+        cecfg2_feedback(0x1888,0x1888,0x8080,0,0,0,0,0,0) != 8 ||
+        cetbl_feedback(0x1888,0x1888,0x8080,0,0,0,0,0,0) != 8) return 1;
+    /* Entering static mode retains the selected bank's old dynamic result. */
+    shift_high = 0x2111;
+    if (cecfg1_result(0x1888,0x1888,0x0101,0,0,0,0,0,0) != 0x2111 ||
+        cecfg2_result(0x1888,0x1888,0x0101,0,0,0,0,0,0) != 0x2111 ||
+        cecfg1_feedback(0x1888,0x1888,0x0101,0,0,0,0,0,0) != 0x3000 ||
+        cecfg2_feedback(0x1888,0x1888,0x0101,0,0,0,0,0,0) != 0x3000) return 2;
+    shift_high = 1;
+    if (cetbl_result(0x1000,0x1000,0xff00,0,0,0,0,0,0) != 1 ||
+        cetbl_feedback(0x1000,0x1000,0xff00,0,0,0,0,0,0) != 0x2000) return 3;
+    return 0;
+}
+");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
     for file in [binary, source, executable] {
         fs::remove_file(file).unwrap();
     }
