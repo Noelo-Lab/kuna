@@ -193,10 +193,11 @@ fn mask(width: i32) -> u64 {
 
 /// Is `v` as wide as an address of the default data space? A narrower pointer
 /// (`rep stos` with an address-size override, through EDI on x86-64) wraps
-/// within its own width, which no C copy, fill or compare can express.
+/// within its own width, which no C copy, fill or compare can express. With no
+/// default data space to compare against, the rewrite is refused.
 fn full_width(data: &Funcdata, v: VarnodeId) -> bool {
     let space = data.get_arch().manage().get_default_data_space().map(|s| s.get_addr_size() as i32);
-    size(data, v).is_some_and(|width| space.is_none_or(|space| width >= space))
+    size(data, v).is_some_and(|width| space.is_some_and(|space| width >= space))
 }
 
 fn def_block(data: &Funcdata, v: VarnodeId) -> Option<BlockId> {

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5499,
-    5499
+    5501,
+    5501
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2554,6 +2554,8 @@
     "data:REXPREFIX #3b: a 32-bit-address rep movs is no builtin_memcpy",
     "data:REXPREFIX #4: a load through edi after an ignored REX.W",
     "data:REXPREFIX #5: no bad-instruction halt",
+    "data:REXPREFIX #6: repz cmpsb after an ignored REX.W compares bytes through a wrapping esi and edi",
+    "data:REXPREFIX #6b: a 32-bit-address repz cmpsb is no builtin_memcmp",
     "data:RUST LOWERED LABELS #1: the first unsigned high-bit pattern is retained",
     "data:RUST LOWERED LABELS #2: the second unsigned high-bit pattern is retained",
     "data:RUST LOWERED LABELS #3: a lowered match is emitted",

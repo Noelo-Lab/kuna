@@ -3845,9 +3845,9 @@ returned, compares used for equality, for order and with a run-time length, a
 compare with no flags set up before it, and a compare whose final pointer is
 returned, which keeps its loop; the x86-64 file adds a gcc 15 `-O2` fill of a
 global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
-`tests/stages/kuna-rex-before-prefix.xml` pins a `rep stosd` and a `rep movsq`
-with 32-bit addresses as loops, and a `rep stosw` through RDI as
-`builtin_memset16`.
+`tests/stages/kuna-rex-before-prefix.xml` pins a `rep stosd`, a `rep movsq`
+and a `repz cmpsb` with 32-bit addresses as loops, and a `rep stosw` through
+RDI as `builtin_memset16`.
 `kuna-cli/tests/repstring_round_trip.rs`
 compiles the printed x86-64 functions beside the source and checks they compute
 the same values.
