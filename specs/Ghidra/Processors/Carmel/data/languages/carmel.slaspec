@@ -194,6 +194,8 @@ define context contextreg
     hw_loop_activate = (20,20) noflow
     hw_loop_capture_rn0 = (21,21) noflow
     hw_loop_setup = (24,24) noflow
+    carmel_implicit_repeat = (25,25) noflow
+    carmel_gpp_disconnected = (26,26) noflow
     hw_loop_restart = (128,151) noflow
     hw_loop_prepare_end = (160,183) noflow
     hw_loop_first = (192,215) noflow
@@ -282,6 +284,10 @@ define token slot (24)
     slot_0_0 = (0,0)
     slot_6_22 = (6,22)
     move_source = (1,4)
+    move_store_left = (1,3)
+    move_store_right = (1,3)
+    move_store_left_ce = (0,0)
+    move_store_right_ce = (0,0)
     slot_3_4 = (3,4)
     slot_2_4 = (2,4)
     slot_5_22 = (5,22)
@@ -386,6 +392,13 @@ define token slot (24)
     logical_right = (1,5)
     compact_mul_left = (4,8)
     slot_6_8 = (6,8)
+    indexed_load_acc = (6,8)
+    indexed_load_lo = (6,8)
+    indexed_load_hi = (6,8)
+    indexed_load_guard = (6,8)
+    indexed_load_ptr = (1,1)
+    indexed_load_inc = (1,1)
+    indexed_load_shift = (1,1)
     compact_mul_right = (1,3)
     slot_9_22 = (9,22)
     compact_square_right = (1,5)
@@ -477,6 +490,9 @@ define token slot (24)
     slot_0_2 = (0,2)
     conditional_words = (2,8) signed
     slot_0_1 = (0,1)
+    compact_input_select = (9,14)
+    compact_input_group = (11,14)
+    compact_conditional_opcode = (15,22)
     peer_left_target_words = (2,8) signed
     peer_right_target_words = (3,12) signed
     hw_loop_count = (8,14)
@@ -501,6 +517,8 @@ define token wide (48)
     wide_loop_count_low = (44,45)
     wide_loop_count_high = (0,9)
     wide_loop_end = (24,43)
+    wide_loop_condition = (2,7)
+    wide_loop_cond_inverse = (2,2)
     wide_32_35 = (32,35)
     wide_38_39 = (38,39)
     bitfield_descriptor = (24,39) hex
@@ -525,6 +543,10 @@ define token wide (48)
     packed_rhs_lo = (40,42)
     packed_rhs_guard = (40,42)
     packed_displacement = (24,31) signed
+    wide_move_displacement = (24,31) signed
+    wide_move_load_opcode = (5,22)
+    wide_move_base = (40,42)
+    wide_move_load_dst = (2,4)
     wide_logic_rmw_op = (18,19)
     wide_logic_rmw_route = (0,17)
     wide_alias_logic_dst = (10,17)
@@ -539,6 +561,7 @@ define token wide (48)
     wide_alias_add_dst = (9,16)
     wide_alias_add_lhs = (1,8)
     wide_40_45 = (40,45)
+    wide_lim8_pointer = (40,43)
     short_alu_rhs_addr = (40,42)
     short_alu_dst_acc = (9,11)
     short_alu_dst_lo = (9,11)
@@ -577,11 +600,16 @@ define token wide (48)
     wide_0_11 = (0,11)
     wide_3_10 = (3,10)
     wide_0_1 = (0,1)
+    wide_input_select = (2,7)
+    wide_input_group = (4,7)
+    wide_conditional_opcode = (8,22)
     wide_frame_delta_0 = (24,45) hex
     wide_frame_delta_22 = (0,1) hex
     stack_ce_bank = (46,46)
+    wide_stack_pop_control = (3,13)
     link_qualifier = (10,13)
     wide_2_9 = (2,9)
+    round_result_selector = (2,9) hex
     wide_0_2 = (0,2)
     stack_pair_first = (32,39)
     stack_pair_second = (24,31)
@@ -615,6 +643,7 @@ define token wide (48)
     wide_repeat_count = (24,39)
     wide_repeat_delay = (11,13)
     wide_repeat_long = (13,13)
+    wide_repeat_extended = (1,1)
     wide_immediate_0 = (24,45) hex
     wide_immediate_22 = (0,1) hex
     wide_2_11 = (2,11)
@@ -655,6 +684,9 @@ define token wide (48)
     swap_peer_modify = (43,44)
     wide_12_22 = (12,22)
     minmax_ce_bank = (46,46)
+    minmax_store_lhs_hi = (0,3)
+    minmax_store_dst = (4,11) hex
+    minmax_store_dst_bank = (9,11)
     minmax_dst_group = (10,11)
     minmax_dst_acc = (7,9)
     minmax_dst_lo = (7,9)
@@ -689,6 +721,7 @@ define token wide (48)
 
 attach variables [inc_source] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
 attach variables [move_source] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [move_store_left move_store_right] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [cmp_lhs] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [cmp_rhs] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [cmpu_lhs] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
@@ -723,11 +756,19 @@ attach variables [agu_3_rl] [RL4 RL6 RL6 _ RL6 RL6 RL6 _];
 attach values [agu_3_shift] [10 12 14 _ 12 14 14 _];
 attach variables [address_literal_dst] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [packed_dst_r] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [wide_move_base wide_move_load_dst] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [packed_lhs_hi packed_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_acc packed_lhs_acc packed_rhs_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [packed_dst_lo packed_lhs_lo packed_rhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [packed_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_guard packed_lhs_guard packed_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [indexed_load_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [indexed_load_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [indexed_load_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [indexed_load_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [indexed_load_ptr] [R0 R1];
+attach variables [indexed_load_inc] [RN0 RN1];
+attach values [indexed_load_shift] [0 2];
 attach variables [short_alu_rhs_addr] [RL0 RL2 RM0 RM2 RL4 RL6 RM4 RM6];
 attach variables [short_alu_dst_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [short_alu_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
@@ -776,6 +817,7 @@ attach variables [x_alu_acc_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [x_alu_acc_gb] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [wide_lc_r] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [wide_lc_rn] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [wide_lim8_pointer] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [compact_mul_left] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
 attach variables [compact_mul_right] [A0L A1L A2L A3L A0H A1H A2H A3H];
 attach variables [compact_square_right] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
@@ -2109,6 +2151,13 @@ macro wide_lim8_status(input, enabled) {
     publish_alu_ce((EST & 0xcfff) | limited);
 }
 
+macro wide_lim8_clamp(input, result) {
+    result = input;
+    if (input <= 0xff) goto <done>;
+    result = 0xff * zext(input < 0x8000);
+  <done>
+}
+
 :LIM8 "CE2" wide_lim8_disconnected,wide_lim8_source is $(WIDE_LIM8_CE2) & wide_lim8_disconnected & wide_lim8_source {
     local enabled:2;
     unary_ce(CECFG2, EST, CETBL, 1, enabled);
@@ -2119,13 +2168,17 @@ macro wide_lim8_status(input, enabled) {
     unary_ce(CECFG2, EST, CETBL, 1, enabled);
     local input:2 = RM6;
     if (enabled == 0) goto <finish>;
-    local result:2 = input;
-    if (input <= 0xff) goto <write>;
-    result = 0xff * zext(input < 0x8000);
-  <write>
+    local result:2;
+    wide_lim8_clamp(input, result);
     wide_lim8_result = result;
   <finish>
     wide_lim8_status(input, enabled);
+}
+
+:LIM8 "RN4",wide_lim8_pointer is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_10_22=0x10e8 & wide_0_1=3 & wide_2_9=0xac & wide_40_45>=0x20 & wide_lim8_pointer {
+    local input:2 = wide_lim8_pointer;
+    wide_lim8_clamp(input, RN4);
+    wide_lim8_status(input, 1:2);
 }
 
 # Qualified SUB with a proven reset operand-fetch route. The extension word
@@ -4161,6 +4214,57 @@ macro wide_round_write_long(address, low, high, flags) {
     publish_alu_ce((EST & 0xcfc0) | flags);
 }
 
+:ROUND wide_unary_gate "FF1","*R6+RN6" is wide_right_mode=1 & wide_10_22=0x10b7 & wide_2_9=0xbe & wide_0_1=0 & wide_40_45=0x2e & wide_unary_gate {
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local address:2 = R6 + RN6;
+    local word:2 = *[data]:2 address;
+    FF1 = word;
+    unary_limit_flags(word);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+# Plain indirect long input still reads both DATA words when the result
+# selector has neither a writeback port nor an arithmetic flag port.
+@define WIDE_ROUND_R1 "$(WIDE_ROUND_DATA) & wide_40_45=1 & wide_0_1=1"
+:ROUND wide_unary_gate round_result_selector,"long *R1" is $(WIDE_ROUND_R1) & wide_2_9>=0xe0 & round_result_selector {
+    if (wide_unary_gate == 0) goto <feedback>;
+    local address:2 = R1;
+    local low:2 = *[data]:2 address;
+    local upper:2 = address + 1;
+    local high:2 = *[data]:2 upper;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:ROUND wide_unary_gate "A2L","long *R1" is $(WIDE_ROUND_R1) & wide_2_9=0x92 {
+    local flags:2 = EST & 0xcfff;
+    if (wide_unary_gate == 0) goto <feedback>;
+    local address:2 = R1;
+    local low:2 = *[data]:2 address;
+    local upper:2 = address + 1;
+    local high:2 = *[data]:2 upper;
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local increment:1 = low > 0x8000 ||
+        (low == 0x8000 && ((ECFG & 2) == 0 || (high & 1) != 0));
+    local word:2 = high + zext(increment);
+    local carry_out:1 = high == 0xffff && increment;
+    local extend:1 = high == 0x7fff && increment;
+    local limit:1 = extend && (ECFG & 4) != 0;
+    local sticky:1 = extend && (ECFG & 0x2c) != 8;
+    local rounded_zero:1 = carry_out || (high == 0 && !increment);
+    flags = (flags & 0xffc4) | zext(carry_out) | (zext(sticky) << 2) |
+        (zext(rounded_zero) << 3) | (zext(high >= 0x8000 && !carry_out) << 4) | (zext(extend) << 5);
+    if (!limit) goto <write>;
+    word = 0x7fff;
+  <write>
+    A2L = word;
+  <feedback>
+    publish_alu_ce(flags);
+}
+@undef WIDE_ROUND_R1
+@undef WIDE_ROUND_DATA
+
 @define WIDE_LIMIT "wide_right_mode=1 & (wide_10_22=0x10b8 | wide_10_22=0x10bb) & wide_unary_gate"
 
 limit_word: "FF1" is wide_0_1=2 & wide_40_45=0x16 { export FF1; }
@@ -4190,6 +4294,36 @@ limit_word_dst: "*R1+="^wide_shift_dst_disp is wide_2_9=0x31 & wide_shift_dst_di
     local delta:2 = sext(wide_shift_dst_disp:1);
     transfer_address_word(R1, RM0, RL0, 2, delta, R1);
     export *[data]:2 address;
+}
+
+:LIM wide_unary_gate "*R5+=RN5",round_extended is wide_right_mode=1 & wide_10_22=0x10b8 & wide_2_9=0xd & round_extended & wide_unary_gate {
+    local gate:2 = wide_unary_gate;
+    if (gate == 0) goto <feedback>;
+    local address:2 = R5;
+    modify_ptr(R5, RN5, RM4, RL4, 10, 1);
+    if ((gate & 1) == 0) goto <feedback>;
+    local word:2 = *[data]:2 0xffff:2;
+    *[data]:2 address = word;
+    unary_limit_flags(word);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:LIM wide_unary_gate "long *R5+=RN5",round_extended^":"^round_high_address is wide_right_mode=1 & wide_10_22=0x10b8 & wide_2_9=0x4d & round_extended & round_high_address & wide_unary_gate {
+    local gate:2 = wide_unary_gate;
+    if (gate == 0) goto <feedback>;
+    local address:2 = R5;
+    modify_ptr(R5, RN5, RM4, RL4, 10, 1);
+    if ((gate & 1) == 0) goto <feedback>;
+    local low:2 = *[data]:2 0xffff:2;
+    local high:2 = *[data]:2 round_high_address;
+    local flags:2 = (zext((low | high) == 0) << 3) | (zext(high >= 0x8000) << 4);
+    EST = (EST & 0xffc4) | flags;
+    *[data]:2 address = low;
+    local second:2 = address + 1;
+    *[data]:2 second = high;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
 }
 
 limit_acc_dst: "A0" is wide_2_9=0x88 {}
@@ -5427,6 +5561,52 @@ macro compact_ff12_store(negate, long_result) {
 :NEG "*R0:long","FF12" "||" nop_right is ($(COMPACT_FF12_DATA) & compact_unary_data_form=0x20dc); (slot_mode=0 & nop_right) { compact_ff12_store(1:8, 1:1); }
 :ABS "*R0:long","FF12" "||" nop_right is ($(COMPACT_FF12_DATA) & compact_unary_data_form=0x20fc); (slot_mode=0 & nop_right) { compact_ff12_store(0:8, 1:1); }
 
+@define COMPACT_R3_WORD_STORE "slot_8_22=0x3152 & slot_4_7=7"
+
+compact_store_first: "MOVE" "*R3++",move_store_left is $(COMPACT_R3_WORD_STORE) & move_store_left & move_store_left_ce=0 { }
+compact_store_first: "MOVE" "CE1" "*R3++",move_store_left is $(COMPACT_R3_WORD_STORE) & move_store_left & move_store_left_ce=1 { }
+compact_store_second: "MOVE" "*R3++",move_store_right is $(COMPACT_R3_WORD_STORE) & move_store_right & move_store_right_ce=0 { }
+compact_store_second: "MOVE" "CE2" "*R3++",move_store_right is $(COMPACT_R3_WORD_STORE) & move_store_right & move_store_right_ce=1 { }
+
+macro compact_store_word(address, source) {
+    local word:2 = source;
+    local shift:1 = (ECFG & 0x20) != 0;
+    *[data]:2 address = word s>> shift;
+}
+
+macro compact_r3_store(source, qualified, cfg, bank) {
+    local enabled:2 = 1;
+    local check:1 = qualified;
+    if (check == 0) goto <prepare>;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+  <prepare>
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <status>;
+    local address:2 = R3;
+    modify_ptr(R3, RN3, RM2, RL2, 6:4, 2:2);
+    if (enabled == 0) goto <status>;
+    compact_store_word(address, source);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:^compact_store_first is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_store_first & move_store_left & move_store_left_ce {
+    compact_r3_store(move_store_left, move_store_left_ce, CECFG1, 0:2);
+}
+:^compact_store_first "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_store_first & move_store_left & move_store_left_ce); (slot_mode=0 & nop_right) {
+    compact_r3_store(move_store_left, move_store_left_ce, CECFG1, 0:2);
+}
+:^nop_left "||" compact_store_second is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_store_second & move_store_right & move_store_right_ce) {
+    compact_r3_store(move_store_right, move_store_right_ce, CECFG2, 1:2);
+}
+:^compact_store_first "||" compact_store_second is (carmel_issue=1 & slot_mode=0 & compact_store_first & move_store_left & move_store_left_ce=0); (slot_mode=0 & compact_store_second & move_store_right & move_store_right_ce=0) {
+    local first:2 = R3;
+    local second:2 = first + 1;
+    modify_ptr_scaled(R3, RN3, RM2, RL2, 6:4, 2:2, 2:2);
+    compact_store_word(first, move_store_left);
+    compact_store_word(second, move_store_right);
+    publish_alu_ce(EST & 0xcfff);
+}
+
 # Signed MOVE binds these extended DATA selectors to the nonmodifying index adder.
 macro compact_move_long_address(address) {
     address = R6 + RN6;
@@ -5489,6 +5669,48 @@ macro compact_move_long_from_a0(bank) {
     A0H = high;
     GB0 = negative * 0xff;
     EST = (EST & 0xffc4) | (zext((low | high) == 0) << 3) | (zext(negative) << 4);
+}
+
+@define COMPACT_INDEXED_WORD "slot_9_22=0x18ee & slot_2_5=4 & indexed_load_acc & indexed_load_ptr & indexed_load_inc"
+
+indexed_load_first: "MOVE" indexed_load_acc,"*"^indexed_load_ptr^"+="^indexed_load_inc is $(COMPACT_INDEXED_WORD) & slot_0_0=0 { }
+indexed_load_first: "MOVE" "CE1" indexed_load_acc,"*"^indexed_load_ptr^"+="^indexed_load_inc is $(COMPACT_INDEXED_WORD) & slot_0_0=1 { }
+indexed_load_second: "MOVE" indexed_load_acc,"*"^indexed_load_ptr^"+="^indexed_load_inc is $(COMPACT_INDEXED_WORD) & slot_0_0=0 { }
+indexed_load_second: "MOVE" "CE2" indexed_load_acc,"*"^indexed_load_ptr^"+="^indexed_load_inc is $(COMPACT_INDEXED_WORD) & slot_0_0=1 { }
+
+macro compact_indexed_word_load(ptr, step, lane, lo, hi, guard, qualified, cfg, bank) {
+    local enabled:2 = 1;
+    local check:1 = qualified;
+    if (check == 0) goto <prepare>;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+  <prepare>
+    local flags:2 = EST & 0xcfff;
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <publish>;
+    local address:2 = ptr;
+    modify_ptr(ptr, step, RM0, RL0, lane, 1:2);
+    local word:2 = *[data]:2 address;
+    if (enabled == 0) goto <publish>;
+    local negative:1 = word >= 0x8000;
+    lo = word;
+    hi = zext(negative) * 0xffff;
+    guard = negative * 0xff;
+    local shift:2 = bank * 6;
+    local nz:2 = (zext(word == 0) << 3) | (zext(negative) << 4);
+    flags = (flags & ~(0x3b:2 << shift)) | (nz << shift);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+@define INDEXED_WORD_LANES "indexed_load_ptr & indexed_load_inc & indexed_load_shift & indexed_load_lo & indexed_load_hi & indexed_load_guard & slot_0_0"
+
+:^indexed_load_first is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & indexed_load_first & $(INDEXED_WORD_LANES) {
+    compact_indexed_word_load(indexed_load_ptr, indexed_load_inc, indexed_load_shift, indexed_load_lo, indexed_load_hi, indexed_load_guard, slot_0_0, CECFG1, 0:2);
+}
+:^indexed_load_first "||" nop_right is (carmel_issue=1 & slot_mode=0 & indexed_load_first & $(INDEXED_WORD_LANES)); (slot_mode=0 & nop_right) {
+    compact_indexed_word_load(indexed_load_ptr, indexed_load_inc, indexed_load_shift, indexed_load_lo, indexed_load_hi, indexed_load_guard, slot_0_0, CECFG1, 0:2);
+}
+:^nop_left "||" indexed_load_second is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & indexed_load_second & $(INDEXED_WORD_LANES)) {
+    compact_indexed_word_load(indexed_load_ptr, indexed_load_inc, indexed_load_shift, indexed_load_lo, indexed_load_hi, indexed_load_guard, slot_0_0, CECFG2, 1:2);
 }
 
 :MOVE "*R6+RN6:long","LSA1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x31e4c4); (slot_mode=0 & nop_right) {
@@ -6915,6 +7137,43 @@ minmax_store_source: "A1L" is wide_0_22=0x48c5f8 { export A1L; }
 @undef EXTREMA_INDEXED
 @undef WIDE_EXTREMA_STORE
 
+# The stored MINU selector straddles the two words: the high four bits
+# of input 1 are in the right word; its low bit accompanies input 2.
+minmax_store_minu_rhs: "A3" is wide_40_45=0xb { }
+minmax_store_minu_rhs: "A3H" is wide_40_45=0x1b { }
+minmax_store_minu_value: is wide_40_45=0xb {
+    local rhs:8 = zext(GB3) * 0x100000000 + zext(A3H) * 0x10000 + zext(A3L);
+    export rhs;
+}
+minmax_store_minu_value: is wide_40_45=0x1b {
+    local rhs:8 = zext(A3H);
+    export rhs;
+}
+minmax_store_minu_shift: is wide_40_45=0xb { export 16:1; }
+minmax_store_minu_shift: is wide_40_45=0x1b { export 0:1; }
+
+@define STORED_MINU_A2H "$(WIDE_MINMAX) & wide_12_22=0x485 & minmax_store_lhs_hi=0xd & minmax_store_minu_rhs"
+:MINU minmax_predicate "R4","A2H",minmax_store_minu_rhs is $(STORED_MINU_A2H) & minmax_store_dst=0xa4 & minmax_store_minu_value & minmax_store_minu_shift {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    build minmax_store_minu_value;
+    local left:8 = zext(A2H);
+    local right:8 = minmax_store_minu_value;
+    minmax_unsigned_flags(right, left);
+    local selected:8 = left;
+    if (left <= right) goto <write>;
+    selected = right;
+  <write>
+    local word:8 = selected >> minmax_store_minu_shift;
+    R4 = word:2;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MINU minmax_predicate minmax_store_dst,"A2H",minmax_store_minu_rhs is $(STORED_MINU_A2H) & minmax_store_dst_bank=7 & minmax_store_dst {
+    publish_alu_ce(EST & 0xcfff);
+}
+@undef STORED_MINU_A2H
+@undef WIDE_MINMAX
+
 # The word port is the upper half of the low 32-bit lane, not the low
 # half of the shifter. Z still observes the guard above that word.
 macro wide_shift_ports(input, count_word, left_tap, right_bias, arithmetic, result, flags) {
@@ -7069,6 +7328,75 @@ macro wide_shift_ports(input, count_word, left_tap, right_bias, arithmetic, resu
     # The IOSPACE input is unbound; all field descriptors extract zero.
     *[data]:2 dest = 0;
     publish_alu_ce((EST & 0xcfe7) | 8);
+}
+
+macro wide_extract_zero(source, width, offset, result) {
+    local count:4 = zext(width & 31);
+    local start:4 = zext(offset & 31);
+    local mask:4 = 0x7fffffff >> (31 - count);
+    result = (source s>> start) & mask;
+}
+
+:EXTRACTZ "long *R2","GB2","long *R6+=RN6" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0xe & wide_0_22=0x768504 {
+    local dest:2 = R2;
+    local dest_high:2 = dest + 1;
+    local addr:2 = R6;
+    local addr_high:2 = addr + 1;
+    modify_ptr_scaled_window(R6, RN6, RM6, RL6, 12, 1, 2:2, 0xffff:2);
+    local width:2 = *[data]:2 addr;
+    local offset:2 = *[data]:2 addr_high;
+    local result:4;
+    wide_extract_zero(zext(GB2), width, offset, result);
+    *[data]:2 dest = result:2;
+    *[data]:2 dest_high = 0;
+    publish_ce_feedback((EST & 0xcfe7) | (zext(result == 0) << 3), EST);
+}
+
+:EXTRACTZ "FF1","FF2","long *R4+="^wide_shift_dst_disp is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x34 & wide_0_22=0x777d2e & wide_shift_dst_disp {
+    local addr:2 = R4;
+    local addr_high:2 = addr + 1;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    modify_ptr_scaled_window(R4, delta, RM4, RL4, 8, 4, 2:2, 0xffff:2);
+    local width:2 = *[data]:2 addr;
+    local offset:2 = *[data]:2 addr_high;
+    local result:4;
+    wide_extract_zero(sext(FF2), width, offset, result);
+    FF1 = result:2;
+    publish_ce_feedback((EST & 0xcfe7) | (zext(result == 0) << 3), EST);
+}
+
+:EXTRACTS "discard","RM6","long *R3--" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x1b & wide_0_22=0x75c96e {
+    local addr:2 = R3;
+    local addr_high:2 = addr + 1;
+    modify_ptr_scaled_window(R3, 0:2, RM2, RL2, 6, 3, 2:2, 0xffff:2);
+    local width:2 = *[data]:2 addr;
+    local offset:2 = *[data]:2 addr_high;
+    publish_ce_feedback(EST & 0xcfff, EST);
+}
+
+:EXTRACTS "LSA1","*R3+=RN3","RM4" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x36 & wide_0_22=0x75a417 {
+    local addr:2 = R3;
+    modify_ptr_scaled_window(R3, RN3, RM2, RL2, 6, 1, 1:2, 0xffff:2);
+    local source:2 = *[data]:2 addr;
+    publish_ce_feedback(EST & 0xcfff, EST);
+}
+
+:EXTRACTZ "CE1" "*R4+=RN4","GB3","FF1:FF2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=0 & wide_40_45=0x1e & wide_0_22=0x761907 {
+    local enable:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enable);
+    local dest:2 = R4;
+    local flags:2 = EST & 0xcfff;
+    if (enable == 0 && (CECFG1 & 0x1000) == 0) goto <feedback>;
+    modify_ptr_scaled_window(R4, RN4, RM4, RL4, 8, 1, 1:2, 0xffff:2);
+    if (enable == 0) goto <feedback>;
+    local result:4;
+    wide_extract_zero(zext(GB3), FF2, FF1, result);
+    *[data]:2 dest = result:2;
+    flags = (flags & 0xffe7) | (zext(result == 0) << 3);
+  <feedback>
+    local second:2;
+    unary_ce(CECFG2, EST, CETBL, 1:2, second);
+    EST = flags | (enable << 12) | (second << 13);
 }
 
 macro wide_shift_fallback_word(dest, count) {
@@ -7683,6 +8011,54 @@ frame_displacement: encoded is wide_frame_delta_0 & wide_frame_delta_22 [ encode
 :POP "CE1" "ASTATUS" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x39 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; ASTATUS = word & 3; <stack_done> }
 :POP "CE2" "ASTATUS" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x39 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; ASTATUS = word & 3; <stack_done> }
 
+@define SINGLE_POP_R7 "wide_right_mode=1 & wide_14_22=0x12c & wide_40_45=0x17 & wide_stack_pop_control=0x5c7"
+@define SINGLE_POP_R7_CE1 "$(SINGLE_POP_R7) & carmel_issue=4 & wide_left_mode=0 & stack_ce_bank=0"
+@define SINGLE_POP_R7_CE2 "$(SINGLE_POP_R7) & carmel_issue=4 & wide_left_mode=0 & stack_ce_bank=1"
+
+single_pop_r7_width: "*R7++" is wide_0_2=0 { export 1:2; }
+single_pop_r7_width: "*R7++:long" is wide_0_2=1 { export 2:2; }
+
+macro single_pop_r7_ports(prefix, words, source, low_port, high_port) {
+    local from:2 = source;
+    local low_at:2 = low_port;
+    local high_at:2 = high_port;
+    local enabled:2;
+    local address_enabled:2;
+    wide_issue_enable(prefix, enabled, address_enabled);
+    local flags:2 = EST & 0xcfff;
+    if (address_enabled == 0) goto <publish>;
+    SP = SP + words;
+    modify_ptr_scaled(R7, RN7, RM6, RL6, 14, 2, words);
+    if (enabled == 0) goto <publish>;
+
+    local low:2 = *[data]:2 from;
+    local last:2 = low;
+    if (words == 1) goto <store>;
+    local high_from:2 = from + 1;
+    last = *[data]:2 high_from;
+  <store>
+    *[data]:2 low_at = low;
+    if (words == 1) goto <status>;
+    *[data]:2 high_at = last;
+  <status>
+    if ((ECFG & 0x10) == 0 || (last & 0xfc00) == 0) goto <publish>;
+    flags = flags | 0x4000;
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:POP "CE1" single_pop_r7_width is $(SINGLE_POP_R7_CE1) & single_pop_r7_width unimpl
+:POP "CE2" single_pop_r7_width is $(SINGLE_POP_R7_CE2) & single_pop_r7_width unimpl
+:POP "CE1" single_pop_r7_width is $(SINGLE_POP_R7_CE1) & single_pop_r7_width & carmel_of_route=2 {
+    single_pop_r7_ports(1:2, single_pop_r7_width, R7, 0xffff:2, A0L);
+}
+:POP "CE2" single_pop_r7_width is $(SINGLE_POP_R7_CE2) & single_pop_r7_width & carmel_of_route=2 {
+    single_pop_r7_ports(2:2, single_pop_r7_width, R7, A0L, A1L);
+}
+:POP "*R7++:long" is $(SINGLE_POP_R7) & carmel_issue=5 & wide_left_mode=1 & wide_0_2=1 {
+    single_pop_r7_ports(0:2, 2:2, SP + 1, R7, R7 + 1);
+}
+
 @define STACK_PAIR "wide_right_mode=1 & wide_14_22=0x128"
 @define STACK_PAIR_CE1 "$(STACK_PAIR) & carmel_issue=4 & wide_left_mode=0 & stack_ce_bank=0"
 @define STACK_PAIR_CE2 "$(STACK_PAIR) & carmel_issue=4 & wide_left_mode=0 & stack_ce_bank=1"
@@ -8023,6 +8399,24 @@ macro wide_div_trace_sink(lo, hi, guard) {
     local previous:2 = BTR2;
     BTR2 = (previous << 1) | zext(take);
 }
+
+:DIVIDE "CE2" "*R2--","FF1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=1 & wide_13_22=0x218 & wide_40_45=0x3e & wide_0_9=0x06a {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <feedback>;
+    modify_ptr(R2, 0:2, RM2, RL2, 4, 3);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:DIVIDE "discard","long *R2+RN2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_13_22=0x218 & wide_40_45=0x2a & (wide_0_9=0x39d | wide_0_9=0x3fd) {
+    local address:2 = R2 + RN2;
+    local second:2 = address + 1;
+    local low:2 = *[data]:2 address;
+    local high:2 = *[data]:2 second;
+    publish_alu_ce(EST & 0xcfff);
+}
+
 :DIVIDE "A5","FF1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x236 & wide_13_22=0x218 & wide_40_45=0x3e { local dividend:8; wide_div_biased(A5L, A5H, GB5, dividend); local result:8; wide_div_trial(dividend, FF1, 16, 0x80000000, result); A5L = result:2; A5H = result(2); GB5 = result(4); }
 :DIVIDE "CE1" "A5L","A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x256 & wide_13_22=0x218 & wide_40_45=0x10 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; wide_div_biased(A5L, A5H, GB5, dividend); local result:8; wide_div_trial(dividend, A0L, 32, 0x800000000000, result); A5L = result:2; A5H = result(2); GB5 = result(4); <wide_div_disabled> }
 :DIVIDE "CE1" "A5H","A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x276 & wide_13_22=0x218 & wide_40_45=0x10 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; dividend = 0x8000000000 + zext(GB5) * 0x10000 + zext(A5H); local result:8; wide_div_trial(dividend, A0L, 32, 0x800000000000, result); A5H = result:2; GB5 = result(2); <wide_div_disabled> }
@@ -8347,11 +8741,256 @@ wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 
 :"CALLABS A0 CE1" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bcb01); (slot_mode=0 & nop_right)) & link_2_0 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local target:4 = A0:4; if (enabled == 0) goto <without_execution>; push_link(link_2_0); call [target]; goto <done>; <without_execution> if ((CECFG1 & 0x1000) == 0) goto <done>; SP = SP - 2; goto [target]; <done> }
 
 conditional_target: word_address is conditional_words [ word_address = (inst_start + conditional_words) & 0xffffff; ] { export *[code]:3 word_address; }
+
+macro pop_block_loop(depth) {
+    local outer:2 = depth - 1;
+    PSTATUS = (PSTATUS & 0xfff0) | outer | (zext(outer != 0) << 3);
+    if (LOOP_FRAME != depth:1) goto <done>;
+    LOOP_FRAME = outer:1;
+  <done>
+}
+
+macro select_loop_continue(depth, counter, start, next, repeating) {
+    if (counter == 0) goto <done>;
+    counter = counter - 1;
+    LC = counter;
+    if (counter == 0) goto <finished>;
+    repeating = 1;
+    next = start & 0xffffff;
+    goto <done>;
+  <finished>
+    pop_block_loop(depth);
+  <done>
+}
+
+# CONTINUE resolves the selected frame before executing its exposed issues.
+macro loop_continue(next, repeating) {
+    next = 0;
+    repeating = 0;
+    if ((PSTATUS & 8) == 0) goto <done>;
+    local depth:2 = PSTATUS & 7;
+    if (depth != 1) goto <outer>;
+    select_loop_continue(depth, LC1, LSA1W, next, repeating);
+    goto <done>;
+  <outer>
+    if (depth != 2) goto <deep>;
+    select_loop_continue(depth, LC2, LSA2W, next, repeating);
+    goto <done>;
+  <deep>
+    if (depth != 3) goto <fourth>;
+    select_loop_continue(depth, LC3, LSA3W, next, repeating);
+    goto <done>;
+  <fourth>
+    if (depth != 4) goto <done>;
+    select_loop_continue(depth, LC4, LSA4W, next, repeating);
+  <done>
+}
+
+# BREAK leaves the innermost count unchanged and pops at writeback.
+macro loop_break() {
+    local depth:2 = PSTATUS & 7;
+    if ((PSTATUS & 8) == 0 || depth == 0) goto <done>;
+    pop_block_loop(depth);
+  <done>
+}
+
+:CONTINUE direct_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_13_22=0x15a & slot_0_2=0 & direct_target); (slot_mode=0 & nop_right) {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    if (!repeating) goto direct_target;
+    goto [next];
+}
+
+:CONTINUE direct_target "delay 1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_13_22=0x15a & slot_0_2=2 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    delayslot(1);
+    if (!repeating) goto direct_target;
+    goto [next];
+}
+
+:CONTINUE direct_target "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_13_22=0x15a & slot_0_2=4 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    delayslot(2);
+    if (!repeating) goto direct_target;
+    goto [next];
+}
+
+:CONTINUE direct_target "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_13_22=0x15a & slot_0_2=6 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    delayslot(3);
+    if (!repeating) goto direct_target;
+    goto [next];
+}
+
+:BREAK conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & (slot_9_22=0x148e | slot_9_22=0x148f) & slot_0_1=0 & slot_9_9 & conditional_target); (slot_mode=0 & nop_right) {
+    local taken:1 = ((EST & 8) != 0) ^ slot_9_9:1;
+    if (!taken) goto <done>;
+    loop_break();
+    goto conditional_target;
+  <done>
+}
+
+:BREAK conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & (slot_9_22=0x148e | slot_9_22=0x148f) & slot_0_1=1 & slot_9_9 & conditional_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] {
+    local taken:1 = ((EST & 8) != 0) ^ slot_9_9:1;
+    delayslot(1);
+    if (!taken) goto <done>;
+    loop_break();
+    goto conditional_target;
+  <done>
+}
+
+:BREAK conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & (slot_9_22=0x148e | slot_9_22=0x148f) & slot_0_1=2 & slot_9_9 & conditional_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] {
+    local taken:1 = ((EST & 8) != 0) ^ slot_9_9:1;
+    delayslot(2);
+    if (!taken) goto <done>;
+    loop_break();
+    goto conditional_target;
+  <done>
+}
+
+:CONTINUE wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13e & wide_9_10=2 & wide_repeat_delay=0 & wide_goto_target {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    if (!repeating) goto wide_goto_target;
+    goto [next];
+}
+
+:CONTINUE wide_goto_target "delay 1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13e & wide_9_10=2 & wide_repeat_delay=1 & wide_goto_target [ carmel_counted_delay=1; ] {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    delayslot(1);
+    if (!repeating) goto wide_goto_target;
+    goto [next];
+}
+
+:CONTINUE wide_goto_target "delay 2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13e & wide_9_10=2 & wide_repeat_delay=2 & wide_goto_target [ carmel_counted_delay=1; ] {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    delayslot(2);
+    if (!repeating) goto wide_goto_target;
+    goto [next];
+}
+
+:CONTINUE wide_goto_target "delay 3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13e & wide_9_10=2 & wide_repeat_delay=3 & wide_goto_target [ carmel_counted_delay=1; ] {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    delayslot(3);
+    if (!repeating) goto wide_goto_target;
+    goto [next];
+}
+
+:CONTINUE wide_goto_target "delay" wide_repeat_delay is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13e & wide_9_10=2 & wide_loop_delay_high=1 & wide_repeat_delay & wide_goto_target [ carmel_counted_delay=1; ] {
+    local next:4; local repeating:1;
+    loop_continue(next, repeating);
+    delayslot(3);
+    if (!repeating) goto wide_goto_target;
+    goto [next];
+}
+
+:BREAK wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x139 & wide_9_10=2 & wide_repeat_delay=0 & (wide_loop_condition=14 | wide_loop_condition=15) & wide_loop_cond_inverse & wide_goto_target {
+    local taken:1 = ((EST & 8) != 0) ^ wide_loop_cond_inverse:1;
+    if (!taken) goto <done>;
+    loop_break();
+    goto wide_goto_target;
+  <done>
+}
+
+:BREAK wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x139 & wide_9_10=2 & wide_repeat_delay=1 & (wide_loop_condition=14 | wide_loop_condition=15) & wide_loop_cond_inverse & wide_goto_target [ carmel_counted_delay=1; ] {
+    local taken:1 = ((EST & 8) != 0) ^ wide_loop_cond_inverse:1;
+    delayslot(1);
+    if (!taken) goto <done>;
+    loop_break();
+    goto wide_goto_target;
+  <done>
+}
+
+:BREAK wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x139 & wide_9_10=2 & wide_repeat_delay>=2 & (wide_loop_condition=14 | wide_loop_condition=15) & wide_loop_cond_inverse & wide_goto_target [ carmel_counted_delay=1; ] {
+    local taken:1 = ((EST & 8) != 0) ^ wide_loop_cond_inverse:1;
+    delayslot(2);
+    if (!taken) goto <done>;
+    loop_break();
+    goto wide_goto_target;
+  <done>
+}
+
 # A conditional CALL emits its link store even when the condition is false.
 :"CALL NC1" conditional_target "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=0 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_0 { local taken:1 = (EST & 1) == 0; store_link(SP, link_2_0); if (!taken) goto <veto>; SP = SP - 2; call conditional_target; <veto> }
 :"CALL NC1" conditional_target "delay 1" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=1 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_1 & resume_2_1 [ carmel_counted_delay=1; ] { local taken:1 = (EST & 1) == 0; local old_sp:2 = SP; delayslot(1); store_link(old_sp, link_2_1); if (!taken) goto inst_next; SP = old_sp - 2; call conditional_target; goto resume_2_1; }
 :"CALL NC1" conditional_target "delay 2" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=2 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_2 & resume_2_2 [ carmel_counted_delay=1; ] { local taken:1 = (EST & 1) == 0; local old_sp:2 = SP; delayslot(2); store_link(old_sp, link_2_2); if (!taken) goto inst_next; SP = old_sp - 2; call conditional_target; goto resume_2_2; }
 :"CALL NC1" conditional_target "delay 3" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_1=3 & slot_9_22=0x1441 & conditional_target); (slot_mode=0 & nop_right)) & link_2_3 & resume_2_3 [ carmel_counted_delay=1; ] { local taken:1 = (EST & 1) == 0; local old_sp:2 = SP; delayslot(2); store_link(old_sp, link_2_3); if (!taken) goto inst_next; SP = old_sp - 2; call conditional_target; goto resume_2_3; }
+
+# External conditions sample the four board inputs once. A disconnected
+# provider has no sample and asserts neither polarity.
+define pcodeop carmel_sample_gpp;
+
+macro sample_gpp_condition(selector, taken) {
+    local select:1 = selector;
+    local pins:1 = carmel_sample_gpp();
+    taken = (((pins >> ((select - 20) >> 1)) ^ select) & 1) != 0;
+}
+
+@define COMPACT_GPP "(compact_input_group=5 | compact_input_group=6)"
+@define WIDE_GPP "(wide_input_group=5 | wide_input_group=6)"
+
+compact_inactive_input: "reserved" is (compact_input_select=31 | compact_input_select=59) {}
+compact_inactive_input: compact_input_select is carmel_gpp_disconnected=1 & $(COMPACT_GPP) & compact_input_select {}
+wide_inactive_input: "reserved" is (wide_input_select=31 | wide_input_select=59) {}
+wide_inactive_input: wide_input_select is carmel_gpp_disconnected=1 & $(WIDE_GPP) & wide_input_select {}
+
+:GOTO compact_input_select,conditional_target "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & compact_conditional_opcode=0x50 & slot_0_1=0 &
+     carmel_gpp_disconnected=0 & $(COMPACT_GPP) & compact_input_select & conditional_target);
+    (slot_mode=0 & nop_right) {
+    local taken:1;
+    sample_gpp_condition(compact_input_select, taken);
+    if (taken) goto conditional_target;
+}
+:CALL compact_input_select,conditional_target "||" nop_right is
+    ((carmel_issue=1 & slot_mode=0 & compact_conditional_opcode=0x51 & slot_0_1=0 &
+      carmel_gpp_disconnected=0 & $(COMPACT_GPP) & compact_input_select & conditional_target);
+     (slot_mode=0 & nop_right)) & link_2_0 {
+    local taken:1;
+    sample_gpp_condition(compact_input_select, taken);
+    store_link(SP, link_2_0);
+    if (!taken) goto <veto>;
+    SP = SP - 2;
+    call conditional_target;
+    <veto>
+}
+:GOTO compact_inactive_input,conditional_target "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & compact_conditional_opcode=0x50 & slot_0_1=0 &
+     compact_inactive_input & conditional_target); (slot_mode=0 & nop_right) {}
+:CALL compact_inactive_input,conditional_target "||" nop_right is
+    ((carmel_issue=1 & slot_mode=0 & compact_conditional_opcode=0x51 & slot_0_1=0 &
+      compact_inactive_input & conditional_target); (slot_mode=0 & nop_right)) & link_2_0 {
+    store_link(SP, link_2_0);
+}
+
+@define WIDE_DIRECT_INPUT "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1"
+:GOTO wide_input_select,wide_goto_target is $(WIDE_DIRECT_INPUT) & wide_conditional_opcode=0x4e40 &
+    carmel_gpp_disconnected=0 & $(WIDE_GPP) & wide_input_select & wide_goto_target {
+    local taken:1;
+    sample_gpp_condition(wide_input_select, taken);
+    if (taken) goto wide_goto_target;
+}
+:CALL wide_input_select,wide_call_target is $(WIDE_DIRECT_INPUT) & wide_conditional_opcode=0x4e42 &
+    carmel_gpp_disconnected=0 & $(WIDE_GPP) & wide_input_select & wide_call_target & link_2_0 {
+    local taken:1;
+    sample_gpp_condition(wide_input_select, taken);
+    store_link(SP, link_2_0);
+    if (!taken) goto <veto>;
+    SP = SP - 2;
+    call wide_call_target;
+    <veto>
+}
+:GOTO wide_inactive_input,wide_goto_target is $(WIDE_DIRECT_INPUT) & wide_conditional_opcode=0x4e40 &
+    wide_inactive_input & wide_goto_target {}
+:CALL wide_inactive_input,wide_call_target is $(WIDE_DIRECT_INPUT) & wide_conditional_opcode=0x4e42 &
+    wide_inactive_input & wide_call_target & link_2_0 { store_link(SP, link_2_0); }
+
 :"GOTO GE1" conditional_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
 :"GOTO GE1" conditional_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target); (slot_mode=0 & nop_right) { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
 :^nop_left "||" "GOTO GE1" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x140a & conditional_target) { if (!(((EST ^ (EST << 3)) & 0x10) != 0)) goto conditional_target; }
@@ -8429,6 +9068,21 @@ repeat_first: is epsilon { delayslot(1); }
 :"REP" "*"^absolute_data_addr "delay 6"^repeat_setup^repeat_first is $(REPEAT_DATA) & wide_repeat_delay=6 & repeat_first [ carmel_counted_delay=1; carmel_split_delay=1; ] { local address:2 = absolute_data_addr; local count:2 = *[data]:2 address; build repeat_setup; if (count == 0) goto <tail>; <again> build repeat_first; <tail> delayslot(3); if (count <= 1) goto <exit>; count = count - 1; goto <again>; <exit> }
 :"REP" "*"^absolute_data_addr "delay 7"^repeat_setup^repeat_first is $(REPEAT_DATA) & wide_repeat_delay=7 & repeat_first [ carmel_counted_delay=1; carmel_split_delay=1; ] { local address:2 = absolute_data_addr; local count:2 = *[data]:2 address; build repeat_setup; if (count == 0) goto <tail>; <again> build repeat_first; <tail> delayslot(4); if (count <= 1) goto <exit>; count = count - 1; goto <again>; <exit> }
 
+# The extended count selects an implicit DATA word; the encoded address is
+# disconnected. The console guard proves the first replay issue is the end.
+:"REP *0xffff delay 3"^repeat_setup is carmel_issue=5 & carmel_implicit_repeat=1
+    & wide_left_mode=1 & wide_right_mode=1 & wide_10_22=0x13c6 & wide_repeat_extended=1
+    & repeat_setup [ carmel_counted_delay=1; carmel_split_delay=1; ] {
+    local count:2 = *[data]:2 0xffff:2;
+    build repeat_setup;
+    if (count == 0) goto <exit>;
+  <again>
+    delayslot(1);
+    count = count - 1;
+    if (count != 0) goto <again>;
+  <exit>
+}
+
 data_load_dst: "R0" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x280 & wide_13_22=0x21b & wide_40_45=0x38 { export R0; }
 data_load_dst: "R1" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x284 & wide_13_22=0x21b & wide_40_45=0x38 { export R1; }
 data_load_dst: "R2" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x288 & wide_13_22=0x21b & wide_40_45=0x38 { export R2; }
@@ -8438,6 +9092,19 @@ data_load_dst: "R5" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x294 & w
 data_load_dst: "R6" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x298 & wide_13_22=0x21b & wide_40_45=0x38 { export R6; }
 data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & wide_13_22=0x21b & wide_40_45=0x38 { export R7; }
 :MOVE data_load_dst,"*"^absolute_data_addr is carmel_issue=5 & data_load_dst & absolute_data_addr { local address:2 = absolute_data_addr; data_load_dst = *[data]:2 address; }
+
+@define WIDE_DISPLACED_MOVE "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45>=0x20 & wide_40_45<=0x27 & wide_move_base & wide_move_displacement"
+
+:MOVE wide_move_load_dst,"*"^wide_move_base^"+"^wide_move_displacement is $(WIDE_DISPLACED_MOVE) & wide_move_load_opcode=0x21b14 & wide_0_1=0 & wide_move_load_dst {
+    local address:2 = wide_move_base + sext(wide_move_displacement:1);
+    wide_move_load_dst = *[data]:2 address;
+}
+:MOVE "*R0","*"^wide_move_base^"+"^wide_move_displacement is $(WIDE_DISPLACED_MOVE) & wide_0_22=0x436020 {
+    local address:2 = wide_move_base + sext(wide_move_displacement:1);
+    local word:2 = *[data]:2 address;
+    local shift:1 = (ECFG & 0x20) != 0;
+    *[data]:2 R0 = word s>> shift;
+}
 
 # EQ1 returns: sample the incoming EST and pop only on the taken path.
 :"RETURN EQ1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & carmel_conditional_return_safe=1 & slot_0_22=0x2be070); (slot_mode=0 & nop_right) { local taken:1 = (EST & 8) != 0; if (!taken) goto <return_veto>; local target:3; pop_link(target); return [target]; <return_veto> goto inst_next; }

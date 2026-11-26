@@ -99,6 +99,77 @@ fn carmel_delay_refuses_unmodeled_data_order_without_discarding_the_slot() {
 }
 
 #[test]
+fn carmel_external_control_samples_the_board_and_keeps_call_link_stores() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-external-control", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0];
+    for (slot, positive, active_level) in [
+        ([[0x28, 0x28, 0x20], nop], true, 1),
+        ([[0xc0, 0, 8], [0xce, 0x40, 0x6c]], false, 8),
+    ] {
+        let mut image = [[nop; 2]; 5];
+        image[0] = slot;
+        image[1][0] = [0x21, 0xac, 0x20];
+        image[4][0] = [0x2b, 0xd8, 0];
+        fs::write(&binary, image.as_flattened().as_flattened()).unwrap();
+        let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", "param 0 %A0L unsigned short a",
+                "--assert", "param 1 %ECFG unsigned short config",
+                "--assert", "return %A0L unsigned short",
+            ]));
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let emitted = function["code"].as_str().unwrap();
+        fs::write(&source, format!(
+            "#include <stdbool.h>\n#include <stdint.h>\n\
+             static uint8_t levels;\nstatic unsigned samples;\n\
+             static uint8_t carmel_sample_gpp(void) {{ ++samples; return levels; }}\n{emitted}\n\
+             int main(void) {{\n\
+               if (sub_0(41, 0) != {} || samples != 1) return 1;\n\
+               levels = {active_level};\n\
+               if (sub_0(41, 0) != {} || samples != 2) return 2;\n\
+               return 0;\n\
+             }}\n",
+            if positive { 42 } else { 41 }, if positive { 41 } else { 42 },
+        )).unwrap();
+        run_emitted_c(&source, &executable, emitted);
+    }
+    for (slot, call_ops) in [
+        ([[0x28, 0xaa, 0x20], nop], &["CALLOTHER", "STORE", "STORE", "CBRANCH", "CALL"][..]),
+        ([[0xc0, 0, 8], [0xce, 0x42, 0xec]], &["STORE", "STORE"][..]),
+    ] {
+        let mut image = [[nop; 2]; 5];
+        image[0] = slot;
+        fs::write(&binary, image.as_flattened().as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), "0x1000", "--raw-image", "--target",
+            "Carmel:BE:24:default:default", "--base", "0x1000", "--count", "1", "--json",
+        ]);
+        assert_eq!(status, 0, "{stdout}\n{stderr}");
+        let doc: Value = serde_json::from_str(&stdout).unwrap();
+        let ops = doc["instructions"][0]["ops"].as_array().unwrap();
+        assert_eq!(ops.iter().filter_map(|op| {
+            let name = op["opcode"].as_str().unwrap();
+            matches!(name, "CALLOTHER" | "STORE" | "CBRANCH" | "CALL").then_some(name)
+        }).collect::<Vec<_>>(), call_ops, "{doc}");
+        if let Some(call) = ops.iter().find(|op| op["opcode"] == "CALL") {
+            assert_eq!(call["inputs"][0]["space"], "code", "{doc}");
+            assert_eq!(call["inputs"][0]["offset"], 3 * 0x1008, "{doc}");
+        }
+    }
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_backtrace_projections_preserve_the_other_lane_and_the_vetoed_write() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
@@ -273,6 +344,85 @@ fn carmel_data_repeat_replays_the_range_and_skips_only_its_first_issue_at_zero()
         }
     }
     fs::remove_file(binary).unwrap();
+}
+
+#[test]
+fn carmel_wide_single_repeat_samples_implicit_data_after_no_address_update() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-repeat-data-ffff", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let setup = [0x21, 0xac, 0x62, 0x2b, 0xec, 0]; // INC A1L
+    let body = [0x21, 0xac, 0x20, 0x2b, 0xec, 0]; // INC A0L
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let base = "0x2200";
+    for repeat in [[0x95, 0, 0, 0xcf, 0x18, 0xae], [0xa6, 0x0b, 0xc3, 0xcf, 0x18, 0xaf]] {
+        let code = [repeat, setup, setup, setup, body, nop, ret];
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let raw = [
+            "raw-pcode", binary.to_str().unwrap(), base, "--raw-image", "--target",
+            "Carmel:BE:24:default:default", "--base", base, "--count", "1", "--json",
+        ];
+        let (stdout, stderr, status) = common::run_kuna(&raw);
+        assert_eq!(status, 0, "{stdout}\n{stderr}");
+        let doc: Value = serde_json::from_str(&stdout).unwrap();
+        let bus_ops: Vec<_> = doc["instructions"][0]["ops"].as_array().unwrap().iter()
+            .filter_map(|op| match op["opcode"].as_str().unwrap() {
+                name @ ("LOAD" | "STORE") => Some(name),
+                _ => None,
+            }).collect();
+        assert_eq!(bus_ops, ["LOAD"], "{doc}");
+        for (output, expression) in [("A0L", "9 + count"), ("A1L", "14")] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                base, "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", base, "--json", "--assert-strict",
+                "--assert", "data [data,0x0] volatile unsigned short wrong_count",
+                "--assert", "data [data,0xffff] volatile unsigned short repeat_count",
+                "--assert", "param 0 %A0L unsigned short in_a0l",
+                "--assert", "param 1 %A1L unsigned short in_a1l",
+                "--assert", "param 2 %ECFG unsigned short in_ecfg",
+                "--assert", "param 3 %EST unsigned short in_est",
+                "--assert", "param 4 %CECFG1 unsigned short in_cecfg1",
+                "--assert", "param 5 %CECFG2 unsigned short in_cecfg2",
+                "--assert", "param 6 %CETBL unsigned short in_cetbl",
+                "--assert", &format!("return %{output} unsigned short"),
+            ]);
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let emitted = function["code"].as_str().unwrap();
+            assert!(emitted.contains("repeat_count") && !emitted.contains("wrong_count"), "{emitted}");
+            fs::write(&source, format!(
+                "#include <stdbool.h>\n#include <stdint.h>\n\
+                 volatile unsigned short repeat_count, wrong_count;\n{emitted}\n\
+                 int main(void) {{\n\
+                   wrong_count = 7;\n\
+                   for (unsigned count = 0; count <= 3; ++count) {{\n\
+                     repeat_count = count;\n\
+                     if (sub_2200(9, 11, 0, 0, 0, 0, 0) != {expression} ||\n\
+                         wrong_count != 7 || repeat_count != count) return 1;\n\
+                   }}\n\
+                   return 0;\n\
+                 }}\n"
+            )).unwrap();
+            run_emitted_c(&source, &executable, emitted);
+        }
+        let mut split = code;
+        split[1][0] |= 0x80;
+        fs::write(&binary, split.as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&raw);
+        assert_eq!(status, 1, "{stdout}\n{stderr}");
+        let doc: Value = serde_json::from_str(&stdout).unwrap();
+        assert!(doc["instructions"].as_array().unwrap().is_empty(), "{doc}");
+    }
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
 }
 
 #[test]
@@ -953,6 +1103,118 @@ int main(void) {
 ");
     fs::write(&source, &emitted).unwrap();
     run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_wide_extract_selects_descriptor_and_result_ports() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    type Row<'a> = ([u8; 6], &'a [(u8, u16)], &'a [(&'a str, u32)],
+                    &'a [(u16, u16, u16)], &'a [(&'a str, u32)]);
+    let long_gb2 = [0xce, 0xbe, 0x12, 0xf6, 0x85, 0x04];
+    let long_ff2 = [0xb4, 0xa4, 0x27, 0xf7, 0x7d, 0x2e];
+    let ce1_gb3 = [0x1e, 0x5f, 0x54, 0xf6, 0x19, 0x07];
+    let gb3_inputs = &[("FF1", 1), ("FF2", 7), ("X1", 0xe0),
+                       ("RN4", 1), ("PACFG", 0), ("RM4", 0), ("RL4", 0)];
+    let routes: &[Row<'_>] = &[
+        (long_gb2, &[(2, 0xffff), (6, 0x8048)],
+         &[("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0), ("EST", 1),
+           ("GB2", 0xf3), ("RN6", 3), ("PACFG", 0), ("RM6", 0), ("RL6", 0)],
+         &[(0x8048, 8, 8), (0x8049, 7, 7), (0xffff, 0xabcd, 1), (0, 0x1234, 0)],
+         &[("EST", 1), ("R6", 0x804b), ("R2", 0xffff), ("GB2", 0xf3)]),
+        (long_ff2, &[(4, 0x48)],
+         &[("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff), ("EST", 8),
+           ("FF1", 0xa567), ("FF2", 0x8000), ("PACFG", 0x200), ("RM4", 0x3f), ("RL4", 0)],
+         &[(0x48, 5, 5), (0x49, 16, 16), (0x2f, 6, 6)],
+         &[("FF1", 31), ("R4", 0x2f), ("EST", 0x3000)]),
+        ([0x9b, 0x87, 0x83, 0xf5, 0xc9, 0x6e], &[(3, 0xc040)],
+         &[("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff), ("EST", 9),
+           ("PACFG", 0), ("RM2", 0), ("RL2", 0)],
+         &[(0xc040, 31, 31), (0xc041, 7, 7)],
+         &[("R3", 0xc03e), ("EST", 0x3009)]),
+        ([0xf6, 0xcd, 0x87, 0xf5, 0xa4, 0x17], &[(3, 0xc040)],
+         &[("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0), ("EST", 8),
+           ("LSA1W", 0x123456), ("RN3", 5), ("PACFG", 0xc0), ("RM2", 7), ("RL2", 0xc03d)],
+         &[(0xc040, 0x8001, 0x8001), (0xc03d, 0x1234, 0x1234)],
+         &[("R3", 0xc03d), ("LSA1W", 0x123456), ("EST", 8)]),
+    ];
+    let binary = common::scratch_file("carmel-wide-extract-ports", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let ce_rows = [
+        (0x1000, 0x1000, 0xffff, 0, 0xf3, 0x79, 0x49, 0x3000),
+        (0x1000, 0x1000, 0, 1, 0xf3, 0x5df9, 0x49, 1),
+        (0, 0x1000, 0, 1, 0xf3, 0x5df9, 0x48, 1),
+        (0x1888, 0x0888, 0x8001, 0, 0, 0, 0x49, 0x1008),
+    ];
+    let ce_inputs: Vec<Vec<_>> = ce_rows.iter().map(|&(cfg1, cfg2, table, flags, gb3, ..)| {
+        [("CECFG1", cfg1), ("CECFG2", cfg2), ("CETBL", table), ("EST", flags), ("GB3", gb3)]
+            .into_iter().chain(gb3_inputs.iter().copied()).collect()
+    }).collect();
+    let ce_words: Vec<_> = ce_rows.iter().map(|&(_, _, _, _, _, word, _, _)| [(0x48, 0x5df9, word)]).collect();
+    let ce_outputs: Vec<_> = ce_rows.iter().map(|&(_, _, _, _, _, _, ptr, flags)| [("R4", ptr), ("EST", flags)]).collect();
+    let cases = routes.iter().copied().chain((0..ce_rows.len()).map(|i| {
+        (ce1_gb3, &[(4, 0x48)][..], ce_inputs[i].as_slice(), &ce_words[i][..], &ce_outputs[i][..])
+    }));
+    let mut generated = String::from("#include <stdbool.h>\n#include <stdint.h>\n#include <stdio.h>\n");
+    let mut calls = String::from("int main(void) {\n");
+    let c_type = |reg: &str| match reg {
+        "GB2" | "GB3" => "unsigned char",
+        "LSA1W" => "unsigned long",
+        _ => "unsigned short",
+    };
+    for (i, (packet, pointers, inputs, cells, outputs)) in cases.enumerate() {
+        let mut code = Vec::new();
+        for &(r, address) in pointers {
+            let [hi, lo] = address.to_be_bytes();
+            code.extend([0x80, hi, lo, 0xc6, 0x42, 0x80 + 4 * r]);
+        }
+        code.extend(packet);
+        code.extend([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        fs::write(&binary, code).unwrap();
+        let actual = inputs.iter().map(|(_, val)| val.to_string()).collect::<Vec<_>>().join(",");
+        for &(address, _, _) in cells {
+            writeln!(generated, "volatile unsigned short word_{i}_{address:04x};").unwrap();
+        }
+        for &(reg, expected) in outputs {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict",
+                "--assert", &format!("return %{reg} {}", c_type(reg)),
+            ]);
+            for (j, &(input, _)) in inputs.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {j} %{input} {} in_{}", c_type(input), input.to_ascii_lowercase())]);
+            }
+            for &(address, _, _) in cells {
+                kuna.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short word_{i}_{address:04x}")]);
+            }
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let function = &json["functions"][0];
+            let text = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let name = format!("extract_{i}_{}", reg.to_ascii_lowercase());
+            writeln!(generated, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+            for &(address, before, _) in cells {
+                writeln!(calls, "word_{i}_{address:04x} = {before};").unwrap();
+            }
+            write!(calls, "if ({name}({actual}) != {expected}").unwrap();
+            for &(address, _, after) in cells {
+                write!(calls, " || word_{i}_{address:04x} != {after}").unwrap();
+            }
+            writeln!(calls, ") {{ fputs(\"{name}\\n\", stderr); return 1; }}").unwrap();
+        }
+    }
+    generated.push_str(&calls);
+    generated.push_str("return 0;\n}\n");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
     for file in [binary, source, executable] {
         fs::remove_file(file).unwrap();
     }
@@ -1903,6 +2165,129 @@ fn carmel_wide_minmax_address_ports_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_compact_word_stores_keep_agu_and_data_lanes_separate() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-word-stores", "bin");
+    let specs = binary.with_extension("specs");
+    tracked_carmel_entry_specs(&specs, &[("R3", 0x4047)], 0, 0);
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let inputs = ["A0H", "A1H", "CECFG1", "CECFG2", "CETBL", "EST", "ECFG", "PACFG", "RM2", "RL2"];
+    let routes = [
+        ([0x31, 0x52, 0x71, 0x2b, 0xec, 0], &[
+            (0, 0, 0, 0x20, 0, 0x4047, 0xa007, 0xa008),
+            (0x1000, 0, 0, 0x20, 0, 0x4048, 0xa007, 0xa008),
+            (0, 0, 0x00ff, 0x20, 0, 0x4048, 0xff6e, 0xa008),
+        ][..]),
+        ([0x2b, 0xec, 0, 0x31, 0x52, 0x73], &[
+            (0, 0, 0xff00, 0, 0, 0x4048, 0x2468, 0xa008),
+        ][..]),
+        ([0x31, 0x52, 0x70, 0x31, 0x52, 0x72], &[
+            (0, 0, 0, 0x20, 0, 0x4049, 0xff6e, 0x1234),
+            (0, 0, 0, 0, 0xc0, 0x4041, 0xfedc, 0x2468),
+        ][..]),
+    ];
+    let mut code = String::from("#include <stdbool.h>\nvolatile unsigned short first, second, bound;\n");
+    let mut calls = String::from("int main(void) {\n");
+    let mut failure = 0;
+    for (i, (packet, rows)) in routes.into_iter().enumerate() {
+        fs::write(&binary, [packet, nop, nop, ret].as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+            "--base", "0", "--json", "--assert-strict", "--assert", "return %R3 unsigned short",
+            "--assert", "data [data,0x4047] volatile unsigned short first",
+            "--assert", "data [data,0x4048] volatile unsigned short second",
+            "--assert", "data [data,0x4040] volatile unsigned short bound",
+        ]);
+        for (index, input) in inputs.into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {index} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let lift = function["code"].as_str().unwrap();
+        writeln!(code, "{}", lift.replace("sub_0", &format!("store_{i}"))).unwrap();
+        for &(ce1, ce2, table, ecfg, pacfg, pointer, low, high) in rows {
+            failure += 1;
+            writeln!(calls,
+                "first = 0xa007; second = 0xa008; bound = 0xa000;\n\
+                 if (store_{i}(0xfedc,0x2468,{ce1},{ce2},{table},0,{ecfg},{pacfg},7,0x4040) != {pointer} || \
+                     first != {low} || second != {high} || bound != 0xa000) return {failure};").unwrap();
+        }
+    }
+    code.push_str(&calls);
+    code.push_str("return 0;\n}\n");
+    fs::write(&source, &code).unwrap();
+    run_emitted_c(&source, &executable, &code);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_wide_displaced_moves_use_distinct_source_and_write_ports() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-displaced-moves", "bin");
+    let specs = binary.with_extension("specs");
+    tracked_carmel_entry_specs(&specs, &[("R0", 0x4320), ("R4", 0x4000), ("R7", 0x410a)], 0, 0);
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let routes = [
+        ([0xa4, 0xd7, 4, 0xc3, 0x62, 0x90], "R4", &[(0, 0x7a36, 0x3412)][..]),
+        ([0xe7, 0xd4, 0xf6, 0xc3, 0x62, 0x80], "R0", &[(0, 0x8123, 0x3412)][..]),
+        ([0xe7, 0xf1, 0xf6, 0xc3, 0x60, 0x20], "R7", &[(0, 0x410a, 0x8123), (0x28, 0x410a, 0xc091)][..]),
+    ];
+    let mut code = String::from("#include <stdbool.h>\nvolatile unsigned short positive, negative, sink, upper;\n");
+    let mut calls = String::from("int main(void) {\n");
+    let mut failure = 0;
+    for (i, (packet, result, rows)) in routes.into_iter().enumerate() {
+        fs::write(&binary, [packet, nop, nop, ret].as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+            "--base", "0", "--json", "--assert-strict", "--assert", &format!("return %{result} unsigned short"),
+            "--assert", "param 0 %ECFG unsigned short mode",
+            "--assert", "data [data,0x4004] volatile unsigned short positive",
+            "--assert", "data [data,0x4100] volatile unsigned short negative",
+            "--assert", "data [data,0x4320] volatile unsigned short sink",
+            "--assert", "data [data,0x4321] volatile unsigned short upper",
+        ]);
+        let output = common::process::required_output(&mut kuna);
+        let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &doc["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let lift = function["code"].as_str().unwrap();
+        writeln!(code, "{}", lift.replace("sub_0", &format!("move_{i}"))).unwrap();
+        for &(mode, returned, sink) in rows {
+            failure += 1;
+            writeln!(calls,
+                "positive = 0x7a36; negative = 0x8123; sink = 0x3412; upper = 0xabcd;\n\
+                 if (move_{i}({mode:#x}) != {returned:#x} || sink != {sink:#x} || upper != 0xabcd || \
+                     positive != 0x7a36 || negative != 0x8123) return {failure};").unwrap();
+        }
+    }
+    code.push_str(&calls);
+    code.push_str("return 0;\n}\n");
+    fs::write(&source, &code).unwrap();
+    run_emitted_c(&source, &executable, &code);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_wide_stored_extrema_keep_the_data_and_literal_ports_distinct() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
@@ -1980,6 +2365,77 @@ fn carmel_wide_stored_extrema_keep_the_data_and_literal_ports_distinct() {
     emitted.push_str("return 0;\n}\n");
     fs::write(&source, &emitted).unwrap();
     run_emitted_c(&source, &executable, &emitted);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_compact_indexed_word_load_keeps_address_and_result_qualification_separate() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-indexed-word", "bin");
+    let specs = binary.with_extension("specs");
+    tracked_carmel_entry_specs(&specs, &[("R0", 0x4000)], 0, 0);
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let inputs = [
+        ("A0L", "unsigned short"), ("A0H", "unsigned short"), ("GB0", "unsigned char"),
+        ("EST", "unsigned short"), ("CECFG1", "unsigned short"), ("CECFG2", "unsigned short"),
+        ("CETBL", "unsigned short"), ("RN0", "unsigned short"), ("PACFG", "unsigned short"),
+        ("RM0", "unsigned short"), ("RL0", "unsigned short"),
+    ];
+    let routes = [
+        ([0x31, 0xdc, 0x10, 0x2b, 0xec, 0], &[
+            (0, 0xffff, 0x8123, [0x2000, 0x8123, 0xffff, 0xff, 0x3010]),
+        ][..]),
+        ([0x31, 0xdc, 0x11, 0x2b, 0xec, 0], &[
+            (0, 0, 0x8123, [0x4000, 0x4321, 0x8765, 0x12, 0]),
+            (0x1000, 0, 0x8123, [0x2000, 0x4321, 0x8765, 0x12, 0]),
+        ][..]),
+        ([0x2b, 0xec, 0, 0x31, 0xdc, 0x10], &[
+            (0, 0xffff, 0, [0x2000, 0, 0, 0, 0x3200]),
+        ][..]),
+    ];
+    let mut code = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short cell;\n");
+    let mut calls = String::from("int main(void) {\n");
+    let mut failure = 0;
+    for (i, (packet, rows)) in routes.into_iter().enumerate() {
+        fs::write(&binary, [packet, nop, nop, ret].as_flattened()).unwrap();
+        for (port, reg) in ["R0", "A0L", "A0H", "GB0", "EST"].into_iter().enumerate() {
+            let kind = if reg == "GB0" { "unsigned char" } else { "unsigned short" };
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict", "--assert", &format!("return %{reg} {kind}"),
+                "--assert", "data [data,0x4000] volatile unsigned short cell",
+            ]);
+            for (j, (input, ty)) in inputs.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {j} %{input} {ty} in_{}", input.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &doc["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let lift = function["code"].as_str().unwrap();
+            let name = format!("load_{i}_{port}");
+            writeln!(code, "{}", lift.replace("sub_0", &name)).unwrap();
+            for &(ce1, table, word, result) in rows {
+                failure += 1;
+                writeln!(calls,
+                    "cell = {word:#x}; if ({name}(0x4321,0x8765,0x12,0,{ce1:#x},0,{table:#x},0x4000,1,7,0x4000) \
+                     != {:#x} || cell != {word:#x}) return {failure};", result[port]).unwrap();
+            }
+        }
+    }
+    code.push_str(&calls);
+    code.push_str("return 0;\n}\n");
+    fs::write(&source, &code).unwrap();
+    run_emitted_c(&source, &executable, &code);
     fs::remove_dir_all(specs).unwrap();
     for file in [binary, source, executable] {
         fs::remove_file(file).unwrap();
@@ -2448,6 +2904,131 @@ fn carmel_wide_paired_pop_fallback_ports() {
         fs::remove_file(file).unwrap();
     }
     fs::remove_dir_all(fixture_specs).unwrap();
+}
+
+#[test]
+fn carmel_single_wide_pop_routes_data_and_falls_through() {
+    use kuna_console::engine::Bootstrap;
+
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    let binary = common::scratch_file("carmel-single-wide-pop", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let fixture_specs = binary.with_extension("specs");
+    let installed = [std::env::var("KUNA_SPECS").unwrap_or_else(|_| {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../specs").display().to_string()
+    })];
+    let cells = [
+        (0, 0x5a5a), (0x40f1, 0x0765), (0x40f2, 0xfc34), (0x5002, 0x1a99), (0x5003, 0x2b22),
+        (0x6004, 0x3c33), (0x9032, 0x4e44), (0x9040, 0x8401), (0x9041, 0x8202), (0xffff, 0x5f55),
+    ];
+    let rows = [
+        (0x17, 0x38, "ifexe(ce1) pop(*r7++);", [0xffff, 0]),
+        (0x57, 0x38, "ifexe(ce2) pop(*r7++);", [0x5002, 0]),
+        (0x17, 0x39, "ifexe(ce1) pop(*(long*)r7++);", [0xffff, 0x5002]),
+        (0x57, 0x39, "ifexe(ce2) pop(*(long*)r7++);", [0x5002, 0x6004]),
+        (0x97, 0x39, "pop(*(long*)r7++);", [0x9040, 0x9041]),
+    ];
+    let cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
+    if cc {
+        tracked_carmel_entry_specs(&fixture_specs, &[
+            ("SP", 0x40f0), ("R7", 0x9040), ("RN7", 23), ("A0L", 0x5002), ("A1L", 0x6004),
+            ("PACFG", 0xc000), ("RM6", 15), ("RL6", 0x9032),
+        ], 0x1000, 2);
+    }
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for (address, _) in cells {
+        writeln!(emitted, "volatile unsigned short word_{address:04x};").unwrap();
+    }
+    let mut main = String::from("int main(void) {\n");
+    for (i, (prefix, opcode, listing, destinations)) in rows.into_iter().enumerate() {
+        let body = [
+            [prefix, 0xe4, 0x81, 0xcb, 0x2e, opcode],
+            [0x80, 0, 0, 0xc0, 0x76, 0x98],       // TRANSFER R6,SP
+            [0x80, 0x41, 0, 0xc6, 0x42, 0x80],   // MOVE R0,0x4100
+            [0x80, 0, 0, 0xc0, 0x40, 0xec],       // TRANSFER SP,R0
+            [0x2b, 0xd8, 0, 0x2b, 0xec, 0],       // RETURN
+        ];
+        fs::write(&binary, body.as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "disassemble", binary.to_str().unwrap(), "0x1000", "--raw-image", "--target", TARGET,
+            "--base", "0x1000", "--count", "2", "--json",
+        ]);
+        assert_eq!(status, 0, "{stdout}\n{stderr}");
+        let listing_json: Value = serde_json::from_str(&stdout).unwrap();
+        assert_eq!(listing_json["instructions"][0]["text"], listing);
+        assert_eq!(listing_json["instructions"][1]["address"], 0x1002);
+        if prefix != 0x97 {
+            let mut program = Bootstrap::new(&installed).target(TARGET)
+                .raw(binary.to_str().unwrap(), 0x1000, &[0x1000]).unwrap();
+            program.commit_pending_analysis().unwrap();
+            assert!(program.raw_pcode_at(0x3000).is_err(), "qualified POP must not guess its route");
+        }
+        if !cc {
+            continue;
+        }
+        let long = opcode == 0x39;
+        let marked = prefix == 0x97;
+        let input = if marked { [0x0765, 0xfc34] } else { [0x8401, 0x8202] };
+        for register in ["R6", "R7", "EST"] {
+            let name = format!("pop_{i}_{}", register.to_ascii_lowercase());
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &fixture_specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", TARGET,
+                "--base", "0x1000", "--json", "--assert-strict",
+                "--assert", &format!("return %{register} unsigned short"),
+            ]);
+            for (index, input) in ["CECFG1", "CECFG2", "CETBL", "EST", "ECFG"].into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {index} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+            }
+            for (address, _) in cells {
+                kuna.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short word_{address:04x}")]);
+            }
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let c = function["code"].as_str().unwrap();
+            assert!(!c.contains("halt_"), "{function}");
+            writeln!(emitted, "{}", c.replace("sub_1000", &name)).unwrap();
+            for (table, config, ecfg) in [(0, 0, 0x30), (0, 0x1000, 0x30),
+                                         (0xffff, 0, 0), (0xffff, 0x1000, 0x30)] {
+                let writes = marked || table != 0;
+                let advances = writes || config != 0;
+                let expected = match register {
+                    "R6" => 0x40f0 + if advances { if long { 2 } else { 1 } } else { 0 },
+                    "R7" => if advances { if long { 0x9032 } else { 0x9041 } } else { 0x9040 },
+                    "EST" => 9 | if table != 0 { 0x3000 } else { 0 } | if writes && ecfg != 0 { 0x4000 } else { 0 },
+                    _ => unreachable!(),
+                };
+                for (address, value) in cells {
+                    writeln!(main, "word_{address:04x} = {value};").unwrap();
+                }
+                write!(main, "if ({name}({config},{config},{table},9,{ecfg}) != {expected}").unwrap();
+                for (address, original) in cells {
+                    let value = if writes && address == destinations[0] {
+                        input[0]
+                    } else if writes && long && address == destinations[1] {
+                        input[1]
+                    } else {
+                        original
+                    };
+                    write!(main, " || word_{address:04x} != {value}").unwrap();
+                }
+                writeln!(main, ") return {};", i + 1).unwrap();
+            }
+        }
+    }
+    fs::remove_file(binary).unwrap();
+    if cc {
+        emitted.push_str(&main);
+        emitted.push_str("return 0;\n}\n");
+        fs::write(&source, &emitted).unwrap();
+        run_emitted_c(&source, &executable, &emitted);
+        fs::remove_file(source).unwrap();
+        fs::remove_file(executable).unwrap();
+        fs::remove_dir_all(fixture_specs).unwrap();
+    }
 }
 
 #[test]
@@ -3625,6 +4206,16 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     coincident[0] = [0xa0, 0, 0x12, 0xce, 0x0c, 0];
     coincident[1] = [0xa0, 0, 0x0e, 0xce, 4, 0];
     coincident[11] = ret;
+    let continue_issue = packet([0x2b, 0x40, 0x62]);
+    let break_issue = packet([0x29, 0x1e, 0x31]);
+    let transfer = |control| [
+        packet([0x2a, 3, 0x42]), nop, nop, control, a0, a1,
+        packet([0x21, 0xac, 0xa4]), packet([0x21, 0xac, 0xe6]),
+        packet([0x21, 0xad, 0x28]), packet([0x21, 0xad, 0x6a]), nop, ret,
+    ];
+    let continuing = transfer(continue_issue);
+    let breaking = transfer(break_issue);
+    let transfer_inputs = &["A0L", "A1L", "A2L", "A3L", "A4L", "A5L", "ECFG", "EST"][..];
     let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
     let mut calls = String::from("int main(void) {\n");
     for (n, (code, base, params, reg, checks)) in [
@@ -3637,6 +4228,14 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         (&coincident[..], "0x1000", &[][..], "LSA1L", &[("", 0x1004)][..]),
         (&coincident[..], "0x1000", &[][..], "LSA2L", &[("", 0x1004)][..]),
         (&coincident[..], "0x1000", &[][..], "LSAL", &[("", 0x1004)][..]),
+        (&continuing[..], "0", transfer_inputs, "A0L", &[("0,0,0,0,0,0,0,0", 3)][..]),
+        (&continuing[..], "0", transfer_inputs, "LC1", &[("0,0,0,0,0,0,0,0", 0)][..]),
+        (&continuing[..], "0", transfer_inputs, "A5L", &[("0,0,0,0,0,0,0,0", 1)][..]),
+        (&continuing[..], "0", transfer_inputs, "LOOP_FRAME", &[("0,0,0,0,0,0,0,0", 0)][..]),
+        (&breaking[..], "0", transfer_inputs, "A0L", &[("0,0,0,0,0,0,0,0", 1)][..]),
+        (&breaking[..], "0", transfer_inputs, "LC1", &[("0,0,0,0,0,0,0,0", 3)][..]),
+        (&breaking[..], "0", transfer_inputs, "A5L", &[("0,0,0,0,0,0,0,0", 1)][..]),
+        (&breaking[..], "0", transfer_inputs, "LOOP_FRAME", &[("0,0,0,0,0,0,0,0", 0)][..]),
     ].into_iter().enumerate() {
         fs::write(&binary, code.as_flattened()).unwrap();
         let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
@@ -3645,6 +4244,9 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
             base, "--raw-image", "--target", TARGET, "--base", base, "--addr", "--json", "--assert-strict",
             "--assert", &format!("return %{reg} {register_type}"),
         ]);
+        if code.get(3) == Some(&continue_issue) {
+            kuna.args(["--assert", "jumptable 6 6"]);
+        }
         for (i, input) in params.iter().enumerate() {
             kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);
         }
@@ -3955,6 +4557,59 @@ fn carmel_wide_byte_limit_ports_execute_in_emitted_c() {
     );
     fs::write(&source, &emitted).unwrap();
     run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_wide_lim8_clamps_pointer_and_increment_sources() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-lim8-pointer", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut checks = String::from("int main(void) {\n");
+    for (i, (selector, register)) in [
+        (0xa0, "R0"), (0xa1, "R1"), (0xa6, "R6"), (0xa8, "RN0"), (0xaf, "RN7"), (0xbf, "RN7"),
+    ].into_iter().enumerate() {
+        fs::write(&binary, [
+            [selector, 0xfd, 0xfe, 0xc3, 0xa2, 0xb3],
+            [0x2b, 0xd8, 0, 0x2b, 0xec, 0],
+        ].as_flattened()).unwrap();
+        for result in ["RN4", "EST"] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict",
+                "--assert", &format!("return %{result} unsigned short"),
+            ]);
+            for (slot, input) in [register, "RN4", "EST", "CECFG1", "CECFG2", "CETBL"].into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {slot} %{input} unsigned short in_{slot}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &doc["functions"][0];
+            let code = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !code.contains("halt_"), "{doc}");
+            writeln!(c, "#define sub_1000 lim8_{i}_{result}\n{code}\n#undef sub_1000").unwrap();
+        }
+        for (v, table, word, status) in [
+            (0x67u16, 0u16, 0x67, 0),
+            (0xff, 0xffff, 0xff, 0x3000),
+            (0x100, 0, 0xff, 4),
+            (0x8000, 0xffff, 0, 0x3004),
+        ] {
+            writeln!(checks, "if (lim8_{i}_RN4({v},0x7878,0,0,0,{table}) != {word} || \
+                lim8_{i}_EST({v},0x7878,0,0,0,{table}) != {status}) return {};", i + 1).unwrap();
+        }
+    }
+    c.push_str(&checks);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
     for file in [binary, source, executable] {
         fs::remove_file(file).unwrap();
     }
@@ -4760,6 +5415,115 @@ fn carmel_wide_round_captures_split_data_and_gates_writeback() {
 }
 
 #[test]
+fn carmel_wide_round_and_minu_distinguish_disconnected_results() {
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let binary = common::scratch_file("carmel-round-minu-ports", "bin");
+    let specs = binary.with_extension("specs");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let have_cc = common::process::optional_output(Command::new("cc").arg("--version")).is_some();
+    let routes = [
+        ("round_sink", [0x81, 0xda, 0x21, 0xc2, 0xdb, 0xd1], "A2L"),
+        ("round_word", [0x81, 0x80, 0xa1, 0xc2, 0xda, 0x49], "A2L"),
+        ("round_ce1", [0x01, 0x80, 0xa1, 0xc2, 0xda, 0x49], "A2L"),
+        ("minu_sink_f", [0xcb, 0x6a, 0x45, 0xc8, 0x5f, 0x4d], "R4"),
+        ("minu_sink_e", [0xcb, 0x6a, 0x45, 0xc8, 0x5e, 0x4d], "R4"),
+        ("minu_long", [0xcb, 0x6a, 0x45, 0xc8, 0x5a, 0x4d], "R4"),
+        ("minu_word", [0xdb, 0x6a, 0x45, 0xc8, 0x5a, 0x4d], "R4"),
+    ];
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short low, high;\n",
+    );
+    if have_cc {
+        tracked_carmel_entry_specs(&specs, &[("R1", 0x4040)], 0x1000, 0);
+    }
+    for (name, packet, result) in routes {
+        fs::write(&binary, [packet, NOP, NOP, NOP, NOP, RET].as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), "0x1000", "--addr", "--raw-image", "--target",
+            TARGET, "--base", "0x1000", "--count", "1", "--json",
+        ]);
+        assert_eq!(status, 0, "{stdout}\n{stderr}");
+        let json: Value = serde_json::from_str(&stdout).unwrap();
+        let ops = json["instructions"][0]["ops"].as_array().unwrap();
+        let reads = if name.starts_with("round") { 2 } else { 0 };
+        assert_eq!(ops.iter().filter(|op| op["opcode"] == "LOAD").count(), reads, "{json}");
+        assert!(ops.iter().all(|op| op["opcode"] != "STORE"), "{json}");
+        if !have_cc {
+            continue;
+        }
+
+        for (suffix, output) in [("result", result), ("est", "EST")] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{output} unsigned short"),
+                "--assert", "data [data,0x4040] volatile unsigned short low",
+                "--assert", "data [data,0x4041] volatile unsigned short high",
+            ]);
+            for (i, input) in ["A2L", "R4", "A2H", "GB3", "A3H", "A3L", "ECFG", "EST",
+                "CECFG1", "CECFG2", "CETBL"].into_iter().enumerate()
+            {
+                let kind = if input == "GB3" { "unsigned char" } else { "unsigned short" };
+                kuna.args(["--assert", &format!("param {i} %{input} {kind} in_{i}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            let code = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !code.contains("halt_"), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            writeln!(c, "{}", code.replace("sub_1000", &format!("{name}_{suffix}"))).unwrap();
+        }
+    }
+    fs::remove_file(binary).unwrap();
+    if !have_cc {
+        return;
+    }
+    c.push_str("int main(void) {\n");
+    for (i, (name, lo, hi, ecfg, table, a2h, a3g, a3h, a3l, result, est)) in [
+        ("round_sink", 0x8001, 0xffff, 0, 0xffff, 0, 0, 0, 0, 0x4321, 0x3000),
+        ("round_word", 0x8000, 0x1022, 2, 0, 0, 0, 0, 0, 0x1022, 0),
+        ("round_word", 0x8000, 0x1023, 2, 0xffff, 0, 0, 0, 0, 0x1024, 0x3000),
+        ("round_word", 0x8001, 0xffff, 0, 0xffff, 0, 0, 0, 0, 0, 0x3009),
+        ("round_word", 0x8001, 0x7fff, 4, 0xffff, 0, 0, 0, 0, 0x7fff, 0x3024),
+        ("round_word", 0x8001, 0x7fff, 8, 0xffff, 0, 0, 0, 0, 0x8000, 0x3020),
+        ("round_ce1", 0xabc9, 0xa102, 0, 0, 0, 0, 0, 0, 0x4321, 0),
+        ("round_ce1", 0xabc9, 0xa102, 0, 0xffff, 0, 0, 0, 0, 0xa103, 0x3010),
+        ("minu_sink_f", 0x0123, 0x8123, 0, 0xffff, 0x1234, 0, 0, 0x1234, 0x48, 0x3000),
+        ("minu_sink_e", 0x0123, 0x8123, 0, 0, 0x9876, 0, 0, 0x1234, 0x48, 0),
+        ("minu_long", 0x0123, 0x8123, 0, 0xffff, 0x1234, 0, 0, 0x1234, 0, 0x3009),
+        ("minu_long", 0x0123, 0x8123, 0, 0xffff, 0x1234, 0x87, 0, 0x1234, 0, 0x3000),
+        ("minu_long", 0x0123, 0x8123, 0, 0, 0x9876, 0, 0, 0x1234, 0, 1),
+        ("minu_word", 0x0123, 0x8123, 0, 0xffff, 0xffec, 0x14, 0x1234, 0xffed, 0x1234, 0x3001),
+    ].into_iter().enumerate() {
+        let args = format!("0x4321,0x48,{a2h:#x},{a3g:#x},{a3h:#x},{a3l:#x},{ecfg:#x},0,0x1000,0x1000,{table:#x}");
+        for (j, (suffix, expected)) in [("result", result), ("est", est)].into_iter().enumerate() {
+            writeln!(c,
+                "low = {lo:#x}; high = {hi:#x};\n\
+                 if ({name}_{suffix}({args}) != {expected:#x} || low != {lo:#x} || high != {hi:#x}) return {};",
+                1 + 2 * i + j).unwrap();
+        }
+    }
+    c.push_str(
+        "low = 0x0123; high = 0x8123;\n\
+         if (round_sink_est(0x4321,0x48,0,0,0,0,0,0x24,0x1000,0x1000,0xffff) != 0x3024 ||\n\
+             round_word_est(0x4321,0x48,0,0,0,0,0,0x24,0x1000,0x1000,0xffff) != 0x3014 ||\n\
+             minu_sink_f_est(0,0x48,0x1234,0,0,0x1234,0,0x24,0x1000,0x1000,0xffff) != 0x3024 ||\n\
+             minu_long_est(0,0x48,0x1234,0,0,0x1234,0,0x24,0x1000,0x1000,0xffff) != 0x302d) return 29;\n",
+    );
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_secondary_rotate_only_updates_its_address_generators() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
@@ -5272,6 +6036,140 @@ fn carmel_wide_limit_source_lanes_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_raw_limit_and_round_data_ports_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let binary = common::scratch_file("carmel-raw-limit-round", "bin");
+    let (specs, source, executable) =
+        (binary.with_extension("specs"), binary.with_extension("c"), binary.with_extension("exe"));
+    tracked_carmel_entry_specs(&specs, &[
+        ("R5", 0x4048), ("RN5", 2), ("R6", 0x8048), ("RN6", 3), ("A0L", 0x09a4), ("PACFG", 0),
+    ], 0x1000, 2);
+    let cells = [
+        (0x4048, "dst_low"), (0x4049, "dst_high"), (0xffff, "src_low"),
+        (0x09a4, "src_high"), (0x8048, "unindexed"), (0x804b, "indexed"),
+    ];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for (_, name) in cells {
+        writeln!(c, "volatile unsigned short {name};").unwrap();
+    }
+    for (name, packet, result) in [
+        ("short", [0xe0, 0x46, 0xf5, 0xc2, 0xe0, 0x37], "R5"),
+        ("long", [0xe7, 0x46, 0xf5, 0xc2, 0xe1, 0x37], "R5"),
+        ("round", [0x2e, 0x49, 0xeb, 0xc2, 0xde, 0xf8], "FF1"),
+    ] {
+        fs::write(&binary, [packet, NOP, NOP, NOP, NOP, RET].as_flattened()).unwrap();
+        for output in ["EST", result] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).env("KUNA_SPECS", &specs).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict",
+                "--assert", &format!("return %{output} unsigned short"),
+            ]);
+            for (i, input) in ["FF1", "ECFG", "EST", "CECFG1", "CECFG2", "CETBL"].into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);
+            }
+            for (address, cell) in cells {
+                kuna.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short {cell}")]);
+            }
+            let output_json = common::process::required_output(&mut kuna);
+            let document: Value = serde_json::from_slice(&output_json.stdout).unwrap();
+            let function = &document["functions"][0];
+            let code = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !code.contains("halt_"), "{document}");
+            writeln!(c, "#define sub_1000 {name}_{output}\n{code}\n#undef sub_1000").unwrap();
+        }
+    }
+    c.push_str("int main(void) {\n\
+        src_low = 0x8888; src_high = 0x7fff; dst_high = 0xbeef;\n\
+        if (short_R5(0,0x20,0,0,0,0) != 0x404a || dst_low != 0x8888 || dst_high != 0xbeef) return 1;\n\
+        if (short_EST(0,0x20,0,0,0,0xffff) != 0x3010) return 2;\n\
+        if (long_R5(0,0x20,0,0,0,0) != 0x404a || dst_low != 0x8888 || dst_high != 0x7fff) return 3;\n\
+        if (long_EST(0,9,0,0,0,0xffff) != 0x3000) return 4;\n\
+        src_low = 0; src_high = 0;\n\
+        if (long_EST(0,9,0,0,0,0xffff) != 0x3008 || dst_low != 0 || dst_high != 0) return 5;\n\
+        unindexed = 0x1231; indexed = 0xc331;\n\
+        if (round_FF1(0x1234,0,0,0,0,0) != 0x1234 || round_EST(0x1234,0,0,0,0,0) != 0) return 6;\n\
+        if (round_FF1(0x1234,0x20,0,0,0,0xffff) != 0xc331 || round_EST(0x1234,0,0,0,0,0xffff) != 0x3010) return 7;\n\
+        if (unindexed != 0x1231 || indexed != 0xc331) return 8;\n\
+        return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_raw_divide_separates_read_and_address_only_ports() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let binary = common::scratch_file("carmel-raw-divide-effects", "bin");
+    let (specs, source, executable) =
+        (binary.with_extension("specs"), binary.with_extension("c"), binary.with_extension("exe"));
+    tracked_carmel_entry_specs(&specs, &[("R2", 0x8040), ("RN2", 3), ("PACFG", 0)], 0x1000, 0);
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         volatile unsigned short low_divisor, high_divisor;\n",
+    );
+    for (name, packet, result, reads) in [
+        ("agu", [0x7e, 0x0d, 0x36, 0xc3, 0x18, 0x6a], "R2", 0),
+        ("sink_e7", [0xaa, 0xc4, 0x15, 0xc3, 0x03, 0x9d], "EST", 2),
+        ("sink_ff", [0xaa, 0xc4, 0x15, 0xc3, 0x03, 0xfd], "EST", 2),
+    ] {
+        fs::write(&binary, [packet, NOP, NOP, NOP, NOP, RET].as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), "0x1000", "--addr", "--raw-image",
+            "--target", TARGET, "--base", "0x1000", "--count", "1", "--json",
+        ]);
+        assert_eq!(status, 0, "{stdout}\n{stderr}");
+        let doc: Value = serde_json::from_str(&stdout).unwrap();
+        let ops = doc["instructions"][0]["ops"].as_array().unwrap();
+        assert_eq!(ops.iter().filter(|op| op["opcode"] == "LOAD").count(), reads, "{doc}");
+        assert!(ops.iter().all(|op| op["opcode"] != "STORE"), "{doc}");
+
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).env("KUNA_SPECS", &specs).args([
+            "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000",
+            "--json", "--assert-strict", "--assert", &format!("return %{result} unsigned short"),
+            "--assert", "data [data,0x8043] volatile unsigned short low_divisor",
+            "--assert", "data [data,0x8044] volatile unsigned short high_divisor",
+        ]);
+        for (i, input) in ["EST", "CECFG1", "CECFG2", "CETBL"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &doc["functions"][0];
+        let code = function["code"].as_str().unwrap();
+        assert!(function["error"].is_null() && !code.contains("halt_"), "{doc}");
+        for cell in ["low_divisor", "high_divisor"] {
+            assert_eq!(code.contains(cell), reads != 0, "{code}");
+        }
+        writeln!(c, "#define sub_1000 {name}\n{code}\n#undef sub_1000").unwrap();
+    }
+    c.push_str("int main(void) {\n\
+        if (agu(0,0x1000,0,0) != 0x8040) return 1;\n\
+        if (agu(0,0,0x1000,0) != 0x803f || agu(0,0,0,0xffff) != 0x803f) return 2;\n\
+        if (sink_e7(0x42,0,0,0) != 0x42 || sink_ff(0x42,0,0,0xffff) != 0x3042) return 3;\n\
+        return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_extrema_keep_compare_width_and_record_only_strict_improvements() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
@@ -5623,6 +6521,55 @@ fn carmel_cliw_parallel_reads_execute_in_emitted_c() {
     fs::write(&source, &c).unwrap();
     run_emitted_c(&source, &executable, &c);
     for file in [image, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_cliw_unmarked_ma1_uses_the_trailing_address_width() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let arch = "Carmel:BE:24:default:default";
+    let image = common::scratch_file("carmel-cliw-ma1-width", "xml");
+    let source = image.with_extension("c");
+    let exe = image.with_extension("exe");
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut calls = String::from("int main(void) {\n");
+    // The terminal indirect record is four bytes; the indexed one is three.
+    // Neither may change the marked packet's encoded R2 postdecrement.
+    for (row, (left, delta)) in [
+        ("770004", 12), ("774004", 11), ("f70004", -1), ("f74004", -1),
+    ].into_iter().enumerate() {
+        let name = format!("cliw_width_{row}");
+        fs::write(&image, format!(
+            "<binaryimage arch=\"{arch}\">\n\
+             <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">{left}d3384b2bd8002bec00</bytechunk>\n\
+             <bytechunk space=\"cliw\" offset=\"0x30\" readonly=\"true\">7fffff227f003fffff7ffff8</bytechunk>\n\
+             <symbol space=\"code\" offset=\"0\" name=\"{name}\"/>\n</binaryimage>\n"
+        )).unwrap();
+        let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&image)
+            .args([&name, "--target", arch, "--assert-strict",
+                "--assert", "param 0 %R2 unsigned short pointer",
+                "--assert", "param 1 %PACFG unsigned short config",
+                "--assert", "param 2 %RM2 unsigned short modulo",
+                "--assert", "param 3 %RL2 unsigned short bound",
+                "--assert", "return %R2 unsigned short"]));
+        let emitted = String::from_utf8(output.stdout).unwrap();
+        assert!(!emitted.contains("halt_") && !emitted.to_ascii_lowercase().contains("warning:"),
+                "{name}: {emitted}");
+        writeln!(c, "{emitted}").unwrap();
+        writeln!(calls, "if ({name}(0x8160, 0, 0, 0) != {:#x}) return {};",
+                 0x8160 + delta, row + 1).unwrap();
+        writeln!(calls, "if ({name}(0x8190, 0, 0, 0) != {:#x}) return {};",
+                 0x8190 + delta, row + 1).unwrap();
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &exe, &c);
+    for file in [image, source, exe] {
         fs::remove_file(file).unwrap();
     }
 }

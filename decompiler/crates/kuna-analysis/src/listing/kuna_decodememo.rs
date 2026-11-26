@@ -168,6 +168,7 @@ impl DecodeMemo {
     /// Keep a decode certified under `context`, answering with the shared
     /// context-only reuse record for it. A decode a record cannot hold is not
     /// kept.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn keep(
         &self,
         vma: u64,
@@ -180,7 +181,6 @@ impl DecodeMemo {
         mnemonic: &str,
         operands: &str,
     ) -> Option<Rc<ReusableDecode>> {
-        let Classified { flow, fall_through, flows, call_count } = classified;
         let (range, at) = self.slot(vma)?;
         let (Ok(len8), Ok(mnemonic8), Ok(operands8), Ok(nflows)) = (
             u8::try_from(len),
@@ -199,7 +199,7 @@ impl DecodeMemo {
         let memo = Memo {
             text: u32::try_from(text.len()).ok()?,
             flows: u32::try_from(targets.len()).ok()?,
-            flow: pack(*flow, fall_through.is_some()),
+            flow: pack(flow, fall_through.is_some()),
             context,
             mnemonic: mnemonic8,
             operands: operands8,

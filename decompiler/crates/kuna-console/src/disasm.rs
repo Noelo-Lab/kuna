@@ -536,7 +536,6 @@ fn decode_rows(
     let stop = region.stop();
     let word_size = prog.code_unit_bytes();
     let alignment = u64::try_from(prog.arch().translate().get_alignment()).unwrap_or(1);
-    let word_size = prog.input_address_offset(1).unwrap_or(1);
     let mut rows: Vec<Row> = Vec::new();
     let mut evidence = FixedRefs::default();
     let mut truncated = false;

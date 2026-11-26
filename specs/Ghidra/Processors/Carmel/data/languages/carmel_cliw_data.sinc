@@ -197,6 +197,139 @@ macro cliw_dm_word_add(left, right, word, flags) {
   <maxm_done>
 }
 
+# Without the left wide marker the D2 skip width replaces MA1's immediate.
+# Count only the AGU records after MA1, including any stack records.
+cliw_skip_unmarked: is wide_left_mode=0 { local value:2 = 1; export value; }
+cliw_skip_unmarked: is wide_left_mode=1 { local value:2 = 0; export value; }
+
+@define CLIW_SKIP "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_20_22=5 & template_index & carmel_cliw_known=1 & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_3_23=0xfffff & cliw_skip_unmarked"
+@define CLIW_SKIP_MOVE "$(CLIW_DM_IDLE1) & tpl_67_72=36 & tpl_64_66=2 & tpl_62_63=1 & tpl_57_61=31 & tpl_52_56=16"
+@define CLIW_SKIP_ACC "$(CLIW_DM_IDLE1) & tpl_64_66=4 & tpl_62_63=1 & tpl_57_61=18 & tpl_52_56=16"
+@define CLIW_SKIP_MPY "tpl_52_63=0xfff & tpl_64_72=0xff & tpl_91_95=16 & tpl_87_90=1 & tpl_83_86=2 & tpl_78_82=31 & tpl_73_77=16"
+
+macro cliw_skip_move() {
+    local value:8 = sext(A1H) & 0xffffffffff;
+    local flags:2;
+    cliw_alu_status(value, flags);
+    write_accumulator40(A0L, A0H, GB0, value);
+    publish_alu_ce((EST & 0xcfc7) | flags);
+}
+
+# MA1 R6--; MA2 *R4; MA3 R2++; MA4 R1++.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_MOVE) & cliw_address_bank=8 &
+    wide_10_14=14 & wide_8_9=0 & wide_3_7=0 & wide_1_2=3 & wide_0_0=0 &
+    cliw_terminal_ma3_condition=10 & cliw_terminal_ma4=9 {
+    local step:2 = cliw_skip_unmarked * (4 + 4 + 4 + 1) - 1;
+    transfer_address_word(R6, RM6, RL6, 12, step, R6);
+    transfer_address_word(R2, RM2, RL2, 4, 1:2, R2);
+    transfer_address_word(R1, RM0, RL0, 2, 1:2, R1);
+    *[data]:2 R4 = 0:2;
+    cliw_skip_move();
+}
+
+# MA1 is long: the MA2 selector supplies its postdecrement mode.
+# The two trailing indexed records contribute three bytes each.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=54 & cliw_address_bank=15 &
+    wide_10_14=31 & wide_8_9=2 & wide_3_7=13 & wide_1_2=3 & wide_0_0=0 &
+    cliw_terminal_ma3_condition=18 & cliw_terminal_ma4=5 {
+    local address:2 = R3;
+    local high:2 = address + 1;
+    local step:2 = cliw_skip_unmarked * (3 + 3 + 2) - 2;
+    transfer_address_word(R3, RM2, RL2, 6, step, R3);
+    local index_step:2 = RN1;
+    local next:2;
+    if ((PACFG & 0xc) != 4) goto <ordinary_index>;
+    local reversed:2;
+    local reversed_step:2;
+    reverse_word(R1, reversed);
+    reverse_word(index_step, reversed_step);
+    local sum:2 = reversed + reversed_step;
+    reverse_word(sum, next);
+    goto <index_done>;
+  <ordinary_index>
+    transfer_address_word(R1, RM0, RL0, 2, index_step, next);
+  <index_done>
+    R1 = next;
+    *[data]:2 address = 0:2;
+    *[data]:2 high = 0:2;
+    local first:8;
+    local second:8;
+    cliw_alu_sample(A1L, A1H, GB1, first);
+    cliw_alu_sample(A2L, A2H, GB2, second);
+    local result:8 = first ^ second;
+    local flags:2;
+    cliw_alu_status(result, flags);
+    write_accumulator40(A0L, A0H, GB0, result);
+    publish_alu_ce((EST & 0xcfc7) | flags);
+}
+
+# For indirect MA1 the immediate moves the effective store address,
+# not R2, even if the accumulator add is inhibited.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=32 & cliw_address_bank=4 &
+    wide_10_14=2 & wide_8_9=2 & wide_3_7=9 & wide_1_2=1 & wide_0_0=1 &
+    cliw_terminal_ma3_condition=23 & cliw_terminal_ma4=28 {
+    local address:2 = R2 + cliw_skip_unmarked * (4 + 3 + 4);
+    transfer_address_word(R1, RM0, RL0, 2, 1:2, R1);
+    *[data]:2 address = 0:2;
+    local enabled:2;
+    local flags:2 = EST & 0xcfff;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <add_done>;
+    local first:8;
+    local second:8;
+    local result:8;
+    local lane_flags:2;
+    cliw_alu_sample(A1L, A1H, GB1, first);
+    cliw_alu_sample(A2L, A2H, GB2, second);
+    cliw_alu_add(first, second, result, lane_flags);
+    write_accumulator40(A0L, A0H, GB0, result);
+    flags = (flags & 0xffc4) | lane_flags;
+  <add_done>
+    publish_alu_ce(flags);
+}
+
+# MA2's stack push consumes three four-byte records and displaces MA3.
+# The register product does not read either configured address.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_MPY) & cliw_address_bank=8 &
+    wide_10_14=13 & wide_8_9=1 & wide_3_7=25 & wide_1_2=3 & wide_0_0=0 &
+    cliw_terminal_ma3_condition=1 & cliw_terminal_ma4=19 {
+    local step:2 = cliw_skip_unmarked * (12 + 1) - 1;
+    transfer_address_word(R5, RM4, RL4, 10, step, R5);
+    local high:2 = SP - 1;
+    SP = SP - 2;
+    *[data]:2 SP = 0:2;
+    *[data]:2 high = 0:2;
+    local flags:2;
+    signed_product_result(A0L, A0H, GB0, A1L, A2L, flags);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+cliw_skip_last_bytes: is cliw_terminal_ma4=0 { local bytes:2 = 4; export bytes; }
+cliw_skip_last_bytes: is cliw_terminal_ma4=16 { local bytes:2 = 3; export bytes; }
+
+# MA4 has no template consumer but still contributes its record width.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_MOVE) & cliw_address_bank=3 &
+    wide_10_14=14 & wide_8_9=0 & wide_3_7=9 & wide_1_2=1 & wide_0_0=1 &
+    cliw_terminal_ma3_condition=238 & cliw_skip_last_bytes {
+    local step:2 = cliw_skip_unmarked * (4 + 4 + cliw_skip_last_bytes + 1) - 1;
+    transfer_address_word(R2, RM2, RL2, 4, step, R2);
+    transfer_address_word(R5, RM4, RL4, 10, 1:2, R5);
+    transfer_address_word(R6, RM6, RL6, 12, -1:2, R6);
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <inhibited>;
+    cliw_skip_move();
+    goto <move_done>;
+  <inhibited>
+    publish_alu_ce(EST & 0xcfff);
+  <move_done>
+}
+
+@undef CLIW_SKIP_MPY
+@undef CLIW_SKIP_ACC
+@undef CLIW_SKIP_MOVE
+@undef CLIW_SKIP
+
 @undef CLIW_DM_LONG
 @undef CLIW_DM_SHORT
 @undef CLIW_DM_MPY2_SQUARE

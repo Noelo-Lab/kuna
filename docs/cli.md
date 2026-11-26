@@ -1602,6 +1602,9 @@ name its decoder with `--target <SLEIGH-language-id>`, map file offset zero with
 `decompile` uses its positional address, and the inventory commands accept
 repeatable `--entry` or `--addr` values. `disassemble`, `read`, and `raw-pcode`
 take a numeric address or range instead and do not discover functions.
+On Carmel, the base is an even CODE word address and the file must contain
+complete six-byte fetches. A listing row covers one or two three-byte words.
+`--count` counts rows; byte counts and sizes still use bytes.
 
 ```bash
 kuna decompile payload.bin 0x4001 --raw-image \

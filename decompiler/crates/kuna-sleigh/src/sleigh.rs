@@ -2833,6 +2833,14 @@ impl Translate for Sleigh {
         self.base.max_delay_slot_bytes() != 0
     }
 
+    fn indirect_target_offset(&self, space: &AddrSpace, value: u64) -> u64 {
+        if space.get_word_size() == 3 && space.get_name() == "code" && self.uses_carmel_issues() {
+            AddrSpace::address_to_byte(value, space.get_word_size())
+        } else {
+            value
+        }
+    }
+
     fn instruction_length(&self, baseaddr: &Address) -> KunaResult<i32> {
         Sleigh::instruction_length(self, baseaddr)
     }

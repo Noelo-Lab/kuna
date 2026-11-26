@@ -21,10 +21,12 @@ const CLIW_BANK_END: u64 = (1 << 10) * TEMPLATE;
 const ISSUE: &str = "carmel_issue";
 const NEXT: &str = "carmel_next_issue_size";
 const BAD_FETCH: &str = "carmel_bad_fetch";
+const IMPLICIT_REPEAT: &str = "carmel_implicit_repeat";
 
 enum Specialization {
     PeerRedirect(peer_redirect::Redirect),
     ConditionalReturn(conditional_return::ReturnDelay),
+    ImplicitRepeat,
 }
 
 const CLIW_FIELDS: [&str; 4] = [
@@ -299,6 +301,8 @@ pub(super) fn frame(
                 candidates.push((addr, Specialization::PeerRedirect(redirect)));
             } else if let Some(delay) = conditional_return::ReturnDelay::parse(&fetch) {
                 candidates.push((addr, Specialization::ConditionalReturn(delay)));
+            } else if fetch[0] & 0x80 != 0 && fetch[3] == 0xcf && fetch[4] == 0x18 && fetch[5] & 2 != 0 {
+                candidates.push((addr, Specialization::ImplicitRepeat));
             }
             on_fetch(loader, addr, &fetch)?;
             std::mem::swap(&mut fetch, &mut next);
@@ -306,7 +310,7 @@ pub(super) fn frame(
         }
     }
     for (start, candidate) in candidates {
-        let fetch_at = |at| {
+        let mut fetch_at = |at| {
             if !result.is_issue_start(at) || covered(&result.bad_fetches, at)
                 || covered(&result.bad_fetches, at + SLOT)
             {
@@ -319,6 +323,18 @@ pub(super) fn frame(
         let (context, safe) = match candidate {
             Specialization::PeerRedirect(redirect) => (peer_redirect::CONTEXT, redirect.admissible(start, fetch_at)?),
             Specialization::ConditionalReturn(delay) => (conditional_return::CONTEXT, delay.admissible(start, fetch_at)?),
+            Specialization::ImplicitRepeat => {
+                // Three issues retire before the restart, but the end is
+                // encoded in fetch units. Only admit a single-issue body.
+                let mut safe = true;
+                for i in 1..=4 {
+                    if !fetch_at(start + i * FETCH)?.is_some_and(|f| Issue::left(&f) != Issue::SeqLeft) {
+                        safe = false;
+                        break;
+                    }
+                }
+                (IMPLICIT_REPEAT, safe)
+            }
         };
         if safe {
             paint(&mut result.specializations, context, start, 1);

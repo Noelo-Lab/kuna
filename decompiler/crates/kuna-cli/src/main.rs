@@ -107,9 +107,7 @@ fn main() -> ExitCode {
         }
     };
     loadtime::export_image_selection(&rest);
-    if sub != "disassemble" || !rest.iter().any(|arg| arg == "--raw-image") {
-        followimages::apply(sub, &mut rest, follow_limit);
-    }
+    followimages::apply(sub, &mut rest, follow_limit);
     let rest = rest.as_slice();
     runtime_hints::note_for_invocation(sub, rest);
     let code = match sub {
