@@ -13,7 +13,6 @@ impl IFernflowerPreferences {
     pub const REMOVE_BRIDGE: &str = "remove-bridge";
     pub const REMOVE_SYNTHETIC: &str = "remove-synthetic";
     pub const DECOMPILE_INNER: &str = "decompile-inner";
-    pub const DECOMPILE_ASSERTIONS: &str = "decompile-assert";
     pub const HIDE_EMPTY_SUPER: &str = "hide-empty-super";
     pub const HIDE_DEFAULT_CONSTRUCTOR: &str = "hide-default-constructor";
     pub const DECOMPILE_GENERIC_SIGNATURES: &str = "decompile-generics";
@@ -98,7 +97,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::REMOVE_BRIDGE, "1".to_string()),
             (IFernflowerPreferences::REMOVE_SYNTHETIC, "1".to_string()),
             (IFernflowerPreferences::DECOMPILE_INNER, "1".to_string()),
-            (IFernflowerPreferences::DECOMPILE_ASSERTIONS, "1".to_string()),
             (IFernflowerPreferences::HIDE_EMPTY_SUPER, "1".to_string()),
             (IFernflowerPreferences::HIDE_DEFAULT_CONSTRUCTOR, "1".to_string()),
             (IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, "1".to_string()),
@@ -205,7 +203,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "REMOVE_BRIDGE", key: IFernflowerPreferences::REMOVE_BRIDGE, short_name: Some("rbr"), name: Some("Remove Bridge Methods"), description: Some("Removes any methods that are marked as bridge from the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "REMOVE_SYNTHETIC", key: IFernflowerPreferences::REMOVE_SYNTHETIC, short_name: Some("rsy"), name: Some("Remove Synthetic Methods And Fields"), description: Some("Removes any methods and fields that are marked as synthetic from the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILE_INNER", key: IFernflowerPreferences::DECOMPILE_INNER, short_name: Some("din"), name: Some("Decompile Inner Classes"), description: Some("Process inner classes and add them to the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "DECOMPILE_ASSERTIONS", key: IFernflowerPreferences::DECOMPILE_ASSERTIONS, short_name: Some("das"), name: Some("Decompile Assertions"), description: Some("Decompile assert statements."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "HIDE_EMPTY_SUPER", key: IFernflowerPreferences::HIDE_EMPTY_SUPER, short_name: Some("hes"), name: Some("Hide Empty super()"), description: Some("Hide super() calls with no parameters."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "HIDE_DEFAULT_CONSTRUCTOR", key: IFernflowerPreferences::HIDE_DEFAULT_CONSTRUCTOR, short_name: Some("hdc"), name: Some("Hide Default Constructor"), description: Some("Hide constructors with no parameters and no code."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILE_GENERIC_SIGNATURES", key: IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, short_name: Some("dgs"), name: Some("Decompile Generics"), description: Some("Decompile generics in classes, methods, fields, and variables."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

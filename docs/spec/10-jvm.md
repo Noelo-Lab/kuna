@@ -445,7 +445,7 @@ Both forms are reverted (all versions back to zero) after each use, so each roun
 re-derives them from the current tree. Then, once: `++`/`--` inside conditions is inlined
 (`PPandMMHelper::inline_pp_iand_mmi_if`); for Java 9+ class files,
 `decompiler/nonnative/kuna-jvm/src/p3_dataflow/concatenation_helper.rs` turns
-`invokedynamic` string concatenation back into `+`; and with `jvm_decompile_assert`,
+`invokedynamic` string concatenation back into `+`; and
 `decompiler/nonnative/kuna-jvm/src/p8_structure/assert_processor.rs` rebuilds `assert`
 statements from the `$assertionsDisabled` check and the `throw new AssertionError(..)`
 that javac emits.

@@ -42,9 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
-| $assertionsDisabled field visible | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
-| assert hides a check that must be read literally | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
 | constructor shows no super() call | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
 | need to see the implicit superclass constructor invocation | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
 | public Foo() {} constructor missing from the output | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
@@ -175,15 +172,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_decompile_assert` -- on | off, default `on`
-
-- **Symptoms:** if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond; $assertionsDisabled field visible; assert hides a check that must be read literally.
-- **What it does:** Rebuild assert statements from the $assertionsDisabled check and the throw new AssertionError(..) javac compiles them to.
-- **When to flip:** Turn off to see the explicit $assertionsDisabled test and throw, e.g. when the static initializer computing the flag was changed.
-- **Where / provenance:** p8_structure/assert_processor · vineflower · vineflower-option
-- **Also spelled:** `decompile-assert`, `das`
-- **Example:** `kuna decompile app.jar com.ex.Checks --option jvm_decompile_assert off`
 
 ### `jvm_hide_empty_super` -- on | off, default `on`
 

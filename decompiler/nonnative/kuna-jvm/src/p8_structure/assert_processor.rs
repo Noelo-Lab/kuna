@@ -10,7 +10,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::IfStatement;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
@@ -58,10 +57,6 @@ impl AssertProcessor {
     }
 
     pub fn build_assertions(root: RootStatement) -> bool {
-        if !DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ASSERTIONS) {
-            return false;
-        }
-
         let wrapper = Self::get_holding_class();
         let prop = wrapper.get_method_properties("<clinit>", "()V");
 
