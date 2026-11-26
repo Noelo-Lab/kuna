@@ -416,6 +416,11 @@ define token slot (24)
     slot_1_5 = (1,5)
     slot_1_3 = (1,3)
     compact_frame_delta = (1,8) signed
+    compact_stack_form = (4,22)
+    compact_stack_first = (5,8)
+    compact_stack_second = (1,4)
+    compact_unary_data_dst = (4,7)
+    compact_unary_data_form = (8,22)
     clrbtr_mask = (1,12) hex
     slot_13_22 = (13,22)
     address_literal_dst = (9,12)
@@ -4032,6 +4037,32 @@ macro raw_mac_finish(exact, raw_adder, short_result, short_zero, store, result, 
   <done>
 }
 
+macro compact_ff12_store(negate, long_result) {
+    local address:2 = R0;
+    local source:8 = zext(FF2) * 0x10000 + zext(FF1);
+    local exact:8 = source - 2 * source * negate;
+    local result:8;
+    local flags:2;
+    raw_mac_finish(exact, (0x10000000000 - source) * negate, 1:1, 0:1, 1:1, result, flags);
+    # SR1 affects DATA after flags and limiting, including for a word result.
+    if ((ECFG & 0x20) == 0) goto <store>;
+    result = (result >> 1) | (result & 0x8000000000);
+  <store>
+    if (long_result == 0) goto <word>;
+    local upper:2 = address + 1;
+    *[data]:2 address = result:2;
+    address = upper;
+  <word>
+    *[data]:2 address = result(2);
+    EST = (EST & 0xffc4) | flags;
+}
+
+@define COMPACT_FF12_DATA "carmel_issue=1 & slot_mode=0 & compact_unary_data_dst=0 & slot_1_3=6 & slot_0_0=0"
+
+:NEG "*R0","FF12" "||" nop_right is ($(COMPACT_FF12_DATA) & compact_unary_data_form=0x20d8); (slot_mode=0 & nop_right) { compact_ff12_store(1:8, 0:1); }
+:NEG "*R0:long","FF12" "||" nop_right is ($(COMPACT_FF12_DATA) & compact_unary_data_form=0x20dc); (slot_mode=0 & nop_right) { compact_ff12_store(1:8, 1:1); }
+:ABS "*R0:long","FF12" "||" nop_right is ($(COMPACT_FF12_DATA) & compact_unary_data_form=0x20fc); (slot_mode=0 & nop_right) { compact_ff12_store(0:8, 1:1); }
+
 macro raw_mac_flags(flags, active, shift) {
     flags = (flags & ~(0x3b:2 << shift)) | (active << shift);
 }
@@ -5172,16 +5203,81 @@ macro paired_pop_top(word) {
     word = *[data]:2 top;
 }
 
-macro paired_push_words(at_sp, below_sp, connected, enabled, flags) {
-    local old_sp:2 = SP;
+macro paired_push_data(old_sp, at_sp, below_sp) {
     local below:2 = old_sp - 1;
-    SP = old_sp - 2;
-    if (enabled == 0) goto <done>;
     *[data]:2 old_sp = at_sp;
     *[data]:2 below = below_sp;
+}
+
+macro paired_push_words(at_sp, below_sp, connected, enabled, flags) {
+    local old_sp:2 = SP;
+    SP = old_sp - 2;
+    if (enabled == 0) goto <done>;
+    paired_push_data(old_sp, at_sp, below_sp);
     if ((ECFG & 0x10) == 0 || (connected & 0xfc00) == 0) goto <done>;
     flags = flags | 0x4000;
   <done>
+}
+
+macro compact_push_words(at_sp, below_sp) {
+    local old_sp:2 = SP;
+    SP = old_sp - 2;
+    paired_push_data(old_sp, at_sp, below_sp);
+}
+
+macro compact_pop_words(first, second) {
+    paired_pop_top(second);
+    first = *[data]:2 SP;
+}
+
+@define COMPACT_PUSH_PAIR "slot_9_22=0x181a & slot_0_0=0"
+@define COMPACT_POP_PAIR "slot_9_22=0x1818 & slot_0_0=0"
+@define COMPACT_STACK_FF12 "slot_1_3=6 & slot_0_0=0"
+
+:PUSH "R0","R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_PUSH_PAIR) & compact_stack_first=0 & compact_stack_second=0); (slot_mode=0 & nop_right) {
+    compact_push_words(R0, R4);
+}
+:PUSH "R0","ASTATUS" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_PUSH_PAIR) & compact_stack_first=0 & compact_stack_second=13); (slot_mode=0 & nop_right) {
+    compact_push_words(R0, ASTATUS);
+}
+:PUSH "ASTATUS","open" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_PUSH_PAIR) & compact_stack_first=13 & compact_stack_second=15); (slot_mode=0 & nop_right) {
+    compact_push_words(ASTATUS, 0xffff:2);
+}
+:PUSH "FF12" is carmel_issue=2 & slot_mode=1 & compact_stack_form=0x30378 & $(COMPACT_STACK_FF12) {
+    compact_push_words(FF1, FF2);
+}
+:^nop_left "||" "POP" "R0","R4" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=0 & compact_stack_second=0) {
+    local first:2;
+    local second:2;
+    compact_pop_words(first, second);
+    R4 = second;
+    R0 = first;
+}
+:POP "FF12" "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_stack_form=0x30338 & $(COMPACT_STACK_FF12)); (slot_mode=0 & nop_right) {
+    local first:2;
+    local second:2;
+    compact_pop_words(first, second);
+    FF2 = second;
+    FF1 = first;
+}
+:POP "ASTATUS","R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=13 & compact_stack_second=0); (slot_mode=0 & nop_right) {
+    local first:2;
+    local second:2;
+    compact_pop_words(first, second);
+    R4 = second;
+    ASTATUS = first & 3;
+}
+:POP "R0","ASTATUS" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=0 & compact_stack_second=13); (slot_mode=0 & nop_right) {
+    local first:2;
+    local second:2;
+    compact_pop_words(first, second);
+    ASTATUS = second & 3;
+    R0 = first;
+}
+:POP "open","R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=14 & compact_stack_second=0); (slot_mode=0 & nop_right) {
+    local second:2;
+    paired_pop_top(second);
+    R4 = second;
 }
 
 macro paired_push_registers(at_sp, below_sp, connected) {

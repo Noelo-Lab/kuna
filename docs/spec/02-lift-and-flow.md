@@ -3897,6 +3897,28 @@ result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
 `CLRBTR` clears only its physical backtrace port; a veto preserves it.
 
+Compact `NEG` and `ABS` with the connected `FF12` input can write indirect
+DATA through `R0` with an inactive right lane. `FF2:FF1` enters the
+40-bit adder zero-extended. Flags describe the unshifted arithmetic
+result; saturation and auto-limit set the loss bit, and `ECFG.SR1`
+shifts the limited value before its DATA words are selected. The short
+port writes the high word. The long port writes the low word at `R0`
+and the high word at the next 16-bit DATA word address. Neither changes
+`R0` or `FF12`.
+
+The supported compact paired stack routes allocate two DATA words.
+`PUSH` writes the first source at old `SP` and the second just below it;
+the open second selector supplies `0xffff`. `POP` consumes the top word
+for the second selector and the next word for the first. A connected
+`ASTATUS` result writes only its low two bits, and an open first selector
+discards its word without changing the stack stride. `FF12` on these
+routes is `FF1` followed by `FF2`, not a single accumulator write. The
+register pairs use `R0` with `R4` or `ASTATUS`, `ASTATUS` with `R4`
+or an open second source, and an open first destination with `R4`.
+`R0,R4` POP uses the right lane; `FF12` PUSH is a left sequential issue.
+The other covered routes use the left lane with an inactive right lane.
+These compact ports do not inherit wide-pair `EST` or predication effects.
+
 In the covered compact parallel logic routes, a CE veto does not
 suppress DATA address generation when the physical lane's override is
 enabled. Two postincrements of the same pointer capture consecutive

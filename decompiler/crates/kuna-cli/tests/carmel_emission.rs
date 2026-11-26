@@ -2777,6 +2777,105 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     }
 }
 
+#[test]
+fn carmel_compact_ff12_data_and_stack_select_physical_words() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-ff12-stack", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut main = String::from("int main(void) {\n");
+    let nop = 0x2bec00;
+    let cells = [0x100, 0x101, 0x4103, 0x4104, 0x4105, 0x4106, 0x7ff1, 0x7ff2];
+    let initial = [0x1122, 0x3344, 0xc103, 0xc104, 0xc105, 0xc106, 0x26, 0];
+    for cell in cells {
+        writeln!(emitted, "volatile unsigned short cell_{cell:x};").unwrap();
+    }
+    let rows: [([u32; 2], u16, [u16; 4], &[(&str, u16)]); 16] = [
+        ([0x20d80c, nop], 0, [0, 0x3344, 0xc103, 0xc104], &[("EST", 0x34)]),
+        ([0x20dc0c, nop], 0, [0x7fff, 0, 0xc103, 0xc104], &[("EST", 0x34)]),
+        ([0x20fc0c, nop], 0, [0x8001, 0xffff, 0xc103, 0xc104], &[("EST", 0x24)]),
+        ([0x303400, nop], 0, [0x1122, 0x3344, 0x4321, 0x100], &[("R7", 0x4102)]),
+        ([nop, 0x303000], 0, [0x1122, 0x3344, 0xc103, 0xc104],
+            &[("R7", 0x4106), ("R0", 0xc106), ("R4", 0xc105)]),
+        ([0xb0378c, nop], 0, [0x1122, 0x3344, 0xffff, 0x8001], &[("R7", 0x4102)]),
+        ([0x30338c, nop], 0, [0x1122, 0x3344, 0xc103, 0xc104],
+            &[("R7", 0x4106), ("FF1", 0xc106), ("FF2", 0xc105)]),
+        ([0x30341a, nop], 0, [0x1122, 0x3344, 1, 0x100], &[("R7", 0x4102)]),
+        ([0x3031a0, nop], 0, [0x1122, 0x3344, 0xc103, 0xc104],
+            &[("R7", 0x4106), ("ASTATUS", 2), ("R4", 0xc105)]),
+        ([0x30301a, nop], 0, [0x1122, 0x3344, 0xc103, 0xc104],
+            &[("R7", 0x4106), ("R0", 0xc106), ("ASTATUS", 1)]),
+        ([0x3035be, nop], 0, [0x1122, 0x3344, 0xffff, 1], &[("R7", 0x4102)]),
+        ([0x3031c0, nop], 0, [0x1122, 0x3344, 0xc103, 0xc104],
+            &[("R7", 0x4106), ("R4", 0xc105), ("ASTATUS", 1)]),
+        ([0x20d80c, nop], 0x20, [0x8000, 0x3344, 0xc103, 0xc104], &[("EST", 0x34)]),
+        ([0x20dc0c, nop], 0x20, [0x3fff, 0x8000, 0xc103, 0xc104], &[("EST", 0x34)]),
+        ([0x20fc0c, nop], 0x04, [0xffff, 0x7fff, 0xc103, 0xc104], &[("EST", 0x24)]),
+        ([0x20dc0c, nop], 0x08, [0, 0x8000, 0xc103, 0xc104], &[("EST", 0x34)]),
+    ];
+    let mut check = 0;
+    for (row, (packet, config, changed, outputs)) in rows.into_iter().enumerate() {
+        let words = [
+            0x804104, 0xc64298, // MOVE R6,0x4104
+            0x800000, 0xc04cec, // TRANSFER SP,R6
+            0x800100, 0xc64280, // MOVE R0,0x100
+            packet[0], packet[1],
+            0x800000, 0xc0769c, // TRANSFER R7,SP
+            0x807ff0, 0xc64298, // MOVE R6,0x7ff0
+            0x800000, 0xc04cec, // TRANSFER SP,R6
+            0x2bd800, nop, // RETURN || NOP
+        ];
+        let code: Vec<_> = words.into_iter().flat_map(|word| {
+            let [_, a, b, c] = word.to_be_bytes();
+            [a, b, c]
+        }).collect();
+        fs::write(&binary, code).unwrap();
+        for &(reg, expected) in outputs {
+            let name = format!("compact_{row}_{}", reg.to_ascii_lowercase());
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            ]);
+            for (i, input) in ["EST", "ECFG", "FF1", "FF2", "R4", "ASTATUS"].into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+            }
+            for cell in cells {
+                kuna.args(["--assert", &format!("data [data,{cell:#x}] volatile unsigned short cell_{cell:x}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            let c = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !c.contains("halt_"), "{function}");
+            writeln!(emitted, "{}", c.replace("sub_0", &name)).unwrap();
+            for (cell, value) in cells.into_iter().zip(initial) {
+                writeln!(main, "cell_{cell:x} = {value:#x};").unwrap();
+            }
+            writeln!(main, "value = {name}(0,{config},0x8001,0xffff,0x4321,1);").unwrap();
+            if reg == "R7" && cells.contains(&u32::from(expected)) {
+                writeln!(main, "if (value == (unsigned short)(uintptr_t)&cell_{expected:x}) value = {expected:#x};").unwrap();
+            }
+            check += 1;
+            writeln!(main, "if (value != {expected:#x}) return {check};").unwrap();
+            for (cell, value) in cells.into_iter().zip(changed.into_iter().chain(initial[4..].iter().copied())) {
+                writeln!(main, "if (cell_{cell:x} != {value:#x}) return {check};").unwrap();
+            }
+        }
+    }
+    emitted.push_str("static unsigned short value;\n");
+    emitted.push_str(&main);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
