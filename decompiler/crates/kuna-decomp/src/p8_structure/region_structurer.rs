@@ -150,14 +150,6 @@ pub fn run_region_structurer(
     deadline: Option<std::time::Instant>,
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
 ) -> KunaResult<(bool, Vec<BlockId>, bool)> {
-    // ---- 1. Region identification over the real CFG (W7 adapter proof) --------
-    // recursive_structurer._analyze runs the RegionIdentifier first; here it both
-    // proves build_from_block_graph().compute() on a live function and supplies a
-    // deterministic node order (by block start address) the virtualize fallback
-    // uses for tie-breaking.  A failure to identify regions is non-fatal: the
-    // structurer still runs on the sblocks topology (honest-partial).
-    let mut ri = crate::p7_regions::kuna_regionid::KunaRegionIdentifier::new();
-    let _ = ri.build_from_block_graph(data).and_then(|()| ri.compute().map(|_| ()));
 
     // ---- 1b. Precompute the switch/jump-table maps over bblocks (Inc 4) -------
     // The switch-case schema (`match_acyclic_switch_cases`) needs the same two maps
@@ -215,7 +207,17 @@ pub fn run_region_structurer(
     // switch-case successors a structural natural-loop walk on the sblocks graph
     // misses) and exit frontier, so the refinement virtualizes exactly the
     // secondary exits.  Empty (and skipped) when refinement is off.
-    let cyclic_loops = if loop_refine { ri.cyclic_loops() } else { Vec::new() };
+    // Region identification over the real CFG supplies the loops' bodies and
+    // exits (`regionlooprefine`); only its cyclic regions are read.  A failure to
+    // identify regions is non-fatal: the structurer still runs on the sblocks
+    // topology (honest-partial).
+    let cyclic_loops = if loop_refine {
+        let mut ri = crate::p7_regions::kuna_regionid::KunaRegionIdentifier::new();
+        let _ = ri.build_from_block_graph(data).and_then(|()| ri.compute_cyclic());
+        ri.cyclic_loops()
+    } else {
+        Vec::new()
+    };
 
     // The `cyclic_loops` are keyed by basic-block start ADDRESS, but the structuring
     // graph's `BlockCopy` leaves carry only the bblocks `BlockId` they copy (their

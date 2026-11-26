@@ -422,15 +422,41 @@ impl KunaRegionIdentifier {
         // borrowing `self` for the node pool / region pool (the C++ keeps both
         // as members; Rust's borrow checker needs the explicit split).
         let mut g = std::mem::take(&mut self.work_graph);
-        self.pick_connected_component(&mut g); // RI _pick_one_connected_component
-        self.make_supergraph(&mut g)?; // RI _make_supergraph
-        self.start_node = Some(self.get_start_node(&g)?); // RI l.121
-        self.compute_node_order(&g)?; // RI l.122
+        self.prepare(&mut g)?;
         let top = self.make_regions(&mut g)?; // RI l.123
         self.work_graph = g;
         self.top_region = Some(top);
         self.build_regions_by_block_addrs(); // RI l.126
         Ok(top)
+    }
+
+    /// Run only the loop half of [`compute`](Self::compute): the cyclic regions
+    /// [`cyclic_loops`](Self::cyclic_loops) reads.  The acyclic regions `compute`
+    /// goes on to build inside and around them only wrap existing nodes, so they
+    /// leave each loop's head address, leaf blocks and successors as they are.
+    /// The identifier has no top region afterwards.
+    pub fn compute_cyclic(&mut self) -> KunaResult<()> {
+        if self.computed {
+            return Ok(());
+        }
+        self.computed = true;
+        if self.work_graph.num_nodes() == 0 {
+            return Err(KunaError::lowlevel("kuna regionid: empty input graph"));
+        }
+        let mut g = std::mem::take(&mut self.work_graph);
+        self.prepare(&mut g)?;
+        self.make_cyclic_regions(&mut g)?;
+        self.work_graph = g;
+        Ok(())
+    }
+
+    /// RI l.119-122: one connected component, the supergraph, the start node and
+    /// the node order.
+    fn prepare(&mut self, g: &mut KunaRegionGraph) -> KunaResult<()> {
+        self.pick_connected_component(g); // RI _pick_one_connected_component
+        self.make_supergraph(g)?; // RI _make_supergraph
+        self.start_node = Some(self.get_start_node(g)?); // RI l.121
+        self.compute_node_order(g) // RI l.122
     }
 
     /// Result (None before compute) (C++ `getTopRegion`).
@@ -1357,8 +1383,9 @@ impl KunaRegionIdentifier {
         Ok(region_id)
     }
 
-    /// RI `_make_regions` (l.435) (C++ `makeRegions`).
-    fn make_regions(&mut self, g: &mut KunaRegionGraph) -> KunaResult<RegionPayloadId> {
+    /// The cyclic phase of RI `_make_regions` (l.435): make the loop regions until
+    /// no loop header is left.
+    fn make_cyclic_regions(&mut self, g: &mut KunaRegionGraph) -> KunaResult<Vec<RegionPayloadId>> {
         let mut structured_loop_headers: BTreeSet<KunaNodeId> = BTreeSet::new(); // Membership only
         let mut new_regions: Vec<RegionPayloadId> = Vec::new();
 
@@ -1430,6 +1457,13 @@ impl KunaRegionIdentifier {
                 break;
             }
         }
+        Ok(new_regions)
+    }
+
+    /// RI `_make_regions` (l.435) (C++ `makeRegions`).
+    fn make_regions(&mut self, g: &mut KunaRegionGraph) -> KunaResult<RegionPayloadId> {
+        let guard_max = kuna_guard_cap(g.num_nodes());
+        let new_regions = self.make_cyclic_regions(g)?;
 
         // Acyclic phase: process each cyclic region's body, then the residual
         // graph (RI l.484 wraps the residual graph in a top-level GraphRegion;
