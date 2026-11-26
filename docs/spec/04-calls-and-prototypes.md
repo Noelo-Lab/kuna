@@ -6110,11 +6110,28 @@ and the i386 one returns `ST0`.
 
 A pop with no rival is unchanged: `pushfq; pop rax; ret` still returns the flags,
 and a function that only moves a double through `xmm0` to memory before `pop rax`
-keeps `rax`, since that `xmm0` is not active. A pop into one register of a pair
-is in the same class as the other and is left to the pair rules above. The rule
+keeps `rax`, since that `xmm0` is not active. A popped second register of an
+`edx:eax` or `rdx:rax` pair with no float beside it is left to the pair rules
+above. Beside an active `ST0`, the popped `edx` of MSVC's x87 CRT helpers (`push
+edx; fstcw [esp]; ... pop edx; ret`) is dropped as well, and `eax`, which those
+helpers set as a status, still outranks `ST0` in the model's fallback. The rule
 is always on. What it cannot separate is hand-written code that leaves a dead
 float in `xmm0` while returning a value it popped into `rax`; compilers emit
 neither the dead float nor a pop into a live return register.
+
+GCC keeps its frames with `sub`/`add`, so over the decbench x86-64 binaries at
+O0 and O2 and the ARM firmware at O2 (497 images) the rule never fires. Built by
+clang, zlib, SQLite and SDL's libm (shared objects, Win64 and i386 COFF objects)
+change nothing; 83 SDL sources at O2, O1, Os and O2 without a red zone change 24
+functions, all float returns that printed the popped slot (`SDL_acos`,
+`SDL_round`, `SDL_GetDisplayContentScale`, `SDL_GetSurfaceHDRHeadroom`, i386
+`SDL_sqrtf`), and the parameter lists of the 22 System V ones match their DWARF
+before and after. Over 240 PE images (148,269 functions) 22 functions change in
+four i386 images, all MSVC x87 CRT helpers: the `fprem` and truncation helpers
+now return `ST0`, and the `cos`-style helpers drop the popped `edx` half. Where
+`ST0` becomes the return, the helper's `edx` flag argument, which the `ST0`
+result depends on, becomes a parameter, and the `__fastcall` model puts the
+`ecx` the helper only saves before it.
 
 `tests/stages/kuna-epiloguepop.xml` pins the issue's function, a Win64 float
 array returned by index and the two controls; `kuna-epiloguepop-sysv.xml` pins
