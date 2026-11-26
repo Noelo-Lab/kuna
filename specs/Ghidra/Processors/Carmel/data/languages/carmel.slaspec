@@ -357,6 +357,9 @@ define token wide (48)
     wide_logic_rmw_op = (18,19)
     wide_logic_rmw_route = (0,17)
     wide_40_45 = (40,45)
+    wide_shift_dst_disp = (24,31) signed
+    wide_shift_count_disp = (32,39) signed
+
     wide_0_10 = (0,10)
     wide_13_22 = (13,22)
     logic_ce_bank = (46,46)
@@ -2372,6 +2375,99 @@ macro compact_rmw_register(cfg, bank, target, connected) {
   <done>
 }
 
+# The logical RMW1 result bus reaches accumulator halves, but the
+# address/increment and FF word ports receive zero without ALU status.
+macro compact_logic_rmw1_zero(target, cfg, bank, address, qualified) {
+    local enabled:2 = 1;
+    if (qualified == 0) goto <fetch>;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <done>;
+  <fetch>
+    local word:2 = *[data]:2 address;
+    if (enabled == 0) goto <done>;
+    target = 0;
+  <done>
+}
+
+macro compact_logic_rmw_word(target, cfg, bank, address, op, to_data) {
+    local enabled:2;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <status>;
+    local word:2 = *[data]:2 address;
+    if (enabled == 0) goto <status>;
+    local result:2;
+    wide_logic_bitop(op, target, word, result);
+    if (to_data != 0) goto <store>;
+    target = result;
+    goto <publish_flags>;
+  <store>
+    *[data]:2 address = result;
+  <publish_flags>
+    local shift:4 = zext(bank) * 6;
+    local flags:2 = zext(result == 0) << 3;
+    commit_logic_flags(flags, shift);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:"ADDC" "*R5+=RN5","A4H","*R5+RN5" "||" "OR" "RMW1","R2","*R3+RN3" is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x175bca); (slot_mode=0 & slot_0_22=0x6b6c26) {
+    local destination:2 = R5;
+    local left_address:2 = R5 + RN5;
+    local right_address:2 = R3 + RN3;
+    modify_ptr(R5, RN5, RM4, RL4, 10, 1);
+    local word:2 = *[data]:2 left_address;
+    local mask:8 = 0xffffffffff;
+    local a:8 = (sext(A4H) << 16) & mask;
+    local b:8 = (sext(word) << 16) & mask;
+    local raw:8 = a + b + (zext(EST & 1) << 16);
+    local result:8;
+    local flags:2;
+    compact_long_finish(raw & mask, raw > mask, 0:1, 0:1, 0:1, result, flags);
+    if ((flags & 0x20) == 0) goto <publish>;
+    if ((ECFG & 0x28) != 8) goto <loss>;
+    result = 0x7fffffff;
+    if ((flags & 0x10) == 0) goto <loss>;
+    result = 0xff80000000;
+  <loss>
+    flags = flags | 4;
+  <publish>
+    compact_logic_rmw1_zero(R2, CECFG2, 1, right_address, 0:1);
+    *[data]:2 destination = result(2);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+:^nop_left "||" "OR" "CE2" "RMW1","R2","*R3+RN3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x6b6c27) {
+    local address:2 = R3 + RN3;
+    compact_logic_rmw1_zero(R2, CECFG2, 1, address, 1:1);
+    publish_alu_ce(EST & 0xcfff);
+}
+:"OR" "CE1" "RMW1","RN2","*R3+RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x6b6ca7); (slot_mode=0 & nop_right) {
+    local address:2 = R3 + RN3;
+    compact_logic_rmw1_zero(RN2, CECFG1, 0, address, 1:1);
+    publish_alu_ce(EST & 0xcfff);
+}
+:^nop_left "||" "OR" "CE2" "RMW1","FF1","*R2" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x68b585) {
+    local address:2 = R2;
+    compact_logic_rmw1_zero(FF1, CECFG2, 1, address, 1:1);
+    publish_alu_ce(EST & 0xcfff);
+}
+:^nop_left "||" "AND" "CE2" "RMW1","A2L","*R3+RN3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x636d27) {
+    local address:2 = R3 + RN3;
+    compact_logic_rmw_word(A2L, CECFG2, 1:2, address, 1:2, 0:1);
+}
+:"XOR" "CE1" "RMW1","A2L","*R3+RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x6f6d27); (slot_mode=0 & nop_right) {
+    local address:2 = R3 + RN3;
+    compact_logic_rmw_word(A2L, CECFG1, 0:2, address, 2:2, 0:1);
+}
+:"OR" "CE1" "RMW1","A2L","*R2" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_22=0x68b485 {
+    local address:2 = R2;
+    compact_logic_rmw_word(A2L, CECFG1, 0:2, address, 0:2, 0:1);
+}
+:^nop_left "||" "OR" "CE2" "RMW2","R2","*R3+RN3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x6b6e27) {
+    local address:2 = R3 + RN3;
+    compact_logic_rmw_word(R2, CECFG2, 1:2, address, 0:2, 1:1);
+}
+
 macro compact_long_postmodify(pointer) {
     # The explicit window of this port uses all 16 RM bits, unlike the
     # implicit window. The other modes share the ordinary compact AGU.
@@ -2439,6 +2535,153 @@ macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
   <transfer_done>
     result = candidate:2;
 }
+
+# The word port is the upper half of the low 32-bit lane, not the low
+# half of the shifter. Z still observes the guard above that word.
+macro wide_shift_ports(input, count_word, left_tap, right_bias, arithmetic, result, flags) {
+    local count:4 = (zext(count_word & 0x7f) ^ 64) - 64;
+    local carry_bit:1 = (EST & 1) != 0;
+    result = input;
+    if (count == 0) goto <shift_status>;
+    if (count s< 0) goto <shift_right>;
+    if (count s<= 40) goto <shift_left>;
+    count = 40;
+  <shift_left>
+    result = (input & 0xffffffffff) << count;
+    carry_bit = 0;
+    if (count s> left_tap) goto <shift_status>;
+    carry_bit = ((input >> (left_tap - count)) & 1) != 0;
+    goto <shift_status>;
+  <shift_right>
+    count = -count;
+    if (count s<= 40) goto <shift_right_bounded>;
+    count = 40;
+  <shift_right_bounded>
+    if (arithmetic != 0) goto <shift_arithmetic>;
+    result = input >> count;
+    goto <shift_right_carry>;
+  <shift_arithmetic>
+    result = input s>> count;
+  <shift_right_carry>
+    carry_bit = ((input >> (count - 1 + right_bias)) & 1) != 0;
+  <shift_status>
+    result = result & 0xffffffffff;
+    local observed:8 = result & (0xffffffffff ^ (zext(right_bias != 0) * 0xffff));
+    shift_flags(observed, carry_bit, flags);
+}
+
+:LSHIFT "*R0","*R2","*R1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45=1 & wide_0_22=0x700004 {
+    local source:2 = *[data]:2 R2;
+    local count:2 = *[data]:2 R1;
+    local input:8 = zext(source) << 16;
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 16:4, 0:1, result, flags);
+    *[data]:2 R0 = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:LSHIFT "*R0","long *R2","*R1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45=1 & wide_0_22=0x700084 {
+    local upper:2 = R2 + 1;
+    local low:2 = *[data]:2 R2;
+    local high:2 = *[data]:2 upper;
+    local count:2 = *[data]:2 R1;
+    local input:8 = zext(low) | (zext(high) << 16);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 16:4, 0:1, result, flags);
+    *[data]:2 R0 = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:LSHIFT "long *R0","long *R2","*R1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45=1 & wide_0_22=0x708084 {
+    local upper:2 = R2 + 1;
+    local low:2 = *[data]:2 R2;
+    local high:2 = *[data]:2 upper;
+    local count:2 = *[data]:2 R1;
+    local input:8 = zext(low) | (zext(high) << 16);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 0:4, 0:1, result, flags);
+    local next:2 = R0 + 1;
+    *[data]:2 R0 = result:2;
+    *[data]:2 next = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:LSHIFT "A0","long *R2","*R1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45=1 & wide_0_22=0x711084 {
+    local upper:2 = R2 + 1;
+    local low:2 = *[data]:2 R2;
+    local high:2 = *[data]:2 upper;
+    local count:2 = *[data]:2 R1;
+    local input:8 = zext(low) | (zext(high) << 16);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 40:4, 0:4, 0:1, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:LSHIFT "CE1" "*R6++("^wide_shift_dst_disp^")","*(R3+RN3)","*(R2+"^wide_shift_count_disp^")" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_40_45=0x22 & wide_0_22=0x706c56 & unary_wide_ce_bank=0 & wide_shift_dst_disp & wide_shift_count_disp {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <shift_veto>;
+    local dest:2 = R6;
+    local source_addr:2 = R3 + RN3;
+    local count_addr:2 = R2 + sext(wide_shift_count_disp:1);
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    local next:2;
+    transfer_address_word(R6, RM6, RL6, 12, delta, next);
+    R6 = next;
+    local source:2 = *[data]:2 source_addr;
+    local count:2 = *[data]:2 count_addr;
+    local input:8 = zext(source) << 16;
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 16:4, 0:1, result, flags);
+    *[data]:2 dest = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+  <shift_veto>
+}
+
+:LSHIFT "CE2" "R2","long *(R3+RN3)","A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_40_45=0x10 & wide_0_22=0x7144d7 & unary_wide_ce_bank=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0) goto <shift_veto>;
+    local addr:2 = R3 + RN3;
+    local upper:2 = addr + 1;
+    local low:2 = *[data]:2 addr;
+    local high:2 = *[data]:2 upper;
+    local input:8 = zext(low) | (zext(high) << 16);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, A0L, 32:4, 16:4, 0:1, result, flags);
+    R2 = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+  <shift_veto>
+}
+
+:ASHIFT "*R6++","*R0--","*R4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45=4 & wide_0_22=0x722c30 {
+    local dest:2 = R6;
+    local source_addr:2 = R0;
+    local next:2;
+    transfer_address_word(R6, RM6, RL6, 12, 1:2, next);
+    R6 = next;
+    transfer_address_word(R0, RM0, RL0, 0, 0xffff:2, next);
+    R0 = next;
+    local source:2 = *[data]:2 source_addr;
+    local count:2 = *[data]:2 R4;
+    local input:8 = sext(source) * 0x10000;
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 16:4, 1:1, result, flags);
+    shift_limit(result, flags);
+    *[data]:2 dest = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
 :TRANSFER "R2","A0L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100422 & transfer_roles_imm { R2 = A0L + transfer_roles_imm; }
 :TRANSFER "R2","A1L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x1004a2 & transfer_roles_imm { R2 = A1L + transfer_roles_imm; }
 :TRANSFER "R2","FF1",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x101f22 & transfer_roles_imm { R2 = FF1 + transfer_roles_imm; }
@@ -3125,6 +3368,8 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "R5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa5 & wide_14_22=0x119 & literal_word { R5 = literal_word; }
 :MOVE "R6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa6 & wide_14_22=0x119 & literal_word { R6 = literal_word; }
 :MOVE "R7",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa7 & wide_14_22=0x119 & literal_word { R7 = literal_word; }
+:MOVE "RN3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xab & wide_14_22=0x119 & literal_word { RN3 = literal_word; }
+:MOVE "RN5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xad & wide_14_22=0x119 & literal_word { RN5 = literal_word; }
 :MOVE "RN6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xae & wide_14_22=0x119 & literal_word { RN6 = literal_word; }
 :MOVE "*R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word { local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 :MOVE "*R0",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }

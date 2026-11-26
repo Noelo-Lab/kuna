@@ -3947,6 +3947,14 @@ still applies its address updates, but cannot write a result or arithmetic
 flags; a sequential right issue can. Read-modify-write stores use the
 captured operand address, not the postmodified pointer.
 
+Covered compact logical `RMW1` routes deliver the result to an accumulator
+half. Disconnected increment, address, and flag-word ports receive zero
+without publishing ALU flags. `RMW2` writes DATA instead of the register.
+
+For covered wide shift routes, the word result uses the upper half of
+the low 32-bit lane. The word and long carry taps differ, and the guard
+can keep the zero flag clear when the written word is zero.
+
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source
 publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.
