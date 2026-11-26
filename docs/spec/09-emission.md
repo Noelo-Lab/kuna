@@ -4532,15 +4532,22 @@ most three INT_ADD, COPY, INDIRECT or MULTIEQUAL steps
 the address operand of a LOAD or STORE in that space, or reach a value whose
 pointer type names it. A CP1600 function declared to return `uint2` that
 returns 0x65a7 therefore prints `return 0x65a7;`, not `return (uint2)&cell;`.
-Pointer-typed uses still resolve as addresses: the same function declared to
-return `uint2 *` prints `return &cell;`, and so does a constant passed to a
-declared pointer parameter, stored into a pointer-typed global or compared with
-a pointer. An exact function entry is also still accepted, on the same two
-readings as the function-entry escape
+The pointer type inferred for the stack-base register (the cspec's stack
+pointer, CP1600 `R6`) is not an address use either. A constant COPYed into that
+register needs the same evidence when neither the constant nor the register is
+type-locked (`coreaction_render.rs (copies_to_inferred_stack_base)`). So a word
+index that a branch selects into `R6` and the function then returns as an
+integer keeps both numeric alternatives. Pointer-typed uses still resolve as
+addresses: the same function declared to return `uint2 *` prints
+`return &cell;`, and so does a constant passed to a declared pointer parameter,
+stored into a pointer-typed global, compared with a pointer, or held in `R6` and
+stored through. In both cases an exact function entry is still accepted, on the
+same two readings as the function-entry escape
 (`decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs
-(entry_escape_applies)`): a C function pointer on these targets is the entry's
-word address, so an AVR callback passed to an undeclared registration function
-keeps its name.
+(entry_escape_applies)`, applied by `coreaction_render.rs
+(lacks_word_address_use)`). A C function pointer on these targets is the
+entry's word address, so an AVR callback passed to an undeclared registration
+function keeps its name, and so does a function entry selected into `R6`.
 
 **What one function knows.** `kuna_globalref.rs (plan)` walks the function
 once when its document starts, and records three facts:
