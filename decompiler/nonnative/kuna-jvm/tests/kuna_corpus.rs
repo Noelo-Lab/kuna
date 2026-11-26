@@ -6,14 +6,11 @@ use std::path::{Path, PathBuf};
 
 use kuna_jvm::fernflower::DecompiledClass;
 use kuna_jvm::i_fernflower_logger::Severity;
-use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::kuna_corpus::*;
 
 const SAMPLE: &str = "\
 # a comment
 kuna-jvm-corpus\t1
-root\tdata
-java_home\t8\t/opt/jdk8
 set\tDefault\tdefault
 opt\tlog-level\twarn
 opt\terror-message\t
@@ -24,10 +21,9 @@ opt\tlog-level\twarn
 javadoc\tplain
 set\tSingle\tsingle
 opt\tinclude-classpath\t1
-current_jdk\t17
 case\tdefault/pkg/TestA\tDefault
-opt\tinclude-runtime\t${java.8.home}
-opt\textra\t${java.9.home}/lib
+opt\tinclude-runtime\t/opt/jdk8
+opt\textra\tx/lib
 class\tjava8/pkg/TestA.class
 class\tjava8/pkg/TestA$1.class
 lib\t/abs/lib.jar
@@ -72,7 +68,6 @@ fn result(id: &str, status: CaseStatus) -> CaseResult {
         first_diff: None,
         error: None,
         failure: None,
-        reason: None,
         log: Vec::new(),
     }
 }
@@ -102,55 +97,27 @@ fn manifest_sets_cases_and_overlays() {
             ("error-message", ""),
             ("include-runtime", "/opt/jdk8"),
             ("banner", "a\tb\\c"),
-            ("extra", "${java.9.home}/lib"),
+            ("extra", "x/lib"),
         ])
     );
     assert_eq!(
         a.class_files,
         vec![
-            PathBuf::from("/m/data/java8/pkg/TestA.class"),
-            PathBuf::from("/m/data/java8/pkg/TestA$1.class")
+            PathBuf::from("/m/java8/pkg/TestA.class"),
+            PathBuf::from("/m/java8/pkg/TestA$1.class")
         ]
     );
     assert_eq!(a.libraries, vec![PathBuf::from("/abs/lib.jar")]);
     assert_eq!(
         a.expected,
-        Some(PathBuf::from("/m/data/expected/default/pkg/TestA.java"))
+        Some(PathBuf::from("/m/expected/default/pkg/TestA.java"))
     );
     assert_eq!(
         a.compare,
         vec!["TestA.java".to_string(), "TestA.kt".to_string()]
     );
     assert_eq!(a.javadoc, None);
-    assert_eq!(
-        a.jdks,
-        vec![
-            JdkNeed {
-                version: "8".into(),
-                home: Some(PathBuf::from("/opt/jdk8")),
-                current: false
-            },
-            JdkNeed {
-                version: "9".into(),
-                home: None,
-                current: false
-            },
-        ]
-    );
     assert_eq!(cases[1].javadoc.as_deref(), Some("plain"));
-    assert_eq!(unsupported_reason(&cases[1]), None);
-    assert_eq!(
-        cases[2].jdks,
-        vec![JdkNeed {
-            version: "17".into(),
-            home: None,
-            current: true
-        }]
-    );
-    assert!(unsupported_reason(&cases[2]).unwrap().starts_with("jdk 17"));
-    assert!(unsupported_reason(a)
-        .unwrap()
-        .starts_with("jdk 8 not found (/opt/jdk8)"));
 }
 
 #[test]
@@ -187,6 +154,9 @@ fn manifest_errors_name_the_line() {
         bad("kuna-jvm-corpus\t1\nset\tS\ts\nclass\tx\n").contains("line 3: `class` outside a case")
     );
     assert!(bad("kuna-jvm-corpus\t1\nset\tS\ts\nset\tS\ts\n").contains("defined twice"));
+    assert!(bad(&with("case\tq/Q\tDefault\nclass\tx\nkuna\t0\njavadoc\tfancy\n"))
+        .contains("javadoc provider `fancy`"));
+    assert!(bad(&with("root\tdata\n")).contains("unknown record `root`"));
 }
 
 #[test]
@@ -473,10 +443,6 @@ fn failure_keys() {
     crash.failure = Some("harness: no result".into());
     assert_eq!(key(&crash), "harness: no result");
 
-    let mut unsupported = result("c", CaseStatus::Unsupported);
-    unsupported.reason = Some("jdk 8 not found (/x)".into());
-    assert_eq!(key(&unsupported), "unsupported: jdk 8 not found");
-
     let mut m = result("d", CaseStatus::Mismatch);
     m.log = vec![LogLine {
         severity: Severity::Warn,
@@ -494,15 +460,14 @@ fn failure_keys() {
     let mut u2 = result("f", CaseStatus::EngineError);
     u2.error = Some(thrown(Some("RuntimeException"), "RuntimeException: A.b", ""));
     let ok = result("g", CaseStatus::Match);
-    let all = vec![u2, ok, r, crash, unsupported];
+    let all = vec![u2, ok, r, crash, m];
     assert_eq!(
         totals(&all),
         Totals {
             total: 5,
             matched: 1,
-            mismatch: 0,
+            mismatch: 1,
             error: 3,
-            unsupported: 1
         }
     );
 }
@@ -575,7 +540,6 @@ fn vendored_corpus_is_complete() {
             "{}",
             case.id
         );
-        assert!(case.jdks.is_empty(), "{} needs a JDK", case.id);
         if case.set_slug == "kuna-fixes" {
             assert!(case.digest.is_none(), "{}", case.id);
             assert!(case.expected.as_ref().is_some_and(|e| e.is_file()), "{}", case.id);
@@ -677,29 +641,6 @@ fn vendored_corpus_is_complete() {
 }
 
 #[test]
-fn vendored_expected_texts_match_themselves() {
-    let cases: Vec<Case> = vendored()
-        .into_iter()
-        .filter(|c| c.digest.is_none())
-        .collect();
-    assert_eq!(cases.len(), 290);
-    let mut matched = 0;
-    for case in &cases {
-        let run = expected_as_actual(case).unwrap();
-        let r = evaluate(case, run);
-        assert_eq!(r.status, CaseStatus::Match, "{}", case.id);
-        assert_eq!(
-            r.actual_path
-                .as_deref()
-                .map(|p| p.rsplit('/').next().unwrap()),
-            Some(case.compare[0].as_str())
-        );
-        matched += 1;
-    }
-    assert_eq!(matched, cases.len());
-}
-
-#[test]
 fn engine_failures_are_contained_and_the_thread_stays_usable() {
     let cases = vendored();
     let real = cases
@@ -719,48 +660,12 @@ fn engine_failures_are_contained_and_the_thread_stays_usable() {
         assert!(bad.error.is_some());
         for _ in 0..2 {
             let r = run_case(&real);
-            assert_ne!(r.status, CaseStatus::Unsupported);
+            assert_eq!(r.status, CaseStatus::Match);
             let text = format!("{:?}{:?}", r.error, r.log);
             assert!(
                 !text.contains("stale") && !text.contains("re-entered"),
                 "{text}"
             );
         }
-        let options = effective_options(&real).unwrap();
-        assert!(options.contains(&("log-level".to_string(), "warn".to_string())));
     });
-}
-
-#[test]
-fn effective_options_overlay_the_defaults() {
-    let cases = vendored();
-    let case = cases
-        .iter()
-        .find(|c| c.id == "default/pkg/TestEnhancedForLoops")
-        .unwrap()
-        .clone();
-    let options = with_engine_stack(move || {
-        let options = effective_options(&case).unwrap();
-        (case, options)
-    });
-    let (case, options) = options;
-    for (k, v) in &case.options {
-        assert!(options.contains(&(k.clone(), v.clone())), "{k}={v}");
-    }
-    let defaults = IFernflowerPreferences::DEFAULTS();
-    let extra = case
-        .options
-        .iter()
-        .filter(|(k, _)| !defaults.contains_key(k))
-        .count();
-    assert_eq!(options.len(), defaults.len() + extra);
-    let indent = IFernflowerPreferences::INDENT_STRING.to_string();
-    assert_eq!(
-        options
-            .iter()
-            .find(|(k, _)| *k == indent)
-            .map(|(_, v)| v.clone()),
-        defaults.get_cloned(&indent)
-    );
-    assert!(options.windows(2).all(|w| w[0].0 < w[1].0));
 }

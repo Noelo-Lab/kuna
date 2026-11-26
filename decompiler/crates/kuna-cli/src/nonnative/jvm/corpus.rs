@@ -209,8 +209,8 @@ pub(crate) fn run(args: &JvmTestArgs) -> i32 {
     } else {
         let _ = writeln!(
             text,
-            "jvm: {}/{} cases matched ({} mismatch, {} error, {} unsupported) in {seconds:.1} s",
-            t.matched, t.total, t.mismatch, t.error, t.unsupported
+            "jvm: {}/{} cases matched ({} mismatch, {} error) in {seconds:.1} s",
+            t.matched, t.total, t.mismatch, t.error
         );
         if !failures.is_empty() || !selection_errors.is_empty() {
             let _ = writeln!(text, "FAILURES:");

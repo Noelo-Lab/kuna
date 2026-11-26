@@ -1,5 +1,5 @@
-//! Runner for the Vineflower-derived regression corpus: one case is a set of class files, an
-//! option map and the Java text expected for the main class.
+//! Runner for the regression corpus (`tests/jvm/cases.tsv`): one case is a set of class files,
+//! an option map and the Java or Kotlin text pinned for the main class.
 //!
 //! A case is run the way Vineflower's `SingleClassesTest` fixture runs it: the option pairs go to
 //! [`Fernflower::new`] (which overlays them on the defaults) with no plugin loaded (`jvm_plugins`
@@ -20,7 +20,6 @@ use crate::class_writer::{FabricJavadocStyle, IFabricJavadocProvider};
 use crate::decompiler_context::DecompilerContext;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
-use crate::jdk_runtime::JdkRuntime;
 use crate::kuna_plugins::JVM_PLUGINS;
 use crate::rt::{self, try_catch, Caught};
 use crate::struct_class::StructClass;
@@ -50,7 +49,6 @@ pub fn engine_stack_bytes() -> usize {
             .map_or(ENGINE_STACK_BYTES, |mib| mib << 20)
     })
 }
-pub const JAVADOC_OPTION: &str = "fabric:javadoc";
 
 /// The provider `SingleClassesTest`'s Javadoc (`plain`) and Markdown Javadoc (`markdown`) sets pass.
 pub struct FixtureJavadocProvider {
@@ -89,15 +87,6 @@ impl IFabricJavadocProvider for FixtureJavadocProvider {
     }
 }
 
-/// A JDK a case needs: `${java.N.home}` in an option value, or `current_jdk N`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct JdkNeed {
-    pub version: String,
-    pub home: Option<PathBuf>,
-    /// The JDK must be the one `include-runtime=current` / `include-classpath=1` resolves to.
-    pub current: bool,
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Case {
     pub id: String,
@@ -111,7 +100,6 @@ pub struct Case {
     /// The output file compared, then its fallbacks.
     pub compare: Vec<String>,
     pub javadoc: Option<String>,
-    pub jdks: Vec<JdkNeed>,
     /// The pinned [`text_digest`] of the compared text, checked instead of an expected file.
     pub digest: Option<String>,
 }
@@ -120,7 +108,6 @@ pub struct Case {
 struct Scoped {
     options: Vec<(String, String)>,
     javadoc: Option<String>,
-    current_jdk: Option<String>,
 }
 
 struct RawCase {
@@ -180,11 +167,9 @@ pub fn load_cases(path: &Path) -> Result<Vec<Case>, String> {
     parse_cases(&text, base).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// Parses a manifest; relative paths resolve against `root` (default: `base_dir`).
+/// Parses a manifest; relative paths resolve against `base_dir`.
 pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
     let mut header = false;
-    let mut root: Option<String> = None;
-    let mut java_homes: BTreeMap<String, String> = BTreeMap::new();
     let mut sets: BTreeMap<String, (String, String, Scoped)> = BTreeMap::new();
     let mut cases: Vec<RawCase> = Vec::new();
     enum At {
@@ -222,14 +207,6 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
             }
         };
         match tag {
-            "root" => {
-                need(1)?;
-                root = Some(args[0].clone());
-            }
-            "java_home" => {
-                need(2)?;
-                java_homes.insert(args[0].clone(), args[1].clone());
-            }
             "set" => {
                 need(1)?;
                 let name = args[0].clone();
@@ -257,7 +234,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                 });
                 at = At::Case;
             }
-            "opt" | "javadoc" | "current_jdk" => {
+            "opt" | "javadoc" => {
                 need(1)?;
                 let scoped = match &at {
                     At::Top => return err(&format!("`{tag}` outside a set or case")),
@@ -270,8 +247,12 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
                         &args[0],
                         args.get(1).map_or("", String::as_str),
                     ),
-                    "javadoc" => scoped.javadoc = Some(args[0].clone()),
-                    _ => scoped.current_jdk = Some(args[0].clone()),
+                    _ => {
+                        if FixtureJavadocProvider::for_style(&args[0]).is_none() {
+                            return err(&format!("javadoc provider `{}` (not a fixture provider)", args[0]));
+                        }
+                        scoped.javadoc = Some(args[0].clone());
+                    }
                 }
             }
             "class" | "lib" | "expected" | "compare" | DIGEST_RECORD => {
@@ -295,18 +276,7 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
         return Err("empty manifest".to_string());
     }
 
-    let root = match root {
-        Some(r) => base_dir.join(r),
-        None => base_dir.to_path_buf(),
-    };
-    let resolve = |p: &str| -> PathBuf {
-        let p = Path::new(p);
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            root.join(p)
-        }
-    };
+    let resolve = |p: &str| -> PathBuf { base_dir.join(p) };
 
     let mut seen = BTreeSet::new();
     let mut listings = Listings::default();
@@ -366,18 +336,6 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
         for (k, v) in &raw.scoped.options {
             overlay_option(&mut options, k, v);
         }
-        let mut jdks: Vec<JdkNeed> = Vec::new();
-        for (_, value) in options.iter_mut() {
-            *value = substitute_java_homes(value, &java_homes, &mut jdks);
-        }
-        if let Some(version) = raw.scoped.current_jdk.or_else(|| set.current_jdk.clone()) {
-            let home = java_homes.get(&version).map(PathBuf::from);
-            jdks.push(JdkNeed {
-                version,
-                home,
-                current: true,
-            });
-        }
         out.push(Case {
             id: raw.id,
             set: raw.set,
@@ -388,7 +346,6 @@ pub fn parse_cases(text: &str, base_dir: &Path) -> Result<Vec<Case>, String> {
             expected,
             compare,
             javadoc: raw.scoped.javadoc.or_else(|| set.javadoc.clone()),
-            jdks,
             digest: raw.digest,
         });
     }
@@ -436,80 +393,6 @@ impl Listings {
             .chain(siblings.cloned())
             .map(|n| dir.join(n))
             .collect()
-    }
-}
-
-fn substitute_java_homes(
-    value: &str,
-    java_homes: &BTreeMap<String, String>,
-    needs: &mut Vec<JdkNeed>,
-) -> String {
-    let mut out = String::new();
-    let mut rest = value;
-    while let Some(start) = rest.find("${java.") {
-        let tail = &rest[start + "${java.".len()..];
-        let Some(end) = tail.find(".home}") else {
-            break;
-        };
-        let version = &tail[..end];
-        out.push_str(&rest[..start]);
-        let home = java_homes.get(version);
-        match home {
-            Some(home) => out.push_str(home),
-            None => out.push_str(&rest[start..start + "${java.".len() + end + ".home}".len()]),
-        }
-        needs.push(JdkNeed {
-            version: version.to_string(),
-            home: home.map(PathBuf::from),
-            current: false,
-        });
-        rest = &tail[end + ".home}".len()..];
-    }
-    out.push_str(rest);
-    out
-}
-
-/// Why a case cannot run here, if it cannot; machine-specific detail is in parentheses.
-pub fn unsupported_reason(case: &Case) -> Option<String> {
-    if let Some(style) = &case.javadoc {
-        if FixtureJavadocProvider::for_style(style).is_none() {
-            return Some(format!("javadoc provider {style} (not a fixture provider)"));
-        }
-    }
-    for need in &case.jdks {
-        let Some(home) = &need.home else {
-            return Some(format!(
-                "jdk {} has no java_home in the manifest",
-                need.version
-            ));
-        };
-        if !JdkRuntime::is_java_home(home) {
-            return Some(format!(
-                "jdk {} not found ({})",
-                need.version,
-                home.display()
-            ));
-        }
-        if need.current {
-            let current = JdkRuntime::locate(JdkRuntime::CURRENT);
-            let same = current.as_ref().is_some_and(|c| same_path(c, home));
-            if !same {
-                return Some(format!(
-                    "jdk {} must be the current JDK (set JAVA_HOME={}; found {})",
-                    need.version,
-                    home.display(),
-                    current.map_or("none".to_string(), |c| c.display().to_string())
-                ));
-            }
-        }
-    }
-    None
-}
-
-fn same_path(a: &Path, b: &Path) -> bool {
-    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
-        (Ok(a), Ok(b)) => a == b,
-        _ => a == b,
     }
 }
 
@@ -679,8 +562,6 @@ pub enum CaseStatus {
     Mismatch,
     /// The run threw.
     EngineError,
-    /// The case needs something this machine or the port does not have.
-    Unsupported,
 }
 
 impl CaseStatus {
@@ -689,7 +570,6 @@ impl CaseStatus {
             CaseStatus::Match => "Match",
             CaseStatus::Mismatch => "Mismatch",
             CaseStatus::EngineError => "EngineError",
-            CaseStatus::Unsupported => "Unsupported",
         }
     }
 }
@@ -715,8 +595,6 @@ pub struct CaseResult {
     pub error: Option<Thrown>,
     /// A failure outside the engine (`harness: ...`).
     pub failure: Option<String>,
-    /// Why the case is `Unsupported`.
-    pub reason: Option<String>,
     /// Log lines at `Warn` and above.
     pub log: Vec<LogLine>,
 }
@@ -731,15 +609,8 @@ impl CaseResult {
             first_diff: None,
             error: None,
             failure: None,
-            reason: None,
             log: Vec::new(),
         }
-    }
-
-    pub fn unsupported(case: &Case, reason: String) -> CaseResult {
-        let mut r = CaseResult::empty(case, CaseStatus::Unsupported);
-        r.reason = Some(reason);
-        r
     }
 
     /// An `EngineError` that happened outside the engine (`harness: ...`).
@@ -751,9 +622,6 @@ impl CaseResult {
 }
 
 pub fn run_case(case: &Case) -> CaseResult {
-    if let Some(reason) = unsupported_reason(case) {
-        return CaseResult::unsupported(case, reason);
-    }
     let run = execute(case);
     evaluate(case, run)
 }
@@ -862,69 +730,12 @@ pub fn evaluate_text(case: &Case, run: EngineRun, expected_raw: &str) -> CaseRes
         first_diff: first,
         error: run.error,
         failure: None,
-        reason: None,
         log: run
             .log
             .into_iter()
             .filter(|l| l.severity >= Severity::Warn)
             .collect(),
     }
-}
-
-/// The run as if the engine had printed the expected text for the compared unit (self-check).
-pub fn expected_as_actual(case: &Case) -> Result<EngineRun, String> {
-    let expected = case.expected.as_ref().ok_or("no expected text")?;
-    let content =
-        std::fs::read(expected).map_err(|e| format!("cannot read {}: {e}", expected.display()))?;
-    let class = case.id.split_once('/').map_or("", |(_, class)| class);
-    let dir = class.rsplit_once('/').map_or("", |(dir, _)| dir);
-    let decoy = DecompiledClass {
-        qualified_name: "decoy/Decoy".to_string(),
-        path: format!("decoy/{}", case.compare[0]),
-        content: String::new(),
-        mapping: None,
-        ..DecompiledClass::default()
-    };
-    let unit = DecompiledClass {
-        qualified_name: String::new(),
-        path: if dir.is_empty() {
-            case.compare[0].clone()
-        } else {
-            format!("{dir}/{}", case.compare[0])
-        },
-        content: String::from_utf8_lossy(&content).into_owned(),
-        mapping: None,
-        ..DecompiledClass::default()
-    };
-    Ok(EngineRun {
-        units: vec![decoy, unit],
-        ..EngineRun::default()
-    })
-}
-
-/// The option map the engine runs a case with: Vineflower's defaults overlaid by the case's pairs,
-/// read back from the context `Fernflower::new` installs, sorted by key. The javadoc provider
-/// object is listed as `fabric:javadoc=$javadoc_provider:<style>`.
-pub fn effective_options(case: &Case) -> Result<Vec<(String, String)>, Thrown> {
-    reset_engine_thread();
-    let result = try_catch(|| {
-        let logger: Rc<dyn IFernflowerLogger> = <dyn IFernflowerLogger>::NO_OP();
-        let mut fernflower = Fernflower::new(&engine_options(case), logger);
-        let mut entries = DecompilerContext::get_current_context()
-            .expect("Fernflower installs a context")
-            .with(|d| d.properties.entry_vec());
-        fernflower.clear_context();
-        if let Some(style) = &case.javadoc {
-            entries.push((
-                JAVADOC_OPTION.to_string(),
-                format!("$javadoc_provider:{style}"),
-            ));
-        }
-        entries.sort();
-        entries
-    });
-    let _ = try_catch(reset_engine_thread);
-    result.map_err(|e| Thrown::from_caught(&e))
 }
 
 /// Runs `f` on a fresh thread with an [`engine_stack_bytes`] stack, guarded
@@ -993,13 +804,6 @@ pub fn failure_key(r: &CaseResult) -> Option<String> {
     }
     match r.status {
         CaseStatus::Match => None,
-        CaseStatus::Unsupported => Some(format!(
-            "unsupported: {}",
-            r.reason.as_deref().map_or("?".to_string(), |s| head(
-                s.split(" (").next().unwrap_or(s),
-                120
-            ))
-        )),
         CaseStatus::EngineError => Some(match (&r.failure, &r.error) {
             (Some(f), _) => head(f, 120),
             (None, Some(t)) => thrown_key(&located(t, &r.log)),
@@ -1033,7 +837,6 @@ pub struct Totals {
     pub matched: usize,
     pub mismatch: usize,
     pub error: usize,
-    pub unsupported: usize,
 }
 
 pub fn totals(results: &[CaseResult]) -> Totals {
@@ -1046,7 +849,6 @@ pub fn totals(results: &[CaseResult]) -> Totals {
             CaseStatus::Match => t.matched += 1,
             CaseStatus::Mismatch => t.mismatch += 1,
             CaseStatus::EngineError => t.error += 1,
-            CaseStatus::Unsupported => t.unsupported += 1,
         }
     }
     t
