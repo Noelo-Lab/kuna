@@ -1,15 +1,23 @@
-//! Read-only candidate lookup against a user-supplied kuna FID database.
-use kuna_analysis::fid::db::{FidDatabase, FidDb};
-use kuna_analysis::fid::fingerprint_function;
+//! Read-only, unverified candidate lookup against a Kuna or Ghidra FID database.
+use std::path::Path;
+
+use kuna_analysis::fid::kuna_fidapply::{open_any, FidDbStatus, LoadedFid};
+use kuna_analysis::fid::hash::FidHashQuad;
+use kuna_analysis::fid::{fingerprint_function, fingerprint_raw_function};
 use kuna_analysis::listing::CodeUnit;
 use kuna_analysis::listing::Listing;
 use kuna_analysis::loadimage_object::ObjectLoadImage;
-use kuna_console::engine::{bootstrap_from_object, ConsoleProgram};
+use kuna_console::engine::{bootstrap_from_object, bootstrap_from_raw, ArmIsa, ConsoleProgram};
 use object::Object;
 use serde_json::json;
 
 fn usage() {
-    eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; addresses are hex (0x optional); single_candidate is an unverified name");
+    eprintln!(
+        "usage: kuna fid query <binary> --db <file.fid|file.fidbf|file.fidb> --addr <address> [--addr <address> ...] --json\n\
+         \x20                   [--raw-image --target <language-id> --base <address> [--isa arm|thumb]]\n\
+         Raw --base is the address of file offset zero; --addr values seed discovery. ARM32 raw input requires an explicit --isa.\n\
+         --json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; addresses are hex (0x optional); single_candidate is an unverified name"
+    );
 }
 
 pub(super) fn run(args: &[String]) -> i32 {
@@ -17,7 +25,7 @@ pub(super) fn run(args: &[String]) -> i32 {
         usage();
         return 0;
     }
-    let (binary, db_path, addresses) = match parse_args(args) {
+    let args = match parse_args(args) {
         Ok(parsed) => parsed,
         Err(e) => {
             eprintln!("kuna fid query: {e}");
@@ -25,7 +33,11 @@ pub(super) fn run(args: &[String]) -> i32 {
             return 2;
         }
     };
-    match query(binary, db_path, &addresses) {
+    let result = match args.raw {
+        Some(raw) => query_raw(args.binary, args.db_path, &args.addresses, raw),
+        None => query(args.binary, args.db_path, &args.addresses),
+    };
+    match result {
         Ok(value) => crate::output::emit_with_status(
             &format!("{}\n", serde_json::to_string_pretty(&value).unwrap()),
             0,
@@ -45,28 +57,51 @@ fn parse_address(value: &str) -> Result<u64, String> {
     u64::from_str_radix(digits, 16).map_err(|_| format!("invalid address {value:?}"))
 }
 
-fn parse_args(args: &[String]) -> Result<(&str, &str, Vec<u64>), String> {
+struct QueryArgs<'a> {
+    binary: &'a str,
+    db_path: &'a str,
+    addresses: Vec<u64>,
+    raw: Option<RawImage<'a>>,
+}
+
+struct RawImage<'a> {
+    target: &'a str,
+    base: u64,
+    isa: Option<ArmIsa>,
+}
+
+fn parse_args(args: &[String]) -> Result<QueryArgs<'_>, String> {
     let mut binary = None;
     let mut db_path = None;
     let mut addresses = Vec::new();
     let mut json_output = false;
+    let mut raw_image = false;
+    let mut target = None;
+    let mut base = None;
+    let mut isa = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
-            "--db" | "--addr" => {
-                let opt = args[i].as_str();
+            opt @ ("--db" | "--addr" | "--target" | "--base" | "--isa") => {
                 i += 1;
                 let value = args
                     .get(i)
                     .ok_or_else(|| format!("missing value for {opt}"))?;
-                if opt == "--db" {
-                    if db_path.replace(value.as_str()).is_some() {
-                        return Err("duplicate --db".into());
-                    }
-                } else {
+                if opt == "--addr" {
                     addresses.push(parse_address(value)?);
+                } else {
+                    let slot = match opt {
+                        "--db" => &mut db_path,
+                        "--target" => &mut target,
+                        "--base" => &mut base,
+                        _ => &mut isa,
+                    };
+                    if slot.replace(value.as_str()).is_some() {
+                        return Err(format!("duplicate {opt}"));
+                    }
                 }
             }
+            "--raw-image" => raw_image = true,
             "--json" => json_output = true,
             flag if flag.starts_with('-') => return Err(format!("unknown option {flag}")),
             path => {
@@ -85,22 +120,32 @@ fn parse_args(args: &[String]) -> Result<(&str, &str, Vec<u64>), String> {
     if !json_output {
         return Err("--json is required".into());
     }
-    Ok((binary, db_path, addresses))
+    let raw = if raw_image {
+        let target = target.filter(|value| !value.trim().is_empty())
+            .ok_or("--raw-image requires --target <SLEIGH-language-id>")?;
+        let base = parse_address(base.ok_or("--raw-image requires --base <address>")?.trim())?;
+        let isa = isa.map(ArmIsa::parse).transpose()?.flatten();
+        Some(RawImage { target, base, isa })
+    } else {
+        if target.is_some() || base.is_some() || isa.is_some() {
+            return Err("--target, --base and --isa require --raw-image for FID query".into());
+        }
+        None
+    };
+    Ok(QueryArgs { binary, db_path, addresses, raw })
 }
 
 fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::Value, String> {
-    let db_bytes = std::fs::read(db_path).map_err(|e| format!("cannot read database: {e}"))?;
     let bytes = std::fs::read(binary).map_err(|e| format!("cannot read binary: {e}"))?;
     let file = object::File::parse(&*bytes).map_err(|e| format!("invalid binary: {e}"))?;
     if file.kind() == object::ObjectKind::Relocatable {
         return Err("relocatable objects are not supported for lookup".into());
     }
-    let db = FidDb::load(&db_bytes).map_err(|e| format!("invalid database: {e}"))?;
     let prog = bootstrap_from_object(binary, "", &super::spec_roots())
         .map_err(|e| format!("bootstrap: {e}"))?;
     let arch = prog.arch();
     let lang = kuna_decomp::kuna_langfamily::language_id(&arch.archid);
-    kuna_analysis::fid::kuna_fidapply::applies(db.lang_id(), arch)?;
+    let (db, format) = load_database(db_path, &prog)?;
     let image =
         ObjectLoadImage::from_bytes(binary, &bytes).map_err(|e| format!("load image: {e}"))?;
     let base_seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
@@ -115,12 +160,7 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
             .translate()
             .context_scope()
             .ok_or("translator does not support scoped context")?;
-        let boundary = match baseline.code_unit_at(addr) {
-            CodeUnit::Instruction(start) if start == addr => "instruction_start",
-            CodeUnit::Instruction(_) => "inside_instruction",
-            CodeUnit::Undefined => "undecoded",
-            CodeUnit::Data(..) => "non_executable",
-        };
+        let boundary = instruction_boundary(&baseline, addr, false);
         let is_discovered = discovered.contains(&addr);
         let source = if is_discovered {
             "discovered"
@@ -129,14 +169,14 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
         };
         let run = || {
             if is_discovered {
-                fid_candidate(binary, db_path, &db, lang, &baseline, &prog, addr)
+                fid_candidate((binary, db_path), &db, format, lang, &baseline, &prog, addr)
             } else {
                 let mut seeds = base_seeds.clone();
                 seeds.push(addr);
                 seeds.sort_unstable();
                 seeds.dedup();
                 let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
-                fid_candidate(binary, db_path, &db, lang, &listing, &prog, addr)
+                fid_candidate((binary, db_path), &db, format, lang, &listing, &prog, addr)
             }
         };
         let result = if thumb {
@@ -167,6 +207,66 @@ fn query(binary: &str, db_path: &str, addresses: &[u64]) -> Result<serde_json::V
     package_results(binary, db_path, addresses, results, prog.is_arm32())
 }
 
+fn query_raw(
+    binary: &str,
+    db_path: &str,
+    addresses: &[u64],
+    raw: RawImage<'_>,
+) -> Result<serde_json::Value, String> {
+    let prog = bootstrap_from_raw(binary, raw.target, raw.base, addresses, raw.isa, &super::spec_roots())
+        .map_err(|e| format!("bootstrap: {}", e.explain()))?;
+    let (db, format) = load_database(db_path, &prog)?;
+    let listing = prog.pending_raw_listing_for_fid().map_err(|e| e.explain().to_owned())?;
+    let lang = kuna_decomp::kuna_langfamily::language_id(&prog.arch().archid);
+    let results = addresses.iter().map(|&requested| {
+        let addr = prog.input_code_offset(requested).map_err(|e| e.explain().to_owned())?;
+        let mut value = lookup(
+            (binary, db_path), &db, format, lang, prog.output_code_offset(addr),
+            fingerprint_raw_function(&listing, prog.arch(), addr),
+        );
+        value["requested_address"] = json!(format!("0x{requested:x}"));
+        // Every requested raw address is a caller-supplied seed, not
+        // independent evidence that a function starts here.
+        value["entry_source"] = json!("user_supplied");
+        value["instruction_boundary"] = json!(instruction_boundary(&listing, addr, true));
+        value["identity_verified"] = json!(false);
+        Ok(value)
+    }).collect();
+    package_results(binary, db_path, addresses, results, prog.is_arm32())
+}
+
+fn load_database(db_path: &str, prog: &ConsoleProgram) -> Result<(LoadedFid, &'static str), String> {
+    let (report, db) = open_any(Path::new(db_path), prog.arch());
+    let format = match &db {
+        LoadedFid::Kuna(_) => "kuna_fid",
+        LoadedFid::Ghidra(_) => "ghidra_fid",
+        LoadedFid::None => {
+            let reason = report.reason.unwrap_or_default();
+            return Err(match report.status {
+                FidDbStatus::Missing | FidDbStatus::Unreadable => format!("cannot read database: {reason}"),
+                FidDbStatus::Invalid => format!("invalid database: {reason}"),
+                _ => reason,
+            });
+        }
+    };
+    Ok((db, format))
+}
+
+fn instruction_boundary(listing: &Listing, addr: u64, raw: bool) -> &'static str {
+    match listing.code_unit_at(addr) {
+        // A raw Listing can contain a decode that used zero padding at EOF.
+        CodeUnit::Instruction(start) if raw && !listing.instruction_at(start).is_some_and(|insn| {
+            start.checked_add(u64::from(insn.len)).is_some_and(|end| {
+                listing.exec_ranges().iter().any(|&(lo, hi)| lo <= start && end <= hi)
+            })
+        }) => "undecoded",
+        CodeUnit::Instruction(start) if start == addr => "instruction_start",
+        CodeUnit::Instruction(_) => "inside_instruction",
+        CodeUnit::Undefined => "undecoded",
+        CodeUnit::Data(..) => "non_executable",
+    }
+}
+
 pub(super) fn package_results(
     binary: &str,
     database: &str,
@@ -193,9 +293,9 @@ pub(super) fn package_results(
 }
 
 fn fid_candidate(
-    binary: &str,
-    db_path: &str,
-    db: &FidDb,
+    (binary, db_path): (&str, &str),
+    db: &LoadedFid,
+    database_format: &'static str,
     lang: &str,
     listing: &Listing,
     prog: &ConsoleProgram,
@@ -207,9 +307,10 @@ fn fid_candidate(
         ));
     }
     if prog.is_arm32() {
-        for insn in kuna_analysis::fid::extent::calculate_extent(listing, addr) {
+        let end = listing.next_function_after(addr).map(|f| f.entry);
+        for (vma, insn) in listing.instructions_in_range(addr, end) {
             let matches_listing =
-                prog.disassemble_at(insn.addr)
+                prog.disassemble_at(*vma)
                     .is_ok_and(|(len, mnemonic, operands)| {
                         u32::try_from(len).ok() == Some(insn.len)
                             && mnemonic == insn.mnemonic.as_str()
@@ -222,24 +323,41 @@ fn fid_candidate(
             }
         }
     }
-    let quad = match fingerprint_function(listing, prog.arch(), addr) {
+    Ok(lookup(
+        (binary, db_path), db, database_format, lang, addr,
+        fingerprint_function(listing, prog.arch(), addr),
+    ))
+}
+
+fn lookup(
+    (binary, db_path): (&str, &str),
+    db: &LoadedFid,
+    database_format: &'static str,
+    lang: &str,
+    addr: u64,
+    fingerprint: Result<FidHashQuad, &'static str>,
+) -> serde_json::Value {
+    let quad = match fingerprint {
         Ok(quad) => quad,
-        Err(reason) => {
-            return Ok(
-                json!({"binary": binary, "database": db_path, "address": format!("0x{addr:x}"), "status": "unavailable", "reason": reason, "candidates": []}),
-            )
-        }
+        Err(reason) => return json!({
+            "binary": binary, "database": db_path, "address": format!("0x{addr:x}"),
+            "status": "unavailable", "reason": reason, "candidates": []
+        }),
     };
     let mut candidates: Vec<_> = db
         .find_by_full_hash(quad.full_hash)
         .iter()
         .map(|r| {
-            json!({
-                "name": r.name, "specific_hash": format!("0x{:016x}", r.specific_hash),
+            let mut candidate = json!({
+                "name": r.name.as_ref(), "specific_hash": format!("0x{:016x}", r.specific_hash),
                 "specific_hash_matches": r.specific_hash == quad.specific_hash,
                 "code_unit_size": r.code_unit_size,
                 "code_unit_size_matches": r.code_unit_size == quad.code_unit_size,
-            })
+            });
+            if matches!(db, LoadedFid::Ghidra(_)) {
+                candidate["ghidra_flags"] = json!(r.flags);
+            }
+            candidate
         })
         .collect();
     candidates.sort_by(|a, b| {
@@ -265,12 +383,10 @@ fn fid_candidate(
         1 => "single_candidate",
         _ => "ambiguous",
     };
-    Ok(
-        json!({"binary": binary, "database": db_path, "database_format": "kuna_fid", "language": lang,
+    json!({"binary": binary, "database": db_path, "database_format": database_format, "language": lang,
         "address": format!("0x{addr:x}"), "status": status, "match_basis": "full_hash",
         "full_hash": format!("0x{:016x}", quad.full_hash), "specific_hash": format!("0x{:016x}", quad.specific_hash),
-        "code_unit_size": quad.code_unit_size, "specific_hash_evidence": specific_evidence, "candidates": candidates}),
-    )
+        "code_unit_size": quad.code_unit_size, "specific_hash_evidence": specific_evidence, "candidates": candidates})
 }
 
 #[cfg(test)]
@@ -293,12 +409,16 @@ mod tests {
         let arch = prog.arch();
         let seeds = kuna_analysis::passes::listing_seeds(&file, &bytes);
         let listing = Listing::build(&file, &image, arch, arch.translate(), &seeds);
-        let db = FidDb::from_records("ARM:LE:32:v8", "default", vec![]);
+        let db = LoadedFid::Kuna(kuna_analysis::fid::db::FidDb::from_records(
+            "ARM:LE:32:v8",
+            "default",
+            vec![],
+        ));
         let query = || {
             fid_candidate(
-                path,
-                "test.fid",
+                (path, "test.fid"),
                 &db,
+                "kuna_fid",
                 "ARM:LE:32:v8",
                 &listing,
                 &prog,

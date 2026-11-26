@@ -110,8 +110,10 @@ fn a_missing_unreadable_or_invalid_database_is_reported_and_the_run_succeeds() {
     for (db, status, says) in [
         (&missing, "missing", "no such file"),
         (&directory, "unreadable", "cannot be read"),
-        (&truncated, "invalid", "not a kuna .fid database"),
-        (&garbage, "invalid", "not a kuna .fid database"),
+        // The reader is format-agnostic now, so the sentence names neither
+        // spelling; the diagnosis after it names the real problem.
+        (&truncated, "invalid", "not a FID database kuna can read (fid: truncated"),
+        (&garbage, "invalid", "not a FID database kuna can read (fid: bad magic"),
     ] {
         let (doc, stderr) = functions(Some(db));
         assert_eq!(names(&doc), ["sub_401000", "sub_401020"], "{status}");
@@ -212,4 +214,94 @@ fn query_uses_the_same_rule() {
     let other = query(&relabeled("AARCH64:LE:64:v8A", "default"));
     assert_eq!(other.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&other.stderr).contains("database language AARCH64:LE:64:v8A"));
+}
+
+#[test]
+fn ghidra_raw_and_packed_filter_libraries_and_respect_rename_policy() {
+    // Stock Ghidra's MakeFidAudit.java hashes the same stripped ELF used here.
+    for (fixture, compiler) in [
+        ("fid_audit_ghidra.fidbf", "gcc"),
+        ("fid_audit_ghidra.fidb", "gcc"),
+        ("fid_audit_ghidra_metadata.fidbf", "gcc,windows"),
+    ] {
+        let db = common::fixture(fixture);
+        let (analysis, stderr) = functions(Some(Path::new(&db)));
+        assert_eq!(names(&analysis), ["audit_mix", "sub_401020"], "{fixture}");
+        let report = only_report(&analysis);
+        assert_eq!(report["status"], "loaded", "{fixture}");
+        assert_eq!(report["language"], "x86:LE:64:compat32");
+        assert_eq!(report["compiler_spec"], compiler);
+        assert_eq!(report["records"], 3, "foreign library excluded");
+        assert!(!stderr.contains("FID database"), "{stderr}");
+
+        let query = kuna(None, &[
+            "fid", "query", &binary(), "--db", &db, "--addr", "0x401000",
+            "--addr", "0x401020", "--json",
+        ]);
+        assert!(query.status.success(), "{}", String::from_utf8_lossy(&query.stderr));
+        let document: Value = serde_json::from_slice(&query.stdout).unwrap();
+        let queries = document["queries"].as_array().unwrap();
+        assert_eq!(queries.len(), 2);
+        assert_eq!(queries[0]["database_format"], "ghidra_fid");
+        assert_eq!(queries[0]["status"], "ambiguous");
+        assert_eq!(queries[0]["identity_verified"], false);
+        let candidates = queries[0]["candidates"].as_array().unwrap();
+        assert_eq!(candidates.len(), 2, "foreign alias must not leak");
+        assert_eq!(candidates[0]["name"], "audit_mix");
+        assert_eq!(candidates[0]["ghidra_flags"], 1);
+        assert_eq!(candidates[1]["name"], "rejected_alias");
+        assert_eq!(candidates[1]["ghidra_flags"], 5);
+        assert_eq!(queries[1]["status"], "single_candidate");
+        assert_eq!(queries[1]["identity_verified"], false);
+        assert_eq!(queries[1]["candidates"][0]["name"], "audit_fold");
+        assert_eq!(queries[1]["candidates"][0]["ghidra_flags"], 17);
+    }
+}
+
+#[test]
+fn raw_x86_fid_report_and_rename_respect_ghidra_policy() {
+    use object::{Object, ObjectSection};
+
+    let scratch = tempfile::tempdir().unwrap();
+    let bytes = std::fs::read(binary()).unwrap();
+    let file = object::File::parse(&*bytes).unwrap();
+    let text = file.section_by_name(".text").unwrap();
+    assert_eq!(text.address(), 0x401000);
+    let raw = scratch.path().join("x86.bin");
+    std::fs::write(&raw, text.data().unwrap()).unwrap();
+    let raw = raw.to_str().unwrap();
+    let db = common::fixture("fid_audit_ghidra.fidb");
+    let mapping = ["--raw-image", "--target", "x86:LE:64:default", "--base", "0x8000"];
+    let list = |db: &Path| {
+        let mut args = vec!["functions", raw, "--json", "--entry", "0x8020",
+            "--option", "listing", "on", "--option", "fid", "on"];
+        args.extend(mapping);
+        let output = kuna(Some(db), &args);
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert_eq!(output.status.code(), Some(0), "{stderr}");
+        (serde_json::from_slice::<Value>(&output.stdout).unwrap(), stderr)
+    };
+    let (analysis, _) = list(Path::new(&db));
+    assert_eq!(names(&analysis), ["audit_mix", "sub_8020"]);
+    assert_eq!(only_report(&analysis)["status"], "loaded");
+    assert_eq!(only_report(&analysis)["records"], 3);
+
+    let missing = scratch.path().join("missing.fid");
+    let (analysis, stderr) = list(&missing);
+    assert_eq!(names(&analysis), ["sub_8000", "sub_8020"]);
+    assert_eq!(only_report(&analysis)["status"], "missing");
+    assert!(stderr.contains("warning: FID database"), "{stderr}");
+
+    let mut args = vec!["fid", "query", raw, "--db", &db, "--json", "--addr", "0x8000", "--addr", "0x8020"];
+    args.extend(mapping);
+    let output = kuna(None, &args);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let queries = doc["queries"].as_array().unwrap();
+    assert_eq!(queries[0]["database_format"], "ghidra_fid");
+    assert_eq!(queries[0]["status"], "ambiguous");
+    assert_eq!(queries[0]["candidates"].as_array().unwrap().len(), 2);
+    assert_eq!(queries[0]["candidates"][0]["name"], "audit_mix");
+    assert_eq!(queries[1]["status"], "single_candidate");
+    assert_eq!(queries[1]["candidates"][0]["name"], "audit_fold");
 }

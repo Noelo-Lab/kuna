@@ -3,6 +3,7 @@
 mod args;
 mod armember;
 mod blobs;
+mod bsim;
 mod callgraph;
 mod catalog;
 mod crypto;
@@ -13,7 +14,6 @@ mod decompile_all;
 mod decompile_project;
 mod decompile_graph;
 mod disassemble;
-mod embedded_specs;
 mod fid;
 mod flirt;
 mod followimages;
@@ -69,6 +69,7 @@ const COMMANDS: &[(&str, CommandHandler)] = &[
     ("modes", cmd_modes),
     ("specs", specs::run),
     ("fid", fid::run),
+    ("bsim", bsim::run),
     ("flirt", flirt::run),
     ("rust-signatures", rust_signatures::run),
 ];
@@ -168,7 +169,7 @@ fn usage() {
          kuna modes [--json]\n\
          kuna specs [-a <dir>] [<slaspec>...] [--diff]\n\
          kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
-         kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
+         kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json [--raw-image --target T --base VMA [--isa arm|thumb]]\n\
          kuna flirt make <lib.a|*.o ...> -o <out.pat> [--sig <out.sig>] [--libname NAME]\n\
          kuna rust-signatures check [--manifest PATH] [--json]\n\
          kuna --version\n\

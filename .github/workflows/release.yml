@@ -83,9 +83,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             name: linux-x86_64
-          # Fully static (musl): no glibc dependency, runs on any Linux. kuna
-          # pulls no C via a `cc`-crate dep, so the musl target links
-          # self-contained -- `rustup target add` is the only setup needed.
+          # Fully static Linux build; ring's TLS code also needs a musl C compiler.
           - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             name: linux-x86_64-musl
@@ -115,6 +113,13 @@ jobs:
           rustup default stable
           rustup target add ${{ matrix.target }}
 
+      - name: Install the musl C compiler
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          echo "CC_x86_64_unknown_linux_musl=musl-gcc" >> "$GITHUB_ENV"
+
       # The one third-party action here (same as pages.yml) — the de-facto
       # standard cargo cache.
       - name: Cache cargo build
@@ -134,12 +139,14 @@ jobs:
         shell: bash
         run: tar xzf specs-dl/kuna-v${{ needs.version.outputs.version }}-specs.tar.gz
 
-      # `kuna` is the whole release: the console and the SLEIGH compiler are
-      # built in, and embed-specs carries the compiled SLEIGH tree.
+      # The standalone CLI and the optional BSim companion both embed specs.
+      # Separate Cargo invocations keep the server-only ProgramDB feature out of the CLI.
       - name: Build release binaries
         working-directory: decompiler
         shell: bash
-        run: cargo build --release --target ${{ matrix.target }} -p kuna-cli -p kuna-ghidra --features kuna-cli/embed-specs
+        run: |
+          cargo build --locked --release --target ${{ matrix.target }} -p kuna-cli -p kuna-ghidra --features kuna-cli/embed-specs
+          cargo build --locked --release --target ${{ matrix.target }} -p kuna-bsim-server --features kuna-bsim-server/embed-specs
 
       # x86_64-apple-darwin is cross-compiled on the arm64 runner; skip running it.
       - name: Smoke test (kuna --version reports the release version)
@@ -168,6 +175,23 @@ jobs:
           echo "$out"
           grep -q 'main(' <<<"$out"
 
+      # As with the CLI smoke checks, the x86_64 macOS binary is cross-built
+      # on ARM; don't require Rosetta. All native runners exercise BSim.
+      - uses: actions/setup-python@v5
+        if: matrix.target != 'x86_64-apple-darwin'
+        with:
+          python-version: "3.12"
+
+      - name: Smoke test (detached BSim round trip with bundled specs and weights)
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
+          bindir="$GITHUB_WORKSPACE/decompiler/target/${{ matrix.target }}/release"
+          python "$GITHUB_WORKSPACE/scripts/test_bsim_native.py" --embedded \
+            --kuna "$bindir/kuna$ext" --server "$bindir/kuna-bsim-server$ext"
+
       - name: Package archive
         shell: bash
         run: |
@@ -177,7 +201,7 @@ jobs:
           ext=""
           if [ "${{ runner.os }}" = "Windows" ]; then ext=".exe"; fi
           mkdir -p "dist/$pkg"
-          cp "$bindir/kuna$ext" "dist/$pkg/"
+          cp "$bindir/kuna$ext" "$bindir/kuna-bsim-server$ext" "dist/$pkg/"
           cp LICENSE NOTICE "dist/$pkg/"
           cd dist
           if [ "${{ runner.os }}" = "Windows" ]; then

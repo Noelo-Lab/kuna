@@ -98,11 +98,25 @@ impl<'a> HalfwordTables<'a> {
         decoded: &dyn Fn(u64) -> bool,
         from: u64,
     ) -> (Vec<u64>, Option<usize>) {
+        Self::targets_in_pool(translate, code_space, exec, decoded, from, &self.pool,
+            self.data_space.as_ref(), self.max_entries)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn targets_in_pool(
+        translate: &dyn Translate,
+        code_space: &Rc<AddrSpace>,
+        exec: &[(u64, u64)],
+        decoded: &dyn Fn(u64) -> bool,
+        from: u64,
+        pool: &PoolImage<'_>,
+        data: Option<&Rc<AddrSpace>>,
+        max_entries: usize,
+    ) -> (Vec<u64>, Option<usize>) {
         let mut cap = FullCapture::default();
         if decode(translate, from, code_space, &mut cap).is_none() {
             return (Vec::new(), None);
         }
-        let data = self.data_space.as_ref();
         let mut vals: Vec<(Key, Val)> = Vec::new();
         let mut index: Option<Key> = None;
         for op in cap.ops() {
@@ -118,7 +132,7 @@ impl<'a> HalfwordTables<'a> {
                 else {
                     return (Vec::new(), None);
                 };
-                let read = offset_targets(table, width, cases, self.max_entries, from, &self.pool, exec);
+                let read = offset_targets(table, width, cases, max_entries, from, pool, exec);
                 return if read.is_empty() { (read, None) } else { (read, Some(cases)) };
             }
             if index.is_none()
@@ -130,7 +144,7 @@ impl<'a> HalfwordTables<'a> {
                     .filter(|vn| value_of(vn, &vals, data).is_none())
                     .find_map(|vn| key_of(vn, data).filter(|k| matches!(k, Key::Reg(..))));
             }
-            let folded = fold(op, &vals, data, &self.pool);
+            let folded = fold(op, &vals, data, pool);
             let Some(out) = &op.out else { continue };
             let key = key_of(out, data);
             invalidate(&mut vals, key);

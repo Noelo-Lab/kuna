@@ -8,6 +8,7 @@ pub mod addrtable;
 pub mod android_jni;
 pub mod aif;
 pub mod blobs;
+pub mod bsim;
 pub mod callfixup;
 pub mod demangle;
 pub mod dwarf;

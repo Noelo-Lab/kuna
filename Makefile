@@ -17,16 +17,18 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage
+.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra test-bsim-native rust rust-test lint clean check-spec version observatory coverage
 
 all: binaries specs
 
 # Build the decompiler console binaries (decomp_dbg, decomp_test_dbg), the
-# SLEIGH compiler (slacomp), and the user-facing `kuna` CLI (kuna-cli).
+# SLEIGH compiler (slacomp), the `kuna` CLI, and its optional BSim service.
 # Cargo manages parallelism + incrementality. (decomp_test_dbg lives in
 # kuna-harness; kuna-cli pulls it in as a sibling at build time.)
+# Build the server separately so its ProgramDB feature stays out of the CLI.
 binaries:
 	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-console -p kuna-harness -p kuna-slacomp -p kuna-cli
+	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-bsim-server
 
 rust: binaries
 
@@ -87,6 +89,10 @@ check-spec:
 test-cli:
 	PYTHONPATH=$(ROOT) python3 -m scripts.repipe.clitests
 
+# Binaries and compiled specs are prerequisites, as with test-cli.
+test-bsim-native:
+	$(PYTHON) $(ROOT)/scripts/test_bsim_native.py --kuna $(BINDIR)/kuna --server $(BINDIR)/kuna-bsim-server
+
 test-tools:
 	$(PYTHON) $(ROOT)/scripts/check_test_layout.py
 	PYTHONPATH=$(ROOT) $(PYTHON) -m unittest discover -s $(ROOT)/scripts/tests -p 'test_*.py'
@@ -119,7 +125,7 @@ rust-test:
 # One invocation: a crate an earlier `--no-deps` run checked only as a dependency
 # is fresh to a later run, which then passes without linting it.
 lint:
-	cd $(ENGINE) && cargo clippy --release -p kuna-cli -p kuna-base -p kuna-num --no-deps -- -D warnings
+	cd $(ENGINE) && cargo clippy --release -p kuna-cli -p kuna-base -p kuna-num -p kuna-bsim-server --no-deps -- -D warnings
 
 clean:
 	cd $(ENGINE) && cargo clean

@@ -1583,9 +1583,10 @@ $ kuna functions fw.bin --json --raw-image \
 still does both, so it remains the way to narrow a raw run to named addresses.
 A function no direct call reaches and no seed names is still undiscovered;
 `--define-function` asserts it. Named `--functions`, section-relative selectors,
-`--slice`, `--summary`, and `--reachable-from` are rejected. `decompile-graph`,
-`xrefs`, and `strings` still require object metadata. A headerless file used
-without `--raw-image` reports the required raw-image command shape, including when its first byte is
+`--slice`, `--summary`, and `--reachable-from` are rejected. `fid query` also
+accepts a raw image with an explicit mapping. `decompile-graph`, `xrefs`, and
+`strings` still require object metadata. A headerless file used without
+`--raw-image` reports the required command shape, including when its first byte is
 `<`; only a parsed document containing `<binaryimage>` is treated as XML. Quoted
 console filenames preserve paths containing whitespace; the interactive spelling
 is `load raw <target> <base> <entry[,entry...]> <filename>`, where the target may
@@ -5120,6 +5121,217 @@ applies to `decompile`, `decompile-all`, `decompile-project`,
 `decompile-graph`, `functions`, `disassemble`, `raw-pcode`, `read`, `xrefs`,
 `strings`, `crypto` and `blobs`; `kuna fid build` reads a whole archive itself.
 
+## `kuna bsim` — function similarity across a corpus
+
+FID asks whether a function matches a known library fingerprint. BSim uses
+weighted features from the decompiler's IR to find functions with similar shape.
+
+```bash
+kuna bsim build app.exe -o app.kbsm                 # sign every function
+kuna bsim query app.exe --corpus app.kbsm --address 0x401010
+kuna bsim info app.kbsm --json                      # what the corpus holds
+```
+
+`build` signs each function and stores it in a corpus with one weights profile.
+A new corpus defaults to the profile for the input language. Use
+`--profile nosize` when creating a corpus for mixed native architectures or
+address sizes. An append or query inherits the stored profile and rejects
+incompatible inputs. Rebuild version-1 `.kbsm` corpora to select a profile.
+
+Ingest deduplicates by the MD5 of the source bytes used to load the executable
+(the extracted Mach-O for a dyld shared cache).
+`--max-functions N` caps the number of signatures. Rerun a capped or partial
+ingest to add missing signatures without duplicating rows. `info` reports
+whether an ingest is complete.
+An executable with no signatures is not stored. To add a different build
+with the same filename, pass `--name`.
+
+`query` signs the function at `--address`/`--name` and reports matches best
+first, each with **similarity** (0 to 1 for local and native server queries)
+and **significance**. The floor
+(`--min-similarity`, default 0.7) is applied before `--max-matches` (default 10),
+so a strong match is never crowded out by a weak one taken first. A query that
+finds nothing says which floor it used and how many functions it considered, so
+"not in the corpus" and "searched with a high floor" are never confused.
+
+**A match is a measure of shape, not proof of the same source.** Two unrelated
+functions that compile alike score high, and structurally identical stubs (a PLT
+range) score 1.0 against each other. Read the numbers as a lead.
+
+The use it exists for is pairing a function across builds: with a corpus built
+from one build, querying the same function in another returns the counterpart at
+the top with a high score — a function at `0x411440` in one build matched the
+same source compiled at `0x411430` in the next, at similarity 1.000, while
+unrelated functions in that corpus scored 0.71–0.73.
+
+Kuna bundles the default weights for each local profile. To override them,
+use `--weights <dir>`, set `KUNA_BSIM_WEIGHTS`, or put the selected profile's
+`lshweights_*.xml` beside the corpus, in that order. Its signature settings
+must match the corpus. No Ghidra installation is needed.
+
+### Serve and import a reference library
+
+`kuna-bsim-server` stores BSim signatures and the original executable bytes
+needed to compare a match. It runs without PostgreSQL, Java, or Ghidra.
+
+```bash
+kuna-bsim-server import-ghidra /backups/library.gpr --store ./library --json
+kuna-bsim-server --store ./library --bind 127.0.0.1:8787
+kuna bsim query new.exe --server http://127.0.0.1:8787 --address 0x401010 --json
+kuna bsim compare new.exe --address 0x401010 \
+    --server http://127.0.0.1:8787 --match-id "$MATCH_ID" --json
+```
+
+Set `MATCH_ID` to the `match_id` printed by the query. Kuna fetches the indexed
+function's original executable from the same origin, verifies the SHA-256,
+and decompiles both entries locally. The service does not store or return
+decompiled code. Files with the same name but different bytes remain distinct.
+Queries send feature hashes, not the source executable.
+Results may be truncated to fit the response limit; the returned matches
+are always the highest-ranked ones. JSON reports this with `truncated`.
+
+The importer reads closed or consistently copied Ghidra 12.1.2 projects
+(`.gpr` together with its `.rep`, or the `.rep` directly) and individual
+packed Program archives (`.gzf`). It imports the saved original executable
+and compatible named functions, not the full analysis database or
+types or analysis overrides. The original must be a linked ELF, PE, or
+Mach-O image or a relocatable ELF object with verifiable file backing.
+Its inferred instruction language must match the project language.
+For ELF PIE and shared objects, the importer verifies a uniform load offset.
+For relocatable ELF, it maps each saved entry through its backed file bytes
+to an original executable section index and offset. Kuna resolves that pair
+in its own object layout; it does not reuse Ghidra's synthetic addresses.
+For relocatable ELF, the importer accepts only byte-exact stock relocations
+it can recompute from the original object and the verified saved layout.
+For x86-64, this covers `PC32` and `PLT32` against file-backed targets.
+For little-endian ARM, this covers selected data and Thumb instruction
+relocations, including targets in zero-fill sections and stock synthetic
+external and common symbol slots. Other changes to executable bytes,
+including user patches at relocation sites, are rejected. Raw images
+are not supported. The saved Program DB version must be 32; upgrade and save
+a copy of an older project in Ghidra 12.1.2 before retrying.
+The latest snapshot takes precedence over inferred native names, but never
+over explicit publications. Import reports what it added, updated, or kept.
+Re-import to refresh eligible signatures after a loader update. It updates
+matching entries without removing addresses absent from the new snapshot.
+Default Ghidra names and address placeholders such as `FUN_00401000` and
+`sub_401000` are not imported. Imported and analysis-assigned names are eligible
+if they are not placeholders. `skipped_unnamed` counts these omissions;
+`considered` counts named functions eligible for signing. A valid program with
+no eligible functions is reported as `skipped`, not as an import failure.
+In JSON output, `snapshot_complete` means all eligible saved functions were
+signed. `executable_complete` reports complete native function-discovery
+coverage in the store, not whether the original executable bytes are intact.
+A Ghidra import can succeed with `executable_complete: false`.
+If some functions cannot be signed, it keeps the successful signatures,
+reports the first failure, and exits nonzero. Use a local store directory
+that only trusted operators can modify.
+The store syncs directory updates on Unix. On Windows, publication uses
+atomic replacement but does not promise recovery after power loss.
+The server uses bundled weights. `--profile` selects a profile for import
+or a query where the default is not appropriate.
+
+Plain HTTP is limited to numeric loopback addresses. To serve a non-loopback
+address, supply `--tls-cert` and `--tls-key` (PEM), and set
+`KUNA_BSIM_SERVER_TOKEN` on the server and client through a credential
+manager. Kuna uses its system trust roots; set `SSL_CERT_FILE` for a private
+CA. The server rejects unauthenticated requests when a token is set.
+For untrusted networks, use an ingress that limits connection and TLS
+handshake rates before forwarding traffic to the service.
+
+To index binaries without a Ghidra project, import the original files directly:
+
+```bash
+kuna-bsim-server import module.o app.exe --store ./library --json
+```
+
+Kuna discovers functions, uses names from the object when available, and
+stores signatures and the original bytes. `.o` functions use Kuna's loaded
+addresses so separate sections with the same raw offset stay distinct.
+For a universal Mach-O, import indexes one slice and stores the whole file.
+Set `KUNA_MACHO_SLICE=arm64` to select the ARM slice instead of the default
+when both are present. Compare verifies the whole file and reopens the
+indexed slice regardless of the client's local slice preference.
+The JSON match includes the slice's file offset and size. A store accepts
+one slice per original file and weights profile.
+
+To publish one finished function, set a separate `KUNA_BSIM_SERVER_WRITE_TOKEN`
+on the server and the publishing client. The server is read-only when this
+token is absent. A read token cannot publish.
+
+```bash
+kuna bsim push app.exe --server http://127.0.0.1:8787 \
+    --address 0x401010 --rename parse_record --json
+```
+
+Use `--name` instead of `--address` to select by an existing symbol.
+Without `--rename`, the server uses Kuna's resolved function name. A bounded
+worker from the same server binary signs the selected function from the
+upload, without consulting other executable files. A push replaces only
+that entry in the same executable and profile; other entries stay intact.
+Release builds load the server's bundled SLEIGH specs directly from the
+binary, without an on-disk spec cache.
+Give write tokens only to trusted publishers. The worker is resource-limited,
+not an OS privilege sandbox; run the server under a dedicated unprivileged
+account and reserve at least 2 GiB of memory for the worker in addition to
+the server's own working set.
+The client verifies the acknowledgement against the exact bytes it sent.
+The returned `match_id` is ready for `kuna bsim compare`. If the client
+reports an unknown outcome, check the entry or retry the same publication.
+
+From a checkout, run `make binaries specs test-bsim-native` to test Ghidra
+migration, native import, authenticated publication, and automatic comparison.
+The regression uses checked-in Ghidra 12.1.2 data and needs no Java or Ghidra.
+
+### Query a PostgreSQL BSim database
+
+Set `KUNA_BSIM_POSTGRES` to a PostgreSQL connection string or URI supplied by
+your credential manager. For example, `host=bsim.example.org dbname=bsim
+user=bsim_reader` specifies the endpoint and identity without a password. This
+mode reads an existing BSim schema and uses its server-side `lshvector` index.
+Use a role with read access to the BSim tables and permission to execute the
+`lshvector` functions. No Ghidra application or bridge runs on the Kuna side.
+TCP connections require TLS with hostname and certificate verification
+against the system trust store; Unix sockets also work.
+Connection startup, including TLS and authentication, has a 10-second deadline.
+
+```bash
+kuna bsim query app.exe --postgres --address 0x401010 --json
+```
+
+Kuna sends feature hashes, not the binary or its decompiled code. It uses the
+database's signature settings, native LSH index, weights and significance
+calculation. As in Ghidra, similarity must exceed `--min-similarity` and
+significance must exceed zero. Index search is approximate; an empty result
+does not prove the database has no similar functions. PostgreSQL BSim layout
+6 is supported. Kuna rejects incomplete or ambiguous native LSH configuration
+rather than searching with fallback weights. H2, Elasticsearch and remote
+ingest are not supported.
+
+### Compare against a local reference binary
+
+Kuna decompiles both functions and emits a unified C diff. Supply the reference
+binary and its function address for an offline comparison:
+
+```bash
+kuna bsim compare app.exe --address 0x401010 \
+    --reference old.exe --reference-address 0x401020 --json
+```
+
+To compare against an existing PostgreSQL match, replace `--reference-address`
+with `--match-id ID` from the same database. Kuna uses the indexed function
+address and verifies the reference binary's MD5. Obtain the binary separately;
+Kuna does not connect to a Ghidra Server or download files from a `repository_url`.
+If either decompilation is unavailable or truncated at 1,000 lines, `diff` is
+null. A text diff does not establish semantic equivalence.
+
+To run the remote regression test on Linux, build Kuna and the SLEIGH specs
+with `make`, then run `python3 scripts/test_bsim_remote.py /path/to/ghidra-source`.
+The test uses PostgreSQL 16 server tools and headers, an x86-64 C toolchain
+with `objcopy`, and OpenSSL.
+It starts a temporary PostgreSQL instance with the stock `lshvector` extension
+to test interoperability; it does not need a Ghidra application or worker.
+
 ## `kuna fid` — function identification by fingerprint
 
 `kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna
@@ -5134,6 +5346,10 @@ against a `libc.a` database it keeps only a few percent of the correct names.
 A name strict declines still counts against a different FLIRT name at that
 address.
 
+Ghidra databases can also be used for automatic naming. Kuna honors mandatory
+record restrictions before proposing a name. A record that requires call
+relationships is not used for automatic naming when that evidence is unavailable.
+
 ### Which database applies, and what a run says about it
 
 A `.fid` header records the language (`--lang`) and compiler spec (`--cspec`)
@@ -5146,6 +5362,7 @@ applies to an `x86:LE:64:default` gcc image, while an `AARCH64:LE:64:v8A` or
 defines applies to nothing. The `.ldefs` facts are not always the id's fields:
 `MIPS:BE:64:64-32addr` has a 32-bit address size, and `ARM:LEBE:32:v8LEInstruction`
 and `AARCH64:BE:64:v8A` have little-endian instructions.
+For Ghidra databases, Kuna applies the same rule to each library separately.
 
 `kuna fid build` refuses an object whose own language, the one kuna decodes it
 with, `--lang` does not apply to: it exits 1 without writing the database, and an
@@ -5162,7 +5379,7 @@ became of it:
 | `loaded` | Read, applies to the image, matched against. |
 | `missing` | No file at that path. |
 | `unreadable` | The path exists but cannot be read (a directory, no permission). |
-| `invalid` | Not a kuna `.fid` (bad magic, unsupported version, truncated). |
+| `invalid` | Unrecognized, incompatible format version, or malformed database. |
 | `incompatible` | A valid database whose language does not apply to the image. |
 
 Every status but `loaded` is printed once on stderr (by the text `decompile` too,
@@ -5191,60 +5408,77 @@ its fingerprint had no unique match; beside any other status, nothing was looked
 
 ### Build a FID database
 
-When an input symbol has a nonzero size, `kuna fid build` clips its linear
-decode to that size and the next function entry. ARM32 Thumb function symbols
-are decoded in Thumb mode at their even address. Symbols without a size retain
-the next-entry approximation. Rebuilding an older database can change its
-records because trailing padding is no longer included; existing databases
-remain readable, but need rebuilding to benefit from the new extents.
+Build and lookup follow reachable instructions up to the next function entry.
+The walk includes direct branches and recovered switch cases. A function with
+an unresolved indirect jump is not fingerprinted. ARM32 Thumb symbols are
+decoded in Thumb mode at their even address. Rebuild version-1 Kuna `.fid`
+databases from their original inputs; their fingerprints are incompatible.
 
 ### `kuna fid query` — candidates for an address, without renaming
 
-`kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
+`kuna fid query <binary> --db <database> --addr <address> [--addr <address> ...] --json`
 reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
-The kuna `.fid` database must apply to the binary (see above); Ghidra `.fidbf`
-is not supported.
+Kuna accepts its own `.fid` files and Ghidra `.fidbf` or `.fidb` databases.
+For Ghidra databases, only compatible libraries contribute candidates.
+
+For a raw image, supply the SLEIGH target and the address of file offset zero.
+The `--addr` values seed discovery. Raw ARM32 also requires `--isa arm|thumb`;
+an odd Thumb pointer selects its underlying even address.
+
+```bash
+kuna fid query ./rom.bin --db ./library.fidb --addr 0x329 --raw-image \
+  --target ARM:LE:32:v7 --base 0 --isa thumb --json
+```
+
+For automatic naming of the raw function inventory, supply the same mapping to
+`kuna functions`, an explicit `--entry`, `--option listing on --option fid on`,
+and the database in `kuna_fid_db`.
 
 For one address, the JSON root contains `binary`, `database`, `requested_address`,
 `address`, `entry_source`, `instruction_boundary`, `identity_verified`, `status`
 and `candidates`. `requested_address` is the input; for an ARM32 Thumb pointer
 `address` has its low bit cleared. `entry_source` is `discovered` when the initial
 Listing already has a function there, or `user_supplied` when the query adds it.
+Raw query addresses are always `user_supplied` seeds.
 `instruction_boundary` is `instruction_start`, `inside_instruction`, `undecoded`,
 or `non_executable`, according to the initial Listing. These are analysis facts,
 not proof that the address is a function entry.
 
 Status `single_candidate` means the full-hash bucket has one distinct name;
 `ambiguous` means multiple names and `no_match` an empty bucket. These three also
-carry `database_format` (`kuna_fid`), `language`, `match_basis` (`full_hash`) and
+carry `database_format` (`kuna_fid` or `ghidra_fid`), `language`,
+`match_basis` (`full_hash`) and
 the function's own `full_hash`, `specific_hash` and `code_unit_size`; each candidate
 is `{name, specific_hash, specific_hash_matches, code_unit_size, code_unit_size_matches}`, sorted by name.
+Ghidra candidates also report their original `ghidra_flags`; the query lists
+raw candidates, not the result of applying automatic naming policy.
 `identity_verified` is always false: even a single candidate can be wrong, and
 functions whose masked bodies are identical share a bucket, so one name can be
 reported at several addresses. Specific hashes are reported for comparison and do
 not decide the match. The result summarizes their agreement as
 `specific_hash_evidence`: `matching_candidate`, `no_candidate_matches`, or
 `no_candidates`. `unavailable` includes a `reason`, such as `too_short` (fewer
-code units than FID hashes), `mask_failed` (an instruction did not decode) or
-`decode_context_mismatch` (the ARM32 decode context no longer reproduced the
-Listing). Malformed or incompatible input is an error.
+code units than FID hashes), `mask_failed` (an instruction did not decode),
+`decode_context_mismatch` (ARM32 context no longer reproduced the Listing),
+or `unresolved_computed_jump` (the switch targets could not be proven).
+Malformed or incompatible input is an error.
 
 For multiple addresses the root is `{binary, database, queries}`; `queries`
 contains results in input order, including duplicate addresses. An address that
 cannot be queried has `status: "error"` and a `reason`; a database or binary
-error fails the command. One address retains the single-result JSON shape. The
-input and database are loaded once, and discovered functions share the Listing.
-Other addresses get separate Listings, and each query uses a scoped decode
-context to avoid changing another result; each such address therefore costs one
-more walk of the whole image. The query's Listing is seeded from the container
-alone, so `kuna functions` can name entries it reports as `user_supplied`. The
+error fails the command. One address retains the single-result JSON shape. For a
+raw image, addresses share one partition seeded by the whole batch; an invalid
+raw seed fails the load. For an object image, discovered functions share the
+initial Listing; each added entry needs a separate Listing and a scoped decode
+context. The initial Listing is seeded from the container alone, so
+`kuna functions` can name entries the query reports as `user_supplied`. The
 Listing uses a contiguous-entry approximation and does not account for
 relocations; relocatable query targets are unsupported.
 
-Exit codes: `0` the document was written (whatever each `status`); `1` the binary
-or database could not be read or loaded (a relocatable object included), the
-database language differs, or the single queried address is not a decodable
-entry; `2` a malformed command line, with the usage block.
+Exit codes: `0` the document was written; inspect each `status`, including
+`unavailable` for an in-range raw seed that cannot be fingerprinted. `1` the
+binary or database could not be loaded, a raw seed is out of range, or a single
+linked-image address could not be decoded as an entry. `2` malformed command line.
 
 ## `kuna flirt make` — write FLIRT `.pat` and `.sig` files
 

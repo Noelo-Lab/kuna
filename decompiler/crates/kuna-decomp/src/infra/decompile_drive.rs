@@ -1324,7 +1324,7 @@ fn run_jumptable_pipeline(
     }
 }
 
-/// Run the `decompile` universalAction root to completion against `fd` (C++
+/// Run the selected universalAction root to completion against `fd` (C++
 /// `IfcDecompile::execute`, ifacedecomp.cc:889 — `getCurrent()->reset(fd)` then
 /// `getCurrent()->perform(fd)`).  Returns the perform result (`>=0` change
 /// count, `<0` on a breakpoint).
@@ -1332,11 +1332,9 @@ fn run_jumptable_pipeline(
 /// The action root owns the restart loop (C++ non-virtual `Action::perform`,
 /// already ported in `action.rs`); this drives it through the engine-side
 /// [`ActionContext`] so the warning-emission points are observable.
-fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> {
+fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata, action: &str) -> KunaResult<int4> {
     let _load = arch.load_scope();
-    // C++ allacts.setCurrent("decompile") derives the filtered decompile root
-    // (idempotent if already current).
-    arch.allacts.set_current("decompile")?;
+    arch.allacts.set_current(action)?;
     // The action loop's in-loop restart cannot re-follow flow (no SLEIGH
     // translator inside `allacts`); it hands a pending restart up here via
     // `ctx.reflow_requested`.  This outer loop owns `&mut Architecture`, so it can
@@ -1574,6 +1572,26 @@ pub fn decompile_func_with_symbols(
     mapped_symbols: &[(String, std::rc::Rc<crate::dtype::Datatype>, Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
     decompile_func_full(arch, name, funcaddr, size, mapped_symbols, None)
+}
+
+/// Build the normalized IR used by Ghidra's `generateSignatures` command.
+pub fn normalize_function(
+    arch: &mut Architecture,
+    name: &str,
+    entry: Address,
+    size: int4,
+) -> KunaResult<Funcdata> {
+    let _drive = arch.kuna_drive_scope();
+    let saved = arch.allacts.get_current_name().to_owned();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let mut fd = build_and_follow_flow(arch, name, entry, size)?;
+        if run_pipeline(arch, &mut fd, "normalize")? < 0 {
+            return Err(KunaError::lowlevel("normalize pipeline hit a breakpoint"));
+        }
+        Ok(fd)
+    }));
+    arch.allacts.set_current(&saved)?;
+    result.unwrap_or_else(|payload| Err(KunaError::lowlevel(panic_message(payload))))
 }
 
 /// How many direct callees a single-function drive may decompile just to state
@@ -2359,7 +2377,7 @@ fn decompile_func_full_with_objects_inner(
         crate::kuna_calleememory::seed(arch, &mut fd);
         // Report a pass panic as a per-function failure at the driver boundary.
         let res =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd)));
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_pipeline(arch, &mut fd, "decompile")));
         match res {
             Ok(r) => {
                 r?;

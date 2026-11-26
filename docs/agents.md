@@ -58,8 +58,9 @@ skip when the tool is absent, but a failed build with an installed tool is an er
 Python tooling unit tests run with `make test-tools` and are also required by CI.
 They use temporary state directories, not the live pipeline inventory.
 
-CI also runs `make lint`, treating Clippy warnings as errors in the CLI and the
-base and numeric libraries, not the whole workspace or their test targets.
+CI also runs `make lint`, treating Clippy warnings as errors in the CLI,
+BSim server, and the base and numeric libraries, not the whole workspace
+or their test targets.
 
 The Rust test profile uses optimization level 1 for real-image tests, with debug
 assertions and integer-overflow checks enabled. Ordinary development builds retain
@@ -93,6 +94,25 @@ the subcommands. Decisions are flipped per run with `--option NAME VALUE`; disco
 `kuna catalog --json`.
 
 Full reference (flags, JSON schemas, watchdog, project-export artifacts): **`docs/cli.md`**.
+
+## Native BSim server compatibility
+
+- **A newer `kuna-bsim-server` must support stores from every released version.**
+  Prefer format changes that keep existing stores readable. If a change makes
+  an older store unreadable or changes how its records are interpreted, version
+  the format and ship a forward migration in the same PR. Preserve the ability
+  to skip releases. Downgrades do not need to work.
+- Run migration offline or under the store's exclusive writer lock. Do not
+  require users to re-import original projects or lose published names. Preserve
+  original binary bytes and digests, valid match IDs, names, and entry
+  provenance. A failed or interrupted migration must leave the old store
+  usable or allow the upgrade to resume safely.
+- Test against a store fixture produced by an older release: upgrade it, then
+  query, download, compare, and publish with the new server. Do not regenerate
+  the old fixture with the new writer. Document the upgrade in `docs/release.md`.
+  Treat the HTTP API separately: preserve existing `/v1` client behavior or
+  introduce a new API version. These rules apply to Kuna's native store, not to
+  stock Ghidra ProgramDB or PostgreSQL BSim schemas.
 
 ## The phase model
 

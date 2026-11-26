@@ -1686,11 +1686,13 @@ pub fn run_default_analyses(
 /// pass's `id()` string, which doubles as its settable-option name (`phases.toml`
 /// + `KUNA_OPTION_NAMES`). A parse failure yields an empty list (additive, never
 /// fails). Pairs preserve pass order so the commit order is deterministic.
+/// Pass `None` for an in-memory object with no on-disk companions.
 pub fn run_default_analyses_per_pass(
     bytes: &[u8],
     image: &ObjectLoadImage,
     arch: &Architecture,
     translate: &dyn Translate,
+    image_path: Option<&std::path::Path>,
 ) -> Vec<(&'static str, AnalysisOutput)> {
     let Ok(raw) = crate::loadimage_object::parse_object(bytes) else {
         return Vec::new();
@@ -1717,7 +1719,7 @@ pub fn run_default_analyses_per_pass(
         image: Some(image),
         arch,
         listing: listing.as_ref(),
-        image_path: image_on_disk_path(image),
+        image_path,
     };
     let format = file.format();
     let mut split: Vec<(&'static str, AnalysisOutput)> = passes_for(compiler, format)

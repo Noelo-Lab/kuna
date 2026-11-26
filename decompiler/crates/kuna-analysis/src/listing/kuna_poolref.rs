@@ -47,6 +47,9 @@
 //! entry, a `.data` pointer) is whatever the loader or the program last wrote
 //! there, and the image's copy of it is not evidence of anything.
 
+use std::sync::Arc;
+
+use kuna_sleigh::loadimage::ImageBytes;
 use object::read::{Object, ObjectSection};
 use object::SectionKind;
 
@@ -60,6 +63,9 @@ const SHF_ALLOC: u64 = 0x2;
 /// content, in address order.
 pub(super) struct PoolImage<'a> {
     ro: Vec<(u64, u64, &'a [u8])>,
+    /// When present, the slices above are empty and reads come from the
+    /// loaded image, including any applied object-file relocations.
+    loaded: Option<Arc<dyn ImageBytes>>,
     /// The target's pointer width in bytes (4 or 8).
     ptr: u32,
     little_endian: bool,
@@ -93,7 +99,20 @@ impl<'a> PoolImage<'a> {
             return None;
         }
         ro.sort_unstable_by_key(|&(lo, _, _)| lo);
-        Some(PoolImage { ro, ptr, little_endian })
+        Some(PoolImage { ro, loaded: None, ptr, little_endian })
+    }
+
+    /// Keep only read-only range metadata; read loaded words on demand.
+    pub(super) fn from_loaded(
+        ranges: Vec<(u64, u64)>,
+        loaded: Arc<dyn ImageBytes>,
+        ptr: u32,
+        little_endian: bool,
+    ) -> Option<Self> {
+        let ro = ranges.into_iter().map(|(lo, hi)| (lo, hi, &[][..])).collect();
+        let mut pool = Self::from_ranges(ro, ptr, little_endian)?;
+        pool.loaded = Some(loaded);
+        Some(pool)
     }
 
     /// The address a `width`-byte read of `at` yields, when that read is a
@@ -161,8 +180,10 @@ impl<'a> PoolImage<'a> {
             return false;
         };
         let (lo, hi, data) = self.ro[i];
-        width != 0 && vma < hi && end <= hi
-            && end.checked_sub(lo).is_some_and(|offset| offset <= data.len() as u64)
+        width != 0 && vma < hi && end <= hi && match &self.loaded {
+            Some(image) => image.mapped_covers(vma, end),
+            None => end - lo <= data.len() as u64,
+        }
     }
 
     /// The signed 32-bit word at `vma`, when `vma` is 4-byte aligned and lies in
@@ -173,8 +194,7 @@ impl<'a> PoolImage<'a> {
         if vma % 4 != 0 {
             return None;
         }
-        let b = self.bytes_at(vma, 4)?;
-        let b: [u8; 4] = b.try_into().ok()?;
+        let b = self.read_word(vma)?;
         Some(if self.little_endian { i32::from_le_bytes(b) } else { i32::from_be_bytes(b) })
     }
 
@@ -185,36 +205,42 @@ impl<'a> PoolImage<'a> {
         if vma % ptr != 0 {
             return None;
         }
-        let b = self.bytes_at(vma, self.ptr)?;
         Some(match (self.ptr, self.little_endian) {
-            (8, true) => u64::from_le_bytes(b.try_into().ok()?),
-            (8, false) => u64::from_be_bytes(b.try_into().ok()?),
-            (_, true) => u64::from(u32::from_le_bytes(b.try_into().ok()?)),
-            (_, false) => u64::from(u32::from_be_bytes(b.try_into().ok()?)),
+            (8, true) => u64::from_le_bytes(self.read_word(vma)?),
+            (8, false) => u64::from_be_bytes(self.read_word(vma)?),
+            (_, true) => u64::from(u32::from_le_bytes(self.read_word(vma)?)),
+            (_, false) => u64::from(u32::from_be_bytes(self.read_word(vma)?)),
         })
     }
 
     /// The unsigned `width`-byte (1 or 2) word at `vma` in a read-only section.
     pub(super) fn uword_at(&self, vma: u64, width: u32) -> Option<u64> {
-        let b = self.bytes_at(vma, width)?;
         Some(match (width, self.little_endian) {
-            (1, _) => u64::from(b[0]),
-            (2, true) => u64::from(u16::from_le_bytes(b.try_into().ok()?)),
-            (2, false) => u64::from(u16::from_be_bytes(b.try_into().ok()?)),
+            (1, _) => u64::from(self.read_word::<1>(vma)?[0]),
+            (2, true) => u64::from(u16::from_le_bytes(self.read_word(vma)?)),
+            (2, false) => u64::from(u16::from_be_bytes(self.read_word(vma)?)),
             _ => return None,
         })
+    }
+
+    fn read_word<const N: usize>(&self, vma: u64) -> Option<[u8; N]> {
+        let Some(image) = &self.loaded else {
+            return self.bytes_at(vma, N as u32)?.try_into().ok();
+        };
+        if !self.contains_bytes(vma, N as u64) {
+            return None;
+        }
+        let mut bytes = [0; N];
+        (image.fill_span(&mut bytes, vma) == 0).then_some(bytes)
     }
 
     /// The `width`-byte (1, 2 or 4) word at `vma` in a read-only section, sign-
     /// or zero-extended: an entry of a relative jump table.
     pub(super) fn sword_at(&self, vma: u64, width: u32, signed: bool) -> Option<i64> {
-        let b = self.bytes_at(vma, width)?;
         let raw = match (width, self.little_endian) {
-            (1, _) => u64::from(b[0]),
-            (2, true) => u64::from(u16::from_le_bytes(b.try_into().ok()?)),
-            (2, false) => u64::from(u16::from_be_bytes(b.try_into().ok()?)),
-            (4, true) => u64::from(u32::from_le_bytes(b.try_into().ok()?)),
-            (4, false) => u64::from(u32::from_be_bytes(b.try_into().ok()?)),
+            (1 | 2, _) => self.uword_at(vma, width)?,
+            (4, true) => u64::from(u32::from_le_bytes(self.read_word(vma)?)),
+            (4, false) => u64::from(u32::from_be_bytes(self.read_word(vma)?)),
             _ => return None,
         };
         let bits = 8 * width;
@@ -276,6 +302,19 @@ mod tests {
 
     fn ro32() -> PoolImage<'static> {
         PoolImage::from_ranges(vec![(0x1000, 0x100c, &POOL[..])], 4, true).unwrap()
+    }
+
+    #[test]
+    fn relative_words_use_loaded_bytes_and_stay_in_the_read_only_range() {
+        use crate::loadimage_object::ObjectLoadImage;
+        use kuna_sleigh::loadimage::LoadImage;
+
+        let bytes = include_bytes!("../../tests/fixtures/arm_thumb_abi_linked.elf");
+        let image = ObjectLoadImage::from_bytes_silent("fixture", bytes).unwrap();
+        let pool = PoolImage::from_loaded(vec![(0x400000, 0x400024)], image.shared_bytes().unwrap(), 4, true).unwrap();
+        assert_eq!(pool.sword_at(0x400020, 2, true), Some(-8184));
+        assert_eq!(pool.sword_at(0x400020, 2, false), Some(0xe008));
+        assert_eq!(pool.sword_at(0x400022, 4, true), None);
     }
 
     #[test]

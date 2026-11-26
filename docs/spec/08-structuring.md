@@ -679,11 +679,14 @@ several such arms can end the switch, so each of the others is printed with a
 `break;` after its call (as in the `usage(0); break;` of a getopt loop). This is
 a correctness fix with no option: no order it changes printed anything the
 program does.
-`blockaction.rs (ActionNormalizeBranches)` remains a non-mutating compatibility
-action in the `jumptable` and `normalize` groups. It preserves its registration
-and initialized-root check, but does not traverse branches or allocate unused
-flip lists. Branch opcodes, operands, flags and edge order remain unchanged;
-removing this discarded analysis does not enable branch normalization.
+
+`blockaction.rs (ActionNormalizeBranches)` runs in the `jumptable` and
+`normalize` action groups, not the C-emitting `decompile` group. When a
+two-successor conditional branch is the only user of a predicate that can be
+complemented to its canonical form, the action rewrites the predicate, swaps
+the true and false successors, and toggles the fallthrough polarity. The
+branch still reaches the same destination for each input. BSim hashes both
+the normalized predicate and the successor order.
 
 **The label invariant.** An emitted `goto label_X;` without a `label_X:` in
 the same function is not C, so the set of blocks

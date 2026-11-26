@@ -135,18 +135,18 @@ const X86_64_CONTEXT: &[(&str, u32)] = &[
 
 const VMA: u64 = 0x401000;
 
-/// Build a `Sleigh` over `x86-64.sla` loaded with `code` at `VMA`.
-fn build_x86_64(code: &[u8]) -> Sleigh {
-    let root = repo_root();
-    let sla = std::fs::read(
-        root.join("specs/Ghidra/Processors/x86/data/languages/x86-64.sla"),
-    )
-    .expect("read x86-64.sla (run: slacomp x86-64.slaspec)");
-
+fn build_sleigh(code: &[u8], language: &str) -> Sleigh {
+    let path = repo_root().join("specs/Ghidra/Processors").join(language);
+    let sla = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     let ctx = Box::new(ContextInternal::new());
     let img = MemImg { vma: VMA, bytes: code.to_vec() };
     let mut sleigh = Sleigh::new(Box::new(img), ctx);
     sleigh.initialize_from_sla(&sla).expect("initialize from sla");
+    sleigh
+}
+
+fn build_x86_64(code: &[u8]) -> Sleigh {
+    let mut sleigh = build_sleigh(code, "x86/data/languages/x86-64.sla");
     for (name, val) in X86_64_CONTEXT {
         sleigh.set_context_default(name, *val);
     }
@@ -344,18 +344,9 @@ fn rex_mov_r64_r64_classifies_both_registers() {
     assert_eq!(m.fixed_mask[1], 0xff, "the MOV opcode (89) must be fully pinned");
     assert_ne!(m.fixed_mask[2], 0xff, "modrm reg/rm selectors are operand bits");
 
-    // A register-to-register form: both operands classify as registers.
-    let regs: Vec<&OpObject> = m
-        .operands
-        .iter()
-        .flat_map(|o| o.objects.iter())
-        .filter(|o| matches!(o, OpObject::Register { .. }))
-        .collect();
-    assert!(
-        regs.len() >= 2,
-        "expected both operands to be registers for mov r64,r64; got {:?}",
-        m.operands
-    );
+    assert_eq!(m.operands.len(), 2);
+    assert_eq!(m.operands[0].objects, [OpObject::Register { offset: 0x30 }]); // RSI
+    assert_eq!(m.operands[1].objects, [OpObject::Register { offset: 0x38 }]); // RDI
 }
 
 #[test]
@@ -383,15 +374,69 @@ fn mov_mem_disp32_masks_displacement() {
         "disp32 displacement bytes must be zeroed (operand)"
     );
 
-    // The displacement classifies a Scalar operand carrying the real value.
-    assert!(
-        m.operands
-            .iter()
-            .flat_map(|o| o.objects.iter())
-            .any(|o| matches!(o, OpObject::Scalar { signed: 0x12345678, .. })),
-        "expected a Scalar operand == 0x12345678 (the disp32), got {:?}",
-        m.operands
+    assert_eq!(m.operands.len(), 2);
+    assert_eq!(m.operands[0].objects, [OpObject::Register { offset: 0 }]); // EAX
+    assert_eq!(
+        m.operands[1].objects,
+        [
+            OpObject::Register { offset: 0x18 }, // RBX
+            OpObject::Scalar { signed: 0x12345678, whole_operand: false, is_address: false },
+        ],
     );
+}
+
+#[test]
+fn jnz_reports_only_the_promoted_branch_address() {
+    let sleigh = build_x86_64(&[0x75, 0x05]); // jnz VMA + 7
+    let m = sleigh.instruction_mask(&code_addr(&sleigh, VMA)).expect("instruction_mask");
+    assert_eq!(m.operands.len(), 1);
+    assert_eq!(m.operands[0].objects, [OpObject::Address]);
+}
+
+#[test]
+fn aarch64_cmn_preserves_a_forwarded_immediate() {
+    // cmn x2, #5. The hidden SBIT_CZNO node occupies instruction slot 0;
+    // slot 0 of the immediate's forwarding constructor is the immediate.
+    let sleigh = build_sleigh(&[0x5f, 0x14, 0x00, 0xb1], "AARCH64/data/languages/AARCH64.sla");
+    let m = sleigh.instruction_mask(&code_addr(&sleigh, VMA)).expect("instruction_mask");
+    assert_eq!(m.operands.len(), 2);
+    assert_eq!(m.operands[0].objects, [OpObject::Register { offset: 0x4010 }]); // x2
+    assert_eq!(
+        m.operands[1].objects,
+        [OpObject::Scalar { signed: 5, whole_operand: true, is_address: false }],
+    );
+}
+
+#[test]
+fn aarch64_ldr_does_not_report_invisible_registers_from_extend_syntax() {
+    let sleigh = build_sleigh(
+        &[
+            0x41, 0xe8, 0x63, 0x3c, // ldr b1, [x2, x3, sxtx]
+            0x41, 0x68, 0x63, 0x3c, // ldr b1, [x2, x3]
+        ],
+        "AARCH64/data/languages/AARCH64.sla",
+    );
+    for off in [VMA, VMA + 4] {
+        let m = sleigh.instruction_mask(&code_addr(&sleigh, off)).expect("instruction_mask");
+        assert_eq!(m.operands.len(), 5);
+        assert_eq!(m.operands[0].objects, [OpObject::Register { offset: 0x5020 }]); // b1
+        assert_eq!(m.operands[1].objects, [OpObject::Register { offset: 0x4010 }]); // x2
+        assert_eq!(m.operands[2].objects, [OpObject::Register { offset: 0x4018 }]); // x3
+        // Both the literal-only `sxtx` and empty extend_spec consume x3
+        // for semantics without printing it; neither contributes an object.
+        assert!(m.operands[3].objects.is_empty());
+        assert!(m.operands[4].objects.is_empty()); // empty extend_amount
+    }
+}
+
+#[test]
+fn aarch64_vector_add_does_not_treat_printed_names_as_scalars() {
+    // add v1.4s, v2.4s, v3.4s prints attached names; the actual registers
+    // are hidden semantic operands in the vector-register constructors.
+    let sleigh = build_sleigh(&[0x41, 0x84, 0xa3, 0x4e], "AARCH64/data/languages/AARCH64.sla");
+    let m = sleigh.instruction_mask(&code_addr(&sleigh, VMA)).expect("instruction_mask");
+    assert_eq!(m.operands.len(), 3);
+    assert!(m.operands.iter().all(|operand| operand.objects.is_empty()));
 }
 
 #[test]

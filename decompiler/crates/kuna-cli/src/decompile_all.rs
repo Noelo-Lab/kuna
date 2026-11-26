@@ -24,7 +24,7 @@ use std::fmt::Write as _;
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_base::address::Address;
 use kuna_console::engine::{
-    bootstrap_from_image_with_isa, bootstrap_from_raw, ArmIsa, Bootstrap, ConsoleProgram, EntryLookupError,
+    bootstrap_from_raw, ArmIsa, Bootstrap, ConsoleProgram, EntryLookupError,
     EntrySelector, FunctionEntry, ObjectLocation,
 };
 // The decompile loop + result shape live in the shared decompile-project core
@@ -1275,7 +1275,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         None => (None, None),
     };
     let loaded = match request {
-        Some(request) => load_program_with_rust_profiles(args, DriverDefaults::Functions, Some(request))
+        Some(request) => load_program_with_rust_profiles(args, DriverDefaults::Functions, Some(request), None)
             .map(|prog| {
                 let all = prog.function_entries_canonical();
                 (prog, all)
@@ -1770,17 +1770,28 @@ pub(crate) fn load_program(
     args: &Args,
     defaults: DriverDefaults,
 ) -> Result<ConsoleProgram, String> {
+    load_program_with_source(args, defaults, None)
+}
+
+pub(crate) type SourceObserver<'a> = &'a mut dyn FnMut(&[u8]);
+
+pub(crate) fn load_program_with_source(
+    args: &Args,
+    defaults: DriverDefaults,
+    observe_source: Option<SourceObserver<'_>>,
+) -> Result<ConsoleProgram, String> {
     let request = args.apply_rust_signatures.as_deref().map(|path| {
         crate::rust_signatures::validate_application(args)?;
         crate::rust_signatures::load(std::path::Path::new(path)).map(|(request, _)| request)
     }).transpose()?;
-    load_program_with_rust_profiles(args, defaults, request)
+    load_program_with_rust_profiles(args, defaults, request, observe_source)
 }
 
 fn load_program_with_rust_profiles(
     args: &Args,
     defaults: DriverDefaults,
     request: Option<kuna_analysis::flirt::kuna_rustprofiles::Request>,
+    observe_source: Option<SourceObserver<'_>>,
 ) -> Result<ConsoleProgram, String> {
     let binary = std::fs::canonicalize(&args.binary)
         .map_err(|_| format!("binary not found: {}", args.binary))?
@@ -1800,7 +1811,7 @@ fn load_program_with_rust_profiles(
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
-    let mut prog = if args.raw_image && matches!(defaults, DriverDefaults::RawView) {
+    let prog = if args.raw_image && matches!(defaults, DriverDefaults::RawView) {
         Bootstrap::new(&spec_roots).target(target).arm_isa(args.isa)
             .raw_view(&binary, args.base.expect("raw parser requires --base"))
     } else if args.raw_image {
@@ -1833,7 +1844,8 @@ fn load_program_with_rust_profiles(
             &spec_roots,
         )
     } else {
-        bootstrap_from_image_with_isa(&binary, target, &spec_roots, args.isa)
+        Bootstrap::new(&spec_roots).target(target).arm_isa(args.isa)
+            .image_with_source(&binary, observe_source)
     }
     .map_err(|e| {
         let detail = e.explain();
@@ -1851,7 +1863,36 @@ fn load_program_with_rust_profiles(
         };
         format!("{msg}{raw_hint}")
     })?;
+    finish_program_load(prog, args, defaults, request, &binary)
+}
 
+pub(crate) fn load_bsim_reference(
+    bytes: Vec<u8>,
+    indexed: &kuna_bsim_server::StoredFunction,
+) -> Result<ConsoleProgram, String> {
+    let roots = spec_roots(None);
+    let slice = indexed.macho_slice.map(|slice| (slice.offset, slice.size));
+    let program = Bootstrap::new(&roots).indexed_image(bytes, slice)
+        .map_err(|error| format!("could not load the verified BSim reference: {}", error.explain()))?;
+    let arch = program.arch();
+    let language = kuna_decomp::kuna_langfamily::language_id(&arch.archid);
+    let compiler = arch.compiler_spec_id();
+    if language != indexed.architecture || compiler != Some(indexed.compiler.as_str()) {
+        return Err(format!(
+            "verified BSim reference loaded as {language} / {compiler:?}, indexed as {} / {:?}",
+            indexed.architecture, indexed.compiler,
+        ));
+    }
+    finish_program_load(program, &Args::serial(), DriverDefaults::Decompile, None, "BSim reference")
+}
+
+fn finish_program_load(
+    mut prog: ConsoleProgram,
+    args: &Args,
+    defaults: DriverDefaults,
+    request: Option<kuna_analysis::flirt::kuna_rustprofiles::Request>,
+    binary: &str,
+) -> Result<ConsoleProgram, String> {
     let non_x86_64 = !prog.arch().archid.starts_with("x86:LE:64:");
     for (name, value) in driver_default_options_for_arch(
         non_x86_64,
@@ -1906,8 +1947,8 @@ fn load_program_with_rust_profiles(
         kuna_console::assertions::apply_program_scoped(&mut prog);
     }
     if args.jobs_worker.is_none() {
-        crate::funcdecl::warn_unmapped(&prog, &binary);
-        crate::fid::report::warn(&prog, &binary);
+        crate::funcdecl::warn_unmapped(&prog, binary);
+        crate::fid::report::warn(&prog, binary);
     }
     crate::kuna_allocrelease::after_analysis();
     if args.jobs_worker.is_none() {

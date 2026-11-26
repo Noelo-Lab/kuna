@@ -1,11 +1,5 @@
-//! S1 FID (Function-ID) fingerprinting — the byte-exact port of Ghidra's
-//! FunctionID hashing mechanism.
-//!
-//! FID re-identifies a function by fingerprinting its instruction stream with an
-//! operand-masked FNV-1a64 hash, then matching that fingerprint against a
-//! database of known-library hashes — the capability that renames a `FUN_<addr>`
-//! in a stripped binary back to (say) `kuna_crc32`. See `docs/history/fid-design.md` for
-//! the full plan.
+//! FunctionID fingerprints instruction streams with an operand-masked FNV-1a64
+//! digest. A database match can supply names for stripped functions.
 //!
 //! # Module set
 //!
@@ -13,15 +7,13 @@
 //!   operand-masked per-instruction fingerprinter), and [`hash::FidHashQuad`]
 //!   (the four-field result). A line-faithful, **byte-exact** port of Ghidra's
 //!   `MessageDigestFidHasher` / `FNV1a64MessageDigest`.
-//! - [`extent`] — the `FunctionBodyFunctionExtentGenerator` analog: the
-//!   address-contiguous `[entry, next_function_after(entry))` body clip over the
-//!   Listing.
+//! - [`extent`] — the reachable, address-ordered body shared by build and
+//!   lookup. Another function entry bounds the walk; an unresolved indirect
+//!   jump prevents fingerprinting.
 //! - [`skipper`] — the [`skipper::InstructionSkipper`] trait and
 //!   [`skipper::X86InstructionSkipper`] (the x86 NOP/alignment skipper).
-//! - [`db`] — the kuna-native `.fid` format ([`db::FidDb`] / [`db::FidRecord`]):
-//!   a flat, full-hash-indexed, version-stamped file modeled field-for-field on
-//!   Ghidra's FID `FunctionsTable`+`StringsTable`, behind the [`db::FidDatabase`]
-//!   trait so a future `.fidbf` reader (deferred PR6) is a serialization swap.
+//! - [`db`] — the native `.fid` database and the shared full-hash lookup trait.
+//! - [`ghidrafid`] — the Ghidra `.fidb` and `.fidbf` database adapter.
 //! - [`build`] — the `FidServiceLibraryIngest` analog ([`build::build_records`]):
 //!   disassembles every named function in a parsed object through the Listing
 //!   path, runs the [`hash::FidHasher`] over its extent, and emits the
@@ -37,8 +29,8 @@
 //! exactly one name ([`pick_unique_name`], conservative; never guesses on a tie) —
 //! emits a [`crate::pass::FidMatch`]. The engine's commit seam then **renames** the
 //! function (only if it still carries an engine `FUN_*`/`sub_*` placeholder — the
-//! label gate). Default-OFF, real-ELF path only, inert without the Listing AND
-//! without a DB — so the parity oracles are structurally untouched.
+//! label gate). Default-OFF, inert without the Listing AND without a DB — so
+//! the parity oracles are structurally untouched.
 //!
 //! The database path is read from the `kuna_fid_db` environment variable; a real `--fidb
 //! <path>` flag is a deferred follow-on (`docs/history/fid-design.md` §7.2). Absent / empty
@@ -49,19 +41,26 @@
 pub mod build;
 pub mod db;
 pub mod extent;
+pub mod ghidradb;
+pub mod ghidrafid;
 pub mod hash;
 pub mod kuna_fidapply;
+pub mod schema;
 pub mod skipper;
 mod kuna_fidstrict;
 
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use kuna_base::address::Address;
+use kuna_decomp::architecture::Architecture;
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, FidMatch, Phase};
-use crate::fid::db::{FidDatabase, FidRecord};
+use crate::fid::db::FidRecord;
+use crate::fid::kuna_fidapply::LoadedFid;
 use crate::fid::hash::{FidHashQuad, FidHasher, InsnFingerprint, NoRelocations};
 use crate::fid::skipper::{InstructionSkipper, X86InstructionSkipper};
+use crate::listing::Listing;
 
 /// The environment variable naming the `.fid` fingerprint database to match
 /// against. A loader-tier env gate: the DB source is
@@ -94,67 +93,124 @@ impl AnalysisPass for FidPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        let mut out = AnalysisOutput::default();
-        // Listing-dependent: a no-op when the Listing is absent (the `--option
-        // listing on` flag is off). Keeps the pass inert by default even if its own
-        // gate is flipped on without the Listing.
         let Some(listing) = ctx.listing else {
-            return out;
+            return AnalysisOutput::default();
         };
-        let Some(path) = fid_db_path() else {
-            return out;
+        let Some(path) = configured_database_path() else {
+            return AnalysisOutput::default();
         };
-        let (report, db) = kuna_fidapply::open(&path, ctx.arch);
-        out.fid_databases.push(report);
-        let Some(db) = db else {
-            return out;
-        };
-
-        for (&entry, _) in listing.functions() {
-            let Ok(quad) = fingerprint_function(listing, ctx.arch, entry) else {
-                continue;
-            };
-            let records = db.find_by_full_hash(quad.full_hash);
-            let Some(name) = pick_unique_name(records, &quad) else {
-                continue;
-            };
-            let fact = FidMatch { addr: entry, name, by_signature: true };
-            if ctx.arch.analysis_fid_strict && !kuna_fidstrict::supports_rename(records, &quad) {
-                out.signature_vetoes.push(fact);
-            } else {
-                out.fid_names.push(fact);
-            }
-        }
-
-        out
+        match_listing(ctx.arch, listing, &path, fingerprint_function)
     }
 }
 
-/// The `.fid` database the load names: `LoadOptions::fid_db`, else
-/// [`FID_DB_ENV`]. `None` when neither names one.
-fn fid_db_path() -> Option<std::path::PathBuf> {
+impl FidPass {
+    /// Run after the raw discovery walk. The caller checks the listing and FID
+    /// gates; no object metadata or relocations are available on this path.
+    pub fn run_raw(arch: &Architecture, listing: &Listing, path: &Path) -> AnalysisOutput {
+        match_listing(arch, listing, path, fingerprint_raw_function)
+    }
+}
+
+fn match_listing(
+    arch: &Architecture,
+    listing: &Listing,
+    path: &Path,
+    fingerprint: impl Fn(&Listing, &Architecture, u64) -> Result<FidHashQuad, &'static str>,
+) -> AnalysisOutput {
+    let mut out = AnalysisOutput::default();
+    let (report, db) = kuna_fidapply::open_any(path, arch);
+    out.fid_databases.push(report);
+    if let LoadedFid::None = db {
+        return out;
+    }
+
+    for (&entry, _) in listing.functions() {
+        let Ok(quad) = fingerprint(listing, arch, entry) else {
+            continue;
+        };
+        let records = db.find_by_full_hash(quad.full_hash);
+        let selection = match &db {
+            LoadedFid::Ghidra(_) => pick_ghidra_name(records, &quad),
+            _ => pick_unique_name(records).map(|name| {
+                (name, !arch.analysis_fid_strict || kuna_fidstrict::supports_rename(records, &quad))
+            }),
+        };
+        let Some((name, strict_evidence)) = selection else {
+            continue;
+        };
+        let fact = FidMatch { addr: entry, name: name.to_owned(), by_signature: true };
+        if arch.analysis_fid_strict && !strict_evidence {
+            out.signature_vetoes.push(fact);
+        } else {
+            out.fid_names.push(fact);
+        }
+    }
+
+    out
+}
+
+/// The configured database path: `LoadOptions::fid_db`, else [`FID_DB_ENV`].
+pub fn configured_database_path() -> Option<PathBuf> {
     use kuna_decomp::kuna_loadoptions::{env, scoped};
     scoped(|o| o.fid_db.clone()).unwrap_or_else(env::fid_db)
 }
 
-/// Fingerprint a discovered function using the same extent and masks as the FID pass.
-/// The error distinguishes an undersized function from a failed instruction mask.
+/// Fingerprint a discovered function with the same extent definition and mask
+/// projection the FID builder uses ([`crate::fid::build`]), so a function hashes
+/// identically whether it was built into a database or looked up against one.
+///
+/// The extent's end bound is the next discovered entry, exactly as the builder
+/// bounds a symbolized function.
 pub fn fingerprint_function(
-    listing: &crate::listing::Listing,
-    arch: &kuna_decomp::architecture::Architecture,
+    listing: &Listing,
+    arch: &Architecture,
     entry: u64,
 ) -> Result<FidHashQuad, &'static str> {
-    let extent = extent::calculate_extent(listing, entry);
+    fingerprint(listing, arch, entry, None)
+}
+
+/// Fingerprint a raw function using its mapped byte range and the architecture's
+/// configured context. Restore decoder context before trying another root.
+pub fn fingerprint_raw_function(
+    listing: &Listing,
+    arch: &Architecture,
+    entry: u64,
+) -> Result<FidHashQuad, &'static str> {
+    let mapped_range = listing
+        .exec_ranges()
+        .iter()
+        .copied()
+        .find(|&(lo, hi)| lo <= entry && entry < hi)
+        .ok_or("extent_outside_image")?;
+    if !listing.is_instruction_start(entry) {
+        return Err("extent_decode_failed");
+    }
+    let scope = arch.translate().decode_context_scope().ok_or("unsupported_translator")?;
+    if arch.input_arm_isa_override {
+        let _ = scope.protect_variable(b"TMode");
+    }
+    fingerprint(listing, arch, entry, Some(mapped_range))
+}
+
+fn fingerprint(
+    listing: &Listing,
+    arch: &Architecture,
+    entry: u64,
+    mapped_range: Option<(u64, u64)>,
+) -> Result<FidHashQuad, &'static str> {
+    let space = arch.manage().get_default_code_space().ok_or("no_code_space")?;
+    let translate = arch.translate().as_sleigh().ok_or("unsupported_translator")?;
+    let end = listing.next_function_after(entry).map(|f| f.entry);
+    let switches = std::cell::OnceCell::new();
+    let extent = extent::decode_extent(arch, translate, entry, end, mapped_range, space, &switches)?;
     if extent.len() < hash::SHORT_HASH_CODE_UNIT_LENGTH as usize {
         return Err("too_short");
     }
-    let space = arch.manage().get_default_code_space().ok_or("no_code_space")?;
-    let translate = arch.translate().as_sleigh().ok_or("unsupported_translator")?;
     let mut fps: Vec<InsnFingerprint> = Vec::with_capacity(extent.len());
-    for insn in extent {
+    for insn in &extent {
         let addr = Address::new(Rc::clone(space), insn.addr);
         let mask = translate.instruction_mask(&addr).map_err(|_| "mask_failed")?;
-        fps.push(build::fingerprint_from_mask(insn.addr, insn.len, insn.flow.is_call, mask));
+        fps.push(build::fingerprint_from_mask(insn.addr, insn.len, insn.is_call, mask));
     }
     let skippers: Vec<Box<dyn InstructionSkipper>> = if arch.archid.starts_with("x86:") {
         vec![Box::new(X86InstructionSkipper)]
@@ -164,22 +220,38 @@ pub fn fingerprint_function(
     FidHasher::new(skippers).hash(&fps, &NoRelocations).ok_or("too_short")
 }
 
-/// §6.1 — exact full-hash match → a unique name.
-///
-/// Returns a name ONLY when the full-hash bucket collapses to exactly one distinct
-/// name (one record, or several records that all carry the same name — e.g. the
-/// same function fingerprinted under aliased symbols). Genuine multi-name buckets
-/// (a real collision or two differently-named functions sharing a full hash) →
-/// `None`: the v1 matcher is conservative and **never guesses on a tie**. The
-/// specific hash / `code_unit_size` tiebreak is the deferred PR5 seeker's job; v1
-/// stores those fields but does not score on them.
-fn pick_unique_name(recs: &[FidRecord], _quad: &FidHashQuad) -> Option<String> {
+/// The native full-hash bucket must collapse to one distinct name.
+fn pick_unique_name(recs: &[FidRecord]) -> Option<&str> {
     let first = recs.first()?;
-    if recs.iter().all(|r| r.name == first.name) {
-        Some(first.name.clone())
-    } else {
-        None
+    recs.iter().all(|r| r.name == first.name).then_some(first.name.as_ref())
+}
+
+/// A Ghidra name must be unique and have a row whose policy Kuna can satisfy.
+/// Relation evidence and unknown flags cannot license a name, but such rows can
+/// still make a competing name uncertain. Strict evidence must come from one
+/// eligible record, never from a record with restrictions we cannot satisfy.
+fn pick_ghidra_name<'a>(records: &'a [FidRecord], query: &FidHashQuad) -> Option<(&'a str, bool)> {
+    use ghidrafid::{AUTO_FAIL, FORCE_RELATION, FORCE_SPECIFIC, KNOWN_FLAGS};
+
+    let mut name = None;
+    let mut supported = false;
+    let mut strict = false;
+    for record in records {
+        let flags = record.flags;
+        let specific_matches = record.specific_hash == query.specific_hash;
+        if flags & AUTO_FAIL != 0 || (flags & FORCE_SPECIFIC != 0 && !specific_matches) {
+            continue;
+        }
+        let candidate = record.name.as_ref();
+        if name.replace(candidate).is_some_and(|prior| prior != candidate) {
+            return None;
+        }
+        if flags & (FORCE_RELATION | !KNOWN_FLAGS) == 0 {
+            supported = true;
+            strict |= specific_matches && record.code_unit_size == query.code_unit_size;
+        }
     }
+    name.filter(|_| supported).map(|name| (name, strict))
 }
 
 #[cfg(test)]
@@ -200,7 +272,7 @@ mod tests {
             code_unit_size: 10,
             specific_addl: 0,
             flags: 0,
-            name: name.to_string(),
+            name: name.into(),
         }
     }
 
@@ -211,12 +283,12 @@ mod tests {
     #[test]
     fn unique_single_record_yields_its_name() {
         let recs = [rec(0x1234, "kuna_crc32")];
-        assert_eq!(pick_unique_name(&recs, &quad()).as_deref(), Some("kuna_crc32"));
+        assert_eq!(pick_unique_name(&recs), Some("kuna_crc32"));
     }
 
     #[test]
     fn empty_bucket_yields_nothing() {
-        assert!(pick_unique_name(&[], &quad()).is_none());
+        assert!(pick_unique_name(&[]).is_none());
     }
 
     #[test]
@@ -224,13 +296,47 @@ mod tests {
         // Several records that all carry the same name collapse to it (the same
         // function fingerprinted under aliased symbols).
         let recs = [rec(0x1234, "kuna_crc32"), rec(0x1234, "kuna_crc32")];
-        assert_eq!(pick_unique_name(&recs, &quad()).as_deref(), Some("kuna_crc32"));
+        assert_eq!(pick_unique_name(&recs), Some("kuna_crc32"));
     }
 
     #[test]
     fn genuine_multi_name_bucket_is_a_tie_no_guess() {
         // Two differently-named functions sharing a full hash → never guess.
         let recs = [rec(0x1234, "foo"), rec(0x1234, "bar")];
-        assert!(pick_unique_name(&recs, &quad()).is_none());
+        assert!(pick_unique_name(&recs).is_none());
+    }
+
+    #[test]
+    fn ghidra_policy_cannot_be_bypassed_by_auto_pass() {
+        use ghidrafid::{AUTO_FAIL, AUTO_PASS, FORCE_RELATION, FORCE_SPECIFIC};
+
+        let mut record = rec(0x1234, "fixture");
+        for flag in [AUTO_FAIL, FORCE_RELATION, 0x80] {
+            record.flags = flag | AUTO_PASS;
+            assert_eq!(pick_ghidra_name(std::slice::from_ref(&record), &quad()), None);
+        }
+        record.flags = FORCE_SPECIFIC | AUTO_PASS;
+        record.specific_hash = 1;
+        assert_eq!(pick_ghidra_name(std::slice::from_ref(&record), &quad()), None);
+        record.specific_hash = quad().specific_hash;
+        assert_eq!(pick_ghidra_name(&[record], &quad()), Some(("fixture", true)));
+    }
+
+    #[test]
+    fn ghidra_unsupported_rows_cannot_break_ties_or_supply_strict_evidence() {
+        use ghidrafid::{AUTO_FAIL, FORCE_RELATION};
+
+        let mut allowed = rec(0x1234, "fixture");
+        allowed.specific_hash = 1;
+        let mut blocked = rec(0x1234, "fixture");
+        blocked.flags = FORCE_RELATION;
+        assert_eq!(
+            pick_ghidra_name(&[allowed.clone(), blocked.clone()], &quad()),
+            Some(("fixture", false)),
+        );
+        blocked.name = "competing name".into();
+        assert_eq!(pick_ghidra_name(&[allowed.clone(), blocked.clone()], &quad()), None);
+        blocked.flags = AUTO_FAIL;
+        assert_eq!(pick_ghidra_name(&[allowed, blocked], &quad()), Some(("fixture", false)));
     }
 }

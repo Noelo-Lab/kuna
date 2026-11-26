@@ -11,8 +11,9 @@ use kuna_decomp::kuna_loadoptions::{self, LoadOptions, LoadScope};
 
 use crate::engine::{
     arm_isa_from_env, bootstrap_image, bootstrap_mz_bytes, bootstrap_object,
-    bootstrap_raw_image, bootstrap_te, bootstrap_te_bytes, bootstrap_xml_image, classify_file,
-    xml_root_image, ArmIsa, ConsoleProgram, FileInput, Languages,
+    bootstrap_raw_image, bootstrap_standalone_image, bootstrap_te, bootstrap_te_bytes,
+    bootstrap_xml_image, classify_file, xml_root_image, ArmIsa, ConsoleProgram, FileInput,
+    Languages, ObjectInput,
 };
 
 /// Where a [`Bootstrap`] finds its languages: spec roots (a slice, array or
@@ -114,10 +115,10 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
         let isa = self.resolved_isa()?;
         match self.options {
             Some(options) => {
-                bootstrap_object(path, self.target, self.languages, isa, options, false)
+                bootstrap_object(ObjectInput::Disk(path, None), self.target, self.languages, isa, options, false)
             }
             None => bootstrap_object(
-                path,
+                ObjectInput::Disk(path, None),
                 self.target,
                 self.languages,
                 isa,
@@ -131,10 +132,20 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     /// TE, a DOS `MZ`, or an object-format binary, as
     /// [`bootstrap_from_image`](crate::engine::bootstrap_from_image) does.
     pub fn image(&self, path: &str) -> KunaResult<ConsoleProgram> {
+        self.image_with_source(path, None)
+    }
+
+    /// As [`Self::image`], with an optional observer of the owned input bytes
+    /// before normalization. For dyld caches this is the extracted Mach-O.
+    pub fn image_with_source(
+        &self,
+        path: &str,
+        observe: Option<&mut dyn FnMut(&[u8])>,
+    ) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
         match self.options {
             Some(options) => {
-                bootstrap_image(path, self.target, self.languages, isa, options, false)
+                bootstrap_image(path, self.target, self.languages, isa, options, false, observe)
             }
             None => bootstrap_image(
                 path,
@@ -143,8 +154,25 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
                 isa,
                 &LoadOptions::from_env(),
                 true,
+                observe,
             ),
         }
+    }
+
+    /// Load one self-contained executable from bytes, with fixed load defaults.
+    /// Unlike disk loading, this does not unwrap containers, consult the load
+    /// environment, or look for debug information or other companion files.
+    pub fn standalone_image(&self, bytes: Vec<u8>) -> KunaResult<ConsoleProgram> {
+        bootstrap_standalone_image(bytes, self.languages, None)
+    }
+
+    /// As [`Self::standalone_image`], but allow a thin Mach-O whose exact
+    /// `(offset, size)` must be present in the supplied universal image's fat
+    /// table. No arch preference or external file is consulted.
+    pub fn indexed_image(
+        &self, bytes: Vec<u8>, macho_slice: Option<(u64, u64)>,
+    ) -> KunaResult<ConsoleProgram> {
+        bootstrap_standalone_image(bytes, self.languages, macho_slice)
     }
 
     /// Load any input `load file` accepts: a real image as [`Bootstrap::image`]
@@ -184,7 +212,7 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     pub fn te(&self, path: &str) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
         let _load = self.enter();
-        bootstrap_te(path, self.target, self.languages, isa)
+        bootstrap_te(path, self.target, self.languages, isa, None)
     }
 
     /// Load a UEFI TE image from bytes already read from `path`, as

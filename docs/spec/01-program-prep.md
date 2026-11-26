@@ -1006,7 +1006,8 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   and preserve its delay-slot arguments. The relocation encoder handles generic
   absolute, relative, PLT-relative, and image-offset fields at 8/16/32/64 bits in
   the object's byte order, plus the instruction fields and ABI formulas for ARM
-  `CALL`/`JUMP24`/Thumb branches/`REL32`/`PREL31`, AArch64 branch/page/low-12
+  `CALL`/`JUMP24`, Thumb branches, PC-relative literal loads and address
+  materialization, `MOVW`/`MOVT`, `REL32`/`PREL31`, AArch64 branch/page/low-12
   forms, PowerPC `REL24`/`PLTREL24`/`LOCAL24PC`/`ADDR24` calls (32- and 64-bit;
   a `-fPIC` object's `PLTREL24` addend locates the caller's `.got2` for the
   linker's call stub and is not added to the target), the 14-bit conditional
@@ -1145,8 +1146,13 @@ the section-flag translation, import resolution (§1.3), and extra constant rang
   cross-state jump cannot make that transition in place, so it is left
   untouched and reported as requiring a linker veneer instead of being encoded
   as a branch in the wrong instruction set. Untyped and undefined targets do
-  not infer state from their synthetic slot address. AArch64 branch, page, and
-  low-12 relocations preserve the instruction's opcode/register fields, while
+  not infer state from their synthetic slot address. Thumb literal loads and ADR
+  use the aligned PC base and check the range and scale of their instruction
+  immediate. Narrow branches use the signed halfword displacement; `MOVW`/`MOVT`
+  split the resolved absolute address. These are the ELF ABI rules for Kuna's
+  own load image, not the replay rules used to verify saved Ghidra relocations.
+  AArch64 branch, page, and low-12 relocations preserve the instruction's
+  opcode/register fields, while
   PowerPC64 `REL24` and TOC-family relocations preserve big-endian instruction
   layout and DS-form low bits. SPARC `WDISP30` and `WPLT30` rewrite the 30-bit
   word displacement of a `call`, computing `S + A - P` modulo 2³² so a call
@@ -6875,6 +6881,10 @@ every other binary's pass list is byte-identical to before the pass existed):
   removed both wrong names. Renames are only through the placeholder label
   gate: the stripped-static-library recovery (`sub_4017c0` → `kuna_crc32`) with no
   way to clobber a real name.
+  On raw images, FID uses the caller's SLEIGH target, base, and explicit entry
+  seeds (and ARM32 ISA). Both lookup and automatic naming use the raw
+  partition's instruction boundaries and reject extents that leave the mapped
+  image rather than hashing loader padding.
   The database builder bounds linear decoding by both the next entry and a
   nonzero symbol size when one exists; ARM32 odd symbols decode as Thumb at
   their even address in a scoped context. Unsized symbols still use the next
@@ -6936,6 +6946,164 @@ every other binary's pass list is byte-identical to before the pass existed):
   the text `decompile` surface relays from its `decomp_dbg` session. A configured database that is not matched does not change the exit
   status: it only ever adds names, and a database set for a batch of
   mixed-architecture images is expected not to apply to some of them.
+  (kuna) **Ghidra database interop**
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/ghidradb.rs (Database)`,
+  `ghidrafid.rs (FidFile)`, `schema.rs (Schema)`): an FID database is accepted in
+  Ghidra's two on-disk spellings as well as kuna's `.fid`, so a run can match
+  against a stock Ghidra corpus without rebuilding it. Both wrap the same Ghidra
+  `db` container: a buffer file of fixed-size blocks whose block 0 is the file
+  header, one user buffer holding `DBParms` (parameter 0 is the master table
+  root), and a B-tree per table described by a master-table record carrying the
+  table name, version, root buffer id, key type, encoded field types and packed
+  column names. All integers are big-endian; the user payload starts five bytes
+  into its block. Leaves store fixed-length records inline and variable-length
+  records by offset, including indirect records backed by chained buffers.
+  The packed column-name list starts with the primary key name. Library schema
+  v6 accepts both the compiler-ID column and the newer `Library Metadata`
+  column; the compiler list before the colon is report metadata, not a filter.
+  A `.fidbf` stores that container directly. A `.fidb` starts with a
+  Java-serialization header (magic, format version, item name, content type,
+  file type, payload length) followed by a **streamed** deflate member with no
+  central directory, so it is inflated from the local file header rather than
+  read as a zip archive. The adapter checks the required table schemas and
+  references, and bounds B-tree traversal by the physical database. It indexes
+  full hashes only from libraries compatible with the image. Automatic naming
+  enforces Ghidra's record restrictions and declines matches whose required
+  evidence is unavailable.
+  (kuna) **The function extent Ghidra fingerprints**
+  (`decompiler/crates/kuna-analysis/src/analyzers/fid/extent.rs (decode_extent)`):
+  Ghidra hashes `func.getBody()`, the address set the FunctionManager recorded.
+  kuna's program model has function **entries**, not bodies, so the extent is
+  defined once here and **both** sides of a match use it — the builder that
+  fingerprints a library function and the pass that fingerprints the same
+  function in a stripped image. One instruction of disagreement makes the hashes
+  differ and the lookup miss silently, so this shared definition is the point.
+  The walk follows fallthrough, in-body direct branches and proven switch
+  successors. For x86-64, the guard must bound the value used by the table load,
+  every entry must be readable, and no discovered path may enter after the
+  guard's comparison. Other indirect forms are left unresolved. The walk stops
+  at terminal instructions or the end bound and declines the fingerprint if
+  any indirect branch is unresolved.
+  Two other readings were measured wrong on real binaries and are recorded here because
+  each looks reasonable: the address clip `[entry, next_entry)` absorbed
+  alignment padding and interleaved code (a 347-code-unit extent for a
+  29-code-unit function, so every lookup missed), and a decode that stopped at the
+  **first** `ret` hashed 9 code units of a function whose body is 16, so a
+  database built from an object stopped matching its own linked program. The
+  end bound is the next function entry, never a symbol size: a library object
+  carries sizes and a stripped image does not, so honoring the size made the two
+  sides hash different instruction sets. Measured against Ghidra's own
+  `FidService.hashFunction` on a real MSVC binary (56 named functions), 36 hash
+  bit-exactly and 53 agree on the code-unit count. Of the 20 that differ, 2 also
+  differ in code-unit count (a body-range difference: Ghidra's FunctionManager
+  holds compiler-generated filter code as a separate range). The other 18 have
+  the SAME instruction count, the same per-instruction mask bytes, the same
+  op-object lists and the same operand counts — verified instruction by
+  instruction on one of them (139 instructions, zero differences in those four
+  facts) — so their cause is **not established** and is an open gap, not an
+  explained one.
+  **Measured name agreement:** every address both tools named from the stock
+  `vsOlder_x86` corpus carried the same name. This does not validate names
+  emitted by only one tool.
+
+  (kuna) **The instruction mask the hash consumes**
+  (`decompiler/crates/kuna-sleigh/src/sleigh.rs (instruction_mask)`): the mask
+  and the per-operand op-objects follow Ghidra's Java accessors, not the raw
+  SLEIGH state, because FID digests them. Operands are the **root** constructor's,
+  in the order `Constructor.getOpsPrintOrder` prints them (declaration order puts
+  a `MOV`'s operands in the wrong slots); an operand's op-objects come from
+  `OperandSymbol.printList`, which descends into a subtable's print pieces so a
+  memory operand reports its base register *and* its displacement scalar, and
+  which promotes a sole constant handle to the address its constructor's result
+  template exports (`HandleTpl.fixPrintPiece`). Attached names and nested literal
+  text contribute to the constructor's print list, not to the fingerprint's
+  operand objects. A branch target that is promoted is reported as an `Address`.
+  Operand order, op-object recursion, and promotion were separately observable:
+  with any one missing the hash matched the stock corpus
+  for no function on a real MSVC binary, and with them it recovers the library
+  names Ghidra's own analyzer reports for the same addresses.
+- **BSim** (`decompiler/crates/kuna-analysis/src/analyzers/bsim/`): function
+  **similarity**, not identification. FID asks whether a function *is* a known
+  library function; BSim asks which functions *look like* it, which is the one
+  question a fingerprint cannot answer. The feature list comes from
+  `kuna_decomp::signature` with settings from the chosen weights profile:
+  the standard profiles use `0x49`; the size-independent profile uses `0x4d`.
+  Kuna bundles compatible default weights as data, independent of any external
+  installation; explicitly supplied weights still take precedence.
+  The rest is a port of Ghidra's `generic/lsh`. `lshweights.rs` validates the
+  TF/IDF tables and stores the IDF values in Ghidra's open-addressing probe
+  table (smallest power of two ≥ size, doubled)
+  because that slot layout is what serialization observes; `lsh.rs` builds the
+  sparse weighted vector and implements `calculateSignificance` with its flip
+  and size-difference penalties; `corpus.rs` stores signatures in a
+  self-describing `KBSM` file with one weights profile and settings per corpus.
+  Ingest deduplicates by the MD5 of the bytes passed to the loader before
+  normalization, resumes incomplete entries, and replaces the corpus atomically
+  under a writer lock. On Unix it syncs the containing directory after replacement.
+  Local and native server queries exclude undefined scores and clamp finite
+  cosine scores to `[0, 1]` before applying the similarity floor and limit.
+  This removes round-off without changing significance. In a corpus of 1084
+  functions from a real static binary, querying `0x4017c0` returned that
+  function at similarity 1.000; a hand computation from
+  `lshweights_32.xml`'s own constants reproduces the reported significance
+  exactly (2.810343 for a disjoint pair). Similarity is a measure of **shape**:
+  structurally identical PLT stubs score 1.0 against each other, so a match is a
+  lead, never a verdict.
+  PostgreSQL queries (`decompiler/crates/kuna-cli/src/bsim/postgres.rs`) use
+  Ghidra's `normalize` action and the database's stored signature settings.
+  Kuna encodes unsigned feature groups as hexadecimal term count and hash;
+  PostgreSQL uses `lshvector` to find candidate vectors and rank them with its
+  own weights before resolving them to function rows. This is compatibility
+  with an existing stock server-side index, not a local runtime prerequisite.
+  `decompiler/crates/kuna-cli/src/bsim/reference.rs` prepares C with Kuna for
+  a pair of entries. For a PostgreSQL match, the caller supplies the reference
+  executable and Kuna verifies its indexed MD5. For a native Kuna BSim match,
+  Kuna validates the match entry and reads the executable from the configured
+  service, not from a URL in the match. It verifies SHA-256 before loading.
+  `decompiler/crates/kuna-bsim-server/src/` stores original bytes keyed by
+  SHA-256 and serves signature matches scoped to one weight profile. A local
+  import reads Ghidra 12.1.2 Program databases through
+  `decompiler/crates/kuna-analysis/src/ghidra_program.rs`, extracts original
+  bytes and compatible entries, and signs only entries backed by verified
+  original file bytes. It checks the saved Program DB version before decoding
+  dependent table schemas. Version 32 is required. A linked image uses its
+  verified native address mapping. For ELF `ET_REL`, executable File Bytes
+  project through the unique original section index and relative offset into
+  Kuna's synthetic object address space. All saved executable sub-blocks must
+  have original file backing. The artifact size limit also caps the sum of
+  original allocated section sizes, including zero-fill sections.
+  Linked code bytes must be unchanged. An ELF object may carry a saved
+  executable relocation only when the loader result can be recomputed
+  exactly from the original relocation and the verified saved mappings.
+  Relocation type, original symbol index and stored width must agree with
+  the saved applied relocation record. A supported relocation that changes
+  the original bytes must have a matching applied record. x86-64 `PC32` and
+  `PLT32` require file-backed targets. Little-endian ARM/Thumb supports stock
+  branch, literal load, `MOVW`/`MOVT` and data relocation encodings.
+  Where an ARM target has no file backing, the importer checks the original
+  ELF's zero-fill sections and the stock external/common slot allocation
+  against saved memory block ranges. It does not derive targets from
+  relocated instruction bytes.
+  Bytes outside those fields must match the original; bytes inside must
+  match the recomputed result. Signing uses Kuna's own layout and relocations.
+  It skips default-source function names and address placeholders. Skipped
+  entries do not overwrite native names and do not count as signing failures.
+  The client neither reads Program databases nor connects to Ghidra Server.
+  Native imports discover function entries from Kuna's loader and analysis.
+  Universal Mach-O references keep the original container digest and record
+  the indexed slice. Compare validates the slice
+  against the verified container and loads it without consulting the client's
+  slice preference. Ghidra snapshot coverage is independent of
+  native executable completeness. Saved entries take precedence over
+  inferred entries; explicit publications take precedence over both.
+  An authenticated `push` sends one original image and one named entry under
+  a dedicated writer credential. An isolated worker signs the upload under
+  memory and wall-time limits. Both native import and the signing worker mount
+  bundled SLEIGH specs in memory, without a filesystem cache. The service
+  updates only the record for that profile, image digest, and loaded entry.
+  The client verifies the returned
+  digest against its upload. Query responses preserve rank when the wire size
+  limit truncates the result.
 - **FLIRT** (`flirt`, default-off, Listing-gated, signatures via `KUNA_FLIRT_SIGS`;
   `decompiler/crates/kuna-analysis/src/analyzers/flirt/mod.rs (FlirtPass)`): names
   library functions from IDA FLIRT `.sig` files (versions 5 to 11; raw, deflate,

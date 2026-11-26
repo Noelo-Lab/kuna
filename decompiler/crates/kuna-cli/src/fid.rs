@@ -71,6 +71,7 @@ fn usage() {
     eprintln!(
         "usage: kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>\n\
          kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n\
+         \x20              [--raw-image --target T --base VMA [--isa arm|thumb]]\n\
          \n\
          Generate a kuna `.fid` fingerprint database from a static library or\n\
          object files. --lang is the SLEIGH language id (e.g. x86:LE:64:default),\n\
@@ -163,7 +164,7 @@ fn dedup_records(all: &mut Vec<FidRecord>) {
         )]
         let mut seen = std::collections::HashSet::new();
         all.iter()
-            .map(|r| seen.insert((r.full_hash, r.specific_hash, r.name.as_str())))
+            .map(|r| seen.insert((r.full_hash, r.specific_hash, r.name.as_ref())))
             .collect()
     };
     let mut keep = keep.into_iter();
@@ -283,7 +284,7 @@ mod tests {
             code_unit_size: 4,
             specific_addl: 2,
             flags: 0,
-            name: name.to_string(),
+            name: name.into(),
         }
     }
 

@@ -91,6 +91,9 @@ use kuna_sleigh::translate::Translate;
 use super::kuna_poolref::PoolImage;
 use super::xrefs::{decode, in_range, FullCapture, FullOp};
 
+#[path = "kuna_switchproof.rs"]
+pub(super) mod proof;
+
 /// Below this an accepted run is a coincidence rather than a table: a compiler
 /// does not lower a one-case switch through a jump table.
 pub(super) const MIN_ENTRIES: usize = 2;

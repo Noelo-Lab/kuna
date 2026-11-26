@@ -80,27 +80,30 @@ and 18 tags**.
    embeds it, and it also ships as an asset (for `KUNA_SPECS`, and the
    nightly's speed baseline).
 3. **build** (matrix, after **specs**) — lays the compiled tree over the
-   checkout's `specs/`, then `cargo build --release` of `kuna-cli` (with
-   `--features kuna-cli/embed-specs`) and `kuna-ghidra` for:
+   checkout's `specs/`, then `cargo build --release` of `kuna-cli`,
+   `kuna-bsim-server`, and `kuna-ghidra`. The CLI and server embed specs but
+   build in separate Cargo invocations so only the server includes the
+   ProgramDB reader. Targets:
    - Linux `x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` (native,
      on the `ubuntu-24.04-arm` runner)
-   - Linux `x86_64-unknown-linux-musl` — a fully static build (no glibc
-     dependency, runs on any Linux). kuna pulls in no C via a `cc`-crate
-     dependency, so the musl target links self-contained; `rustup target add`
-     is the only extra setup.
+   - Linux `x86_64-unknown-linux-musl` — a static build without a glibc
+     dependency. The build uses a musl C compiler for the TLS provider.
    - macOS `aarch64-apple-darwin` and `x86_64-apple-darwin` (the latter
      cross-compiled on the arm64 runner)
    - Windows `x86_64-pc-windows-msvc`
    Each archive (`kuna-v<ver>-<os-arch>.tar.gz`, `.zip` on Windows) contains
-   `kuna`, `LICENSE`, `NOTICE` — `kuna` is self-contained: the decompiler
-   console (`decomp_dbg`) and the SLEIGH compiler (`slacomp`) are built in
-   as hidden subcommands, and `embed-specs` carries the compiled SLEIGH tree.
-   Two smoke tests assert `kuna --version` prints the release version and
-   that the binary, copied alone into an empty directory with no spec
-   override, decompiles a fixture. (`decomp_test_dbg` is not shipped — the
+   `kuna`, `kuna-bsim-server`, `LICENSE`, and `NOTICE`. `kuna`
+   is self-contained: the decompiler console (`decomp_dbg`) and SLEIGH compiler
+   (`slacomp`) are built in as hidden subcommands. Neither binary needs a
+   separate SLEIGH tree or a Java runtime.
+   The BSim server and its signer read their bundled specs in memory.
+   Smoke tests check the version, single-binary decompilation, and a native
+   BSim round trip with linked and relocatable Ghidra fixtures, using only
+   the two release executables and test inputs. (`decomp_test_dbg` is not shipped — the
    datatest harness only makes sense inside the repo.) The `kuna_ghidra`
    binaries are not in the archives: each row uploads its binary as a
    `ghidra-bin-<platform>` workflow artifact for the **ghidra-ext** job.
+   The cross-built macOS x86_64 artifact skips runtime smoke tests.
 4. **ghidra-ext** — packages the ready-to-install KunaDecompiler Ghidra
    extension, `kuna-v<ver>-KunaDecompiler-ghidra_<ghidra-version>.zip`. It
    downloads the pinned Ghidra release (version *and* full asset URL are

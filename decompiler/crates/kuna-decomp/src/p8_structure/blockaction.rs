@@ -3697,9 +3697,8 @@ impl Action for ActionStructureTransform {
     }
 }
 
-/// Compatibility action for branch normalization.
-///
-/// Retains its registered slot and initialized-root check without rewriting IR.
+/// Prefer canonical comparisons by complementing the predicate and swapping
+/// its successors (C++ `ActionNormalizeBranches`).
 pub struct ActionNormalizeBranches {
     base: ActionBase,
 }
@@ -3724,10 +3723,44 @@ impl Action for ActionNormalizeBranches {
         }
         Some(Box::new(ActionNormalizeBranches { base: self.base.clone() }))
     }
-    fn apply(&mut self, data: &mut Funcdata, _ctx: &mut ActionContext) -> ApplyResult {
+    fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         let graph = data.bblocks_ref();
         let root = graph.root.expect("ActionNormalizeBranches: bblocks root");
-        graph.block(root);
+        let blocks = graph.block(root).get_size();
+        let mut flips = Vec::new();
+        for i in 0..blocks {
+            let bb = data.bblocks_ref().block(root).get_block(i);
+            if data.bblocks_ref().block(bb).size_out() != 2 {
+                continue;
+            }
+            let Some(branch) = data.bb_op_tail(bb) else { continue };
+            let op = data.obank().get(branch).expect("normalizebranches: stale op");
+            if op.code() != OpCode::CPUI_CBRANCH {
+                continue;
+            }
+            let Some(cond) = op.get_in(1) else { continue };
+            if data.lone_descend(cond) != Some(branch) {
+                continue;
+            }
+            let Some(def) = data.vbank().get(cond).and_then(|vn| vn.get_def()) else { continue };
+
+            // Normalize the predicate itself, independent of the branch's boolean_flip.
+            flips.clear();
+            if data.op_flip_in_place_test(def, &mut flips, true) != 0 {
+                continue;
+            }
+            if let Err(error) = data.op_flip_in_place_execute(&flips) {
+                ctx.error = Some(error);
+                return -1;
+            }
+            data.obank_mut()
+                .get_mut(branch)
+                .expect("normalizebranches: stale branch")
+                .flip_flag(crate::op::pcodeop_flags::fallthru_true);
+            data.bblocks_mut().swap_edges(bb);
+            self.base.count += 1;
+        }
+        data.clear_dead_ops();
         0
     }
 }

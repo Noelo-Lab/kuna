@@ -201,6 +201,27 @@ impl TokenField {
         }
     }
 
+    /// The field's bit range within its token (`getBitStart`/`getBitEnd`), used
+    /// to derive an operand's value mask the way `SleighDebugLogger` does.
+    pub fn bit_range(&self) -> (i32, i32) {
+        (self.bitstart, self.bitend)
+    }
+
+    /// The field's byte range within its token (`getByteStart`/`getByteEnd`).
+    pub fn byte_range(&self) -> (i32, i32) {
+        (self.bytestart, self.byteend)
+    }
+
+    /// True when this field was decoded from a big-endian token.
+    pub fn is_big_endian(&self) -> bool {
+        self.bigendian
+    }
+
+    /// True when the field carries a sign bit.
+    pub fn has_sign_bit(&self) -> bool {
+        self.signbit
+    }
+
     /// C++ `TokenField::genPattern(intb val)`: the basic instruction pattern
     /// `TokenPattern(tok, val, bitstart, bitend)`.
     pub fn gen_pattern(&self, val: i64) -> TokenPattern {

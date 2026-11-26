@@ -24,8 +24,13 @@ smallvec.workspace = true
 flate2.workspace = true
 flirt-sig.workspace = true
 memmap2 = "0.9"
+sha2 = { version = "0.11", optional = true }
+
+[features]
+ghidra-program = ["dep:sha2"]
 
 [dev-dependencies]
+kuna-console.workspace = true
 object = { workspace = true, features = ["write"] }
 
 [lints]

@@ -176,6 +176,93 @@ pub struct Listing {
     mips_transfers: Vec<(u64, u64)>,
 }
 
+/// The loaded ranges and immutable table bytes available to FID's switch proof.
+/// FID inspects these only at a computed jump in the body it is fingerprinting.
+pub(crate) struct BoundedSwitches {
+    pool: kuna_poolref::PoolImage<'static>,
+    exec: Vec<(u64, u64)>,
+    max_entries: usize,
+}
+
+impl BoundedSwitches {
+    pub(crate) fn from_loader(arch: &Architecture, code_space: &AddrSpace) -> Option<Self> {
+        use kuna_sleigh::loadimage::{section_flags as flags, LoadImageSection};
+
+        let loader = arch.translate().loader_rc();
+        let loader = loader.borrow();
+        let loaded = loader.shared_bytes()?;
+        let mut exec = Vec::new();
+        let mut ro = Vec::new();
+        let mut record = |lo: u64, size: u64, bits: u32| {
+            let Some(hi) = lo.checked_add(size).filter(|&hi| hi > lo) else { return };
+            if bits & (flags::UNALLOC | flags::NOLOAD) == 0 {
+                if bits & flags::CODE != 0 {
+                    exec.push((lo, hi));
+                }
+                if bits & flags::READONLY != 0 {
+                    ro.push((lo, hi));
+                }
+            }
+        };
+        loader.open_section_info();
+        let mut has_sections = false;
+        loop {
+            let mut section = LoadImageSection::default();
+            let more = loader.get_next_section(&mut section);
+            if section.size != 0 {
+                has_sections = true;
+                record(section.address.get_offset(), section.size, section.flags);
+            }
+            if !more {
+                break;
+            }
+        }
+        loader.close_section_info();
+        if !has_sections {
+            for (lo, size, bits) in loader.get_segments() {
+                record(lo, size, bits);
+            }
+        }
+        drop(loader);
+
+        exec.sort_unstable();
+        let data_space = arch.manage().get_default_data_space().map_or(code_space, Rc::as_ref);
+        let ptr = data_space.get_addr_size();
+        if exec.is_empty() || !matches!(ptr, 4 | 8) {
+            return None;
+        }
+        Some(Self {
+            pool: kuna_poolref::PoolImage::from_loaded(ro, loaded, ptr, !data_space.is_big_endian())?,
+            exec,
+            max_entries: match arch.max_jumptable_size {
+                0 => kuna_switchtable::DEFAULT_MAX_ENTRIES,
+                n => n as usize,
+            },
+        })
+    }
+
+    /// A proven table with every entry read, plus the only permitted entry to
+    /// the contiguous proof chain ending at `dispatch`.
+    pub(crate) fn prove_targets(
+        &self,
+        arch: &Architecture,
+        translate: &dyn Translate,
+        code_space: &Rc<AddrSpace>,
+        decoded: &std::collections::HashSet<u64>,
+        dispatch: u64,
+    ) -> Option<(u64, Vec<u64>)> {
+        // Other Listing solvers discover candidates, but do not prove that
+        // their counts bound a dispatch on all paths. Do not fall back to them.
+        if !arch.archid.starts_with("x86:LE:64:") {
+            return None;
+        }
+        let data = arch.manage().get_default_data_space()?;
+        kuna_switchtable::proof::targets(
+            translate, code_space, data, decoded, dispatch, &self.pool, &self.exec, self.max_entries,
+        )
+    }
+}
+
 impl Listing {
     /// Build the Listing by recursive-descent over the loadimage, seeded from
     /// `seeds` (design §3). `file` supplies the executable-range universe;

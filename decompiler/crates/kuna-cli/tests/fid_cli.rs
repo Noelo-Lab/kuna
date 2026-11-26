@@ -64,7 +64,7 @@ fn archive_members_keep_the_vendored_database_and_leave_no_staging_files() {
     let result: serde_json::Value = serde_json::from_slice(&query.stdout).unwrap();
     assert!(result["candidates"].as_array().unwrap().iter().any(|c| c["name"] == "kuna_strlen"));
     let records = kuna_analysis::fid::db::FidDb::load(&std::fs::read(output).unwrap()).unwrap();
-    let mut names: Vec<_> = records.records().iter().map(|record| record.name.as_str()).collect();
+    let mut names: Vec<_> = records.records().iter().map(|record| record.name.as_ref()).collect();
     names.sort_unstable();
     assert_eq!(names, ["kuna_crc32", "kuna_memset", "kuna_strlen"]);
     assert!(std::fs::read_dir(staging).unwrap().next().is_none());
@@ -119,8 +119,14 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
     assert_eq!(value["instruction_boundary"], "instruction_start");
     assert_eq!(value["match_basis"], "full_hash");
     assert_eq!(value["candidates"][0]["name"], "kuna_crc32");
-    assert_eq!(value["candidates"][0]["specific_hash_matches"], false);
-    assert_eq!(value["specific_hash_evidence"], "no_candidate_matches");
+    // The specific hash agrees because the builder's and the lookup's operand
+    // op-objects now match: `kuna_crc32` is self-contained (it calls no external
+    // symbol, see `tests/fixtures/fid/lib.c`), so the same body fingerprinted
+    // from the object and from the linked program folds the same scalar values.
+    // It disagreed while the operand objects were derived differently on each
+    // side.
+    assert_eq!(value["candidates"][0]["specific_hash_matches"], true);
+    assert_eq!(value["specific_hash_evidence"], "matching_candidate");
     assert_eq!(value["candidates"][0]["code_unit_size_matches"], true);
     let batch = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(["fid", "query"]).arg(&binary).arg("--db").arg(&fixture)
@@ -158,7 +164,7 @@ fn query_reports_candidates_collisions_and_invalid_databases() {
 
     let db = FidDb::load(&std::fs::read(fixture).unwrap()).unwrap();
     let mut records: Vec<_> = db.records().into_iter().cloned().collect();
-    let mut collision = records.iter().find(|r| r.name == "kuna_crc32").unwrap().clone();
+    let mut collision = records.iter().find(|r| r.name.as_ref() == "kuna_crc32").unwrap().clone();
     collision.name = "other_candidate".into();
     records.push(collision);
     let path = scratch.path().join("collision.fid");
@@ -210,7 +216,7 @@ fn thumb_pointers_use_the_discovered_mode_and_isolate_batch_context() {
         .env("SLEIGHHOME", root.join("specs")).output().unwrap();
     assert!(build.status.success(), "{}", String::from_utf8_lossy(&build.stderr));
     let parsed = FidDb::load(&std::fs::read(&db).unwrap()).unwrap();
-    assert!(parsed.records().iter().any(|record| record.name == "thumb_probe"));
+    assert!(parsed.records().iter().any(|record| record.name.as_ref() == "thumb_probe"));
     let call = |addresses: &[&str]| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
         command.args(["fid", "query"]).arg(&binary).arg("--db").arg(&db);
@@ -283,4 +289,121 @@ fn query_keeps_the_cli_contract_for_addresses_usage_errors_and_closed_pipes() {
     let stderr = String::from_utf8_lossy(&closed.stderr);
     assert!(!stderr.contains("panicked") && !stderr.contains("Broken pipe"), "{stderr}");
     assert!(closed.status.success(), "{:?}: {stderr}", closed.status.code());
+}
+
+#[test]
+fn raw_thumb_fid_uses_explicit_mapping_for_query_and_naming() {
+    use object::{Object, ObjectSection};
+
+    let scratch = tempfile::tempdir().unwrap();
+    let specs = common::repo_root().join("specs");
+    let object = common::fixture("fid_thumb_probe.o");
+    let db = scratch.path().join("arm.fid");
+    let build = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["fid", "build", &object, "-o"]).arg(&db)
+        .args(["--lang", "ARM:LE:32:v8", "--cspec", "default"])
+        .env("SLEIGHHOME", &specs).output().unwrap();
+    assert!(build.status.success(), "{}", String::from_utf8_lossy(&build.stderr));
+
+    let object_bytes = std::fs::read(object).unwrap();
+    let file = object::File::parse(&*object_bytes).unwrap();
+    let code = file.section_by_name(".text").unwrap().data().unwrap();
+    assert_eq!(code.len(), 10);
+    let mut image = vec![0; 8];
+    image.extend_from_slice(code);
+    let binary = scratch.path().join("thumb.bin");
+    std::fs::write(&binary, &image).unwrap();
+
+    let opts = ["--raw-image", "--target", "ARM:LE:32:v8", "--base", "0x4000", "--isa", "thumb"];
+    let run_query = |addresses: &[&str], options: &[&str]| {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        cmd.args(["fid", "query"]).arg(&binary).arg("--db").arg(&db).arg("--json");
+        for address in addresses {
+            cmd.args(["--addr", address]);
+        }
+        cmd.args(options).env("SLEIGHHOME", &specs).output().unwrap()
+    };
+    let query = run_query(&["0x4008", "0x4009"], &opts);
+    assert!(query.status.success(), "{}", String::from_utf8_lossy(&query.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&query.stdout).unwrap();
+    let even = &doc["queries"][0];
+    let odd = &doc["queries"][1];
+    for value in [even, odd] {
+        assert_eq!(value["address"], "0x4008");
+        assert_eq!(value["entry_source"], "user_supplied");
+        assert_eq!(value["instruction_boundary"], "instruction_start");
+        assert_eq!(value["status"], "single_candidate");
+        assert_eq!(value["candidates"][0]["name"], "thumb_probe");
+        assert_eq!(value["code_unit_size"], 5);
+        assert_eq!(value["identity_verified"], false);
+    }
+    assert_eq!(odd["requested_address"], "0x4009");
+    assert_eq!(odd["full_hash"], even["full_hash"]);
+    assert_eq!(odd["specific_hash"], even["specific_hash"]);
+
+    let functions = |fid: &str| {
+        let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("functions").arg(&binary).args(opts)
+            .args(["--entry", "0x4009", "--option", "listing", "on", "--option", "fid", fid, "--json"])
+            .env("SLEIGHHOME", &specs).env("kuna_fid_db", &db).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap()
+    };
+    let listed = functions("on");
+    assert_eq!(listed["count"], 1);
+    assert_eq!(listed["functions"][0]["address_hex"], "0x4008");
+    assert_eq!(listed["functions"][0]["name"], "thumb_probe");
+    assert_eq!(listed["fid_databases"][0]["status"], "loaded");
+    let disabled = functions("off");
+    assert_ne!(disabled["functions"][0]["name"], "thumb_probe");
+    assert!(disabled.get("fid_databases").is_none());
+
+    for (options, required) in [
+        (&opts[..1], "--target"),
+        (&opts[..3], "--base"),
+        (&opts[..5], "--isa arm or --isa thumb"),
+    ] {
+        let failure = run_query(&["0x4008"], options);
+        assert!(!failure.status.success());
+        assert!(String::from_utf8_lossy(&failure.stderr).contains(required));
+    }
+    let outside = run_query(&["0x4012"], &opts);
+    assert_eq!(outside.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&outside.stderr).contains("raw entry 0x4012 is outside mapped range"));
+
+    // Remove the last byte of BX LR. A zero-padded decode is not evidence.
+    std::fs::write(&binary, &image[..image.len() - 1]).unwrap();
+    let truncated = run_query(&["0x4008"], &opts);
+    assert!(truncated.status.success(), "{}", String::from_utf8_lossy(&truncated.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&truncated.stdout).unwrap();
+    assert_eq!(doc["status"], "unavailable");
+    assert_eq!(doc["reason"], "extent_outside_image");
+    assert_eq!(doc["instruction_boundary"], "instruction_start");
+    assert_eq!(doc["candidates"], serde_json::json!([]));
+    assert_ne!(functions("on")["functions"][0]["name"], "thumb_probe");
+
+    let padded = run_query(&["0x4010"], &opts);
+    assert!(padded.status.success(), "{}", String::from_utf8_lossy(&padded.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&padded.stdout).unwrap();
+    assert_eq!(doc["status"], "unavailable");
+    assert_eq!(doc["instruction_boundary"], "undecoded");
+
+    // BNE at 0x4008 targets 0x3ffe, just below the image, but can fall through.
+    let mut branch_image = image.clone();
+    branch_image[8..10].copy_from_slice(&[0xf9, 0xd1]);
+    std::fs::write(&binary, branch_image).unwrap();
+    let branch = run_query(&["0x4008"], &opts);
+    assert!(branch.status.success(), "{}", String::from_utf8_lossy(&branch.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&branch.stdout).unwrap();
+    assert_eq!(doc["status"], "unavailable");
+    assert_eq!(doc["reason"], "extent_outside_image");
+    assert_eq!(doc["instruction_boundary"], "instruction_start");
+
+    // A BL to the same unmapped address is a call, not a path in this body.
+    image.splice(8..10, [0xff, 0xf7, 0xf9, 0xff]);
+    std::fs::write(&binary, image).unwrap();
+    let call = run_query(&["0x4008"], &opts);
+    assert!(call.status.success(), "{}", String::from_utf8_lossy(&call.stderr));
+    let doc: serde_json::Value = serde_json::from_slice(&call.stdout).unwrap();
+    assert_eq!(doc["code_unit_size"], 4, "{doc}");
 }

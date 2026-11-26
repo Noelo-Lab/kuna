@@ -13,8 +13,10 @@ use std::path::PathBuf;
 
 #[path = "src/kuna_buildstamp_fingerprint.rs"]
 mod fingerprint;
+mod build_embedded_specs;
 
 fn main() {
+    build_embedded_specs::generate();
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap_or_default());
     let workspace = manifest
         .parent()

@@ -70,7 +70,7 @@ pub mod reloc_object;
 pub mod srecord;
 // Architecture-aware ELF instruction/data relocation encoders used by the
 // relocatable-object layout. Kept separate so bitfield rules are unit-testable.
-mod reloc_apply;
+pub(crate) mod reloc_apply;
 // (kuna) MIPS relocations, `$gp` and GOT for a relocatable object.
 mod kuna_mipsreloc;
 mod kuna_commonalloc;

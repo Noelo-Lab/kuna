@@ -62,6 +62,7 @@ use kuna_analysis::loadimage_object::{is_arm32_language, ObjectLoadImage, PE_MAC
 use kuna_analysis::loadimage_mz::{is_mz_dos_image, MzImage, MZ_LANGUAGE};
 use kuna_analysis::flirt::kuna_rustprofiles::{ImageReport as RustProfileReport, Request as RustProfileRequest};
 use kuna_analysis::loadimage_te::{is_te_image, TeLoadImage, TE_PROBE_LEN};
+use kuna_analysis::listing::{kuna_rawdiscover::RawDiscovery, Listing};
 use kuna_sleigh::loadimage_xml::LoadImageXml;
 use kuna_sleigh::loadimage_xml::register_loadimage_xml_ids;
 use kuna_sleigh::translate::register_translate_ids;
@@ -636,7 +637,7 @@ pub struct ConsoleProgram {
     /// datatest path (no Listing tier), so the gated build is a structural no-op
     /// there. Empty/`None` when the listing flag is off ⇒ zero cost.
     analysis_image:
-        Option<(String, kuna_analysis::image_bytes::ImageBytes, kuna_analysis::loader::ImportProofMemo)>,
+        Option<(Option<String>, kuna_analysis::image_bytes::ImageBytes, kuna_analysis::loader::ImportProofMemo)>,
     /// (kuna `armframes`) The whole-image frame recovery: set before the commit,
     /// it is replayed instead of searched; after it, the record that commit made.
     arm_frames: Option<kuna_analysis::aif::kuna_framereplay::ArmFrameReplay>,
@@ -3044,6 +3045,43 @@ impl ConsoleProgram {
         }
     }
 
+    fn raw_discovery(&self, code_space: &Rc<AddrSpace>, for_fid: bool) -> RawDiscovery {
+        let exec: Vec<(u64, u64)> = self
+            .sections()
+            .into_iter()
+            .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
+            .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
+            .collect();
+        let seeds: Vec<u64> =
+            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
+        let arch = self.arch();
+        let translate = arch.translate();
+        // Speculative sweep decodes must not replace the caller's ARM ISA or
+        // leave decode commits that would alter a later function's hash.
+        let scope = if for_fid { translate.decode_context_scope() } else { None };
+        if arch.input_arm_isa_override {
+            if let Some(scope) = &scope {
+                // An ARM-only language may have no TMode to protect.
+                let _ = scope.protect_variable(b"TMode");
+            }
+        }
+        kuna_analysis::listing::kuna_rawdiscover::discover(
+            arch, translate, code_space, &exec, &seeds, self.mz_evidence.as_ref(),
+        )
+    }
+
+    /// Obtain the raw discovery partition for FID lookup before committing
+    /// analysis. The entries and byte ranges are those validated by bootstrap.
+    pub fn pending_raw_listing_for_fid(&self) -> KunaResult<Listing> {
+        if self.container != ProgramContainer::Raw || self.mz_evidence.is_some() {
+            return Err(KunaError::lowlevel("FID raw discovery requires a headerless image"));
+        }
+        let code_space = self.analysis_code_space.as_ref()
+            .ok_or_else(|| KunaError::lowlevel("no pending raw code space"))?;
+        self.raw_discovery(code_space, true).listing
+            .ok_or_else(|| KunaError::lowlevel("no pending raw entries to discover"))
+    }
+
     /// (kuna `rawdiscover`) Extend [`Self::pending_synthetic_entries`] with every
     /// function the headerless-image discovery finds: the targets of every direct
     /// call in the executable bytes, plus the direct-call closure of those and
@@ -3061,27 +3099,24 @@ impl ConsoleProgram {
         let Some(code_space) = self.analysis_code_space.clone() else {
             return Vec::new();
         };
-        let exec: Vec<(u64, u64)> = self
-            .sections()
-            .into_iter()
-            .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
-            .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
-            .collect();
-        let seeds: Vec<u64> =
-            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
-        let known: BTreeSet<u64> = seeds.iter().copied().collect();
-        let found = {
-            let arch = self.arch();
-            let mz = self.mz_evidence.as_ref();
-            kuna_analysis::listing::kuna_rawdiscover::discover(
-                arch,
-                arch.translate(),
-                &code_space,
-                &exec,
-                &seeds,
-                mz,
-            )
+        let fid_db = if self.arch().analysis_listing && self.arch().analysis_fid
+            && self.mz_evidence.is_none()
+        {
+            kuna_analysis::fid::configured_database_path()
+        } else {
+            None
         };
+        let found = self.raw_discovery(&code_space, fid_db.is_some());
+        if let (Some(listing), Some(path)) = (found.listing, fid_db) {
+            let mut out = kuna_analysis::fid::FidPass::run_raw(self.arch(), &listing, &path);
+            out.sanitize_names(kuna_decomp::kuna_symbolnamechars::symbolnamechars_mode());
+            // The normal commit applies the label gate after the synthetic
+            // entries have been installed, then exposes the database report.
+            self.pending_analysis.push(("fid", out));
+        }
+        let known: BTreeSet<u64> = self.pending_synthetic_entries.iter()
+            .map(|addr| addr.get_offset())
+            .collect();
         for &vma in &found.entries {
             if known.contains(&vma) {
                 continue;
@@ -3304,8 +3339,7 @@ impl ConsoleProgram {
                 if self.arch().android_jni {
                     crate::kuna_androidjni::collect(self.arch(), &bytes, &mut merged);
                 }
-                let image_path = std::path::Path::new(&path);
-                let image_path = image_path.exists().then_some(image_path);
+                let image_path = path.as_deref().map(Path::new).filter(|path| path.exists());
                     // Deferred entry-discovery passes FIRST: their entries must be
                     // in `merged` before `committed_entry_seeds` is read below, which
                     // is what hands the load-time inventory to the Listing walk as
@@ -4184,6 +4218,9 @@ fn build_engine_and_init(sleigh: &mut SleighArchitecture, db: &LanguageDatabase)
         // (`kuna_decodekit::EngineRecipe`).
         arch.set_decode_truncations(db.truncations(langindex));
         arch.set_language_families(kuna_decomp::kuna_langfamily::families(db));
+        let requested = arch.archid.rsplit_once(':').map_or("default", |(_, id)| id);
+        let compiler = db.descriptions()[langindex as usize].get_compiler(requested);
+        arch.set_compiler_spec_id(compiler.get_id());
     }
 
     // Hand the resolved compiler-spec (`.cspec`) XML to the architecture so
@@ -4780,16 +4817,81 @@ pub(crate) fn bootstrap_image(
     isa: Option<ArmIsa>,
     options: &LoadOptions,
     from_env: bool,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
 ) -> KunaResult<ConsoleProgram> {
     if file_is_te_image(path) {
         let _load = enter_load(options, from_env);
-        bootstrap_te(path, target, languages, isa)
+        bootstrap_te(path, target, languages, isa, observe_source)
     } else if let Some(bytes) = file_mz_dos_image(path) {
         let _load = enter_load(options, from_env);
+        if let Some(observe) = observe_source {
+            observe(&bytes);
+        }
         bootstrap_mz_bytes(path, &bytes, target, languages, isa)
     } else {
-        bootstrap_object(path, target, languages, isa, options, from_env)
+        bootstrap_object(ObjectInput::Disk(path, observe_source), target, languages, isa, options, from_env)
     }
+}
+
+/// Recognize a self-contained executable from bytes. A recorded fat Mach-O
+/// range lets native BSim replay one indexed slice; uploads pass no range.
+/// Neither path can enter dyld, firmware, or fileset expansion.
+pub(crate) fn bootstrap_standalone_image(
+    bytes: Vec<u8>,
+    languages: &(impl Languages + ?Sized),
+    macho_slice: Option<(u64, u64)>,
+) -> KunaResult<ConsoleProgram> {
+    use object::FileKind;
+    let options = LoadOptions {
+        kernelcache: kuna_decomp::kuna_kernelcache::KernelcacheChoice::Off,
+        kernelcache_boot: kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::Off,
+        dyldcrossrefs: false,
+        ..LoadOptions::default()
+    };
+    let _load = options.enter();
+    let bytes: kuna_analysis::image_bytes::ImageBytes = if let Some((offset, size)) = macho_slice {
+        let slice = kuna_analysis::loader::macho_fat::fat_slice_by_range(&bytes, offset, size)
+            .ok_or_else(|| KunaError::lowlevel("indexed Mach-O slice range is not in the input fat table"))?;
+        if !matches!(FileKind::parse(slice), Ok(FileKind::MachO32 | FileKind::MachO64)) {
+            return Err(KunaError::lowlevel("indexed fat slice is not a thin Mach-O image"));
+        }
+        check_standalone_macho(slice)?;
+        let slice = std::sync::Arc::<[u8]>::from(slice);
+        drop(bytes);
+        slice.into()
+    } else {
+        if is_te_image(&bytes) {
+            return bootstrap_te_bytes("upload", &bytes, "", languages, None);
+        }
+        if is_mz_dos_image(&bytes) {
+            return bootstrap_mz_bytes("upload", &bytes, "", languages, None);
+        }
+        match FileKind::parse(bytes.as_slice()) {
+            Ok(FileKind::Elf32 | FileKind::Elf64 | FileKind::Pe32 | FileKind::Pe64
+                | FileKind::Coff | FileKind::CoffBig) => {}
+            Ok(FileKind::MachO32 | FileKind::MachO64) => check_standalone_macho(&bytes)?,
+            // The shared parser recognizes bare THUMB COFF even though FileKind
+            // doesn't. It has no container expansion or secondary I/O.
+            Err(_) if bytes.starts_with(&object::pe::IMAGE_FILE_MACHINE_THUMB.to_le_bytes()) => {}
+            _ => return Err(KunaError::lowlevel("expected a standalone executable image")),
+        }
+        bytes.into()
+    };
+    bootstrap_object(ObjectInput::Standalone(bytes), "", languages, None, &options, false)
+}
+
+fn check_standalone_macho(bytes: &[u8]) -> KunaResult<()> {
+    const FILESET: u32 = object::macho::MH_FILESET;
+    let kind = bytes.get(12..16).ok_or_else(|| KunaError::lowlevel("truncated Mach-O header"))?;
+    if kind == FILESET.to_le_bytes() || kind == FILESET.to_be_bytes() {
+        return Err(KunaError::lowlevel("Mach-O filesets are not standalone images"));
+    }
+    Ok(())
+}
+
+pub(crate) enum ObjectInput<'path, 'observe> {
+    Disk(&'path str, Option<&'observe mut dyn FnMut(&[u8])>),
+    Standalone(kuna_analysis::image_bytes::ImageBytes),
 }
 
 /// Put a load's options in force on this thread: `options` for an
@@ -4970,10 +5072,14 @@ pub(crate) fn bootstrap_te(
     target: &str,
     languages: &(impl Languages + ?Sized),
     isa: Option<ArmIsa>,
+    observe_source: Option<&mut dyn FnMut(&[u8])>,
 ) -> KunaResult<ConsoleProgram> {
     let bytes = std::fs::read(path).map_err(|error| {
         KunaError::lowlevel(format!("Unable to open TE image file: {path}: {error}"))
     })?;
+    if let Some(observe) = observe_source {
+        observe(&bytes);
+    }
     bootstrap_te_bytes(path, &bytes, target, languages, isa)
 }
 
@@ -5135,7 +5241,7 @@ pub fn bootstrap_from_object_with_isa(
 /// non-Go image). An explicit-options load leaves the environment alone and
 /// never reads it. The options are in force from the first byte read.
 pub(crate) fn bootstrap_object(
-    path: &str,
+    input: ObjectInput<'_, '_>,
     target: &str,
     languages: &(impl Languages + ?Sized),
     isa: Option<ArmIsa>,
@@ -5146,9 +5252,20 @@ pub(crate) fn bootstrap_object(
     let target = kuna_analysis::loadimage_object::explicit_language_target(target).unwrap_or("");
     let registry = build_registry();
 
-    let (bytes, load_notes) = match kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)? {
-        Some(bytes) => (bytes, Vec::new()),
-        None => {
+    let disk_path = match &input {
+        ObjectInput::Disk(path, _) => Some(*path),
+        ObjectInput::Standalone(_) => None,
+    };
+    let path = disk_path.unwrap_or("upload");
+    let mapped = if matches!(&input, ObjectInput::Disk(_, None)) {
+        kuna_analysis::image_bytes::ImageBytes::map_thin_macho(path)?
+    } else {
+        None
+    };
+    let (bytes, load_notes) = match (input, mapped) {
+        (_, Some(bytes)) => (bytes, Vec::new()),
+        (ObjectInput::Standalone(bytes), None) => (bytes, Vec::new()),
+        (ObjectInput::Disk(_, observe_source), None) => {
             // Read the image bytes once: reused for the loader AND the analysis-pass
             // object::File view (the analyzers need a parsed object the loader drops).
             let bytes = match kuna_analysis::loader::kuna_dyldcache::read_selected_image(Path::new(path)) {
@@ -5156,6 +5273,9 @@ pub(crate) fn bootstrap_object(
                 None => std::fs::read(path)
                     .map_err(|e| KunaError::lowlevel(format!("Unable to open image file: {path}: {e}")))?,
             };
+            if let Some(observe) = observe_source {
+                observe(&bytes);
+            }
             // (kuna `kernelcache`) IMG4 / IM4P / LZFSE / complzss unwrapping and MH_FILESET
             // entry selection, ahead of every other normalization.
             let choice = kuna_decomp::kuna_kernelcache::KernelcacheChoice::in_force();
@@ -5327,6 +5447,7 @@ pub(crate) fn bootstrap_object(
         // `.sla` is loaded and the loadimage attached (above), so a flag-gated
         // `Listing::build` can decode through it. Default-off ⇒ unused.
         sleigh.base().unwrap().translate(),
+        disk_path.map(Path::new).filter(|path| path.is_file()),
     );
     if let Some(facts) = android_jni {
         sleigh.base_mut().unwrap().android_jni = true;
@@ -5574,7 +5695,7 @@ pub(crate) fn bootstrap_object(
     }
     let proof_memo = import_proofs.memo();
     drop(import_proofs);
-    prog.analysis_image = Some((path.to_string(), bytes, proof_memo));
+    prog.analysis_image = Some((disk_path.map(str::to_owned), bytes, proof_memo));
     prog.loader_data_objects = loader_data_objects;
     prog.loader_data_exports = loader_data_exports;
     prog.import_slots = crate::kuna_importslots::ImportSlots::new(import_slots);

@@ -2153,28 +2153,127 @@ impl Sleigh {
     }
 }
 
-/// Classify a resolved operand [`FixedHandle`] (Pcode state) into an
-/// [`OpObject`] for the instruction-mask accessor.  A constant-space handle is
-/// a scalar immediate; a register-space handle is a register at its offset;
-/// anything else is a code/data address.  `is_code_address` carries SLEIGH's
-/// own marking for scalars that denote a code address.
-fn classify_handle(hand: &FixedHandle, is_code_address: bool) -> OpObject {
-    match hand.space.as_ref() {
-        Some(space) if space.get_type() == spacetype::IPTR_CONSTANT => OpObject::Scalar {
+/// Collect printed handles and report whether the operand contributes anything
+/// to Ghidra's print list, including text that is not an operand object.
+fn collect_operand_handles(
+    walker: &mut ParserWalker<'_>,
+    slot: usize,
+    out: &mut Vec<FixedHandle>,
+) -> KunaResult<bool> {
+    let node = &walker.ctx.state[walker.point()];
+    let Some(&child_idx) = node.resolve.get(slot) else { return Ok(false) };
+    let table = walker.table;
+    let defining = operand_symbol(table, walker.get_constructor_inner()?, slot as i32)?
+        .get_defining_symbol()
+        .and_then(|id| table.find_symbol_by_id(id))
+        .map(|symbol| symbol.kind());
+    let handle = &walker.ctx.state[child_idx].hand;
+    match defining {
+        Some(SymbolKind::Name(name)) => {
+            return Ok(name.get_name_table().get(handle.offset_offset as usize)
+                .is_some_and(|token| !token.is_empty()));
+        }
+        Some(SymbolKind::Subtable(_)) => {}
+        _ => {
+            out.push(handle.clone());
+            return Ok(true);
+        }
+    }
+    walker.push_operand_inner(slot as i32)?;
+    let constructor = table.get_constructor(walker.get_constructor_inner()?)?;
+    let start = out.len();
+    let mut last_slot = 0;
+    let mut contributing_operands = 0;
+    let mut has_text = false;
+    for piece in constructor.get_print_pieces() {
+        if let [b'\n', index, ..] = piece.as_slice() {
+            let idx = usize::from(index - b'A');
+            if collect_operand_handles(walker, idx, out)? {
+                contributing_operands += 1;
+                last_slot = idx;
+            }
+        } else if !piece.is_empty() {
+            has_text = true;
+        }
+    }
+    // Text contributes when printed through an operand, but not when it is a
+    // literal print piece of this constructor.
+    if contributing_operands == 1 && out.len() - start == 1 {
+        if let Some(result) = constructor
+            .get_templ()
+            .and_then(|t| walker.engine.base.templates.get(t))
+            .and_then(|t| t.get_result())
+        {
+            result.fix_print_piece(&mut out[start], walker, last_slot as i32);
+        }
+    }
+    walker.pop_operand_inner();
+    Ok(has_text || contributing_operands != 0)
+}
+
+/// Classify a resolved operand [`FixedHandle`] (Pcode state) into [`OpObject`]s
+/// for the instruction-mask accessor, following Ghidra's `addHandleObject`.
+///
+/// That method **adds nothing** for an invalid handle, and for a RAM handle
+/// whose `offset_space` is null it adds an address only when the handle resolves
+/// to one. kuna's earlier version reported every such handle as an `Address`,
+/// which injected op-object updates Ghidra never makes — a `MOV EBP,ESP` gained a
+/// phantom `Address` object and the fingerprint matched nothing.
+///
+/// A register-space handle is a register at its offset; a constant-space handle
+/// is a scalar immediate (`is_code_address` carries SLEIGH's marking for a
+/// scalar that denotes a code address); a RAM handle with a register
+/// `offset_space` is the register it dereferences.
+fn classify_handle_into(
+    hand: &FixedHandle,
+    is_code_address: bool,
+    whole_operand: bool,
+    out: &mut Vec<OpObject>,
+) {
+    let Some(space) = hand.space.as_ref() else {
+        // Invalid handle (`handle.isInvalid()`): nothing to add.
+        return;
+    };
+    let space_type = space.get_type();
+    // Ghidra's `TYPE_REGISTER`; kuna models the register space as a processor
+    // space named `register`.
+    if space.get_name() == "register" {
+        out.push(OpObject::Register { offset: hand.offset_offset });
+        return;
+    }
+    if space_type == spacetype::IPTR_CONSTANT {
+        out.push(OpObject::Scalar {
             // The handle offset holds the resolved constant; reinterpret as
             // signed (FID's operand sub-hash truncates to i32 downstream).
             signed: hand.offset_offset as i64,
-            whole_operand: true,
+            // Ghidra's `OperandType.isScalar(operandType)` — a property of the
+            // CONTAINING operand, not of this leaf. A displacement inside a
+            // memory operand is only one component, so a magnitude >= 256 is
+            // suppressed to FID's placeholder rather than counted.
+            whole_operand,
             is_address: is_code_address,
-        },
-        Some(space) if space.get_name() == "register" => {
-            OpObject::Register { offset: hand.offset_offset }
-        }
-        Some(_) => OpObject::Address,
-        // No resolved space (dynamic/unresolved handle): treat as an address —
-        // FID hashes it as a non-scalar placeholder.
-        None => OpObject::Address,
+        });
+        return;
     }
+    // Ghidra's `TYPE_RAM`: a normal processor space.
+    if space_type == spacetype::IPTR_PROCESSOR || space_type == spacetype::IPTR_SPACEBASE {
+        match hand.offset_space.as_ref() {
+            // A static RAM handle is a code/data address. Ghidra's
+            // `getHandleAddr` refuses a null truncated address, which a RAM
+            // handle always has, so this is the address arm.
+            None => out.push(OpObject::Address),
+            // A dynamic pointer to a register is that register.
+            Some(offset_space) if offset_space.get_name() == "register" => {
+                out.push(OpObject::Register { offset: hand.offset_offset });
+            }
+            // Ghidra's `addHandleObject` falls through to `return false` here:
+            // a RAM handle dereferencing a non-register space adds NO object.
+            Some(_) => {}
+        }
+        return;
+    }
+    // Any other space (unique, overlay, ...) contributes no object, matching
+    // `addHandleObject`'s fall-through `return false`.
 }
 
 /// Helper: borrow a [`SubtableSymbol`](crate::slghsymbol::SubtableSymbol) by symbol id (C++ blind cast).
@@ -2355,10 +2454,9 @@ impl Sleigh {
         let mut fixed = vec![0u8; ulen];
 
         let mut stack = vec![pos.base_state];
-        let mut operands: Vec<OperandView> = Vec::new();
         while let Some(node_idx) = stack.pop() {
             let node = &pos.state[node_idx];
-            let Some(ctref) = node.ct else { continue };
+            let Some(_ctref) = node.ct else { continue };
             let node_off = node.offset as usize;
 
             let dp = node.matched_pattern.as_ref().ok_or_else(|| {
@@ -2377,31 +2475,72 @@ impl Sleigh {
                 b += 1;
             }
 
+            for child in &node.resolve {
+                stack.push(*child);
+            }
+        }
+
+        // Operands are the ROOT constructor's, in PRINT ORDER — Ghidra's
+        // `opresolve = ct.getOpsPrintOrder()` — because `getOperandValueMask(i)`
+        // and `getOpObjects(i)` are both indexed that way. Declaration order
+        // put the operands of a `MOV` in the wrong slots and invented an
+        // `Address` object for a register operand.
+        // Ghidra's `cacheMnemonicState`: start at the root and descend while the
+        // constructor is a flow-through wrapper (an x86 REX/prefix shell), so the
+        // operands collected are the ACTUAL instruction's, not one hidden wrapper
+        // operand. Then `opresolve = ct.getOpsPrintOrder()` — and an empty print
+        // order means no operands, never declaration order as a substitute (a
+        // substituted order shifts every operand's `(index + 1) * 7777` seed).
+        let mut mnemonic_idx = pos.base_state;
+        let mut mnemonic_off = pos.state[mnemonic_idx].offset as usize;
+        while let Some(ctref) = pos.state[mnemonic_idx].ct {
             let ct = table.get_constructor(ctref)?;
-            let numoper = ct.get_num_operands();
-            for oper in 0..numoper {
-                let opid = ct.get_operand(oper)?;
+            let index = ct.get_flowthru_index();
+            if index < 0 {
+                break;
+            }
+            let Some(&child) = pos.state[mnemonic_idx].resolve.get(index as usize) else { break };
+            mnemonic_idx = child;
+            mnemonic_off = pos.state[child].offset as usize;
+        }
+        let root = &pos.state[mnemonic_idx];
+        let mut operands: Vec<OperandView> = Vec::new();
+        if let Some(ctref) = root.ct {
+            let root_off = mnemonic_off;
+            let ct = table.get_constructor(ctref)?;
+            let slots: Vec<i32> = ct.get_ops_print_order();
+            let mut walker = ParserWalker::new(&pos, table, self);
+            walker.cur.to_mut().point = Some(mnemonic_idx);
+            let mut handles = Vec::new();
+            for slot in slots {
+                let opid = ct.get_operand(slot)?;
                 let opsym = table
                     .find_symbol_by_id(opid)
                     .ok_or_else(|| KunaError::sleigh("instruction_mask: operand undefined"))?;
                 let SymbolKind::Operand(op) = opsym.kind() else {
                     return Err(KunaError::sleigh("instruction_mask: not an operand symbol"));
                 };
-
-                // Use the child span when resolved; otherwise approximate from
-                // the operand's constructor-relative offset and minimum length.
-                let child_idx = node.resolve.get(oper as usize).copied();
+                let child_idx = root.resolve.get(slot as usize).copied();
                 let (span_off, span_len) = match child_idx {
                     Some(ci) => {
                         let c = &pos.state[ci];
                         (c.offset as usize, c.length.max(0) as usize)
                     }
                     None => {
-                        let off = node_off + op.get_relative_offset() as usize;
+                        let off = root_off + op.get_relative_offset() as usize;
                         (off, op.get_minimum_length().max(0) as usize)
                     }
                 };
-
+                // The operand mask is the complement of the bits fixed at this
+                // point (`SleighDebugLogger` clears operand bits out of the
+                // instruction mask). Deriving it from the defining expression's
+                // token fields is closer to Ghidra for a register-selection
+                // operand, but kuna's runtime decode drops the compiler's
+                // per-sub-table pattern groups that Ghidra's fallback needs, and
+                // a partial mask corrupts the fixed mask through `clearBits`.
+                // The operand's value-bit span: the complement of the bits fixed
+                // where its containing constructor sits. This feeds only the
+                // relocation test (`hasRelocation`), never the digested hash.
                 let mut value_mask = vec![0u8; ulen];
                 for i in 0..span_len {
                     let abs = span_off + i;
@@ -2410,16 +2549,20 @@ impl Sleigh {
                     }
                 }
 
-                let mut objects: Vec<OpObject> = Vec::new();
-                if let Some(ci) = child_idx {
-                    let hand = &pos.state[ci].hand;
-                    objects.push(classify_handle(hand, op.is_code_address()));
+                collect_operand_handles(&mut walker, slot as usize, &mut handles)?;
+                // Ghidra's `getOpType` works from the operand's resolved handle:
+                // the operand is a scalar when that handle is a raw constant.
+                // Propagate that one decision to every leaf collected below.
+                let whole_operand = root
+                    .resolve
+                    .get(slot as usize)
+                    .and_then(|&ci| pos.state[ci].hand.space.as_ref())
+                    .is_some_and(|sp| sp.get_type() == spacetype::IPTR_CONSTANT);
+                let mut objects = Vec::new();
+                for hand in handles.drain(..) {
+                    classify_handle_into(&hand, op.is_code_address(), whole_operand, &mut objects);
                 }
                 operands.push(OperandView { value_mask, objects });
-            }
-
-            for child in &node.resolve {
-                stack.push(*child);
             }
         }
 

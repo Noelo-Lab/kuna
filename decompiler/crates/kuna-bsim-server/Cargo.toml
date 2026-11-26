@@ -1,0 +1,61 @@
+[package]
+name = "kuna-bsim-server"
+description = "BSim service and content-addressed reference store for Kuna"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+kuna-analysis.workspace = true
+kuna-base.workspace = true
+kuna-console = { workspace = true, optional = true }
+kuna-decomp = { workspace = true, optional = true }
+kuna-sleigh = { workspace = true, optional = true }
+md-5 = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3.27"
+thiserror.workspace = true
+
+[dependencies.httparse]
+version = "1.10"
+optional = true
+
+[dependencies.rustls]
+version = "0.23"
+default-features = false
+features = ["ring", "std", "tls12"]
+optional = true
+
+[dependencies.subtle]
+version = "2.6"
+optional = true
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", optional = true, features = [
+    "Win32_Security_Authorization", "Win32_System_JobObjects", "Win32_System_Threading",
+] }
+
+[features]
+default = ["http"]
+http = [
+    "dep:httparse", "dep:rustls", "dep:subtle",
+    "dep:kuna-console", "dep:kuna-decomp", "dep:kuna-sleigh",
+    "dep:libc", "dep:windows-sys",
+    "kuna-analysis/ghidra-program",
+]
+embed-specs = ["kuna-console?/embed-specs"]
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "kuna-bsim-server"
+path = "src/main.rs"
+required-features = ["http"]

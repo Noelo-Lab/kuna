@@ -12,6 +12,13 @@ SLEIGH compiler are a Rust port of Ghidra's C++ decompiler and SLEIGH compiler
 and the decompiler regression corpus (tests/datatests/) are vendored from
 Ghidra. The pinned upstream commit is recorded in docs/UPSTREAM.md.
 
+The BSim XML weight data in
+decompiler/crates/kuna-analysis/src/analyzers/bsim/weights/ is copied unchanged
+from the Ghidra_12.1.2_build tag under the Apache License, Version 2.0:
+Ghidra/Features/BSim/data/lshweights_32.xml, lshweights_64.xml,
+lshweights_64_32.xml, lshweights_cpool.xml, and lshweights_nosize.xml.
+Source: https://github.com/NationalSecurityAgency/ghidra/tree/Ghidra_12.1.2_build/Ghidra/Features/BSim/data
+
 The following attribution is reproduced from Ghidra's NOTICE file:
 
     Ghidra

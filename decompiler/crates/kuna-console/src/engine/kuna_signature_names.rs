@@ -5,7 +5,7 @@ use kuna_analysis::pass::{AnalysisOutput, SymKind};
 use kuna_decomp::kuna_symbolnamebound::bound_scope_path;
 use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name, symbolnamechars_mode};
 
-use super::ConsoleProgram;
+use super::{ConsoleProgram, ProgramContainer, is_generic_placeholder_name};
 
 #[derive(Default)]
 pub(super) struct SignatureNames {
@@ -14,7 +14,7 @@ pub(super) struct SignatureNames {
 }
 
 impl SignatureNames {
-    /// Record supplied names before discovered entries are registered as placeholders.
+    /// Protect supplied names, not the placeholders already installed for raw entries.
     pub(super) fn collect(
         prog: &ConsoleProgram,
         out: &AnalysisOutput,
@@ -26,6 +26,11 @@ impl SignatureNames {
         let provided_entries = prog
             .symbols
             .iter()
+            .filter(|s| {
+                prog.container != ProgramContainer::Raw
+                    || !is_generic_placeholder_name(&s.name)
+                    || !prog.is_not_declared_name(s.addr.get_offset(), &s.name)
+            })
             .map(|s| s.addr.get_offset())
             .chain(prog.loader_aliases.keys().copied())
             .chain(

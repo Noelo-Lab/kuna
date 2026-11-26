@@ -292,6 +292,9 @@ mod explicit_branch_assertion_cli;
 #[path = "fid_cli.rs"]
 mod fid_cli;
 
+#[path = "bsim_cli.rs"]
+mod bsim_cli;
+
 #[path = "fid_db_status_cli.rs"]
 mod fid_db_status_cli;
 

@@ -53,6 +53,8 @@ pub mod pass;
 pub mod passes;
 pub mod loadimage_object;
 pub mod image_bytes;
+#[cfg(feature = "ghidra-program")]
+pub mod ghidra_program;
 pub mod loadimage_te;
 pub mod loadimage_mz;
 pub mod loader;

@@ -3076,14 +3076,14 @@ fn a_nan_returned_in_s0_round_trips() {
     assert!(stdout.contains("*(float *)(a1 + a2 * 4) = core(a0);"), "put stores core's float:\n{stdout}");
     let printed = printed_functions(&stdout, &["qnanf_ ", "core ", "logish ", "use ", "qp ", "sn ", "nn ", "put2 "]);
     let src = format!(
-        "#include <stdio.h>\n#include <string.h>\n#include <math.h>\n{BITS}int dat_0;\n{printed}\n\
+        "#include <stdio.h>\n#include <string.h>\n#include <math.h>\n{BITS}int err;\n{printed}\n\
          int main(void) {{\n  float out[4] = {{0}};\n  put2(3.0f, out);\n  \
          printf(\"%f %f %f %f %llx %llx %llx %llx\\n\", use(-3.0f), use(0.0f), use(4.0f), logish(-3.0f), \
-         BITS(qp()), BITS(sn()), BITS(nn()), BITS(out[2]));\n  return 0;\n}}\n"
+         BITS(qp()), BITS(sn()), BITS(nn()), BITS(out[2]));\n  logish(0.0f);\n  printf(\"%d\\n\", err);\n  return 0;\n}}\n"
     );
     for (cc, got) in compile_and_run_each("floatret-cm4", &src) {
         assert_eq!(
-            got, "nan -inf 3.000000 nan 7fc00123 7fa00000 ffc00005 3fc00000",
+            got, "nan -inf 3.000000 nan 7fc00123 7fa00000 ffc00005 3fc00000\n34",
             "{cc}: the printed C computes something else:\n{printed}"
         );
     }

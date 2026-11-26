@@ -65,6 +65,30 @@ docker run --rm -v "$(pwd)":/workspaces/kuna -w /workspaces/kuna kuna-dev \
     bash -lc 'make rust-test'    # full cargo workspace suite
 ```
 
+### PE fixtures outside the dev container
+
+`make rust-test` builds Windows/PE fixtures with
+`clang --target={i686,x86_64}-w64-windows-gnu` and then compiles the emitted C
+natively, so it needs a clang that can *link* PE. On a host whose clang is a Nix
+**wrapper** it cannot: the wrapper passes a Linux `--gcc-toolchain` and a Linux
+`ld.bfd`, which answers `unrecognised emulation mode: i386pep`. The failures look
+like decompiler bugs and are not.
+
+`scripts/pe-test-env.sh` installs two shims for such a host — a `clang` that sends
+`--target=*windows-gnu` to an unwrapped clang (keeping the wrapped one, with its
+libc headers, for native fixtures) and an `ld` that dispatches MinGW emulations to
+the cross linkers and everything else to the system linker:
+
+```bash
+eval "$(scripts/pe-test-env.sh)"
+make rust-test
+```
+
+The MinGW binutils come from `nix-shell`, which is why the script is Nix-specific.
+Two further prerequisites are separate: 32-bit **ELF** fixtures (`clang -m32`)
+need a 32-bit `libgcc`, and a few tests compare against a specific `gcc` code
+generation.
+
 `decompiler/target/` is gitignored, so building inside the mounted worktree leaves the host
 tree clean of artifacts (the `target/` produced is the host's own and is never committed).
 

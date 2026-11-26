@@ -1223,37 +1223,133 @@ fn normalization_branch(opcode: OpCode) -> (Funcdata, BlockId, [OpId; 2]) {
     (data, entry, [condition, jump])
 }
 
-fn normalization_snapshot(data: &Funcdata, entry: BlockId, ops: [OpId; 2]) -> String {
-    format!(
-        "{:?} {:?} {:?} {:?}",
-        data.bblocks_ref().block(entry),
-        data.bb_ops(entry),
-        data.obank().get(ops[0]),
-        data.obank().get(ops[1])
-    )
+#[test]
+fn normalization_complements_noncanonical_comparisons_and_swaps_successors() {
+    for (opcode, changed) in [(OpCode::CPUI_INT_NOTEQUAL, true), (OpCode::CPUI_INT_EQUAL, false)] {
+        let (mut data, entry, [cond, branch]) = normalization_branch(opcode);
+        let block = data.bblocks_ref().block(entry);
+        let (false_out, true_out) = (block.get_out(0), block.get_out(1));
+        let fallthru = data.obank().get(branch).unwrap().is_fallthru_true();
+
+        let mut action = ActionNormalizeBranches::boxed("normalizebranches");
+        let mut ctx = ActionContext::default();
+        assert_eq!(action.apply(&mut data, &mut ctx), 0);
+        assert!(ctx.error.is_none());
+        assert_eq!(data.obank().get(cond).unwrap().code(), OpCode::CPUI_INT_EQUAL);
+        let block = data.bblocks_ref().block(entry);
+        assert_eq!(
+            (block.get_out(0), block.get_out(1)),
+            if changed { (true_out, false_out) } else { (false_out, true_out) }
+        );
+        let op = data.obank().get(branch).unwrap();
+        assert_eq!(op.is_fallthru_true(), fallthru ^ changed);
+        assert!(!op.is_boolean_flip());
+    }
 }
 
 #[test]
-fn normalization_keeps_eligible_branch_ir_and_edge_order_unchanged() {
-    for (opcode, expected) in [
-        (OpCode::CPUI_INT_NOTEQUAL, 0),
-        (OpCode::CPUI_INT_EQUAL, 1),
-        (OpCode::CPUI_BOOL_NEGATE, 0),
-        (OpCode::CPUI_INT_LESS, 0),
+fn normalization_rewires_branch_after_removing_a_negation() {
+    let (mut data, entry, [negate, branch]) = normalization_branch(OpCode::CPUI_BOOL_NEGATE);
+    let input = data.obank().get(negate).unwrap().get_in(0).unwrap();
+    let input = data.vbank().get(input).unwrap();
+    let original = (input.get_offset(), input.get_size());
+    let old_true = data.bblocks_ref().block(entry).get_out(1);
+    let mut ctx = ActionContext::default();
+    assert_eq!(ActionNormalizeBranches::boxed("normalizebranches").apply(&mut data, &mut ctx), 0);
+    assert!(ctx.error.is_none());
+    assert_eq!(data.bb_ops(entry), [branch]);
+    let input = data.obank().get(branch).unwrap().get_in(1).unwrap();
+    let input = data.vbank().get(input).unwrap();
+    assert!(input.is_constant());
+    assert_eq!((input.get_offset(), input.get_size()), original);
+    assert_eq!(data.bblocks_ref().block(entry).get_out(0), old_true);
+}
+
+#[test]
+fn normalization_preserves_destinations_at_integer_comparison_boundaries() {
+    use OpCode::*;
+    for (before, bound, after, canonical_bound) in [
+        (CPUI_INT_LESS, 0, CPUI_INT_LESS, 1),
+        (CPUI_INT_LESS, 255, CPUI_INT_LESSEQUAL, 255),
+        (CPUI_INT_SLESS, 128, CPUI_INT_SLESS, 129),
+        (CPUI_INT_SLESS, 127, CPUI_INT_SLESSEQUAL, 127),
     ] {
-        let (mut data, entry, ops) = normalization_branch(opcode);
-        let mut candidates = Vec::new();
-        assert_eq!(
-            data.op_flip_in_place_test(ops[1], &mut candidates, true),
-            expected
-        );
-        assert!(!candidates.is_empty());
-        let before = normalization_snapshot(&data, entry, ops);
-        let mut action = ActionNormalizeBranches::boxed("normalizebranches");
-        assert_eq!(action.apply(&mut data, &mut ActionContext::default()), 0);
-        assert_eq!(action.base().count, 0);
-        assert_eq!(normalization_snapshot(&data, entry, ops), before);
+        for flipped in [false, true] {
+            let (mut data, entry, [cond, branch]) = normalization_branch(before);
+            let constant = data.new_constant(1, bound);
+            let addr = Address::new(cj_ram(&data), 0x1010);
+            let input = data.new_varnode(1, &addr, None);
+            let input = data.set_input_varnode(input).unwrap();
+            data.op_set_input(cond, constant, 0).unwrap();
+            data.op_set_input(cond, input, 1).unwrap();
+            if flipped {
+                data.obank_mut().get_mut(branch).unwrap().set_flag(pcodeop_flags::boolean_flip);
+            }
+            let block = data.bblocks_ref().block(entry);
+            let original = [block.get_out(0), block.get_out(1)];
+            let mut action = ActionNormalizeBranches::boxed("normalizebranches");
+            let mut ctx = ActionContext::default();
+            assert_eq!(action.apply(&mut data, &mut ctx), 0);
+            assert!(ctx.error.is_none());
+            let compare = data.obank().get(cond).unwrap();
+            assert_eq!(compare.code(), after);
+            assert_eq!(compare.get_in(0), Some(input));
+            let limit = data.vbank().get(compare.get_in(1).unwrap()).unwrap().get_offset();
+            assert_eq!(limit, canonical_bound);
+            let block = data.bblocks_ref().block(entry);
+            let branch_op = data.obank().get(branch).unwrap();
+            assert_eq!(branch_op.is_boolean_flip(), flipped);
+            assert!(branch_op.is_fallthru_true());
+            for value in 0..=255 {
+                let signed = |v| v as i8;
+                let old = match before {
+                    CPUI_INT_LESS => bound < value,
+                    CPUI_INT_SLESS => signed(bound) < signed(value),
+                    _ => unreachable!(),
+                };
+                let new = match compare.code() {
+                    CPUI_INT_LESS => value < limit,
+                    CPUI_INT_LESSEQUAL => value <= limit,
+                    CPUI_INT_SLESS => signed(value) < signed(limit),
+                    CPUI_INT_SLESSEQUAL => signed(value) <= signed(limit),
+                    _ => unreachable!(),
+                };
+                assert_eq!(block.get_out(i32::from(new ^ flipped)), original[usize::from(old ^ flipped)]);
+            }
+        }
     }
+}
+
+#[test]
+fn normalization_complements_single_use_compound_predicate() {
+    let (mut data, entry, [combined, branch]) = normalization_branch(OpCode::CPUI_BOOL_AND);
+    let left = cj_op(&mut data, 2, 0x1000, OpCode::CPUI_INT_NOTEQUAL);
+    let right = cj_op(&mut data, 1, 0x1000, OpCode::CPUI_BOOL_NEGATE);
+    let value = data.new_constant(1, 1);
+    data.op_set_input(left, value, 0).unwrap();
+    let zero = data.new_constant(1, 0);
+    data.op_set_input(left, zero, 1).unwrap();
+    let value = data.new_constant(1, 1);
+    data.op_set_input(right, value, 0).unwrap();
+    let left_out = data.new_unique_out(1, left).unwrap();
+    let right_out = data.new_unique_out(1, right).unwrap();
+    data.op_insert_before(left, combined);
+    data.op_insert_before(right, combined);
+    data.op_set_input(combined, left_out, 0).unwrap();
+    data.op_set_input(combined, right_out, 1).unwrap();
+    let old_true = data.bblocks_ref().block(entry).get_out(1);
+    let mut ctx = ActionContext::default();
+    assert_eq!(ActionNormalizeBranches::boxed("normalizebranches").apply(&mut data, &mut ctx), 0);
+    assert!(ctx.error.is_none());
+    assert_eq!(data.bb_ops(entry), [left, combined, branch]);
+    assert_eq!(data.obank().get(left).unwrap().code(), OpCode::CPUI_INT_EQUAL);
+    let op = data.obank().get(combined).unwrap();
+    assert_eq!(op.code(), OpCode::CPUI_BOOL_OR);
+    let rhs = data.vbank().get(op.get_in(1).unwrap()).unwrap();
+    assert!(rhs.is_constant());
+    assert_eq!(rhs.get_offset(), 1);
+    assert_eq!(data.bblocks_ref().block(entry).get_out(0), old_true);
+    assert_eq!(data.bblocks_ref().block(old_true).get_in_rev_index(0), 0);
 }
 
 #[test]

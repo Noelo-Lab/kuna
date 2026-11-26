@@ -1,12 +1,12 @@
 ---
 name: kuna-decompiler
-description: Use the Kuna CLI to recover searchable C and assembly, trace program logic, and validate findings in CTF solving, vulnerability hunting, malware identification, and program repair. Covers using Kuna, not developing the decompiler.
+description: Use the Kuna CLI to recover searchable C and assembly, trace program logic, compare functions with BSim, and identify library code with FunctionID. Covers using Kuna, not developing the decompiler.
 ---
 
 # Kuna for reversing binaries
 
-Kuna provides fast, flexible, source-like decompilation through a CLI on PATH, not an
-MCP server. It needs no connection and saves no analysis state between invocations.
+Kuna decompiles locally through a CLI on PATH, not an MCP server. Decompilation needs
+no connection and saves no analysis state between invocations.
 In a checkout, the built CLI is `decompiler/target/release/kuna`.
 
 Decompile once for the chosen scope, then reuse the output with `rg`, file reads, and
@@ -83,6 +83,98 @@ size thresholds; `options` when tuning as below. Use `kuna --help` or
 `kuna <subcommand> --help` for quick syntax checks. Avoid loading `kuna docs --all`
 or the full option catalog into context for routine analysis.
 
+## Find similar functions with BSim
+
+Use BSim to find candidates across builds. Query a specific symbol (`--name`) or
+loaded address (`--address`). Read both `similarity` and `significance`: even a
+similarity of 1.0 does not prove identity. A `truncated` result is not exhaustive.
+Record the reference build and function address. Distinguish exact instruction-byte
+matches, matches after accounting for known relocations, and similarity candidates.
+Review candidates before renaming. `bsim query` does not accept `--raw-image`;
+use FID for raw-image candidate lookup.
+
+```bash
+kuna bsim build ./known-build -o ./known.kbsm
+kuna bsim info ./known.kbsm --json
+kuna bsim query ./target --corpus ./known.kbsm --address 0x401230 --json
+kuna bsim compare ./target --address 0x401230 \
+  --reference ./known-build --reference-address 0x401000 --json
+```
+
+For an existing native Kuna server, set `BSIM_URL` to its URL and take `MATCH_ID`
+from the query. The query sends feature hashes, not the executable. Compare downloads
+and verifies the original reference bytes, then decompiles both sides locally.
+
+```bash
+kuna bsim query ./target --server "$BSIM_URL" --address 0x401230 --json
+kuna bsim compare ./target --server "$BSIM_URL" \
+  --address 0x401230 --match-id "$MATCH_ID" --json
+```
+
+To populate an authorized native store, import binaries directly or import a closed
+or consistently copied Ghidra 12.1.2 snapshot (`.gpr` with its `.rep`, `.rep` alone,
+or `.gzf`). The native server does not require Ghidra or Java.
+For an older Program DB, upgrade and save a copy in 12.1.2. Project import
+keeps saved names for supported linked images and backed relocatable ELF sections,
+but skips default names and placeholders such as `FUN_00401000`.
+
+```bash
+kuna-bsim-server import ./module.o ./app.exe --store ./library
+kuna-bsim-server import-ghidra ./saved.gpr --store ./library
+kuna-bsim-server --store ./library --bind 127.0.0.1:8787
+```
+
+To publish one reviewed name, run `kuna bsim push` in the client shell. It uploads
+the whole executable; use it only with permission and a separate
+`KUNA_BSIM_SERVER_WRITE_TOKEN` on the client and server. See `kuna docs cli` for
+read tokens and TLS.
+
+```bash
+kuna bsim push ./target --server "$BSIM_URL" \
+  --address 0x401230 --rename parse_record --json
+```
+
+For stock PostgreSQL BSim, configure `KUNA_BSIM_POSTGRES` through a credential
+manager and replace `--server "$BSIM_URL"` on **query** with `--postgres`. For
+**compare**, use the returned `--match-id` with a local `--reference` instead of
+`--reference-address`. Kuna checks its MD5; it does not fetch from Ghidra Server.
+If compare returns `diff: null`, check both `code` results before drawing conclusions.
+
+## Identify library functions with FunctionID
+
+Use FID to propose names from known library fingerprints, not to rank similar code.
+Query loaded addresses in a linked or raw image without renaming. Repeat `--addr`
+for a batch. Relocatable objects are database inputs, not lookup targets.
+
+```bash
+kuna fid build ./lib.o -o ./lib.fid --lang x86:LE:64:default --cspec gcc
+kuna fid query ./target --db ./lib.fid --addr 0x401230 --addr 0x4012a0 --json > fid.json
+kuna_fid_db="$PWD/lib.fid" kuna functions ./target --option listing on --option fid on --json
+```
+
+Use the library's actual language and compiler spec when building. Query and automatic
+naming also accept stock Ghidra `.fidbf` and `.fidb` files. Query verified entries in
+batches. Keep candidates grouped by address, and count each status separately:
+`no_match` means a fingerprint was searched, while `unavailable` or `error` means
+the lookup could not complete. Keep the reason with those entries. For a batch:
+
+```bash
+jq '.queries | group_by([.status, .reason]) | map({status: .[0].status, reason: .[0].reason, count: length})' fid.json
+```
+
+`single_candidate` is not a verified identity. Check database provenance and compare
+instructions, callers, and known reference objects before applying a name, especially
+for short functions or when `specific_hash_evidence` is `no_candidate_matches`.
+Leave ambiguous identities unresolved. For automatic naming, check
+`fid_databases[].status`: a missing or incompatible database does not fail the listing.
+
+For a raw image, give FID the verified mapping and, on ARM32, the decode mode:
+
+```bash
+kuna fid query ./rom.bin --db ./library.fidb --addr 0x329 --raw-image \
+  --target ARM:LE:32:v7 --base 0 --isa thumb --json
+```
+
 ## Explore options only when the task warrants it
 
 Explore `--option NAME VALUE` only when an error blocks progress or changes the
@@ -149,12 +241,18 @@ kuna decompile-all ./challenge.com --raw-image \
   --target 'x86:LE:16:Real Mode' --base 0x100 --entry 0x100 --jobs 1
 ```
 
-Adjust target/base/entry to the image; a bare-metal firmware image usually keeps its
-entry in its first word, so `entry = *(uint32_t *)&file[0]` and the base is that value
-rounded down to the region start. `--entry` only seeds the load: discovery sweeps the
-executable bytes for call targets from there, so an unfiltered `decompile-all` emits
-what the image calls, not just the seed (`--addr`
-to narrow). Raw-image decompilation requires explicit entries and serial execution;
+Verify the architecture, byte order, and file-offset-to-address mapping from evidence
+such as a memory map, image metadata, or a known load address. Do not infer the base
+by rounding an apparent entry address. In a Cortex-M vector table, the first word is
+the initial stack pointer and the second is the reset vector; first locate the table,
+which may not start at file offset zero. Use reset vector bit 0 as the Thumb indicator,
+not as part of the instruction address.
+
+For a verified function-pointer table, record each slot and decoded target.
+An odd in-range value alone does not prove it points to code. Seed only reviewed
+targets with repeatable `--entry`, or use `--addr` to seed and select output.
+Use `--define-function @FILE` to declare entries or bounds after discovery.
+Raw-image decompilation requires explicit entries and serial execution;
 `--summary`, `--reachable-from`, `strings`, `xrefs`, `disassemble`, and `read` require
 object metadata.
 

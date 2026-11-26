@@ -1326,6 +1326,24 @@ impl Constructor {
         self.operands.len() as i32 // size_t -> int4 as in C++
     }
 
+    /// C++ `Constructor::getOpsPrintOrder` — operand indices in the order they
+    /// print, after the first whitespace piece. This is the index space every
+    /// Ghidra operand API speaks (`SleighInstructionPrototype.opresolve`), so an
+    /// operand mask or op-object list must be built against it, not against
+    /// declaration order.
+    pub fn get_ops_print_order(&self) -> Vec<i32> {
+        if self.firstwhitespace < 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        for piece in self.printpiece.iter().skip(self.firstwhitespace as usize + 1) {
+            if piece.first() == Some(&b'\n') {
+                out.push(i32::from(piece[1]) - i32::from(b'A'));
+            }
+        }
+        out
+    }
+
     /// C++ `Constructor::getOperand(int4 i)` — the operand's symbol id
     /// (unchecked vector indexing in C++; an error here).
     #[inline]

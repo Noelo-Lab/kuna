@@ -9,7 +9,7 @@
 //!
 //! ```text
 //! magic        "KFID"                         # 4 bytes
-//! version      u32  (= FID_DB_VERSION = 1)
+//! version      u32  (= FID_DB_VERSION = 2)
 //! lang_id      len-prefixed UTF-8
 //! cspec_id     len-prefixed UTF-8
 //! n_records    u32
@@ -24,17 +24,17 @@
 
 #[expect(clippy::disallowed_types, reason = "lookup indices; output ordering is explicit")]
 use std::collections::{hash_map::Entry, HashMap};
+use std::sync::Arc;
 
 use kuna_base::error::{KunaError, KunaResult};
 
 /// `"KFID"` — the `.fid` file magic.
 pub const FID_DB_MAGIC: &[u8; 4] = b"KFID";
 
-/// The on-disk format version. **Bump on ANY change to the hash, the skipper
-/// patterns, or the record layout** (Ghidra's `FidFileManager.VERSION = 6`
-/// analog) — a mismatched version means the stored hashes were computed by a
-/// different algorithm and would mis-match.
-pub const FID_DB_VERSION: u32 = 1;
+/// The on-disk format and fingerprint version. Bump on changes to the hash,
+/// instruction masks, skipper rules, body extent, or record layout. Version 1
+/// did not account for the current masks or switch case bodies.
+pub const FID_DB_VERSION: u32 = 2;
 
 /// `flags` bit 0 — the record's hash was computed over a body with a terminator
 /// (return/halt) as its last code unit. Other flag bits are reserved.
@@ -58,9 +58,8 @@ pub struct FidRecord {
     pub specific_addl: u8,
     /// Record flags ([`FLAG_HAS_TERMINATOR`] + reserved).
     pub flags: u8,
-    /// The function name this fingerprint identifies (resolved from the interned
-    /// string blob at load; interned back into it at serialize).
-    pub name: String,
+    /// Function name. Records referencing the same stored name share its allocation.
+    pub name: Arc<str>,
 }
 
 /// Read-only metadata and full-hash lookup for a fingerprint database.
@@ -142,7 +141,7 @@ impl FidDb {
         #[expect(clippy::disallowed_types, reason = "lookup only; blob order follows sorted records")]
         let mut name_off: HashMap<&str, u32> = HashMap::new();
         for rec in &records {
-            if let Entry::Vacant(entry) = name_off.entry(rec.name.as_str()) {
+            if let Entry::Vacant(entry) = name_off.entry(rec.name.as_ref()) {
                 entry.insert(blob.len() as u32);
                 blob.extend_from_slice(rec.name.as_bytes());
                 blob.push(0); // NUL terminator
@@ -161,7 +160,7 @@ impl FidDb {
             out.extend_from_slice(&rec.code_unit_size.to_le_bytes());
             out.push(rec.specific_addl);
             out.push(rec.flags);
-            out.extend_from_slice(&name_off[rec.name.as_str()].to_le_bytes());
+            out.extend_from_slice(&name_off[rec.name.as_ref()].to_le_bytes());
         }
         out.extend_from_slice(&blob);
         out
@@ -180,6 +179,13 @@ impl FidDb {
             )));
         }
         let version = r.u32()?;
+        if version < FID_DB_VERSION {
+            return Err(KunaError::bad_data(format!(
+                "fid: native KFID version {version} uses incompatible fingerprints \
+                 (expected version {FID_DB_VERSION}); rebuild the database from its \
+                 original libraries with `kuna fid build`"
+            )));
+        }
         if version != FID_DB_VERSION {
             return Err(KunaError::bad_data(format!(
                 "fid: version {version} != supported {FID_DB_VERSION}"
@@ -206,8 +212,16 @@ impl FidDb {
         let blob = r.rest();
 
         let mut records: Vec<FidRecord> = Vec::with_capacity(raw.len());
+        #[expect(clippy::disallowed_types, reason = "lookup only; records preserve input order")]
+        let mut names = HashMap::<_, Arc<str>>::new();
         for rr in raw {
-            let name = read_interned_name(blob, rr.name_off as usize)?;
+            let name = match names.entry(rr.name_off) {
+                Entry::Occupied(found) => Arc::clone(found.get()),
+                Entry::Vacant(slot) => {
+                    let text = read_interned_name(blob, rr.name_off as usize)?;
+                    Arc::clone(slot.insert(Arc::from(text)))
+                }
+            };
             records.push(FidRecord {
                 full_hash: rr.full_hash,
                 specific_hash: rr.specific_hash,
@@ -255,12 +269,15 @@ fn write_str(out: &mut Vec<u8>, s: &str) {
 
 /// Read a NUL-terminated UTF-8 name from the blob at `off`. A bad offset or a
 /// non-UTF-8 / unterminated name is an error (never a panic).
-fn read_interned_name(blob: &[u8], off: usize) -> KunaResult<String> {
+fn read_interned_name(blob: &[u8], off: usize) -> KunaResult<&str> {
     if off > blob.len() {
         return Err(KunaError::bad_data(format!(
             "fid: name offset {off} past blob end {}",
             blob.len()
         )));
+    }
+    if off != 0 && blob[off - 1] != 0 {
+        return Err(KunaError::bad_data("fid: name offset is not at a string boundary"));
     }
     let tail = &blob[off..];
     let end = tail
@@ -268,7 +285,6 @@ fn read_interned_name(blob: &[u8], off: usize) -> KunaResult<String> {
         .position(|&b| b == 0)
         .ok_or_else(|| KunaError::bad_data("fid: unterminated name in string blob"))?;
     std::str::from_utf8(&tail[..end])
-        .map(str::to_owned)
         .map_err(|_| KunaError::bad_data("fid: non-UTF-8 name in string blob"))
 }
 
@@ -344,7 +360,7 @@ mod tests {
             code_unit_size: cus,
             specific_addl: addl,
             flags: FLAG_HAS_TERMINATOR,
-            name: name.to_string(),
+            name: name.into(),
         }
     }
 
@@ -391,7 +407,7 @@ mod tests {
         assert_eq!(back.record_count(), 2);
         let bucket = back.find_by_full_hash(0x4242);
         assert_eq!(bucket.len(), 2);
-        let names: Vec<&str> = bucket.iter().map(|r| r.name.as_str()).collect();
+        let names: Vec<&str> = bucket.iter().map(|r| r.name.as_ref()).collect();
         assert!(names.contains(&"foo") && names.contains(&"bar"));
     }
 
@@ -404,7 +420,7 @@ mod tests {
             rec(7, 50, 0, 0, ""),
         ]);
         let bytes = db.serialize();
-        assert_eq!(&bytes[..22], b"KFID\x01\0\0\0\x01\0\0\0L\x01\0\0\0C\x04\0\0\0");
+        assert_eq!(&bytes[..22], b"KFID\x02\0\0\0\x01\0\0\0L\x01\0\0\0C\x04\0\0\0");
         let table = &bytes[22..22 + 4 * 24];
         let fields: Vec<_> = table.chunks_exact(24).map(|record| (
             u64::from_le_bytes(record[..8].try_into().unwrap()),
@@ -428,8 +444,8 @@ mod tests {
         let blob_count = bytes.windows(5).filter(|w| *w == b"same\0").count();
         assert_eq!(blob_count, 1, "the shared name is interned once");
         let back = FidDb::load(&bytes).unwrap();
-        assert_eq!(back.find_by_full_hash(0x1)[0].name, "same");
-        assert_eq!(back.find_by_full_hash(0x2)[0].name, "same");
+        assert_eq!(back.find_by_full_hash(0x1)[0].name.as_ref(), "same");
+        assert_eq!(back.find_by_full_hash(0x2)[0].name.as_ref(), "same");
     }
 
     #[test]
@@ -460,6 +476,15 @@ mod tests {
         // The version u32 starts right after the 4-byte magic.
         bytes[4] = bytes[4].wrapping_add(1);
         assert!(FidDb::load(&bytes).is_err());
+    }
+
+    #[test]
+    fn legacy_native_fingerprints_require_rebuilding() {
+        let mut bytes = FidDb::from_records("L", "C", vec![]).serialize();
+        bytes[4..8].copy_from_slice(&1u32.to_le_bytes());
+        let error = FidDb::load(&bytes).unwrap_err().to_string();
+        assert!(error.contains("version 1 uses incompatible fingerprints"), "{error}");
+        assert!(error.contains("`kuna fid build`"), "{error}");
     }
 
     #[test]

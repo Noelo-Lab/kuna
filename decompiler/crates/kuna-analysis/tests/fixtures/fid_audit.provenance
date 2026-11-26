@@ -18,3 +18,12 @@ Recipe (Ubuntu clang 14.0.0, GNU ld 2.38)
   clang -target x86_64-unknown-linux-gnu -O1 -c fid_audit_x86_64.c -o fid_audit_x86_64.o
   ld -m elf_x86_64 -s -e audit_fold fid_audit_x86_64.o -o fid_audit_x86_64
   kuna fid build fid_audit_x86_64.o -o fid_audit_x86_64.fid --lang x86:LE:64:default --cspec gcc
+
+Ghidra 12.1.2 fixtures (regenerate with MakeFidAudit.java)
+  fid_audit_ghidra.fidb          packed database
+  fid_audit_ghidra.fidbf         same database in raw buffer format
+  fid_audit_ghidra_metadata.fidbf raw database with the alternate v6 library schema
+
+The x86-64 records exercise naming restrictions and compatible library variants.
+The AArch64 library shares one long symbol name across two records and references
+a longer domain path. These strings exercise both chained-buffer layouts.

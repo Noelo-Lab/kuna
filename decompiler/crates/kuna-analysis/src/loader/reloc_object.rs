@@ -1061,6 +1061,24 @@ mod tests {
         SymbolKind, SymbolScope,
     };
 
+    #[test]
+    fn arm_thumb_sdk_relocations_match_gnu_linked_text() {
+        let object = object::File::parse(&include_bytes!("../../tests/fixtures/arm_thumb_abi_fixture.o")[..]).unwrap();
+        let linked = object::File::parse(&include_bytes!("../../tests/fixtures/arm_thumb_abi_linked.elf")[..]).unwrap();
+        let loaded = layout_relocatable(&object, &ElfFormat);
+        let diagnostics = loaded.diagnostics.report_lines();
+        assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+
+        for section in object.sections().filter(|section| section.kind() == SectionKind::Text && section.size() != 0) {
+            let name = section.name().unwrap();
+            let expected = linked.section_by_name(name).unwrap();
+            let vma = loaded.section_vma[&section.index()];
+            assert_eq!(vma, expected.address(), "{name}");
+            let (_, bytes) = loaded.segments.iter().find(|(base, _)| *base == vma).unwrap();
+            assert_eq!(bytes.as_slice(), expected.data().unwrap(), "{name}");
+        }
+    }
+
     /// Hand-assemble a minimal little-endian ELF64 **ET_REL** (no program
     /// headers) with one `.text` (ALLOC|EXEC), one `.data` (ALLOC|WRITE), a
     /// `.symtab` (`myfunc`@.text, `datum`@.data, undefined `ext_call`), and a

@@ -1,11 +1,11 @@
-//! The compiled SLEIGH tree a release `kuna` carries inside itself (cargo feature
+//! The compiled SLEIGH tree carried by release binaries (cargo feature
 //! `embed-specs`; `build.rs` generates the table).
 //!
-//! The engine reads specs only through plain `std::fs` path reads, so the table is
-//! unpacked once into the per-user cache directory, under a name derived from its
-//! contents, and that directory is handed out like any other spec root. Each unpack
-//! is written to a private directory and renamed into place only once complete, so a
-//! reader never sees a partial tree and concurrent first runs settle on one copy.
+//! The table can be mounted directly as a memory-backed spec root. Legacy CLI
+//! callers that need a directory use [`tree`], which unpacks it into a cache.
+//! Each unpack is written to a private directory and renamed into place only
+//! once complete, so a reader never sees a partial tree and concurrent first
+//! runs settle on one copy.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +15,18 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "embed-specs")]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/embedded_specs.rs"));
+}
+
+/// The compiled spec files, borrowed directly from the binary without unpacking.
+pub fn files() -> Option<&'static [(&'static str, &'static [u8])]> {
+    #[cfg(feature = "embed-specs")]
+    {
+        Some(generated::FILES)
+    }
+    #[cfg(not(feature = "embed-specs"))]
+    {
+        None
+    }
 }
 
 /// Written last into a finished unpack; a tree without it is not used.

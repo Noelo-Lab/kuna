@@ -668,8 +668,8 @@ pub struct AnalysisOutput {
     /// `(addr, name)`. The commit boundary **renames** each (resolved by ADDRESS) only
     /// when it still carries an engine `FUN_*`/`sub_*` placeholder (the label gate)
     /// — the stripped-binary re-identification the FID pass exists for. Produced
-    /// only by [`crate::fid::FidPass`] (`--option fid on`, default-off, real-ELF
-    /// path only, and only when a `.fid` database is configured); empty otherwise.
+    /// by [`crate::fid::FidPass`] when the Listing and FID gates are enabled
+    /// and a database is configured; empty otherwise.
     /// See [`FidMatch`].
     pub fid_names: Vec<FidMatch>,
     /// Signature names a recogniser holds but does not apply (`fid strict` when

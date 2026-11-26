@@ -99,3 +99,25 @@ build out of env scope. The hashes above are validated by self-consistency (a fr
 generate reproduces the vendored `.fid`) and by the byte-exact PR2 unit gate against
 the published FNV-1a64 vectors; a real Ghidra dump over this `lib.o` remains the
 target for full cross-validation.
+
+## Ghidra cross-validation (done)
+
+The deferred gate above has since been run against a built Ghidra. Ghidra's own
+`FidService.hashFunction` was dumped over a real MSVC binary
+(`GhidraClass/ExerciseFiles/VersionTracking/WallaceSrc.exe`, 56 named functions)
+and compared with `kuna fid query`'s full hashes: 36 agree bit-exactly and 53
+agree on the code-unit count. Every function kuna names from the stock
+`vsOlder_x86` corpus that Ghidra also names carries the identical name. Of the 20
+that differ, 2 also differ in code-unit count (Ghidra's FunctionManager holds
+compiler-generated filter code as a separate body range); the other 18 agree on
+instruction count, mask bytes, op-object lists and operand counts, so their
+cause is not established. See `docs/spec/01-program-prep.md` for the extent rule
+and the wrong readings that measurement ruled out.
+
+**Regenerating.** The vendored `.fid` files must be rebuilt whenever the mask,
+the extent rule or the hash changes — `kuna-console/tests/verify_fid_build.rs`
+fails with "regenerate it with `kuna fid build`" when they drift:
+
+```bash
+kuna fid build lib.o -o lib.fid --lang x86:LE:64:default --cspec gcc
+```

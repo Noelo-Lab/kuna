@@ -104,11 +104,21 @@ fn run(mode: Mode) -> Run {
     match mode {
         Mode::On | Mode::Strict | Mode::StrictMatched => {
             let mut db = fixture_dir().join("lib.fid");
-            if matches!(mode, Mode::StrictMatched) {
+            // `Strict` proves `strict` DECLINES on a specific-hash mismatch and
+            // `StrictMatched` proves it ACCEPTS when the hash agrees, so both
+            // rewrite the record. They used to rely on the vendored database
+            // disagreeing by accident; correcting the instruction mask made it
+            // agree, so the mismatch is now stated instead of inherited.
+            if matches!(mode, Mode::Strict | Mode::StrictMatched) {
                 use kuna_analysis::fid::db::FidDb;
                 let original = FidDb::load(&std::fs::read(&db).unwrap()).unwrap();
                 let mut records: Vec<_> = original.records().into_iter().cloned().collect();
-                records.iter_mut().find(|r| r.name == "kuna_crc32").unwrap().specific_hash = 0x7488df19ec1bc03b;
+                if matches!(mode, Mode::Strict) {
+                    // Flip every bit: no query can produce this, so `strict` must
+                    // decline and `on` must still rename.
+                    let crc = records.iter_mut().find(|r| r.name.as_ref() == "kuna_crc32").unwrap();
+                    crc.specific_hash ^= 0xffff_ffff_ffff_ffff;
+                }
                 db = std::env::temp_dir().join(format!("kuna-fid-strict-{}.fid", std::process::id()));
                 std::fs::write(&db, FidDb::from_records("x86:LE:64:default", "gcc", records).serialize()).unwrap();
                 temp_db = Some(db.clone());

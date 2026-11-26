@@ -79,7 +79,7 @@ fn records_for_fixture() -> Vec<kuna_analysis::fid::db::FidRecord> {
 fn generator_recovers_the_three_functions_by_name() {
     let records = records_for_fixture();
 
-    let names: Vec<&str> = records.iter().map(|r| r.name.as_str()).collect();
+    let names: Vec<&str> = records.iter().map(|r| r.name.as_ref()).collect();
     assert!(
         names.contains(&"kuna_crc32"),
         "kuna_crc32 must be fingerprinted; got {names:?}"
@@ -155,4 +155,173 @@ fn fresh_generate_matches_the_vendored_fid() {
             r.name
         );
     }
+}
+
+#[derive(Clone, Copy)]
+enum SwitchLayout {
+    Checked,
+    UnrelatedComparison,
+    SignedComparison,
+    CaseReentry,
+}
+
+/// A compiler-style signed-delta table with a checked index. Both the `lea`
+/// and every table entry require a relocation before the switch can be read.
+fn relocatable_switch(case_opcode: u8, rows: usize, layout: SwitchLayout) -> Vec<u8> {
+    use object::{
+        write, Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags, SymbolKind,
+        SymbolScope,
+    };
+
+    fn patch_rel8(code: &mut [u8], at: usize, target: usize) {
+        code[at] = i8::try_from(target as isize - (at + 1) as isize).unwrap() as u8;
+    }
+    let mut code = vec![
+        0x83, 0xff, 2, // cmp $2,%edi
+        0x77, 0,       // ja default
+    ];
+    match layout {
+        SwitchLayout::UnrelatedComparison => {
+            // An independent filter on the second parameter. It doesn't
+            // reduce the number of possible cases of the checked first.
+            code.extend([0x83, 0xfe, 1, 0x77, 0]); // cmp $1,%esi; ja default
+        }
+        SwitchLayout::SignedComparison => {
+            // The first unsigned check still makes every dispatch safe.
+            code.extend([0x83, 0xff, 1, 0x7f, 0]); // cmp $1,%edi; jg default
+        }
+        _ => {}
+    }
+    let zero_extend = code.len();
+    let lea_disp = zero_extend + 5;
+    code.extend([
+        0x89, 0xff,                    // mov %edi,%edi
+        0x48, 0x8d, 0x15, 0, 0, 0, 0, // lea table(%rip),%rdx
+        0x48, 0x63, 0x04, 0xba,       // movslq (%rdx,%rdi,4),%rax
+        0x48, 0x01, 0xd0,             // add %rdx,%rax
+        0xff, 0xe0,                   // jmp *%rax
+    ]);
+    let case0 = code.len();
+    code.extend([0xb8, 1, 0, 0, 0, 0xc3]);
+    let case1 = code.len();
+    code.extend([case_opcode, 0xc0, 0xc3]);
+    let case2 = code.len();
+    if matches!(layout, SwitchLayout::CaseReentry) {
+        // A shared tail: case 2 reuses case 0, with its own safe selector.
+        // This incoming edge becomes known only after visiting the cases.
+        code.extend([0xbf, 0, 0, 0, 0, 0xeb, 0]); // mov $0,%edi; jmp zero_extend
+        patch_rel8(&mut code, case2 + 6, zero_extend);
+    } else {
+        code.extend([0xb8, 3, 0, 0, 0, 0xc3]);
+    }
+    let default = code.len();
+    code.extend([0xb8, 0xff, 0xff, 0xff, 0xff, 0xc3]);
+    patch_rel8(&mut code, 4, default);
+    if matches!(layout, SwitchLayout::UnrelatedComparison | SwitchLayout::SignedComparison) {
+        patch_rel8(&mut code, 9, default);
+    }
+    let mut object = write::Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
+    let text = object.section_id(write::StandardSection::Text);
+    let rodata = object.section_id(write::StandardSection::ReadOnlyData);
+    object.append_section_data(text, &code, 4);
+    object.append_section_data(rodata, &[0; 12][..rows * 4], 4);
+    object.add_symbol(write::Symbol {
+        name: b"dispatch".to_vec(),
+        value: 0,
+        size: code.len() as u64,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Dynamic,
+        weak: false,
+        section: write::SymbolSection::Section(text),
+        flags: SymbolFlags::None,
+    });
+    let text_symbol = object.section_symbol(text);
+    let table_symbol = object.section_symbol(rodata);
+    let pc32 = RelocationFlags::Elf { r_type: object::elf::R_X86_64_PC32 };
+    object.add_relocation(text, write::Relocation {
+        offset: lea_disp as u64,
+        symbol: table_symbol,
+        addend: -4,
+        flags: pc32,
+    }).expect("lea relocation");
+    for (i, target) in [case0, case1, case2].into_iter().take(rows).enumerate() {
+        let offset = (4 * i) as u64;
+        object.add_relocation(rodata, write::Relocation {
+            offset,
+            symbol: text_symbol,
+            addend: target as i64 + offset as i64,
+            flags: pc32,
+        }).expect("table relocation");
+    }
+    object.write().expect("write switch ELF")
+}
+
+fn switch_fingerprints(case_opcode: u8, rows: usize, layout: SwitchLayout) -> (
+    Vec<kuna_analysis::fid::db::FidRecord>,
+    Result<kuna_analysis::fid::hash::FidHashQuad, &'static str>,
+) {
+    use kuna_analysis::fid::fingerprint_function;
+    use kuna_analysis::listing::{Listing, ListingDetail};
+
+    let bytes = relocatable_switch(case_opcode, rows, layout);
+    let path = crate::common::scratch_file("fid-switch", "o");
+    std::fs::write(&path, &bytes).expect("write switch input");
+    let input = path.to_str().unwrap();
+    let specs = vec![repo_root().join("specs").to_str().unwrap().to_string()];
+    let prog = bootstrap_from_object(input, LANG, &specs);
+    std::fs::remove_file(&path).expect("remove switch input");
+    let prog = prog.expect("bootstrap switch object");
+    let image = ObjectLoadImage::from_bytes(input, &bytes).expect("load switch ELF");
+    let arch = prog.arch();
+    let translate = arch.translate().as_sleigh().unwrap();
+    let built = build_records(&bytes, &image, arch, translate);
+    let entry = image.func_symbols().into_iter().find(|(_, name)| name == "dispatch").unwrap().0;
+    let ranges: Vec<_> = image.executable_ranges().into_iter().map(|(lo, size)| (lo, lo + size)).collect();
+    let space = arch.manage().get_default_code_space().unwrap();
+    let listing = Listing::build_raw(arch, translate, space, &ranges, &[entry], ListingDetail::PARTITION_ONLY);
+    (built, fingerprint_function(&listing, arch, entry))
+}
+
+#[test]
+fn switch_only_case_mutation_changes_build_and_lookup_fingerprints() {
+    let (original, lookup) = switch_fingerprints(0x31, 3, SwitchLayout::Checked); // xor %eax,%eax
+    let (changed, changed_lookup) = switch_fingerprints(0x29, 3, SwitchLayout::Checked); // sub %eax,%eax
+    let original = original.iter().find(|record| record.name.as_ref() == "dispatch").unwrap();
+    let changed = changed.iter().find(|record| record.name.as_ref() == "dispatch").unwrap();
+    let lookup = lookup.expect("complete switch fingerprints");
+    let changed_lookup = changed_lookup.expect("changed switch fingerprints");
+    assert_eq!(original.code_unit_size, 15, "{original:?}");
+    assert_eq!(original.full_hash, lookup.full_hash);
+    assert_eq!(changed.full_hash, changed_lookup.full_hash);
+    assert_eq!(original.code_unit_size, lookup.code_unit_size);
+    assert_eq!(changed.code_unit_size, changed_lookup.code_unit_size);
+    assert_eq!(original.code_unit_size, changed.code_unit_size);
+    assert_ne!(original.full_hash, changed.full_hash);
+}
+
+#[test]
+fn partial_switch_table_cannot_be_built_or_queried() {
+    // The valid prefix has two in-body targets; the guard requires three.
+    assert_switch_unresolved(2, SwitchLayout::Checked);
+}
+
+#[test]
+fn unrelated_comparison_cannot_bound_the_switch_index() {
+    assert_switch_unresolved(3, SwitchLayout::UnrelatedComparison);
+}
+
+#[test]
+fn unproven_signed_comparison_cannot_bound_the_switch_index() {
+    assert_switch_unresolved(3, SwitchLayout::SignedComparison);
+}
+
+#[test]
+fn case_body_cannot_bypass_the_switch_proof() {
+    assert_switch_unresolved(3, SwitchLayout::CaseReentry);
+}
+
+fn assert_switch_unresolved(rows: usize, layout: SwitchLayout) {
+    let (records, lookup) = switch_fingerprints(0x31, rows, layout);
+    assert!(records.iter().all(|record| record.name.as_ref() != "dispatch"));
+    assert_eq!(lookup.unwrap_err(), "unresolved_computed_jump");
 }

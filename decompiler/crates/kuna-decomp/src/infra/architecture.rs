@@ -1889,9 +1889,8 @@ pub struct Architecture {
     /// database (named by the `kuna_fid_db` env var), renaming a matched
     /// `FUN_*`/`sub_*` placeholder back to its library name — the capability that
     /// re-identifies a function in a STRIPPED binary (e.g. `sub_4017c0` →
-    /// `kuna_crc32`). Reads the Listing (`--option listing on` builds it) and is a
-    /// no-op without the Listing AND without a configured DB. Default-off, real-ELF
-    /// path only ⇒ every parity gate is byte-identical.
+    /// `kuna_crc32`). Reads the Listing and does nothing without a configured DB.
+    /// On raw images the existing discovery partition supplies the Listing.
     pub analysis_fid: bool,
     /// Require matching specific hash and instruction count for FID renames.
     pub analysis_fid_strict: bool,
@@ -2200,6 +2199,8 @@ pub struct Architecture {
     /// the frontend did not supply it (then a name-only `unknown` default is
     /// seeded, as before).
     cspec_xml: Option<Vec<u8>>,
+    /// The resolved `.ldefs` compiler tag, including any catalog fallback.
+    compiler_spec_id: Option<String>,
     /// Raw processor-spec (`.pspec`) XML content, set by the frontend before
     /// [`init_post_engine`](Architecture::init_post_engine).  The C++
     /// `parseProcessorConfig` (architecture.cc:1176) decodes the
@@ -2849,6 +2850,7 @@ impl Architecture {
             evalfp_current_spec: None,
             default_return_addr: None,
             cspec_xml: None,
+            compiler_spec_id: None,
             pspec_xml: None,
             pspec_symbols: std::collections::HashMap::new(),
             coretypes_xml: None,
@@ -5633,6 +5635,17 @@ impl Architecture {
     pub fn set_cspec_xml(&mut self, xml: Vec<u8>) {
         self.kuna_callwide.clear();
         self.cspec_xml = Some(xml);
+    }
+
+    /// Record the compiler selected from the active language's `.ldefs`.
+    pub fn set_compiler_spec_id(&mut self, id: &str) {
+        self.compiler_spec_id = Some(id.to_owned());
+    }
+
+    /// The selected compiler ID, not necessarily the requested architecture
+    /// suffix if the language catalog used its default compiler.
+    pub fn compiler_spec_id(&self) -> Option<&str> {
+        self.compiler_spec_id.as_deref()
     }
 
     /// (kuna, Phase 3) Record the wire `<coretypes>` XML for the ghidra-mode
