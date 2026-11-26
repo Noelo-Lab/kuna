@@ -3554,6 +3554,70 @@ fn carmel_trap_flushes_the_next_issue_or_follows_its_vector_and_stacks_the_resum
             ).unwrap();
         }
     }
+    c.push_str("volatile unsigned short inner_lo, inner_hi;\n");
+    let mut project = |entry: usize, reg: &str, name: &str, vector: bool| {
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            &format!("{entry:#x}"), "--addr", "--raw-image", "--target", TARGET, "--base", &base,
+            "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            "--assert", "param 0 %A0L unsigned short in_a0",
+            "--assert", "param 1 %EST unsigned short in_est",
+            "--assert", "param 2 %ECFG unsigned short in_ecfg",
+            "--assert", "param 3 %INTBASE unsigned short in_intbase",
+            "--assert", "data [data,0x403d] volatile unsigned short inner_lo",
+            "--assert", "data [data,0x403e] volatile unsigned short inner_hi",
+            "--assert", "data [data,0x403f] volatile unsigned short link_lo",
+            "--assert", "data [data,0x4040] volatile unsigned short link_hi",
+        ]);
+        if vector {
+            kuna.args(["--assert", &format!("jumptable {BASE:#x} {:#x}", BASE + 8)]);
+        }
+        let out = common::process::required_output(&mut kuna);
+        let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let [fun] = report["functions"].as_array().unwrap().as_slice() else { panic!("{report}"); };
+        let text = fun["code"].as_str().unwrap();
+        assert!(fun["error"].is_null() && !text.contains("halt_"), "{fun}");
+        assert!(report["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{report}");
+        writeln!(c, "#define sub_{entry:x} {name}\n{text}\n#undef sub_{entry:x}").unwrap();
+    };
+    for first in 1..=3u8 {
+        for second in 1..=3u8 {
+            let handler = if first == 1 { 8 } else { 4 };
+            let accepted = first != second && second != 3;
+            let mut code = [[nop; 2]; 8];
+            code[0][0] = [0x2b, 0xd0, first];
+            code[handler / 2][0] = [0x2b, 0xd0, second];
+            code[handler / 2 + 1][0] = a0;
+            code[7] = ret;
+            fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+            let name = format!("nested_{first}_{second}");
+            project(BASE, "A0L", &name, first == 1);
+            let inner_lo = if accepted { (BASE + handler + 2) & 0xffff } else { 1 };
+            let inner_hi = if accepted { BASE >> 16 } else { 2 };
+            writeln!(calls,
+                "inner_lo = 1; inner_hi = 2; link_lo = 3; link_hi = 4;\
+                 if ({name}(0, 0, 0, 0x21) != {} || inner_lo != {inner_lo} || inner_hi != {inner_hi} ||\
+                 link_lo != 0x802 || link_hi != 1) return {};",
+                usize::from(!accepted), 10 + 3 * first + second,
+            ).unwrap();
+        }
+    }
+    // A left sequential TRAP saves an odd CODE word. Keep the whole fetch
+    // mapped so the ordinary framer recognizes the saved right slot.
+    let mut code = [[nop; 2]; 8];
+    code[0] = [sequential([0x2b, 0xd0, 1]), a0];
+    code[1] = ret;
+    code[4][0] = [0x2b, 0xd8, 0x10];
+    code[7] = ret;
+    fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+    project(BASE, "SP", "iret_frame", true);
+    project(BASE + 1, "A0L", "iret_resume", false);
+    writeln!(calls,
+        "link_lo = 3; link_hi = 4;\
+         if (iret_frame(0, 0, 0, 0x21) != 0x4040 || ((uint32_t)link_hi << 16 | link_lo) != {:#x}) return 30;\
+         if (iret_resume(0, 0, 0, 0x21) != 1) return 31;",
+        BASE + 1,
+    ).unwrap();
     c.push_str(&calls);
     c.push_str("return 0;\n}\n");
     fs::write(&source, &c).unwrap();

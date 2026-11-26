@@ -4244,6 +4244,10 @@ and transfer unless execution or address enable is set. A taken `RETI`
 releases the newest active trap source without changing `PSTATUS`; with
 no active trap it clears bit four of `PSTATUS`. Ordinary `RETURN` does not
 consume trap state.
+The saved link is a CODE word address: `RETI` loads the low half at
+`SP+1` and the high half at `SP+2`, advances `SP` by two, and returns
+indirectly to the assembled link. An odd link can name a real sequential
+right slot; it is not rounded down to the fetch root.
 
 `TRAPCTX` is lift state, not an encoded register operand. The compact
 `TRAP 1` through `TRAP 3` forms with an inactive right lane and a following
@@ -4251,6 +4255,10 @@ complete issue record accepted sources there and push a two-word link.
 An already-active source 1 or 2 is ignored, and source 3 is ignored when
 any trap is active. Source 1 vectors through `INTBASE` when no trap is
 active; accepted non-vectored entries skip the following issue.
+An ignored entry leaves both `SP` and DATA alone and flows to the ordinary
+next issue. An accepted nested entry writes its own frame below the older
+frame, leaving the older return address intact. Skipping an issue never
+changes the value written to the link.
 
 Lifted absolute peripheral moves use separate `io` and `ext` spaces
 with 16-bit words. Neither aliases a `data` word at the same numeric address.
