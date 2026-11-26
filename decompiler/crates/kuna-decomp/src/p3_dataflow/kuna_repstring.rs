@@ -31,8 +31,9 @@
 //!   a copy loads the element through the source, a fill stores a value
 //!   defined before the loop;
 //! * nothing outside the loop reads a value the body computes;
-//! * each pointer is as wide as an address (a compare's too): an x86-64
-//!   address-size override steps EDI/ESI, which wrap at 4 GiB as no builtin can.
+//! * each pointer is as wide as an address or a compiler-spec pointer (a
+//!   compare's too): an x86-64 address-size override steps EDI/ESI, which wrap
+//!   at 4 GiB as no builtin can.
 //!
 //! A destination in the function's own frame (the stack pointer plus a
 //! constant) is declined: the builtin is placed after heritage, so the frame
@@ -191,13 +192,17 @@ fn mask(width: i32) -> u64 {
     }
 }
 
-/// Is `v` as wide as an address of the default data space? A narrower pointer
-/// (`rep stos` with an address-size override, through EDI on x86-64) wraps
-/// within its own width, which no C copy, fill or compare can express. With no
+/// Is `v` as wide as an address of the default data space, or as a pointer of
+/// the compiler spec? A narrower pointer (`rep stos` with an address-size
+/// override, through EDI on x86-64) wraps within its own width, which no C
+/// copy, fill or compare can express. 32-bit code on the 64-bit model
+/// (`x86:LE:64:compat32`) steps the program's own 4-byte pointers. With no
 /// default data space to compare against, the rewrite is refused.
 fn full_width(data: &Funcdata, v: VarnodeId) -> bool {
-    let space = data.get_arch().manage().get_default_data_space().map(|s| s.get_addr_size() as i32);
-    size(data, v).is_some_and(|width| space.is_some_and(|space| width >= space))
+    let arch = data.get_arch();
+    let Some(space) = arch.manage().get_default_data_space().map(|s| s.get_addr_size() as i32) else { return false };
+    let pointer = arch.types().map(|t| t.get_size_of_pointer()).filter(|&p| p > 0);
+    size(data, v).is_some_and(|width| width >= space || pointer.is_some_and(|p| width >= p))
 }
 
 fn def_block(data: &Funcdata, v: VarnodeId) -> Option<BlockId> {
