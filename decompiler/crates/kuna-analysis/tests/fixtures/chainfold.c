@@ -57,3 +57,15 @@ int main(int argc, char **argv)
     return 0;
 }
 #endif
+
+__attribute__((noinline)) void commit(int *b, int x)
+{
+    int r;
+
+    if ((r = put(b, x)) != 0 || (order = 1, (r = put(b, x + 3)) != 0)) {
+        note(r);
+        return;
+    }
+    sink = *b;
+    note(0);
+}

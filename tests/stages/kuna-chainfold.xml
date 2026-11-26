@@ -15,8 +15,10 @@
 
     Pass 1 runs with `option condfold noreturn` and prints the -O2 store as a
     ladder; pass 2 (`option condfold auto`, the default) prints its chain as one
-    condition.  The -O0 send keeps its ladder under both values, because the
-    detector calls the function unoptimized.
+    condition.  commit stores `order = 1` between its two calls: noreturn keeps
+    the store as a statement in nested ifs, auto carries it into the condition
+    as a comma operand ahead of the second call.  The -O0 send keeps its ladder
+    under both values, because the detector calls the function unoptimized.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -31,6 +33,14 @@
   <com>print C</com>
   <com>option condfold auto</com>
   <com>load function store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold noreturn</com>
+  <com>load function commit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold auto</com>
+  <com>load function commit</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
@@ -48,6 +58,8 @@
 </script>
 <stringmatch name="CHAINFOLD #1: noreturn prints the -O2 store as a ladder" min="1" max="1">^    v1 = put\(a0,\(int4\)a1 \* 2\);$</stringmatch>
 <stringmatch name="CHAINFOLD #2: auto prints the -O2 store's chain as one condition" min="1" max="1">^  if \(\(!v1\) &amp;&amp; \(v1 = put\(a0,\(int4\)a1 \* 2\), !v1\)\) \{$</stringmatch>
-<stringmatch name="CHAINFOLD #3: both keep store's call on the failure path" min="2" max="2">^  note\(v1\); // tail-call$</stringmatch>
+<stringmatch name="CHAINFOLD #3: both keep store's and commit's call on the failure path" min="4" max="4">^  note\(v1\); // tail-call$</stringmatch>
 <stringmatch name="CHAINFOLD #4: the unoptimized -O0 send keeps its ladder under both values" min="2" max="2">^      v1 = put\(a0,a1 \+ a2\);$</stringmatch>
+<stringmatch name="CHAINFOLD #5: noreturn keeps commit's store between the calls as a statement" min="1" max="1">^    order = 1;$</stringmatch>
+<stringmatch name="CHAINFOLD #6: auto carries commit's store into the condition as a comma operand" min="1" max="1">^  if \(\(!v1\) &amp;&amp; \(order = 1, v1 = put\(a0,\(int4\)a1 \+ 3\), !v1\)\) \{$</stringmatch>
 </decompilertest>
