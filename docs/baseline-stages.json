@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5539,
-    5539
+    5543,
+    5543
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3191,6 +3191,10 @@
     "data:VENEERTAILCALL #9: a veneer with no output of its own keeps the body of a callee that returns a value",
     "data:VOIDTAILRETURN #1: the bare trailing return; is printed by EXACTLY ONE of the two passes - the default elides it, `option voidtailreturn off` keeps it (2 would mean the option did nothing)",
     "data:VOIDTAILRETURN #2: both passes really emitted the function, so #1 cannot pass vacuously on a pass that produced no C",
+    "data:WORD-INDEX #1: a returned word index stays numeric",
+    "data:WORD-INDEX #2: the typed pointer returns the cell address",
+    "data:WORD-INDEX #3: an indirect load still reads the cell",
+    "data:WORD-INDEX #4: a word index on a function entry still names the function",
     "data:WRAPSPLIT #1: the wrapping read is its bytes from offset 0 over the 2 below it",
     "data:WRAPSPLIT #2: no overlapping inputs at the bottom of the stack space",
     "data:WRAPSPLIT #3: a ram qword at the top of the space",
