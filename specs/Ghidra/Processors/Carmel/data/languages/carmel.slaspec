@@ -576,7 +576,10 @@ define token wide (48)
     wide_shift_count_disp = (32,39) signed
     wide_shift_opcode = (17,22)
     wide_shift_destination = (9,16)
+    wide_shift_low_dst = (9,11)
+    wide_shift_low_bank = (12,16)
     wide_shift_source_tail = (0,8)
+    wide_shift_immediate = (24,30) signed
 
     wide_0_10 = (0,10)
     wide_13_22 = (13,22)
@@ -759,7 +762,7 @@ attach variables [packed_dst_r] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [wide_move_base wide_move_load_dst] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [packed_lhs_hi packed_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_acc packed_lhs_acc packed_rhs_acc] [A0 A1 A2 A3 A4 A5 _ _];
-attach variables [packed_dst_lo packed_lhs_lo packed_rhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [packed_dst_lo packed_lhs_lo packed_rhs_lo wide_shift_low_dst] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [packed_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_guard packed_lhs_guard packed_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [indexed_load_acc] [A0 A1 A2 A3 A4 A5 _ _];
@@ -7208,6 +7211,16 @@ macro wide_shift_ports(input, count_word, left_tap, right_bias, arithmetic, resu
     shift_flags(observed, carry_bit, flags);
 }
 
+macro wide_shift_word_limit(result, flags, word) {
+    # The word writeback limits on all nine extension bits, not just
+    # the guard boundary. C/Z/M/E still describe the pre-limit result.
+    word = result(2);
+    if ((ECFG & 4) == 0 || (flags & 0x20) == 0) goto <unlimited>;
+    word = 0x7fff + zext((flags & 0x10) != 0);
+    flags = flags | 4;
+  <unlimited>
+}
+
 :LSHIFT "*R0","*R2","*R1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45=1 & wide_0_22=0x700004 {
     local source:2 = *[data]:2 R2;
     local count:2 = *[data]:2 R1;
@@ -7479,25 +7492,68 @@ macro wide_shift_carry_only(input, count) {
     publish_alu_ce(EST & 0xcfff);
 }
 
+macro wide_immediate_shift_word(input, count, left_tap, word, flags) {
+    local result:8;
+    wide_shift_ports(input, count, left_tap, 16:4, 1:1, result, flags);
+    wide_shift_word_limit(result, flags, word);
+}
+
+@define WIDE_IMMEDIATE_ASHIFT "$(WIDE_ORIGINAL_BITS) & wide_shift_opcode=0x39 & wide_40_45=0xf & wide_0_0=1 & wide_shift_immediate"
+
+:ASHIFT "RMW1","*"^short_alu_src_ptr,wide_shift_immediate is $(WIDE_IMMEDIATE_ASHIFT) & wide_shift_destination=0x86 & wide_shift_source_tail<=0xf & short_alu_src_ptr {
+    local address:2 = short_alu_src_ptr;
+    local source:2 = *[data]:2 address;
+    local input:8 = sext(source) * 0x10000;
+    local count:2 = wide_shift_immediate;
+    local word:2;
+    local flags:2;
+    wide_immediate_shift_word(input, count, 32:4, word, flags);
+    *[data]:2 address = word;
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:ASHIFT "A0L","A1",wide_shift_immediate is $(WIDE_IMMEDIATE_ASHIFT) & wide_shift_destination=0x90 & wide_shift_source_tail=0x113 {
+    local input:8 = sext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L);
+    local count:2 = wide_shift_immediate;
+    local word:2;
+    local flags:2;
+    wide_immediate_shift_word(input, count, 40:4, word, flags);
+    A0L = word;
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+@undef WIDE_IMMEDIATE_ASHIFT
+
 shift_ce_destination: CECFG1 is wide_shift_destination=0xc2 & CECFG1 { export CECFG1; }
 shift_ce_destination: CECFG2 is wide_shift_destination=0xc3 & CECFG2 { export CECFG2; }
 shift_ce_destination: CETBL is wide_shift_destination=0xc4 & CETBL { export CETBL; }
 
-:ASHIFT shift_ce_destination,"long *R7+="^wide_shift_dst_disp,"RN5" is $(WIDE_ORIGINAL_BITS) & wide_shift_opcode=0x39 & wide_40_45=0x2d & wide_shift_source_tail=0xef & shift_ce_destination & wide_shift_dst_disp {
+macro wide_shift_r7_word(delta, word, flags) {
     local addr:2 = R7;
-    local delta:2 = sext(wide_shift_dst_disp:1);
     modify_ptr_scaled_window(R7, delta, RM6, RL6, 14, 4, 1:2, 0xffff:2);
     local upper:2 = addr + 1;
     local low:2 = *[data]:2 addr;
     local high:2 = *[data]:2 upper;
     local input:8 = sext(high) * 0x10000 + zext(low);
     local result:8;
-    local flags:2;
     wide_shift_ports(input, RN5, 32:4, 16:4, 1:1, result, flags);
-    shift_limit(result, flags);
+    wide_shift_word_limit(result, flags, word);
+}
+
+:ASHIFT shift_ce_destination,"long *R7+="^wide_shift_dst_disp,"RN5" is $(WIDE_ORIGINAL_BITS) & wide_shift_opcode=0x39 & wide_40_45=0x2d & wide_shift_source_tail=0xef & shift_ce_destination & wide_shift_dst_disp {
+    local word:2;
+    local flags:2;
+    wide_shift_r7_word(sext(wide_shift_dst_disp:1), word, flags);
     # This writeback does not drive either CE input for the same issue.
     publish_ce_feedback((EST & 0xcfc6) | flags, EST);
-    shift_ce_destination = result(2);
+    shift_ce_destination = word;
+}
+
+:ASHIFT wide_shift_low_dst,"long *R7+="^wide_shift_dst_disp,"RN5" is $(WIDE_ORIGINAL_BITS) & wide_shift_opcode=0x39 & wide_40_45=0x2d & wide_shift_source_tail=0xef & wide_shift_low_bank=0x12 & wide_shift_low_dst & wide_shift_dst_disp {
+    local word:2;
+    local flags:2;
+    wide_shift_r7_word(sext(wide_shift_dst_disp:1), word, flags);
+    wide_shift_low_dst = word;
+    publish_alu_ce((EST & 0xcfc6) | flags);
 }
 
 @undef WIDE_ORIGINAL_BITS

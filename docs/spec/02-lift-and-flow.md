@@ -4515,12 +4515,30 @@ port. Both CE banks sample incoming `EST`, configuration, and truth
 table before that write and the new shifter flags take effect. If a
 configuration write switches a bank to static mode, the sampled bit
 is retained; a subsequent issue can evaluate the new table in a
-dynamic bank. The disconnected register and long DATA result ports
+dynamic bank.
+
+The long-source accumulator route uses the same address and count inputs,
+but publishes the upper result word into the selected accumulator's low
+half, preserving its upper word and guard. For both long-source routes,
+`ECFG.ALIM` clamps on the shifter's extension flag `E` and sets sticky
+`L`. Carry, zero, sign, and extension describe the pre-limit result.
+
+The disconnected register and long DATA result ports
 can still publish carry. The disconnected loop-address route only reads
 the count at incoming `R4` and postmodifies that pointer; it leaves the
 arithmetic flags and loop address unchanged. The implicit circular window starts
 at zero; the explicit window uses the programmed bound. A DATA allocation
 or decode stop is not a supported retirement.
+
+Unqualified immediate `ASHIFT` interprets the low seven bits of the
+extension word as a signed count and bounds the shift to 40 bits.
+The short indirect `RMW1` form captures the incoming `R0`–`R7` address,
+aligns the signed DATA word to bits 16–31, and writes the upper result
+word back without modifying the pointer. The `A1` to `A0L` form shifts
+all 40 source bits but changes only `A0L`. The left carry tap is bit 31
+for the aligned DATA word and bit 39 for the full accumulator; right
+carry is relative to bit 16 for both. `Z`, `M`, and `E` describe bits
+16–39 of the pre-limit result. `ALIM` clamps on `E` and sets sticky `L`.
 
 Covered compact word shifts align their input to the upper word of the
 40-bit shifter. They publish the selected word but set `Z`, `M`, and `E`

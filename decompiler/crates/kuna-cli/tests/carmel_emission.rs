@@ -1011,9 +1011,9 @@ fn carmel_original_wide_bitfield_ports_execute_in_emitted_c() {
         "#include <stdbool.h>\n#include <stdint.h>\n\
          #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
          volatile unsigned short word_0000, word_0040, word_0041, word_0048, word_02ca, word_02cb, word_8012,\n\
-         word_804a, word_c048, word_c049, word_c04f, word_ffff;\n",
+         word_4048, word_4049, word_804a, word_c048, word_c049, word_c04f, word_ffff;\n",
     );
-    let routes: [([u8; 6], Option<(u8, u16)>, &[&str], &[u16], &[&str]); 11] = [
+    let routes: [([u8; 6], Option<(u8, u16)>, &[&str], &[u16], &[&str]); 13] = [
         ([0xe9, 0xb4, 0x0a, 0xf6, 0x31, 0xb1], Some((0, 0x40)),
             &["PACFG", "RM0", "RL0", "FF1", "FF2"], &[0x40, 0xffff], &["EST", "R0"]),
         ([0xb0, 0xe3, 0x11, 0xf2, 0x11, 0xfb], Some((0, 0x40)),
@@ -1036,6 +1036,10 @@ fn carmel_original_wide_bitfield_ports_execute_in_emitted_c() {
             &[], &[0xffff, 0], &["A0L", "A0H", "R7"]),
         ([0xcf, 0, 0x12, 0xf7, 0x10, 0x01], Some((0, 0x40)),
             &[], &[0x40], &["A0L", "EST"]),
+        ([0xed, 0xe2, 0x07, 0xf3, 0x20, 0xef], Some((7, 0x4048)),
+            &["PACFG", "RM6", "RL6", "RN5", "ECFG"], &[0x4048, 0x4049], &["A0L", "EST"]),
+        ([0xed, 0xe2, 0x07, 0xf3, 0x22, 0xef], Some((7, 0xffff)),
+            &["PACFG", "RM6", "RL6", "RN5", "ECFG"], &[0xffff, 0], &["A1L", "R7"]),
     ];
     for (route, (packet, pointer, inputs, cells, outputs)) in routes.into_iter().enumerate() {
         let mut code = Vec::new();
@@ -1105,6 +1109,9 @@ int main(void) {
     word_c048 = 0; word_c049 = 0x4000;
     if (route_6_cetbl(0x1000,0x1000,0,0,0,0,0,1,4) != 0x7fff ||
         route_6_est(0x1000,0x1000,0,0,0,0,0,1,4) != 0x3024) return 17;
+    word_c048 = 0x8765; word_c049 = 0x9234;
+    if (route_6_cetbl(0x1000,0x1000,0,0,0,0,0,2,4) != 0x8000 ||
+        route_6_est(0x1000,0x1000,0,0,0,0,0,2,4) != 0x34) return 27;
     if (route_2_est(0x1000,0x1000,0xffff,9,0xffff,0) != 0x3009) return 18;
     word_0040 = 0x802b; word_0041 = 0x4321;
     if (route_7_a0l(0x1000,0x1000,0,1) != 0x802b || route_7_a0h(0x1000,0x1000,0,1) != 0xf ||
@@ -1116,11 +1123,118 @@ int main(void) {
         route_9_r7(0x1000,0x1000,0,0) != 0xffff) return 21;
     if (route_10_a0l(0x1000,0x1000,0,0) != 0 ||
         route_10_est(0x1000,0x1000,0xffff,0x15) != 0x3008) return 22;
+    word_4048 = 0x8765; word_4049 = 0x9234;
+    if (route_11_a0l(0x1000,0x1000,0,0,0,0,0,1,0) != 0x2469 ||
+        route_11_est(0x1000,0x1000,0,0,0,0,0,1,0) != 0x31) return 23;
+    if (route_11_a0l(0x1000,0x1000,0,0,0,0,0,2,4) != 0x8000 ||
+        route_11_est(0x1000,0x1000,0,0,0,0,0,2,4) != 0x34) return 24;
+    if (route_11_a0l(0x1000,0x1000,0,0,0,0,0,0x40,0) != 0xffff ||
+        route_11_est(0x1000,0x1000,0,0,0,0,0,0x40,0) != 0x11) return 25;
+    word_4049 = 0x6dcb;
+    if (route_11_a0l(0x1000,0x1000,0,0,0,0,0,2,4) != 0x7fff ||
+        route_11_est(0x1000,0x1000,0,0,0,0,0,2,4) != 0x25 ||
+        word_4048 != 0x8765 || word_4049 != 0x6dcb) return 28;
+    word_ffff = 0x1234; word_0000 = 0xe312;
+    if (route_12_a1l(0x1000,0x1000,0,0,0,0,0,7,0) != 0x8909 ||
+        route_12_r7(0x1000,0x1000,0,0,0,0,0,7,0) != 6) return 26;
     return 0;
 }
 ");
     fs::write(&source, &emitted).unwrap();
     run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_wide_immediate_ashift_samples_data_address_and_result_lane() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-immediate-ashift", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT14(h,l) (((uint64_t)(uint8_t)(h) << 32) | (uint32_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short word_0040, word_0041, word_ffff;\n",
+    );
+    for (name, packet, setup, younger) in [
+        ("rmw", [0xcf, 0x08, 0x04, 0xf3, 0x0c, 0x01],
+            Some([0x80, 0, 0x40, 0xc6, 0x42, 0x80]), Some([0x80, 0, 0x41, 0xc6, 0x42, 0x80])),
+        ("rmw_high", [0xcf, 0, 0x7f, 0xf3, 0x0c, 0x0f],
+            Some([0x80, 0xff, 0xff, 0xc6, 0x42, 0x9c]), None),
+        ("rmw_limit", [0xcf, 0xff, 0x8f, 0xf3, 0x0c, 0x01],
+            Some([0x80, 0xff, 0xff, 0xc6, 0x42, 0x80]), None),
+        ("word", [0xcf, 0, 0x40, 0xf3, 0x21, 0x13], None, None),
+        ("word_left", [0xcf, 0xa5, 1, 0xf3, 0x21, 0x13], None, None),
+        ("word_right", [0xcf, 0xa5, 0x7f, 0xf3, 0x21, 0x13], None, None),
+        ("word_limit", [0xcf, 0xff, 0x80, 0xf3, 0x21, 0x13], None, None),
+    ] {
+        let code: Vec<u8> = setup.into_iter().chain([packet]).chain(younger)
+            .chain([[0x2b, 0xd8, 0, 0x2b, 0xec, 0]]).flatten().collect();
+        fs::write(&binary, code).unwrap();
+        let inputs: &[&str] = if setup.is_some() { &[] } else { &["A1L", "A1H", "GB1"] };
+        let outputs: &[&str] = if setup.is_some() { &["EST"] } else { &["EST", "A0L"] };
+        for reg in outputs {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", &format!("return %{reg} unsigned short"),
+            ]);
+            for (i, input) in ["EST", "ECFG", "CECFG1", "CECFG2", "CETBL"].into_iter()
+                .chain(inputs.iter().copied()).enumerate()
+            {
+                let ty = if input == "GB1" { "unsigned char" } else { "unsigned short" };
+                kuna.args(["--assert", &format!("param {i} %{input} {ty} in_{}", input.to_ascii_lowercase())]);
+            }
+            for addr in [0x40, 0x41, 0xffff] {
+                kuna.args(["--assert", &format!("data [data,0x{addr:x}] volatile unsigned short word_{addr:04x}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let emitted = function["code"].as_str().unwrap();
+            assert!(!emitted.contains("halt_"), "{function}");
+            let name = format!("{name}_{}", reg.to_ascii_lowercase());
+            writeln!(c, "{}", emitted.replace("sub_0", &name)).unwrap();
+        }
+    }
+    c.push_str(r"
+int main(void) {
+    word_0040 = 0x0318; word_0041 = 0x1234; word_ffff = 0x8001;
+    if (rmw_est(0,0,0x1000,0x1000,0) != 0 || word_0040 != 0x3180 ||
+        word_0041 != 0x1234 || word_ffff != 0x8001) return 1;
+    word_0040 = 0x0800;
+    if (rmw_est(0,0,0x1000,0x1000,0) != 0x20 || word_0040 != 0x8000) return 2;
+    word_0040 = 0x1000;
+    if (rmw_est(0,0,0x1000,0x1000,0) != 0x21 || word_0040 != 0) return 3;
+    if (rmw_high_est(0,0,0x1000,0x1000,0) != 0x11 || word_ffff != 0xc000 ||
+        word_0040 != 0 || word_0041 != 0x1234) return 4;
+    word_ffff = 0x95a7;
+    if (rmw_limit_est(0,4,0x1000,0x1000,0) != 0x35 || word_ffff != 0x8000) return 5;
+    if (word_a0l(0,0,0x1000,0x1000,0,0xabcd,0x8765,0x12) != 0 ||
+        word_est(0,0,0x1000,0x1000,0,0xabcd,0x8765,0x12) != 8) return 6;
+    if (word_a0l(0,0,0x1000,0x1000,0,0,0,0x80) != 0xffff ||
+        word_est(0,0,0x1000,0x1000,0,0,0,0x80) != 0x11) return 7;
+    if (word_left_a0l(0,0,0x1000,0x1000,0,0,0x8000,0) != 0 ||
+        word_left_est(0,0,0x1000,0x1000,0,0,0x8000,0) != 0x20 ||
+        word_left_est(0,0,0x1000,0x1000,0,0,0,0x80) != 9) return 8;
+    if (word_right_a0l(0,0,0x1000,0x1000,0,0,2,0) != 1 ||
+        word_right_est(0,0,0x1000,0x1000,0,0,1,0) != 9) return 9;
+    if (word_limit_a0l(0,4,0x1000,0x1000,0,0,0,0x12) != 0x7fff ||
+        word_limit_est(0,4,0x1000,0x1000,0,0,0,0x12) != 0x24) return 10;
+    return 0;
+}
+");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
     for file in [binary, source, executable] {
         fs::remove_file(file).unwrap();
     }
