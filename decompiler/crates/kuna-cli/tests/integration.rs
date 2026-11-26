@@ -969,3 +969,6 @@ mod types_header;
 mod assert_storage_names;
 #[path = "bounds_checked_prototypes.rs"]
 mod bounds_checked_prototypes;
+
+#[path = "post_call_resume.rs"]
+mod post_call_resume;
