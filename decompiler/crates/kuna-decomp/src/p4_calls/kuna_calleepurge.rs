@@ -75,6 +75,42 @@ const BP: usize = 5;
 const CALLER_SAVED: [usize; 3] = [0, 1, 2];
 const CALLEE_SAVED: [usize; 4] = [3, 5, 6, 7];
 
+/// What a direct callee's extrapop rests on, strongest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PopEvidence {
+    /// Every return the walk reaches finds the stack pointer exactly at its
+    /// entry value ([`callee_extra_pop`]).
+    Proven(int4),
+    /// Every return the walk reaches takes the same immediate, the walk
+    /// followed every path, and the stack pointer there is imprecise only
+    /// through calls it could not read, never through the callee's own code
+    /// ([`callee_return_pop`]).
+    ReturnImmediate(int4),
+    /// What a declared parameter list implies under a model that leaves the
+    /// extrapop unknown (`FuncProto::resolve_extra_pop`).
+    Declared(int4),
+    Unknown,
+}
+
+impl PopEvidence {
+    /// The extrapop the evidence states, if any.
+    pub fn extra_pop(self) -> Option<int4> {
+        match self {
+            PopEvidence::Proven(ep) | PopEvidence::ReturnImmediate(ep) | PopEvidence::Declared(ep) => Some(ep),
+            PopEvidence::Unknown => None,
+        }
+    }
+
+    /// The evidence the callee's own code gives for call spec `fc`.
+    pub fn of_call(fc: &crate::fspec::FuncCallSpecs) -> PopEvidence {
+        match (fc.callee_purge(), fc.callee_return_immediate()) {
+            (Some(ep), _) => PopEvidence::Proven(ep),
+            (None, Some(ep)) => PopEvidence::ReturnImmediate(ep),
+            (None, None) => PopEvidence::Unknown,
+        }
+    }
+}
+
 /// The extrapop (`4 + purge`) of the direct call target `entry`, when the
 /// language is x86-32 under a default model that leaves extrapop unknown and
 /// the callee's own returns prove it.
@@ -1077,7 +1113,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
         }
         if s.falls_through {
             let next = at.wrapping_add(*len);
-            if track && !strayed && !seen.contains_key(&next) {
+            if !strayed && !seen.contains_key(&next) {
                 strayed = next != entry.get_offset() && is_entry(arch, &space, next);
             }
             work.push((next, s.state));

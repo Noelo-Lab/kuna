@@ -1,0 +1,49 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    kuna issue testcase: a direct call's pop, when the callee's DWARF
+    declaration names no calling convention, is the one the callee's own
+    returns prove (kuna_calleeprotostack, always on).
+
+    Issue:      kuna GH-1920 - GCC's DWARF states no calling convention, so a
+                MinGW i386 PE's declared __cdecl function was laid out under
+                x86win.cspec's default __stdcall, whose extrapop is unknown,
+                and resolve_extra_pop credited it with popping its arguments
+                (4 + 4N). Its `ret` pops nothing, so every stack offset after
+                the call was off by the argument bytes: a stack argument of a
+                later call was read from a slot nothing wrote, and outgoing
+                arguments and return addresses were printed as stores into
+                the caller's locals.
+    Stage:      P4 calls - ActionDefaultParams
+                (`p4_calls/kuna_calleeprotostack.rs`).
+    P0 assert:  none (a correctness fix).
+
+    dwarfpop_mingw_pe_i386.exe (MinGW GCC -O2 -g, source and build line in
+    dwarfpop_mingw_pe_i386.c): add_cache (0x4010d0) calls clear on one of two
+    paths that merge before a call to copy, which takes add_cache's own ptr.
+    clear calls the import puts, so only its `ret` states its pop. version
+    (0x401160) clears a local struct with fill, which calls nothing, and
+    passes it to query.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/dwarfpop_mingw_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x4010d0</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401160</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DWARFPOP #1: copy takes the caller's own ptr after the merge" min="1" max="1">_copy\(dst,ptr,len\);</stringmatch>
+<stringmatch name="DWARFPOP #2: clear and fill keep their three arguments" min="2" max="2">_(clear|fill)\([^,()]+,0,[^,()]+\);</stringmatch>
+<stringmatch name="DWARFPOP #3: version reads the fields query wrote" min="1" max="1">return si\.minor \+ 0x24 \+ si\.major \* 10;</stringmatch>
+<stringmatch name="DWARFPOP #4: no outgoing argument is stored into the local" min="0" max="0">si\.kind = </stringmatch>
+</decompilertest>

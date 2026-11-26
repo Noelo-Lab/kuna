@@ -4872,6 +4872,43 @@ reference in the caller, so the solver keeps such a call. A call to
 a call to `void observe(float,float)` keeps the cleanup the solver reads off the
 caller.
 
+A declaration states a parameter list, not what the callee's code does with the
+stack, so at a direct call whose callee's own returns prove its pop (the walk of
+`kuna_calleepurge.rs`, recorded on the call spec at flow) the proven pop is taken
+instead of the one the parameter list implies
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`). This matters for the parked pieces the DWARF pass
+gives a MinGW i386 PE's own functions: GCC's DWARF names no calling convention,
+so a `__cdecl` function is laid out under the default `__stdcall` model, and
+reading its three parameters as twelve popped bytes moves every later stack
+reference in the caller by twelve. A `memset` called on one of two paths that
+merge then leaves the merged block reading a `memcpy` source from a slot nothing
+wrote, and the outgoing arguments and return addresses of later calls print as
+stores into a local struct. The `ret` of such a callee proves a pop of 4, and the
+call takes it. A callee that itself calls an import (`call puts`, through its
+`jmp [IAT]` thunk) cannot be read that far: the import's pop is unknown, so a
+callee built without a frame pointer reaches its `ret` with the stack pointer
+known only as a range, and nothing is proven.
+
+The pop is therefore taken by the strength of what states it
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs (PopEvidence)`),
+strongest first. *Proven*: the walk found the stack pointer exactly at its entry
+value at every return. *Return immediate*: every return the walk reaches adds the
+same amount (`ret` is 4, `ret 0xc` is 16), the walk followed every path, reached
+no `int3` and fell through into no other function, and the stack pointer at each
+return is imprecise only through calls the walk could not read. If the
+imprecision is the callee's own doing (`sub esp,eax`, a stack pointer loaded from
+memory, a return reached at a known offset other than entry), the callee is a
+stack mover and states nothing. *Declared*: what the parameter list implies.
+A proven pop is taken for every declaration. A return immediate is taken only for
+a declaration that names no convention, whose default-model layout says nothing
+about cleanup; one that names its convention, `__stdcall` included, keeps its
+declared pop (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`). A callee whose returns disagree, or whose walk
+ran into an indirect jump (a return through a popped return address included),
+keeps the declaration's pop, and a model that states its own extrapop is left
+alone as before.
+
 The same park is read a second time, at de-indirection. `ActionDefaultParams`
 runs once at the head of the function, when a `call dword ptr [IAT slot]` is
 still a CALLIND with no callee to ask about, so a parked signature reached such a

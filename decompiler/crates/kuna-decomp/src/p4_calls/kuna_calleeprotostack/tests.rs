@@ -57,15 +57,49 @@ fn resolve_declared_extra_pop_leaves_a_model_that_states_its_own() {
     let mut fp = void_store_proto();
     fp.set_input_lock(true);
     fp.set_extra_pop(4); // as a __cdecl model would
-    resolve_declared_extra_pop(&mut fp);
+    resolve_declared_extra_pop(&mut fp, PopEvidence::Unknown, false);
     assert_eq!(fp.get_extra_pop(), 4);
+}
+
+#[test]
+fn resolve_declared_extra_pop_takes_the_pop_the_callee_proves() {
+    let mut fp = void_store_proto();
+    fp.set_input_lock(true);
+    fp.set_extra_pop(EXTRAPOP_UNKNOWN);
+    // No parameters: the list alone would imply 4.
+    assert_eq!(resolve_declared_extra_pop(&mut fp, PopEvidence::Proven(12), true), PopEvidence::Proven(12));
+    assert_eq!(fp.get_extra_pop(), 12);
+}
+
+#[test]
+fn resolve_declared_extra_pop_keeps_a_stated_pop_over_a_proven_one() {
+    let mut fp = void_store_proto();
+    fp.set_input_lock(true);
+    fp.set_extra_pop(4);
+    resolve_declared_extra_pop(&mut fp, PopEvidence::Proven(12), false);
+    assert_eq!(fp.get_extra_pop(), 4);
+}
+
+#[test]
+fn a_return_immediate_overrides_only_an_unnamed_declaration() {
+    let mut unnamed = void_store_proto();
+    unnamed.set_input_lock(true);
+    unnamed.set_extra_pop(EXTRAPOP_UNKNOWN);
+    let taken = resolve_declared_extra_pop(&mut unnamed, PopEvidence::ReturnImmediate(12), false);
+    assert_eq!((taken, unnamed.get_extra_pop()), (PopEvidence::ReturnImmediate(12), 12));
+
+    let mut named = void_store_proto();
+    named.set_input_lock(true);
+    named.set_extra_pop(EXTRAPOP_UNKNOWN);
+    let taken = resolve_declared_extra_pop(&mut named, PopEvidence::ReturnImmediate(12), true);
+    assert_eq!((taken, named.get_extra_pop()), (PopEvidence::Declared(4), 4));
 }
 
 #[test]
 fn resolve_declared_extra_pop_needs_the_lock() {
     let mut fp = FuncProto::new();
     fp.set_extra_pop(EXTRAPOP_UNKNOWN);
-    resolve_declared_extra_pop(&mut fp);
+    resolve_declared_extra_pop(&mut fp, PopEvidence::Unknown, false);
     assert_eq!(fp.get_extra_pop(), EXTRAPOP_UNKNOWN);
 }
 
@@ -79,6 +113,6 @@ fn store_less_prototype_declines() {
     assert!(!fp.has_store());
     fp.set_extra_pop(20);
     assert_eq!(declared_caller_frame_floor(&fp), None);
-    resolve_declared_extra_pop(&mut fp);
+    resolve_declared_extra_pop(&mut fp, PopEvidence::Unknown, false);
     assert_eq!(fp.get_extra_pop(), 20);
 }
