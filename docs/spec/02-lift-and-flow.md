@@ -4086,6 +4086,15 @@ vetoing the DATA write. Arithmetic flags stay unchanged; CE feedback
 is still published. A pair of postincrements of the same pointer
 remains unimplemented rather than assuming that both updates retire.
 
+For the signed `MOVE` register result, a whole accumulator supplies its
+upper word to the selected accumulator half. The result flags use the
+guard byte and upper word together. Saturation mode can suppress a new
+limit flag without clamping the word or clearing a prior limit flag.
+By contrast, the `X1`/`X2` and `FF1`/`FF2` latches accept an unshifted
+half-register or DATA word when the address-generation path is enabled,
+even if CE vetoes the arithmetic result. Their DATA routes read the old
+pointer, and the latches leave the arithmetic flags unchanged.
+
 The supported compact paired stack routes allocate two DATA words.
 `PUSH` writes the first source at old `SP` and the second just below it;
 the open second selector supplies `0xffff`. `POP` consumes the top word

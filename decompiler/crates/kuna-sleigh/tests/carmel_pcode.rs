@@ -362,6 +362,47 @@ fn wide_signed_move_data_mux() {
 }
 
 #[test]
+fn wide_signed_move_register_mux() {
+    for (acc, ecfg, initial, result, status) in [
+        (0x000000abcd, 0, 0, 0x0000000000, 0x0008),
+        (0x0081234321, 0, 0, 0x0081238123, 0x0024),
+        (0x0081234321, 4, 0, 0x0081238123, 0x0020),
+        (0xff00004321, 0, 0, 0xff00000000, 0x0034),
+        (0xff00004321, 8, 0x7fff, 0xff00000000, 0x7ff4),
+    ] {
+        let mut m = Machine::new(0, &[(0x882983, 0xc36642), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", acc), ("ECFG", ecfg), ("EST", initial),
+                 ("CECFG1", 0x888), ("CECFG2", 0x888), ("CETBL", 0x8080)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("EST")), (result, status));
+    }
+
+    for (left, right, table, cfg, dest, result, r0, r1, status) in [
+        (0x112983, 0xc3667a, 0, 0, "X1", 0x1357, 0x3300, 0x7300, 0x4fff),
+        (0x112983, 0xc3667a, 0, 0x1000, "X1", 0x7654, 0x3300, 0x7300, 0x4fff),
+        (0x192983, 0xc3665a, 0xff00, 0x1000, "FF1", 0x8b98, 0x3300, 0x7300, 0x6fff),
+        (0x412983, 0xc3667c, 0, 0, "X2", 0x2468, 0x3300, 0x7300, 0x4fff),
+        (0x412983, 0xc3667c, 0, 0x1000, "X2", 0xd256, 0x3300, 0x7300, 0x4fff),
+        (0x902983, 0xc3665c, 0, 0, "FF2", 0xa123, 0x3301, 0x7300, 0x4fff),
+        (0x912983, 0xc36658, 0, 0, "FF1", 0xd256, 0x3300, 0x7301, 0x4fff),
+        (0x992983, 0xc3667e, 0, 0, "X2", 0x8b98, 0x3300, 0x7300, 0x4fff),
+    ] {
+        let mode = if left & 0x800000 == 0 { 4 } else { 5 };
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, mode, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0x007ffe4321), ("A1", 0x7e8b987654), ("R0", 0x3300), ("R1", 0x7300),
+                 ("X1", 0x1357), ("X2", 0x2468), ("FF1", 0x3579), ("FF2", 0xcafe),
+                 ("ECFG", 0x20), ("EST", 0x7fff), ("CECFG1", cfg), ("CECFG2", cfg), ("CETBL", table)]);
+        m.seed_data(0x3300, 0xa123);
+        m.seed_data(0x7300, 0xd256);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg(dest), m.reg("R0"), m.reg("R1"), m.reg("EST")), (result, r0, r1, status));
+        assert_eq!((m.data(0x3300), m.data(0x7300)), (0xa123, 0xd256));
+    }
+}
+
+#[test]
 fn compact_data_move_reads_the_old_address_and_uses_the_new_signed_increment() {
     for (cfg, value, rn, pointer, accumulator, flags) in [
         (0, 0, 3, 0x414b, 0, 8),

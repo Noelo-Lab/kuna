@@ -598,6 +598,11 @@ define token wide (48)
     wide_smove_dst_r0 = (2,2)
     wide_smove_dst_r1 = (3,3)
     wide_smove_dst_r2 = (4,4)
+    wide_smove_reg_src = (40,43)
+    wide_smove_reg_dst = (2,5)
+    wide_smove_acc = (40,42)
+    wide_smove_acc_high = (40,42)
+    wide_smove_acc_guard = (40,42)
     wide_logic_rmw_op = (18,19)
     wide_logic_rmw_route = (0,17)
     wide_alias_logic_dst = (10,17)
@@ -856,7 +861,10 @@ attach variables [short_alu_dst_bound wide_logic_lhs_bound wide_logic_rhs_bound]
 attach values [short_alu_dst_mode_shift wide_logic_lhs_mode_shift wide_logic_rhs_mode_shift] [0 2 4 6 8 10 12 14];
 attach variables [dual_preg_register] [_ _ _ _ _ _ _ _ _ _ A2H A3H _ _ _ _];
 attach variables [swap_reg_lo] [A0L A1L A2L A3L A4L A5L FF1 FF2];
-attach variables [swap_reg_full] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
+attach variables [swap_reg_full wide_smove_reg_src wide_smove_reg_dst] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
+attach variables [wide_smove_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [wide_smove_acc_high] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [wide_smove_acc_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [swap_base] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [swap_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [swap_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
@@ -10078,6 +10086,63 @@ macro wide_smove_sr1(value, shifted) {
     wide_smove_write_long(dest, shifted);
   <publish>
     publish_alu_ce(EST & 0xcfff);
+}
+
+@define WIDE_SIGNED_MOVE_REG "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_10_22=0x10d9 & wide_ce_prefix"
+@define SIGNED_MOVE_HALF_DST "(wide_2_9>=0x90 & wide_2_9<=0x95) | (wide_2_9>=0x98 & wide_2_9<=0x9d)"
+@define SIGNED_MOVE_LATCH_DST "wide_2_9=0x96 | wide_2_9=0x97 | wide_2_9=0x9e | wide_2_9=0x9f"
+
+:MOVE wide_ce_prefix wide_smove_reg_dst,wide_smove_acc is $(WIDE_SIGNED_MOVE_REG)
+    & wide_0_1=2 & ($(SIGNED_MOVE_HALF_DST)) & wide_smove_reg_dst
+    & wide_40_45>=8 & wide_40_45<=13 & wide_smove_acc & wide_smove_acc_high & wide_smove_acc_guard {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    local flags:2 = EST & 0xcfff;
+    if (execute == 0) goto <publish>;
+    local high:2 = wide_smove_acc_high;
+    local guard:1 = wide_smove_acc_guard;
+    local extended:1 = guard != (0:1 - zext(high s< 0));
+    local limited:1 = extended && (ECFG & 0xc) == 0;
+    wide_smove_reg_dst = high;
+    flags = (flags & 0xffc4) | (zext(limited) << 2) | (zext(high == 0 && guard == 0) << 3)
+          | (zext(guard s< 0) << 4) | (zext(extended) << 5);
+  <publish>
+    publish_ce_feedback(flags, EST);
+}
+
+:MOVE wide_ce_prefix wide_smove_reg_dst,wide_smove_reg_src is $(WIDE_SIGNED_MOVE_REG)
+    & wide_0_1=2 & ($(SIGNED_MOVE_LATCH_DST)) & wide_smove_reg_dst
+    & ((wide_40_45>=16 & wide_40_45<=21) | (wide_40_45>=24 & wide_40_45<=29)) & wide_smove_reg_src {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (agu == 0) goto <publish>;
+    wide_smove_reg_dst = wide_smove_reg_src;
+  <publish>
+    publish_ce_feedback(EST & 0xcfff, EST);
+}
+
+wide_smove_latch_source: wide_smove_word_src is wide_smove_word_src { build wide_smove_word_src; }
+wide_smove_latch_source: "*"^wide_move_base^"--" is wide_smove_src_mode=3
+    & wide_move_base & wide_logic_rhs_modulo & wide_logic_rhs_bound & wide_logic_rhs_mode_shift {
+    modify_ptr(wide_move_base, 0:2, wide_logic_rhs_modulo, wide_logic_rhs_bound, wide_logic_rhs_mode_shift, 3:2);
+}
+
+:MOVE wide_ce_prefix wide_smove_reg_dst,wide_smove_latch_source is $(WIDE_SIGNED_MOVE_REG)
+    & wide_0_1=0 & ($(SIGNED_MOVE_LATCH_DST)) & wide_smove_reg_dst & wide_move_base & wide_smove_latch_source {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (agu == 0) goto <publish>;
+    local address:2 = wide_move_base;
+    build wide_smove_latch_source;
+    wide_smove_reg_dst = *[data]:2 address;
+  <publish>
+    publish_ce_feedback(EST & 0xcfff, EST);
 }
 
 # EQ1 returns: sample the incoming EST and pop only on the taken path.
