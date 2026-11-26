@@ -3310,7 +3310,9 @@ kuna read avr.bin 0x101 --bytes 2 --raw-image --target avr8:LE:16:default --base
 Address `0x101` selects file offset `2`. Numeric addresses, displayed row
 addresses, and span endpoints are in CODE units; `--bytes`, `size`, and file
 offsets are always bytes. A partial final word rounds the displayed exclusive
-end up, not the byte count. Reads have file provenance and no object fixups.
+end up, not the byte count. Operand text is the language's own rendering and is
+not rescaled: AVR prints branch targets as byte offsets, so a `rjmp 0x2` row at
+`0x0` jumps to the row at `0x1`. Reads have file provenance and no object fixups.
 For raw ARM32, specify `--isa arm|thumb`. A single odd code address denotes a
 Thumb pointer; explicit ranges and data addresses are literal.
 
