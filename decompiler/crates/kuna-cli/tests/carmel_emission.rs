@@ -4509,6 +4509,76 @@ fn carmel_compact_secondary_extract_does_not_consume_the_data_ports() {
     }
 }
 
+#[test]
+fn carmel_wide_load_execution_ports_and_retired_status_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let binary = common::scratch_file("carmel-load-execution-ports", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let ff1 = [0x10, 0xfa, 2, 0xc2, 0x7a, 0x5a];
+    let x1 = [0x10, 0xfa, 2, 0xc2, 0x7a, 0x7a];
+    let btr1 = [0x10, 0xfa, 2, 0xc2, 0x7b, 0x1a];
+    let early_est = [0x10, 0xfa, 2, 0xc2, 0x7b, 0x06];
+    let inc = [0x21, 0xac, 0x20, 0x2b, 0xec, 0];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for (body, regs, projections) in [
+        (
+            &[ff1, x1, btr1, RET][..],
+            &["A0L", "CECFG1", "CECFG2", "CETBL", "EST", "PACFG", "FF1", "X1", "BTR1"][..],
+            &["FF1", "X1", "BTR1", "PACFG"][..],
+        ),
+        (
+            &[early_est, inc, RET][..],
+            &["A0L", "CECFG1", "CECFG2", "CETBL", "EST", "ECFG"][..],
+            &["A0L", "EST"][..],
+        ),
+    ] {
+        fs::write(&binary, body.as_flattened()).unwrap();
+        for reg in projections {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            ]);
+            for (i, input) in regs.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let [function] = report["functions"].as_array().unwrap().as_slice() else { panic!("{report}"); };
+            assert!(function["error"].is_null(), "{function}");
+            assert!(report["assertions"].as_array().unwrap().iter().all(|r| r["status"] == "applied"), "{report}");
+            let code = function["code"].as_str().unwrap();
+            assert!(!code.contains("halt_"), "{function}");
+            writeln!(c, "{}", code.replace("sub_1000", &format!("load_{reg}"))).unwrap();
+        }
+    }
+    c.push_str("int main(void) {\n");
+    for (i, (cfg, table, ff, x, btr, pacfg)) in [
+        (0x1000, 0, 0xb679, 0xb679, 0x2222, 0x2000),
+        (0x1000, 1, 0xb679, 0xb679, 0xb679, 0x2000),
+        (0, 0, 0x0033, 0x0055, 0x2222, 0),
+    ].into_iter().enumerate() {
+        let args = format!("0xb679,{cfg:#x},0x1000,{table:#x},0,0,0x33,0x55,0x2222");
+        writeln!(c, "if (load_FF1({args}) != {ff:#x} || load_X1({args}) != {x:#x} || \
+                     load_BTR1({args}) != {btr:#x} || load_PACFG({args}) != {pacfg:#x}) return {};", i + 1).unwrap();
+    }
+    c.push_str("if (load_A0L(0xb679,0x1000,0x1000,0xffff,0,1) != 0xb67a || \
+                    load_EST(0xb679,0x1000,0x1000,0xffff,0,1) != 0x3010) return 4;\n\
+                if (load_A0L(0xffff,0x1000,0x1000,1,0,1) != 0 || \
+                    load_EST(0xffff,0x1000,0x1000,1,0,1) != 0x1009) return 5;\n\
+                return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

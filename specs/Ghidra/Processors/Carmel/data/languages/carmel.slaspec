@@ -911,6 +911,12 @@ macro publish_loop_word(value, high, low) {
     low = value(0);
 }
 
+macro refresh_live_loop(counter, start, end) {
+    LC = counter;
+    publish_loop_word(start, LSAH, LSAL);
+    publish_loop_word(end, LEAH, LEAL);
+}
+
 # Publications are pending in the live frame, not in a per-instruction owner
 # slot. When phases coincide, immediate address writes precede dynamic EX.
 macro publish_loop_address(due, value, pending, address, high, low, bit, depth, level) {
@@ -3024,6 +3030,103 @@ wide_load_literal: "#"^wide_load_literal_bits is wide_load_literal_bits { export
 :LOAD "CE1" "A1",wide_load_literal,wide_load_mode is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_load_ce_bank=0 & wide_0_9=0x226 & wide_13_22=0x213 & wide_40_45=0xf & wide_load_mode & wide_load_literal { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <wide_load_done>; local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xfff3) | (new_mode << 2); R1 = wide_load_literal; if (enabled == 0) goto <wide_load_done>; local low:2 = wide_load_literal; A1L = low; A1H = 0 - (low >> 15); GB1 = (A1H >= 0x8000) * 0xff; wide_load_flags(low == 0, low >= 0x8000, 0:1, 0:1); <wide_load_done> }
 :LOAD "CE1" "R2","A0L",wide_load_mode is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_load_ce_bank=0 & wide_0_9=0x28a & wide_13_22=0x213 & wide_40_45=0x10 & wide_load_mode { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <wide_load_done>; local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xffcf) | (new_mode << 4); local low:2 = A0L; R2 = low; <wide_load_done> }
 :LOAD "CE1" "A1","A0L",wide_load_mode is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_load_ce_bank=0 & wide_0_9=0x226 & wide_13_22=0x213 & wide_40_45=0x10 & wide_load_mode { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <wide_load_done>; local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xfff3) | (new_mode << 2); if (enabled == 0) goto <wide_load_done>; local low:2 = A0L; A1L = low; A1H = 0 - (low >> 15); GB1 = (A1H >= 0x8000) * 0xff; wide_load_flags(low == 0, low >= 0x8000, 0:1, 0:1); <wide_load_done> }
+
+# The fixed EX ports need address enable, not the late result predicate.
+macro wide_load_set_mode(mode, shift) {
+    local new_mode:2 = mode;
+    PACFG = (PACFG & ~(3 << shift)) | (new_mode << shift);
+}
+
+macro wide_load_loop_address(pointer, address) {
+    local low:2 = *[data]:2 pointer;
+    local following:2 = pointer + 1;
+    local high:2 = *[data]:2 following;
+    address = ((zext(high) << 16) | zext(low)) & 0xfffffe;
+}
+
+macro wide_load_saved_bound(address, saved1, saved2, saved3, saved4) {
+    local frame:2 = PSTATUS & 7;
+    if (frame == 2) goto <second>;
+    if (frame == 3) goto <third>;
+    if (frame == 4) goto <fourth>;
+    if (frame > 4) goto <done>;
+    saved1 = address;
+    goto <done>;
+  <second>
+    saved2 = address;
+    goto <done>;
+  <third>
+    saved3 = address;
+    goto <done>;
+  <fourth>
+    saved4 = address;
+  <done>
+}
+
+wide_load_execute: "FF1","A0L" is wide_0_9=0x25a & wide_40_45=0x10 & wide_load_mode {
+    wide_load_set_mode(wide_load_mode, 12);
+    FF1 = A0L;
+}
+wide_load_execute: "X1","A0L" is wide_0_9=0x27a & wide_40_45=0x10 {
+    X1 = A0L;
+}
+wide_load_execute: "MINMAX","A0L" is wide_0_9=0x2ea & wide_40_45=0x10 {
+    MINMAX = A0L;
+}
+wide_load_execute: "EST","A0L" is wide_0_9=0x306 & wide_40_45=0x10 & wide_load_mode {
+    # The EX-only EST view does not replace the guest flags fed to the next issue.
+    wide_load_set_mode(wide_load_mode, 2);
+}
+wide_load_execute: "CECFG1","A0L" is wide_0_9=0x30a & wide_40_45=0x10 & wide_load_mode {
+    wide_load_set_mode(wide_load_mode, 4);
+    CECFG1 = A0L & 0x3fff;
+}
+wide_load_execute: "PSTATUS","A0L" is wide_0_9=0x356 & wide_40_45=0x10 & wide_load_mode {
+    wide_load_set_mode(wide_load_mode, 10);
+    local depth:2 = A0L & 3;
+    depth = depth | ((A0L & 4) * zext(depth == 0));
+    PSTATUS = (PSTATUS & 0xffe0) | (A0L & 0x18) | (depth * zext((A0L & 8) != 0));
+    refresh_live_loop(LC1, LSA1W, LEA1W);
+    LOOP_FRAME = 1;
+}
+wide_load_execute: "USER_IO","A0L" is wide_0_9=0x35e & wide_40_45=0x10 & wide_load_mode {
+    wide_load_set_mode(wide_load_mode, 14);
+    USER_IO = A0L & 0xf;
+}
+wide_load_execute: "LSA1","*R0:long" is wide_0_9=0x349 & wide_40_45=0 & wide_load_mode {
+    wide_load_set_mode(wide_load_mode, 4);
+    local address:4;
+    wide_load_loop_address(R0, address);
+    wide_load_saved_bound(address, LSA1W, LSA2W, LSA3W, LSA4W);
+    publish_loop_word(address, LSAH, LSAL);
+}
+wide_load_execute: "LEA1","*R1:long" is wide_0_9=0x34d & wide_40_45=1 & wide_load_mode {
+    wide_load_set_mode(wide_load_mode, 6);
+    local address:4;
+    wide_load_loop_address(R1, address);
+    wide_load_saved_bound(address, LEA1W, LEA2W, LEA3W, LEA4W);
+    publish_loop_word(address, LEAH, LEAL);
+}
+
+@define WIDE_LOAD_CE1_PORT "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_load_ce_bank=0 & wide_13_22=0x213"
+:LOAD "CE1" wide_load_execute,wide_load_mode is $(WIDE_LOAD_CE1_PORT) & wide_load_execute & wide_load_mode {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <feedback>;
+    build wide_load_execute;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:LOAD "CE1" "BTR1","A0L",wide_load_mode is $(WIDE_LOAD_CE1_PORT) & wide_0_9=0x31a & wide_40_45=0x10 & wide_load_mode {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <feedback>;
+    wide_load_set_mode(wide_load_mode, 12);
+    if (enabled == 0) goto <feedback>;
+    BTR1 = A0L;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
 
 # SWAP exchanges one DATA word even when the operand selector names a long.
 swap_word_register: swap_reg_lo is wide_0_1<2 & (swap_reg_short_group=0 | swap_reg_short_group=4 | swap_reg_short_group=5 | swap_reg_short_group=7) & swap_reg_lo { export swap_reg_lo; }
@@ -5285,12 +5388,6 @@ macro mac_r3_post_r0_control(base, signed_left, signed_right, bias, word) {
     raw_mac_word(LC1, base);
     mac_r3_post_r0_control(base, 1:1, 1:1, 0x8000:8, LC1);
 }
-macro refresh_live_loop(counter, start, end) {
-    LC = counter;
-    publish_loop_word(start, LSAH, LSAL);
-    publish_loop_word(end, LEAH, LEAL);
-}
-
 macro refresh_selected_loop() {
     if (LOOP_FRAME == 2) goto <bank2>;
     if (LOOP_FRAME == 3) goto <bank3>;

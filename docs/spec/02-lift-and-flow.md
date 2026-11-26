@@ -3902,6 +3902,18 @@ fetches past the maximum delay window. The loader admits only NOP and
 independent low-accumulator increments in the bounded peer window, and
 requires bounded speculative target fetches even on the unselected path.
 
+The covered CE1 wide `LOAD` execution ports are enabled by the address
+stage (`CE1` or `CECFG1.AEN`), not by the late result predicate. This
+includes the fixed FF1, X1, MINMAX, CECFG1 and USER_IO ports and the
+loop-control ports. PSTATUS loads restore the live counter and bounds
+from saved frame 1. Split DATA inputs form an even 24-bit CODE address
+from the first word and the low byte of the second; the address updates
+the live bound and the saved bound selected by PSTATUS. Neither indirect
+input advances its pointer. BTR1 instead needs a true late predicate,
+even when AEN permits the PACFG update. The early EST view does not
+replace the retired status word: CE feedback and the following compact
+INC use the guest flag state, not the debugger-visible EX transient.
+
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
