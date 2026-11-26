@@ -4059,6 +4059,25 @@ selectors write the clamped word to the input's `RM6` port, `FF1`, or the
 saved counter `LC1`; the listing retains the encoded selector names. A CE2
 veto suppresses both writeback and the limit flag update.
 
+Covered wide `LIM` forms use signed flag and accumulator words directly.
+The apparent literal selector reads one DATA word through the implicit
+operand-fetch route, not from the encoded extra word. The reset route
+reads `0xffff` and the routed zero address reads DATA word zero; an
+unknown route remains unlifted. A word destination takes a word input
+unchanged but takes the upper word of a limited 40-bit accumulator input.
+It preserves the other
+accumulator lanes, or writes the saved `LC1` rather than `LC` for the loop
+selector. A whole-accumulator destination instead sign-extends a word
+input or receives the entire accumulator result clamped to signed 32 bits.
+The explicit limit does not depend on `ECFG`. Zero uses the selected
+result width; sign and extension come from the pre-clamp input and
+clamping sets sticky `L1`. The extended disconnected result clears carry
+and overflow and refreshes extension and sticky loss without replacing
+zero or sign.
+Short DATA addresses use the incoming pointer; their signed byte
+postdisplacement updates it once. CE vetoes the result and flags, not
+address generation when the address override is set.
+
 Covered unqualified wide `ADD` and `XOR` select their operand banks from
 the result route. The accumulator ADD route reads signed address and
 flag words, saved loop bounds, full accumulators, or constant minus one.

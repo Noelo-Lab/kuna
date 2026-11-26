@@ -3633,14 +3633,14 @@ round_extended: "DATA" is wide_0_1=3 & wide_40_45>=0x20 {}
 round_high_address: "A0L" is carmel_of_route=2 { export A0L; }
 round_high_address: "0" is carmel_of_route=3 { export 0:2; }
 
-round_gate: "" is carmel_issue=5 & wide_left_mode=1 { export 3:2; }
-round_gate: "CE1" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank=0 {
+wide_unary_gate: "" is carmel_issue=5 & wide_left_mode=1 { export 3:2; }
+wide_unary_gate: "CE1" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank=0 {
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0, enabled);
     local gate:2 = enabled | ((CECFG1 >> 11) & 2);
     export gate;
 }
-round_gate: "CE2" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank=1 {
+wide_unary_gate: "CE2" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank=1 {
     local enabled:2;
     unary_ce(CECFG2, EST, CETBL, 1, enabled);
     local gate:2 = enabled | ((CECFG2 >> 11) & 2);
@@ -3676,9 +3676,9 @@ macro wide_round_write_long(address, low, high, flags) {
     *[data]:2 second = word:2;
 }
 
-@define WIDE_ROUND_DATA "wide_right_mode=1 & wide_10_22=0x10b6 & round_gate"
-:ROUND round_gate "long *R1+=RN1",round_extended^":"^round_high_address is $(WIDE_ROUND_DATA) & wide_2_9=0x49 & round_extended & round_high_address {
-    local gate:2 = round_gate;
+@define WIDE_ROUND_DATA "wide_right_mode=1 & wide_10_22=0x10b6 & wide_unary_gate"
+:ROUND wide_unary_gate "long *R1+=RN1",round_extended^":"^round_high_address is $(WIDE_ROUND_DATA) & wide_2_9=0x49 & round_extended & round_high_address {
+    local gate:2 = wide_unary_gate;
     local flags:2 = EST & 0x3f;
     if (gate == 0) goto <done>;
     local address:2 = R1;
@@ -3691,8 +3691,8 @@ macro wide_round_write_long(address, low, high, flags) {
     publish_alu_ce((EST & 0xcfc0) | flags);
 }
 
-:ROUND round_gate "long *R1+=RN1","long *R1" is $(WIDE_ROUND_DATA) & wide_2_9=0x49 & wide_40_45=1 & wide_0_1=1 {
-    local gate:2 = round_gate;
+:ROUND wide_unary_gate "long *R1+=RN1","long *R1" is $(WIDE_ROUND_DATA) & wide_2_9=0x49 & wide_40_45=1 & wide_0_1=1 {
+    local gate:2 = wide_unary_gate;
     local flags:2 = EST & 0x3f;
     if (gate == 0) goto <done>;
     local address:2 = R1;
@@ -3706,8 +3706,8 @@ macro wide_round_write_long(address, low, high, flags) {
     publish_alu_ce((EST & 0xcfc0) | flags);
 }
 
-:ROUND round_gate "*R1+=RN1",round_extended is $(WIDE_ROUND_DATA) & wide_2_9=9 & round_extended {
-    local gate:2 = round_gate;
+:ROUND wide_unary_gate "*R1+=RN1",round_extended is $(WIDE_ROUND_DATA) & wide_2_9=9 & round_extended {
+    local gate:2 = wide_unary_gate;
     local flags:2 = EST & 0x3f;
     if (gate == 0) goto <done>;
     local address:2 = R1;
@@ -3718,6 +3718,146 @@ macro wide_round_write_long(address, low, high, flags) {
     flags = (zext(word == 0) << 3) | (zext(word >= 0x8000) << 4);
   <done>
     publish_alu_ce((EST & 0xcfc0) | flags);
+}
+
+@define WIDE_LIMIT "wide_right_mode=1 & (wide_10_22=0x10b8 | wide_10_22=0x10bb) & wide_unary_gate"
+
+limit_word: "FF1" is wide_0_1=2 & wide_40_45=0x16 { export FF1; }
+limit_word: "FF2" is wide_0_1=2 & wide_40_45=0x17 { export FF2; }
+limit_word: "A0L" is wide_0_1=2 & wide_40_45=0x10 { export A0L; }
+limit_word: "A0H" is wide_0_1=2 & wide_40_45=0x18 { export A0H; }
+limit_word: alias_of_word is wide_0_1=2 & wide_40_45=0xf & (carmel_of_route=2 | carmel_of_route=3) & alias_of_word {
+    build alias_of_word;
+    export alias_of_word;
+}
+
+limit_acc: "A0" is wide_0_1=2 & wide_40_45=8 {
+    local raw:8 = zext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L);
+    export raw;
+}
+limit_acc: "A1" is wide_0_1=2 & wide_40_45=9 {
+    local raw:8 = zext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L);
+    export raw;
+}
+
+limit_word_dst: "A1L" is wide_2_9=0x91 { export A1L; }
+limit_word_dst: "A0H" is wide_2_9=0x98 { export A0H; }
+limit_word_dst: "A1H" is wide_2_9=0x99 { export A1H; }
+limit_word_dst: "LC" is wide_2_9=0xd4 { export LC1; }
+limit_word_dst: "*R1+="^wide_shift_dst_disp is wide_2_9=0x31 & wide_shift_dst_disp {
+    local address:2 = R1;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    transfer_address_word(R1, RM0, RL0, 2, delta, R1);
+    export *[data]:2 address;
+}
+
+limit_acc_dst: "A0" is wide_2_9=0x88 {}
+limit_acc_dst: "A1" is wide_2_9=0x89 {}
+limit_dst_low: is wide_2_9=0x88 { export A0L; }
+limit_dst_low: is wide_2_9=0x89 { export A1L; }
+limit_dst_high: is wide_2_9=0x88 { export A0H; }
+limit_dst_high: is wide_2_9=0x89 { export A1H; }
+limit_dst_guard: is wide_2_9=0x88 { export GB0; }
+limit_dst_guard: is wide_2_9=0x89 { export GB1; }
+
+# Explicit signed-32 limiting ignores ECFG. Z samples the selected result
+# width, M and E sample the incoming 40 bits, and limiting sets sticky L.
+macro limit_acc_value(raw, word_result, value) {
+    local flags:2;
+    shift_flags(raw, 0:1, flags);
+    if (word_result == 0 || (raw >> 16) != 0) goto <clamp>;
+    flags = flags | 8;
+  <clamp>
+    value = raw;
+    if ((flags & 0x20) == 0) goto <commit>;
+    local negative:8 = zext((flags & 0x10) != 0);
+    value = 0x7fffffff + negative * 0xff00000001;
+    flags = flags | 4;
+  <commit>
+    EST = (EST & 0xffc4) | flags;
+}
+
+:LIM wide_unary_gate limit_word_dst,limit_word is $(WIDE_LIMIT) & limit_word_dst & limit_word {
+    local gate:2 = wide_unary_gate;
+    if (gate == 0) goto <feedback>;
+    build limit_word_dst;
+    build limit_word;
+    if ((gate & 1) == 0) goto <feedback>;
+    local word:2 = limit_word;
+    limit_word_dst = word;
+    unary_limit_flags(word);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:LIM wide_unary_gate limit_word_dst,limit_acc is $(WIDE_LIMIT) & limit_word_dst & limit_acc {
+    local gate:2 = wide_unary_gate;
+    if (gate == 0) goto <feedback>;
+    build limit_word_dst;
+    if ((gate & 1) == 0) goto <feedback>;
+    local value:8;
+    limit_acc_value(limit_acc, 1:1, value);
+    limit_word_dst = value(2);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+@define LIMIT_ACC_DST "limit_acc_dst & limit_dst_low & limit_dst_high & limit_dst_guard"
+:LIM wide_unary_gate limit_acc_dst,limit_word is $(WIDE_LIMIT) & $(LIMIT_ACC_DST) & limit_word {
+    local gate:2 = wide_unary_gate;
+    if (gate == 0) goto <feedback>;
+    build limit_word;
+    if ((gate & 1) == 0) goto <feedback>;
+    local word:2 = limit_word;
+    limit_dst_low = word;
+    local sign:2 = 0 - zext(word >= 0x8000);
+    limit_dst_high = sign;
+    limit_dst_guard = sign:1;
+    unary_limit_flags(word);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:LIM wide_unary_gate limit_acc_dst,limit_acc is $(WIDE_LIMIT) & $(LIMIT_ACC_DST) & limit_acc {
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local value:8;
+    limit_acc_value(limit_acc, 0:1, value);
+    limit_dst_low = value:2;
+    limit_dst_high = value(2);
+    limit_dst_guard = value(4);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:LIM wide_unary_gate "IO",limit_acc is $(WIDE_LIMIT) & wide_2_9=0xd8 & limit_acc {
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local discarded:8;
+    limit_acc_value(limit_acc, 1:1, discarded);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:LIM wide_unary_gate "0xe8",limit_acc is $(WIDE_LIMIT) & wide_2_9=0xe8 & limit_acc {
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local flags:2;
+    shift_flags(limit_acc, 0:1, flags);
+    local extension:2 = flags & 0x20;
+    EST = (EST & 0xffdc) | extension | (extension >> 3);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:LIM wide_unary_gate "IO","*R3+="^wide_shift_dst_disp is $(WIDE_LIMIT) & wide_2_9=0xd8 & wide_0_1=0 & wide_40_45=0x33 & wide_shift_dst_disp {
+    local gate:2 = wide_unary_gate;
+    if (gate == 0) goto <feedback>;
+    local address:2 = R3;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    transfer_address_word(R3, RM2, RL2, 6, delta, R3);
+    local word:2 = *[data]:2 address;
+    if ((gate & 1) == 0) goto <feedback>;
+    unary_limit_flags(word);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
 }
 
 # These implicit DATA operands need established OF context, not a CODE-address guess.

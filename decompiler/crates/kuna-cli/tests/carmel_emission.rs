@@ -4579,6 +4579,140 @@ fn carmel_wide_load_execution_ports_and_retired_status_execute_in_emitted_c() {
     }
 }
 
+#[test]
+fn carmel_wide_limit_source_lanes_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    const INPUTS: [&str; 14] = [
+        "A0L", "A0H", "GB0", "A1L", "A1H", "GB1", "FF2", "EST",
+        "ECFG", "CECFG1", "CECFG2", "CETBL", "LC", "LC1",
+    ];
+    let binary = common::scratch_file("carmel-wide-limit", "bin");
+    let specs = binary.with_extension("specs");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let tracked = [
+        ("R1", 0x4040), ("R3", 0xc044), ("PACFG", 0),
+        ("RM0", 0), ("RL0", 0), ("RM2", 0), ("RL2", 0),
+    ];
+    let implicit = [0x8f, 0x23, 0xe1, 0xc2, 0xec, 0xc6];
+    fs::write(&binary, [implicit, RET].as_flattened()).unwrap();
+    let (stdout, stderr, status) = common::run_kuna(&[
+        "raw-pcode", binary.to_str().unwrap(), "0x1000", "--addr", "--raw-image",
+        "--target", TARGET, "--base", "0x1000", "--count", "1", "--json",
+    ]);
+    let unknown: Value = serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{stdout}\n{stderr}"));
+    assert_eq!(status, 1, "{unknown}");
+    assert_eq!(unknown["error"]["address"], 0x1000, "{unknown}");
+    assert!(unknown["instructions"].as_array().unwrap().is_empty(), "{unknown}");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT14(h,l) (((uint64_t)(uint8_t)(h) << 32) | (uint32_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT44(h,l) (((uint64_t)(uint32_t)(h) << 32) | (uint32_t)(l))\n\
+         volatile unsigned short destination, old_source, advanced_source, implicit_ffff, implicit_zero;\n",
+    );
+    let c_type = |register: &str| {
+        if register.starts_with("GB") { "unsigned char" } else { "unsigned short" }
+    };
+    for (name, packet, route, outputs) in [
+        ("half", [0x88, 0x41, 0x23, 0xc2, 0xee, 0x46], 0, &["A1L", "A1H", "GB1", "EST"][..]),
+        ("whole", [0x88, 0x41, 0x23, 0xc2, 0xee, 0x26], 0, &["A1L", "A1H", "GB1", "EST"][..]),
+        ("word", [0x97, 0x41, 0x23, 0xc2, 0xee, 0x26], 0, &["A1L", "A1H", "GB1", "EST"][..]),
+        ("cold", implicit, 2, &["R1", "EST"][..]),
+        ("routed", implicit, 3, &["R1", "EST"][..]),
+        ("sink", [0x08, 0x41, 0x23, 0xc2, 0xe3, 0xa2], 0, &["EST"][..]),
+        ("loop", [0x08, 0x41, 0x23, 0xc2, 0xe3, 0x52], 0, &["LC", "LC1", "EST"][..]),
+        ("pointer", [0x73, 0x11, 0xff, 0xc2, 0xe3, 0x60], 0, &["R3", "EST"][..]),
+    ] {
+        tracked_carmel_entry_specs(&specs, &tracked, 0x1000, route);
+        fs::write(&binary, [packet, NOP, NOP, NOP, NOP, RET].as_flattened()).unwrap();
+        for register in outputs {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).env("KUNA_SPECS", &specs).args([
+                "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{register} {}", c_type(register)),
+            ]);
+            for (i, input) in INPUTS.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} {} in_{i}", c_type(input))]);
+            }
+            for (addr, name) in [(0x4040, "destination"), (0xc044, "old_source"), (0xc043, "advanced_source"),
+                                 (0xffff, "implicit_ffff"), (0, "implicit_zero")] {
+                kuna.args(["--assert", &format!("data [data,{addr:#x}] volatile unsigned short {name}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let [function] = json["functions"].as_array().unwrap().as_slice() else { panic!("{json}"); };
+            assert!(function["error"].is_null(), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let code = function["code"].as_str().unwrap();
+            assert!(!code.contains("halt_"), "{function}");
+            writeln!(emitted, "#define sub_1000 {name}_{register}\n{code}\n#undef sub_1000").unwrap();
+        }
+    }
+    emitted.push_str("int main(void) {\n");
+    let mut check = 0;
+    let mut project = |name: &str, results: &[(&str, u16)], acc: u64, ff2: u16,
+                       est: u16, cfg2: u16, table: u16, stored: u16| {
+        let address_zero = ff2 ^ 0x8000;
+        let flag_word = if name == "word" { ff2 } else { ff2 ^ 0x4a93 };
+        let args = [
+            acc as u16, (acc >> 16) as u16, (acc >> 32) as u16, 0x61a5, 0xbeef, 0xac,
+            flag_word, est, 0x24, 0, cfg2, table, 0x1234, 0xa69c,
+        ].map(|v| v.to_string()).join(", ");
+        for &(register, expected) in results {
+            check += 1;
+            writeln!(emitted, "destination = 0x557e; old_source = 0x9a73; advanced_source = 0x3012;\n\
+                implicit_ffff = {ff2:#x}; implicit_zero = {address_zero:#x};\n\
+                if ({name}_{register}({args}) != {expected:#x} || destination != {stored:#x} || \
+                old_source != 0x9a73 || advanced_source != 0x3012 || implicit_ffff != {ff2:#x} || \
+                implicit_zero != {address_zero:#x}) return {check};").unwrap();
+        }
+    };
+    for (acc, half, whole, half_flags, whole_flags) in [
+        (1, 0, 1u64, 8, 0),
+        (0x7fff_fffe, 0x7fff, 0x7fff_fffe, 0, 0),
+        (0x7fff_ffff, 0x7fff, 0x7fff_ffff, 0, 0),
+        (0x8000_0000, 0x7fff, 0x7fff_ffff, 0x24, 0x24),
+        (0xff_7fff_ffff, 0x8000, 0xff_8000_0000, 0x34, 0x34),
+        (0xff_8000_0000, 0x8000, 0xff_8000_0000, 0x10, 0x10),
+        (0xff_8000_0001, 0x8000, 0xff_8000_0001, 0x10, 0x10),
+    ] {
+        project("half", &[("A1L", half), ("A1H", 0xbeef), ("GB1", 0xac), ("EST", 0x3000 | half_flags)],
+                acc, 0x8765, 0, 0, 0xffff, 0x557e);
+        project("whole", &[("A1L", whole as u16), ("A1H", (whole >> 16) as u16),
+                            ("GB1", (whole >> 32) as u16), ("EST", 0x3000 | whole_flags)],
+                acc, 0x8765, 0, 0, 0xffff, 0x557e);
+    }
+    project("word", &[("A1L", 0x8765), ("A1H", 0xffff), ("GB1", 0xff), ("EST", 0x3010)],
+            0x01_2345_6789, 0x8765, 0, 0, 0xffff, 0x557e);
+    project("cold", &[("R1", 0x4021), ("EST", 0x3008)], 0x01_2345_6789, 0, 0, 0, 0xffff, 0);
+    project("cold", &[("R1", 0x4021), ("EST", 0x3010)], 0x01_2345_6789, 0x924b, 0, 0, 0xffff, 0x924b);
+    project("routed", &[("R1", 0x4021), ("EST", 0x3000)], 0x01_2345_6789, 0x924b, 0, 0, 0xffff, 0x124b);
+    project("sink", &[("EST", 0x1014)], 0xff_8000_0000, 0, 0x34, 0, 1, 0x557e);
+    project("sink", &[("EST", 0x101c)], 0, 0, 0x3f, 0, 0xff, 0x557e);
+    project("sink", &[("EST", 0x1024)], 0x80_0000_0000, 0, 0, 0, 1, 0x557e);
+    project("loop", &[("LC", 0x1234), ("LC1", 0x7fff), ("EST", 0x1024)],
+            0x8000_0000, 0, 0, 0, 1, 0x557e);
+    project("loop", &[("LC", 0x1234), ("LC1", 0xa69c), ("EST", 0x2000)],
+            0x8000_0000, 0, 0, 0, 0x100, 0x557e);
+    project("pointer", &[("R3", 0xc043), ("EST", 0x2010)], 0, 0, 0, 0, 0x100, 0x557e);
+    project("pointer", &[("R3", 0xc044), ("EST", 0x1000)], 0, 0, 0, 0, 1, 0x557e);
+    project("pointer", &[("R3", 0xc043), ("EST", 0x1000)], 0, 0, 0, 0x1000, 1, 0x557e);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
