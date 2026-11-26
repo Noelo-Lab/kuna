@@ -33,6 +33,12 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+Instruction and byte queries over a headerless raw image use the caller's
+SLEIGH language and file mapping without adding function entry points. Their
+walks and mapping checks use byte offsets; input and reported CODE addresses
+use the language's address units. Byte counts and lifted varnode offsets are
+not rescaled.
+
 PPC32 `blr` and its conditional forms are not necessarily ABI returns: LR can
 hold a locally computed code address. Before return processing discards that
 target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (classify)`

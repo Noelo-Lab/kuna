@@ -158,7 +158,13 @@ pub(crate) fn console_form(
         Body::Prototype { func, decl } => {
             (Slot::Program, format!("map prototype {func} {}", semicolon(decl)))
         }
-        Body::Data { addr, decl } => (Slot::Program, format!("map address {addr:#x} {decl}")),
+        Body::Data { addr, space, decl } => {
+            let line = match space {
+                Some(space) => format!("map address data [{space},{addr:#x}] {decl}"),
+                None => format!("map address {addr:#x} {decl}"),
+            };
+            (Slot::Program, line)
+        }
         Body::Param { func, index, storage, decl } => match names_another(func, target) {
             Some(f) => (Slot::Program, format!("map param {f}::{index} {storage} {decl}")),
             None => (Slot::Function, format!("map param {index} {storage} {decl}")),
@@ -307,12 +313,31 @@ mod tests {
     fn addresses_are_hex_with_or_without_the_prefix() {
         assert_eq!(
             one("data 0x601040 char *sneaky").body,
-            Body::Data { addr: 0x601040, decl: "char *sneaky".into() }
+            Body::Data { addr: 0x601040, space: None, decl: "char *sneaky".into() }
         );
         assert_eq!(
             one("comment 400699 open the file").body,
             Body::Comment { func: None, addr: 0x400699, text: "open the file".into() }
         );
+    }
+
+    #[test]
+    fn named_data_assertions_keep_the_space_and_lower_in_the_program_slot() {
+        let directive = one("data [CS.reg,a0] volatile unsigned short sample");
+        assert_eq!(
+            directive.body,
+            Body::Data {
+                addr: 0xa0,
+                space: Some("CS.reg".into()),
+                decl: "volatile unsigned short sample".into(),
+            }
+        );
+        let form = console_form(&directive, None).unwrap();
+        assert_eq!(form.slot, Slot::Program);
+        assert_eq!(form.line, "map address data [CS.reg,0xa0] volatile unsigned short sample");
+        for malformed in ["[,0xa0]", "[CS.reg]", "[CS.reg,0xa0", "[CS.reg,z]", "[CS.reg,1,2]"] {
+            assert!(parse_one(&format!("data {malformed} short sample")).is_err(), "{malformed}");
+        }
     }
 
     #[test]

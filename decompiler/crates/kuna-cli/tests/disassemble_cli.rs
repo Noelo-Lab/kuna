@@ -112,6 +112,121 @@ fn instructions(doc: &str) -> Vec<Map<String, Json>> {
     }
 }
 
+#[test]
+fn raw_view_avr_uses_code_words_but_keeps_byte_widths() {
+    let path = common::scratch_file("raw-view-avr", "bin");
+    // rjmp .+2; nop; ret; an incomplete trailing word.
+    std::fs::write(&path, [0x01, 0xc0, 0, 0, 0x08, 0x95, 0x12]).unwrap();
+    let binary = path.to_str().unwrap();
+    let flags = ["--raw-image", "--target", "avr8:LE:16:default", "--base", "0x100", "--json"];
+    let query = |command, address, extra: &[&str], expected_status| {
+        let (stdout, stderr, code) = run_kuna(&[&[command, binary, address][..], &flags, extra].concat());
+        assert_eq!(code, expected_status, "{stderr}\n{stdout}");
+        serde_json::from_str::<Json>(&stdout).expect(&stdout)
+    };
+
+    let code = query("disassemble", "0x100-0x105", &["--follow"], 0);
+    assert_eq!(code["target"]["name"], Json::Null);
+    assert_eq!(code["start_hex"], "0x100");
+    assert_eq!(code["end_hex"], "0x104");
+    assert_eq!(code["bytes"], 7);
+    for (i, mnemonic, bytes, size) in [
+        (0, "rjmp", "01c0", 2),
+        (1, "nop", "0000", 2),
+        (2, "ret", "0895", 2),
+        (3, ".byte", "12", 1),
+    ] {
+        let row = &code["instructions"][i];
+        assert_eq!(row["address"], 0x100 + i as u64);
+        assert_eq!(row["mnemonic"], mnemonic);
+        assert_eq!(row["bytes"], bytes);
+        assert_eq!(row["size"], size);
+    }
+
+    let data = query("read", "0x101..0x104", &["--bytes", "3"], 0);
+    assert_eq!(data["hex"], "000008");
+    assert_eq!(data["end_hex"], "0x103");
+    assert_eq!(data["rows"][0]["size"], 3);
+    let range = &data["provenance"][0];
+    assert_eq!(range["source"], "file");
+    assert_eq!(range["file_offset"], 2);
+    assert_eq!(range["start_hex"], "0x101");
+    assert_eq!(range["end_hex"], "0x103");
+    assert_eq!(range["size"], 3);
+
+    let pcode = query("raw-pcode", "0x102", &["--count", "1"], 0);
+    assert_eq!(pcode["instructions"][0]["address_hex"], "0x102");
+    assert_eq!(pcode["instructions"][0]["size"], 2);
+    assert_eq!(pcode["instructions"][0]["bytes"], "0895");
+    let flow = query("raw-pcode", "0x100-0x103", &["--follow"], 0);
+    assert_eq!(flow["complete"], true);
+    assert_eq!(flow["range_end_hex"], "0x103");
+    assert_eq!(flow["blocks"][0]["start_hex"], "0x100");
+    assert_eq!(flow["blocks"][0]["successors"][0]["target_hex"], "0x102");
+    assert_eq!(flow["blocks"][0]["instructions"][0]["ops"][0]["inputs"][0]["offset"], 0x204);
+    assert_eq!(flow["blocks"][1]["start_hex"], "0x102");
+
+    let flow = query("raw-pcode", "0x100-0x101", &["--follow"], 0);
+    assert_eq!(flow["complete"], false);
+    assert_eq!(flow["issues"][0]["reason"], "out_of_range");
+    assert_eq!(flow["issues"][0]["address_hex"], "0x100");
+    assert_eq!(flow["issues"][0]["target_hex"], "0x102");
+    let partial = query("raw-pcode", "0x102", &["--bytes", "1"], 1);
+    assert_eq!(partial["stop_reason"], "decode_error");
+    assert_eq!(partial["error"]["address_hex"], "0x102");
+    assert_eq!(partial["bytes"], 0);
+
+    let (stdout, stderr, code) = run_kuna(&[&["read", binary, "0x104"][..], &flags].concat());
+    assert_eq!(code, 1, "{stderr}\n{stdout}");
+    assert!(stderr.contains("no bytes mapped at 0x104 in raw image"), "{stderr}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_view_arm_thumb_pointers_are_not_byte_selectors() {
+    let path = common::scratch_file("raw-view-thumb", "bin");
+    // movs r0, #7; bx lr.
+    std::fs::write(&path, [0x07, 0x20, 0x70, 0x47]).unwrap();
+    let binary = path.to_str().unwrap();
+    let flags = ["--raw-image", "--target", "ARM:LE:32:v4t:default", "--isa", "thumb", "--json"];
+    let query = |command, address, base, extra: &[&str]| {
+        let (stdout, stderr, code) =
+            run_kuna(&[&[command, binary, address, "--base", base][..], &flags, extra].concat());
+        assert_eq!(code, 0, "{stderr}\n{stdout}");
+        serde_json::from_str::<Json>(&stdout).expect(&stdout)
+    };
+
+    for command in ["disassemble", "raw-pcode"] {
+        let doc = query(command, "4001", "0x4000", &["--count", "1"]);
+        assert_eq!(doc["start_hex"], "0x4000");
+        assert_eq!(doc["instructions"][0]["bytes"], "0720");
+    }
+    let data = query("read", "0x4001", "0x4000", &["--bytes", "1"]);
+    assert_eq!(data["start_hex"], "0x4001");
+    assert_eq!(data["hex"], "20");
+    assert_eq!(data["provenance"][0]["file_offset"], 1);
+    let unaligned_base = query("read", "0x4001-0x4002", "0x4001", &[]);
+    assert_eq!(unaligned_base["hex"], "07");
+    assert_eq!(unaligned_base["provenance"][0]["file_offset"], 0);
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn raw_view_validates_the_mapping_flags_at_the_cli() {
+    let target = "avr8:LE:16:default";
+    for (args, message) in [
+        (&["disassemble", "missing.bin", "0", "--raw-image", "--base", "0"][..], "requires --target"),
+        (&["read", "missing.bin", "0", "--raw-image", "--target", target], "requires --base"),
+        (&["raw-pcode", "missing.bin", "main", "--raw-image", "--target", target, "--base", "0"], "requires a numeric address or range"),
+        (&["disassemble", "missing.bin", "0", "--raw-image", "--target", target, "--base", "0", "--slice", "arm"], "--slice does not apply"),
+        (&["read", "missing.bin", "0", "--base", "0"], "--base requires --raw-image"),
+    ] {
+        let (_, stderr, code) = run_kuna(args);
+        assert_eq!(code, 2, "{args:?}: {stderr}");
+        assert!(stderr.contains(message), "{args:?}: {stderr}");
+    }
+}
+
 // --- the acceptance probes ---------------------------------------------------
 
 /// **The acceptance probe**: `kuna disassemble <bin> main` lists real

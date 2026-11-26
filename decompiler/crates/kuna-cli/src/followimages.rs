@@ -47,6 +47,9 @@ fn address(token: &str) -> Option<u64> {
 /// Widen the image selection so it holds the addresses `argv` names, and
 /// rewrite a stub address to the function it jumps to.
 pub(crate) fn apply(sub: &str, argv: &mut [String], limit: usize) {
+    if argv.iter().any(|arg| arg == "--raw-image") {
+        return;
+    }
     let through_stubs = match sub {
         "decompile" | "disassemble" => true,
         "xrefs" => false,

@@ -184,6 +184,16 @@ image twice. With the catalog defaults its PIC stub stays `sub_1800`; after
 `mode aggressive`, which sets `ppc32picimports abi` and which `auto` selects
 for files under 500 KiB, the same call prints as the import `extra`.
 
+`kuna-mips-octeon-elf32-o64.xml` loads big-endian Octeon ELF32 images without a
+target: one declaring O64, one declaring no ABI with GCC's `.mdebug.abiO64`
+marker, and one declaring no ABI at all. Each now loads with the Octeon O64
+model, so `bbit0` keeps the CRC's bit-15 test and `describe` passes its five
+arguments, the fifth from the stack slot at SP + 32; they used to load as
+generic MIPS32, which read `bbit0` as a COP2 load and stopped at `sd ra`. A
+generic MIPS image with the same encoding keeps its COP2 load. A strict fix
+with one pass. The fixtures and their recipe are in
+`tests/fixtures/octeon-elf32/`.
+
 `kuna-narrowed-call-input.xml` checks a call through a typed field whose
 argument was narrowed to two bytes before the field's prototype was forced on
 the call: the function decompiles and passes the sum widened to the parameter.

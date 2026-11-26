@@ -302,7 +302,7 @@ fn a_typedef_is_nameable_by_a_later_type_directive() {
 fn data_renames_the_global_at_its_use() {
     let (code, report) = decompile_with(vec![directive(
         "data 0x601048 char *shadowpw",
-        Body::Data { addr: 0x601048, decl: "char *shadowpw".into() },
+        Body::Data { addr: 0x601048, space: None, decl: "char *shadowpw".into() },
     )]);
     all_applied(&report);
     assert!(code.contains("shadowpw"), "the declared global did not reach the C:\n{code}");
