@@ -25,7 +25,7 @@ Seconds. Errors fail the run:
   unless a commit carries `Assertion-change: <test>: <why the new expectation is
   right>` (`kuna-catalog.xml`'s registry counts are exempt).
 
-A new `kuna_*.rs` with no `phases.toml` change prints a warning: that is right
+A new `kuna_*.rs` with no `phases.d/` row prints a warning: that is right
 only for a strict correctness fix (`docs/agents.md`, "Adding features").
 
 ## `aritydiff`: call arities over real binaries

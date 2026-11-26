@@ -1,5 +1,5 @@
 //! The metadata/markup analyzers of the program-prep tier — one module per
-//! analysis pass (each doubles as its settable-option name in `phases.toml`).
+//! analysis pass (each doubles as its settable-option name in `kuna-decomp/phases.d/`).
 //!
 //! Grouped here for layout only; `lib.rs` re-exports them flat, so public
 //! paths stay `kuna_analysis::<analyzer>` (e.g. `kuna_analysis::dwarf`).

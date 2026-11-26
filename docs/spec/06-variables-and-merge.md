@@ -20,7 +20,7 @@ one-shot tail after `fullloop` exits — the exact order is the pass tree in
 `decompiler/crates/kuna-decomp/src/infra/universalaction.rs (universal_sched)`.
 
 Option defaults and flip guidance for every option named below live in the
-generated catalog ([docs/options.md](../options.md)); the rows are defined in
+generated catalog (`kuna docs options`); the rows are defined in
 `decompiler/crates/kuna-decomp/phases.toml` and the intentional
 default-divergences are DIV-3/14 in `docs/history.md`.
 

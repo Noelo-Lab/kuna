@@ -7,7 +7,7 @@ Checks (run from the repo root; exit 1 on any failure):
      exists on disk.
   2. Folder coverage: every top-level directory under kuna-decomp/src and
      kuna-analysis/src is owned by exactly one chapter's Anchors block.
-  3. (--strict) Option mention: every `option = "..."` in phases.toml settableTable
+  3. (--strict) Option mention: every `option = "..."` in phases.d/ (the settableTable)
      appears at least once in docs/spec/ (so no gated algorithm goes undescribed).
 
 Usage: python3 tools/check_spec.py [--strict]
@@ -77,7 +77,9 @@ for src_root in ("decompiler/crates/kuna-decomp/src", "decompiler/crates/kuna-an
 
 # --- 3. option mention (strict) ----------------------------------------------
 if STRICT:
-    toml = open(os.path.join(ROOT, "decompiler/crates/kuna-decomp/phases.toml"), encoding="utf-8").read()
+    rows = os.path.join(ROOT, "decompiler/crates/kuna-decomp/phases.d")
+    toml = "\n".join(open(os.path.join(rows, n), encoding="utf-8").read()
+                     for n in sorted(os.listdir(rows)) if n.endswith(".toml"))
     spec_all = " ".join(t for _, t in chapters())
     in_settable = False
     for line in toml.splitlines():

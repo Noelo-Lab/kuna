@@ -16,8 +16,9 @@ from collections import Counter
 from pathlib import Path
 
 from . import config
+from .. import paths
 
-STAGES_TOML = config.repo_root() / "decompiler" / "crates" / "kuna-decomp" / "phases.toml"
+STAGES_TOML = paths.phases_toml(config.repo_root())
 FEATURES_DIR = config.repo_root() / "docs" / "features"
 
 
@@ -26,7 +27,7 @@ def campaign_settables() -> list[dict]:
     if not STAGES_TOML.exists():
         return []
     out = []
-    for block in STAGES_TOML.read_text().split("\n[[settable]]\n"):
+    for block in paths.phases_text(STAGES_TOML).split("\n[[settable]]\n"):
         insp = re.search(r'^inspiration\s*=\s*"(.*)"', block, re.M)
         if not insp or "decbench:" not in insp.group(1):
             continue

@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage
+.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage options-md
 
 all: binaries specs
 
@@ -115,6 +115,11 @@ coverage:
 rust-test:
 	$(PYTHON) $(ROOT)/scripts/check_test_layout.py
 	cd $(ENGINE) && cargo test --workspace --no-fail-fast
+
+# The option catalog is generated, not committed: write it to docs/options.md
+# (gitignored) for local reading. `kuna docs options` prints the same bytes.
+options-md: $(BINDIR)/kuna
+	$(BINDIR)/kuna catalog --markdown > $(ROOT)/docs/options.md
 
 # One invocation: a crate an earlier `--no-deps` run checked only as a dependency
 # is fresh to a later run, which then passes without linting it.

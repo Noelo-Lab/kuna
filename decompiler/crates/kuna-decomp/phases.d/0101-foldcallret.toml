@@ -1,0 +1,18 @@
+[[settable]]
+option = "foldcallret"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P6"
+subphase = "explicit-marking"
+rewind = "P6"
+strength = "HINT"
+issue = "angr-call-return-variable-folding"
+summary = "Fold an order-safe single-use call return value into its use site, inlining the call expression instead of spilling it to a named temporary (e.g. `if (timespec_cmp(...) <= -1)` instead of `v5 = timespec_cmp(); if (v5 <= -1)`). It also folds past the merge phalanx: a collision with the call's own INDIRECT effect on a global it is passed (the self-effect `check_implied_cover` would otherwise refuse) no longer blocks the fold, so passing a global to the call does not force a spill."
+use_when = "kuna spills a call result to a `vN = call(); use(vN)` pair that is used exactly once where angr folds the call expression into its use site. On by default (DIV-14); flip OFF to restore the upstream explicit-temporary form (Ghidra forces every call output explicit). Only folds when the single use is in the same block and nothing the call would be moved past is a barrier, over the whole distance from the call to the statement the folded expression is really printed in -- which is further than the use whenever the use op's own result is implied. A barrier is a call, a LOAD/STORE/CALLOTHER, or a write to persistent or address-tied storage. That last one is not an opcode: heritage promotes a write to a fixed address, or to a frame slot whose address escaped into the call, into a plain COPY, and without it `int t = f(7); k = 42; return t + k;` folded to `k = 0x2a; return f(7) + 0x2a;` -- the binary returns 50, that C reads 91 (GH-657, fixed). Two things are deliberately not barriers: a COPY back into the storage its input already occupies (what RuleIndirectCollapse leaves behind), and the ops the folded expression travels through, each of which consumes the previous one's value."
+example = "option foldcallret on"
+source_decompiler = "angr"
+inspiration = "test_call_return_variable_folding; angr call-return variable folding (expression folding in angr/analyses/decompiler); print_long_format"
+change_kind = "presentation-default"
+tier = "transform"
+symptoms = "call result spilled to a temp used exactly once: v5 = f(); if (v5 < 0)|single-use call return not inlined into its use site|flip off to force every call output into a named temporary (ghidra style)"

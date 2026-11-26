@@ -110,7 +110,7 @@ On the engineering side, the decompiler design aims to align with two other aspe
 
 The phases are described in the following files:
 - `docs/phases.md` — the stage model at a glance (the runtime registry is queryable via the `stage list/map/catalog` console commands).
-- `docs/options.md` — the tiered option catalog (transforms = the LLM control surface,
+- `kuna docs options` (or `make options-md`) — the tiered option catalog (transforms = the LLM control surface,
   with a generated symptom index)
 
 ## Development
@@ -140,7 +140,7 @@ Four gates, all expected green before every commit:
 make test        # the 675/675 decompiler regression parity (tests/datatests/ vs docs/baseline.json)
 make test-stages # the kuna-owned issue testcases (tests/stages/ vs docs/baseline-stages.json)
 make rust-test   # the full cargo workspace suite (ported unit tests, golden differential
-                 # vectors, SLEIGH-compiler .sla content-parity, docs/options.md freshness, ...)
+                 # vectors, SLEIGH-compiler .sla content-parity, ...)
 make check-spec  # docs/spec/ honesty: anchors and inline code paths resolve, and each
                  # phase folder is owned by exactly one spec chapter
 ```

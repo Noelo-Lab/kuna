@@ -4,8 +4,8 @@ Three layers of collision avoidance, cheapest first (docs/re-pipeline.md):
 
 1. **Track separation is the structural win.** Track `tooling` touches kuna-cli /
    kuna-console / kuna-analysis / tests/cli / docs/cli.md. Track `quality` touches
-   kuna-decomp / phases.toml / options.rs / the four hard-coded counters / docs/options.md /
-   docs/history.md / tests/stages. Those sets are DISJOINT, so three tooling builders run in
+   kuna-decomp / phases.toml / options.rs / docs/history.md /
+   tests/stages. Those sets are DISJOINT, so three tooling builders run in
    parallel with no shared mutable state at all.
 2. **Named resource leases.** A need's track and `touches:` map to a resource set; a need
    whose set intersects a held lease is not dispatched. Because every quality need needs
@@ -36,7 +36,7 @@ from ..atomic import atomic_text_writer
 # flight" falls out of the lease algebra rather than being special-cased.
 TRACK_RESOURCES = {
     "quality": ["counter:catalog", "counter:stages-corpus",
-                "file:phases.toml", "file:docs/options.md"],
+                "file:phases.toml"],
     "loader": [],
     "tooling": [],
     "perf": [],
@@ -54,7 +54,6 @@ PATH_RESOURCES = [
     ("decompiler/crates/kuna-decomp/src/p0_knowledge/kuna_phases", "counter:catalog"),
     ("decompiler/crates/kuna-decomp/tests/catalog_bytecompat.rs", "counter:catalog"),
     ("decompiler/crates/kuna-base/src/xml.rs", "counter:stages-corpus"),
-    ("docs/options.md", "file:docs/options.md"),
     ("docs/baseline-stages.json", "counter:stages-corpus"),
     ("tests/stages", "counter:stages-corpus"),
 ]

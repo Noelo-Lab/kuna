@@ -1,0 +1,18 @@
+[[settable]]
+option = "armconstshift"
+values = "off|on|all"
+default = "off"
+destructive = false
+phase = "P9"
+subphase = "cast-policy"
+strength = "HARD"
+rewind = "P9"
+issue = "arm-fixed-signed-lsl"
+summary = "Print a fixed left shift of a signed operand as a shift of its unsigned conversion, so the emitted C is defined for negative values and for bits shifted into or past the sign. `on` covers ARM's fixed 32-bit LSL, `(int)((unsigned int)x << n)`; `all` adds every architecture's fixed 64-bit left shift with a count below 64, `(long)((unsigned long)x << n)`, keeping an operand's sign extension inside the conversion. The shiftee is converted once, the signed result type is restored only when the p-code output is signed, unsigned shiftees are unchanged, a register count qualifies only when its non-zero mask proves it below 32 (the shifts `armshiftguard needed` prints without a range guard), a 64-bit operand whose known bits prove the result nonnegative keeps the compact form, and a signed variable is never shifted in place."
+use_when = "Turn on when the emitted C must be free of signed-shift undefined behavior, e.g. before recompiling it with sanitizers or comparing it against the binary; use `all` for 64-bit code on any architecture. Off by default because the conversion adds a cast pair to every ARM sign-bit test such as `x << 0x18 < 0`, which firmware uses for nearly every register flag check, and to every scaled 64-bit index."
+example = "option armconstshift on"
+source_decompiler = "kuna"
+inspiration = "A locked `unsigned int ShiftLeftTwo(int value)` whose ARM LSL #2 printed `return value << 2;`, undefined for negative inputs and positive overflow."
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "a signed ARM value is shifted left by a constant in the emitted C|UBSan reports a left shift of a negative value in recompiled ARM output|a signed ARM shift overflows into the sign bit in recompiled output|UBSan reports a left shift of a negative 64-bit value in recompiled output|a sign-extended 32-bit value shifted left into the sign bit of a 64-bit result"

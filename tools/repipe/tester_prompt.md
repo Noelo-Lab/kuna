@@ -19,7 +19,7 @@ Round {{ROUND}} · challenge `{{HEXID}}` · time budget **{{TIME_BUDGET}} minute
   kuna decompile ./target/{{TARGET}} <fn> --option NAME VALUE
   ```
   Its full reference is `{{REPO}}/docs/cli.md` and the option catalog with symptom-indexed
-  guidance is `{{REPO}}/docs/options.md`. Read them; they are the contract.
+  guidance is `kuna docs options`. Read them; they are the contract.
 - `objdump`, `readelf`, `strings`, `xxd`, `nm`, `file`, `python3` are available.
 {{IDA_LINE}}
 - You have **no network**. Do not try to look this crackme up; you cannot, and that is

@@ -148,7 +148,7 @@ pass lives outside the folder: the (kuna, GH-558) comparison canonicalizer
 (ActionPresentCompareForm)`, group `presentcompare`, is described with its
 folder in chapter [03](03-ssa-and-simplification.md). Option defaults, tiers,
 and flip guidance for the kuna settable options named below live in the
-generated catalog ([docs/options.md](../options.md)); the upstream console
+generated catalog (`kuna docs options`); the upstream console
 knobs (`nocastprinting`, `integerformat`, `nullprinting`, `inplaceops`,
 `maxlinewidth`, `indentincrement`) are surfaceTable rows in `phases.toml`, set
 via the console `option` command, and are not part of the settable catalog.
@@ -2463,7 +2463,7 @@ scalar those sizes keep `undefined<N>` (DIV-48,
 is not a residual unknown and never enters the relabel, so the opaque
 `void *` of `free`/`malloc`/`memcpy` is unaffected. Per-symbol format assertions
 (`map convert`, `force varnode`, `force constant`, `force datatype`) override
-the global format at the same point ([docs/options.md](../options.md)). `force
+the global format at the same point (`kuna docs options`). `force
 constant <addr> <format> [<value>]`, which the `--assert format` directive
 lowers to, names the constant by the address of the instruction that reads it
 instead of by a dataflow hash or a p-code sequence number (chapter 00, the
@@ -3448,7 +3448,7 @@ symbol-mapped array access renders `name[index]` with the index in its
 natural base, and a spacebase reference to a mapped local renders `&a` /
 `&myval.b` through the PTRSUB symbol markup (§9.2's partial-symbol walk).
 Flip `off` for consumers that diff against raw pointer arithmetic
-([docs/options.md](../options.md)); the toggle is per-render and pure
+(`kuna docs options`); the toggle is per-render and pure
 presentation.
 
 ## 9.6 Alternate languages

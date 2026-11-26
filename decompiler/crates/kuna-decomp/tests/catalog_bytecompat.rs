@@ -1,69 +1,64 @@
 //! Catalog byte-compatibility gate (ADR 0006, item w4-kuna-p0-pack).
 //!
-//! The Rust catalog JSON emitter (`kuna_phases::emit_catalog_json`) must
-//! reproduce `kuna_console.cc kunaEmitSettableJson`'s output **byte for byte**:
-//! `tests/stages/kuna-catalog.xml` (a C++ datatest) string-matches the raw
-//! emitter output, and `python -m kuna.catalog` parses it, so any drift in key
-//! order, spacing, separators, pipe-splitting, the conditional `current` field,
-//! or escaping would silently break the LLM control surface.
+//! The catalog JSON emitter (`kuna_phases::emit_catalog_json`) must keep
+//! `kuna_console.cc kunaEmitSettableJson`'s byte format: `tests/stages/kuna-catalog.xml`
+//! string-matches the raw emitter output, and `python -m kuna.catalog` parses it, so any
+//! drift in key order, spacing, separators, pipe-splitting, the conditional `current`
+//! field, or escaping would silently break the LLM control surface.
 //!
 //! ## What is compared
 //!
-//! The fixture `tests/fixtures/phase_catalog.json` is the EXACT bytes the C++
-//! `decomp_dbg` binary emits for `phase catalog` **with no program loaded**
-//! (so `kunaLiveValue` returns `""` for every option and no `current` field is
-//! present). We compare against the no-program form deliberately: the `current`
-//! field is architecture-dependent (it reads live `Architecture` flags), so it
-//! is not a stable cross-build byte contract — but the surrounding bytes (key
-//! order, `[\n  {...},\n  {...}\n]\n` framing, two-space indent, `, ` and `: `
-//! separators, the pipe-split `values` array, and the JSON escaping) are. The
-//! Rust emitter is driven with a `live = |_| None` closure to produce the same
-//! no-`current` form.
-//!
-//! ## Regenerating the fixture
-//!
-//! The original fixture was captured from the (now-removed) C++ binary. Since the
-//! C++ tree is gone and kuna is Rust-only, the Rust `emit_catalog_json` emitter is
-//! the authoritative source; kuna-native settables (e.g. `realtypes`, DIV-6) have
-//! no C++ origin. Recapture from the Rust `decomp_dbg` with the `openfile write`
-//! trick (the same one `kuna decompile` uses, so console prompts never pollute the
-//! bytes), with no program loaded so `kunaLiveValue` returns `""` (no `current`):
+//! The full catalog must be exactly `[\n`, one row per registry entry in registry
+//! order joined by `,\n`, and `\n]\n`, with each row the bytes of
+//! `phase catalog <option>`. The row format itself is pinned by
+//! `tests/fixtures/phase_catalog_rows.json`: a handful of rows captured verbatim with
+//! **no program loaded** (so `kunaLiveValue` returns `""` and no `current` field is
+//! present), chosen to cover the first row, a destructive default, a `<n>` value, an
+//! escaped quote, an escaped backslash and non-ASCII text. A new option needs no
+//! fixture change; editing one of those six rows' text does. Recapture them with the
+//! `openfile write` trick (console prompts never pollute the bytes):
 //!
 //! ```sh
 //! printf 'openfile write /tmp/cap.json\nphase catalog\nclosefile\nquit\n' \
 //!   | decompiler/target/release/decomp_dbg -s "$PWD/specs" >/dev/null 2>&1
-//! cp /tmp/cap.json decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog.json
+//! grep -E '^  \{"option": "(compareform|returnpair|protoorder|cppsig|retsplitlimit|macho-arm64e)"' \
+//!   /tmp/cap.json | sed 's/},$/}/' > decompiler/crates/kuna-decomp/tests/fixtures/phase_catalog_rows.json
 //! ```
-//!
-//! Regenerate it whenever `phases.toml` gains/loses a settable or a settable's
-//! catalog text changes.
 
-use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, lookup_settable};
+use kuna_decomp::kuna_phases::{
+    emit_catalog_json, emit_catalog_json_one, kuna_num_settables, kuna_settable_by_index,
+    lookup_settable,
+};
 
-/// The captured `phase catalog` output (no program loaded -> no `current`).
-const FIXTURE: &str = include_str!("fixtures/phase_catalog.json");
+/// Captured `phase catalog` rows (no program loaded -> no `current`), one per line.
+const FIXTURE: &str = include_str!("fixtures/phase_catalog_rows.json");
+
+fn rows() -> Vec<String> {
+    (0..kuna_num_settables())
+        .map(|i| {
+            let st = kuna_settable_by_index(i);
+            let one = emit_catalog_json_one(st.option, None).expect("known option");
+            assert!(one.starts_with("  {\"option\": "), "{}", st.option);
+            assert!(one.ends_with("}\n"), "{}", st.option);
+            one.trim_end_matches('\n').to_string()
+        })
+        .collect()
+}
 
 #[test]
-fn full_catalog_matches_cpp_byte_for_byte() {
-    // No live values -> the static, no-`current` form the fixture captures.
-    let rust = emit_catalog_json(|_| None);
-    if rust != FIXTURE {
-        // Surface the first divergence for a readable failure.
-        let rl: Vec<&str> = rust.lines().collect();
-        let fl: Vec<&str> = FIXTURE.lines().collect();
-        for (i, (r, f)) in rl.iter().zip(fl.iter()).enumerate() {
-            assert_eq!(r, f, "first byte divergence at line {i}");
-        }
-        assert_eq!(
-            rl.len(),
-            fl.len(),
-            "line count differs (rust {}, cpp {})",
-            rl.len(),
-            fl.len()
-        );
-        assert_eq!(rust, FIXTURE, "catalog bytes differ");
+fn full_catalog_is_every_row_in_registry_order() {
+    let full = emit_catalog_json(|_| None);
+    assert_eq!(full, format!("[\n{}\n]\n", rows().join(",\n")));
+}
+
+#[test]
+fn pinned_rows_match_byte_for_byte() {
+    let full = emit_catalog_json(|_| None);
+    let emitted: Vec<&str> = full.lines().map(|l| l.trim_end_matches(',')).collect();
+    assert_eq!(FIXTURE.lines().count(), 6);
+    for pinned in FIXTURE.lines() {
+        assert!(emitted.contains(&pinned), "row drifted from its capture:\n{pinned}");
     }
-    assert_eq!(rust, FIXTURE);
 }
 
 #[test]
@@ -76,35 +71,10 @@ fn fixture_has_no_current_field() {
 }
 
 #[test]
-    // One `"option":` per settable row; the authoritative per-option list is
-    // phases.toml settableTable (counts asserted in kuna_phases/tests.rs).
-    // Every row carries the tier field appended after change_kind.
-    // ... and the symptoms array appended after tier (C3).
-fn fixture_has_all_245_settables() {
-    assert_eq!(FIXTURE.matches("\"option\": ").count(), 245);
-    assert_eq!(FIXTURE.matches("\"tier\": ").count(), 245);
-    assert_eq!(FIXTURE.matches("\"symptoms\": ").count(), 245);
-}
-
-#[test]
-fn single_settable_rows_match_their_slice_of_the_catalog() {
-    // `phase catalog <option>` (one-argument form) must emit exactly the same
-    // bytes as that option's row in the full catalog, minus the leading "  "
-    // is preserved and minus the trailing comma (the full form joins with ',').
-    for i in 0..kuna_decomp::kuna_phases::kuna_num_settables() {
-        let st = kuna_decomp::kuna_phases::kuna_settable_by_index(i);
-        let one = emit_catalog_json_one(st.option, None).expect("known option");
-        // The one-row form is the bare object + a single newline.
-        assert!(one.starts_with("  {\"option\": "));
-        assert!(one.ends_with("}\n"));
-        // It must appear verbatim inside the full catalog (the full form differs
-        // only by an optional trailing comma before the newline).
-        let body = one.trim_end_matches('\n');
-        assert!(
-            FIXTURE.contains(body),
-            "one-row form for `{}` not found verbatim in the full catalog",
-            st.option
-        );
+fn every_row_carries_the_tier_and_symptoms_fields() {
+    let full = emit_catalog_json(|_| None);
+    for key in ["\"option\": ", "\"tier\": ", "\"symptoms\": "] {
+        assert_eq!(full.matches(key).count(), kuna_num_settables(), "{key}");
     }
 }
 

@@ -5,7 +5,7 @@
 //! `--option` (last-write-wins, so a user `--option` always overrides the
 //! mode). A mode is **not** a `[[settable]]` row -- it references existing
 //! option names and lives entirely in this table, so it never touches
-//! `phases.toml` / `SETTABLE_TABLE` / the catalog count+tier gates. File
+//! `phases.d/` / `SETTABLE_TABLE` / the catalog count+tier gates. File
 //! frontends resolve an omitted mode as the size-driven `auto` policy.
 //!
 //! Four modes ship:

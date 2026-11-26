@@ -1,0 +1,18 @@
+[[settable]]
+option = "branchflip"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "readability-rewrites"
+strength = "HINT"
+rewind = "P8"
+issue = "angr-SAILR-condition-polarity"
+summary = "Flip a negated-guard if/else for linearity: when an `if (x == 0) {A} else {B}` (equality-to-zero / negated guard) can be flipped in place, rewrite it to the positive complement `if (x != 0) {B} else {A}` so the common path reads top-to-bottom (angr-style positive guard vs `if (x == 0)`)."
+use_when = "An `if (x == 0)` negated guard reads inverted versus the angr-style positive form. On by default (DIV-14): the non-negated comparison becomes the `if` condition and the if/else arms swap to match; flip OFF to keep Ghidra's polarity. A flip is logged as a `branchflip:` warning comment at the if. Only fires on `if/else` (3-component) blocks whose condition flips cleanly in place."
+example = "option branchflip on"
+source_decompiler = "angr"
+inspiration = "tee_O2 x2nrealloc (if (a0 == 0) vs angr if (a0)); angr SAILR structurer condition processing"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "if (x == 0) guard with the common path in the else arm|negated condition where angr renders the positive complement first|if/else polarity inverted versus the source's reading order"

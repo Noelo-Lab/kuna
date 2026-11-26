@@ -194,6 +194,11 @@ unclassifiable ones for a human).
 
 ### Shared counters in a busy queue — the merge is not the hard part
 
+*History: the hard-coded counters below are gone. Option rows live one per file in
+`kuna-decomp/phases.d/`, the count tests compare against the registry, the catalog tallies
+are lower bounds, and `docs/baseline-stages.json` is only sorted keys. The rule still
+stands: never add a literal shared total.*
+
 This queue ran up to four output-changing PRs concurrently, and every one of them touches
 the same handful of hard-coded counters (`catalog_bytecompat.rs`, `phase_catalog.json`,
 `kuna-base/src/xml.rs`' corpus count, `docs/baseline-stages.json`, the `kuna_phases`

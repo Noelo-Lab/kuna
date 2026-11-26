@@ -1,0 +1,18 @@
+[[settable]]
+option = "constselectjump"
+values = "off|reentry|on"
+default = "reentry"
+destructive = true
+phase = "P2"
+subphase = "switch-model"
+strength = "HARD"
+rewind = "P2"
+issue = "re-conditional-indirect-branches-hide"
+summary = "Recover an indirect branch whose destination is selected between constant addresses as a jump table over that constant set. `on` recovers every such select (a CMOV/predicated dispatch) instead of truncating it to a call. `reentry`, the default, recovers only a dispatcher loop: a single-target jump whose own target code flows back into it with another local constant, so the re-entry already shows the targets are one function's. Flow retries only the dispatches a newly found edge can reach, proves a constant arriving straight at the dispatch without another partial decompile, keeps the caller's return as a destination when the selector can still hold it, and retains an indirect tail call for an unresolved target. With `off`, flow follows the original recovered addresses and preserves the transfer through any other value."
+use_when = "`reentry` is on by default: 0/675 datatest assertions move. Flip `off` to disable discovery of additional local targets on re-entry. Turn `on` when an indirect jump renders as a computed `(*v)()` call carrying a 'Treating indirect jump as call' warning while the destinations are already visible as address constants in the emitted C, and the code behind them is missing. DESTRUCTIVE as a global default: a conditional TAIL CALL selecting between two nearby function entries is the same shape, and recovering it splices both callee bodies into the caller; `reentry` never recovers a select that is not re-entered."
+example = "option constselectjump off"
+source_decompiler = "kuna"
+inspiration = "RE-friction need conditional-indirect-branches-hide: a Mach-O decoder dispatches through `CMOVZ R11,R10; JMP R11` over two LEA-loaded code addresses"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "indirect jump renders as a computed (code *)() call whose destinations are already constants in the emitted C|'Treating indirect jump as call' on a CMOV/predicated dispatch|the body behind a conditional indirect branch is never decoded"

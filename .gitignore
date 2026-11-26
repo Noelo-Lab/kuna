@@ -52,3 +52,6 @@ private/
 **/*.DS_Store
 **/*.swp
 
+
+# The option catalog is generated (`make options-md`, `kuna docs options`), never committed.
+/docs/options.md

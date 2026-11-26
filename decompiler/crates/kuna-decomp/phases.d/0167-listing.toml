@@ -1,0 +1,18 @@
+[[settable]]
+option = "listing"
+values = "on|off"
+default = "off"
+destructive = false
+phase = "P1"
+subphase = "code-data-partition"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-listing"
+summary = "Build the Listing/xref disassembly tier: a program-wide recursive-descent disassembly over the loadimage bytes (reusing the SLEIGH decoder + the lifted S2 flow classifier) producing three read-only sub-models (instruction / cross-reference / discovered-function) shared with the consumer analysis passes. DISABLED by default (the Listing is never built; real-ELF path only, so every parity gate is byte-identical)."
+use_when = "Off (default; the Listing is not built and there is zero decode cost). Flip on to make the program-wide instruction/xref/function model available to consumer passes (e.g. discovered-no-return) on a real-ELF target."
+example = "option listing on"
+source_decompiler = "kuna"
+inspiration = "Ghidra Listing / ReferenceManager / FunctionManager (recursive-descent disassembly)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "noreturn discovery inert on a stripped binary|analysis passes that need whole-image xrefs do nothing|no program-wide instruction/xref/function model for consumer passes"

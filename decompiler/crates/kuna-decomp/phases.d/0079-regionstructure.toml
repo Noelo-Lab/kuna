@@ -1,0 +1,18 @@
+[[settable]]
+option = "regionstructure"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality"
+strength = "HARD"
+rewind = "P8"
+issue = "angr-region-structurer"
+summary = "Structure the CFG by walking the KunaRegionIdentifier region tree and matching angr Phoenix/SAILR schemas (acyclic sequence + ITE + cyclic loops [Inc 3] + acyclic switch-case [Inc 4], with the SAILR H1/H3-ordered virtualize-to-goto fallback) instead of running Ghidra's CollapseStructure. DIV-12 default-on: the primary structuring path. Byte-identical to Ghidra's CollapseStructure on reducible code; falls back to CollapseStructure on irreducible (multi-entry) loops."
+use_when = "On by default (DIV-12): the region-driven structurer is the primary S8 path. It is byte-identical to Ghidra on reducible code and falls back to CollapseStructure when a function cannot be collapsed to a single structured root (irreducible/multi-entry loops). Set OFF to force the upstream Ghidra CollapseStructure path unconditionally."
+example = "option regionstructure on"
+source_decompiler = "angr"
+inspiration = "angr Phoenix/SAILR structurer (angr/analyses/decompiler/structuring/{recursive_structurer,phoenix,sailr}.py); _match_acyclic_sequence, _virtualize_edge, _order_virtualizable_edges"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "goto placement follows the sailr region walk instead of ghidra's collapse order (flip off to force CollapseStructure)|uncompilable c where a loop body folded into a while condition|structuring differs from upstream ghidra on the same function"

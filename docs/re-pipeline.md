@@ -233,7 +233,7 @@ Getting the track wrong is the most likely way to waste a builder session.
 | Lives in | `kuna-cli`, `kuna-console`, `kuna-analysis` | `kuna-decomp/src/pN_*/kuna_<slug>.rs` | either |
 | Changes emitted C | **no** | **yes** | must not |
 | `phases.toml` option | **not required** — the rule is "a judgement call ships behind a named option", and a new subcommand is not one | **required for a judgement call** (plus all 8 ritual steps); **forbidden for a strict correctness fix**, which ships always-on with a one-pass stage test (`docs/agents.md` → *Adding features*) | only if output moves |
-| Counters | none | `kuna_phases/tests.rs` (2 asserts + the tier tuple + the count-encoding *test names*), `catalog_bytecompat.rs` (3 asserts + the `phase_catalog.json` fixture), `tests/stages/kuna-catalog.xml`, `kuna-base/src/xml.rs` | none |
+| Counters | none | none: the count tests compare against the registry and the `tests/stages/kuna-catalog.xml` tallies are lower bounds | none |
 | Tests | cargo tests + the promoted acceptance probe. **A `tests/stages/` case would be wrong** — that README scopes the corpus to stage-model issues | `tests/stages/gh{angr,dec}-<slug>.xml`: two-pass when option-gated, one pass when always-on | timing probe with a stated noise floor |
 | Speed bar | before/after on the touched path | `scripts.pipeline.timeit`, ≤5% | **3σ and ≥20%** — `returncopysplit` measured a −20%/−12% noise floor on byte-identical output |
 
@@ -310,9 +310,9 @@ Three layers, cheapest first:
 
 1. **Track separation.** `tooling` touches kuna-cli/console/analysis + `tests/cli/` +
    `docs/cli.md`; `quality` touches kuna-decomp + `phases.toml` + the counters +
-   `docs/options.md` + `docs/history.md` + `tests/stages/`. Disjoint sets.
+   `docs/history.md` + `tests/stages/`. Disjoint sets.
 2. **Named leases** with a TTL and a dead-pid reaper: `merge`, `counter:catalog`,
-   `counter:stages-corpus`, `file:phases.toml`, `file:docs/options.md`,
+   `counter:stages-corpus`, `file:phases.toml`,
    `cluster:<id>`. A lease exists where a *silent wrong merge* is possible — not where a
    trivial rebase would resolve it. Because every `quality` need needs the whole counter set,
    **at most one option-adding builder is ever in flight** with no special-casing, while

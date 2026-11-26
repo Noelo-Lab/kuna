@@ -1,0 +1,18 @@
+[[settable]]
+option = "jumptablemax"
+values = "1024|<n>"
+default = "1024"
+destructive = false
+phase = "P2"
+subphase = "switch-model"
+rewind = "P2"
+strength = "HARD"
+issue = "kuna-hugefn"
+summary = "The most entries one jump table may have. Jump-table recovery refuses a switch whose range check admits more cases than this (the dispatch then prints as a computed call, `// jump-as-call`), unless a guard of the switch, not the selector's width, bounds the table to at most 65536 entries: such a table is read to its guard's bound and refused when it reaches more than this many distinct destinations, or when it admits more than four values per table slot it reads (gcc's `if (x <= 0x28ff) goto tbl[x >> 8]` admits 0x2900 values over 41 slots, each of which would print as a `case` label). A 60000-entry table with few destinations reads in about 3 s, and a switch with thousands of distinct arms stays refused before structuring. The analysis tier's reference walk reads at most this many entries of a table, so the case bodies past it are not decoded, attributed or counted. It is upstream's `OptionJumpTableMax` (default 1024; upstream refuses every table over it), catalogued so it can be found and so one value bounds both tiers: `kuna functions --summary --json` reports every switch whose range check exceeds it under `summary.limits`."
+use_when = "Raise it when `kuna functions --summary --json` lists a switch under `limits.over` (its `cases` exceeds `jumptablemax`), or when a dispatch prints as `// jump-as-call` behind a range check such as `if (idx <= 0x1629c)`. The cost is linear in the entries read; a giant switch usually also needs `--option maxinstruction N` for the bodies it reaches. Leave at 1024 for output that matches every other kuna run."
+example = "option jumptablemax 100000"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra `OptionJumpTableMax` (`Architecture::max_jumptable_size`), reachable before only as an uncatalogued OptionDatabase name, and not at all by the analysis tier's switch-table read"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "switch with more than 1024 cases prints as a computed call (jump-as-call)|state-machine function with a giant jump table decompiles to a stub|functions --summary lists a switch over jumptablemax|xrefs miss references made from switch cases past the first 1024"

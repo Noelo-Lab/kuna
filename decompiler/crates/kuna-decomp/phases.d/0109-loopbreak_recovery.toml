@@ -1,0 +1,18 @@
+[[settable]]
+option = "loopbreak_recovery"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P8"
+subphase = "goto-quality-acceptance"
+strength = "HARD"
+rewind = "P8"
+issue = "angr-1after909-doit"
+summary = "Lower loop-exit `goto <successor>` edges to structured `break;` (and switch-case exits to empty `break;`), a port of Ghidra BlockGraph::scopeBreak run in ActionFinalStructure between finalizePrinting and markUnstructured; the now-dead successor label is suppressed."
+use_when = "A loop's error/exit paths render as `goto <successor-label>;` plus a synthesized `label_NNNN:` (angr emits `break;`). On by default (DIV-10, clean ablation + converges to upstream Ghidra, which always runs scopeBreak); set OFF to restore kuna's prior byte-identical raw-goto rendering."
+example = "option loopbreak_recovery off"
+source_decompiler = "angr"
+inspiration = "test_decompiling_1after909_doit; Phoenix/SAILR loop-successor break/continue recovery (Ghidra BlockGraph::scopeBreak); doit"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "loop exit rendered as goto label_N; plus a synthesized label instead of break;|switch-case exit gotos where break; is expected|error paths leave a loop by goto to its successor label"

@@ -24,7 +24,7 @@ import tomllib
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 from scripts.observatory import atlas  # noqa: E402
-CATALOG = "decompiler/crates/kuna-decomp/phases.toml"
+CATALOG = "decompiler/crates/kuna-decomp/phases.d"
 PHASES = [
     ("P0", "Knowledge", "Configuration, symbols & assertions"),
     ("P1", "Partition", "Images, code boundaries & entry points"),
@@ -53,6 +53,11 @@ MILESTONES = [
     {"date": "2026-08-31", "title": "RE-needs pipeline starts", "commit": "63a124ae",
      "detail": "The first run records problems found while using Kuna for reverse engineering; fixes follow from the re-needs backlog."},
 ]
+
+
+def footer(baseline: dict) -> list:
+    """A recorded ``[applied, passing]`` footer, or the passing-key count when none is kept."""
+    return baseline.get("data_footer") or [len(baseline["passing"])] * 2
 
 
 def git(repo: Path, *args: str) -> str:
@@ -202,13 +207,16 @@ def export(repo: Path) -> dict:
     if not commits:
         raise ValueError("dev-viz requires at least one non-merge commit")
 
-    text = (repo / CATALOG).read_text()
-    rows = tomllib.loads(text)["settable"]
-    lines = {m[1]: i for i, line in enumerate(text.splitlines(), 1)
-             if (m := re.match(r'option = "([^"]+)"', line))}
+    rows, where = [], {}
+    for path in sorted((repo / CATALOG).glob("*.toml")):
+        text = path.read_text()
+        rows += tomllib.loads(text)["settable"]
+        where.update({m[1]: (f"{CATALOG}/{path.name}", i) for i, line in enumerate(text.splitlines(), 1)
+                      if (m := re.match(r'option = "([^"]+)"', line))})
     options = [{"name": r["option"], "phase": r["phase"], "default": r["default"],
                 "source": r["source_decompiler"].lower(), "inspiration": r["inspiration"],
-                "summary": r["summary"], "tier": r["tier"], "line": lines[r["option"]],
+                "summary": r["summary"], "tier": r["tier"],
+                "path": where[r["option"]][0], "line": where[r["option"]][1],
                 "decbench": "decbench:" in r["inspiration"].lower()}
                for r in rows]
     options.sort(key=lambda r: r["name"])
@@ -278,7 +286,7 @@ def export(repo: Path) -> dict:
             "groups": int(novel_match[2].replace(",", "")) if novel_match else None,
             "path": "docs/decbench/novel.md",
         },
-        "baselines": {"upstream": baseline["data_footer"], "stages": stages["data_footer"]},
+        "baselines": {"upstream": footer(baseline), "stages": footer(stages)},
         "architecture": architecture(repo),
     }
 

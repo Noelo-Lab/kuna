@@ -226,8 +226,9 @@ status), `failures` (`unit`, `data`, `data_errors`), `parity` (with `--baseline`
 `data.matched` lists the corpus files the harness ran: the whole corpus when no `--name`
 was given, so an empty corpus is `matched: []`. `unit.matched` lists the unit tests
 the harness reported running. `data` is `null` under `--unittests` and `unit` is `null`
-under `--datatests`. A saved baseline keeps its four fields only (`unit_footer`,
-`data_footer`, `passing`, `returncode`), so recording one never depends on `selection`.
+under `--datatests`. A saved baseline (`--save-baseline`) is only the sorted `passing`
+array, one key per line, so recording one never depends on `selection` and two branches
+that add different tests change different lines.
 
 A baseline must be a JSON object with one `passing` array containing only strings.
 Other metadata is optional. Malformed JSON, trailing non-whitespace content, a
@@ -4783,15 +4784,15 @@ it needs to drive it.
 | Topic | Source | Why an agent wants it |
 |---|---|---|
 | `cli` | `docs/cli.md` | every subcommand, flag, exit code and JSON schema |
-| `options` | `docs/options.md` | the generated option catalog with the symptom index — bad output → the flip that fixes it |
+| `options` | rendered in-process (`kuna catalog --markdown`) | the generated option catalog with the symptom index — bad output → the flip that fixes it |
 | `agents` | `docs/agents.md` | the repo rulebook and the doc map |
 | `phases` | `docs/phases.md` | the P0–P9 model, for reasoning about *which* decision to flip |
 | `modes` | `docs/modes.md` | the `--mode` presets and the size thresholds `auto` selects on |
 
-`docs/options.md` is generated (`kuna catalog --markdown > docs/options.md`) and dominates
-the embedded bytes at ~281 KB. A test asserts the embedded copy is byte-identical to the file
-on disk, so a rebuild cannot ship a stale catalog — the same hazard
-`kuna-decomp/tests/options_md_fresh.rs` guards for the file itself.
+The `options` topic is not a file: it is rendered in-process from the registry the binary was
+built with (the same bytes as `kuna catalog --markdown`), so it can never be stale. It
+dominates the manual at ~281 KB. The repository does not commit it; `make options-md`
+writes it to `docs/options.md` (gitignored) for local reading.
 
 Exit codes: `0` ok, `2` unknown topic (the message lists the valid ones).
 
@@ -4825,14 +4826,15 @@ kept, `2` usage error or no agent config directory found.
 
 ```bash
 kuna catalog --json              # the flippable assertion list, for an agent
-kuna catalog --markdown          # regenerate docs/options.md
+kuna catalog --markdown          # the rendered catalog (`make options-md` writes docs/options.md)
 kuna catalog --check             # fail on catalog/registration drift (CI)
 kuna catalog --tier transform    # filter to the transform-tier control surface
 ```
 
 By default, reads the static catalog directly from the linked engine library, without
 starting `decomp_dbg` or loading SLEIGH specs. The single source of truth is
-`settableTable`, generated from `decompiler/crates/kuna-decomp/phases.toml`; the console's
+`settableTable`, generated from the one-file-per-option rows in
+`decompiler/crates/kuna-decomp/phases.d/`; the console's
 `phase catalog` command uses the same emitter. `--json` emits a JSON **array** with one
 object per option —
 `[{option,values,default,destructive_as_default,phase,subphase,strength,rewind,issue,summary,
@@ -4853,7 +4855,7 @@ not a fallback to the local catalog. Build-identity warnings stay on stderr.
 external query on its own, and only that route uses their engine/specs configuration.
 `--markdown` always describes this `kuna` build, even with an external override.
 
-The rendered catalog is `docs/options.md`; the model behind it is `docs/phases.md` /
+The rendered catalog is `kuna docs options`; the model behind it is `docs/phases.md` /
 `docs/spec/`; the defaults are recorded in `docs/history.md`.
 
 ## `kuna specs` — the SLEIGH compiler
@@ -5094,7 +5096,7 @@ applies to `decompile`, `decompile-all`, `decompile-project`,
 `kuna fid build <lib.a|*.o ...> -o <out.fid> --lang <id> --cspec <id>` writes a kuna
 `.fid` database of FID fingerprints; `--option listing on --option fid on` with the
 `kuna_fid_db` environment variable naming it renames matching stripped functions
-(see `docs/options.md`, option `fid`). Use `--option fid strict` to require
+(see `kuna docs options`, option `fid`). Use `--option fid strict` to require
 the same record to match the specific hash and code-unit count as well. Strict
 mode can reject correct matches, and both modes leave multi-name buckets
 unresolved. The specific hash includes operand values that change between

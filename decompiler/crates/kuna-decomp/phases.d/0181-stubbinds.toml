@@ -1,0 +1,18 @@
+[[settable]]
+option = "stubbinds"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "environment-binding"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-stubbinds"
+summary = "Name a Mach-O `__stubs` entry after the import its pointer slot is bound to when the indirect-symbol table no longer says. A stub is named through `LC_DYSYMTAB`: its indirect-symbol entry indexes the undefined `nlist` of the import it jumps to. A chained-fixups link records the import again as the bind on the slot the stub loads, and once the image is stripped the `nlist` entry can go while the bind stays: `strip` writes `INDIRECT_SYMBOL_LOCAL | INDIRECT_SYMBOL_ABS` over the stub's entry, which is how the SwiftPM-built frameworks of an App Store app ship most of their Swift stdlib and runtime calls. The indirect-symbol walk then leaves the stub `sub_<addr>` and every `bl` to it is an anonymous call. With this on, each such stub is decoded to the slot it jumps through (`adrp; ldr; br` on arm64, the `adrp; add; ldr; braa` of an arm64e `__auth_stubs` entry, `jmp [rip+disp]` on x86-64) and named after the slot's addend-free chained bind, one leading `_` stripped and Swift or Itanium names demangled, exactly as the indirect-symbol walk names a stub. A stub that walk already named, a stub that does not decode to a slot, and a slot with no bind or a bind with an addend are left alone. Mach-O only; inert on an image without chained fixups or with a complete indirect-symbol table, so every datatest is byte-identical."
+use_when = "On (default): a stripped SwiftPM framework's `sub_fc80(0x28)` becomes `Swift._StringGuts.grow(_:)(0x28)`. Flip off to see the stubs as the symbol table alone names them, or when auditing what the indirect-symbol table says."
+example = "--option stubbinds off"
+source_decompiler = "kuna"
+inspiration = "stripped Swift frameworks from App Store IPAs: 39 of 76 DeviceKit stubs and 696 of 848 RevenueCat stubs were `sub_` while the chained-fixups import table named every one"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "a stripped Mach-O's stubs stay sub_ while its __got slots are named|anonymous sub_ calls into Swift stdlib or runtime from a SwiftPM framework|llvm-otool -I shows LOCAL ABSOLUTE for a __stubs entry whose slot has a chained bind|kuna names fewer imports than the chained-fixups import table lists"

@@ -8,18 +8,17 @@
 //! `kuna docs` opens no file and resolves no path, so it behaves identically in
 //! an empty directory and in the repo.
 //!
-//! Compiling the bytes in also fixes the freshness hazard the other direction:
-//! `docs/options.md` is generated (`kuna catalog --markdown > docs/options.md`)
-//! and gated by `kuna-decomp/tests/options_md_fresh.rs`, so a stale catalog
-//! cannot reach a binary that is rebuilt — and `tests/docs_cli.rs` asserts the
-//! embedded bytes still equal the on-disk file, which is what makes that true.
+//! The `options` topic is the one exception: it is not a committed file but the
+//! catalog rendered in-process from the registry this binary was built with
+//! (`kuna catalog --markdown`), so it cannot be stale. `make options-md` writes
+//! the same bytes to `docs/options.md` (gitignored) for local reading.
 
 use std::fmt::Write as _;
 
 use crate::jsonfmt::{self, Json};
 use crate::output;
 
-/// One embedded document.  `body` is the source file verbatim, so
+/// One embedded document.  A file `body` is the source verbatim, so
 /// `kuna docs <topic>` is byte-identical to `cat docs/<topic>.md`.
 pub struct Doc {
     pub topic: &'static str,
@@ -27,7 +26,26 @@ pub struct Doc {
     pub summary: &'static str,
     /// Repo-relative source, reported in `--all` banners and by the freshness test.
     pub path: &'static str,
-    pub body: &'static str,
+    body: Body,
+}
+
+enum Body {
+    File(&'static str),
+    Rendered(fn() -> &'static str),
+}
+
+impl Doc {
+    pub fn body(&self) -> &'static str {
+        match self.body {
+            Body::File(text) => text,
+            Body::Rendered(render) => render(),
+        }
+    }
+}
+
+fn option_catalog() -> &'static str {
+    static CATALOG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CATALOG.get_or_init(kuna_decomp::kuna_phases::emit_catalog_markdown)
 }
 
 /// Ordered by what an agent reaches for first, not alphabetically: the command
@@ -39,35 +57,35 @@ pub const DOCS: &[Doc] = &[
         title: "The `kuna` CLI reference",
         summary: "Every subcommand, flag, exit code and JSON schema of the kuna binary.",
         path: "docs/cli.md",
-        body: include_str!("../../../../docs/cli.md"),
+        body: Body::File(include_str!("../../../../docs/cli.md")),
     },
     Doc {
         topic: "options",
         title: "kuna option catalog",
         summary: "Generated catalog of every --option, by tier, with a symptom index from bad output to the flip that fixes it.",
         path: "docs/options.md",
-        body: include_str!("../../../../docs/options.md"),
+        body: Body::Rendered(option_catalog),
     },
     Doc {
         topic: "agents",
         title: "AGENTS.md — working in and with kuna",
         summary: "The repo rulebook: what kuna is, how it is laid out, the build/test gates, and the doc map.",
         path: "docs/agents.md",
-        body: include_str!("../../../../docs/agents.md"),
+        body: Body::File(include_str!("../../../../docs/agents.md")),
     },
     Doc {
         topic: "phases",
         title: "Decompiler phases",
         summary: "The P0-P9 phase model on one screen: what each phase computes and where the feedback edges run.",
         path: "docs/phases.md",
-        body: include_str!("../../../../docs/phases.md"),
+        body: Body::File(include_str!("../../../../docs/phases.md")),
     },
     Doc {
         topic: "modes",
         title: "Decompiler modes",
         summary: "The --mode auto|reliable|aggressive|fast presets and the input-size thresholds auto selects on.",
         path: "docs/modes.md",
-        body: include_str!("../../../../docs/modes.md"),
+        body: Body::File(include_str!("../../../../docs/modes.md")),
     },
 ];
 
@@ -123,7 +141,7 @@ pub fn run(argv: &[String]) -> i32 {
     }
     match topic {
         Some(name) => match lookup(name) {
-            Some(doc) => output::emit_with_status(doc.body, 0),
+            Some(doc) => output::emit_with_status(doc.body(), 0),
             None => {
                 eprintln!("error: no embedded doc named {name:?}");
                 eprintln!("known topics: {}", topic_names().join(", "));
@@ -161,7 +179,7 @@ pub fn render_list() -> String {
     let width = DOCS.iter().map(|d| d.topic.len()).max().unwrap_or(0);
     let mut out = String::new();
     for d in DOCS {
-        let _ = writeln!(out, "{:width$}  {:>8}  {}", d.topic, human_size(d.body.len()), d.summary);
+        let _ = writeln!(out, "{:width$}  {:>8}  {}", d.topic, human_size(d.body().len()), d.summary);
     }
     out
 }
@@ -174,7 +192,7 @@ pub fn render_json() -> String {
                 ("topic".into(), Json::Str(d.topic.into())),
                 ("title".into(), Json::Str(d.title.into())),
                 ("summary".into(), Json::Str(d.summary.into())),
-                ("bytes".into(), Json::Number(d.body.len().to_string())),
+                ("bytes".into(), Json::Number(d.body().len().to_string())),
             ])
         })
         .collect();
@@ -185,7 +203,7 @@ pub fn render_json() -> String {
 /// still valid markdown, and a reader (human or model) can still see where one
 /// document ends and the next begins.
 pub fn render_all() -> String {
-    let total: usize = DOCS.iter().map(|d| d.body.len()).sum();
+    let total: usize = DOCS.iter().map(|d| d.body().len()).sum();
     let mut out = String::new();
     let _ = writeln!(
         out,
@@ -200,9 +218,9 @@ pub fn render_all() -> String {
             "<!-- ===== kuna docs: {} — {} ({}) ===== -->\n",
             d.topic,
             d.path,
-            human_size(d.body.len())
+            human_size(d.body().len())
         );
-        out.push_str(d.body.trim_end_matches('\n'));
+        out.push_str(d.body().trim_end_matches('\n'));
         out.push_str("\n\n");
     }
     out
@@ -224,8 +242,8 @@ mod tests {
     fn every_topic_is_embedded_and_nonempty() {
         assert!(DOCS.len() >= 5);
         for d in DOCS {
-            assert!(!d.body.is_empty(), "{} embedded empty", d.topic);
-            assert!(d.body.starts_with('#'), "{} is not the markdown file", d.topic);
+            assert!(!d.body().is_empty(), "{} embedded empty", d.topic);
+            assert!(d.body().starts_with('#'), "{} is not the markdown file", d.topic);
         }
     }
 
@@ -252,7 +270,7 @@ mod tests {
     fn all_carries_every_body_verbatim() {
         let all = render_all();
         for d in DOCS {
-            assert!(all.contains(d.body.trim_end_matches('\n')), "{} missing", d.topic);
+            assert!(all.contains(d.body().trim_end_matches('\n')), "{} missing", d.topic);
         }
     }
 }

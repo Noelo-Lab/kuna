@@ -63,3 +63,20 @@ def decomp_test_dbg() -> Path:
 
 def sleigh() -> Path:
     return binary("sleigh_opt", "KUNA_SLEIGH")
+
+
+def phases_toml(root=None) -> Path:
+    """The phase registry's shared tables (groups, subphases, surfaces)."""
+    return Path(root or repo_root()) / "decompiler" / "crates" / "kuna-decomp" / "phases.toml"
+
+
+def phases_files(path=None) -> list:
+    """``phases.toml`` then every ``phases.d/*.toml`` option row in catalog (file-name) order."""
+    path = Path(path) if path else phases_toml()
+    rows = sorted((path.parent / "phases.d").glob("*.toml"), key=lambda p: p.name)
+    return [path] + rows
+
+
+def phases_text(path=None) -> str:
+    """The whole registry as one TOML document, as if every option row were in phases.toml."""
+    return "\n".join(p.read_text(encoding="utf-8") for p in phases_files(path))

@@ -1,0 +1,18 @@
+[[settable]]
+option = "swifthelpers"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-swifthelpers"
+summary = "The helper arm of the Swift metadata pass (inert unless swiftmetadata is on; arm64 only): names two kinds of function swiftc emits into every image that uses generic types, which a stripped image leaves sub_, from their bodies. (1) `__swift_instantiateConcreteTypeFromMangledName` and its `Abstract` twin: a cache-word test, then one call to `swift_getTypeByMangledNameInContext2` (`...InMetadataState2`) on a mangled type name found through a 32-bit relative offset (`add xD, xB, wN, sxtw`), whose base register says whether the name record is the cache word itself (the older one-argument form, offset and negated length until the cache is filled) or a second argument (Apple's two-argument form). The helper gets the prototype `void *f(void *cache[, void *name])` (swifttypes types each call's result `swift.type_metadata *`), and at every call whose arguments are adrp/add or adr constants the mangled name is demangled (symbolic references resolved through the descriptor table) and the cache word named after the type, as the image's own `MD` symbol would be (`hf.Box<hf.Unit>.type_metadata_demangling_cache`), so `sub_100009fe4(0x104052368,0x103202d00)` prints `__swift_instantiateConcreteTypeFromMangledName(&[Swift.String:Any].type_metadata_demangling_cache,...)`. (2) Lazy protocol witness table accessors: `adrp; ldr x0, [cache]; cbz x0; ret`, then a call for the concrete type's metadata followed by `mov x1, x0`, and `swift_getWitnessTable` with a local or `__got` conformance descriptor in x0. The type comes from the metadata call (an instantiation helper call, a local non-generic type's accessor, or an imported `Ma`), the protocol from the descriptor, and the function becomes `<T:P>.lazy_protocol_witness_table_accessor` (prototype `void *f(void)`) and its cache `<T:P>.lazy_protocol_witness_table_cache`. Runtime calls are recognised by name through the image's stubs or PLT entries (decoding a stripped stub to its slot's bind). A real symbol is never replaced; a body that does not decode to these shapes, or a call whose arguments are not constants, is left as it was: both shapes are the shrink-wrapped ones (the cache test before any frame setup), so a helper or accessor that saves its frame first and branches back to the epilogue after the runtime call (swiftc 6.0 and some Xcode output) is not recognised. One linear scan of the text for `bl` targets; on a 72 MB third-party iOS app it names 278 helper copies, 818 lazy accessors and 18,549 caches for about 0.4 s of load time (dev build)."
+use_when = "On (default) for Swift binaries: the type each instantiation call asks for reads at the call, and the witness table accessors carry their conformance. Flip off to see the helpers as sub_ and the caches as dat_."
+example = "option swifthelpers off"
+source_decompiler = "kuna"
+inspiration = "swiftc IRGen's emitted helpers (lib/IRGen/GenMeta.cpp emitMetadataAccessByMangledName, GenProto.cpp lazy witness table accessors) and the Swift ABI mangling of `MD` and `Wl`/`WL` symbols (docs/ABI/Mangling.rst)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "sub_(&cache, &mangled) called before every generic type use in a stripped swift binary|__swift_instantiateConcreteTypeFromMangledName unnamed|lazy protocol witness table accessors render as sub_ with a cached global and swift_getWitnessTable|the type a swift function instantiates is not visible at the call"

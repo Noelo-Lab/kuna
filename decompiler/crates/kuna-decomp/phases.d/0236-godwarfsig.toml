@@ -1,0 +1,18 @@
+[[settable]]
+option = "godwarfsig"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-angr-go-dwarf-signatures"
+summary = "On little-endian amd64 Go binaries and a verified AArch64 Go ELF subset, recover compiler DWARF function signatures, including bounded zlib debug sections. Resolve cross-unit type references, separate result formals using DW_AT_variable_parameter, and verify complete contracts against the little-endian amd64 Go register ABI. Pointers may target grounded scalars or flat records. AArch64 supports bounded uncompressed and zlib-compressed DWARF and requires an exact ELF text identity, one pointer-to-int32 input in X0 and one signed int32 or int64 result with verified X0 storage. Up to two verified string inputs with a scalar or void result keep each input's two separate ABI words and name its pointer and length from the source formal. Other by-value aggregates, unsupported multiple results, stack arguments, hidden-context functions and incomplete metadata retain existing inference. Exactly two full-width signed or unsigned integer results are recovered as well when the contract is complete (independent RAX/RBX result allocation, joined storage, a unique function entry): they are carried in an ordinary struct with validated language metadata and Go declarations, calls and returns use multiple-result syntax (formerly the gopairreturns option). DWARF int/error results require the nominal runtime.iface layout and RCX/RBX/RAX join; their raw 24-byte integer/table/data fields preserve typed nil without high-level error syntax or stripped inference. A verified amd64 ELF status-only receive on a receive-only int channel retains its full channel handle, private word destination and boolean chanrecv2 result. On named amd64 ELF with verified Go pointer method metadata and a matching scalar ABI contract, the Go view binds the receiver declaration and direct same-package method expressions."
+use_when = "On by default: a Go binary with DWARF keeps its parameter names, pointer types and an identity function's return value. Uses the abi-internal compiler model on little-endian amd64 and the verified AArch64 subset. Stripped or unsupported contracts retain existing inference. Flip off to leave the Go prototypes to inference."
+example = "option godwarfsig on"
+source_decompiler = "kuna"
+inspiration = "angr Go DWARF signatures and Go cmd/compile DW_AT_variable_parameter metadata"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "go functions lose source parameters despite dwarf|go identity function decompiles as void|go result parameters appear as inputs"

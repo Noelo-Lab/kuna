@@ -1,0 +1,18 @@
+[[settable]]
+option = "termdup"
+values = "2|3|4|<n>"
+default = "2"
+destructive = false
+phase = "P6"
+subphase = "explicit-marking"
+rewind = "P6"
+strength = "HARD"
+issue = "kuna-impliedrefs"
+summary = "How many terminal terms one implied expression may duplicate at each use before the value is declared instead. A value that survived the `impliedrefs` descendant test with more than one reader is walked by ActionMarkExplicit::processMultiplier, which counts the leaf terms (the explicit variables and constants, spacebase excluded) the expression would re-print at every use and forces the value explicit once that count exceeds this bound. It shipped as a hard-coded 2 whose own upstream comment reads `2 and 3 (4) are reasonable`, with no way to reach it from a command. It is the second, independent half of the same decision: `impliedrefs` bounds how MANY places an expression is copied to, `termdup` bounds how BIG the copied expression may be. Measured on coreutils fmt -O2 (decompile-all, 151 functions), the emitted C declares 369 locals at the shipped 2, 366 at 3, 363 at 4 and 362 at 6, and in the other direction 380 at 1 and 385 at 0."
+use_when = "Raise to 3 or 4 together with (or instead of) `impliedrefs` when the listing is full of two-term temporaries whose expression is small enough to read at each use; leave at the shipped 2 for output that matches every other kuna run. It has no effect on a value with a single reader, so it is the finer of the two levers -- reach for `impliedrefs` first and use this one to let the slightly larger expressions through."
+example = "option termdup 3"
+source_decompiler = "ghidra-upstream"
+inspiration = "Ghidra's own `Architecture::max_term_duplication` comment: `2 and 3 (4) are reasonable` -- a tunable upstream expects to be edited, reachable only by recompiling until now"
+change_kind = "opt-in-tool"
+tier = "transform"
+symptoms = "a two-term expression is declared as a temporary instead of being inlined at its two uses|want to ablate the term-duplication threshold without rebuilding|raising impliedrefs did not inline an expression because the expression itself is too wide"

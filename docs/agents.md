@@ -38,7 +38,7 @@ binaries into `decompiler/target/release/` and compiles the specs).
 |---|---|---|
 | `make test` | datatest corpus vs `docs/baseline.json` | **PARITY OK** (675/675) |
 | `make test-stages` | stage-issue corpus vs `docs/baseline-stages.json` | **PARITY OK** |
-| `make rust-test` | full cargo workspace suite + `docs/options.md` freshness | green |
+| `make rust-test` | full cargo workspace suite | green |
 | `make check-spec` | `docs/spec/` anchors + inline code paths resolve; each phase folder owned by exactly one chapter (`--strict` adds option-mention coverage) | green |
 
 CI runs all four (plus `kuna catalog --check`) on every push to main —
@@ -77,8 +77,10 @@ instead. `make rust-test` and `make test-tools` enforce this. Focused run:
   deliberate default change, and the commit message says which (`kuna test --save-baseline`).
   Adding a stage test DOES re-record the stages baseline:
   `kuna test --datatests --datatests-dir tests/stages --save-baseline docs/baseline-stages.json`.
-- `docs/options.md` is generated — after touching option metadata:
-  `decompiler/target/release/kuna catalog --markdown > docs/options.md`.
+  That file is only the sorted passing keys, one per line, so two branches adding different
+  tests merge cleanly; on a conflict, re-record it on the merged tree rather than hand-merge.
+- The option catalog is generated, never committed: `kuna docs options` prints it and
+  `make options-md` writes it to `docs/options.md` (gitignored) for local reading.
 - When doing builds and tests on a local system, always be aware of the total RAM available on the machine.
   You should always stay below 90% RAM usage. If you detect it occuring, kill it, then request help
   from the user and if it is ok to allow it.
@@ -107,8 +109,9 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 ## Adding features (the enforced rules)
 
 - **A judgement call ships behind a named option; a fix does not.** An option is a
-  `settableTable` row in `decompiler/crates/kuna-decomp/phases.toml` (every field populated,
-  including `tier` + `symptoms`) plus a handler in `src/p0_knowledge/kuna_option_dispatch.rs`;
+  `settableTable` row — its own file `decompiler/crates/kuna-decomp/phases.d/NNNN-<option>.toml`,
+  `NNNN` one past the highest there (every field populated, including `tier` + `symptoms`;
+  `phases.d/README.md`) — plus a handler in `src/p0_knowledge/kuna_option_dispatch.rs`;
   `kuna catalog --check` must stay green. Options can take values, not just on/off. New logic
   goes in a `kuna_<slug>.rs` module inside its owning phase folder (canonical template:
   `p2_lift/kuna_loweredswitch.rs`). An option exists only where the outcome is questionable:
@@ -123,7 +126,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 - **A target-gated feature defaults on and says so.** Anything that applies only to one
   architecture, OS, container format or source language (PE RTTI, Mach-O ObjC, ARM literal
   pools, Go/Rust ABI) is enabled automatically on that target, is inert everywhere else, and
-  its `phases.toml` row names the target in its first sentence. "Needs evidence" is answered
+  its `phases.d/` row names the target in its first sentence. "Needs evidence" is answered
   by the on-target sweep plus an off-target byte-identical sweep, not by shipping it off.
 - **The catalog default is the product default.** If the `auto` mode would turn an option on
   for every binary of every size, that is the catalog default; the vendored datatest corpus
@@ -131,12 +134,12 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   `truthycond` do. Presets (`docs/modes.md`) exist for size and risk trade-offs, not to hide
   a better default. The decisions behind these rules, option by option:
   `docs/option-surface-study.md`.
-- **Adding an option also bumps hard-coded catalog counts** — the count tests in
-  `kuna_phases/tests.rs`, the `tests/catalog_bytecompat.rs` fixture, and the
-  `tests/stages/kuna-catalog.xml` count assertions. Grep for the current total, or
-  `make rust-test`/`make test-stages` fail opaquely.
+- **No shared counts to bump.** The catalog and corpus count tests compare against the
+  registry and the files on disk, and the `tests/stages/kuna-catalog.xml` tallies are lower
+  bounds, so adding an option or a stage test edits no number anywhere. Never add a test that
+  pins a registry-wide or corpus-wide total as a literal: every parallel PR would edit it.
 - **Default-ON needs evidence**: only if the flip changes 0/675 datatest assertions and
-  passes the speed budget. Record what the default now does in the option's `phases.toml`
+  passes the speed budget. Record what the default now does in the option's `phases.d/`
   row and its `docs/spec/` chapter — there is no separate registry to update.
 - **The spec is live**: every new feature or behavior change is described in natural-language
   prose in the owning `docs/spec/` chapter in the same PR — not just an anchor update (each
@@ -175,10 +178,8 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   "Could not find .sla file" no matter what is exported. Symlink the main tree's built
   `.sla` files into the worktree's `specs/` before running the suite (they are gitignored,
   so the tree stays clean) — do not `make specs`.
-- Adding a `tests/stages/*.xml` also bumps a hard-coded corpus file count in
-  `decompiler/crates/kuna-base/src/xml.rs` and requires re-recording
-  `docs/baseline-stages.json`. Two such PRs in flight WILL conflict on both; resolve the count
-  to base + all merged, and re-record the baseline rather than hand-merging it.
+- Adding a `tests/stages/*.xml` requires re-recording `docs/baseline-stages.json` (above);
+  nothing else counts the corpus by hand.
 - Opening a PR: do not open an issue first (the PR describes the problem), do not @-mention the maintainers, and end the body with the line `Model: <model id>` naming the model that generated it. Details in `docs/pr-bodies.md`.
 - Any time any public thing is created fully automatically, it should start with `[AUTOMATED]`. That goes for PRs, Issues (opening and responses), and most importantly replies or comments to issues/PRs. It should also be in the commit message, but can go outside of the tagline and more inside the extended part.
 - **PR bodies** lead with a runnable repro, stay under one screen, and never mention our
@@ -191,7 +192,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 |---|---|
 | `docs/phases.md` | The phase model on one screen (P0–P9, Band B, feedback edges). |
 | `docs/spec/` | How any algorithm/pass actually works (start `00-overview.md`). |
-| `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
+| `kuna docs options` | The generated option catalog (tiers, symptoms, flip guidance); `make options-md` writes it to `docs/options.md`. |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |
 | `docs/prepr.md` | Optional pre-PR helpers: a call-arity diff over real MSVC binaries, and a diff lint. |

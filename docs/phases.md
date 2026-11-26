@@ -10,7 +10,7 @@ The kuna phase model: **ordered phases + explicit typed feedback edges**, with o
 orthogonal plane and one fixed-point band. This is the model kuna is organized around —
 the runtime registry (queryable via the `phase list`/`phase map`/`phase catalog` console
 commands; `stage ...` still works as a deprecated alias), the option catalog
-(`docs/options.md`), and the issue testcases (`tests/stages/`) all speak it.
+(`kuna docs options`), and the issue testcases (`tests/stages/`) all speak it.
 
 A decompiler is not a feed-forward pipeline: phases fire in order on the *first* pass, but
 information learned later routinely rewinds or modifies earlier phases (the feedback-edge
@@ -71,7 +71,7 @@ Every sub-phase names the **assertion** that overrides it, with strength **HARD*
 inference, e.g. typelock) or **HINT** (biases it), a **re-run scope**, and a **LATENT**
 flag when the decision is hardcoded with no override today (the LATENT set is the kuna
 roadmap). The machine-readable,
-flippable subset is `docs/options.md` (`kuna catalog --json`).
+flippable subset is `kuna docs options` (`kuna catalog --json`).
 
 ## Feedback mechanisms
 
@@ -99,7 +99,7 @@ surviving state:
 All interventions are durable typed assertions written to P0 and consulted on (re-)run —
 never imperative mid-pipeline edits: `assert(phase, anchor, type, value, strength)`. An
 LLM agent is just another assertion writer driving the feedback edges deliberately.
-For symptom→sub-phase navigation use `docs/options.md`'s symptom index (caveat from practice: a
+For symptom→sub-phase navigation use the option catalog's symptom index (`kuna docs options`) (caveat from practice: a
 symptom's phase is not always its decision's phase — wrong-looking constants in the
 rendered C are usually destroyed in Band B, not mis-rendered at P9).
 

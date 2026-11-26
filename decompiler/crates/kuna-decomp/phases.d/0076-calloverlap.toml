@@ -1,0 +1,18 @@
+[[settable]]
+option = "calloverlap"
+values = "auto|off|in|full"
+default = "auto"
+destructive = false
+phase = "P3"
+subphase = "call-guard"
+strength = "HARD"
+rewind = "P3"
+issue = "GH-275"
+summary = "Recover ABI argument and result slots contained within wider dataflow register ranges. Auto applies both guards only to a named eight-byte register containing one named, low four-byte general ABI slot on a truncated 32-bit address target, such as an e500 GPR. The surrounding bytes remain separate and call-clobbered. Auto also gives a call the one float slot at the low end of a wider register, such as XMM0_Qa inside an xmm0 the caller wrote with pxor, where the direct callee stated no prototype and its body reads that slot, as wide as it reads it, and gives a call with no locked output the model's first float return slot when it is the only output slot inside a wider register, such as XMM0_Qa inside an xmm0 the caller copies whole with movapd after the call, where nothing states or has recovered a returned value for the callee (an import such as difftime); the result is recovered only where a read after the call reaches it. Other registers and address spaces retain legacy behavior. In enables the input guard for all contained slots; full also enables the output guard. Complete multi-slot general-register partitions are registered at every level. Off disables these partial-range guards."
+use_when = "Leave auto for scalar calls on e500 and equivalent narrow-ABI register models, for float arguments to callees whose bodies read them, and for double results moved whole with movapd/movaps. Use full to investigate other missing floating-point arguments or results in wider registers. Full can expose mixed integer/float argument-ordering and vector-lane rendering limitations, so those broad guards remain opt-in. In is for isolating argument recovery and can leave a call result unresolved. Off reproduces the previous partial-range behavior."
+example = "option calloverlap full"
+source_decompiler = "ghidra-upstream"
+inspiration = "upstream Heritage::guardCallOverlappingInput (heritage.cc:1210, called at :1508), Heritage::tryOutputOverlapGuard (heritage.cc:1249) and Heritage::guardOutputOverlap (heritage.cc:1293); GH-275 (packed-double atan2 call arguments) and the plain gcc -O2 pxor reproducer behind it"
+change_kind = "correctness-fix"
+tier = "core"
+symptoms = "call emitted with no arguments or fewer arguments than the disassembly passes|call result read from a local that is never assigned|enclosing function loses its own parameter list and return type (void f(void))|argument register written whole-width by pxor movdqa movdqu por pand orpd or movq before the call|second call binds a stale pre-call value where the first call should have defined it"

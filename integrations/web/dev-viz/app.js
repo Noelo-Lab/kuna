@@ -245,7 +245,7 @@ function renderArchitecture(data) {
   }).join('');
   const total = arch.crates.reduce((sum, c) => sum + c.loc, 0);
   const engine = arch.crates.find((c) => c.name === 'kuna-decomp');
-  $('arch-note').innerHTML = `Line counts include tests kept beside the code. The engine crate (<code>kuna-decomp</code>) holds ${kilo(engine.loc)} of the ${kilo(total)} lines of Rust in ${arch.crates.length} workspace crates; the rest are the loader and analyzer, the SLEIGH compiler and runtime, the command line, and the Ghidra and browser front ends. Options and passes are counted from <a href="${repoLink('decompiler/crates/kuna-decomp/phases.toml')}">the option catalog</a> and <a href="${repoLink(arch.schedule.source)}">the recorded default schedule</a>.`;
+  $('arch-note').innerHTML = `Line counts include tests kept beside the code. The engine crate (<code>kuna-decomp</code>) holds ${kilo(engine.loc)} of the ${kilo(total)} lines of Rust in ${arch.crates.length} workspace crates; the rest are the loader and analyzer, the SLEIGH compiler and runtime, the command line, and the Ghidra and browser front ends. Options and passes are counted from <a href="${repoLink('decompiler/crates/kuna-decomp/phases.d')}">the option catalog</a> and <a href="${repoLink(arch.schedule.source)}">the recorded default schedule</a>.`;
 }
 
 function renderOrder(data) {
@@ -308,7 +308,7 @@ function renderProvenance(data) {
     const query = search.value.trim().toLowerCase();
     const source = select.value;
     const filtered = data.options.filter((o) => (!source || sourceKey(o.source) === source) && (!query || [o.name,o.phase,o.source,o.inspiration,o.summary].some((v) => String(v).toLowerCase().includes(query))));
-    $('catalog-list').innerHTML = filtered.length ? filtered.slice(0, limit).map((o) => `<article class="catalog-item"><header><a href="${repoLink('decompiler/crates/kuna-decomp/phases.toml', o.line)}">${esc(o.name)}</a><span class="tag">${o.phase}</span><span class="tag">${esc(sourceLabel(o.source))}</span>${o.decbench ? '<span class="tag">decbench</span>' : ''}</header><p>${esc(o.inspiration)}</p></article>`).join('') : '<p class="catalog-empty">No options match that filter.</p>';
+    $('catalog-list').innerHTML = filtered.length ? filtered.slice(0, limit).map((o) => `<article class="catalog-item"><header><a href="${repoLink(o.path, o.line)}">${esc(o.name)}</a><span class="tag">${o.phase}</span><span class="tag">${esc(sourceLabel(o.source))}</span>${o.decbench ? '<span class="tag">decbench</span>' : ''}</header><p>${esc(o.inspiration)}</p></article>`).join('') : '<p class="catalog-empty">No options match that filter.</p>';
     more.hidden = filtered.length <= limit;
     more.textContent = `Show ${Math.min(24, filtered.length - limit)} more of ${filtered.length}`;
   }

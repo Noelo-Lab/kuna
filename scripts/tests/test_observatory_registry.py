@@ -23,7 +23,7 @@ class FallbackParserTests(unittest.TestCase):
 
     @unittest.skipUnless(registry.tomllib, "needs tomllib (Python 3.11+)")
     def test_fallback_matches_tomllib_on_real_file(self):
-        text = registry.default_path().read_text(encoding="utf-8")
+        text = registry.phases_text(registry.default_path())
         fallback = registry._fallback_parse(text)
         reference = registry.tomllib.loads(text)
         for table in registry.TABLES:

@@ -47,12 +47,12 @@ chapter is anchored to the code that implements it.
    budgets). Anything unverifiable is cut or marked `UNVERIFIED:` — and an
    `UNVERIFIED:` marker must not survive to a commit.
 6. **Link, don't duplicate.** Option metadata (defaults, tiers, symptoms, flip
-   guidance) lives in the generated catalog (`docs/options.md`); the spec names an
+   guidance) lives in the generated catalog (`kuna docs options`); the spec names an
    option exactly where its algorithm is described and links there.
 
 ## Where things that are not algorithms live
 
-- Option catalog (the on/off control surface): `docs/options.md` (generated).
+- Option catalog (the on/off control surface): `kuna docs options` (generated, not committed).
 - Intentional default divergences from upstream + measurements: `docs/history.md`.
 - The phase model at a glance: `docs/phases.md`.
 - Project history (the C++→Rust port, ADRs, retired campaigns): `docs/history.md`.

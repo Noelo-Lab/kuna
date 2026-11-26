@@ -1,0 +1,18 @@
+[[settable]]
+option = "rtti"
+values = "on|off"
+default = "on"
+destructive = false
+phase = "P1"
+subphase = "external-refinement"
+strength = "HARD"
+rewind = "P1"
+issue = "kuna-analysis-rtti"
+summary = "On a Windows PE, run the MSVC RTTI / vftable class-name recovery pass: the kuna analog of Ghidra's RttiAnalyzer (a Microsoft-PE analyzer). Parse the run-time-type-information graph entirely in the loaded image (.rdata/.data): find the common type_info vftable (the pointer every RTTI0 TypeDescriptor shares), locate the TypeDescriptors carrying the `.?A...@@`-mangled class names, byte-search back to each CompleteObjectLocator (COL = ref - 12), validate the COL -> RTTI3 ClassHierarchyDescriptor -> RTTI2 BaseClassArray -> RTTI1 BaseClassDescriptor -> RTTI0 TypeDescriptor reachability chain, and demangle each class name via the existing MSVC demangler (the Ghidra RttiUtil `??_R0...@8` wrap; zero new demangler code). Handles BOTH x86 (raw-VA inter-structure refs, RTTI0 name at offset 8) AND x64 (image-base-relative IBO32 disp32 refs, RTTI0 name at offset 16) via a refkind dispatch on is64Bit. Emits Data symbols labelling each class's vftable (`<Class>::vftable`), CompleteObjectLocator (`<Class>::RTTI_Complete_Object_Locator`), and TypeDescriptor (`<Class>::RTTI_Type_Descriptor`), so the C++ class names (Box/Shape) surface as recovered symbols and the virtual-dispatch metadata graph is named. PE-only (registered in passes_for only for a PE image, and the pass self-gates on PE in run), so every ELF/Mach-O/XML path is byte-identical."
+use_when = "On by default: a Windows PE built by MSVC (or clang -target ...-windows-msvc) carrying polymorphic C++ classes gets its C++ class names recovered and the RTTI/vftable metadata graph labelled (the raw .rdata bytes / unnamed DAT_* vtable become `Box`/`Shape` class names + `<Class>::vftable` / `<Class>::RTTI_*` labels). Inert on every non-PE image and on a PE with no shared type_info vftable. Flip off to see the raw .rdata without the recovered labels."
+example = "option rtti on"
+source_decompiler = "kuna"
+inspiration = "Ghidra RttiAnalyzer / RttiUtil (Microsoft RTTI / CompleteObjectLocator vftable recovery)"
+change_kind = "analysis-enablement"
+tier = "analysis"
+symptoms = "msvc c++ class names missing and vftables left as unnamed data|no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes"
