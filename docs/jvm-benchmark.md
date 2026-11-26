@@ -50,32 +50,21 @@ done
 ```
 
 `run` decompiles and scores (`--jobs` is the scoring parallelism and Vineflower's `-thr`;
-kuna runs with its defaults; to score kuna in compat mode, give `--kuna-bin` a script that
-runs kuna with `--option jvm_vineflower_compat on` added to `decompile-project`), writing `$JAVABENCH_WORKSPACE/results/<run>/` with
+kuna runs with its defaults), writing `$JAVABENCH_WORKSPACE/results/<run>/` with
 `scoreboard.md`, `scoreboard.json` and one record per method. `compare` lists the methods one
 run has perfect and the other does not. Without `--full`, `run` scores a 3,000-method sample
 per project in a few minutes.
 
 ## Result
 
-kuna's engine has two modes (`docs/jvm.md`, "The fidelity contract"): compat mode
-(`--option jvm_vineflower_compat on`) prints Vineflower's text, and the default mode is the
-same text with kuna's fixes of Vineflower's defects applied. Both were scored against
-Vineflower 1.12.0 on all 110,238 methods.
-
-### Compat mode: the same scores as Vineflower
-
-Every score field is identical between kuna in compat mode and Vineflower on all five
-projects: the scoreboards match, and so does every per-method record (GED, type and
-bytecode scores, perfect flags, failures). These are the Vineflower scores in the table
-below. A method that is not perfect is one where Vineflower's output (and so kuna's)
-departs from the source, or one of the few the harness cannot score perfectly even from the
+kuna and Vineflower 1.12.0 were scored on all 110,238 methods. A method that is not perfect
+departs from the source, or is one of the few the harness cannot score perfectly even from the
 source itself: the source pseudo-decompiler (`--decompiler source`) reaches 100% on
 structure, 99.98% on bytes and 98.96% of variable types, the misses being source-level
 `var` (`scripts/javabench/README.md`). Timings are in `docs/jvm.md`, "Performance and
 limits".
 
-### Default mode: what kuna's fixes and options change
+### kuna against Vineflower
 
 kuna with default flags against the same Vineflower runs: its fixes, and the three options
 that are on by default, `jvm_javac_layout` (ifs, loops, exits and boolean comparisons laid out as
