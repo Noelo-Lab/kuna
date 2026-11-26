@@ -348,6 +348,7 @@ define token slot (24)
     slot_6_7 = (6,7)
     div_step_src = (1,4)
     slot_8_22 = (8,22)
+    trap_vector = (0,7)
     div_btr1_dst = (4,6)
     div_btr1_dst_lo = (4,6)
     div_btr1_dst_hi = (4,6)
@@ -6383,10 +6384,96 @@ data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & w
 :"RETI" "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd814); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:4; pop_link(target); retire_trap(); delayslot(2); return [target]; }
 :"RETI" "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd816); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local target:4; pop_link(target); retire_trap(); delayslot(3); return [target]; }
 :"RETI CE1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd811); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <veto>; local target:4; pop_link(target); retire_trap(); return [target]; <veto> goto inst_next; }
-trap_skip_next: word_address is epsilon [ word_address = (inst_start + 4) & 0xffffff; ] { export *[code]:3 word_address; }
-:"TRAP 1" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & carmel_next_issue_size=6 & slot_0_22=0x2bd001); (slot_mode=0 & nop_right)) & link_2_0 & trap_skip_next { if ((TRAPCTX & 3) == 1 || ((TRAPCTX >> 2) & 3) == 1 || ((TRAPCTX >> 4) & 3) == 1) goto <ignored>; local vectored:1 = TRAPCTX == 0; push_link(link_2_0); TRAPCTX = (TRAPCTX << 2) | 1; if (!vectored) goto trap_skip_next; local target:3 = (zext(INTBASE & 0x1fff) << 11) | 8; goto [target]; <ignored> }
-:"TRAP 2" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & carmel_next_issue_size=6 & slot_0_22=0x2bd002); (slot_mode=0 & nop_right)) & link_2_0 & trap_skip_next { if ((TRAPCTX & 3) == 2 || ((TRAPCTX >> 2) & 3) == 2 || ((TRAPCTX >> 4) & 3) == 2) goto <ignored>; push_link(link_2_0); TRAPCTX = (TRAPCTX << 2) | 2; goto trap_skip_next; <ignored> }
-:"TRAP 3" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & carmel_next_issue_size=6 & slot_0_22=0x2bd003); (slot_mode=0 & nop_right)) & link_2_0 & trap_skip_next { if (TRAPCTX != 0) goto <ignored>; push_link(link_2_0); TRAPCTX = (TRAPCTX << 2) | 3; goto trap_skip_next; <ignored> }
+# Nonvectored TRAP skips one framed issue, but stacks the ordinary resume PC.
+trap_resume: word_address is (carmel_issue=2 | carmel_issue=3) & carmel_next_issue_size=3
+    [ word_address = (inst_start + 2) & 0xffffff; ] { export *[code]:3 word_address; }
+trap_resume: word_address is (((carmel_issue=2 | carmel_issue=3) & carmel_next_issue_size=6) |
+    (carmel_issue=1 & carmel_next_issue_size=3))
+    [ word_address = (inst_start + 3) & 0xffffff; ] { export *[code]:3 word_address; }
+trap_resume: word_address is carmel_issue=1 & carmel_next_issue_size=6
+    [ word_address = (inst_start + 4) & 0xffffff; ] { export *[code]:3 word_address; }
+
+macro trap_duplicate(source, duplicate) {
+    duplicate = ((TRAPCTX & 3) == source) || (((TRAPCTX >> 2) & 3) == source) ||
+                (((TRAPCTX >> 4) & 3) == source);
+}
+
+macro push_trap(saved, source) {
+    push_link(saved);
+    TRAPCTX = (TRAPCTX << 2) | source;
+}
+
+macro trap_vector_word(vector, target) {
+    local source:1 = vector;
+    target = (zext(INTBASE & 0x1fff) << 11) | (zext(source) << 3);
+}
+
+:"TRAP 1" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd001); (slot_mode=0 & nop_right)) & link_2_0 & trap_resume {
+    local duplicate:1;
+    trap_duplicate(1:1, duplicate);
+    if (duplicate) goto <ignored>;
+    local vectored:1 = TRAPCTX == 0;
+    push_trap(link_2_0, 1:1);
+    if (!vectored) goto trap_resume;
+    local target:4;
+    trap_vector_word(1:1, target);
+    goto [target];
+    <ignored>
+}
+:"TRAP 2" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd002); (slot_mode=0 & nop_right)) & link_2_0 & trap_resume {
+    local duplicate:1;
+    trap_duplicate(2:1, duplicate);
+    if (duplicate) goto <ignored>;
+    push_trap(link_2_0, 2:1);
+    goto trap_resume;
+    <ignored>
+}
+:"TRAP 3" "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_22=0x2bd003); (slot_mode=0 & nop_right)) & link_2_0 & trap_resume {
+    if (TRAPCTX != 0) goto <ignored>;
+    push_trap(link_2_0, 3:1);
+    goto trap_resume;
+    <ignored>
+}
+
+:"TRAP 1" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_22=0x2bd001 & link_1_0 & trap_resume {
+    local duplicate:1;
+    trap_duplicate(1:1, duplicate);
+    if (duplicate) goto <ignored>;
+    local vectored:1 = TRAPCTX == 0;
+    push_trap(link_1_0, 1:1);
+    if (!vectored) goto trap_resume;
+    local target:4;
+    trap_vector_word(1:1, target);
+    goto [target];
+    <ignored>
+}
+:"TRAP 2" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_22=0x2bd002 & link_1_0 & trap_resume {
+    local duplicate:1;
+    trap_duplicate(2:1, duplicate);
+    if (duplicate) goto <ignored>;
+    push_trap(link_1_0, 2:1);
+    goto trap_resume;
+    <ignored>
+}
+:"TRAP 3" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_22=0x2bd003 & link_1_0 & trap_resume {
+    if (TRAPCTX != 0) goto <ignored>;
+    push_trap(link_1_0, 3:1);
+    goto trap_resume;
+    <ignored>
+}
+
+:TRAP trap_vector "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_8_22=0x2bd0 & slot_2_7!=0 & trap_vector); (slot_mode=0 & nop_right)) & link_2_0 {
+    push_link(link_2_0);
+    local target:4;
+    trap_vector_word(trap_vector, target);
+    goto [target];
+}
+:TRAP trap_vector is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_8_22=0x2bd0 & slot_2_7!=0 & trap_vector & link_1_0 {
+    push_link(link_1_0);
+    local target:4;
+    trap_vector_word(trap_vector, target);
+    goto [target];
+}
 
 :CLRBTR clrbtr_mask is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask { BTR1 = 0; }
 :CLRBTR clrbtr_mask "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_13_22=0x16d & clrbtr_mask); (slot_mode=0 & nop_right) { BTR1 = 0; }

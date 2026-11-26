@@ -3873,6 +3873,16 @@ byte-budget delay-slot path. The
 p-code emulator likewise converts an indirect transfer's CODE-word operand to
 a byte offset only in such a `code` space.
 
+Compact `TRAP` in either sequential slot or with an inactive parallel peer
+stacks the ordinary next CODE word address, high word at old `SP` and low
+word at `SP-1`, then uses the decremented stack pointer. Sources 2 and 3
+redirect past the next framed issue without executing it. Source 1 selects
+its vector when no trap is active and skips an issue when accepted inside
+another trap. Duplicate sources 1 and 2 and nested source 3 are ignored.
+Sources 4 through 255 redirect through `INTBASE` without changing the
+nesting state. Vectored targets are indirect CODE word addresses, not
+assumed fall-throughs.
+
 Block repeat uses four numbered frames. A compact register count is sampled
 after the next issue; address-stage counts preserve their DATA read or address
 update, and publish the count and bounds at execute. Immediate bounds publish

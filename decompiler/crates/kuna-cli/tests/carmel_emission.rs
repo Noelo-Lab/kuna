@@ -3373,6 +3373,113 @@ fn carmel_wide_control_alu_routes_execute_in_emitted_c() {
     }
 }
 
+#[test]
+fn carmel_trap_flushes_the_next_issue_or_follows_its_vector_and_stacks_the_resume() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const BASE: usize = 0x10800;
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    let nop = [0x2b, 0xec, 0];
+    let ret = [[0x2b, 0xd8, 0], nop];
+    let a0 = [0x21, 0xac, 0x20];
+    let a1 = [0x21, 0xac, 0x62];
+    let a2 = [0x21, 0xac, 0xa4];
+    let a3 = [0x21, 0xac, 0xe6];
+    let binary = common::scratch_file("carmel-trap-entry", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let specs = binary.with_extension("specs");
+    let languages = Path::new("Ghidra/Processors/Carmel/data/languages");
+    let installed = std::env::var_os("KUNA_SPECS")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| common::repo_root().join("specs"))
+        .join(languages);
+    let fixture = specs.join(languages);
+    fs::create_dir_all(&fixture).unwrap();
+    for file in ["carmel.ldefs", "carmel.cspec", "carmel.sla"] {
+        fs::copy(installed.join(file), fixture.join(file)).unwrap();
+    }
+    let pspec = fs::read_to_string(installed.join("carmel.pspec")).unwrap();
+    fs::write(fixture.join("carmel.pspec"), pspec.replace("</processor_spec>",
+        "<context_data><tracked_set space=\"code\">
+        <set name=\"SP\" val=\"0x4040\"/><set name=\"TRAPCTX\" val=\"0\"/>
+        </tracked_set></context_data></processor_spec>",
+    )).unwrap();
+
+    let sequential = |[a, b, c]: [u8; 3]| [a | 0x80, b, c];
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         volatile unsigned short link_lo, link_hi;\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    let base = format!("{BASE:#x}");
+    // Placement 0 is parallel, 1 is sequential left, and 2 is sequential right.
+    for (i, (vector, placement, want)) in [
+        (1u8, 0, [0, 0, 0, 1]),
+        (2, 0, [0, 0, 1, 0]),
+        (2, 1, [0, 1, 1, 0]),
+        (3, 2, [0, 1, 1, 0]),
+        (4, 2, [0, 1, 0, 1]),
+        (255, 1, [0, 0, 0, 1]),
+    ].into_iter().enumerate() {
+        let trap = [0x2b, 0xd0, vector];
+        let vectored = !matches!(vector, 2 | 3);
+        let vector_offset = usize::from(vector) * 8;
+        let mut code = vec![[nop; 2]; if vectored { vector_offset / 2 + 2 } else { 3 }];
+        code[0] = match placement {
+            0 => [trap, nop],
+            1 => [sequential(trap), a0],
+            _ => [sequential(a1), trap],
+        };
+        code[1] = [sequential(a1), a2];
+        code[2] = ret;
+        if vectored {
+            code[vector_offset / 2] = [a3, nop];
+            code[vector_offset / 2 + 1] = ret;
+        }
+        fs::write(&binary, code.as_slice().as_flattened().as_flattened()).unwrap();
+        let owner = BASE + usize::from(placement == 2);
+        let saved = (BASE & 0xffff) + if placement == 1 { 1 } else { 2 };
+        for (r, expected) in ["A0L", "A1L", "A2L", "A3L"].into_iter().zip(want) {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                &base, "--addr", "--raw-image", "--target", TARGET, "--base", &base,
+                "--json", "--assert-strict", "--assert", &format!("return %{r} unsigned short"),
+                "--assert", "data [data,0x403f] volatile unsigned short link_lo",
+                "--assert", "data [data,0x4040] volatile unsigned short link_hi",
+            ]);
+            for (i, reg) in ["A0L", "A1L", "A2L", "A3L", "EST", "ECFG", "INTBASE"].into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{reg} unsigned short in_{i}")]);
+            }
+            if vectored {
+                kuna.args(["--assert", &format!("jumptable {owner:#x} {:#x}", BASE + vector_offset)]);
+            }
+            let out = common::process::required_output(&mut kuna);
+            let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+            let [fun] = report["functions"].as_array().unwrap().as_slice() else { panic!("{report}"); };
+            let text = fun["code"].as_str().unwrap();
+            assert!(fun["error"].is_null() && !text.contains("halt_"), "{fun}");
+            assert!(report["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{report}");
+            let name = format!("trap_{i}_{r}");
+            writeln!(c, "#define sub_10800 {name}\n{text}\n#undef sub_10800").unwrap();
+            writeln!(calls,
+                "link_lo = 0xabcd; link_hi = 0x5678;\
+                 if ({name}(0, 0, 0, 0, 0, 0, 0x21) != {expected} || link_lo != {saved} || link_hi != 1) return {};",
+                i + 1,
+            ).unwrap();
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
