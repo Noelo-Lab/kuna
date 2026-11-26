@@ -2096,6 +2096,37 @@ compact_extract_active: "EXTRACTZ" "A1,A0H,FF2:FF1" is slot_0_22=0x37c18e {
     compact_extract_full(A0H, FF2, FF1, A1L, A1H, GB1);
 }
 
+compact_extract_active: "EXTRACTZ CE1" "A2,A5L,*R3:long" is slot_0_22=0x36c4a7 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <done>;
+    local address:2 = R3;
+    local upper:2 = address + 1;
+    local count:2 = *[data]:2 address;
+    local offset:2 = *[data]:2 upper;
+    if (enabled == 0) goto <done>;
+    compact_extract_full(A5L, count, offset, A2L, A2H, GB2);
+  <done>
+}
+
+macro compact_extract_agu(pointer, step, modulus, limit, shift) {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1:2, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <done>;
+    modify_ptr(pointer, step, modulus, limit, shift, 1);
+  <done>
+}
+
+compact_extract_right: "EXTRACTZ CE2" "A2,A5L,*R3:long" is slot_0_22=0x36c4a7 { }
+compact_extract_right: "EXTRACTS CE2" "A2,A5L,*R3:long" is slot_0_22=0x34c4a7 { }
+compact_extract_right: "EXTRACTZ CE2" "A2,A5L,*R3+=RN3:long" is slot_0_22=0x36c4b7 {
+    compact_extract_agu(R3, RN3, RM2, RL2, 6);
+}
+compact_extract_right: "EXTRACTZ CE2" "A2,*R5+=RN5,*R3:long" is slot_0_22=0x3644a7 {
+    compact_extract_agu(R5, RN5, RM4, RL4, 10);
+}
+compact_extract_passive: compact_extract_right is compact_extract_right { build compact_extract_right; }
+
 compact_extract_passive: "EXTRACTZ" "*R5,*R5+=RN5,FF2:FF1" is slot_0_22=0x372ade {
     modify_ptr(R5, RN5, RM4, RL4, 10, 1);
 }
@@ -4186,6 +4217,13 @@ macro parallel_logic_conflict() {
   <stopped>
     carmel_register_write_conflict();
     goto <stopped>;
+}
+
+:XOR "CE1" "A4H","A4L","*R7+=RN7" "||" compact_extract_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x6ce51f); (slot_mode=0 & compact_extract_right) {
+    local flags:2 = EST & 0xcfff;
+    build compact_extract_right;
+    compact_xor_a4h_r7(flags);
+    publish_alu_ce(flags);
 }
 
 macro parallel_logic_full_half(half, full_cfg, full_bank, half_cfg, half_bank, shares) {

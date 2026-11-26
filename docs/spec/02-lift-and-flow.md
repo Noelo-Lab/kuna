@@ -4243,10 +4243,13 @@ pointer once. Packed computation preserves the arithmetic flags.
 
 Covered compact `EXTRACTS` and `EXTRACTZ` use the low five descriptor
 bits for width and the low five bits of its high word for offset. The
-two flag-word aliases exchange those roles. A parallel right issue
-still applies its address updates, but cannot write a result or arithmetic
-flags; a sequential right issue can. Read-modify-write stores use the
-captured operand address, not the postmodified pointer.
+two flag-word aliases exchange those roles. A primary long DATA descriptor
+reads width at its base and offset at the next DATA word, and the short
+source is sign-extended before selection. A parallel right issue can
+postmodify its short source or its descriptor pointer, but reserves
+neither DATA read and cannot write a result or flags. A sequential
+right issue uses the primary result path. Read-modify-write stores use
+the captured operand address, not the postmodified pointer.
 
 Covered compact logical `RMW1` routes deliver the result to an accumulator
 half. Disconnected increment, address, and flag-word ports receive zero
