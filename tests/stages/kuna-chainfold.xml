@@ -1,0 +1,65 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `condfold auto`: in an optimized function, a chain of tests that all
+    branch to one block only they enter folds into one condition even when that
+    block does not end in a call that does not return; an unoptimized function
+    keeps folding only chains into such a call.
+
+    Stage / sub-stage: P8 "goto-quality", option condfold (default auto).
+
+    The images are decompiler/crates/kuna-analysis/tests/fixtures/
+    chainfold_gcc_O2_x86_64 and chainfold_gcc_O0_x86_64 (chainfold.c, gcc 11.4
+    -O2 -fno-reorder-blocks-and-partition and -O0), loaded whole.  store's
+    chain branches to `note(r); return;`, send's to `note(r); return -1;`.
+
+    Pass 1 runs with `option condfold noreturn` and prints the -O2 store as a
+    ladder; pass 2 (`option condfold auto`, the default) prints its chain as one
+    condition.  commit stores `order = 1` between its two calls: noreturn keeps
+    the store as a statement in nested ifs, auto carries it into the condition
+    as a comma operand ahead of the second call.  The -O0 send keeps its ladder
+    under both values, because the detector calls the function unoptimized.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/chainfold_gcc_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>option condfold noreturn</com>
+  <com>load function store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold auto</com>
+  <com>load function store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold noreturn</com>
+  <com>load function commit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold auto</com>
+  <com>load function commit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/chainfold_gcc_O0_x86_64</com>
+  <com>read symbols</com>
+  <com>option condfold noreturn</com>
+  <com>load function send</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option condfold auto</com>
+  <com>load function send</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CHAINFOLD #1: noreturn prints the -O2 store as a ladder" min="1" max="1">^    v1 = put\(a0,\(int4\)a1 \* 2\);$</stringmatch>
+<stringmatch name="CHAINFOLD #2: auto prints the -O2 store's chain as one condition" min="1" max="1">^  if \(\(!v1\) &amp;&amp; \(v1 = put\(a0,\(int4\)a1 \* 2\), !v1\)\) \{$</stringmatch>
+<stringmatch name="CHAINFOLD #3: both keep store's and commit's call on the failure path" min="4" max="4">^  note\(v1\); // tail-call$</stringmatch>
+<stringmatch name="CHAINFOLD #4: the unoptimized -O0 send keeps its ladder under both values" min="2" max="2">^      v1 = put\(a0,a1 \+ a2\);$</stringmatch>
+<stringmatch name="CHAINFOLD #5: noreturn keeps commit's store between the calls as a statement" min="1" max="1">^    order = 1;$</stringmatch>
+<stringmatch name="CHAINFOLD #6: auto carries commit's store into the condition as a comma operand" min="1" max="1">^  if \(\(!v1\) &amp;&amp; \(order = 1, v1 = put\(a0,\(int4\)a1 \+ 3\), !v1\)\) \{$</stringmatch>
+</decompilertest>

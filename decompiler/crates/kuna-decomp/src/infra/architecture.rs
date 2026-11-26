@@ -1084,6 +1084,9 @@ pub struct Architecture {
     /// [`crate::p8_structure::kuna_outline`].
     pub outline_spec: String,
     pub cond_fold: int4,
+    /// (kuna `condfold noreturn|auto`) Which chains of tests into one shared
+    /// block fold.  See [`crate::p8_structure::kuna_fatalchain`].
+    pub cond_fold_chain: crate::p8_structure::kuna_fatalchain::ChainFold,
     /// (kuna) `condstmts` statement cap for folded condition operands; negative =
     /// off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
@@ -2626,6 +2629,7 @@ impl Architecture {
             region_edge_order: false,
             outline_spec: String::new(),
             cond_fold: 0,
+            cond_fold_chain: crate::p8_structure::kuna_fatalchain::ChainFold::Off,
             cond_stmts: -1,
             goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off,
             flatten_ifelse: false,
@@ -2967,6 +2971,7 @@ impl Architecture {
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
         self.outline_spec = String::new(); // (kuna) default-OFF opt-in (excise a supplied single-entry region into a synthesized pseudofunction call; destructive, and inert with no region supplied)
         self.cond_stmts = crate::p8_structure::kuna_condstmts::DEFAULT_CAP; // (kuna) condstmts default-on: a folded condition operand prints at most 3 statements before its test (0/675 ablation)
+        self.cond_fold_chain = crate::p8_structure::kuna_fatalchain::ChainFold::Auto; // (kuna) condfold default `auto`: a chain of tests into one no-return call folds into one condition, and in an optimized function a chain into any block it alone enters
         self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
         self.goto_reduce = crate::p8_structure::kuna_gotoreduce::GotoReduceMode::On; // (kuna) gotoreduce default `on`: call-free return tails and return tails with a call (angr SAILR ReturnDuplicator/ReturnDuplicatorLow; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
@@ -3857,6 +3862,7 @@ impl Architecture {
         ctx.lowered_switch_tree = self.lowered_switch_tree; // loweredswitch tree|all
         ctx.lowered_switch_compiled = self.lowered_switch_compiled; // loweredswitch auto
         ctx.cond_fold = self.cond_fold; // condfold
+        ctx.cond_fold_chain = self.cond_fold_chain; // condfold noreturn|auto
         ctx.cond_stmts = self.cond_stmts; // condstmts
         ctx.goto_reduce = self.goto_reduce; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten

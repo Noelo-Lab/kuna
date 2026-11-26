@@ -2432,7 +2432,9 @@ that is a return, not a switch (`RecoveryMode::FailReturn`).
 Failure demotes: `flow.rs (FlowInfo::truncate_indirect_jump)` rewrites the
 BRANCHIND to a RETURN (`fail_return`, warning `"Treating indirect jump as
 return"`) or to a CALLIND with an artificial RETURN after it (`fail_normal`,
-warning `"Treating indirect jump as call"`; `fail_thunk` silently; a
+which marks the call's `FuncCallSpecs` a bad jump table so the warning
+`"Treating indirect jump as call"` is published only if that call survives
+simplification, chapter 9; `fail_thunk` silently; a
 CALLOTHER-computed target additionally marks the halt no-return) (unreachable today: nothing produces the CALLOTHER failure, see above). This is the
 failure mode every rescue below is fighting for: one unbounded table turns a
 switch into an opaque computed call.

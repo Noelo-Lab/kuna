@@ -174,6 +174,10 @@ When the rule changed a choice and the result holds a `goto`,
 `ActionBlockStructure` structures the graph again without it and keeps the
 version with fewer (the region structurer's result is only kept against its
 own choice; where that fails, `CollapseStructure` decides as upstream). The
+first collapse is set aside and put back when it wins, instead of being
+collapsed a third time: both start from a fresh seed of the same blocks,
+which `blockaction.rs (copy_maps)` confirms by the copy each basic block maps
+to. The
 check is per structuring: the earlier structurings also decide which return
 blocks `ActionReturnSplit` and `returndup` copy, so a function can still end
 with one more `goto` than upstream, which on the decbench corpus happens to a
@@ -416,7 +420,9 @@ the sequencing argument above is independent of the call count, so the looser
 count cannot produce wrong C — it only admits a denser operand than angr would.
 Rule B, which charges every call op, is the tighter half of the union.
 
-Option `condfold`, default **off**, three-valued: `on` uses angr's statement
+Option `condfold`, default **auto**, five-valued: `noreturn` relaxes the gate
+for one shape only (below), `auto` adds a second shape in optimized functions,
+and `on` and `wide` include `auto`. `on` uses angr's statement
 threshold (width budget 5, and Rule A additionally 1 statement-root call) and
 `wide` raises the width budget to 9 for **both** rules; Rule A's call cap, Rule
 B's shape allowlist and scored caps, the cross-leaf caps and every soundness or
@@ -428,9 +434,8 @@ shadows the AIL never materializes — so a block angr folds as one statement ca
 print as seven in kuna. Both levels apply to **both** engines (`blockaction.rs
 (CollapseStructure::rule_block_or)` and `region_structurer.rs
 (RegionStructurer::try_block_or)`, which are verbatim copies of each other);
-implementing only one would no-op on functions where the other converges. Off,
-the precompute is skipped and every disjunct is dead, so output is
-byte-identical to upstream.
+implementing only one would no-op on functions where the other converges. Under
+`off`, `noreturn` and `auto` the precompute is skipped and every disjunct is dead.
 
 Two effects are accepted rather than fixed. The option is **not a monotone goto
 reducer**: folding changes which edges the structurer can subsequently match,
@@ -442,6 +447,95 @@ suppresses `emit_comment_group` for the whole operand — so an advisory emitted
 by a pass that runs after structuring can still vanish (`newbury::main` emits
 four `WARNING:` lines at `off` and three at `on`). Those are kuna
 annotations, never a correctness signal, and the emitted C is unaffected.
+
+**`condfold noreturn` — a chain of tests into one call that does not return.**
+Source code often checks a sequence of calls and stops in one fatal call when
+any of them fails, `if ((r = put(b, x)) != 0 || (r = put(b, y)) != 0)
+fatal(r, "compose"); rest;`. The binary is a chain of two-way blocks, each
+holding one call and its test, whose taken edges all reach one block that ends
+in the call that does not return. `rule_block_or` would fold the chain, but the
+function is structured inside the main loop, while each call block still holds
+the call's stack bookkeeping (on x86 the push of the return address, a `STORE`
+the stack analysis has not yet turned into a dead stack copy). `bb_is_complex`
+counts the call, the store and the branch, so every later test is complex and
+the chain prints as a ladder of nested `if`s, the continuation innermost and
+the call after all of them. At the final `ActionBlockStructure` the same blocks
+score as simple, but the tree already exists and is kept.
+
+`p8_structure/kuna_fatalchain.rs (chains)` finds the shape on the basic
+blocks: a block with no out-edge ending in the halt flow plants after a call,
+whose call carries the no-return note (a flow cut at the next function's entry
+carries another warning and does not count), entered only from two-way blocks
+`C1 .. Ck` (k >= 2) where each later `Ci` is entered only from `C(i-1)` and
+leaves either to the target or to `C(i+1)`. `kuna_fatalchain.rs (relax)` runs
+wherever `ActionBlockStructure` builds a tree and drops `C2 .. Ck` from the
+complex set both engines read, except a block the `condstmts` seed keeps
+complex or one that carries a buffered comment. Once highs exist it also skips
+a block printing more statements before its test than the `condstmts` cap; in
+the main loop that check is left to `condstmts`' own final measurement, whose
+reanalysis keeps such a block complex from the first structuring on, which is
+what the old structuring also gives it. `blockaction.rs
+(ActionBlockStructure::structure_held)` keeps a structuring that relaxed only
+when it prints no goto; otherwise it restores the branch orientation and
+structures the function again without the relaxation, because a fold in a
+function that keeps gotos changes which edges the later goto passes take and
+can leave it with more.
+
+Folding the chain is not enough to give the source's form: when the rest of the
+function also ends without falling through, the collapse's arm order makes the
+continuation the `if` body, `if (!c1 && !c2) { rest } fatal(..);`.
+`kuna_fatalchain.rs (ActionFatalChain)` runs after the tree is final (before
+`retshape` and `tailform`) and, for each chain, finds the leaf printing its
+target as the last statement of a list whose preceding statement is a plain
+`if` testing the chain's later blocks; when that `if`'s arm does not fall
+through, carries no label and is not a goto target, the condition is negated in
+place and the arm and the call change places, `if (c1 || c2) fatal(..); rest`.
+Neither form reaches past the call, so both run the same tests in the same
+order with the same short-circuit, and the call sees the same values; no
+p-code moves. This works at any depth, unlike `tailform`'s top-level no-return
+rule, which then sees the rewritten list.
+
+Measured on decbench (gcc O2 without inlining and O0, within one build,
+`off` against `noreturn`): 66 and 89 more functions match the source's
+control flow exactly and none is lost. `off` prints the ladder. Witnesses:
+`tests/stages/kuna-fatalchain.xml` and
+`decompiler/crates/kuna-cli/tests/fatalchain_round_trip.rs`, which compiles
+the printed functions and runs them with each call failing in turn.
+
+**`condfold auto` — a chain into an ordinary block, in optimized code.** The
+same stale verdict ladders a chain whose tests all reach a block that returns,
+`if ((r = put(b, x)) != 0 || (r = put(b, y)) != 0) { note(r); return -1; }`,
+or the target of a `goto out`. Under `auto`, `kuna_fatalchain.rs (chains)`
+accepts any target block that only the chain enters, in a function that
+`p3_dataflow/kuna_unoptimized.rs (is_unoptimized)` does not flag; an
+unoptimized function keeps exactly the `noreturn` behaviour, because there
+the authors' nesting `if (p == 0 && n == 0) { p = malloc(1); if (p == 0) .. }`
+is common enough to make the fold a net loss. Every guard of the no-return
+case applies: the `condstmts` width cap, the comment check, the target entered
+only from the chain, and `ActionBlockStructure::structure_held`'s goto
+fallback. That fallback structures again only when a relaxed block actually
+folded (otherwise the two collapses made the same choices), and once a fold
+into an ordinary block has fallen back in a function of 64 or more blocks
+(`kuna_fatalchain.rs (GIVE_UP_BLOCKS)`), later structurings of the same
+analysis do not relax at all, so a large function re-structured many times
+pays for the comparison once. Such a fold is not reoriented, since its target
+can fall through.
+A later print-tree pass can still leave a goto in a tree that had none when it
+was structured (`taildup` does on expat's `startElementNS`), so
+`kuna_fatalchain.rs (late_gotos)` reports a function whose kept structuring
+folded a chain into an ordinary block and still prints a goto, and
+`infra/decompile_drive.rs` analyzes it again without such folds, keeping the
+copy with fewer gotos and the unfolded one on a tie. Measured against
+`noreturn` within one build: 73 more functions match at O2 (102 gained, 29
+lost; +51 and +22 on the two project halves), 14 more at O0 from functions the
+detector misses, and no function gains a goto. The losses are sources that
+nest the second test, mostly because they use its value afterwards, or keep
+separate guards before one constant return; excluding plain-return targets,
+chains whose every test calls, two-test chains, chains in loops, or chains
+whose later test defines a value used afterwards each costs more gains than
+losses on both halves. Witness: `tests/stages/kuna-chainfold.xml` (gcc -O2
+folds, gcc -O0 keeps the ladder) and the second test of
+`decompiler/crates/kuna-cli/tests/fatalchain_round_trip.rs`.
 
 **`condstmts` — a cap on what a folded operand prints before its test.** The
 opposite pressure: Ghidra's own non-complex budget can let a block fold whose
@@ -675,12 +769,11 @@ grown increment by increment (the archived plan is
 the retired region-structurer roadmap, git history) and made the default S8 engine
 by DIV-12 under `option regionstructure`.
 
-**Input.** `region_structurer.rs (run_region_structurer)` first runs the
-chapter-07 region identifier fresh over the real CFG
+**Input.** When `regionlooprefine` is on, `region_structurer.rs
+(run_region_structurer)` first runs the loop half of the chapter-07 region
+identifier fresh over the real CFG
 (`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regionid.rs
-(KunaRegionIdentifier)`) and consumes two things from it: the deterministic
-node order (tie-breaking for edge virtualization) and — when
-`regionlooprefine` is on — the `kuna_regionid.rs
+(KunaRegionIdentifier::compute_cyclic)`) and consumes its `kuna_regionid.rs
 (KunaRegionIdentifier::cyclic_loops)` projection: each loop's refined body
 and exit frontier keyed by block start address, which absorbs
 dominated switch-case successors that a purely structural natural-loop walk
@@ -824,6 +917,15 @@ code is byte-identical with the flag off or on.
 across the full datatest corpus (DIV-12's verification) and structurally
 cannot do worse: any function it cannot finish is re-structured by the
 upstream engine from a clean re-seed.
+
+Its result depends only on the basic-block graph, the loop-condition rule and
+the `o0jumps` gate, so `blockaction.rs (ActionBlockStructure)` remembers,
+within one application, that it failed under the current gate: the second
+structuring of `structure_held` and the `o0jumps` structuring with the record
+back on run on the same graph (restored with `restore_orientation`) and go
+straight to `CollapseStructure`. On the decbench `bash` the region structurer
+fails on four structurings in five, and each such failure costs several times
+the collapse that follows it.
 
 ## 8.3 The goto-quality pass family (angr)
 

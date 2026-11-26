@@ -3854,12 +3854,15 @@ impl Action for ActionBranchFlip {
 /// `ActionBlockStructure`).  Drives [`CollapseStructure`].
 pub struct ActionBlockStructure {
     base: ActionBase,
+    /// Per `o0jumps` gate state (off, on): the region structurer failed on this
+    /// apply's graph, so a re-structuring of the same graph skips it.
+    region_failed: [bool; 2],
 }
 
 impl ActionBlockStructure {
     /// Construct in group `g`.
     pub fn boxed(g: impl Into<String>) -> Box<dyn Action> {
-        Box::new(ActionBlockStructure { base: ActionBase::new(0, "blockstructure", g) })
+        Box::new(ActionBlockStructure { base: ActionBase::new(0, "blockstructure", g), region_failed: [false; 2] })
     }
 }
 
@@ -3871,6 +3874,13 @@ type CollapseInputs = (
     std::collections::BTreeMap<BlockId, usize>,
     std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
 );
+
+/// The `sblocks` copy each basic block maps to.  Two seedings that map every
+/// block alike built the same graph with the same ids, so the structuring of one
+/// stands for a structuring of the other.
+fn copy_maps(data: &Funcdata) -> Vec<Option<BlockId>> {
+    (0..data.bblocks_get_size()).map(|i| data.bblocks_ref().block(data.bblocks_get_block(i)).get_copy_map()).collect()
+}
 
 /// Run `CollapseStructure` once over the seeded `sblocks`, returning its result,
 /// change count, the deferred condition flips and whether the loop-condition
@@ -3912,7 +3922,7 @@ impl Action for ActionBlockStructure {
         if !grouplist.contains(self.get_group()) {
             return None;
         }
-        Some(Box::new(ActionBlockStructure { base: self.base.clone() }))
+        Some(Box::new(ActionBlockStructure { base: self.base.clone(), region_failed: [false; 2] }))
     }
     fn apply(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // (kuna `loopcontinue auto`) when keeping the recorded jump statements'
@@ -3920,20 +3930,21 @@ impl Action for ActionBlockStructure {
         // the form with fewer.
         use crate::p8_structure::kuna_o0jumps as o0j;
         let saved = data.kuna_o0jumps.is_some().then(|| o0j::orientation(data));
+        self.region_failed = [false; 2];
         o0j::set_gate(true);
-        let res = self.structure_once(data, ctx);
+        let res = self.structure_held(data, ctx);
         if let Some(saved) = saved {
             let gated = if o0j::refused() && !ctx.deadline_expired() { o0j::gotos(data) } else { 0 };
             if gated > 0 {
                 data.sblocks_clear();
                 o0j::restore_orientation(data, &saved);
                 o0j::set_gate(false);
-                self.structure_once(data, ctx);
+                self.structure_held(data, ctx);
                 if o0j::gotos(data) >= gated {
                     data.sblocks_clear();
                     o0j::restore_orientation(data, &saved);
                     o0j::set_gate(true);
-                    self.structure_once(data, ctx);
+                    self.structure_held(data, ctx);
                 }
             }
         }
@@ -3943,6 +3954,38 @@ impl Action for ActionBlockStructure {
 }
 
 impl ActionBlockStructure {
+    /// (kuna `condfold noreturn`) A structuring that relaxed a chain into a
+    /// no-return call is kept only when it prints no goto; otherwise the function
+    /// is structured again without the relaxation.
+    fn structure_held(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
+        use crate::p8_structure::kuna_o0jumps as o0j;
+        if data.sblocks_get_size() != 0 || !crate::p8_structure::kuna_fatalchain::pending(data) {
+            return self.structure_once(data, ctx);
+        }
+        let saved = o0j::orientation(data);
+        let relaxed = data.fatalchain_relaxed().clone();
+        let any = data.chainfold_any();
+        let res = self.structure_once(data, ctx);
+        if data.fatalchain_relaxed().len() == relaxed.len()
+            || ctx.deadline_expired()
+            || o0j::gotos(data) == 0
+            || !crate::p8_structure::kuna_fatalchain::folded_any(data, &relaxed)
+        {
+            return res;
+        }
+        if data.chainfold_any() && data.bblocks_get_size() >= crate::p8_structure::kuna_fatalchain::GIVE_UP_BLOCKS {
+            data.set_chainfold_given_up();
+        }
+        data.sblocks_clear();
+        o0j::restore_orientation(data, &saved);
+        data.set_fatalchain_relaxed(relaxed);
+        data.set_chainfold_any(any);
+        data.set_fatalchain_hold(true);
+        let held = self.structure_once(data, ctx);
+        data.set_fatalchain_hold(false);
+        held
+    }
+
     fn structure_once(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
@@ -3965,7 +4008,13 @@ impl ActionBlockStructure {
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
         let loop_cond = crate::p8_structure::kuna_loopcond::rule_for(data);
-        if data.get_arch().region_structure {
+        let gate = crate::p8_structure::kuna_o0jumps::gate_on() as usize;
+        if data.get_arch().region_structure && self.region_failed[gate] {
+            if ctx.deadline_expired() {
+                return 0;
+            }
+            data.reseed_sblocks_copy();
+        } else if data.get_arch().region_structure {
             let mut rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
             if matches!(rs, Ok((true, _, true))) {
                 let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
@@ -4000,6 +4049,7 @@ impl ActionBlockStructure {
                     if ctx.deadline_expired() {
                         return 0;
                     }
+                    self.region_failed[gate] = true;
                     // Could not converge: discard the partially-structured sblocks
                     // and re-seed a clean BlockCopy mirror for the CollapseStructure
                     // fallback (never abort — honest-partial parity).
@@ -4069,6 +4119,7 @@ impl ActionBlockStructure {
                 switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
             }
         }
+        crate::p8_structure::kuna_fatalchain::relax(data, &mut complex_blocks);
         // (kuna, `option condfold`) the condfold-admissible subset of the *complex*
         // blocks under either admission rule: a bounded, branch-free, comment-free
         // printed-statement prefix in front of the trailing CBRANCH (Rule A), or the
@@ -4107,11 +4158,16 @@ impl ActionBlockStructure {
         if let Some(inputs) = retry {
             let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
             if collapse_res.is_ok() && with > 0 && changed {
+                let first = std::mem::take(data.sblocks_mut());
+                let seeded = copy_maps(data);
                 data.reseed_sblocks_copy();
+                let same_seed = first.root == data.sblocks_ref().root && seeded == copy_maps(data);
                 let plain = collapse_once(data, None, inputs.clone(), guard_arm, apply_index);
                 let without = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
                 if plain.0.is_ok() && without < with {
                     (collapse_res, cc, flips, _) = plain;
+                } else if same_seed {
+                    *data.sblocks_mut() = first;
                 } else {
                     data.reseed_sblocks_copy();
                     (collapse_res, cc, flips, _) = collapse_once(data, loop_cond, inputs, guard_arm, apply_index);

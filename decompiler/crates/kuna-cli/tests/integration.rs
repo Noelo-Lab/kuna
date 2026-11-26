@@ -353,6 +353,8 @@ mod tailform_round_trip;
 
 #[path = "tailform_noreturn_round_trip.rs"]
 mod tailform_noreturn_round_trip;
+#[path = "fatalchain_round_trip.rs"]
+mod fatalchain_round_trip;
 
 #[path = "return_copy_clone.rs"]
 mod return_copy_clone;

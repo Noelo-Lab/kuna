@@ -376,6 +376,11 @@ pub(crate) fn set_gate(on: bool) {
     GATE.with(|g| g.set((on, 0)));
 }
 
+/// Whether the gate is on.
+pub(crate) fn gate_on() -> bool {
+    GATE.with(|g| g.get().0)
+}
+
 /// Whether the gate refused a fold since [`set_gate`].
 pub(crate) fn refused() -> bool {
     GATE.with(|g| g.get().1 > 0)
