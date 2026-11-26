@@ -8,6 +8,8 @@ mod return_branch_cli;
 #[path = "riscv_zcmp.rs"]
 mod riscv_zcmp;
 mod common;
+#[path = "android_jni.rs"]
+mod android_jni;
 #[path = "rust_signature_summary.rs"]
 mod rust_signature_summary;
 #[path = "sparc_prologue_start.rs"]
@@ -395,6 +397,8 @@ mod narrow_extension;
 
 #[path = "narrow_switch_labels.rs"]
 mod narrow_switch_labels;
+#[path = "narrow_multiply_emission.rs"]
+mod narrow_multiply_emission;
 
 #[path = "narrow_zext_returns.rs"]
 mod narrow_zext_returns;

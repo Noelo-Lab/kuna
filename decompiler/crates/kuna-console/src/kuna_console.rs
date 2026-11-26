@@ -193,6 +193,7 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         // C++ `arraynotation` reads `conf->print` (PrintC::getArrayNotation), now
         // exposed via `Architecture::print()` (the owned `PrintC`).
         "arraynotation" => on_off(conf.print().options.array_notation()),
+        "jniregister" => on_off(conf.analysis_jniregister),
         "armfloatargs" => on_off(conf.arm_float_args),
         "callarrayextent" => on_off(conf.call_array_extent),
         "stackstruct" => on_off(conf.stack_struct),

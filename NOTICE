@@ -1,6 +1,10 @@
 kuna
 Copyright 2026 The kuna Authors
 
+The Android JNI declarations in decompiler/crates/kuna-analysis/data/android-jni
+are derived from jni.h in the Android NDK, copyright (C) 2006 The Android Open
+Source Project, licensed under the Apache License, Version 2.0 (see LICENSE).
+
 kuna is derived from Ghidra (https://github.com/NationalSecurityAgency/ghidra),
 released under the Apache License, Version 2.0. The decompiler engine and the
 SLEIGH compiler are a Rust port of Ghidra's C++ decompiler and SLEIGH compiler

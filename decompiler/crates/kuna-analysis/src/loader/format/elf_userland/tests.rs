@@ -273,3 +273,34 @@ fn foreign_images_are_not_linux() {
     assert!(!is_linux_image(b"MZ\0\0"));
     assert!(!is_linux_image(&[]));
 }
+
+#[test]
+fn android_requires_a_complete_abi_note_or_an_android_interpreter() {
+    let linked = |kind, data| {
+        let mut bytes = image(true, false, 0, &[Part { kind, data }], &[]);
+        bytes[16..18].copy_from_slice(&3u16.to_le_bytes());
+        bytes
+    };
+    let area = notes(false, &[("GNU", 1), ("Android", 1)]);
+    assert!(is_android_image(&linked(PT_NOTE, area)));
+    for kind in [0, 3] {
+        assert!(!is_android_image(&linked(
+            PT_NOTE,
+            notes(false, &[("Android", kind)])
+        )));
+    }
+    let mut truncated = notes(false, &[("Android", 1)]);
+    truncated.pop();
+    assert!(!is_android_image(&linked(PT_NOTE, truncated)));
+    let mut short = notes(false, &[("Android", 1)]);
+    short[4..8].copy_from_slice(&2u32.to_le_bytes());
+    assert!(!is_android_image(&linked(PT_NOTE, short)));
+    assert!(is_android_image(&linked(
+        PT_INTERP,
+        b"/system/bin/linker64\0".to_vec()
+    )));
+    assert!(!is_android_image(&linked(
+        PT_INTERP,
+        b"/lib64/ld-linux-x86-64.so.2\0".to_vec()
+    )));
+}

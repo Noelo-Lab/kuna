@@ -21,6 +21,7 @@ pub mod ifaceterm;
 pub mod ifacedecomp;
 mod entry_selector;
 mod kuna_bootstrap;
+mod kuna_androidjni;
 mod kuna_importslots;
 pub mod engine;
 pub mod embedded_specs;
