@@ -3,7 +3,8 @@
 //! method or class with `StackOverflowError`, and the run goes on. The method
 //! budget counts polls; a three-letter option name is its long name.
 //! Fixtures in `tests/jvm/stackguard/`: `TestDeepExpression` (javac 21.0.12
-//! `--release 17 -g`, a sum 300 terms deep) and `TestLambdaCycle`
+//! `--release 17 -g`, a sum 300 terms deep), `TestDeepField` (javac 21.0.13.1
+//! `--release 17 -g`, the same depth in a field initializer) and `TestLambdaCycle`
 //! (asmtools-core 7.0.b10-ea jasm on JDK 17.0.20.1: two synthetic lambda
 //! bodies that create each other's lambdas, which Vineflower nests without
 //! end).
@@ -62,6 +63,22 @@ fn an_expression_deeper_than_the_stack_fails_only_its_method() {
     let out = text(&full, "pkg/TestDeepExpression");
     assert!(!out.contains("Couldn't be decompiled"), "{out}");
     assert_eq!(out.matches("+ b").count(), 150, "{out}");
+}
+
+#[test]
+fn an_initializer_deeper_than_the_stack_fails_its_class_and_the_run_goes_on() {
+    let dir = fixture("stackguard-field", &["TestDeepField.class", "TestDeepExpression.class"]);
+    let small = run(&dir, &[], Some(1 << 20));
+    let out = text(&small, "pkg/TestDeepField");
+    assert!(out.contains("$VF: Unable to decompile class"), "{out}");
+    assert!(out.contains("StackOverflowError"), "{out}");
+    let other = text(&small, "pkg/TestDeepExpression");
+    assert!(other.contains("return a + 1;"), "{other}");
+
+    let full = run(&dir, &[], None);
+    let out = text(&full, "pkg/TestDeepField");
+    assert!(!out.contains("decompile"), "{out}");
+    assert_eq!(out.matches("A[0]").count(), 300, "{out}");
 }
 
 #[test]

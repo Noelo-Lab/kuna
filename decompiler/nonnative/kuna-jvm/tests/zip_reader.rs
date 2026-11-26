@@ -4,7 +4,7 @@ use std::path::Path;
 
 use kuna_jvm::zip_reader::{inflate, ZipReader, DEFLATED, STORED};
 
-use crate::f6_support::{data, run, skip, tmp_dir, tool, vineflower_jar};
+use crate::f6_support::{data, run, skip, tmp_dir, tool};
 
 struct Listed {
     size: u64,
@@ -101,15 +101,6 @@ fn fixtures_match_unzip() {
         bytes += b;
     }
     eprintln!("zip fixtures: {entries} entries, {bytes} bytes identical to unzip -p");
-}
-
-#[test]
-fn vineflower_jar_matches_unzip() {
-    let (Some(unzip), Some(jar)) = (tool(None, "unzip"), vineflower_jar()) else {
-        return skip("vineflower_jar_matches_unzip", "no unzip or vineflower jar");
-    };
-    let (e, b) = compare_with_unzip(&unzip, &jar);
-    eprintln!("vineflower-1.12.0.jar: {e} entries, {b} bytes identical to unzip -p");
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Final-text regressions for port bugs found by a pass-trace sweep:
-//! vendored corpus classes run with the Default set's options plus a few overrides, compared with
-//! the digest of Vineflower 1.12.0's output for the same run (`tests/data/trace_sweep/gen.sh`).
+//! vendored corpus classes run with the Default set's options plus a few overrides the corpus does
+//! not use, compared with the digest of the text pinned for that run (`data/trace_sweep/digests.tsv`).
 
 use std::path::{Path, PathBuf};
 

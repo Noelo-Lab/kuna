@@ -1,6 +1,6 @@
 //! The class node trees `ClassesProcessor.loadClasses` builds (and the warnings it logs, on
-//! inconsistent `InnerClasses` entries too) under the options that shape them, against
-//! Vineflower 1.12.0 (`data/b19/golden.txt`, `gen.sh`).
+//! inconsistent `InnerClasses` entries too) under the options that shape them
+//! (`data/b19/golden.txt`, recorded from Vineflower 1.12.0; `gen.sh` builds the classes).
 
 use std::path::{Path, PathBuf};
 

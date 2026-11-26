@@ -1,8 +1,8 @@
 //! The Kotlin metadata decoder on hand-made `kotlin/Metadata` values: wire edge cases,
 //! truncation, overlong varints, merges, recursion limits, string-table and resolver corners,
-//! the 8-to-7 bit encoding (`data/kotlin_metadata/gen_cases.py`). Each decodes to the message the
-//! Kotlin plugin of Vineflower 1.12.0 read, or fails with the exception it threw, and the string
-//! table cases resolve every name as it did (`gen.sh`).
+//! the 8-to-7 bit encoding (`data/kotlin_metadata/crafted.txt`, recorded from Vineflower 1.12.0's
+//! Kotlin plugin). Each decodes to the message pinned there, or fails with the exception pinned
+//! there, and the string table cases resolve every name as pinned.
 
 use kuna_jvm::code_constants::{
     CONSTANT_DOUBLE, CONSTANT_FLOAT, CONSTANT_INTEGER, CONSTANT_LONG, CONSTANT_UTF8,

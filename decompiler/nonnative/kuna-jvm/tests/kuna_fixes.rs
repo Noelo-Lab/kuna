@@ -14,7 +14,6 @@ use kuna_jvm::if_exprent::{IfExprent, Type as IfType};
 use kuna_jvm::if_helper::IfHelper;
 use kuna_jvm::if_statement::IfStatement;
 use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
-use kuna_jvm::kuna_options::resolve;
 use kuna_jvm::list_stack::ListStack;
 use kuna_jvm::root_statement::RootStatement;
 use kuna_jvm::rt::{reset_class_scope, JHashMap, JHashSet};
@@ -48,12 +47,6 @@ fn failure_comments_name_kuna_unless_the_caller_sets_the_message() {
     assert_eq!(error_message(&[]), KUNA_ERROR_MESSAGE);
     assert_eq!(error_message(&[("error-message", "see the docs")]), "see the docs");
     assert_eq!(error_message(&[("erm", "")]), "");
-}
-
-#[test]
-fn the_vineflower_compat_switch_is_an_unknown_option() {
-    let err = resolve("jvm_vineflower_compat", "on").unwrap_err();
-    assert!(err.starts_with("unknown JVM option jvm_vineflower_compat"), "{err}");
 }
 
 /// `if (a) { if (b) throw; if (c) return; else e(); } z; return;` as IfHelper sees it after

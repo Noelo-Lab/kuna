@@ -1,0 +1,72 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--json",
+    "--option",
+    "jvm_include_runtime",
+    "off"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {},
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/jvm/failures/classes/com/ex/fail/Nested.class",
+    "binary_sha256": "6f5b6c1c9df63ef5eceacb75c54045291512bd6d0e220ae10063a24a1c3167c4",
+    "binary_size": 2359,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/jvm/failures/classes/com/ex/fail/Nested.class",
+    "selector": null,
+    "selector_kind": "none"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_is_json": true,
+    "json": [
+      {
+        "path": "functions[0].name",
+        "op": "eq",
+        "value": "com.ex.fail.Nested.escape"
+      },
+      {
+        "path": "functions[0].nested_errors",
+        "op": "len_eq",
+        "value": 1
+      },
+      {
+        "path": "functions[0].nested_errors[0].body",
+        "op": "eq",
+        "value": "com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;"
+      },
+      {
+        "path": "functions[1].nested_errors",
+        "op": "len_eq",
+        "value": 2
+      },
+      {
+        "path": "functions[3].nested_errors",
+        "op": "len_eq",
+        "value": 0
+      },
+      {
+        "path": "classes[0].status",
+        "op": "eq",
+        "value": "decompiled"
+      },
+      {
+        "path": "classes[0].nested_errors",
+        "op": "len_eq",
+        "value": 1
+      }
+    ]
+  },
+  "notes": "A lambda that fails inside a method fails that method: decompile-all --json names the failed body in the enclosing method's nested_errors (and its error), and a failed field-initializer lambda in the class record's nested_errors. The fixture fails by construction (tests/fixtures/jvm/failures/README.md).",
+  "probe_id": "p-91c1fc326a3c"
+}
