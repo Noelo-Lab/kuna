@@ -10,7 +10,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::generic_type::GenericType;
 use crate::jthrow;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::type_annotations;
 use crate::pair::Pair;
 use crate::rt::{JHashSet, JavaEq, JavaHash};
@@ -251,7 +250,7 @@ impl TypeAnnotation {
 
                 if i > 0 {
                     buffer.append(".");
-                } else if kuna_fixes::enabled(KunaFix::TypeAnnotationQualifiedName) {
+                } else {
                     buffer.append(&type_annotations::qualifier(clazz));
                 }
 
@@ -265,13 +264,10 @@ impl TypeAnnotation {
                 }
 
                 buffer.append_class(&name, false, &clazz.replace('.', "/"));
-                if kuna_fixes::enabled(KunaFix::TypeAnnotationOuterArguments)
-                    && i + 1 < full_classes.len()
-                {
-                    if let Some(args) = type_annotations::arguments_of(
-                        type_,
-                        &clazz.replace('.', "/"),
-                    ) {
+                if i + 1 < full_classes.len() {
+                    if let Some(args) =
+                        type_annotations::arguments_of(type_, &clazz.replace('.', "/"))
+                    {
                         buffer.append("<");
                         for (j, arg) in args.iter().enumerate() {
                             if j > 0 {
@@ -300,42 +296,22 @@ impl TypeAnnotation {
                         }
 
                         let final_j = j as i32;
-                        let in_arg = kuna_fixes::enabled(KunaFix::TypeAnnotationArgumentScope)
-                            .then(|| {
-                                type_annotations::entering(
-                                    type_annotations,
-                                    final_j,
-                                )
-                            });
+                        let in_arg = type_annotations::entering(type_annotations, final_j);
                         TypeAnnotation::stepwise_write_annotations(
                             buffer,
                             type_annotations,
                             filter,
                             &|v| v.kind() == PathKind::GenericArgument && v.type_arg() == final_j,
                         );
-                        match in_arg {
-                            Some(in_arg) => {
-                                let mut sub = type_annotations::take(
-                                    type_annotations,
-                                    &in_arg,
-                                );
-                                TypeAnnotation::append_generic_argument(
-                                    buffer, arg.as_ref(), &mut sub, filter, vararg,
-                                );
-                                type_annotations::put_back(
-                                    type_annotations,
-                                    &in_arg,
-                                    sub,
-                                );
-                            }
-                            None => TypeAnnotation::append_generic_argument(
-                                buffer,
-                                arg.as_ref(),
-                                type_annotations,
-                                filter,
-                                vararg,
-                            ),
-                        }
+                        let mut sub = type_annotations::take(type_annotations, &in_arg);
+                        TypeAnnotation::append_generic_argument(
+                            buffer,
+                            arg.as_ref(),
+                            &mut sub,
+                            filter,
+                            vararg,
+                        );
+                        type_annotations::put_back(type_annotations, &in_arg, sub);
                     }
                     buffer.append(">");
                 }

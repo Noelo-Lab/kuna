@@ -29,7 +29,6 @@ use crate::fixes::lambdas::lambda_type_variable_target;
 use crate::fixes::generic_casts::raw_receiver_erasure;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
@@ -524,9 +523,7 @@ impl InvocationExprent {
         }
 
         let desc = self.d(|d| d.desc);
-        if kuna_fixes::enabled(KunaFix::RawReceiverErasure)
-            && raw_receiver_erasure::has_raw_receiver(self)
-        {
+        if raw_receiver_erasure::has_raw_receiver(self) {
             return self.get_expr_type();
         }
         if let (Some(desc), Some(mth_cls)) = (desc, mth_cls) {
@@ -739,7 +736,6 @@ impl InvocationExprent {
 
                 let mut param_generics: JHashSet<VarType> = JHashSet::new();
                 let mut pertinent_generics: JHashSet<VarType> = JHashSet::new();
-                let pertinence = kuna_fixes::enabled(KunaFix::LambdaPertinence);
                 let lst_parameters = self.get_lst_parameters();
                 if !lst_parameters.is_empty() && desc.get_signature().is_some() {
                     let mut mask: Option<Vec<Option<VarVersionPair>>> = None;
@@ -768,11 +764,7 @@ impl InvocationExprent {
                         {
                             let inner =
                                 (new_node.with(|d| d.access) & CodeConstants::ACC_STATIC) == 0;
-                            if kuna_fixes::enabled(KunaFix::InnerMethodArgumentShift) {
-                                own_type_parameters_only = inner;
-                            } else {
-                                start = if inner { 1 } else { 0 };
-                            }
+                            own_type_parameters_only = inner;
                         }
                     }
 
@@ -846,18 +838,11 @@ impl InvocationExprent {
                                 );
                             }
                         }
-                        let mut non_pertinent: JHashSet<VarType> = if pertinence {
-                            JHashSet::from_collection(lambda_pertinence::excluded_vars(
-                                parameter,
-                                &param_type,
-                                &fparams,
-                            ))
-                        } else {
-                            JHashSet::new()
-                        };
+                        let mut non_pertinent: JHashSet<VarType> = JHashSet::from_collection(
+                            lambda_pertinence::excluded_vars(parameter, &param_type, &fparams),
+                        );
                         let mut element_type: Option<VarType> = None;
-                        if pertinence
-                            && j == desc_sig.parameter_types().len()
+                        if j == desc_sig.parameter_types().len()
                             && desc.has_modifier(CodeConstants::ACC_VARARGS)
                         {
                             if let Some((vars, elements)) =
@@ -1059,8 +1044,7 @@ impl InvocationExprent {
                                 }
                             }
                         }
-                        let pertinence_missing = pertinence
-                            && !missing
+                        let pertinence_missing = !missing
                             && fparams.iter().any(|param| {
                                 !pertinent_generics
                                     .contains(&GenericType::parse(&format!("T{param};")))
@@ -1100,8 +1084,7 @@ impl InvocationExprent {
                             {
                                 generic_args.clear();
                             }
-                            if kuna_fixes::enabled(KunaFix::LambdaReturnTypeArgument)
-                                && !is_new
+                            if !is_new
                                 && desc.get_signature().is_some_and(|sig| {
                                     lambda_return_type_argument::contradicts(
                                         self,
@@ -1119,13 +1102,12 @@ impl InvocationExprent {
                                 d.kuna_needs_type_args = needs;
                             });
                         } else if is_gen_new
-                            && !(kuna_fixes::enabled(KunaFix::DiamondArgumentConflict)
-                                && generics::contradicts(
-                                    new_ret.as_ref(),
-                                    upper_bound,
-                                    &fparams,
-                                    &named,
-                                ))
+                            && !generics::contradicts(
+                                new_ret.as_ref(),
+                                upper_bound,
+                                &fparams,
+                                &named,
+                            )
                         {
                             self.d_mut(|d| d.generic_args.push(GenericType::DUMMY_VAR().0));
                         }
@@ -1315,11 +1297,7 @@ impl InvocationExprent {
                 && self.d(|d| d.can_ignore_boxing)
                 && !self.d(|d| d.boxing.force_boxing)
             {
-                if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                    numeric_types::keep_under_boxing(
-                        self.get_lst_parameters().get(0),
-                    );
-                }
+                numeric_types::keep_under_boxing(self.get_lst_parameters().get(0));
                 ExprProcessor::get_casted_exprent_full(
                     self.get_lst_parameters().get(0),
                     &self.get_descriptor().params[0],
@@ -1454,13 +1432,9 @@ impl InvocationExprent {
                         self.d_mut(|d| {
                             d.kuna_unboxing_written_as = Some(UnboxingWrittenAs::Instance)
                         });
-                        if kuna_fixes::enabled(KunaFix::KtUnboxingCastType) {
-                            if let Some(cast) =
-                                kt_unboxing_cast_type::write(self, instance, indent)
-                            {
-                                buf.append_buffer(&cast);
-                                return buf;
-                            }
+                        if let Some(cast) = kt_unboxing_cast_type::write(self, instance, indent) {
+                            buf.append_buffer(&cast);
+                            return buf;
                         }
                         buf.append_buffer(&instance.to_java(indent));
                         return buf;
@@ -1472,9 +1446,7 @@ impl InvocationExprent {
                         buf.push_newline_group(indent, 1);
                         pushed_call_chain_group = true;
                     }
-                    if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
-                        generics::type_receiver(self, instance);
-                    }
+                    generics::type_receiver(self, instance);
                     let res = instance.to_java(indent);
 
                     let inst_node = root_class_node(&classname);
@@ -1529,8 +1501,7 @@ impl InvocationExprent {
             }
         }
 
-        let kotlin_member = (kuna_fixes::enabled(KunaFix::KtMappedJavaMember)
-            && self.get_functype() == Type::General
+        let kotlin_member = (self.get_functype() == Type::General
             && invocation_type != InvocationType::Dynamic
             && invocation_type != InvocationType::ConstantDynamic
             && super_qualifier.is_none()
@@ -1681,18 +1652,10 @@ impl InvocationExprent {
                     let kotlin_name = self.d(|d| d.kuna_kotlin_name.clone());
                     let printed = if let Some(kotlin_name) = &kotlin_name {
                         kt_unescaped_name::member(kotlin_name)
-                    } else if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                        kt_unescaped_name::member(&valid_name)
                     } else {
-                        valid_name.clone()
+                        kt_unescaped_name::member(&valid_name)
                     };
-                    buf.append_method_descriptor(
-                        &printed,
-                        false,
-                        &classname,
-                        &name,
-                        &descriptor,
-                    );
+                    buf.append_method_descriptor(&printed, false, &classname, &name, &descriptor);
                     if valid_name != name && kotlin_name.is_none() {
                         buf.append("/* $VF was: ").append(&name).append(" */");
                     }
@@ -1709,18 +1672,13 @@ impl InvocationExprent {
             Type::Init => {
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 if super_qualifier.is_some() {
-                    if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
-                        if let Some((outer, hide)) = qualified_super_call::super_outer(self)
-                        {
-                            if let Some(outer) = outer {
-                                buf.append_buffer(&qualified_super_call::qualifier_text(
-                                    outer, indent,
-                                ))
+                    if let Some((outer, hide)) = qualified_super_call::super_outer(self) {
+                        if let Some(outer) = outer {
+                            buf.append_buffer(&qualified_super_call::qualifier_text(outer, indent))
                                 .append(".");
-                            }
-                            if hide {
-                                self.set_kuna_skip_arg(Some(0));
-                            }
+                        }
+                        if hide {
+                            self.set_kuna_skip_arg(Some(0));
                         }
                     }
                     buf.append("super(");
@@ -1845,19 +1803,12 @@ impl InvocationExprent {
         let ambiguous_vararg = self.is_varargs_ambiguous(&self.get_matched_descriptors(true));
         let mut set_ambiguous_parameters = self.get_ambiguous_parameters(&matches);
         let overload_ambiguous = set_ambiguous_parameters.clone();
-        if kuna_fixes::enabled(KunaFix::LambdaArgumentOverload) {
-            set_ambiguous_parameters.or(&lambda_argument_overload::ambiguous_arguments(
-                self, &matches,
-            ));
-        }
-        if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
-            set_ambiguous_parameters.or(&lambda_type_variable_target::cast_arguments(self));
-        }
+        set_ambiguous_parameters.or(&lambda_argument_overload::ambiguous_arguments(
+            self, &matches,
+        ));
+        set_ambiguous_parameters.or(&lambda_type_variable_target::cast_arguments(self));
 
-        if kuna_fixes::enabled(KunaFix::UnseenClassOverload)
-            && !writing_kotlin()
-            && struct_context.get_class(&classname).is_none()
-        {
+        if !writing_kotlin() && struct_context.get_class(&classname).is_none() {
             unseen_class_overload::mark(self, &mut set_ambiguous_parameters);
         }
 
@@ -1869,10 +1820,8 @@ impl InvocationExprent {
             if let Some(last_new) = last_param.try_as_new() {
                 if last_param.get_expr_type().array_dim >= 1
                     && (!ambiguous_vararg || last_new.get_lst_array_elements().len() != 1)
-                    && (!kuna_fixes::enabled(KunaFix::VarargArrayLength)
-                        || overloads::spreads_as_elements(last_new))
-                    && (!kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
-                        || writing_kotlin()
+                    && overloads::spreads_as_elements(last_new)
+                    && (writing_kotlin()
                         || vararg_spread_resolution::spread_resolves(self, last_new))
                 {
                     last_new.set_var_arg_param(true);
@@ -1880,9 +1829,7 @@ impl InvocationExprent {
             }
         }
 
-        if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
-            lambda_type_variable_target::mark(self);
-        }
+        lambda_type_variable_target::mark(self);
 
         let start: usize = if is_enum { 2 } else { 0 };
         let mut parameters: Vec<Exprent> = lst_parameters.to_vec();
@@ -1943,9 +1890,7 @@ impl InvocationExprent {
                     types[i] = descriptor.params[i].clone();
                     inv.force_boxing(true);
                 } else {
-                    if kuna_fixes::enabled(KunaFix::ReferenceUnboxing) {
-                        numeric_types::keep_under_boxing(value);
-                    }
+                    numeric_types::keep_under_boxing(value);
                     value.add_bytecode_offsets(inv.get_bytecode().as_ref());
                     parameters[i] = value;
                     if i < unboxed.len() {
@@ -2006,10 +1951,9 @@ impl InvocationExprent {
                 }
             }
         }
-        let desc = self.d(|d| d.desc).filter(|_| {
-            !(kuna_fixes::enabled(KunaFix::RawReceiverErasure)
-                && raw_receiver_erasure::has_raw_receiver(self))
-        });
+        let desc = self
+            .d(|d| d.desc)
+            .filter(|_| !raw_receiver_erasure::has_raw_receiver(self));
         if let Some((desc, desc_sig)) =
             desc.and_then(|desc| desc.get_signature().map(|s| (desc, s)))
         {
@@ -2025,10 +1969,8 @@ impl InvocationExprent {
             }
 
             let named_gens = JHashSet::from_collection(self.0.get_named_generics().key_vec());
-            let argument_casts =
-                kuna_fixes::enabled(KunaFix::ArgumentGenericCast) && !self.0.is_kotlin();
-            let keep_unboxed = kuna_fixes::enabled(KunaFix::UnboxedArgumentType)
-                && !writing_kotlin();
+            let argument_casts = !self.0.is_kotlin();
+            let keep_unboxed = !writing_kotlin();
             let erased = if mask.is_none() {
                 self.kuna_erased_type_variable_arguments(Some(&overload_ambiguous))
             } else {
@@ -2490,10 +2432,7 @@ impl InvocationExprent {
     /// parameters' erasure (`ambiguous`: `getAmbiguousParameters`' answer,
     /// computed when not given).
     fn kuna_erased_type_variable_arguments(self, ambiguous: Option<&BitSet>) -> Vec<usize> {
-        if !kuna_fixes::enabled(KunaFix::AmbiguousTypeVariableArgument)
-            || writing_kotlin()
-            || self.get_functype() == Type::Init
-        {
+        if writing_kotlin() || self.get_functype() == Type::Init {
             return Vec::new();
         }
         let Some(sig) = self.d(|d| d.desc).and_then(|desc| desc.get_signature()) else {
@@ -3097,10 +3036,9 @@ impl InvocationExprent {
         if self.d(|d| d.desc.is_none()) {
             self.get_inferred_expr_type(None);
         }
-        let desc = self.d(|d| d.desc).filter(|_| {
-            !(kuna_fixes::enabled(KunaFix::RawReceiverErasure)
-                && raw_receiver_erasure::has_raw_receiver(self))
-        });
+        let desc = self
+            .d(|d| d.desc)
+            .filter(|_| !raw_receiver_erasure::has_raw_receiver(self));
         if let Some((desc, desc_sig)) =
             desc.and_then(|desc| desc.get_signature().map(|s| (desc, s)))
         {

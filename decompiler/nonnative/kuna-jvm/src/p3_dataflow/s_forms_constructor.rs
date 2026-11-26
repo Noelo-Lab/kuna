@@ -16,7 +16,6 @@ use crate::direct_node_type::DirectNodeType;
 use crate::fast_sparse_set_factory::FastSparseSetFactory;
 use crate::field_exprent::FieldExprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::stack_var_inlining::field_read_all_paths::FieldReadAllPaths;
 use crate::fixes::finally_sync::finally_exit_versions::FinallyExitVersions;
@@ -95,8 +94,7 @@ impl SFormsConstructor {
             kind,
             field_reads_all_paths: false,
             finally_changes_fields: JHashMap::new(),
-            finally_exits: kuna_fixes::enabled(KunaFix::FinallyExitVersions)
-                .then(FinallyExitVersions::default),
+            finally_exits: Some(FinallyExitVersions::default()),
         }
     }
 

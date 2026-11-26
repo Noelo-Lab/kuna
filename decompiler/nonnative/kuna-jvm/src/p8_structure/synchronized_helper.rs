@@ -3,7 +3,6 @@
 use crate::assignment_exprent::AssignmentExprent;
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::finally_sync::is_lock_variable;
 use crate::root_statement::RootStatement;
 use crate::statement::Statement;
@@ -32,10 +31,8 @@ impl SynchronizedHelper {
                 for e in first_exprents.iter() {
                     if let Some(ass) = e.try_as_assignment() {
                         if let Some(var) = ass.get_left().try_as_var() {
-                            let fixed = kuna_fixes::enabled(KunaFix::SynchronizedLockAssignment);
                             if var.equals(mon.get_value())
-                                && (!fixed
-                                    || is_lock_variable(&first_exprents, e, ass.get_right(), true))
+                                && is_lock_variable(&first_exprents, e, ass.get_right(), true)
                                 && !var.is_var_referenced(
                                     stat.get_parent().expect("parent"),
                                     &[mon.get_value().as_var()],
@@ -48,8 +45,7 @@ impl SynchronizedHelper {
                                 res = true;
                                 break;
                             } else if ass.get_right().equals(mon.get_value())
-                                && (!fixed
-                                    || is_lock_variable(&first_exprents, e, ass.get_right(), false))
+                                && is_lock_variable(&first_exprents, e, ass.get_right(), false)
                                 && !var.is_var_referenced(stat.get_parent().expect("parent"), &[])
                             {
                                 first_exprents.remove_item(&e);

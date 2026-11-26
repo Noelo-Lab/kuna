@@ -9,7 +9,6 @@ use crate::const_exprent::ConstExprent;
 use crate::dec_helper::DecHelper;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::patterns::{type_switch_enum_label, type_switch_label_lookup};
 use crate::function_exprent::FunctionType;
 use crate::if_statement::set_head_slot;
@@ -146,11 +145,7 @@ impl SwitchStatement {
                 d.default_edge,
             )
         });
-        let fillers = if kuna_fixes::enabled(KunaFix::SwitchTableFillers) {
-            switches::filler_edges(self)
-        } else {
-            Vec::new()
-        };
+        let fillers = switches::filler_edges(self);
         for i in 0..case_statements.len() {
             let stat = case_statements.get(i);
             let edges = case_edges.get(i);
@@ -163,16 +158,10 @@ impl SwitchStatement {
             let scoped = self.d(|d| d.scoped_case_statements.contains(&stat));
             let default_last =
                 !edges.is_empty() && Some(edges.get(edges.len() - 1)) == default_edge;
-            if kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                && switches::hides_case(self, &edges.to_vec())
-            {
+            if switches::hides_case(self, &edges.to_vec()) {
                 continue;
             }
-            let unnamed = if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
-                type_switch_label_lookup::unnamed_pattern_types(&values)
-            } else {
-                None
-            };
+            let unnamed = type_switch_label_lookup::unnamed_pattern_types(&values);
 
             for j in 0..edges.len() {
                 if let Some(types) = &unnamed {
@@ -214,12 +203,7 @@ impl SwitchStatement {
                     }
                     let qualified = value.and_then(|v| v.try_as_field()).filter(|f| {
                         f.is_static()
-                            && kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel)
-                            && type_switch_enum_label::is_qualified_label(
-                                *f,
-                                &switch_type,
-                                self.0,
-                            )
+                            && type_switch_enum_label::is_qualified_label(*f, &switch_type, self.0)
                     });
                     if let Some(field) = qualified {
                         buf.append_buffer(&type_switch_enum_label::qualified_label(
@@ -454,15 +438,11 @@ impl SwitchStatement {
             edges.push(lst);
         }
 
-        let positions = if kuna_fixes::enabled(KunaFix::SwitchCaseOrder) {
-            switches::positions(
-                bbstat,
-                lst_first_succs.len(),
-                lst_first_succs[0].get_destination(),
-            )
-        } else {
-            None
-        };
+        let positions = switches::positions(
+            bbstat,
+            lst_first_succs.len(),
+            lst_first_succs[0].get_destination(),
+        );
         let sort_key = |lst: &Vec<i32>| -> i64 {
             match &positions {
                 Some(p) => lst

@@ -18,7 +18,6 @@ use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_proto::{self, Projection, Variance};
-use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
@@ -45,8 +44,7 @@ pub fn header(cl: StructClass, kt_data: Option<&KElement>, indent: i32) -> Optio
     let cls = applicable(cl, kt_data)?;
     let resolver = cls.resolver.as_ref()?;
     let proto = &cls.proto;
-    let _scope = kuna_fixes::enabled(KunaFix::KtTypeParameterId)
-        .then(|| kt_type_parameter_id::class_scope(cl, proto, resolver));
+    let _scope = kt_type_parameter_id::class_scope(cl, proto, resolver);
     if !all_resolved(proto, resolver) {
         return None;
     }
@@ -75,7 +73,7 @@ pub fn header(cl: StructClass, kt_data: Option<&KElement>, indent: i32) -> Optio
 /// `cl`'s class metadata when the fix writes its header: a class (not an
 /// annotation class) whose metadata has its supertypes and bounds inline.
 fn applicable(cl: StructClass, kt_data: Option<&KElement>) -> Option<Rc<KClass>> {
-    if !kuna_fixes::enabled(KunaFix::KtClassHeaderMetadata) || cl.has_modifier(ACC_ANNOTATION) {
+    if cl.has_modifier(ACC_ANNOTATION) {
         return None;
     }
     let Some(KElement::Class(cls)) = kt_data else {
@@ -191,8 +189,7 @@ fn metadata_header(cl: StructClass, kt_data: Option<&KElement>, anonymous: bool)
     let Some(resolver) = cls.resolver.as_ref() else {
         return false;
     };
-    let _scope = kuna_fixes::enabled(KunaFix::KtTypeParameterId)
-        .then(|| kt_type_parameter_id::class_scope(cl, &cls.proto, resolver));
+    let _scope = kt_type_parameter_id::class_scope(cl, &cls.proto, resolver);
     all_resolved(&cls.proto, resolver)
 }
 
@@ -209,8 +206,7 @@ pub fn is_collection_stub(
     kt_data: Option<&KElement>,
     anonymous: bool,
 ) -> bool {
-    if !kuna_fixes::enabled(KunaFix::KtClassHeaderMetadata)
-        || mt.get_name().starts_with('<')
+    if mt.get_name().starts_with('<')
         || KtAttrs::get(mt, &KElement::KEY()).is_some()
         || !metadata_header(cl, kt_data, anonymous)
     {
@@ -250,10 +246,7 @@ pub fn is_collection_stub(
 /// (a class's metadata copied into an inlined copy of an object names the
 /// inline function's).
 fn resolved(t: &kt_proto::Type) -> bool {
-    if t.has_type_parameter()
-        && (!kuna_fixes::enabled(KunaFix::KtTypeParameterId)
-            || kt_type_parameter_id::name(t.get_type_parameter()).is_none())
-    {
+    if t.has_type_parameter() && kt_type_parameter_id::name(t.get_type_parameter()).is_none() {
         return false;
     }
     t.get_argument_list()

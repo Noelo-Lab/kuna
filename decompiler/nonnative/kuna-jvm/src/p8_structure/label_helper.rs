@@ -3,7 +3,6 @@
 use crate::do_statement::Type as DoType;
 use crate::function_exprent::FunctionType;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, JLinkedHashSet, JList};
@@ -245,9 +244,7 @@ impl LabelHelper {
                 let first = stat.get_first().unwrap();
                 map_edges = Self::set_explicit_edges(first);
                 Self::process_edges_with_next(first, &mut map_edges, Some(stat));
-                if kuna_fixes::enabled(KunaFix::LoopBodyExitExplicit) {
-                    map_edges.clear();
-                }
+                map_edges.clear();
             }
             StatementType::If => {
                 let ifstat = stat.as_if();
@@ -491,8 +488,7 @@ impl LabelHelper {
                         if let Some(default_edge) = swst.get_default_edge() {
                             lst_edges.remove_item(&default_edge);
                         }
-                        if kuna_fixes::enabled(KunaFix::SwitchTableFillers) && !lst_edges.is_empty()
-                        {
+                        if !lst_edges.is_empty() {
                             let fillers = switches::filler_edges(swst);
                             if lst_edges.iter().all(|e| fillers.contains(&e)) {
                                 lst_edges.clear();

@@ -11,7 +11,6 @@ use crate::exprent::Exprent;
 use crate::if_statement::set_head_slot;
 use crate::java_subclass;
 use crate::fixes::generic_casts::raw_receiver_erasure;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{JHashSet, JList, Shared};
 use crate::stat_edge::StatEdge;
 use crate::statement::{
@@ -183,18 +182,14 @@ impl DoStatement {
                 null_slot(self.get_inc_exprent()).get_inferred_expr_type(None);
                 buf.append(" : ");
                 let iterable = null_slot(self.get_inc_exprent());
-                let cast = if kuna_fixes::enabled(KunaFix::RawReceiverErasure) {
-                    null_slot(self.get_init_exprent())
-                        .try_as_var()
-                        .and_then(|v| {
-                            raw_receiver_erasure::foreach_cast_type(
-                                iterable,
-                                &v.get_definition_var_type(),
-                            )
-                        })
-                } else {
-                    None
-                };
+                let cast = null_slot(self.get_init_exprent())
+                    .try_as_var()
+                    .and_then(|v| {
+                        raw_receiver_erasure::foreach_cast_type(
+                            iterable,
+                            &v.get_definition_var_type(),
+                        )
+                    });
                 match cast {
                     Some(cast) => raw_receiver_erasure::append_cast(
                         &mut buf, iterable, &cast, indent,

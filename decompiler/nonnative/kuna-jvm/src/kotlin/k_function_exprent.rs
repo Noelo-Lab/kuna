@@ -18,8 +18,6 @@ use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_java_syntax::kt_string_literal_escape;
 use crate::kotlin_exprent;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
-use crate::kuna_fixes::{self, KunaFix};
-use crate::rt::jstring::from_utf16;
 use crate::rt::BitSet;
 use crate::text_buffer::TextBuffer;
 use crate::type_family::TypeFamily;
@@ -149,9 +147,7 @@ impl KFunctionExprent {
                 kex.set_func_type_typed(AnyFunctionType::Kotlin(KFunctionType::Equals3));
             }
         }
-        if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
-            kt_operators::mark_identity(kex);
-        }
+        kt_operators::mark_identity(kex);
 
         kex
     }
@@ -179,9 +175,6 @@ impl KFunctionExprent {
     /// else star projections where it is raw, and by Kotlin's read-only name
     /// where it is a mapped collection interface; `None` for other types.
     fn kuna_type_operand(operand: Exprent, cast: Option<KFunctionExprent>) -> Option<TextBuffer> {
-        if !kuna_fixes::enabled(KunaFix::KtRawGenericType) {
-            return None;
-        }
         let t = operand.get_expr_type();
         if t.array_dim != 0 || t.type_ != CodeType::Object {
             return None;
@@ -268,31 +261,21 @@ impl KFunctionExprent {
                                         string.as_string(),
                                         ascii,
                                     );
-                                    if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape) {
-                                        buf.append(&kt_string_literal_escape::kotlin_text(
-                                            &value, true,
-                                        ));
-                                    } else {
-                                        buf.append(&value.replace('$', "\\$"));
-                                    }
+                                    buf.append(&kt_string_literal_escape::kotlin_text(
+                                        &value, true,
+                                    ));
                                 } else if VarType::VARTYPE_CHAR().equals(&const_type) {
                                     let unit = const_expr
                                         .get_value()
                                         .unwrap_or_else(|| npe("ConstExprent.getValue()"))
                                         .as_int()
                                         as u16;
-                                    if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape) {
-                                        let ascii = DecompilerContext::get_option(
-                                            IFernflowerPreferences::ASCII_STRING_CHARACTERS,
-                                        );
-                                        buf.append(
-                                            &kt_string_literal_escape::template_char(
-                                                unit, ascii,
-                                            ),
-                                        );
-                                    } else {
-                                        buf.append(&from_utf16(&[unit]));
-                                    }
+                                    let ascii = DecompilerContext::get_option(
+                                        IFernflowerPreferences::ASCII_STRING_CHARACTERS,
+                                    );
+                                    buf.append(&kt_string_literal_escape::template_char(
+                                        unit, ascii,
+                                    ));
                                 } else {
                                     if VarType::is_primitive(&const_type) {
                                         DecompilerContext::get_logger().write_message(
@@ -309,12 +292,10 @@ impl KFunctionExprent {
                                 }
                             } else if expr.is_var() {
                                 let name = expr.to_java(indent);
-                                if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape)
-                                    && !kt_string_literal_escape::simple_reference(
-                                        &name.convert_to_string_and_allow_data_discard(),
-                                        operands.get(i + 1).copied(),
-                                    )
-                                {
+                                if !kt_string_literal_escape::simple_reference(
+                                    &name.convert_to_string_and_allow_data_discard(),
+                                    operands.get(i + 1).copied(),
+                                ) {
                                     buf.append("${").append_buffer(&name).append("}");
                                 } else {
                                     buf.append("$").append_buffer(&name);
@@ -405,10 +386,8 @@ impl KFunctionExprent {
             }
             FunctionType::Cast => {
                 if !self.does_cast()
-                    || (kuna_fixes::enabled(KunaFix::KtRawGenericType)
-                        && kt_raw_generic_type::redundant(self))
-                    || (kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                        && kt_suspend_lambda::lambda_of_cast(self.0 .0).is_some())
+                    || kt_raw_generic_type::redundant(self)
+                    || kt_suspend_lambda::lambda_of_cast(self.0 .0).is_some()
                 {
                     buf.append_buffer(&lst_operands.get(0).to_java(indent));
                     return buf;
@@ -418,9 +397,7 @@ impl KFunctionExprent {
                 let mut type_ = Self::kuna_type_operand(lst_operands.get(1), Some(self))
                     .unwrap_or_else(|| lst_operands.get(1).to_java(indent));
                 let written = type_.convert_to_string_and_allow_data_discard();
-                let nullable = self.kd(|d| d.nullable_cast)
-                    && kuna_fixes::enabled(KunaFix::KtNullableCast)
-                    && !written.ends_with('?');
+                let nullable = self.kd(|d| d.nullable_cast) && !written.ends_with('?');
                 if nullable && written.contains("->") {
                     type_.enclose("(", ")");
                 }
@@ -430,11 +407,7 @@ impl KFunctionExprent {
                 }
                 return buf;
             }
-            func_type
-                if func_type.cast_type().is_some()
-                    && self.does_cast()
-                    && kuna_fixes::enabled(KunaFix::KtJavaCastSyntax) =>
-            {
+            func_type if func_type.cast_type().is_some() && self.does_cast() => {
                 let operand = lst_operands.get(0);
                 if let Some(inv) = operand.try_as_invocation() {
                     if inv.is_unboxing_call() {
@@ -457,10 +430,7 @@ impl KFunctionExprent {
                 buf.append(".inv()");
                 return buf;
             }
-            FunctionType::Eq | FunctionType::Ne
-                if kuna_fixes::enabled(KunaFix::KtReferenceInequality)
-                    && kt_operators::identity(self) =>
-            {
+            FunctionType::Eq | FunctionType::Ne if kt_operators::identity(self) => {
                 let operator = if self.get_func_type() == FunctionType::Eq {
                     " === "
                 } else {
@@ -507,10 +477,8 @@ impl KFunctionExprent {
     /// An operand of a bitwise or shift operator; fix `kt_narrow_bitwise_operand`
     /// widens a `Byte`, `Short` or `Char` one to `Int`.
     fn bitwise_operand(self, expr: Exprent, indent: i32) -> TextBuffer {
-        if kuna_fixes::enabled(KunaFix::KtNarrowBitwiseOperand) {
-            if let Some(widened) = kt_operators::write_widened(expr, indent) {
-                return widened;
-            }
+        if let Some(widened) = kt_operators::write_widened(expr, indent) {
+            return widened;
         }
         self.wrap(expr, indent)
     }
@@ -671,10 +639,7 @@ impl KFunctionExprent {
             KFunctionType::GetKclass => 1,
             KFunctionType::StrTemplate => FunctionType::StrConcat.precedence(),
             KFunctionType::NotNull => 0,
-            KFunctionType::None
-                if kuna_fixes::enabled(KunaFix::KtRawGenericType)
-                    && kt_raw_generic_type::redundant(self) =>
-            {
+            KFunctionType::None if kt_raw_generic_type::redundant(self) => {
                 self.get_lst_operands().get(0).get_precedence()
             }
             KFunctionType::None => FunctionExprent::get_precedence(self.0),
@@ -686,13 +651,9 @@ impl KFunctionExprent {
         let k_type = self.kd(|d| d.k_type);
         let expr_type = self.0 .0.get_expr_type_opt();
         let copy = KFunctionExprent::new_typed(func, k_type, expr_type);
-        if kuna_fixes::enabled(KunaFix::KtCopiedEquality) {
-            kt_operators::keep_function_type(self, copy);
-        }
-        if kuna_fixes::enabled(KunaFix::KtReferenceInequality) {
-            let identity = self.kd(|d| d.identity);
-            copy.kd_mut(|d| d.identity = identity);
-        }
+        kt_operators::keep_function_type(self, copy);
+        let identity = self.kd(|d| d.identity);
+        copy.kd_mut(|d| d.identity = identity);
         let nullable_cast = self.kd(|d| d.nullable_cast);
         copy.kd_mut(|d| d.nullable_cast = nullable_cast);
         copy.0 .0

@@ -19,7 +19,6 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::generics;
 use crate::fixes::constructor_calls::implicit_outer_instance;
 use crate::fixes::constructor_calls::qualified_super_call;
@@ -183,7 +182,7 @@ impl NewExprent {
         if !lambda && new_type.type_ == CodeType::Object {
             let node = struct_class(new_type.value.as_deref());
 
-            if node.is_none() && kuna_fixes::enabled(KunaFix::ExternalClassDiamond) {
+            if node.is_none() {
                 if let Some(type_) = generics::external_diamond_type(self, upper_bound) {
                     return type_;
                 }
@@ -418,9 +417,7 @@ impl NewExprent {
                                     let prior = generics_map.get(&key).cloned().flatten();
                                     let mut add_to_map = true;
                                     if let Some(prior) = prior {
-                                        if return_type.is_none()
-                                            && kuna_fixes::enabled(KunaFix::LambdaWildcardReturn)
-                                        {
+                                        if return_type.is_none() {
                                             if prior.is_generic()
                                                 && !prior.as_generic().is_type_unfinished()
                                             {
@@ -610,19 +607,10 @@ impl NewExprent {
 
                 if !lambda {
                     if let Some(constructor) = constructor {
-                        let qualifier = if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
-                            child.and_then(|child| {
-                                qualified_super_call::anonymous_qualifier(
-                                    child,
-                                    constructor,
-                                )
-                            })
-                        } else {
-                            None
-                        };
-                        if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
-                            constructor.set_kuna_skip_arg(qualifier);
-                        }
+                        let qualifier = child.and_then(|child| {
+                            qualified_super_call::anonymous_qualifier(child, constructor)
+                        });
+                        constructor.set_kuna_skip_arg(qualifier);
                         enclosing = match qualifier {
                             Some(arg) => Some(qualified_super_call::qualifier_text(
                                 constructor.get_lst_parameters().get(arg),
@@ -766,10 +754,9 @@ impl NewExprent {
 
                 if let Some(constructor) = constructor {
                     let params = constructor.get_lst_parameters().to_vec();
-                    let implicit = kuna_fixes::enabled(KunaFix::ImplicitOuterInstance)
-                        && new_type.value.as_deref().is_some_and(|name| {
-                            implicit_outer_instance::is_implicit(self, name, &params)
-                        });
+                    let implicit = new_type.value.as_deref().is_some_and(|name| {
+                        implicit_outer_instance::is_implicit(self, name, &params)
+                    });
                     if !implicit {
                         enclosing = NewExprent::get_qualified_new_instance_opt(
                             new_type.value.as_deref(),
@@ -812,8 +799,7 @@ impl NewExprent {
         } else if is_var_arg_param {
             let left_type = new_type.decrease_array_dim();
             let lst_array_elements = self.get_lst_array_elements();
-            let lone_cast = kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
-                && lst_array_elements.len() == 1
+            let lone_cast = lst_array_elements.len() == 1
                 && vararg_spread_resolution::lone_element_cast(
                     &new_type,
                     lst_array_elements.get(0),
@@ -843,19 +829,6 @@ impl NewExprent {
                     ExprProcessor::get_casted_exprent(element, &left_type, &mut buf, indent, false);
                 }
                 i += 1;
-            }
-
-            if lst_array_elements.len() == 1
-                && !kuna_fixes::enabled(KunaFix::VarargSpreadResolution)
-            {
-                let element_type = lst_array_elements.get(0).get_expr_type();
-                if element_type.type_ == CodeType::Object
-                    && element_type.value_str() == "java/lang/Object"
-                    && element_type.array_dim >= 1
-                {
-                    buf.prepend("(Object)");
-                    buf.add_class_token(1, 6, "java/lang/Object");
-                }
             }
         } else {
             buf.append("new ").append_type_name(&new_type);

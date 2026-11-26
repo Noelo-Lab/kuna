@@ -4,7 +4,6 @@ use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
 use crate::k_types::KTypes;
 use crate::fixes::finally_sync::kt_semaphore_store_liveness as semaphore_fix;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
 use crate::root_statement::RootStatement;
@@ -27,8 +26,7 @@ impl Pass for EliminateDeadVarsPass {
 
 impl EliminateDeadVarsPass {
     fn eliminate(root: RootStatement, mt: StructMethod, varproc: VarProcessor) -> bool {
-        let monitors = kuna_fixes::enabled(KunaFix::KtSemaphoreStoreLiveness)
-            .then(|| semaphore_fix::monitor_vars(root.0));
+        let monitors = Some(semaphore_fix::monitor_vars(root.0));
         let mut ssau = SSAUConstructorSparseEx::new();
         ssau.split_variables(root, mt);
 

@@ -12,7 +12,6 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::k_element::KElement;
 use crate::k_type::KType;
 use crate::kt_attrs::KtAttrs;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
 use crate::struct_class::StructClass;
 use crate::text_buffer::TextBuffer;
@@ -24,8 +23,7 @@ pub fn type_arguments(cl: StructClass, classname: &str, indent: i32) -> Option<T
         return None;
     };
     let resolver = cls.resolver.as_ref()?;
-    let _scope = kuna_fixes::enabled(KunaFix::KtTypeParameterId)
-        .then(|| kt_type_parameter_id::class_scope(cl, &cls.proto, resolver));
+    let _scope = kt_type_parameter_id::class_scope(cl, &cls.proto, resolver);
     let supertype = cls
         .proto
         .get_supertype_list()

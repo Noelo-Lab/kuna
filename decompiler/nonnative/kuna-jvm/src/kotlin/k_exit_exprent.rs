@@ -10,7 +10,6 @@ use crate::fixes::kt_java_syntax::kt_throwable_cast;
 use crate::kotlin_exprent;
 use crate::fixes::kt_jumps;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -45,25 +44,20 @@ impl KExitExprent {
     /// A value-less `return` outside a named lambda throws `NullPointerException`, as in Vineflower.
     pub fn to_java(self, indent: i32) -> TextBuffer {
         if self.get_exit_type() == ExitType::Throw {
-            if kuna_fixes::enabled(KunaFix::KtThrowableCast) {
-                if let Some(cast) = self.get_value() {
-                    if let Some(operand) = kt_throwable_cast::uncast(cast) {
-                        let mut buf = TextBuffer::new();
-                        buf.add_bytecode_mapping(self.get_bytecode().as_ref());
-                        buf.add_bytecode_mapping(cast.get_bytecode().as_ref());
-                        buf.append("throw ").append_buffer(&operand.to_java(indent));
-                        return buf;
-                    }
+            if let Some(cast) = self.get_value() {
+                if let Some(operand) = kt_throwable_cast::uncast(cast) {
+                    let mut buf = TextBuffer::new();
+                    buf.add_bytecode_mapping(self.get_bytecode().as_ref());
+                    buf.add_bytecode_mapping(cast.get_bytecode().as_ref());
+                    buf.append("throw ").append_buffer(&operand.to_java(indent));
+                    return buf;
                 }
             }
             return ExitExprent::to_java(self.0, indent);
         }
 
         let outer_method = DecompilerContext::get_current_method_wrapper().filter(|m| {
-            !(kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject)
-                && kt_synthetic_anonymous_object::is_declaration(*m))
-                && !(kuna_fixes::enabled(KunaFix::KtReturnOutsideLambda)
-                    && !kt_jumps::is_lambda_body(*m))
+            !kt_synthetic_anonymous_object::is_declaration(*m) && kt_jumps::is_lambda_body(*m)
         });
         if outer_method.is_some() {
             let mut buf = TextBuffer::new();

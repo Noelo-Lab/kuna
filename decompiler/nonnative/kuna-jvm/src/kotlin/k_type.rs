@@ -14,7 +14,6 @@ use crate::k_types::KTypes;
 use crate::kt_proto::{self, Projection};
 use crate::fixes::kt_suspend;
 use crate::fixes::kt_types::kt_type_parameter_id;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::text_buffer::TextBuffer;
 use crate::validation_helper::ValidationHelper;
@@ -209,7 +208,7 @@ impl KType {
 
         let type_parameter_name = if type_.has_type_parameter_name() {
             Some(name_resolver.resolve(type_.get_type_parameter_name()))
-        } else if kuna_fixes::enabled(KunaFix::KtTypeParameterId) && type_.has_type_parameter() {
+        } else if type_.has_type_parameter() {
             kt_type_parameter_id::name(type_.get_type_parameter())
         } else {
             None
@@ -229,9 +228,7 @@ impl KType {
             type_parameter_name,
             type_alias_name,
         );
-        if kuna_fixes::enabled(KunaFix::KtSuspendFunctionType)
-            && kt_suspend::is_suspend_function_type(type_)
-        {
+        if kt_suspend::is_suspend_function_type(type_) {
             k_type.kuna_with_suspend()
         } else {
             k_type

@@ -18,7 +18,6 @@ use crate::key::Key;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_suspend;
 use crate::kotlin_chooser::KotlinChooser;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::method_descriptor::MethodDescriptor;
@@ -110,18 +109,13 @@ pub fn resume_path(mt: StructMethod) -> Option<Rc<[usize]>> {
 }
 
 /// The slot of `$completion`, when `mt` is a function the metadata declares
-/// `suspend` (or, with fix `kt_suspend_without_metadata`, a method without
-/// metadata that overrides one, or with fix `kt_suspend_impl` the
+/// `suspend` (or a method without metadata that overrides one, or the
 /// `$suspendImpl` method holding one's body) and its last parameter is the
 /// continuation.
 pub fn completion_slot(mt: StructMethod) -> Option<i32> {
     let suspend = match KtAttrs::get(mt, &KElement::KEY()) {
         Some(KElement::Function(function)) => Flags::IS_SUSPEND.get(function.flags),
-        _ => {
-            (kuna_fixes::enabled(KunaFix::KtSuspendWithoutMetadata)
-                && kt_suspend::overridden(mt).is_some())
-                || (kuna_fixes::enabled(KunaFix::KtSuspendImpl) && kt_suspend_impl::member_of(mt).is_some())
-        }
+        _ => kt_suspend::overridden(mt).is_some() || kt_suspend_impl::member_of(mt).is_some(),
     };
     if !suspend {
         return None;

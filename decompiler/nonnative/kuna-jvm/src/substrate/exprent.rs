@@ -29,7 +29,6 @@ use crate::if_exprent::{IfExprent, IfExprentData};
 use crate::invocation_exprent::{InvocationExprent, InvocationExprentData};
 use crate::k_dispatch::{self, KExprentExt};
 use crate::fixes::generics;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::method_wrapper::MethodWrapper;
@@ -774,24 +773,14 @@ impl Exprent {
         let mut ret: JHashMap<VarType, Vec<VarType>> = JHashMap::new();
         let mut class_: Option<ClassNode> = DecompilerContext::get_current_class_node();
         let mut method: Option<MethodWrapper> = DecompilerContext::get_current_method_wrapper();
-        let scoped = kuna_fixes::enabled(KunaFix::StaticTypeVariableScope);
-        let shadowing = kuna_fixes::enabled(KunaFix::TypeVariableShadowing);
         let mut static_context = false;
 
         loop {
-            let inner = if shadowing {
-                ret.clone()
-            } else {
-                JHashMap::new()
-            };
-            if scoped {
-                static_context |= method.is_some_and(|m| {
-                    generics::is_static_method(class_, m)
-                });
-            }
+            let inner = ret.clone();
+            static_context |= method.is_some_and(|m| generics::is_static_method(class_, m));
             let cls = class_
                 .filter(|_| !static_context)
-                .filter(|c| !shadowing || c.with(|d| d.type_) != ClassNodeType::Lambda)
+                .filter(|c| c.with(|d| d.type_) != ClassNodeType::Lambda)
                 .and_then(|c| c.with(|d| d.class_struct).get_signature());
             if let Some(cls) = cls {
                 let fparameters = cls.fparameters().clone();

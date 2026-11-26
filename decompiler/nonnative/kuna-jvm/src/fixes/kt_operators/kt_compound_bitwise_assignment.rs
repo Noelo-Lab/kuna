@@ -8,7 +8,6 @@ use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::k_function_exprent::KFunctionType;
 use crate::fixes::kt_operators::{self, kt_operator_precedence};
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -21,8 +20,7 @@ pub fn write(
     right: Exprent,
     indent: i32,
 ) -> Option<TextBuffer> {
-    let narrowed = kuna_fixes::enabled(KunaFix::KtNarrowBitwiseOperand)
-        && kt_operators::widening(left_type).is_some();
+    let narrowed = kt_operators::widening(left_type).is_some();
     if !matches!(
         operator,
         FunctionType::And

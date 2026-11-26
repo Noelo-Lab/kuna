@@ -13,7 +13,6 @@ use crate::k_new_exprent::KNewExprent;
 use crate::k_switch_head_exprent::KSwitchHeadExprent;
 use crate::k_var_exprent::KVarExprent;
 use crate::kt_proto::Visibility;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -66,13 +65,8 @@ impl KUtils {
             jthrow!(NullPointerException; "visibility is null")
         };
         match visibility {
-            Visibility::Local if kuna_fixes::enabled(KunaFix::KtLocalVisibilityComment) => {
-                buf.append("/* $VF: local visibility outside of method */ internal ");
-            }
             Visibility::Local => {
-                buf.append("// $VF: local visibility outside of methodSupplier")
-                    .append_line_separator()
-                    .append("internal ");
+                buf.append("/* $VF: local visibility outside of method */ internal ");
             }
             Visibility::PrivateToThis => {
                 buf.append("private ");

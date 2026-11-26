@@ -18,7 +18,6 @@ use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_names::kt_unescaped_name;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::method_descriptor::MethodDescriptor;
@@ -241,15 +240,9 @@ impl VarExprent {
             }
 
             let name = self.get_name();
-            if !definition
-                && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                && writing_kotlin()
-            {
-                let reference = kt_suspend_lambda::receiver_reference(self).or_else(|| {
-                    kuna_fixes::enabled(KunaFix::KtSuspendImpl)
-                        .then(|| kt_suspend_impl::name(self))
-                        .flatten()
-                });
+            if !definition && writing_kotlin() {
+                let reference = kt_suspend_lambda::receiver_reference(self)
+                    .or_else(|| kt_suspend_impl::name(self));
                 if let Some(reference) = reference {
                     buffer.append(&reference);
                     return buffer;
@@ -301,11 +294,7 @@ impl VarExprent {
                         };
 
                 match this_var {
-                    Some(_)
-                        if name.ends_with(".this")
-                            && kuna_fixes::enabled(KunaFix::KtOuterThis)
-                            && writing_kotlin() =>
-                    {
+                    Some(_) if name.ends_with(".this") && writing_kotlin() => {
                         buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
                     }
                     Some(this_var) if name.contains(".this") => {
@@ -319,11 +308,7 @@ impl VarExprent {
                         if !VarExprent::is_valid_name(&name) && !name.contains(".this") {
                             write_name = self.get_var_ver_name(self.get_var_version_pair());
                         }
-                        let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                            kt_unescaped_name::variable(&write_name)
-                        } else {
-                            write_name.clone()
-                        };
+                        let printed = kt_unescaped_name::variable(&write_name);
 
                         buffer.append_variable_descriptor(
                             &printed,
@@ -350,11 +335,7 @@ impl VarExprent {
                 }
 
                 match this_var {
-                    Some(_)
-                        if name.ends_with(".this")
-                            && kuna_fixes::enabled(KunaFix::KtOuterThis)
-                            && writing_kotlin() =>
-                    {
+                    Some(_) if name.ends_with(".this") && writing_kotlin() => {
                         buffer.append(&KVarExprent::outer_this_label(&name[..name.len() - 5]));
                     }
                     Some(this_var) if name.contains(".this") => {
@@ -377,11 +358,7 @@ impl VarExprent {
             write_name = self.get_var_ver_name(self.get_var_version_pair());
         }
 
-        if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-            buffer.append(&kt_unescaped_name::variable(&write_name));
-        } else {
-            buffer.append(&write_name);
-        }
+        buffer.append(&kt_unescaped_name::variable(&write_name));
         if write_name != name {
             buffer.append("/* $VF was: ").append(name).append(" */");
         }
@@ -626,9 +603,6 @@ impl VarExprent {
 
     /// Fix `kt_raw_generic_type`: the type the Kotlin plugin gave this local.
     pub fn kuna_declared(self) -> Option<crate::var_processor::KunaLocalType> {
-        if !kuna_fixes::enabled(KunaFix::KtRawGenericType) {
-            return None;
-        }
         let (processor, index, signed) = self.d(|d| {
             (
                 d.processor,

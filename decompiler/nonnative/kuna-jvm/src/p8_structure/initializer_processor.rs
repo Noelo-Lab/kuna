@@ -15,7 +15,6 @@ use crate::function_exprent::FunctionType;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::class_writing;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
@@ -162,9 +161,7 @@ impl InitializerProcessor {
 
                     if hide_super {
                         first_exprents.remove_at(0);
-                        if kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall) {
-                            method.with_mut(|d| d.hidden_super = Some(inv_expr));
-                        }
+                        method.with_mut(|d| d.hidden_super = Some(inv_expr));
                     }
                 }
             }
@@ -230,28 +227,26 @@ impl InitializerProcessor {
                 }
             }
 
-            if kuna_fixes::enabled(KunaFix::EnumConstantInValuesArray) {
-                class_writing::extract_values_array_constants(
-                    wrapper,
-                    cl,
-                    &first_exprents,
-                    &mut whitelist,
-                    &multi_assign,
-                    |field, value, whitelist, fidx| {
-                        Self::is_exprent_independent(
-                            field,
-                            value,
-                            method,
-                            cl,
-                            whitelist,
-                            &multi_assign,
-                            &[],
-                            fidx,
-                            true,
-                        )
-                    },
-                );
-            }
+            class_writing::extract_values_array_constants(
+                wrapper,
+                cl,
+                &first_exprents,
+                &mut whitelist,
+                &multi_assign,
+                |field, value, whitelist, fidx| {
+                    Self::is_exprent_independent(
+                        field,
+                        value,
+                        method,
+                        cl,
+                        whitelist,
+                        &multi_assign,
+                        &[],
+                        fidx,
+                        true,
+                    )
+                },
+            );
 
             let mut not_inlined: Vec<FieldExprent> = Vec::new();
 

@@ -15,16 +15,13 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::generic_method_descriptor::GenericMethodDescriptor;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::struct_class::StructClass;
 use crate::var_type::VarType;
 
 /// Whether the static call of `owner.name` whose qualifier would be
 /// `short_name` is written without a qualifier.
 pub fn drop_qualifier(owner: &str, name: &str, short_name: &str) -> bool {
-    if short_name != ExprProcessor::UNREPRESENTABLE_TYPE_STRING
-        || !kuna_fixes::enabled(KunaFix::AnonymousStaticQualifier)
-    {
+    if short_name != ExprProcessor::UNREPRESENTABLE_TYPE_STRING {
         return false;
     }
     enclosed_without_shadow(DecompilerContext::get_current_class_node(), owner, name)

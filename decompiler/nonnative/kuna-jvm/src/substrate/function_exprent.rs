@@ -14,7 +14,6 @@ use crate::fixes::kt_operators::kt_operator_precedence;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::numeric_types::concat_operand_type;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::list_stack::ListStack;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -493,10 +492,7 @@ impl FunctionExprent {
     /// Java `getInferredExprType(VarType)` exactly, `null` included.
     pub fn get_inferred_expr_type_opt(self, upper_bound: Option<&VarType>) -> Option<VarType> {
         let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
-        if func_type == FunctionType::Other
-            && kuna_fixes::enabled(KunaFix::KtNotNullAssertion)
-            && kt_not_null_assertion::is_not_null(self.0)
-        {
+        if func_type == FunctionType::Other && kt_not_null_assertion::is_not_null(self.0) {
             return lst_operands.get(0).get_inferred_expr_type_opt(upper_bound);
         }
         if func_type == FunctionType::Cast {
@@ -630,10 +626,7 @@ impl FunctionExprent {
 
     pub fn get_exprent_use(self) -> i32 {
         let (func_type, lst_operands) = self.d(|d| (d.func_type, d.lst_operands.clone()));
-        if func_type == FunctionType::Other
-            && kuna_fixes::enabled(KunaFix::KtNotNullAssertion)
-            && kt_not_null_assertion::is_not_null(self.0)
-        {
+        if func_type == FunctionType::Other && kt_not_null_assertion::is_not_null(self.0) {
             return 0;
         }
         if func_type.ordinal() >= FunctionType::Imm.ordinal()
@@ -877,9 +870,7 @@ impl FunctionExprent {
                 }
             }
 
-            if matches!(func_type, FunctionType::Eq | FunctionType::Ne)
-                && kuna_fixes::enabled(KunaFix::ReferenceUnboxing)
-            {
+            if matches!(func_type, FunctionType::Eq | FunctionType::Ne) {
                 numeric_types::keep_in_comparison(left, right);
             }
 
@@ -941,12 +932,7 @@ impl FunctionExprent {
                     buf.append_buffer(&lst_operands.get(i).to_java(indent));
                 }
                 buf.enclose_with_parens();
-                if kuna_fixes::enabled(KunaFix::BoxedTypeVariableCast) {
-                    keep_boxing_under_cast(
-                        lst_operands.get(0),
-                        &lst_operands.get(1).get_expr_type(),
-                    );
-                }
+                keep_boxing_under_cast(lst_operands.get(0), &lst_operands.get(1).get_expr_type());
                 let operand = self.wrap_operand_string(lst_operands.get(0), true, indent);
                 buf.append_buffer(&operand);
                 return buf;
@@ -965,9 +951,7 @@ impl FunctionExprent {
                     );
                     buf.add_type_name_token(&obj_arr, 2);
                 }
-                if kuna_fixes::enabled(KunaFix::KtMappedJavaMember)
-                    && writing_kotlin()
-                {
+                if writing_kotlin() {
                     buf.append(".size");
                 } else {
                     buf.append(".length");
@@ -980,14 +964,8 @@ impl FunctionExprent {
                 buf.append_buffer(&first)
                     .append_possible_newline_alt(" ")
                     .append("? ");
-                let arm_casts = if kuna_fixes::enabled(KunaFix::TernaryNumericArms) {
-                    ternary_numeric_arms::arm_casts(
-                        lst_operands.get(1),
-                        lst_operands.get(2),
-                    )
-                } else {
-                    [None, None]
-                };
+                let arm_casts =
+                    ternary_numeric_arms::arm_casts(lst_operands.get(1), lst_operands.get(2));
                 let second =
                     self.wrap_ternary_arm(lst_operands.get(1), arm_casts[0].as_ref(), indent);
                 buf.append_buffer(&second)
@@ -1125,10 +1103,10 @@ impl FunctionExprent {
     /// would end the statement at a break before it (fix
     /// `kt_operator_line_break`).
     fn append_operator(self, buf: &mut TextBuffer, operator: &str) {
-        if kuna_fixes::enabled(KunaFix::KtOperatorLineBreak)
-            && kt_operator_line_break::breaks_after(self)
-        {
-            buf.append(" ").append(operator).append_possible_newline_alt(" ");
+        if kt_operator_line_break::breaks_after(self) {
+            buf.append(" ")
+                .append(operator)
+                .append_possible_newline_alt(" ");
         } else {
             buf.append_possible_newline_alt(" ")
                 .append(operator)
@@ -1143,7 +1121,7 @@ impl FunctionExprent {
         left: Exprent,
         right: Exprent,
     ) -> (Option<&'static str>, Option<&'static str>) {
-        if !kuna_fixes::enabled(KunaFix::KtBinaryNumericPromotion) || !self.0.is_k_function() {
+        if !self.0.is_k_function() {
             return (None, None);
         }
         kt_binary_numeric_promotion::conversions(self.get_func_type(), left, right)
@@ -1151,7 +1129,7 @@ impl FunctionExprent {
     }
 
     fn kotlin_promotion_of_negation(self, operand: Exprent) -> Option<&'static str> {
-        if !kuna_fixes::enabled(KunaFix::KtBinaryNumericPromotion) || !self.0.is_k_function() {
+        if !self.0.is_k_function() {
             return None;
         }
         kt_binary_numeric_promotion::negation(operand)
@@ -1198,15 +1176,14 @@ impl FunctionExprent {
                         && !same_type(&expr.get_expr_type_opt(), &VarType::VARTYPE_DOUBLE())
                     {
                         parentheses = !FunctionExprent::is_associative(func_type);
-                        if !parentheses && kuna_fixes::enabled(KunaFix::MixedTypeReassociation) {
-                            parentheses =
-                                numeric_types::regroups_type(self, expr);
+                        if !parentheses {
+                            parentheses = numeric_types::regroups_type(self, expr);
                         }
                     }
                 }
             }
         }
-        if !parentheses && kuna_fixes::enabled(KunaFix::KtOperatorPrecedence) {
+        if !parentheses {
             parentheses = kt_operator_precedence::needs_parentheses(self, expr);
         }
 
@@ -1223,10 +1200,7 @@ impl FunctionExprent {
         }
 
         let mut res = expr.to_java(indent);
-        if !parentheses
-            && kuna_fixes::enabled(KunaFix::KtOperatorPrecedence)
-            && kt_operator_precedence::written_as_other(expr)
-        {
+        if !parentheses && kt_operator_precedence::written_as_other(expr) {
             parentheses = kt_operator_precedence::needs_parentheses(self, expr);
         }
 

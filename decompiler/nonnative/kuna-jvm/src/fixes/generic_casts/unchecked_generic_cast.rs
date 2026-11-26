@@ -9,7 +9,6 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::fixes::generic_casts::unchecked_call_result_cast;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::kuna_static_types::{arg_equal, field_declared, param_type, supertype_args};
 use crate::var_type::{instance_of, VarType};
 
@@ -68,14 +67,11 @@ pub fn cast_for(exprent: Exprent, left: &VarType) -> Option<VarType> {
 
 /// The type the program declares for `exprent`: `this` (not of an inner
 /// class), a static field or a field of `this` of a known class, or a
-/// variable with a local variable table entry or a parameter's declared type;
-/// with the fix `unchecked_call_result_cast`, also a call's declared result
-/// (`fixes::generic_casts::unchecked_call_result_cast`).
+/// variable with a local variable table entry or a parameter's declared type,
+/// or a call's declared result (`fixes::generic_casts::unchecked_call_result_cast`).
 pub(crate) fn declared_type(exprent: Exprent) -> Option<VarType> {
     if let Some(inv) = exprent.try_as_invocation() {
-        return kuna_fixes::enabled(KunaFix::UncheckedCallResultCast)
-            .then(|| unchecked_call_result_cast::declared_result(inv, declared_type))
-            .flatten();
+        return unchecked_call_result_cast::declared_result(inv, declared_type);
     }
     if let Some(var) = exprent.try_as_var() {
         let processor = var.get_processor()?;

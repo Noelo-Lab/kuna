@@ -13,7 +13,6 @@ use crate::fixes::kt_operators::kt_compound_bitwise_assignment;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_util::writing_kotlin;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
@@ -109,7 +108,7 @@ impl AssignmentExprent {
             Some(FunctionType::Shl | FunctionType::Shr | FunctionType::Ushr)
         );
         if type_left.type_family.is_greater(type_right.type_family) {
-            if shift && kuna_fixes::enabled(KunaFix::CompoundShiftCountType) {
+            if shift {
                 result.add_expr_lower_bound(right, &VarType::VARTYPE_BYTECHAR());
             } else {
                 result.add_expr_lower_bound(
@@ -189,11 +188,7 @@ impl AssignmentExprent {
         if field_in_class_init {
             let field = left.as_field();
             let name = field.get_name();
-            let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                kt_unescaped_name::member(&name)
-            } else {
-                name.clone()
-            };
+            let printed = kt_unescaped_name::member(&name);
             buffer.append_field_descriptor(
                 &printed,
                 false,
@@ -201,9 +196,7 @@ impl AssignmentExprent {
                 &name,
                 &field.get_descriptor(),
             );
-        } else if kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
-            && left.try_as_var().is_some_and(|v| v.is_definition())
-        {
+        } else if left.try_as_var().is_some_and(|v| v.is_definition()) {
             buffer.append_buffer(&kt_unrepresentable_declared_type::initialized(|| {
                 left.to_java(indent)
             }));
@@ -212,17 +205,15 @@ impl AssignmentExprent {
         }
 
         if let Some(right_const) = self.get_right().try_as_const() {
-            if kuna_fixes::enabled(KunaFix::DefinitionConstType) {
-                if let Some(var) = left.try_as_var().filter(|v| v.is_definition()) {
-                    let declared = var.get_definition_var_type();
-                    if left_type.type_family == TypeFamily::Boolean
-                        && right_const.get_const_type().type_family == TypeFamily::Boolean
-                        && declared.array_dim == 0
-                        && declared.type_family == TypeFamily::Integer
-                    {
-                        right_const.set_const_type(declared.clone());
-                        left_type = declared;
-                    }
+            if let Some(var) = left.try_as_var().filter(|v| v.is_definition()) {
+                let declared = var.get_definition_var_type();
+                if left_type.type_family == TypeFamily::Boolean
+                    && right_const.get_const_type().type_family == TypeFamily::Boolean
+                    && declared.array_dim == 0
+                    && declared.type_family == TypeFamily::Integer
+                {
+                    right_const.set_const_type(declared.clone());
+                    left_type = declared;
                 }
             }
             right_const.adjust_const_type(&left_type);
@@ -257,14 +248,13 @@ impl AssignmentExprent {
                 }
             }
             Some(cond_type) => {
-                let kotlin = (kuna_fixes::enabled(KunaFix::KtCompoundBitwiseAssignment)
-                    && writing_kotlin())
-                .then(|| {
-                    kt_compound_bitwise_assignment::write(
-                        left, &left_type, cond_type, right, indent,
-                    )
-                })
-                .flatten();
+                let kotlin = writing_kotlin()
+                    .then(|| {
+                        kt_compound_bitwise_assignment::write(
+                            left, &left_type, cond_type, right, indent,
+                        )
+                    })
+                    .flatten();
                 if let Some(kotlin) = kotlin {
                     buffer.append_buffer(&kotlin);
                 } else {

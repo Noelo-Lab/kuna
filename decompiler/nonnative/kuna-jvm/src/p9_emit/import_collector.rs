@@ -7,7 +7,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::fixes::kt_names::kt_escaped_class_name;
 use crate::kotlin_import_collector::KotlinImportCollector;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::class_writing;
 use crate::struct_inner_classes_attribute::Entry;
 use crate::rt::{JHashMap, JHashSet};
@@ -87,8 +86,7 @@ impl ImportCollector {
             }
         }
 
-        let kuna_names = kuna_fixes::enabled(KunaFix::ExternalInheritedMemberType)
-            .then(JHashMap::new);
+        let kuna_names = Some(JHashMap::new());
         collector.collect_conflicting_short_names(root, &JHashMap::new(), kuna_names.as_ref());
         collector
     }
@@ -143,7 +141,7 @@ impl ImportCollector {
     /// nameless non-anonymous nested class).
     pub fn get_short_name_imported(self, full_name: &str, imported: bool) -> Option<String> {
         let name = self.get_short_name_imported_java(full_name, imported);
-        if self.with(|d| d.kotlin) && kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
+        if self.with(|d| d.kotlin) {
             return name.map(|name| kt_escaped_class_name::escape_qualified(&name));
         }
         name
@@ -191,7 +189,7 @@ impl ImportCollector {
                 return result;
             }
         } else {
-            if kuna_fixes::enabled(KunaFix::NonpublicNestedImport) && !self.with(|d| d.kotlin) {
+            if !self.with(|d| d.kotlin) {
                 if let Some(name) = class_writing::qualified_name(self, &full_name, imported) {
                     return Some(name);
                 }
@@ -228,7 +226,7 @@ impl ImportCollector {
         };
         let inner_class_name = |name: &str| -> Option<String> {
             self.with(|d| {
-                if !d.kotlin && kuna_fixes::enabled(KunaFix::ExternalInheritedMemberType) {
+                if !d.kotlin {
                     if let Some(names) = d.kuna_inner_class_names.get(&map_key) {
                         return names.get_cloned(&name.to_string());
                     }

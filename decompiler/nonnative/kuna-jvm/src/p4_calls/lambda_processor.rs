@@ -5,7 +5,6 @@ use crate::code_constants::OPC_INVOKEDYNAMIC;
 use crate::decompiler_context::DecompilerContext;
 use crate::interpreter_util::InterpreterUtil;
 use crate::jthrow;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::lambdas::self_referencing_lambda;
 use crate::rt::{BitSet, JHashMap};
@@ -150,12 +149,10 @@ impl LambdaProcessor {
 
         sort_nodes(&nested);
 
-        if kuna_fixes::enabled(KunaFix::SelfReferencingLambda) {
-            self_referencing_lambda::write_recursive_lambdas_as_method_references(
-                &nested,
-                &mut map_methods_lambda,
-            );
-        }
+        self_referencing_lambda::write_recursive_lambdas_as_method_references(
+            &nested,
+            &mut map_methods_lambda,
+        );
 
         for nd in nested.to_vec() {
             let (type_, enclosing_method) = nd.with(|d| (d.type_, d.enclosing_method.clone()));

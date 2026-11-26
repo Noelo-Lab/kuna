@@ -1,8 +1,7 @@
-//! kuna's fixes of Vineflower's defects, one module per family of `fixes.toml`
-//! (a folder for a large family). Ported files call them from the
-//! branch their gate `kuna_fixes::enabled(KunaFix::X)` takes; what each fix
-//! does is its row of the fix table in `docs/jvm.md`, the mechanisms the fixes
-//! share are spec section 10.16.
+//! kuna's fixes of Vineflower's defects, one module per family (a folder for a
+//! large family), called from the ported files; what each fix does is its row of
+//! the fix table in `docs/jvm.md`, the mechanisms the fixes share are spec
+//! section 10.16.
 
 pub(crate) mod anonymous_classes;
 pub(crate) mod asserts;

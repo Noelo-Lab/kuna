@@ -20,7 +20,6 @@ use crate::kt_attrs::KtAttrs;
 use crate::kt_metadata::{KotlinMetadataAnnotation, KtMetadata};
 use crate::kt_proto;
 use crate::fixes::kt_types::kt_type_parameter_id;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::language_chooser::LanguageChooser;
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::rt::{rethrow, try_catch, Caught};
@@ -180,7 +179,6 @@ impl KotlinChooser {
             let pcl = kt_proto::Class::parse_from(&mut input);
             let _type_parameters = resolver
                 .as_ref()
-                .filter(|_| kuna_fixes::enabled(KunaFix::KtTypeParameterId))
                 .map(|resolver| kt_type_parameter_id::class_scope(cl, &pcl, resolver));
             KProperty::parse(cl, &pcl.get_property_list(), resolver.as_ref(), None);
             KFunction::parse(

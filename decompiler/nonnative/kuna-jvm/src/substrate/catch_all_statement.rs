@@ -9,7 +9,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::java_subclass;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::finally_sync;
 use crate::rt::{JList, JavaStr};
 use crate::stat_edge::StatEdge;
@@ -77,9 +76,7 @@ impl CatchAllStatement {
             return None;
         }
 
-        if kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
-            && finally_sync::is_open_loop_body(head)
-        {
+        if finally_sync::is_open_loop_body(head) {
             return None;
         }
 

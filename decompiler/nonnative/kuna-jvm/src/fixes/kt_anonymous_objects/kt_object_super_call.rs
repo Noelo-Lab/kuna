@@ -19,7 +19,6 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::k_element::KElement;
 use crate::k_type::KType;
 use crate::kt_attrs::KtAttrs;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::statements::Statements;
 use crate::text_buffer::TextBuffer;
@@ -176,8 +175,7 @@ fn super_arguments(
     if call
         .get_string_descriptor()
         .contains(DEFAULT_CONSTRUCTOR_MARKER)
-        && !(kuna_fixes::enabled(KunaFix::KtDefaultArgsSuperCall)
-            && kt_default_args_super_call::resugar(call))
+        && !kt_default_args_super_call::resugar(call)
     {
         return None;
     }

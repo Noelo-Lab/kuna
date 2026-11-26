@@ -27,7 +27,6 @@ use crate::if_statement::IfStatement;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::{InvocationType, Type as InvocationFuncType};
 use crate::jthrow;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::constructor_calls::synthetic_null_check_shape;
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
@@ -934,42 +933,40 @@ impl SimplifyExprentsHelper {
                 && invocation.get_name() == "requireNonNull"
                 && invocation.get_string_descriptor() == "(Ljava/lang/Object;)Ljava/lang/Object;")
         {
-            if kuna_fixes::enabled(KunaFix::SyntheticNullCheckShape)
-                && !synthetic_null_check_shape::is_javac_check(
-                    invocation.get_kuna_null_check_shape(),
-                    if invocation.is_static() {
-                        invocation.get_lst_parameters().get(0)
-                    } else {
-                        invocation.get_instance().expect("NullPointerException: instance")
-                    },
-                )
-            {
-                return false;
-            }
-            if kuna_fixes::enabled(KunaFix::QualifiedSuperCall) {
-                let checked = if invocation.is_static() {
+            if !synthetic_null_check_shape::is_javac_check(
+                invocation.get_kuna_null_check_shape(),
+                if invocation.is_static() {
                     invocation.get_lst_parameters().get(0)
                 } else {
-                    invocation.get_instance().expect("NullPointerException: instance")
-                };
-                if synthetic_null_check_shape::is_javac_check(
-                    invocation.get_kuna_null_check_shape(),
-                    checked,
-                ) && qualified_super_call::mark_checked(checked, second)
-                {
-                    return true;
-                }
+                    invocation
+                        .get_instance()
+                        .expect("NullPointerException: instance")
+                },
+            ) {
+                return false;
+            }
+            let checked = if invocation.is_static() {
+                invocation.get_lst_parameters().get(0)
+            } else {
+                invocation
+                    .get_instance()
+                    .expect("NullPointerException: instance")
+            };
+            if synthetic_null_check_shape::is_javac_check(
+                invocation.get_kuna_null_check_shape(),
+                checked,
+            ) && qualified_super_call::mark_checked(checked, second)
+            {
+                return true;
             }
             if invocation.is_synthetic_null_check() {
-                if kuna_fixes::enabled(KunaFix::ImplicitOuterInstance) {
-                    let target = if invocation.is_static() {
-                        Some(invocation.get_lst_parameters().get(0))
-                    } else {
-                        invocation.get_instance()
-                    };
-                    if let Some(target) = target {
-                        implicit_outer_instance::mark_checked(target, second);
-                    }
+                let target = if invocation.is_static() {
+                    Some(invocation.get_lst_parameters().get(0))
+                } else {
+                    invocation.get_instance()
+                };
+                if let Some(target) = target {
+                    implicit_outer_instance::mark_checked(target, second);
                 }
                 return true;
             }
@@ -1010,25 +1007,20 @@ impl SimplifyExprentsHelper {
                     });
                     if let Some(node) = node {
                         if node.with(|d| d.type_) != ClassNodeType::Root {
-                            if kuna_fixes::enabled(KunaFix::ImplicitOuterInstance) {
-                                new_expr.set_outer_checked();
-                            }
+                            new_expr.set_outer_checked();
                             return true;
                         }
                     }
                 }
             }
-            if kuna_fixes::enabled(KunaFix::QualifiedSuperCall)
-                && synthetic_null_check_shape::is_javac_check(
-                    invocation.get_kuna_null_check_shape(),
-                    target.expect("NullPointerException: target"),
-                )
-                && qualified_super_call::mark_checked_copy(
-                    target.expect("NullPointerException: target"),
-                    second,
-                    invocation.is_static(),
-                )
-            {
+            if synthetic_null_check_shape::is_javac_check(
+                invocation.get_kuna_null_check_shape(),
+                target.expect("NullPointerException: target"),
+            ) && qualified_super_call::mark_checked_copy(
+                target.expect("NullPointerException: target"),
+                second,
+                invocation.is_static(),
+            ) {
                 return true;
             }
         }

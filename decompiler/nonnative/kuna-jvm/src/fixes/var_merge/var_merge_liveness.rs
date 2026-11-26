@@ -8,7 +8,6 @@ use crate::direct_node_type::DirectNodeType;
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::finally_sync::finally_exit_versions::FinallyExitVersions;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet};
@@ -53,11 +52,7 @@ impl Flow {
         for (i, (node, _)) in nodes.iter().enumerate() {
             by_id.put(node.id(), i);
         }
-        let exits = if kuna_fixes::enabled(KunaFix::FinallyExitVersions) {
-            FinallyExitVersions::exit_edges(&graph.nodes())
-        } else {
-            JHashMap::new()
-        };
+        let exits = FinallyExitVersions::exit_edges(&graph.nodes());
         Flow {
             nodes,
             exprents,

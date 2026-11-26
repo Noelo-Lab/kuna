@@ -14,7 +14,6 @@ use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::kotlin_writer::KotlinWriter;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::BitSet;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
@@ -90,47 +89,33 @@ impl KVarExprent {
     }
 
     pub fn get_name(self) -> String {
-        if kuna_fixes::enabled(KunaFix::KtExtensionReceiver) {
-            if let Some(name) = kt_extensions::name(self.0) {
-                return name;
-            }
+        if let Some(name) = kt_extensions::name(self.0) {
+            return name;
         }
-        if kuna_fixes::enabled(KunaFix::KtSetterParameterName) {
-            if let Some(name) = kt_properties::name_in_setter(self.0) {
-                return name;
-            }
+        if let Some(name) = kt_properties::name_in_setter(self.0) {
+            return name;
         }
-        if kuna_fixes::enabled(KunaFix::KtDefaultValueNames) {
-            if let Some(name) = kt_default_args::name_in_defaults(self.0) {
-                return name;
-            }
+        if let Some(name) = kt_default_args::name_in_defaults(self.0) {
+            return name;
         }
-        if kuna_fixes::enabled(KunaFix::KtSuspendImpl) {
-            if let Some(name) = kt_suspend_impl::name(self.0) {
-                return name;
-            }
+        if let Some(name) = kt_suspend_impl::name(self.0) {
+            return name;
         }
-        if kuna_fixes::enabled(KunaFix::KtFunctionParameterName) {
-            if let Some(name) = kt_function_parameter_name::name(self.0) {
-                return name;
-            }
+        if let Some(name) = kt_function_parameter_name::name(self.0) {
+            return name;
         }
         let name = VarExprent::get_name_base(self.0);
 
-        if kuna_fixes::enabled(KunaFix::KtSuspendLambda) {
-            if let Some(reference) = kt_suspend_lambda::receiver_reference(self.0) {
-                return reference;
-            }
+        if let Some(reference) = kt_suspend_lambda::receiver_reference(self.0) {
+            return reference;
         }
 
         if name.starts_with("this@") || name == "this" {
             return name;
         }
 
-        if kuna_fixes::enabled(KunaFix::KtOuterThis) {
-            if let Some(class) = name.strip_suffix(".this").filter(|c| !c.is_empty()) {
-                return KVarExprent::outer_this_label(class);
-            }
+        if let Some(class) = name.strip_suffix(".this").filter(|c| !c.is_empty()) {
+            return KVarExprent::outer_this_label(class);
         }
 
         KotlinWriter::to_valid_kotlin_identifier(&name)
@@ -168,13 +153,10 @@ impl KVarExprent {
                 None => KTypes::get_kotlin_type(Some(&self.get_definition_var_type())),
             };
             if !(declaration_type == Some(DeclarationType::Definition)
-                && kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
                 && kt_unrepresentable_declared_type::omits(&written))
             {
                 buffer.append(": ");
-                if declaration_type == Some(DeclarationType::Definition)
-                    && self.kd(|d| d.nullable)
-                    && kuna_fixes::enabled(KunaFix::KtNullableLocal)
+                if declaration_type == Some(DeclarationType::Definition) && self.kd(|d| d.nullable)
                 {
                     buffer.append(&kt_nullable_local::nullable(&written));
                 } else {

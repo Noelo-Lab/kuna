@@ -8,7 +8,6 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::instruction_sequence::InstructionSequence;
 use crate::java_subclass;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
 use crate::statement::{
     add_instanceof_pattern_vars, LastBasicType, Statement, StatementKind, StatementType,
@@ -103,9 +102,7 @@ impl BasicBlockStatement {
         }
 
         newblock.set_seq(seq);
-        if kuna_fixes::enabled(KunaFix::CopiedFinally) {
-            newblock.set_copy_of(Some(self.get_block()));
-        }
+        newblock.set_copy_of(Some(self.get_block()));
 
         BasicBlockStatement::new(newblock).0
     }

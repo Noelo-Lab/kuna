@@ -24,7 +24,6 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::invocation_exprent::InvocationExprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::root_statement::RootStatement;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
@@ -481,9 +480,6 @@ fn remove_checks(stat: Statement) -> bool {
 
 /// The call as Kotlin writes it, when it is a rebuilt copy.
 pub fn write(inv: InvocationExprent, indent: i32) -> Option<TextBuffer> {
-    if !kuna_fixes::enabled(KunaFix::KtInlinedStdlibCall) {
-        return None;
-    }
     let inlined = inv.d(|d| d.kuna_inlined)?;
     let params = inv.get_lst_parameters().to_vec();
     let mut buf = TextBuffer::new();
@@ -1296,9 +1292,6 @@ fn lambda_marker_parameter(mt: StructMethod, body: Statement, marker: &str) -> O
 
 /// The statement as Kotlin writes it, when it is a marked copy of `use`.
 pub fn write_use(ca: CatchAllStatement, indent: i32) -> Option<TextBuffer> {
-    if !kuna_fixes::enabled(KunaFix::KtInlinedStdlibCall) {
-        return None;
-    }
     let call = ca.d(|d| d.kuna_inlined_use.clone())?;
     let body = ca.0.get_first()?.get_first()?;
     let mut buf = TextBuffer::new();

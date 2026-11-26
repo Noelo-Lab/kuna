@@ -6,7 +6,6 @@ use crate::code_type::CodeType;
 use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -65,7 +64,6 @@ pub fn written_type(operand: Exprent, inferred: VarType) -> VarType {
     if matches!(inferred.type_, CodeType::Bytechar | CodeType::Shortchar)
         && inferred.array_dim == 0
         && operand.try_as_const().is_some()
-        && kuna_fixes::enabled(KunaFix::KtJavaCastSyntax)
     {
         return VarType::VARTYPE_INT();
     }
@@ -81,10 +79,8 @@ pub fn written_type(operand: Exprent, inferred: VarType) -> VarType {
 /// The Kotlin form of Java's cast of a value of type `from` to `to`, if it
 /// has one with the same meaning.
 pub fn form(to: &VarType, from: &VarType) -> Option<KotlinCast> {
-    if kuna_fixes::enabled(KunaFix::KtJavaCastSyntax) {
-        if let Some(cast) = syntax_form(to, from) {
-            return Some(cast);
-        }
+    if let Some(cast) = syntax_form(to, from) {
+        return Some(cast);
     }
     kt_java_reference_cast::applies(to, from)
         .then(|| KotlinCast::Reference(kt_java_reference_cast::nullable(to, from)))

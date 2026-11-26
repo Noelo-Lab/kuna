@@ -28,7 +28,6 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
 use crate::interpreter_util::InterpreterUtil;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::exception_ranges::handler_copy_shared_body::HandlerCopySharedBody;
 use crate::fixes::exception_ranges::overlapping_ranges::OverlappingRanges;
@@ -176,9 +175,7 @@ impl FinallyProcessor {
         graph: ControlFlowGraph,
     ) -> bool {
         self.ssuversions = None;
-        if kuna_fixes::enabled(KunaFix::InlineMarkerFinallyCopy) {
-            self.pool = Some(cl.get_pool());
-        }
+        self.pool = Some(cl.get_pool());
         let bytecode_version = mt.get_bytecode_version();
 
         let mut stack: Vec<Statement> = vec![root.0];
@@ -232,10 +229,8 @@ impl FinallyProcessor {
                                     Self::inline_return_var(graph, handler, &inf);
 
                                     self.finally_blocks.put(handler, None);
-                                    if kuna_fixes::enabled(KunaFix::FinallyExitVersions) {
-                                        let remapped = self.remapped_stores.take();
-                                        self.finally_remapped.put(handler, remapped);
-                                    }
+                                    let remapped = self.remapped_stores.take();
+                                    self.finally_remapped.put(handler, remapped);
                                 } else {
                                     let var_index = DecompilerContext::get_counter_container()
                                         .get_counter_and_increment(CounterContainer::VAR_COUNTER);
@@ -272,9 +267,7 @@ impl FinallyProcessor {
 
                         return true;
                     }
-                } else if Some(stat) == fin.get_first()
-                    && kuna_fixes::enabled(KunaFix::CopiedFinally)
-                {
+                } else if Some(stat) == fin.get_first() {
                     self.mark_copied_finally(fin);
                 }
             }
@@ -1176,9 +1169,7 @@ impl FinallyProcessor {
                 let mut first_op = first.operand(i);
                 let mut second_op = second.operand(i);
                 if first_op != second_op {
-                    if Self::is_store(first.opcode())
-                        && kuna_fixes::enabled(KunaFix::FinallyExitVersions)
-                    {
+                    if Self::is_store(first.opcode()) {
                         let mut remapped = self.remapped_stores.borrow_mut();
                         for slot in [first_op, second_op] {
                             if !remapped.contains(&slot) {
@@ -1351,10 +1342,8 @@ impl FinallyProcessor {
     ) {
         let seq = block.get_seq();
         let instr_old_offsets = block.get_instr_old_offsets();
-        let missing_ok = kuna_fixes::enabled(KunaFix::HandlerCopyOffsets)
-            && (Self::is_whole_handler_copy(graph, block)
-                || (kuna_fixes::enabled(KunaFix::HandlerCopySharedBody)
-                    && HandlerCopySharedBody::owns_body(graph, block)));
+        let missing_ok = Self::is_whole_handler_copy(graph, block)
+            || HandlerCopySharedBody::owns_body(graph, block);
         let remove_offset = |index: i32| {
             if missing_ok {
                 if (0..instr_old_offsets.len() as i32).contains(&index) {

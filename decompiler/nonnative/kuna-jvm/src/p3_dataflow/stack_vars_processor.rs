@@ -20,7 +20,6 @@ use crate::function_exprent::FunctionType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_processor::ScratchScope;
 use crate::monitor_exprent::Type as MonitorType;
@@ -158,7 +157,7 @@ impl StackVarsProcessor {
     /// Whether this pass's SSAU forms keep a field read live only while it is
     /// live on every path (fix `field_read_all_paths`).
     fn field_reads_all_paths(options: StackSimplifyOptions) -> bool {
-        options.inline_regular_vars && kuna_fixes::enabled(KunaFix::FieldReadAllPaths)
+        options.inline_regular_vars
     }
 
     pub fn set_versions_to_null(stat: Statement) {
@@ -210,12 +209,11 @@ impl StackVarsProcessor {
 
         let mut lvts: JHashMap<VarVersionPair, LocalVariable> = JHashMap::new();
 
-        let lock_uses =
-            if options.inline_regular_vars && kuna_fixes::enabled(KunaFix::KtInlineLockLocal) {
-                KtInlineLockLocal::lock_uses(dgraph, ssa)
-            } else {
-                JHashSet::new()
-            };
+        let lock_uses = if options.inline_regular_vars {
+            KtInlineLockLocal::lock_uses(dgraph, ssa)
+        } else {
+            JHashSet::new()
+        };
 
         let mut ret = [0, 0];
         while let Some(mut nd) = stack.pop_front() {
@@ -496,7 +494,6 @@ impl StackVarsProcessor {
 
         if options.inline_regular_vars
             && !left.is_stack()
-            && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
             && kt_suspend_lambda::is_argument_local(left)
         {
             Self::set_ret(ret, -1, changed);
@@ -624,7 +621,6 @@ impl StackVarsProcessor {
         let keeps_single_read = left.is_stack()
             && !options.inline_regular_vars
             && right.is_field()
-            && kuna_fixes::enabled(KunaFix::FieldReadReuse)
             && stack_var_inlining::keeps_single_read(
                 right,
                 &used_vers,
@@ -653,7 +649,6 @@ impl StackVarsProcessor {
                         .as_ref()
                         .is_none_or(|next_vars| next_vars.contains(&usedver)))
                 && (left.is_stack()
-                    || !kuna_fixes::enabled(KunaFix::KtInlineEvaluationOrder)
                     || KtInlineEvaluationOrder::may_move(right, evaluated_next, usedver))
                 && (!untracked_read
                     || KtInlineEvaluationOrder::heap_unchanged_before(right, evaluated_next, usedver))
@@ -679,7 +674,6 @@ impl StackVarsProcessor {
             && !notdom
             && !vernotreplaced
             && set_temp_used_vers.len() > 1
-            && kuna_fixes::enabled(KunaFix::KtInlineHeapRead)
             && KtInlineHeapRead::copies_heap_read(
                 right,
                 &used_vers,
@@ -1318,9 +1312,7 @@ impl StackVarsProcessor {
                                                 if param_types.iter().any(|p| lvt_type.equals(p)) {
                                                     left_var.set_effectively_final(true);
                                                 }
-                                            } else if kuna_fixes::enabled(
-                                                KunaFix::UnlistedAnonymousClass,
-                                            ) {
+                                            } else {
                                                 let def = left_var.get_var_version_pair();
                                                 let reads_def = |pair: VarVersionPair| {
                                                     ssau.get_ssu_versions()

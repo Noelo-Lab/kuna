@@ -10,7 +10,6 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::generic_main::GenericMain;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::jstring::from_utf16;
 use crate::rt::{JHashMap, JHashSet, JavaStr};
 use crate::var_type::{
@@ -263,10 +262,16 @@ impl GenericType {
                 )
                 .0
             }
-        } else if wildcard != GenericType::WILDCARD_NO
-            && kuna_fixes::enabled(KunaFix::PrimitiveArrayWildcard)
-        {
-            GenericType::new_shared(type_, array_dim, value, None, Rc::from(Vec::new()), wildcard).0
+        } else if wildcard != GenericType::WILDCARD_NO {
+            GenericType::new_shared(
+                type_,
+                array_dim,
+                value,
+                None,
+                Rc::from(Vec::new()),
+                wildcard,
+            )
+            .0
         } else {
             VarType::new_value(type_, array_dim, value)
         }
@@ -851,19 +856,11 @@ impl GenericType {
                 .map(|p| p.as_generic());
             if parent.is_none() {
                 if let Some(cls) = get_class(&other_parent.value) {
-                    if kuna_fixes::enabled(KunaFix::GenericParentWithoutSignature) {
-                        parent = Some(match cls.get_signature() {
-                            Some(sig) => sig.generic_type(),
-                            None => GenericType::parse(&format!("L{}<>;", cls.qualified_name()))
-                                .as_generic(),
-                        });
-                    } else {
-                        parent = Some(
-                            cls.get_signature()
-                                .expect("NullPointerException")
-                                .generic_type(),
-                        );
-                    }
+                    parent = Some(match cls.get_signature() {
+                        Some(sig) => sig.generic_type(),
+                        None => GenericType::parse(&format!("L{}<>;", cls.qualified_name()))
+                            .as_generic(),
+                    });
                 }
             }
 

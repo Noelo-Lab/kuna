@@ -1,19 +1,17 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/TryHelper.java`.
 use crate::catch_statement::CatchStatement;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::root_statement::RootStatement;
 use crate::rt::JHashSet;
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
-use crate::struct_class::StructClass;
 use crate::try_with_resources_processor::TryWithResourcesProcessor;
 
 pub struct TryHelper;
 
 impl TryHelper {
-    pub fn enhance_try_stats(root: RootStatement, cl: StructClass) -> bool {
-        let mut ret = Self::make_try_with_resource_rec(cl, root.0);
+    pub fn enhance_try_stats(root: RootStatement) -> bool {
+        let mut ret = Self::make_try_with_resource_rec(root.0);
 
         if ret {
             SequenceHelper::condense_sequences(root.0);
@@ -28,12 +26,11 @@ impl TryHelper {
         ret
     }
 
-    fn make_try_with_resource_rec(cl: StructClass, stat: Statement) -> bool {
+    fn make_try_with_resource_rec(stat: Statement) -> bool {
         let mut ret = false;
 
-        let new_twr = cl.get_version().has_new_try_with_resources();
-        if (new_twr || kuna_fixes::enabled(KunaFix::TwrClassVersion)) && stat.is_catch() {
-            if TryWithResourcesProcessor::make_try_with_resource_j11_in(stat.as_catch(), !new_twr) {
+        if stat.is_catch() {
+            if TryWithResourcesProcessor::make_try_with_resource_j11_in(stat.as_catch()) {
                 ret = true;
             }
         } else if let Some(try_st) = stat.try_as_catch_all().filter(|t| t.is_finally()) {
@@ -44,7 +41,7 @@ impl TryHelper {
 
         let stats = stat.get_stats().borrow().to_vec();
         for st in stats {
-            if Self::make_try_with_resource_rec(cl, st) {
+            if Self::make_try_with_resource_rec(st) {
                 ret = true;
             }
         }

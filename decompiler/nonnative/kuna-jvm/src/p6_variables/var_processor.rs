@@ -7,7 +7,6 @@
 
 use std::collections::BTreeMap;
 
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::kt_names::kt_java_keyword_variable_name;
 use crate::fixes::nested_class_vars;
@@ -155,8 +154,7 @@ impl VarProcessor {
                         debug_name,
                         &method.get_bytecode_version(),
                         root.mt(),
-                    ) || (kuna_fixes::enabled(KunaFix::KtJavaKeywordVariableName)
-                        && kt_java_keyword_variable_name::accepts(debug_name))
+                    ) || kt_java_keyword_variable_name::accepts(debug_name)
                     {
                         name = Some(debug_name.clone());
                         lvt_name = true;
@@ -219,14 +217,7 @@ impl VarProcessor {
 
     pub fn refresh_var_names(self, vc: VarNamesCollector) {
         let temp_var_names = self.with(|d| d.map_var_names.clone());
-        if kuna_fixes::enabled(KunaFix::RefreshPrintedVarNames) {
-            nested_class_vars::refresh(self, vc, temp_var_names);
-            return;
-        }
-        for (key, value) in temp_var_names.entry_vec() {
-            let name = vc.get_free_name_opt(value.as_deref());
-            self.with_mut(|d| d.map_var_names.put(key, name));
-        }
+        nested_class_vars::refresh(self, vc, temp_var_names);
     }
 
     pub fn get_synthetic_semaphores(self) -> Shared<JHashSet<i32>> {

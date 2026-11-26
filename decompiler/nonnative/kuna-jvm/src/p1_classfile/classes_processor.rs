@@ -20,7 +20,6 @@ use crate::i_identifier_renamer::{IIdentifierRenamer, Type as RenamerType};
 use crate::import_collector::ImportCollector;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::lambda_processor::LambdaProcessor;
 use crate::language_spec::LanguageSpec;
 use crate::nested_class_processor::NestedClassProcessor;
@@ -440,17 +439,11 @@ impl ClassesProcessor {
                 }
             }
 
-            if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
-                unlisted_anonymous_class::nest_in_enclosing_class(
-                    &map_root_classes,
-                    verify_anonymous_classes,
-                );
-            }
-            if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
-                anonymous_class_created_elsewhere::nest_at_creating_class(
-                    &map_root_classes,
-                );
-            }
+            unlisted_anonymous_class::nest_in_enclosing_class(
+                &map_root_classes,
+                verify_anonymous_classes,
+            );
+            anonymous_class_created_elsewhere::nest_at_creating_class(&map_root_classes);
         }
     }
 

@@ -26,7 +26,6 @@ use crate::function_exprent::FunctionType;
 use crate::if_statement::IfStatement;
 use crate::invocation_exprent::InvocationExprent;
 use crate::fixes::asserts;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::p6_variables::kuna_source_locals;
 use crate::p8_structure::kuna_javac_layout;
@@ -532,11 +531,7 @@ impl MergeHelper {
             let last_exprents = last_data.get_exprents().expect("exprents");
             let last_exp = last_exprents.get(last_exprents.len() - 1);
 
-            let statement_only = if kuna_fixes::enabled(KunaFix::StatementAsExpression) {
-                asserts::is_statement_only(last_exp)
-            } else {
-                last_exp.is_exit()
-            };
+            let statement_only = asserts::is_statement_only(last_exp);
             if statement_only {
                 return;
             }

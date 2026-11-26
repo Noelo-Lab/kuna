@@ -10,7 +10,6 @@ use std::rc::Rc;
 use crate::k_type::KType;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_flags::Flags;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::jstring::java_string_hash;
 use crate::rt::{JavaEq, JavaHash};
 use crate::text_buffer::TextBuffer;
@@ -92,11 +91,7 @@ impl KParameter {
             buf.append("noinline ");
         }
 
-        let is_vararg = if kuna_fixes::enabled(KunaFix::KtVarargFromMetadata) {
-            self.vararg_type.is_some()
-        } else {
-            self.vararg_type.is_some() && self.type_.k().kotlin_type == "kotlin/Array"
-        };
+        let is_vararg = self.vararg_type.is_some();
 
         if is_vararg {
             buf.append("vararg ");

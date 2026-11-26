@@ -9,7 +9,6 @@ use crate::k_if_statement::copy_statement_fields;
 use crate::kotlin_statement;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
 use crate::fixes::kt_jumps;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::statement::Statement;
 use crate::switch_statement::SwitchStatement;
@@ -45,16 +44,12 @@ impl KSwitchStatement {
     }
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
-        if self.is_labeled() && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
+        if self.is_labeled() {
             return kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
                 self.write(indent, true, true)
             });
         }
-        if kuna_fixes::enabled(KunaFix::KtWhenBreak)
-            && !self.is_labeled()
-            && !self.is_phantom()
-            && kt_jumps::needs_run(self.into())
-        {
+        if !self.is_labeled() && !self.is_phantom() && kt_jumps::needs_run(self.into()) {
             return kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, || {
                 self.write(indent, true, false)
             });
@@ -73,16 +68,12 @@ impl KSwitchStatement {
         ));
 
         let first = self.get_first().expect("NullPointerException: first");
-        let indented = kuna_fixes::enabled(KunaFix::KtSwitchHeadIndent);
-        let first_buf = if indented {
-            first.to_java(if run && head_in_run { indent + 1 } else { indent })
+        let first_buf = first.to_java(if run && head_in_run {
+            indent + 1
         } else {
-            first.to_java_default()
-        };
+            indent
+        });
         if !head_in_run && first_buf.length() > 0 {
-            if !indented {
-                buf.append_indent(indent);
-            }
             buf.append_buffer(&first_buf);
         }
 
@@ -95,7 +86,7 @@ impl KSwitchStatement {
             indent += 1;
         }
 
-        if !(indented && head_in_run && first_buf.length() > 0) {
+        if !(head_in_run && first_buf.length() > 0) {
             buf.append_indent(indent);
         }
         if head_in_run {
@@ -143,14 +134,9 @@ impl KSwitchStatement {
 
                 if let Some(v) = value {
                     if v.is_const() && !VarType::VARTYPE_NULL().equals(&v.get_expr_type()) {
-                        if kuna_fixes::enabled(KunaFix::KtWhenCaseType) {
-                            let copied = KConstExprent::new(v.copy().as_const());
-                            copied.set_const_type(switch_type.clone());
-                            value = Some(copied.0 .0);
-                        } else {
-                            let const_value = v.copy().as_const();
-                            const_value.set_const_type(switch_type.clone());
-                        }
+                        let copied = KConstExprent::new(v.copy().as_const());
+                        copied.set_const_type(switch_type.clone());
+                        value = Some(copied.0 .0);
                     }
                 }
 
@@ -161,11 +147,7 @@ impl KSwitchStatement {
                     let import_collector = DecompilerContext::get_import_collector();
                     let classname = field.get_classname();
                     let short_name = import_collector
-                        .get_short_name(&if kuna_fixes::enabled(KunaFix::KtEnumWhenMappings) {
-                            ExprProcessor::build_java_class_name(&classname)
-                        } else {
-                            classname.clone()
-                        })
+                        .get_short_name(&ExprProcessor::build_java_class_name(&classname))
                         .expect("NullPointerException: short name");
                     let name = field.get_name();
                     buf.append_class(&short_name, false, &classname)

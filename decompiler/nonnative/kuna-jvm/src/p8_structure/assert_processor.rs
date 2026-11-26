@@ -15,7 +15,6 @@ use crate::if_statement::IfStatement;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::asserts;
 use crate::secondary_functions_helper::SecondaryFunctionsHelper;
 use crate::root_statement::RootStatement;
@@ -194,10 +193,7 @@ impl AssertProcessor {
             throw_error = Self::is_assertion_error(elsestat);
 
             if throw_error.is_none() {
-                if kuna_fixes::enabled(KunaFix::AssertThrowAfterIf) {
-                    return Self::replace_assertion_after_if(parent, stat, classname, key);
-                }
-                return false;
+                return Self::replace_assertion_after_if(parent, stat, classname, key);
             } else {
                 throw_in_if = false;
                 ifstat = elsestat;
@@ -353,10 +349,7 @@ impl AssertProcessor {
         }
 
         if let Some((throw_stat, if_edge)) = broken_to {
-            if kuna_fixes::enabled(KunaFix::AssertDeadThrow)
-                && !res.assignment
-                && !res.replace_parent
-            {
+            if !res.assignment && !res.replace_parent {
                 asserts::remove_consumed_throw(throw_stat, if_edge);
             }
         }

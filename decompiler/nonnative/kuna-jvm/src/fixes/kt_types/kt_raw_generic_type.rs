@@ -939,9 +939,7 @@ fn type_parameters_in_scope(method: StructMethod) -> BTreeSet<String> {
     if let Some(sig) = method.get_signature() {
         scope.extend(sig.type_parameters().iter().cloned());
     }
-    if let Some(cl) = DecompilerContext::get_current_class().filter(|_| {
-        crate::kuna_fixes::enabled(crate::kuna_fixes::KunaFix::KtEnclosingTypeParameter)
-    }) {
+    if let Some(cl) = DecompilerContext::get_current_class() {
         scope.extend(crate::fixes::kt_types::kt_enclosing_type_parameter::enclosing_names(cl));
     }
     if let Some(cl) = DecompilerContext::get_current_class() {
@@ -1056,9 +1054,7 @@ pub fn reads_nullable_element(value: Exprent) -> bool {
 /// A local's declared type as the fix gave it, in Kotlin's syntax; a
 /// Kotlin type (fix `kt_inline_class_value`'s value class locals) as it is.
 pub fn declared_type(typed: &KunaLocalType) -> String {
-    if typed.type_.is_k_type()
-        && crate::kuna_fixes::enabled(crate::kuna_fixes::KunaFix::KtInlineClassValue)
-    {
+    if typed.type_.is_k_type() {
         return crate::fixes::kt_types::kt_inline_class_value::declared_text(&typed.type_);
     }
     render(&typed.type_, typed.mutable, &typed.nullable)

@@ -15,7 +15,6 @@ use crate::fixes::kt_default_args;
 use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
 use crate::rt::JHashMap;
 use crate::struct_ann_default_attribute::StructAnnDefaultAttribute;
@@ -103,37 +102,14 @@ impl DefaultArgsMap {
                 }
             }
 
-            let exprents = if kuna_fixes::enabled(KunaFix::KtDefaultArgCompoundBranch) {
-                match if_statement.get_ifstat().and_then(|s| s.get_exprents()) {
-                    Some(exprents) if !exprents.is_empty() => exprents,
-                    _ => continue,
-                }
-            } else {
-                if_statement
-                    .get_ifstat()
-                    .expect("NullPointerException: ifstat")
-                    .get_exprents()
-                    .expect("NullPointerException: exprents")
+            let exprents = match if_statement.get_ifstat().and_then(|s| s.get_exprents()) {
+                Some(exprents) if !exprents.is_empty() => exprents,
+                _ => continue,
             };
-            let expr = exprents.get(0);
-            let default = if kuna_fixes::enabled(KunaFix::KtDefaultArgAssignedParam) {
-                kt_default_args::default_value(
-                    &exprents.to_vec(),
-                    start_of_bitmasks,
-                )
-            } else {
-                expr.try_as_assignment()
-                    .map(|assignment| assignment.get_right())
-            };
+            let default = kt_default_args::default_value(&exprents.to_vec(), start_of_bitmasks);
             if let Some(default) = default {
                 let mut right = default.copy();
-                if kuna_fixes::enabled(KunaFix::KtDefaultValueCoercionCast) {
-                    right = kt_default_args::uncast(
-                        right,
-                        &exprents.to_vec(),
-                        defaults,
-                    );
-                }
+                right = kt_default_args::uncast(right, &exprents.to_vec(), defaults);
                 DefaultArgsMap::update_exprent(right, calling);
                 if mask_index < 0 || mask_index as usize >= params.len() {
                     jthrow!(ArrayIndexOutOfBoundsException; "Index {} out of bounds for length {}", mask_index, params.len());

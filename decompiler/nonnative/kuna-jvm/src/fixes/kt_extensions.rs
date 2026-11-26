@@ -10,7 +10,6 @@ use crate::k_type::KType;
 use crate::k_type_parameter::KTypeParameter;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_proto;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::method_wrapper::MethodWrapper;
 use crate::rt::try_catch;
@@ -102,11 +101,7 @@ fn stores_to(cl: StructClass, mt: StructMethod, last: i32) -> bool {
     if !expanded && try_catch(|| mt.expand_data(cl)).is_err() {
         return true;
     }
-    let resumed = if kuna_fixes::enabled(KunaFix::KtSuspendStateMachine) {
-        kt_suspend_state_machine::resume_path(mt)
-    } else {
-        None
-    };
+    let resumed = kt_suspend_state_machine::resume_path(mt);
     let found = mt.get_instruction_sequence().is_none_or(|seq| {
         (0..seq.length()).any(|i| {
             if resumed.as_ref().is_some_and(|r| r.contains(&(i as usize))) {

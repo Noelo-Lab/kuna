@@ -10,7 +10,6 @@ use crate::field_exprent::FieldExprent;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_matchable::MatchProperties;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::rt::jstring::{from_utf16, java_string_hash};
@@ -836,35 +835,6 @@ impl ConstExprent {
                         let text = f(bytecode.as_ref());
                         buf.append_buffer(&text);
                         return buf;
-                    }
-
-                    let float_representation = double_val as f32;
-                    if float_representation as f64 == double_val
-                        && !kuna_fixes::enabled(KunaFix::DoubleConstantLiteral)
-                    {
-                        let trimmed_float = ConstExprent::trim_float(
-                            &jnum::float_to_string(float_representation),
-                            float_representation,
-                        );
-                        let trimmed_double = ConstExprent::trim_double(
-                            &jnum::double_to_string(double_val),
-                            double_val,
-                        );
-                        if trimmed_float.len() < trimmed_double.len() {
-                            let floats = ConstExprent::UNINLINED_FLOATS();
-                            if let Some(f) = floats.get(&ConstValue::Float(float_representation)) {
-                                let text = f(bytecode.as_ref());
-                                buf.append_buffer(&text);
-                                return buf;
-                            } else {
-                                buf.append(&ConstExprent::trim_float(
-                                    &jnum::float_to_string(float_representation),
-                                    float_representation,
-                                ))
-                                .append("F");
-                                return buf;
-                            }
-                        }
                     }
                 } else if double_val.is_nan() {
                     buf.append("0.0 / 0.0");

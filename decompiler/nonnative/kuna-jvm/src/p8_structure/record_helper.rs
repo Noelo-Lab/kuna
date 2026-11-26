@@ -3,7 +3,6 @@
 use crate::class_writer::ClassWriter;
 use crate::code_constants::{ACC_STATIC, ACC_VARARGS, INIT_NAME};
 use crate::exprent::Exprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::class_writing;
 use crate::method_wrapper::MethodWrapper;
 use crate::root_statement::RootStatement;
@@ -308,35 +307,24 @@ impl RecordHelper {
             varidx += md.params[i].stack_size;
         }
 
-        let fixed = kuna_fixes::enabled(KunaFix::CompactRecordConstructor);
         if Self::is_compact_canonical_constructor(mw)
-            && (!fixed
-                || mw.with(|d| d.root).is_some_and(|root| {
-                    class_writing::assigns_components_last(root, &components)
-                        && !class_writing::stores_on_own_line(
-                            root,
-                            mw.with(|d| d.method_struct),
-                            components.len(),
-                        )
-                }))
+            && mw.with(|d| d.root).is_some_and(|root| {
+                class_writing::assigns_components_last(root, &components)
+                    && !class_writing::stores_on_own_line(
+                        root,
+                        mw.with(|d| d.method_struct),
+                        components.len(),
+                    )
+            })
         {
             mw.get_or_build_graph()
                 .expect("NullPointerException: graph")
                 .iterate_exprents(|exprent: Exprent| {
-                    if fixed {
-                        return if class_writing::is_this_field_store(exprent) {
-                            2
-                        } else {
-                            0
-                        };
+                    if class_writing::is_this_field_store(exprent) {
+                        2
+                    } else {
+                        0
                     }
-                    if let Some(assignment_exprent) = exprent.try_as_assignment() {
-                        if assignment_exprent.get_left().is_field() {
-                            return 2;
-                        }
-                    }
-
-                    0
                 });
             mw.with_mut(|d| d.is_compact_record_constructor = true);
         }

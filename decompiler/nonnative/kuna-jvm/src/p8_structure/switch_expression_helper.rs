@@ -6,7 +6,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::switches;
 use crate::pair::Pair;
 use crate::root_statement::RootStatement;
@@ -44,8 +43,7 @@ impl SwitchExpressionHelper {
 
         if let Some(switch_stat) = stat.try_as_switch() {
             ret |= Self::process_statement(switch_stat)
-                || (kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                    && switches::return_switch_expression(switch_stat));
+                || switches::return_switch_expression(switch_stat);
         }
 
         ret
@@ -145,13 +143,7 @@ impl SwitchExpressionHelper {
             return false;
         };
 
-        if kuna_fixes::enabled(KunaFix::SwitchExpressionAssignments)
-            && !switches::every_assignment_yields(
-                stat,
-                &break_jumps,
-                relevant_var.get_index(),
-            )
-        {
+        if !switches::every_assignment_yields(stat, &break_jumps, relevant_var.get_index()) {
             return false;
         }
 

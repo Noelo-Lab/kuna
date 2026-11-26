@@ -11,7 +11,6 @@ use crate::const_exprent::ConstExprent;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::fixes::kt_java_syntax::kt_string_literal_escape;
 use crate::kotlin_exprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -130,9 +129,6 @@ impl KAnnotationExprent {
             }
             buffer.append_char(']');
         } else if let Some(annotation_exprent) = expr.try_as_annotation() {
-            if !kuna_fixes::enabled(KunaFix::KtNestedAnnotationArgument) {
-                buffer.append_char('@');
-            }
             let type_ = VarType::new_signature_cl(&annotation_exprent.get_class_name(), true);
             buffer.append(&KTypes::get_kotlin_type(Some(&type_)));
 
@@ -177,10 +173,9 @@ impl KAnnotationExprent {
                 buffer
                     .append(&KTypes::get_kotlin_type(Some(&type_)))
                     .append("::class");
-            } else if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape)
-                && const_exprent
-                    .get_const_type()
-                    .equals(&VarType::VARTYPE_STRING())
+            } else if const_exprent
+                .get_const_type()
+                .equals(&VarType::VARTYPE_STRING())
                 && const_exprent.get_value().is_some()
             {
                 let ascii = DecompilerContext::get_option(

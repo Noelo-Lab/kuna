@@ -5,7 +5,6 @@
 
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::exprent::Exprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{JList, JavaStr};
 
 /// The `super(..)` call of the reference class `node`'s constructor: the only
@@ -27,12 +26,9 @@ pub fn super_call(node: ClassNode, exprents: Option<JList<Exprent>>) -> Option<E
 }
 
 /// The JVM name and descriptor of the method a reference named `name` with
-/// the signature constant `signature` refers to; Vineflower's
-/// `methodAndDesc.substring(methodRef.length())` in compat mode.
+/// the signature constant `signature` refers to.
 pub fn reference_name_and_descriptor(name: &str, signature: &str) -> (String, String) {
-    let split = kuna_fixes::enabled(KunaFix::KtReferenceAnonymousSuperCall)
-        .then(|| split_signature(signature))
-        .flatten();
+    let split = split_signature(signature);
     split.unwrap_or_else(|| (name.to_string(), signature.jsubstring_from(name.jlen())))
 }
 

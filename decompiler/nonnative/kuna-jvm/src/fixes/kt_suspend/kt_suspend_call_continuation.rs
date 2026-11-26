@@ -12,7 +12,6 @@ use crate::k_element::KElement;
 use crate::k_function::KFunction;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::decompiler_context::DecompilerContext;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
@@ -30,17 +29,14 @@ use crate::fixes::util::all_exprents;
 /// Whether `mt`'s body is a suspend function's whose calls this fix marks, for
 /// fix `kt_nullable_local`'s typing.
 pub fn is_suspend_body(mt: StructMethod) -> bool {
-    kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) && continuation_slot(mt).is_some()
+    continuation_slot(mt).is_some()
 }
 
 /// The slot of the continuation a suspend function's calls pass on: its
 /// `$completion`, or `this` in a suspend lambda's body that fix
 /// `kt_suspend_lambda` rebuilt.
 fn continuation_slot(mt: StructMethod) -> Option<i32> {
-    completion_slot(mt).or_else(|| {
-        (kuna_fixes::enabled(KunaFix::KtSuspendLambda) && kt_suspend_lambda::parameters(mt).is_some())
-            .then_some(0)
-    })
+    completion_slot(mt).or_else(|| kt_suspend_lambda::parameters(mt).is_some().then_some(0))
 }
 
 /// Marks the suspend calls under `root`, the body of `mt`, that pass the
@@ -151,9 +147,7 @@ fn declared_function(call: Exprent) -> Option<Rc<KFunction>> {
     let cl = DecompilerContext::get_struct_context().get_class(&inv.get_classname())?;
     let method = cl.get_method(&inv.get_name(), &inv.get_string_descriptor())?;
     let element = KtAttrs::get(method, &KElement::KEY()).or_else(|| {
-        kuna_fixes::enabled(KunaFix::KtSyntheticAccessorCall)
-            .then(|| kt_synthetic_accessor_call::resugar(inv).map(|access| access.calling_data.clone()))
-            .flatten()
+        kt_synthetic_accessor_call::resugar(inv).map(|access| access.calling_data.clone())
     });
     match element {
         Some(KElement::Function(function)) => Some(function),

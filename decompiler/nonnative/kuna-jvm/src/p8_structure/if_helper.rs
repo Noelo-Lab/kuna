@@ -13,7 +13,6 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_node::{EdgeType, IfNode};
 use crate::if_statement::IfStatement;
 use crate::jthrow;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::merge_helper::MergeHelper;
 use crate::p8_structure::kuna_javac_layout::{self, Reorder};
 use crate::root_statement::RootStatement;
@@ -548,9 +547,7 @@ impl IfHelper {
                             if next_stat.is_some()
                                 && next_if_stat.is_none_or(|nis| !first_exprents_empty(nis.0))
                             {
-                                if kuna_fixes::enabled(KunaFix::IfDenestFallthrough)
-                                    && Self::reaches_following(outer_if, parent)
-                                {
+                                if Self::reaches_following(outer_if, parent) {
                                     return false;
                                 }
                                 let condition_exprent = outer_if.get_headexprent();

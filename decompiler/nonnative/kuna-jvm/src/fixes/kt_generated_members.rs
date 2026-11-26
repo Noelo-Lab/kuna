@@ -19,7 +19,6 @@ use crate::k_element::KElement;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::try_catch;
 use crate::struct_class::StructClass;
@@ -176,10 +175,7 @@ fn calls_only_super(cl: StructClass, mt: StructMethod) -> bool {
 /// default body kotlinc generated: it checks its parameters and passes them
 /// on to the `DefaultImpls` method, or the interface's default method.
 pub fn is_delegate(cl: StructClass, mt: StructMethod) -> bool {
-    if !kuna_fixes::enabled(KunaFix::KtDefaultImplsDelegate)
-        || mt.get_name().starts_with('<')
-        || KtAttrs::get(mt, &KElement::KEY()).is_some()
-    {
+    if mt.get_name().starts_with('<') || KtAttrs::get(mt, &KElement::KEY()).is_some() {
         return false;
     }
     let name = cl.qualified_name();
@@ -268,13 +264,10 @@ pub fn is_delegate(cl: StructClass, mt: StructMethod) -> bool {
 /// Whether `cl` is a `DefaultImpls` class that holds nothing but such
 /// calls, which the fix leaves it without.
 pub fn is_emptied_default_impls(cl: StructClass) -> bool {
-    kuna_fixes::enabled(KunaFix::KtDefaultImplsDelegate)
-        && cl.qualified_name().ends_with(DEFAULT_IMPLS)
-        && cl.get_fields().is_empty()
-        && {
-            let methods = cl.get_methods();
-            !methods.is_empty() && methods.iter().all(|m| is_delegate(cl, *m))
-        }
+    cl.qualified_name().ends_with(DEFAULT_IMPLS) && cl.get_fields().is_empty() && {
+        let methods = cl.get_methods();
+        !methods.is_empty() && methods.iter().all(|m| is_delegate(cl, *m))
+    }
 }
 
 /// Whether `class` has Kotlin class metadata, which declares the members its

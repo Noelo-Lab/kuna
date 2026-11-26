@@ -22,11 +22,10 @@ use crate::fixes::kt_default_args::kt_default_args_call;
 use crate::fixes::kt_names::kt_function_parameter_name;
 use crate::fixes::kt_delegation_calls::kt_default_args_super_call;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
-use crate::kt_proto::{self, ClassKind, Modality, Visibility};
+use crate::kt_proto::{self, ClassKind, Visibility};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::root_statement::RootStatement;
 use crate::method_wrapper::MethodWrapper;
@@ -101,12 +100,6 @@ impl KConstructor {
         };
 
         let class_flags = proto_class.get_flags();
-        if Flags::MODALITY.get(class_flags) == Some(Modality::Abstract)
-            && !kuna_fixes::enabled(KunaFix::KtAbstractClassConstructor)
-        {
-            return;
-        }
-
         let proto_constructors = proto_class.get_constructor_list();
         if proto_constructors.is_empty() {
             return;
@@ -120,10 +113,11 @@ impl KConstructor {
                 let flags = proto_parameter.get_flags();
                 let name = resolver.resolve(proto_parameter.get_name());
                 let type_ = KType::from(&proto_parameter.get_type(), resolver);
-                let vararg_type = if !kuna_fixes::enabled(KunaFix::KtVarargFromMetadata)
-                    || proto_parameter.has_vararg_element_type()
-                {
-                    Some(KType::from(&proto_parameter.get_vararg_element_type(), resolver))
+                let vararg_type = if proto_parameter.has_vararg_element_type() {
+                    Some(KType::from(
+                        &proto_parameter.get_vararg_element_type(),
+                        resolver,
+                    ))
                 } else {
                     None
                 };
@@ -135,9 +129,7 @@ impl KConstructor {
             let flags = constructor.get_flags();
 
             let signature = constructor.get_extension_constructor_signature();
-            let desc = if kuna_fixes::enabled(KunaFix::KtConstructorDefaultSignature)
-                && !signature.has_desc()
-            {
+            let desc = if !signature.has_desc() {
                 let mut desc = String::from("(");
                 for parameter in parameters.iter() {
                     desc.push_str(&parameter.type_.0.to_string());
@@ -179,15 +171,7 @@ impl KConstructor {
                 continue;
             };
 
-            let method = match kuna_fixes::enabled(KunaFix::KtInlineClassConstructorAccessor)
-                .then(|| {
-                    kt_constructors::real_constructor(
-                        class_struct,
-                        method,
-                    )
-                })
-                .flatten()
-            {
+            let method = match kt_constructors::real_constructor(class_struct, method) {
                 Some(real) => {
                     KtAttrs::put(
                         method,
@@ -203,19 +187,8 @@ impl KConstructor {
 
             let mut default_args_desc = String::from("(");
             // the Kotlin types miss an inner class's outer instance
-            if kuna_fixes::enabled(KunaFix::KtDefaultArgsCtorDescriptor) {
-                for param in method.method_descriptor().params.iter() {
-                    default_args_desc.push_str(&param.to_string());
-                }
-            } else {
-                if Flags::CLASS_KIND.get(class_flags) == Some(ClassKind::EnumClass) {
-                    default_args_desc.push_str("Ljava/lang/String;");
-                    default_args_desc.push('I');
-                }
-
-                for parameter in parameters.iter() {
-                    default_args_desc.push_str(&parameter.type_.0.to_string());
-                }
+            for param in method.method_descriptor().params.iter() {
+                default_args_desc.push_str(&param.to_string());
             }
 
             default_args_desc.push_str(&"I".repeat(parameters.len() / 32 + 1));
@@ -323,9 +296,7 @@ impl KConstructor {
         method_key: &str,
     ) {
         let qualified_name = self.class_struct.qualified_name();
-        let declared = (self.is_primary
-            && kuna_fixes::enabled(KunaFix::KtDataClassPropertyParameters))
-        .then(|| {
+        let declared = self.is_primary.then(|| {
             let method_wrapper = self.method_wrapper(wrapper);
             kt_constructors::plan(
                 self.class_struct,
@@ -429,8 +400,7 @@ impl KConstructor {
             let containing_class = self.class_struct.qualified_name();
 
             let exprents = KConstructor::first_node(method_wrapper).exprents();
-            let hidden_super = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-                && kt_delegation_calls::hidden_call(method_wrapper).is_some();
+            let hidden_super = kt_delegation_calls::hidden_call(method_wrapper).is_some();
             if hidden_super {
                 buf.append(")");
             } else {
@@ -459,10 +429,8 @@ impl KConstructor {
                 } else {
                     buf.append(": ");
 
-                    if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
-                        if let Some(invocation) = first_expr.try_as_invocation() {
-                            kt_default_args_call::resugar_delegation(invocation);
-                        }
+                    if let Some(invocation) = first_expr.try_as_invocation() {
+                        kt_default_args_call::resugar_delegation(invocation);
                     }
                     buf.append_buffer_mapped(
                         &first_expr.to_java(indent + 1),
@@ -482,7 +450,6 @@ impl KConstructor {
             if KConstructor::first_node(method_wrapper)
                 .exprents()
                 .is_empty()
-                && kuna_fixes::enabled(KunaFix::KtConstructorBodyAfterFirstBlock)
             {
                 rendered = kt_delegation_calls::nonempty_body(|| {
                     self.render_body(root, indent, method_wrapper)
@@ -499,9 +466,7 @@ impl KConstructor {
                 return false;
             }
 
-            if kuna_fixes::enabled(KunaFix::KtSecondaryConstructorLine) {
-                buf.append_line_separator();
-            }
+            buf.append_line_separator();
             buffer.append_buffer(&buf);
             return true;
         }
@@ -534,18 +499,15 @@ impl KConstructor {
         indent: i32,
         method_wrapper: MethodWrapper,
     ) -> TextBuffer {
-        let _parameter_names = kuna_fixes::enabled(KunaFix::KtFunctionParameterName)
-            .then_some(self.method_struct)
-            .flatten()
-            .map(|method| {
-                let jvm_params = method.method_descriptor().params.len();
-                kt_function_parameter_name::enter(
-                    method_wrapper,
-                    &self.parameters,
-                    jvm_params.saturating_sub(self.parameters.len()),
-                    0,
-                )
-            });
+        let _parameter_names = self.method_struct.map(|method| {
+            let jvm_params = method.method_descriptor().params.len();
+            kt_function_parameter_name::enter(
+                method_wrapper,
+                &self.parameters,
+                jvm_params.saturating_sub(self.parameters.len()),
+                0,
+            )
+        });
         kt_java_reference_cast::with_nullable_parameters(
             k_function::nullable_parameters(&self.parameters),
             || root.to_java(indent + 1),
@@ -607,8 +569,7 @@ impl KConstructor {
                 buf.append("constructor");
             }
 
-            let secondary = kuna_fixes::enabled(KunaFix::KtEmptyPrimaryConstructor)
-                && self.has_secondary_constructor();
+            let secondary = self.has_secondary_constructor();
             if !self.parameters.is_empty() || appended || secondary {
                 buf.append("(").push_newline_group(indent, 1);
 
@@ -622,9 +583,7 @@ impl KConstructor {
 
         let method_wrapper = self.method_wrapper(wrapper);
 
-        let hidden = kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-            .then(|| kt_delegation_calls::hidden_call(method_wrapper))
-            .flatten();
+        let hidden = kt_delegation_calls::hidden_call(method_wrapper);
         let invocation = match hidden {
             Some(invocation) => invocation,
             None => {
@@ -659,21 +618,17 @@ impl KConstructor {
         buf.append(" : ");
 
         buf.append(super_class.as_deref().unwrap_or("null"));
-        if kuna_fixes::enabled(KunaFix::KtSupertypeTypeArguments) {
-            if let Some(arguments) = kt_delegation_calls::type_arguments(
-                self.class_struct,
-                &invocation.get_classname(),
-                indent,
-            ) {
-                buf.append_buffer(&arguments);
-            }
+        if let Some(arguments) = kt_delegation_calls::type_arguments(
+            self.class_struct,
+            &invocation.get_classname(),
+            indent,
+        ) {
+            buf.append_buffer(&arguments);
         }
         buf.append_char('(');
 
         if hidden.is_none() {
-            if !(kuna_fixes::enabled(KunaFix::KtDefaultArgsSuperCall)
-                && kt_default_args_super_call::resugar(invocation))
-            {
+            if !(kt_default_args_super_call::resugar(invocation)) {
                 KUtils::remove_arguments(invocation, &KConstructor::DEFAULT_CONSTRUCTOR_MARKER());
             }
 

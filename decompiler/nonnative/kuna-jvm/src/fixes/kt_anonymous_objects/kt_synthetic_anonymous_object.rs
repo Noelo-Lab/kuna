@@ -9,11 +9,9 @@ use std::cell::Cell;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::INIT_NAME;
 use crate::decompiler_context::DecompilerContext;
-use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::InvocationExprent;
 use crate::fixes::kt_types::kt_java_type_syntax;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
@@ -91,22 +89,19 @@ pub fn capture_reads_at_site(node: ClassNode, pair: VarVersionPair, arg: Exprent
     };
     let parent = node.with(|d| d.parent);
     if !arg.is_var()
-        && kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere)
         && anonymous_class_created_elsewhere::field_capture_reads_at_site(node, pair, arg)
     {
         return true;
     }
     let arg = match captured_var_through_cast::cast_var(arg) {
-        Some(var) if kuna_fixes::enabled(KunaFix::CapturedVarThroughCast) => var.into(),
+        Some(var) => var.into(),
         _ => arg,
     };
     if pair.var == -1 || !arg.is_var() {
         return false;
     }
     let varproc = enclosing.with(|d| d.varproc);
-    let clashing = kuna_fixes::enabled(KunaFix::CapturedVarClashName)
-        .then(|| captured_var_clash_name::clashing_name(varproc, pair))
-        .flatten();
+    let clashing = captured_var_clash_name::clashing_name(varproc, pair);
     let Some(name) = clashing.or_else(|| varproc.get_var_name(pair)) else {
         return false;
     };
@@ -204,11 +199,7 @@ pub fn write_object_header_with(
     buffer.append("object");
     for (i, type_) in supertypes.iter().enumerate() {
         buffer.append(if i == 0 { " : " } else { ", " });
-        if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) {
-            buffer.append(&kt_java_type_syntax::supertype(type_));
-        } else {
-            buffer.append(&ExprProcessor::get_cast_type_name(type_));
-        }
+        buffer.append(&kt_java_type_syntax::supertype(type_));
         if with_arguments == Some(i) {
             if let Some(arguments) = superclass_arguments {
                 buffer

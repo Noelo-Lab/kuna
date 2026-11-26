@@ -30,7 +30,6 @@ use crate::kt_attrs::KtAttrs;
 use crate::fixes::kt_anonymous_objects::kt_object_super_call;
 use crate::fixes::kt_anonymous_objects::kt_property_reference;
 use crate::fixes::kt_anonymous_objects::kt_synthetic_anonymous_object;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -86,12 +85,8 @@ impl KNewExprent {
         new.set_direct_array_init(expr.is_direct_array_init());
         new.set_var_arg_param(expr.is_var_arg_param());
         new.set_anonymous(expr.is_anonymous());
-        if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
-            kt_default_args_call::resugar_new(expr);
-        }
-        if kuna_fixes::enabled(KunaFix::KtConstructorAccessorCall) {
-            kt_constructors::resugar_accessor_call(expr);
-        }
+        kt_default_args_call::resugar_new(expr);
+        kt_constructors::resugar_accessor_call(expr);
 
         if KUtils::assertions_enabled() && expr.is_lambda() != new.is_lambda() {
             jthrow!(AssertionError; "");
@@ -128,7 +123,7 @@ impl KNewExprent {
                     }
                 }
 
-                if kt_data.is_none() && kuna_fixes::enabled(KunaFix::KtPropertyReference) {
+                if kt_data.is_none() {
                     let receiver = self
                         .get_constructor()
                         .and_then(|c| c.get_lst_parameters().to_vec().into_iter().next());
@@ -148,16 +143,12 @@ impl KNewExprent {
                 {
                     node.with_mut(|d| d.type_ = ClassNodeType::Anonymous);
                     buf.add_bytecode_mapping(self.get_bytecode().as_ref());
-                    if kuna_fixes::enabled(KunaFix::KtObjectSuperCall) {
-                        kt_object_super_call::write_at_site(
-                            node,
-                            self.get_constructor(),
-                            indent,
-                            || KotlinWriter::new().write_class(node, &mut buf, indent),
-                        );
-                    } else {
-                        KotlinWriter::new().write_class(node, &mut buf, indent);
-                    }
+                    kt_object_super_call::write_at_site(
+                        node,
+                        self.get_constructor(),
+                        indent,
+                        || KotlinWriter::new().write_class(node, &mut buf, indent),
+                    );
                     return buf;
                 }
             }
@@ -223,11 +214,7 @@ impl KNewExprent {
                                 index,
                             )
                             .unwrap_or_else(|| npe("parameter name"));
-                        let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                            kt_unescaped_name::lambda_parameter(&parameter_name)
-                        } else {
-                            parameter_name.clone()
-                        };
+                        let printed = kt_unescaped_name::lambda_parameter(&parameter_name);
                         buf.append_variable_descriptor(
                             &printed,
                             true,
@@ -339,63 +326,40 @@ impl KNewExprent {
         } else if self.is_anonymous() {
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
             let node = node.unwrap_or_else(|| npe("KNewExprent anonymous node"));
-            if kuna_fixes::enabled(KunaFix::KtReusedInlineObject) {
-                let call = self.get_constructor().and_then(|constructor| {
-                    kt_reused_inline_object::write(node, constructor, indent)
-                });
-                if let Some(call) = call {
-                    buf.append_buffer(&call);
-                    return buf;
-                }
+            let call = self
+                .get_constructor()
+                .and_then(|constructor| kt_reused_inline_object::write(node, constructor, indent));
+            if let Some(call) = call {
+                buf.append_buffer(&call);
+                return buf;
             }
             let write = |buf: &mut TextBuffer| {
-                if kuna_fixes::enabled(KunaFix::KtSyntheticAnonymousObject) {
-                    kt_synthetic_anonymous_object::write_at_site(
-                        node,
-                        self.get_constructor(),
-                        || KotlinWriter::new().write_class(node, buf, indent),
-                    );
-                } else {
-                    KotlinWriter::new().write_class(node, buf, indent);
-                }
+                kt_synthetic_anonymous_object::write_at_site(node, self.get_constructor(), || {
+                    KotlinWriter::new().write_class(node, buf, indent)
+                });
             };
             let write = |buf: &mut TextBuffer| {
-                if kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall) {
-                    kt_object_super_call::write_synthetic_at_site(
-                        node,
-                        self.get_constructor(),
-                        indent,
-                        || write(buf),
-                    );
-                } else {
-                    write(buf);
-                }
-            };
-            if kuna_fixes::enabled(KunaFix::KtObjectSuperCall) {
-                kt_object_super_call::write_at_site(
+                kt_object_super_call::write_synthetic_at_site(
                     node,
                     self.get_constructor(),
                     indent,
-                    || write(&mut buf),
+                    || write(buf),
                 );
-            } else {
-                write(&mut buf);
-            }
+            };
+            kt_object_super_call::write_at_site(node, self.get_constructor(), indent, || {
+                write(&mut buf)
+            });
             return buf;
         }
 
         let constructor = self.get_constructor();
         if new_type.array_dim == 0 {
             if !self.is_enum_const() {
-                let mut type_name = Some(
-                    if kuna_fixes::enabled(KunaFix::KtMappedJavaType)
-                        && kt_mapped_java_type::java_constructor(&new_type)
-                    {
-                        ExprProcessor::get_cast_type_name(&new_type)
-                    } else {
-                        KTypes::get_kotlin_type(Some(&new_type))
-                    },
-                );
+                let mut type_name = Some(if kt_mapped_java_type::java_constructor(&new_type) {
+                    ExprProcessor::get_cast_type_name(&new_type)
+                } else {
+                    KTypes::get_kotlin_type(Some(&new_type))
+                });
 
                 if let Some(constructor) = constructor {
                     let enclosing = new_type.value.as_deref().and_then(|value| {
@@ -415,22 +379,15 @@ impl KNewExprent {
                                 None => t,
                             }),
                         };
-                        if kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
-                            type_name = type_name
-                                .map(|t| kt_escaped_class_name::escape(&t));
-                        }
-                    } else if kuna_fixes::enabled(KunaFix::KtInnerClassConstructor) {
+                        type_name = type_name.map(|t| kt_escaped_class_name::escape(&t));
+                    } else {
                         if let Some(name) = new_type.value.as_deref().and_then(|value| {
                             kt_constructors::implicit_receiver_name(
                                 value,
                                 &constructor.get_lst_parameters().to_vec(),
                             )
                         }) {
-                            type_name = Some(if kuna_fixes::enabled(KunaFix::KtEscapedClassName) {
-                                kt_escaped_class_name::escape(&name)
-                            } else {
-                                name
-                            });
+                            type_name = Some(kt_escaped_class_name::escape(&name));
                         }
                     }
                 }
@@ -441,9 +398,7 @@ impl KNewExprent {
             if let Some(constructor) = constructor {
                 if !self.is_enum_const() || constructor.get_lst_parameters().len() > 2 {
                     let generic_args = constructor.get_generic_args();
-                    if !(kuna_fixes::enabled(KunaFix::KtConstructorDiamond)
-                        && is_diamond(&generic_args))
-                    {
+                    if !(is_diamond(&generic_args)) {
                         self.0 .0.append_parameters(&mut buf, &generic_args);
                     }
                     buf.append("(")
@@ -481,7 +436,6 @@ impl KNewExprent {
         } else if self.get_lst_array_elements().is_empty()
             && !self.get_lst_dims().is_empty()
             && (self.get_lst_dims().len() as i32) < new_type.array_dim
-            && kuna_fixes::enabled(KunaFix::KtPartialArrayDims)
         {
             self.partial_dims_to_java(&mut buf, indent);
         } else if self.get_lst_array_elements().is_empty() {

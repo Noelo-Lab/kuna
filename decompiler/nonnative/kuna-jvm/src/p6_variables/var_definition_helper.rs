@@ -32,7 +32,6 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::var_merge::var_merge_liveness;
 use crate::fixes::declaration_scope;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::var_merge;
 use crate::p6_variables::kuna_source_locals;
 use crate::method_descriptor::MethodDescriptor;
@@ -963,12 +962,8 @@ impl VarDefinitionHelper {
     }
 
     /// `var_merge_liveness`: whether merging `key` into `target` makes a write
-    /// of `key` overwrite a value of `target` that is read later; always false
-    /// in compat mode.
+    /// of `key` overwrite a value of `target` that is read later.
     fn merge_overwrites_live(self, key: VarVersionPair, target: VarVersionPair) -> bool {
-        if !kuna_fixes::enabled(KunaFix::VarMergeLiveness) {
-            return false;
-        }
         if self.with(|d| d.flow.is_none()) {
             let flow = var_merge_liveness::Flow::build(self.root());
             self.with_mut(|d| d.flow = Some(flow));
@@ -979,9 +974,7 @@ impl VarDefinitionHelper {
     /// Fix `var_merge_lost_definition`: whether `remapVar` can merge `from`
     /// into `to`, so that taking `from`'s definition away for it loses nothing.
     fn merge_has_type(self, from: VarVersionPair, to: VarVersionPair, check: &Merge) -> bool {
-        !kuna_fixes::enabled(KunaFix::VarMergeLostDefinition)
-            || matches!(check, Merge::Widened(_))
-            || self.get_merged_type(from, to).is_some()
+        matches!(check, Merge::Widened(_)) || self.get_merged_type(from, to).is_some()
     }
 
     fn identify_parent(stat: Statement) -> Option<Statement> {
@@ -1226,18 +1219,8 @@ impl VarDefinitionHelper {
         if self.varproc().has_lvt() && kuna_source_locals::named_apart(self.root().0, from, to) {
             return Merge::Refused;
         }
-        if kuna_fixes::enabled(KunaFix::VarMergeDeclaredType)
-            && var_merge::declared_apart(
-                self.root().0,
-                self.varproc(),
-                from,
-                to,
-            )
-        {
+        if var_merge::declared_apart(self.root().0, self.varproc(), from, to) {
             return Merge::Refused;
-        }
-        if !kuna_fixes::enabled(KunaFix::VarMergeNarrowing) {
-            return Merge::Plain;
         }
         let Some(merged) = self.get_merged_type(from, to) else {
             return Merge::Plain;
@@ -1662,48 +1645,7 @@ impl VarDefinitionHelper {
 
     /// Java: setNonFinal(Statement, Set)
     fn set_non_final(self, stat: Statement, un_initialized: &mut JHashSet<VarVersionPair>) {
-        if kuna_fixes::enabled(KunaFix::LocalFinalWrites) {
-            declaration_scope::set_non_final(self, stat, un_initialized);
-            return;
-        }
-        if let Some(exprents) = stat.get_exprents().filter(|e| !e.is_empty()) {
-            for exp in exprents.iter() {
-                if let Some(var) = exp.try_as_var() {
-                    un_initialized.add(VarVersionPair::from_var(var));
-                } else {
-                    self.set_non_final_exprent(Some(exp), un_initialized);
-                }
-            }
-        }
-
-        let var_definitions = stat.get_var_definitions();
-        if !var_definitions.is_empty() && stat.is_do() {
-            for var in var_definitions.iter() {
-                un_initialized.add(VarVersionPair::from_var(var.as_var()));
-            }
-        }
-
-        if let Some(dostat) = stat.try_as_do() {
-            self.set_non_final_exprent(dostat.get_init_exprent(), un_initialized);
-            self.set_non_final_exprent(dostat.get_inc_exprent(), un_initialized);
-        } else if let Some(ifstat) = stat.try_as_if() {
-            if let (Some(if_branch), Some(else_branch)) =
-                (ifstat.get_ifstat(), ifstat.get_elsestat())
-            {
-                self.set_non_final(
-                    ifstat.get_first().expect("NullPointerException: first"),
-                    un_initialized,
-                );
-                self.set_non_final(if_branch, &mut un_initialized.clone());
-                self.set_non_final(else_branch, un_initialized);
-                return;
-            }
-        }
-
-        let stats = stat.get_stats().borrow().to_vec();
-        for st in stats {
-            self.set_non_final(st, un_initialized);
-        }
+        declaration_scope::set_non_final(self, stat, un_initialized);
     }
 
     /// Java: setNonFinal(Exprent, Set)
@@ -2060,51 +2002,35 @@ impl VarDefinitionHelper {
         live_var_defs.add_all(cur_var_defs.iter().copied());
         var_definitions.put(Some(stat), std::mem::take(cur_var_defs));
 
-        let mut iterate = true;
-        let mut arms = false;
-        if let Some(switch_stat) = stat.try_as_switch() {
-            if switch_stat.is_phantom() {
-                if kuna_fixes::enabled(KunaFix::SwitchExpressionArmScope) {
-                    arms = true;
-                } else {
-                    iterate = false;
-                }
-            }
-        }
+        let arms = stat.try_as_switch().is_some_and(|s| s.is_phantom());
 
-        let deferred: Vec<Statement> = Vec::new();
         let seperate = stat.is_if() || stat.is_catch() || arms;
-        if iterate {
-            let mut stats = stat.get_stats().borrow().to_vec();
-            if kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
-                stats = declaration_scope::in_text_order(stat, stats, mt);
+        let mut stats = stat.get_stats().borrow().to_vec();
+        stats = declaration_scope::in_text_order(stat, stats, mt);
+        for st in stats {
+            let mut st_vars: JHashSet<VarInMethod> = JHashSet::new();
+            let tmp_vars = statement_vars.get_or_default(&st, JHashSet::new());
+            if head_outside && st == stat.get_basichead().0 {
+                continue;
             }
-            for st in stats {
-                let mut st_vars: JHashSet<VarInMethod> = JHashSet::new();
-                let tmp_vars = statement_vars.get_or_default(&st, JHashSet::new());
-                if head_outside && st == stat.get_basichead().0 {
-                    continue;
-                }
-                live_var_defs.add_all(tmp_vars.iter().copied());
-                self.iterate_clashing_names(
-                    st,
-                    mt,
-                    var_definitions,
-                    live_var_defs,
-                    &mut st_vars,
-                    name_map,
-                    seen_methods,
-                );
-                live_var_defs.remove_all(&tmp_vars);
-                if seperate {
-                    self.clear_statement(var_definitions, live_var_defs, name_map, st);
-                    self.clear_statement(var_definitions, live_var_defs, name_map, stat);
-                }
+            live_var_defs.add_all(tmp_vars.iter().copied());
+            self.iterate_clashing_names(
+                st,
+                mt,
+                var_definitions,
+                live_var_defs,
+                &mut st_vars,
+                name_map,
+                seen_methods,
+            );
+            live_var_defs.remove_all(&tmp_vars);
+            if seperate {
+                self.clear_statement(var_definitions, live_var_defs, name_map, st);
+                self.clear_statement(var_definitions, live_var_defs, name_map, stat);
             }
         }
 
-        let case_block = kuna_fixes::enabled(KunaFix::SwitchCaseScope)
-            && declaration_scope::is_case_block(stat, mt);
+        let case_block = declaration_scope::is_case_block(stat, mt);
         if should_remove_at_end && !case_block {
             self.clear_statement(var_definitions, live_var_defs, name_map, stat);
         }
@@ -2120,30 +2046,6 @@ impl VarDefinitionHelper {
             }
         }
 
-        if iterate {
-            for &st in &deferred {
-                let tmp_vars = statement_vars.get_or_default(&st, JHashSet::new());
-                live_var_defs.add_all(tmp_vars.iter().copied());
-                self.iterate_clashing_names(
-                    st,
-                    mt,
-                    var_definitions,
-                    live_var_defs,
-                    &mut JHashSet::new(),
-                    name_map,
-                    seen_methods,
-                );
-                live_var_defs.remove_all(&tmp_vars);
-            }
-        }
-
-        for st in JHashSet::from_collection(var_definitions.key_vec()).to_vec() {
-            let st = st.expect("NullPointerException: statement");
-            if st.get_parent() == Some(stat) && deferred.contains(&st) {
-                self.clear_statement(var_definitions, live_var_defs, name_map, st);
-            }
-        }
-
         if !stat.is_root() {
             var_definitions
                 .compute_if_absent(stat.get_parent(), JHashSet::new)
@@ -2156,8 +2058,7 @@ impl VarDefinitionHelper {
     /// block, written before the statement, is in the enclosing scope, as an
     /// `if`'s is: its declarations stay live after the statement.
     fn head_outside(stat: Statement) -> bool {
-        kuna_fixes::enabled(KunaFix::HeadDefinitionScope)
-            && (stat.try_as_switch().is_some_and(|s| !s.is_phantom()) || stat.is_synchronized())
+        (stat.try_as_switch().is_some_and(|s| !s.is_phantom()) || stat.is_synchronized())
             && stat.get_first().is_some_and(|first| first.is_basic_block())
     }
 
@@ -2391,7 +2292,7 @@ impl VarDefinitionHelper {
                             }
                         }
 
-                        if !scoped_switch && kuna_fixes::enabled(KunaFix::SwitchCaseScope) {
+                        if !scoped_switch {
                             scoped_switch = declaration_scope::scope_clashing_cases(
                                 stat,
                                 mt,

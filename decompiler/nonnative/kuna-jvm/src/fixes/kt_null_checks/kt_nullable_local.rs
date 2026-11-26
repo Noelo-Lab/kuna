@@ -23,7 +23,6 @@ use crate::k_var_exprent::DeclarationType;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::root_statement::RootStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{Statement, StatementType};
@@ -118,37 +117,33 @@ pub fn infer(root: RootStatement, method: StructMethod) {
             break;
         }
     }
-    if kuna_fixes::enabled(KunaFix::KtNullableLocal) {
-        for (var, defs) in walk.definitions {
-            if !nullable.contains(&var) {
-                continue;
-            }
-            for def in defs {
-                let k = def.as_k_var();
-                if k.get_definition_var_type().type_family == TypeFamily::Object {
-                    k.kd_mut(|d| d.nullable = true);
-                }
+    for (var, defs) in walk.definitions {
+        if !nullable.contains(&var) {
+            continue;
+        }
+        for def in defs {
+            let k = def.as_k_var();
+            if k.get_definition_var_type().type_family == TypeFamily::Object {
+                k.kd_mut(|d| d.nullable = true);
             }
         }
     }
-    if kuna_fixes::enabled(KunaFix::KtNullableCast) {
-        for var in &walk.uses {
-            if nullable.contains(&var.as_var().get_index()) {
-                var.as_k_var().kd_mut(|d| d.nullable = true);
-            }
+    for var in &walk.uses {
+        if nullable.contains(&var.as_var().get_index()) {
+            var.as_k_var().kd_mut(|d| d.nullable = true);
         }
-        for cast in walk.casts {
-            if walk.derefs.contains(&cast.value) {
-                continue;
-            }
-            let func = cast.value.as_k_function();
-            let operand = func.get_lst_operands().get(0);
-            let to = func.get_lst_operands().get(1).get_expr_type();
-            if to.type_family == TypeFamily::Object
-                && may_be_null(operand, &cast.checked, &nullable, &params) == Some(true)
-            {
-                func.kd_mut(|d| d.nullable_cast = true);
-            }
+    }
+    for cast in walk.casts {
+        if walk.derefs.contains(&cast.value) {
+            continue;
+        }
+        let func = cast.value.as_k_function();
+        let operand = func.get_lst_operands().get(0);
+        let to = func.get_lst_operands().get(1).get_expr_type();
+        if to.type_family == TypeFamily::Object
+            && may_be_null(operand, &cast.checked, &nullable, &params) == Some(true)
+        {
+            func.kd_mut(|d| d.nullable_cast = true);
         }
     }
 }
@@ -516,9 +511,7 @@ fn may_be_null(
     if checked.iter().any(|c| same(*c, value)) {
         return Some(false);
     }
-    if kuna_fixes::enabled(KunaFix::KtRawGenericType)
-        && crate::fixes::kt_types::kt_raw_generic_type::reads_nullable_element(value)
-    {
+    if crate::fixes::kt_types::kt_raw_generic_type::reads_nullable_element(value) {
         return Some(true);
     }
     match value.get_type() {
@@ -815,8 +808,7 @@ pub fn nullable(written: &str) -> String {
 /// Fix `kt_nullable_cast`: whether `operand` reads a local that may hold `null`
 /// there (no null check of the method guards the read).
 pub fn may_read_null(operand: Exprent) -> bool {
-    kuna_fixes::enabled(KunaFix::KtNullableCast)
-        && operand.try_as_k_var().is_some_and(|k| {
-            k.kd(|d| d.nullable && d.declaration_type != Some(DeclarationType::Definition))
-        })
+    operand.try_as_k_var().is_some_and(|k| {
+        k.kd(|d| d.nullable && d.declaration_type != Some(DeclarationType::Definition))
+    })
 }

@@ -7,12 +7,6 @@ use crate::classes_processor::ClassNode;
 use crate::code_constants::INIT_NAME;
 use crate::decompiler_context::DecompilerContext;
 use crate::fixes::util::top_level;
-use crate::kuna_fixes::{self, KunaFix};
-
-const CONTINUATIONS: [&str; 2] = [
-    "kotlin/coroutines/jvm/internal/ContinuationImpl",
-    "kotlin/coroutines/jvm/internal/RestrictedContinuationImpl",
-];
 
 const SUSPEND_LAMBDAS: [&str; 2] = [
     "kotlin/coroutines/jvm/internal/SuspendLambda",
@@ -32,14 +26,7 @@ pub fn message(node: ClassNode) -> String {
         .super_class()
         .map(|s| s.get_string().to_string())
         .unwrap_or_default();
-    let reason = if CONTINUATIONS.contains(&superclass.as_str())
-        && !kuna_fixes::enabled(KunaFix::KtSyntheticObjectSuperCall)
-    {
-        format!(
-            "{name} is the continuation of a suspend function: the method is the function's \
-             coroutine state machine, which has no Kotlin form"
-        )
-    } else if SUSPEND_LAMBDAS.contains(&superclass.as_str()) {
+    let reason = if SUSPEND_LAMBDAS.contains(&superclass.as_str()) {
         format!("{name} is a suspend lambda: its coroutine state machine has no Kotlin form")
     } else if superclass.starts_with("kotlin/jvm/internal/") && superclass.contains("Reference") {
         if captures(node) {

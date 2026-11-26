@@ -8,7 +8,6 @@
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::p8_structure::kuna_javac_layout;
 use crate::fixes::control_flow;
 use crate::sequence_helper::SequenceHelper;
@@ -242,9 +241,7 @@ impl LoopExtractHelper {
 
                 let destination =
                     check.get_successor_edges(StatEdge::TYPE_REGULAR)[0].get_destination();
-                if kuna_fixes::enabled(KunaFix::LoopFirstIfExit)
-                    && !control_flow::exits_to(firstif, destination)
-                {
+                if !control_flow::exits_to(firstif, destination) {
                     return false;
                 }
 

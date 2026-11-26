@@ -17,7 +17,6 @@ use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
 use crate::fixes::kt_jumps;
 use crate::fixes::kt_anonymous_objects::kt_property_reference;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_wrapper::MethodWrapper;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -85,28 +84,24 @@ impl KFieldExprent {
             KotlinChooser::parse_metadata_for(cl);
 
             let Some(kt_data) = KtAttrs::get(cl, &KElement::KEY()) else {
-                if kuna_fixes::enabled(KunaFix::KtPropertyReference) {
-                    let reference = root_class_node(&classname).and_then(|node| {
-                        kt_property_reference::stringify(
-                            indent,
-                            node,
-                            self.get_bytecode().as_ref(),
-                            None,
-                        )
-                    });
-                    if let Some(reference) = reference {
-                        return reference;
-                    }
+                let reference = root_class_node(&classname).and_then(|node| {
+                    kt_property_reference::stringify(
+                        indent,
+                        node,
+                        self.get_bytecode().as_ref(),
+                        None,
+                    )
+                });
+                if let Some(reference) = reference {
+                    return reference;
                 }
                 return FieldExprent::to_java(self.0, indent);
             };
 
             match kt_data {
                 KElement::Class(cls) => {
-                    if kuna_fixes::enabled(KunaFix::KtObjectInstance) {
-                        if let Some(object) = kt_object_instance::object_name(self.0) {
-                            return object;
-                        }
+                    if let Some(object) = kt_object_instance::object_name(self.0) {
+                        return object;
                     }
                     if cls.proto.has_companion_object_name() {
                         let name = match &cls.resolver {
@@ -145,11 +140,7 @@ impl KFieldExprent {
                         let method_struct = function
                             .method_struct
                             .unwrap_or_else(|| npe("KFunction.methodStruct()"));
-                        let printed = if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-                            kt_unescaped_name::lambda_parameter(&param.name)
-                        } else {
-                            param.name.clone()
-                        };
+                        let printed = kt_unescaped_name::lambda_parameter(&param.name);
                         buf.append_variable(
                             &printed,
                             true,
@@ -178,11 +169,7 @@ impl KFieldExprent {
                             let root = method.with(|d| d.root);
                             if let Some(root) = root {
                                 DecompilerContext::set_current_method_wrapper(Some(method));
-                                if kuna_fixes::enabled(KunaFix::KtLambdaSingletonReturns) {
-                                    kt_jumps::label_exits(
-                                        &mut buf, root, &classname,
-                                    );
-                                }
+                                kt_jumps::label_exits(&mut buf, root, &classname);
                                 let mut body = root.0.to_java(indent + 1);
                                 body.add_bytecode_mapping(
                                     root.get_dummy_exit().bytecode().as_ref(),

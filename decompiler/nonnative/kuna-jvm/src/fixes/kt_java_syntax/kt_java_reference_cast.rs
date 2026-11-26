@@ -12,7 +12,6 @@ use crate::generic_type::GenericType;
 use crate::k_types::KTypes;
 use crate::fixes::kt_null_checks::kt_nullable_local;
 use crate::fixes::kt_util::writing_kotlin;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -60,9 +59,6 @@ fn primitive(type_: CodeType) -> bool {
 
 /// Whether Java's cast of a value of type `from` to `to` is written `as`.
 pub fn applies(to: &VarType, from: &VarType) -> bool {
-    if !kuna_fixes::enabled(KunaFix::KtJavaReferenceCast) {
-        return false;
-    }
     if to.array_dim > 0 || to.type_ == CodeType::Object {
         return true;
     }
@@ -288,8 +284,7 @@ pub fn qualifier(buf: &mut TextBuffer, to: &VarType, instance: Exprent, mut res:
 
 /// Whether the fix writes the casts of the Kotlin class being written.
 pub fn active() -> bool {
-    kuna_fixes::enabled(KunaFix::KtJavaReferenceCast)
-        && writing_kotlin()
+    writing_kotlin()
 }
 
 /// `res`, the array operand of an element access or `length` whose type is

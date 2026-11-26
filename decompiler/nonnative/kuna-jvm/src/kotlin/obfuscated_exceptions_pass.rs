@@ -3,7 +3,6 @@
 use crate::decompiler_context::DecompilerContext;
 use crate::exception_deobfuscator::ExceptionDeobfuscator;
 use crate::i_fernflower_logger::Severity;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::exception_ranges::overlapping_ranges::OverlappingRanges;
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
@@ -14,9 +13,7 @@ impl Pass for ObfuscatedExceptionsPass {
     fn run(&self, ctx: &mut PassContext) -> bool {
         let graph = ctx.get_graph().expect("NullPointerException: graph");
         let mt = ctx.get_method();
-        if kuna_fixes::enabled(KunaFix::OverlappingRanges) {
-            OverlappingRanges::split(graph);
-        }
+        OverlappingRanges::split(graph);
 
         if ExceptionDeobfuscator::has_obfuscated_exceptions(graph) {
             if !ExceptionDeobfuscator::handle_multiple_entry_exception_ranges(graph) {

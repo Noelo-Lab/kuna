@@ -10,7 +10,6 @@ use crate::expr_processor::{ExprProcessor, NullCastType};
 use crate::exprent::{Exprent, ExprentKind};
 use crate::i_matchable::MatchProperties;
 use crate::fixes::lambdas::lambda_type_variable_target;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::java_subclass;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -168,11 +167,9 @@ impl ExitExprent {
                 }
                 buf.append_char(' ');
 
-                if kuna_fixes::enabled(KunaFix::LambdaTypeVariableTarget) {
-                    if let Some(inv) = value.and_then(|v| v.try_as_invocation()) {
-                        let target = lambda_type_variable_target::return_target(&ret, generic);
-                        inv.d_mut(|d| d.kuna_target = target);
-                    }
+                if let Some(inv) = value.and_then(|v| v.try_as_invocation()) {
+                    let target = lambda_type_variable_target::return_target(&ret, generic);
+                    inv.d_mut(|d| d.kuna_target = target);
                 }
 
                 let _declared = disjoint_generic_cast::mark_declared_target();
@@ -190,17 +187,19 @@ impl ExitExprent {
 
             buf
         } else {
-            if kuna_fixes::enabled(KunaFix::ThrownTypeVariable) {
-                let thrown = value.expect("NullPointerException");
-                if let Some(cast) = generics::throw_cast(thrown) {
-                    buf.append("throw (").append_cast_type_name(&cast).append(")");
-                    if thrown.get_precedence() >= FunctionType::Cast.precedence() {
-                        buf.append("(").append_buffer(&thrown.to_java(indent)).append(")");
-                    } else {
-                        buf.append_buffer(&thrown.to_java(indent));
-                    }
-                    return buf;
+            let thrown = value.expect("NullPointerException");
+            if let Some(cast) = generics::throw_cast(thrown) {
+                buf.append("throw (")
+                    .append_cast_type_name(&cast)
+                    .append(")");
+                if thrown.get_precedence() >= FunctionType::Cast.precedence() {
+                    buf.append("(")
+                        .append_buffer(&thrown.to_java(indent))
+                        .append(")");
+                } else {
+                    buf.append_buffer(&thrown.to_java(indent));
                 }
+                return buf;
             }
             let method = DecompilerContext::get_current_method_wrapper();
             let node = DecompilerContext::get_current_class_node();

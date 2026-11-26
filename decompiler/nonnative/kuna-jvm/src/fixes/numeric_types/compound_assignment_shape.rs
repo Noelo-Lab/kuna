@@ -7,7 +7,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::FunctionType;
 use crate::kt_metadata::KotlinMetadataAnnotation;
-use crate::kuna_fixes::{self, KunaFix};
 
 /// The fix's decision for `asexpr` (the read of `left` may be widened, as in
 /// `i += someLong`): `Some(true)` when it was made compound,
@@ -86,9 +85,8 @@ pub fn compound(asexpr: AssignmentExprent) -> Option<bool> {
 /// instead of becoming `++x.f` (`PPandMMHelper`, `isPPIorMMI`, and
 /// `isIPPorIMM2` for a read kept in a stack variable).
 pub fn loads_twice(left: Exprent, read: Exprent) -> bool {
-    if !kuna_fixes::enabled(KunaFix::CompoundAssignmentShape)
-        || DecompilerContext::get_current_class()
-            .is_some_and(|cl| KotlinMetadataAnnotation::find(cl).is_some())
+    if DecompilerContext::get_current_class()
+        .is_some_and(|cl| KotlinMetadataAnnotation::find(cl).is_some())
         || left.get_type() != read.get_type()
     {
         return false;

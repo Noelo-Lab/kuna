@@ -7,7 +7,6 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::field_exprent::FieldExprent;
 use crate::generic_type::GenericType;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::generic_casts;
 use crate::var_exprent::VarExprent;
@@ -76,9 +75,7 @@ pub fn supertype_args(sub: &VarType, sup: &str) -> Option<Vec<Option<VarType>>> 
         return None;
     }
     let Some(sup_formals) = formals(sup) else {
-        return kuna_fixes::enabled(KunaFix::ExternalSupertypeArguments)
-            .then(|| generic_casts::external_supertype_args(sub, sup))
-            .flatten();
+        return generic_casts::external_supertype_args(sub, sup);
     };
     let cls = get_class(&sub.value)?;
     let hierarchy = cls.get_all_generics();

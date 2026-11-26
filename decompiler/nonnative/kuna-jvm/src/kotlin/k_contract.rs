@@ -8,7 +8,6 @@ use crate::fixes::kt_declarations;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{self, ConstantValue, EffectType, InvocationKind};
-use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::text_buffer::TextBuffer;
 
@@ -65,16 +64,10 @@ impl KContract {
 
     pub fn stringify(&self, indent: i32) -> TextBuffer {
         let mut buf = TextBuffer::new();
-        if kuna_fixes::enabled(KunaFix::KtContractImport) {
-            buf.append_indent(indent)
-                .append(&kt_declarations::contract_call())
-                .append(" {")
-                .append_line_separator();
-        } else {
-            buf.append_indent(indent)
-                .append("contract {")
-                .append_line_separator();
-        }
+        buf.append_indent(indent)
+            .append(&kt_declarations::contract_call())
+            .append(" {")
+            .append_line_separator();
         for effect in &self.effects {
             effect.stringify(&mut buf, indent + 1);
         }

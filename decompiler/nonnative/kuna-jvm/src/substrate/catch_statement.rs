@@ -8,7 +8,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::java_subclass;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::{JHashSet, JList};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementKind, StatementType};
@@ -134,9 +133,7 @@ impl CatchStatement {
                 }
             }
 
-            if kuna_fixes::enabled(KunaFix::CatchLoopBackSuccessor)
-                && next.is_some_and(|n| n == head || set_handlers.contains(&n))
-            {
+            if next.is_some_and(|n| n == head || set_handlers.contains(&n)) {
                 return None;
             }
 

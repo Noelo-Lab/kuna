@@ -7,7 +7,6 @@ use crate::function_exprent::FunctionType;
 use crate::jthrow;
 use crate::fixes::kt_delegation_calls::kt_delegation_call_arguments;
 use crate::fixes::kt_null_checks;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::k_function_exprent::{KFunctionExprent, KFunctionType};
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
@@ -84,17 +83,11 @@ impl Pass for ResugarKotlinMethodsPass {
     fn run(&self, ctx: &mut PassContext) -> bool {
         let mut res = false;
 
-        if kuna_fixes::enabled(KunaFix::KtDelegationCallArguments) {
-            res |= kt_delegation_call_arguments::inline(ctx);
-        }
+        res |= kt_delegation_call_arguments::inline(ctx);
 
-        if kuna_fixes::enabled(KunaFix::KtLegacyConstructorParameterChecks) {
-            res |= kt_null_checks::remove_legacy_constructor_checks(ctx);
-        }
+        res |= kt_null_checks::remove_legacy_constructor_checks(ctx);
 
-        if kuna_fixes::enabled(KunaFix::KtLegacyParameterChecks) {
-            res |= kt_null_checks::remove_legacy_checks(ctx);
-        }
+        res |= kt_null_checks::remove_legacy_checks(ctx);
 
         let digraph =
             FlattenStatementsHelper::build(ctx.get_root().expect("NullPointerException: root"));

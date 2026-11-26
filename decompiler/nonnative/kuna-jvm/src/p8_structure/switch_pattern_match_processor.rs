@@ -14,16 +14,13 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_pattern_match_processor::IfPatternMatchProcessor;
 use crate::if_statement::IfStatement;
 use crate::invocation_exprent::InvocationType;
-use crate::jthrow;
-use crate::fixes::patterns::type_switch_enum_label;
 use crate::fixes::patterns::type_switch_label_lookup;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::pair::Pair;
 use crate::pattern_exprent::PatternExprent;
 use crate::pooled_constant::PooledConstant;
 use crate::primitive_constant::PrimitiveConstant;
 use crate::root_statement::RootStatement;
-use crate::rt::{JHashMap, JList, JavaEq};
+use crate::rt::{JHashMap, JList};
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
@@ -235,33 +232,17 @@ impl SwitchPatternMatchProcessor {
                                         {
                                             if primitive.type_ == CONSTANT_CLASS {
                                                 operands.push(check.0);
-                                                if kuna_fixes::enabled(
-                                                    KunaFix::TypeSwitchPatternType,
-                                                ) {
-                                                    operands.push(
-                                                        ConstExprent::new(
-                                                            VarType::new_signature_cl(
-                                                                &primitive.get_string(),
-                                                                true,
-                                                            ),
-                                                            None,
-                                                            None,
-                                                        )
-                                                        .0,
-                                                    );
-                                                } else {
-                                                    operands.push(
-                                                        ConstExprent::new(
-                                                            VarType::VARTYPE_CLASS(),
-                                                            primitive
-                                                                .value
-                                                                .as_ref()
-                                                                .map(ConstValue::from),
-                                                            None,
-                                                        )
-                                                        .0,
-                                                    );
-                                                }
+                                                operands.push(
+                                                    ConstExprent::new(
+                                                        VarType::new_signature_cl(
+                                                            &primitive.get_string(),
+                                                            true,
+                                                        ),
+                                                        None,
+                                                        None,
+                                                    )
+                                                    .0,
+                                                );
                                                 operands.push(var.0);
                                                 if all_cases.contains(&None) {
                                                     stat.set_default_edge(None);
@@ -327,71 +308,13 @@ impl SwitchPatternMatchProcessor {
         }
 
         let bootstrap_arguments = value.get_bootstrap_arguments().expect("bsm args");
-        if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
-            type_switch_label_lookup::replace_labels(
-                stat,
-                &bootstrap_arguments,
-                real_selector,
-                is_enum_switch,
-            );
-            type_switch_label_lookup::strip_multi_pattern_guards(stat);
-        } else {
-            for (i, bsa) in bootstrap_arguments.iter().enumerate() {
-                let i = i as i32;
-                let mut replace_index = i;
-                for case_value_set in stat.get_case_values().iter() {
-                    if let Some(const_expr) = case_value_set.get(0).and_then(|e| e.try_as_const()) {
-                        if let Some(ConstValue::Int(v)) = const_expr.get_value() {
-                            if v == i {
-                                replace_index =
-                                    index_of_list(&stat.get_case_values(), &case_value_set);
-                            }
-                        }
-                    }
-                }
-                let new_value = match bsa {
-                    Some(PooledConstant::Primitive(p)) => {
-                        let class_allowed = p.type_ == CONSTANT_CLASS
-                            && stat
-                                .get_case_values()
-                                .get(replace_index as usize)
-                                .iter()
-                                .all(|x| x.is_some_and(|x| x.is_const()));
-                        let new_value =
-                            Self::label_value(p, real_selector, is_enum_switch, class_allowed);
-                        if p.type_ == CONSTANT_STRING {
-                            replace_index = Self::get_index(i, &stat.get_case_values());
-                        }
-                        new_value
-                    }
-                    Some(PooledConstant::Link(link))
-                        if kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel) =>
-                    {
-                        type_switch_enum_label::resolve_label(link)
-                    }
-                    _ => None,
-                };
-                if let Some(nvx) = new_value {
-                    let ix = i;
-                    let list = stat.get_case_values().get(replace_index as usize);
-                    let replaced: Vec<Option<Exprent>> = list
-                        .to_vec()
-                        .into_iter()
-                        .map(|u| match u {
-                            Some(c)
-                                if c.is_const()
-                                    && c.get_expr_type().type_family == TypeFamily::Integer
-                                    && c.as_const().get_int_value() == ix =>
-                            {
-                                Some(nvx)
-                            }
-                            other => other,
-                        })
-                        .collect();
-                    list.set_all(replaced);
-                }
-            }
-        }
+        type_switch_label_lookup::replace_labels(
+            stat,
+            &bootstrap_arguments,
+            real_selector,
+            is_enum_switch,
+        );
+        type_switch_label_lookup::strip_multi_pattern_guards(stat);
 
         let mut replace_with = stat.0;
         let mut parent = stat.get_parent();
@@ -551,24 +474,6 @@ impl SwitchPatternMatchProcessor {
                 None
             }
         }
-    }
-
-    fn get_index(check: i32, values: &JList<JList<Option<Exprent>>>) -> i32 {
-        for i in 0..values.len() {
-            let list = values.get(i);
-
-            for exp in list.iter() {
-                if let Some(cons) = exp.and_then(|e| e.try_as_const()) {
-                    if let Some(ConstValue::Int(val)) = cons.get_value() {
-                        if val == check {
-                            return i as i32;
-                        }
-                    }
-                }
-            }
-        }
-
-        jthrow!(IllegalStateException; "Unexpected case in switch pattern matching")
     }
 
     /// `guards` is Java's `Map<List<Exprent>, Exprent>`, keyed by the content of a case-value
@@ -808,15 +713,4 @@ impl SwitchPatternMatchProcessor {
         }
         false
     }
-}
-
-/// `values.indexOf(list)`: the first case-value list equal by content (`List.equals`).
-fn index_of_list(values: &JList<JList<Option<Exprent>>>, list: &JList<Option<Exprent>>) -> i32 {
-    let wanted = list.to_vec();
-    for (i, candidate) in values.iter().enumerate() {
-        if wanted.java_equals(&candidate.to_vec()) {
-            return i as i32;
-        }
-    }
-    -1
 }

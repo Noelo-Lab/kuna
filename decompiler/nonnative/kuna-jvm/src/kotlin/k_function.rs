@@ -34,7 +34,6 @@ use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::fixes::kt_suspend::kt_suspend_impl;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::fixes::kt_types::kt_type_parameter_id;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::method_wrapper::MethodWrapper;
 use crate::rt::{rethrow, try_catch};
@@ -137,12 +136,8 @@ impl KFunction {
         };
 
         for function in proto_functions {
-            let _type_parameters = kuna_fixes::enabled(KunaFix::KtTypeParameterId).then(|| {
-                kt_type_parameter_id::member_scope(
-                    &function.get_type_parameter_list(),
-                    resolver,
-                )
-            });
+            let _type_parameters =
+                kt_type_parameter_id::member_scope(&function.get_type_parameter_list(), resolver);
             let jvm_data = function.get_extension_method_signature();
 
             let flags = function.get_flags();
@@ -206,11 +201,7 @@ impl KFunction {
 
                 method_lookup = class_struct.get_method(&lookup_name, &desc);
 
-                if method_lookup.is_none()
-                    && is_synthetic_function
-                    && "<anonymous>" == name
-                    && kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                {
+                if method_lookup.is_none() && is_synthetic_function && "<anonymous>" == name {
                     method_lookup = kt_suspend_lambda::body_method(class_struct);
                     suspend_lambda_body = method_lookup.is_some();
                 }
@@ -234,10 +225,7 @@ impl KFunction {
                 if let Some(companion_parent) = companion_parent {
                     if let Some(in_parent) = companion_parent
                         .get_method(&lookup_name, &desc)
-                        .filter(|m| {
-                            !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kt_generated_members::is_copy(*m)
-                        })
+                        .filter(|m| kt_generated_members::is_copy(*m))
                     {
                         KtAttrs::put(
                             in_parent,
@@ -273,11 +261,10 @@ impl KFunction {
                 default_args_desc.push_str(&receiver_type.0.to_string());
             }
             for (i, parameter) in parameters.iter().enumerate() {
-                let named = !kuna_fixes::enabled(KunaFix::KtTypeParameterId)
-                    || function
-                        .get_value_parameter(i as i32)
-                        .get_type()
-                        .has_type_parameter_name();
+                let named = function
+                    .get_value_parameter(i as i32)
+                    .get_type()
+                    .has_type_parameter_name();
                 if let Some(type_parameter_name) = parameter
                     .type_
                     .k()
@@ -304,22 +291,13 @@ impl KFunction {
             default_args_desc.push_str("Ljava/lang/Object;)");
             default_args_desc.push_str(&return_type.0.to_string());
 
-            let bridge = kuna_fixes::enabled(KunaFix::KtDefaultArgsBridgeLookup).then(|| {
-                kt_default_args::locate(
-                    class_struct,
-                    method,
-                    parameters.len(),
-                )
-            });
+            let bridge = kt_default_args::locate(class_struct, method, parameters.len());
             let (default_args_name, default_args_desc) = match &bridge {
-                Some(Some(bridge)) => (bridge.name.clone(), bridge.descriptor.clone()),
-                _ => (default_args_name, default_args_desc),
+                Some(bridge) => (bridge.name.clone(), bridge.descriptor.clone()),
+                None => (default_args_name, default_args_desc),
             };
 
-            let default_method = match &bridge {
-                Some(bridge) => bridge.as_ref().and_then(|b| b.method(class_struct)),
-                None => class_struct.get_method(&default_args_name, &default_args_desc),
-            };
+            let default_method = bridge.as_ref().and_then(|b| b.method(class_struct));
             if let Some(default_method) = default_method {
                 KtAttrs::put(
                     default_method,
@@ -328,9 +306,7 @@ impl KFunction {
                 );
             }
 
-            if let Some(companion_parent) =
-                companion_parent.filter(|_| !matches!(bridge, Some(None)))
-            {
+            if let Some(companion_parent) = companion_parent.filter(|_| bridge.is_some()) {
                 let in_parent = companion_parent.get_method(&default_args_name, &default_args_desc);
                 if let Some(in_parent) = in_parent {
                     KtAttrs::put(
@@ -344,10 +320,7 @@ impl KFunction {
             let default_args: DefaultArgsSupplier = {
                 let parameters = parameters.clone();
                 Rc::new(move |wrapper: ClassWrapper| {
-                    let defaults = match &bridge {
-                        Some(bridge) => bridge.as_ref().and_then(|b| b.wrapper(wrapper)),
-                        None => wrapper.get_method_wrapper(&default_args_name, &default_args_desc),
-                    };
+                    let defaults = bridge.as_ref().and_then(|b| b.wrapper(wrapper));
                     DefaultArgsMap::from(
                         defaults,
                         wrapper.get_method_wrapper(&method.get_name(), &method.get_descriptor()),
@@ -366,8 +339,7 @@ impl KFunction {
                     &method.get_name(),
                     &method.method_descriptor(),
                     false,
-                ) || kuna_fixes::enabled(KunaFix::KtMissedOverride)
-                    && kt_declarations::bridged(class_struct, method));
+                ) || kt_declarations::bridged(class_struct, method));
 
             let contract = if function.has_contract() {
                 Some(KContract::from(
@@ -444,7 +416,7 @@ impl KFunction {
             TypeAnnotation::METHOD_RETURN_TYPE,
         );
 
-        if self.contract.is_some() && kuna_fixes::enabled(KunaFix::KtContractImport) {
+        if self.contract.is_some() {
             kt_declarations::append_opt_in(&mut buf, indent);
         }
 
@@ -576,23 +548,19 @@ impl KFunction {
 
             parameter.stringify(indent + 1, &mut buf);
             // K1 copies the overridden function's default flags into a delegating member
-            let delegated = kuna_fixes::enabled(KunaFix::KtDelegatedMemberDefault)
-                && Flags::MEMBER_KIND.get(flags) == Some(MemberKind::Delegation);
+            let delegated = Flags::MEMBER_KIND.get(flags) == Some(MemberKind::Delegation);
             if Flags::DECLARES_DEFAULT_VALUE.get(parameter.flags) && !delegated {
                 let defaults = (self.default_args_supplier)(wrapper);
-                let _names = defaults
-                    .kuna_bridge()
-                    .filter(|_| kuna_fixes::enabled(KunaFix::KtDefaultValueNames))
-                    .and_then(|bridge| {
-                        kt_default_args::enter_defaults(
-                            bridge,
-                            class_struct,
-                            method_struct,
-                            &self.parameters,
-                            self.receiver_type.is_some(),
-                            Flags::IS_SUSPEND.get(flags),
-                        )
-                    });
+                let _names = defaults.kuna_bridge().and_then(|bridge| {
+                    kt_default_args::enter_defaults(
+                        bridge,
+                        class_struct,
+                        method_struct,
+                        &self.parameters,
+                        self.receiver_type.is_some(),
+                        Flags::IS_SUSPEND.get(flags),
+                    )
+                });
                 let default_value = defaults.to_java(parameter, indent + 1);
                 buf.append_buffer_mapped(&default_value, Some(&qualified_name), Some(&method_key));
             }
@@ -607,8 +575,7 @@ impl KFunction {
                 .append_buffer(&self.return_type.stringify(indent + 1));
         }
 
-        let no_body = kuna_fixes::enabled(KunaFix::KtAbstractFunctionBody)
-            && (method_struct.get_access_flags() & (ACC_ABSTRACT | ACC_NATIVE)) != 0
+        let no_body = (method_struct.get_access_flags() & (ACC_ABSTRACT | ACC_NATIVE)) != 0
             && (Flags::MODALITY.get(flags) == Some(Modality::Abstract)
                 || Flags::IS_EXTERNAL_FUNCTION.get(flags));
 
@@ -657,30 +624,27 @@ impl KFunction {
         let mut method_wrapper =
             (self.method_supplier)(wrapper).expect("NullPointerException: methodWrapper");
         let mut _impl_scope = None;
-        if kuna_fixes::enabled(KunaFix::KtSuspendImpl) {
-            if let Some(body) = kt_suspend_impl::body_of(wrapper, method_wrapper) {
-                method_wrapper = body;
-                _impl_scope = Some(kt_suspend_impl::enter(body));
-            }
+        if let Some(body) = kt_suspend_impl::body_of(wrapper, method_wrapper) {
+            method_wrapper = body;
+            _impl_scope = Some(kt_suspend_impl::enter(body));
         }
-        let _receiver = (kuna_fixes::enabled(KunaFix::KtExtensionReceiver)
-            && self.receiver_type.is_some())
-        .then(|| {
-            kt_extensions::enter(
-                class_struct,
-                method_wrapper,
-                method_struct.has_modifier(ACC_STATIC),
-            )
-        })
-        .flatten();
-        let _parameter_names = kuna_fixes::enabled(KunaFix::KtFunctionParameterName).then(|| {
-            kt_function_parameter_name::enter(
-                method_wrapper,
-                &self.parameters,
-                usize::from(self.receiver_type.is_some()),
-                usize::from(Flags::IS_SUSPEND.get(flags)),
-            )
-        });
+        let _receiver = self
+            .receiver_type
+            .is_some()
+            .then(|| {
+                kt_extensions::enter(
+                    class_struct,
+                    method_wrapper,
+                    method_struct.has_modifier(ACC_STATIC),
+                )
+            })
+            .flatten();
+        let _parameter_names = kt_function_parameter_name::enter(
+            method_wrapper,
+            &self.parameters,
+            usize::from(self.receiver_type.is_some()),
+            usize::from(Flags::IS_SUSPEND.get(flags)),
+        );
         let (root, decompile_error) =
             method_wrapper.with(|d| (d.root, d.decompile_error.is_some()));
         if let (Some(root), false) = (root, decompile_error) {

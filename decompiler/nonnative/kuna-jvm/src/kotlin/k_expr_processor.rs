@@ -4,7 +4,6 @@ use crate::expr_processor::ExprProcessor;
 use crate::jthrow;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label;
 use crate::fixes::kt_jumps;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
@@ -25,14 +24,9 @@ impl KExprProcessor {
                 let mut inner_buf = TextBuffer::new();
                 inner_buf.append_indent(indent);
 
-                let closure_is_run = if kuna_fixes::enabled(KunaFix::KtUnlabeledSequenceBreak) {
-                    kt_jumps::returns_from_sequence(edge)
-                } else {
-                    edge.closure().is_some_and(|c| c.is_k_sequence())
-                };
-                let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
-                    && kt_jump_to_non_loop_label::returns(edge);
-                let when_break = (kuna_fixes::enabled(KunaFix::KtWhenBreak) && !is_switch)
+                let closure_is_run = kt_jumps::returns_from_sequence(edge);
+                let lambda_return = kt_jump_to_non_loop_label::returns(edge);
+                let when_break = (!is_switch)
                     .then(|| kt_jumps::when_jump(edge, stat))
                     .flatten();
                 match edge.get_type() {

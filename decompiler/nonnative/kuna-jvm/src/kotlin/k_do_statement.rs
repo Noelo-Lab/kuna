@@ -13,7 +13,6 @@ use crate::k_var_exprent::{DeclarationType, KVarExprent};
 use crate::kotlin_statement;
 use crate::fixes::kt_for_loops;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
-use crate::kuna_fixes::{self, KunaFix};
 use crate::stat_edge::StatEdge;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -32,9 +31,7 @@ fn replace_exprent(ex: Option<Exprent>) -> Option<Exprent> {
 /// comparisons take the range operator into their own operand.
 fn range_operand(expr: Exprent) -> TextBuffer {
     let mut buf = expr.to_java_default();
-    if kuna_fixes::enabled(KunaFix::KtRangeOperandPrecedence)
-        && expr.get_precedence() > FunctionType::Add.precedence()
-    {
+    if expr.get_precedence() > FunctionType::Add.precedence() {
         buf.enclose("(", ")");
     }
     buf
@@ -218,7 +215,7 @@ impl KDoStatement {
                         }
 
                         let body = || KExprProcessor::jmp_wrapper(first(), indent + 1, false);
-                        buf.append_buffer(&if repeat && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
+                        buf.append_buffer(&if repeat {
                             kt_jump_to_non_loop_label::within(self.into(), Lambda::Repeat, body)
                         } else {
                             body()
@@ -227,7 +224,6 @@ impl KDoStatement {
                             .append("}")
                             .append_line_separator();
                     }
-                    Resugar::Abandoned => {}
                     Resugar::NotRange => {
                         let init = replace_exprent(self.get_init_exprent())
                             .or_else(|| self.get_init_exprent());
@@ -244,9 +240,7 @@ impl KDoStatement {
                         }
 
                         let definitions = self.get_var_definitions();
-                        if kuna_fixes::enabled(KunaFix::KtForLoopDefinitions)
-                            && !definitions.is_empty()
-                        {
+                        if !definitions.is_empty() {
                             buf.set_length(0);
                             buf.append_buffer(&ExprProcessor::list_to_java(
                                 Some(&definitions),
@@ -259,11 +253,10 @@ impl KDoStatement {
                             .append_line_separator()
                             .append_indent(indent);
 
-                        let do_form = kuna_fixes::enabled(KunaFix::KtForLoopContinueUpdate)
-                            && self
-                                .get_predecessor_edges(StatEdge::TYPE_CONTINUE)
-                                .iter()
-                                .any(|edge| edge.explicit());
+                        let do_form = self
+                            .get_predecessor_edges(StatEdge::TYPE_CONTINUE)
+                            .iter()
+                            .any(|edge| edge.explicit());
                         if labeled && !do_form {
                             indent += 1;
                             buf.append("run label")
@@ -285,23 +278,15 @@ impl KDoStatement {
                             self.write_continue_update_loop(&mut buf, indent, condition, inc);
                             return buf;
                         }
-                        if kuna_fixes::enabled(KunaFix::KtForLoopExitCondition) {
-                            buf.append("while (");
-                            buf.push_newline_group(indent, 1);
-                            buf.append_possible_newline();
-                            buf.append_buffer(&condition.to_java(indent));
-                            buf.append_possible_newline_dedent("", true);
-                            buf.pop_newline_group();
-                            buf.append(") {").append_line_separator();
-                        } else {
-                            buf.append("while (true) {").append_line_separator();
-                            buf.append_indent(indent + 1);
-                            buf.append("if (");
-                            buf.append_buffer(&condition.to_java(indent + 1));
-                            buf.append(") break").append_line_separator();
-                        }
+                        buf.append("while (");
+                        buf.push_newline_group(indent, 1);
+                        buf.append_possible_newline();
+                        buf.append_buffer(&condition.to_java(indent));
+                        buf.append_possible_newline_dedent("", true);
+                        buf.pop_newline_group();
+                        buf.append(") {").append_line_separator();
                         let body = || KExprProcessor::jmp_wrapper(first(), indent + 1, false);
-                        buf.append_buffer(&if labeled && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel) {
+                        buf.append_buffer(&if labeled {
                             kt_jump_to_non_loop_label::within(self.into(), Lambda::Run, body)
                         } else {
                             body()
@@ -385,9 +370,7 @@ impl KDoStatement {
         if condition.get_func_type() != FunctionType::Lt {
             return Resugar::NotRange;
         }
-        if kuna_fixes::enabled(KunaFix::KtForRangeCounter)
-            && !kt_for_loops::is_counted_loop(self.0, var_expr, inc, condition)
-        {
+        if !kt_for_loops::is_counted_loop(self.0, var_expr, inc, condition) {
             return Resugar::NotRange;
         }
 
@@ -414,32 +397,27 @@ impl KDoStatement {
                 && left.is_var()
             {
                 KVarExprent::new(left.as_var()).0 .0
-            } else if kuna_fixes::enabled(KunaFix::KtForRangeUnmatchedBound) {
-                return Resugar::NotRange;
             } else {
-                return Resugar::Abandoned;
+                return Resugar::NotRange;
             }
         };
 
-        let exclusive_bound = kuna_fixes::enabled(KunaFix::KtForRangeExclusiveBound);
         let mut exclusive = false;
-        if exclusive_bound {
-            match condition_expr.try_as_const().and_then(|c| c.get_value()) {
-                Some(ConstValue::Int(i))
-                    if Self::step_past(i as i64, inc.get_func_type())
-                        .is_none_or(|v| v != v as i32 as i64) =>
-                {
-                    return Resugar::NotRange;
-                }
-                Some(ConstValue::Long(l)) if Self::step_past(l, inc.get_func_type()).is_none() => {
-                    return Resugar::NotRange;
-                }
-                Some(_) => {}
-                None if inc.get_func_type().is_pp() => exclusive = true,
-                None => return Resugar::NotRange,
+        match condition_expr.try_as_const().and_then(|c| c.get_value()) {
+            Some(ConstValue::Int(i))
+                if Self::step_past(i as i64, inc.get_func_type())
+                    .is_none_or(|v| v != v as i32 as i64) =>
+            {
+                return Resugar::NotRange;
             }
+            Some(ConstValue::Long(l)) if Self::step_past(l, inc.get_func_type()).is_none() => {
+                return Resugar::NotRange;
+            }
+            Some(_) => {}
+            None if inc.get_func_type().is_pp() => exclusive = true,
+            None => return Resugar::NotRange,
         }
-        let mut count_expr = condition_expr;
+        let count_expr = condition_expr;
 
         if let Some(condition_const) = condition_expr.try_as_const() {
             condition_const.set_const_type(var_expr.0 .0.get_expr_type());
@@ -456,9 +434,7 @@ impl KDoStatement {
                 ))
                 .0
                  .0;
-            } else if let (true, Some(ConstValue::Long(l))) =
-                (exclusive_bound, condition_const.get_value())
-            {
+            } else if let Some(ConstValue::Long(l)) = condition_const.get_value() {
                 let new_value = Self::step_past(l, inc.get_func_type()).expect("checked above");
                 condition_expr = KConstExprent::new(ConstExprent::new(
                     var_expr.0 .0.get_expr_type(),
@@ -468,9 +444,6 @@ impl KDoStatement {
                 .0
                  .0;
             }
-        }
-        if !exclusive_bound {
-            count_expr = condition_expr;
         }
 
         if let Some(const_expr) = init.get_right().try_as_const() {
@@ -509,6 +482,5 @@ struct RangeHeader {
 
 enum Resugar {
     Range(RangeHeader),
-    Abandoned,
     NotRange,
 }

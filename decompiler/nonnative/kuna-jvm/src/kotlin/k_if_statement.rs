@@ -6,7 +6,6 @@ use crate::k_expr_processor::KExprProcessor;
 use crate::fixes::kt_jumps;
 use crate::kotlin_statement;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JavaStr;
 use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
@@ -111,10 +110,7 @@ impl KIfStatement {
 
         buf.append_buffer(&self.get_first().expect("first").to_java(indent));
 
-        if self.is_labeled()
-            && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
-            && kt_jump_to_non_loop_label::jumped_out_of(self.into())
-        {
+        if self.is_labeled() && kt_jump_to_non_loop_label::jumped_out_of(self.into()) {
             buf.append_indent(indent)
                 .append("run label")
                 .append_int(self.id())
@@ -152,7 +148,8 @@ impl KIfStatement {
         match self.get_ifstat() {
             None => {
                 let if_edge = self.get_if_edge().expect("NullPointerException: ifEdge");
-                let when_break = (kuna_fixes::enabled(KunaFix::KtWhenBreak) && if_edge.explicit())
+                let when_break = if_edge
+                    .explicit()
                     .then(|| kt_jumps::when_jump(if_edge, self.into()))
                     .flatten();
                 if let Some(when_break) = when_break {
@@ -162,14 +159,8 @@ impl KIfStatement {
                             .append_line_separator();
                     }
                 } else if if_edge.explicit() {
-                    let lambda_return = kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
-                        && kt_jump_to_non_loop_label::returns(if_edge);
-                    let closure_is_run =
-                        if kuna_fixes::enabled(KunaFix::KtUnlabeledSequenceBreak) {
-                            kt_jumps::returns_from_sequence(if_edge)
-                        } else {
-                            if_edge.closure().is_some_and(|c| c.is_k_sequence())
-                        };
+                    let lambda_return = kt_jump_to_non_loop_label::returns(if_edge);
+                    let closure_is_run = kt_jumps::returns_from_sequence(if_edge);
                     buf.append_indent(indent + 1);
                     if lambda_return {
                         buf.append("return");

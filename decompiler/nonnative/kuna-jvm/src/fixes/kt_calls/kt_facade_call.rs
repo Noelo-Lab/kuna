@@ -24,7 +24,6 @@ use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::fixes::kt_calls::kt_explicit_type_arguments;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
@@ -483,9 +482,6 @@ pub fn property_prefix(invocation: InvocationExprent, property: &KProperty) -> O
 /// The written read of a top-level property's field (`@JvmField`, `const`)
 /// through its facade, `name` or `pkg.name`.
 pub fn write_field(classname: &str, name: &str, descriptor: &str) -> Option<TextBuffer> {
-    if !kuna_fixes::enabled(KunaFix::KtFacadeCall) {
-        return None;
-    }
     let package = top_level_package(classname)?;
     let cl = DecompilerContext::get_struct_context().get_class(classname)?;
     let field = cl.get_field(name, descriptor)?;

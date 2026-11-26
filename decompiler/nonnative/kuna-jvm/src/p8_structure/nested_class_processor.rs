@@ -9,7 +9,6 @@
 use std::collections::{BTreeSet, VecDeque};
 use std::fmt;
 
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::anonymous_classes;
 use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
 use crate::fixes::nested_class_vars::captured_var_through_cast;
@@ -354,9 +353,7 @@ impl NestedClassProcessor {
                     child_enclosing_method.clone().expect("enclosingMethod"),
                     original,
                 );
-                if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
-                    var_proc.set_captured_source(pair, enclosing_var_proc, original);
-                }
+                var_proc.set_captured_source(pair, enclosing_var_proc, original);
             }
         }
 
@@ -374,12 +371,10 @@ impl NestedClassProcessor {
                 }
                 0
             });
-        if kuna_fixes::enabled(KunaFix::LambdaCatchVarRename) {
-            if let Some(root) = method.with(|d| d.root) {
-                nested_class_vars::rename_catch_vars(*root, &lvts, &|pair| {
-                    map_new_names.contains_key(&pair)
-                });
-            }
+        if let Some(root) = method.with(|d| d.root) {
+            nested_class_vars::rename_catch_vars(*root, &lvts, &|pair| {
+                map_new_names.contains_key(&pair)
+            });
         }
         var_proc.set_nested_processed(true);
     }
@@ -513,9 +508,7 @@ impl NestedClassProcessor {
             JHashMap::new();
 
         if !(cl_types.len() == 1 && cl_types.contains(&ClassNodeType::Member)) {
-            if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
-                anonymous_class_created_elsewhere::find_field_captures(node);
-            }
+            anonymous_class_created_elsewhere::find_field_captures(node);
             let wrapper = node.get_wrapper().expect("ClassWrapper");
             let methods = wrapper.get_methods().borrow().to_vec();
             for method in methods {
@@ -558,7 +551,7 @@ impl NestedClassProcessor {
 
                                 for (i, mask_pair) in mask.iter().enumerate() {
                                     let param = constructor.get_lst_parameters().get(i);
-                                    let mut pair: Option<VarFieldPair> = None;
+                                    let pair: Option<VarFieldPair>;
 
                                     if let (Some(param), Some(mask_pair)) =
                                         (param.try_as_var(), mask_pair)
@@ -569,20 +562,16 @@ impl NestedClassProcessor {
                                             mask_pair.with(|d| (d.field_key.clone(), d.assigned));
                                         pair =
                                             Some(VarFieldPair::new(&field_key, var_pair, assigned));
-                                    } else if let (Some(param), Some(mask_pair), true) = (
-                                        captured_var_through_cast::cast_var(param),
-                                        mask_pair,
-                                        kuna_fixes::enabled(KunaFix::CapturedVarThroughCast),
-                                    ) {
+                                    } else if let (Some(param), Some(mask_pair)) =
+                                        (captured_var_through_cast::cast_var(param), mask_pair)
+                                    {
                                         let var_pair = VarVersionPair::from_var(param);
 
                                         let (field_key, assigned) =
                                             mask_pair.with(|d| (d.field_key.clone(), d.assigned));
                                         pair =
                                             Some(VarFieldPair::new(&field_key, var_pair, assigned));
-                                    } else if kuna_fixes::enabled(
-                                        KunaFix::AnonymousClassCreatedElsewhere,
-                                    ) {
+                                    } else {
                                         pair = Self::field_capture(
                                             &ref_class_name,
                                             &constructor_descriptor,
@@ -847,15 +836,13 @@ impl NestedClassProcessor {
                             var_name = enclosing_varproc.get_var_name(pair);
                             var_type = enclosing_varproc.get_var_type(pair);
                             var_lvt = enclosing_varproc.get_var_lvt(pair);
-                            if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
-                                var_lvt = unlisted_anonymous_class::captured_lvt(
-                                    child,
-                                    enclosing_method.expect("enclosing method"),
-                                    pair,
-                                    var_name.as_deref(),
-                                    var_lvt,
-                                );
-                            }
+                            var_lvt = unlisted_anonymous_class::captured_lvt(
+                                child,
+                                enclosing_method.expect("enclosing method"),
+                                pair,
+                                var_name.as_deref(),
+                                var_lvt,
+                            );
 
                             enclosing_varproc.set_var_final(pair, FinalType::ExplicitFinal);
                         }
@@ -878,9 +865,7 @@ impl NestedClassProcessor {
                                 .get_this_vars()
                                 .borrow_mut()
                                 .put(new_var, parent_class.qualified_name());
-                        } else if child_type != ClassNodeType::Member
-                            && kuna_fixes::enabled(KunaFix::CapturedVarClashName)
-                        {
+                        } else if child_type != ClassNodeType::Member {
                             let enclosing_varproc = enclosing_method
                                 .expect("enclosing method")
                                 .with(|d| d.varproc);
@@ -924,15 +909,13 @@ impl NestedClassProcessor {
                         var_name = enclosing_varproc.get_var_name(field_var);
                         var_type = enclosing_varproc.get_var_type(field_var);
                         var_lvt = enclosing_varproc.get_var_lvt(field_var);
-                        if kuna_fixes::enabled(KunaFix::UnlistedAnonymousClass) {
-                            var_lvt = unlisted_anonymous_class::captured_lvt(
-                                cn,
-                                enclosing_method,
-                                field_var,
-                                var_name.as_deref(),
-                                var_lvt,
-                            );
-                        }
+                        var_lvt = unlisted_anonymous_class::captured_lvt(
+                            cn,
+                            enclosing_method,
+                            field_var,
+                            var_name.as_deref(),
+                            var_lvt,
+                        );
 
                         enclosing_varproc.set_var_final(field_var, FinalType::ExplicitFinal);
                     }
@@ -956,9 +939,7 @@ impl NestedClassProcessor {
                             .get_this_vars()
                             .borrow_mut()
                             .put(new_var, parent_class.qualified_name());
-                    } else if cn_type != ClassNodeType::Member
-                        && kuna_fixes::enabled(KunaFix::CapturedVarClashName)
-                    {
+                    } else if cn_type != ClassNodeType::Member {
                         let enclosing_varproc = Self::find_enclosing_method(cn)
                             .expect("enclosing method")
                             .with(|d| d.varproc);
@@ -1125,17 +1106,12 @@ impl NestedClassProcessor {
                 if let Some(lvt) = lvt {
                     ret.set_lvt(Some(lvt));
                 }
-                if kuna_fixes::enabled(KunaFix::AnonymousClassCreatedElsewhere) {
-                    return Some(
-                        anonymous_class_created_elsewhere::read_captured_field(
-                            &f_expr.get_classname(),
-                            &f_expr.get_name(),
-                            &f_expr.get_descriptor().descriptor_string,
-                            ret.0,
-                        ),
-                    );
-                }
-                return Some(ret.0);
+                return Some(anonymous_class_created_elsewhere::read_captured_field(
+                    &f_expr.get_classname(),
+                    &f_expr.get_name(),
+                    &f_expr.get_descriptor().descriptor_string,
+                    ret.0,
+                ));
             }
         }
 
@@ -1602,7 +1578,7 @@ impl NestedClassProcessor {
                         res = new_type.type_ == CodeType::Object
                             && new_type.value.as_deref() == Some(classname)
                             || Self::contains_type(new_expr.get_constructor(), class_type);
-                        if !res && kuna_fixes::enabled(KunaFix::LocalClassAnonymousSubclass) {
+                        if !res {
                             res = new_expr.is_anonymous()
                                 && anonymous_classes::extends(&new_type, classname);
                         }

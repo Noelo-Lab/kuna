@@ -10,7 +10,6 @@ use crate::if_statement::set_head_slot;
 use crate::java_subclass;
 use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_jumps::kt_jump_to_non_loop_label::{self, Lambda};
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
 use crate::sequence_helper::SequenceHelper;
 use crate::stat_edge::StatEdge;
@@ -68,7 +67,6 @@ impl SynchronizedStatement {
         buf.append_buffer(&self.get_first().expect("first").to_java(indent));
 
         if self.is_labeled()
-            && kuna_fixes::enabled(KunaFix::KtJumpToNonLoopLabel)
             && writing_kotlin()
             && kt_jump_to_non_loop_label::jumped_out_of(self.into())
         {

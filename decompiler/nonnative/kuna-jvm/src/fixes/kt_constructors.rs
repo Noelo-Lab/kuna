@@ -21,7 +21,6 @@ use crate::key::Key;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::MemberKind;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -52,12 +51,10 @@ fn DECLARED() -> Key<bool> {
 /// the constructor of `cl` declares, so the class body leaves them out.
 pub fn visited(cl: StructClass) -> JHashSet<KProperty> {
     let mut visited = JHashSet::new();
-    if kuna_fixes::enabled(KunaFix::KtDataClassPropertyParameters) {
-        for field in cl.get_fields().to_vec() {
-            if KtAttrs::has(field, &DECLARED()) {
-                if let Some(property) = property(field) {
-                    visited.add((*property).clone());
-                }
+    for field in cl.get_fields().to_vec() {
+        if KtAttrs::has(field, &DECLARED()) {
+            if let Some(property) = property(field) {
+                visited.add((*property).clone());
             }
         }
     }
@@ -263,9 +260,7 @@ pub fn delegation(wrapper: ClassWrapper, method: MethodWrapper) -> Option<Delega
     }
     let (root, failed) = method.with(|d| (d.root, d.decompile_error.is_some()));
     let root = root.filter(|_| !failed)?;
-    if kuna_fixes::enabled(KunaFix::KtHiddenEmptySuperCall)
-        && kt_delegation_calls::hidden_call(method).is_some()
-    {
+    if kt_delegation_calls::hidden_call(method).is_some() {
         return Some(Delegation::Implicit);
     }
     let exprents = root.get_basichead().get_exprents()?;
@@ -299,9 +294,7 @@ pub fn write_delegation(
     let Delegation::Call(call) = delegation else {
         return Restore(None);
     };
-    if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall) {
-        kt_default_args_call::resugar_delegation(call);
-    }
+    kt_default_args_call::resugar_delegation(call);
     let mt = method.with(|d| d.method_struct);
     buffer.append(" : ");
     buffer.append_buffer_mapped(

@@ -12,7 +12,6 @@ use crate::fixes::kt_operators;
 use crate::kt_flags::Flags;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax::{self, KotlinCast};
 use crate::fixes::kt_util::writing_kotlin;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::var_type::VarType;
 
 const POSTFIX: u8 = 0;
@@ -111,12 +110,11 @@ fn same_associative(parent: FunctionExprent, operand: Exprent) -> bool {
 /// Whether the Kotlin text of the infix call's operand `operand` needs
 /// parentheses; `right` for its argument, which binds to the call's right.
 pub fn infix_call_operand(operand: Exprent, right: bool) -> bool {
-    kuna_fixes::enabled(KunaFix::KtOperatorPrecedence)
-        && if right {
-            infix_right_operand(operand)
-        } else {
-            level(operand) > INFIX
-        }
+    if right {
+        infix_right_operand(operand)
+    } else {
+        level(operand) > INFIX
+    }
 }
 
 /// Whether the Kotlin text of `operand` needs parentheses as the right
@@ -226,7 +224,7 @@ fn level(exprent: Exprent) -> u8 {
         FunctionType::Ternary if kotlin && safe_cast(operands.to_vec()) => AS,
         FunctionType::Ternary => LOWEST,
         conversion if conversion.cast_type().is_some() => {
-            if !kotlin || !kuna_fixes::enabled(KunaFix::KtJavaCastSyntax) {
+            if !kotlin {
                 return PREFIX;
             }
             let operand = operands.get(0);

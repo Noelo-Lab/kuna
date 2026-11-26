@@ -38,7 +38,6 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
 use crate::kt_attrs::KtAttrs;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
 use crate::loop_extract_helper::LoopExtractHelper;
@@ -109,18 +108,15 @@ impl KotlinPlugin {
             .add_pass(
                 "SuspendStateMachine",
                 Rc::new(|ctx: &mut PassContext| {
-                    (kuna_fixes::enabled(KunaFix::KtSuspendStateMachine)
-                        && kt_suspend_state_machine::rebuild(
-                            graph(ctx),
-                            ctx.get_method(),
-                            ctx.get_enclosing_class(),
-                        ))
-                        || (kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                            && kt_suspend_lambda::rebuild_body(
-                                graph(ctx),
-                                ctx.get_method(),
-                                ctx.get_enclosing_class(),
-                            ))
+                    kt_suspend_state_machine::rebuild(
+                        graph(ctx),
+                        ctx.get_method(),
+                        ctx.get_enclosing_class(),
+                    ) || kt_suspend_lambda::rebuild_body(
+                        graph(ctx),
+                        ctx.get_method(),
+                        ctx.get_enclosing_class(),
+                    )
                 }),
             )
             .add_pass(
@@ -287,42 +283,26 @@ impl KotlinPlugin {
                     )
                     .add_looping_pass(
                         "JoinSplitConstructors",
-                        Rc::new(|ctx: &mut PassContext| {
-                            kuna_fixes::enabled(KunaFix::SplitConstructorCall)
-                                && join_split_constructors(root(ctx))
-                        }),
+                        Rc::new(|ctx: &mut PassContext| join_split_constructors(root(ctx))),
                     )
                     .build(),
             )
             .add_pass(
                 "WhenMappings",
-                Rc::new(|ctx: &mut PassContext| {
-                    kuna_fixes::enabled(KunaFix::KtEnumWhenMappings)
-                        && kt_when::resugar(root(ctx).0)
-                }),
+                Rc::new(|ctx: &mut PassContext| kt_when::resugar(root(ctx).0)),
             )
             .add_pass(
                 "SimplifyStack",
                 WrappedPass::of(|ctx| {
-                    if kuna_fixes::enabled(KunaFix::KtInlinedToTypedArray) {
-                        kt_inlined_to_typed_array::resugar(root(ctx));
-                    }
-                    if kuna_fixes::enabled(KunaFix::KtInlinedStdlibCall) {
-                        kt_inlined_stdlib_call::resugar(
-                            root(ctx),
-                            ctx.get_enclosing_class(),
-                            ctx.get_method(),
-                        );
-                    }
-                    if kuna_fixes::enabled(KunaFix::KtNotNullAssertion) {
-                        kt_not_null_assertion::recover(root(ctx));
-                    }
-                    if kuna_fixes::enabled(KunaFix::KtExpressionValueCheck) {
-                        kt_null_checks::remove_stored_value_checks(root(ctx));
-                    }
-                    if kuna_fixes::enabled(KunaFix::KtObjectInstanceLocal)
-                        && ctx.get_method().get_name() == CLINIT_NAME
-                    {
+                    kt_inlined_to_typed_array::resugar(root(ctx));
+                    kt_inlined_stdlib_call::resugar(
+                        root(ctx),
+                        ctx.get_enclosing_class(),
+                        ctx.get_method(),
+                    );
+                    kt_not_null_assertion::recover(root(ctx));
+                    kt_null_checks::remove_stored_value_checks(root(ctx));
+                    if ctx.get_method().get_name() == CLINIT_NAME {
                         kt_initializers::replace_instance_local(
                             root(ctx),
                             ctx.get_enclosing_class(),
@@ -334,17 +314,13 @@ impl KotlinPlugin {
                         ctx.get_enclosing_class(),
                         KotlinPlugin::INLINE_ALL_VARS(),
                     );
-                    if kuna_fixes::enabled(KunaFix::KtInlinedToTypedArray) {
-                        kt_inlined_to_typed_array::retype(root(ctx), ctx.get_var_proc());
-                    }
-                    if kuna_fixes::enabled(KunaFix::KtNarrowConstantLocal) {
-                        kt_narrow_constant_local::retype(
-                            root(ctx),
-                            ctx.get_method(),
-                            &ctx.get_method_descriptor(),
-                            ctx.get_var_proc(),
-                        );
-                    }
+                    kt_inlined_to_typed_array::retype(root(ctx), ctx.get_var_proc());
+                    kt_narrow_constant_local::retype(
+                        root(ctx),
+                        ctx.get_method(),
+                        &ctx.get_method_descriptor(),
+                        ctx.get_var_proc(),
+                    );
                 }),
             )
             .add_pass(
@@ -376,15 +352,13 @@ impl KotlinPlugin {
             .add_pass(
                 "SuspendLambdaArguments",
                 Rc::new(|ctx: &mut PassContext| {
-                    kuna_fixes::enabled(KunaFix::KtSuspendLambda)
-                        && kt_suspend_lambda::remove_argument_reads(root(ctx), ctx.get_method())
+                    kt_suspend_lambda::remove_argument_reads(root(ctx), ctx.get_method())
                 }),
             )
             .add_pass(
                 "SuspendCalls",
                 Rc::new(|ctx: &mut PassContext| {
-                    kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation)
-                        && kt_suspend_call_continuation::mark(root(ctx), ctx.get_method())
+                    kt_suspend_call_continuation::mark(root(ctx), ctx.get_method())
                 }),
             )
             .add_pass("ResugarMethods", Rc::new(ResugarKotlinMethodsPass))
@@ -392,53 +366,35 @@ impl KotlinPlugin {
             .add_pass(
                 "RawGenericTypes",
                 WrappedPass::of(|ctx| {
-                    if kuna_fixes::enabled(KunaFix::KtRawGenericType) {
-                        kt_raw_generic_type::infer(
-                            root(ctx),
-                            ctx.get_method(),
-                            ctx.get_var_proc(),
-                        );
-                    }
-                    if kuna_fixes::enabled(KunaFix::KtInlinedToTypedArray) {
-                        kt_inlined_to_typed_array::type_arguments(root(ctx));
-                    }
+                    kt_raw_generic_type::infer(root(ctx), ctx.get_method(), ctx.get_var_proc());
+                    kt_inlined_to_typed_array::type_arguments(root(ctx));
                 }),
             )
             .add_pass(
                 "NullableLocals",
                 WrappedPass::of(|ctx| {
-                    if kuna_fixes::enabled(KunaFix::KtNullableLocal)
-                        || kuna_fixes::enabled(KunaFix::KtNullableCast)
-                    {
-                        kt_nullable_local::infer(root(ctx), ctx.get_method());
-                    }
+                    kt_nullable_local::infer(root(ctx), ctx.get_method());
                 }),
             )
             .add_pass(
                 "CoroutineBoxing",
                 Rc::new(|ctx: &mut PassContext| {
-                    kuna_fixes::enabled(KunaFix::KtCoroutineBoxing)
-                        && kt_suspend::rewrite_boxing(root(ctx), ctx.get_method())
+                    kt_suspend::rewrite_boxing(root(ctx), ctx.get_method())
                 }),
             )
             .add_pass(
                 "NothingValueThrows",
-                Rc::new(|ctx: &mut PassContext| {
-                    kuna_fixes::enabled(KunaFix::KtNothingValueThrow)
-                        && kt_nothing_value_throw::remove(root(ctx).0)
-                }),
+                Rc::new(|ctx: &mut PassContext| kt_nothing_value_throw::remove(root(ctx).0)),
             )
             .add_pass(
                 "InlineClassValues",
                 WrappedPass::of(|ctx| {
-                    if kuna_fixes::enabled(KunaFix::KtInlineClassValue) {
-                        kt_inline_class_value::resugar(
-                            root(ctx),
-                            ctx.get_enclosing_class(),
-                            ctx.get_method(),
-                            ctx.get_var_proc(),
-                        );
-                    }
+                    kt_inline_class_value::resugar(
+                        root(ctx),
+                        ctx.get_enclosing_class(),
+                        ctx.get_method(),
+                        ctx.get_var_proc(),
+                    );
                 }),
             )
             .add_pass(

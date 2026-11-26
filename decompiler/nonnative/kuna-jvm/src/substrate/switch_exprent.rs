@@ -6,7 +6,6 @@ use crate::const_exprent::ConstExprent;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::{Exprent, ExprentKind};
 use crate::field_exprent::FieldExprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::patterns::{type_switch_enum_label, type_switch_label_lookup};
 use crate::function_exprent::FunctionType;
 use crate::pattern::Pattern;
@@ -68,9 +67,7 @@ impl SwitchExprent {
         let mut buf = TextBuffer::new();
 
         let switch_type = backing.get_headexprent().get_expr_type();
-        let is_exhaustive = self.is_exhaustive()
-            || (kuna_fixes::enabled(KunaFix::SwitchSyntheticDefault)
-                && switches::is_javac_default(backing));
+        let is_exhaustive = self.is_exhaustive() || switches::is_javac_default(backing);
 
         buf.append_buffer(&backing.get_headexprent().to_java(indent))
             .append(" {")
@@ -97,11 +94,7 @@ impl SwitchExprent {
                 }
             }
 
-            let unnamed = if kuna_fixes::enabled(KunaFix::TypeSwitchLabelLookup) {
-                type_switch_label_lookup::unnamed_pattern_types(&values)
-            } else {
-                None
-            };
+            let unnamed = type_switch_label_lookup::unnamed_pattern_types(&values);
             let mut has_edge = false;
             for j in 0..edges.len() {
                 if let Some(types) = &unnamed {
@@ -142,12 +135,7 @@ impl SwitchExprent {
 
                 let qualified = value_ex.try_as_field().filter(|f| {
                     f.is_static()
-                        && kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel)
-                        && type_switch_enum_label::is_qualified_label(
-                            *f,
-                            &switch_type,
-                            backing.0,
-                        )
+                        && type_switch_enum_label::is_qualified_label(*f, &switch_type, backing.0)
                 });
                 if let Some(field) = qualified {
                     buf.append_buffer(&type_switch_enum_label::qualified_label(
@@ -219,11 +207,7 @@ impl SwitchExprent {
                     if content.is_const()
                         && !content.get_expr_type().equals(&VarType::VARTYPE_NULL())
                     {
-                        if kuna_fixes::enabled(KunaFix::SwitchYieldConstRetype) {
-                            if content.as_const().can_be_written_as(&type_) {
-                                content.as_const().set_const_type(type_.clone());
-                            }
-                        } else {
+                        if content.as_const().can_be_written_as(&type_) {
                             content.as_const().set_const_type(type_.clone());
                         }
                     }

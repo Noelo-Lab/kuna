@@ -6,7 +6,6 @@ use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::k_element::KElement;
 use crate::fixes::kt_calls::kt_synthetic_accessor_call;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::statement::Statement;
 
 const NOTHING_VALUE_EXCEPTION: &str = "kotlin/KotlinNothingValueException";
@@ -60,10 +59,8 @@ fn returns_nothing(e: Exprent) -> bool {
     let Some(inv) = e.try_as_k_invocation() else {
         return false;
     };
-    let accessed = kuna_fixes::enabled(KunaFix::KtSyntheticAccessorCall)
-        .then(|| kt_synthetic_accessor_call::resugar(inv.0))
-        .flatten()
-        .map(|access| access.calling_data.clone());
+    let accessed =
+        kt_synthetic_accessor_call::resugar(inv.0).map(|access| access.calling_data.clone());
     match accessed.or_else(|| inv.kd(|d| d.calling_data.clone())) {
         Some(KElement::Function(function)) => {
             let k = function.return_type.k();

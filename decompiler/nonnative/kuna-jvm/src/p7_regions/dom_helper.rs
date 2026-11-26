@@ -21,7 +21,6 @@ use crate::i_fernflower_logger::Severity;
 use crate::if_statement::IfStatement;
 use crate::irreducible_cfg_deobfuscator::IrreducibleCFGDeobfuscator;
 use crate::jthrow;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::method_processor::MethodProcessor;
 use crate::fixes::control_flow::IrreducibleWithExceptionEdges;
@@ -426,9 +425,7 @@ impl DomHelper {
                                     edge.get_destination().mark_monitorexit_dead();
                                 }
 
-                                if kuna_fixes::enabled(KunaFix::SynchronizedBreakExit) {
-                                    finally_sync::mark_break_exits(current, ca_first);
-                                }
+                                finally_sync::mark_break_exits(current, ca_first);
 
                                 current.remove_successor(
                                     current.get_successor_edges(Statement::STATEDGE_DIRECT_ALL)[0],
@@ -565,8 +562,7 @@ impl DomHelper {
                                 "$VF: Irreducible bytecode was duplicated to produce valid code",
                             );
                         }
-                    } else if kuna_fixes::enabled(KunaFix::IrreducibleWithExceptionEdges)
-                        && (mapstage == 1 || map_refreshed)
+                    } else if (mapstage == 1 || map_refreshed)
                         && IrreducibleWithExceptionEdges::split(general)
                     {
                         tracer.warn(general, &format!("Split irreducible flow: {reducibility}"));
@@ -618,11 +614,7 @@ impl DomHelper {
                         let mut stat =
                             DomHelper::find_general_statement(general, forceall, &map_ext_post);
                         let mut isolated = false;
-                        if stat.is_none()
-                            && forceall
-                            && (mapstage == 1 || map_refreshed)
-                            && kuna_fixes::enabled(KunaFix::IrreducibleWithExceptionEdges)
-                        {
+                        if stat.is_none() && forceall && (mapstage == 1 || map_refreshed) {
                             stat = IrreducibleWithExceptionEdges::isolate(general);
                             isolated = stat.is_some();
                         }
@@ -879,9 +871,7 @@ impl DomHelper {
                     || head
                         .get_neighbours(StatEdge::TYPE_REGULAR, EdgeDirection::Backward)
                         .contains(&head)
-                    || (!same
-                        && kuna_fixes::enabled(KunaFix::ProtectedBackEdge)
-                        && finally_sync::is_open_loop_body(head)))
+                    || (!same && finally_sync::is_open_loop_body(head)))
                 && set_nodes.len() < stats.borrow().len()
                 && DomHelper::check_synchronized_completeness(&set_nodes)
             {

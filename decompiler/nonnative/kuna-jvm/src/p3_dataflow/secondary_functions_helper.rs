@@ -13,7 +13,6 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::IfStatement;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::p3_dataflow::kuna_javac_boolean_compare;
 use crate::fixes::numeric_types::{compound_assignment_shape, implicit_widening_arithmetic};
 use crate::p8_structure::kuna_javac_layout;
@@ -648,29 +647,8 @@ impl SecondaryFunctionsHelper {
                             return ret;
                         }
                     }
-                    Add | Sub | Mul | Div | Neg | Rem | Shl | Shr | Ushr
-                        if kuna_fixes::enabled(KunaFix::ImplicitWideningArithmetic) =>
-                    {
+                    Add | Sub | Mul | Div | Neg | Rem | Shl | Shr | Ushr => {
                         implicit_widening_arithmetic::keep_widening(fexpr);
-                    }
-                    Add | Sub | Mul | Div => {
-                        let left = lst_operands.get(0);
-                        let left_implicit_cast = is_implicit_cast(left).is_some();
-                        let right = lst_operands.get(1);
-                        let right_implicit_cast = is_implicit_cast(right).is_some();
-
-                        if left_implicit_cast
-                            && right_implicit_cast
-                            && right.get_expr_type().ptr_eq(&left.get_expr_type())
-                        {
-                            left.as_function().set_needs_cast(true);
-                        }
-                    }
-                    Shl | Shr | Ushr => {
-                        let op = lst_operands.get(0);
-                        if let Some(op) = is_implicit_cast(op) {
-                            op.set_needs_cast(true);
-                        }
                     }
                     _ => {}
                 }
@@ -682,10 +660,8 @@ impl SecondaryFunctionsHelper {
                     return ret;
                 }
 
-                if kuna_fixes::enabled(KunaFix::CompoundAssignmentShape) {
-                    if let Some(made) = compound_assignment_shape::compound(asexpr) {
-                        return if made { Some(exprent) } else { ret };
-                    }
+                if let Some(made) = compound_assignment_shape::compound(asexpr) {
+                    return if made { Some(exprent) } else { ret };
                 }
 
                 let mut right = asexpr.get_right();

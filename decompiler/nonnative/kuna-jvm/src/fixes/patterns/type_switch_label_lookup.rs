@@ -8,7 +8,6 @@ use crate::const_exprent::ConstValue;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::jthrow;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::patterns::type_switch_enum_label;
 use crate::pooled_constant::PooledConstant;
 use crate::rt::JList;
@@ -55,9 +54,7 @@ pub fn replace_labels(
                 }
                 SwitchPatternMatchProcessor::label_value(p, real_selector, is_enum_switch, true)
             }
-            Some(PooledConstant::Link(link))
-                if !targets.is_empty() && kuna_fixes::enabled(KunaFix::TypeSwitchEnumLabel) =>
-            {
+            Some(PooledConstant::Link(link)) if !targets.is_empty() => {
                 type_switch_enum_label::resolve_label(link)
             }
             _ => None,

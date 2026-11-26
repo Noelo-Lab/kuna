@@ -15,7 +15,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::kotlin_options::KotlinOptions;
 use crate::kt_metadata::KotlinMetadataAnnotation;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::rt::JList;
 use crate::struct_class::StructClass;
 use crate::var_exprent::VarExprent;
@@ -93,7 +92,6 @@ pub fn keeps_read(
     kotlin: bool,
 ) -> bool {
     value.is_field()
-        && kuna_fixes::enabled(KunaFix::KtFieldReadReuse)
         && kotlin
         && keeps_single_read(value, used, exprents, index)
         && !is_final(value)
@@ -111,14 +109,12 @@ fn is_final(value: Exprent) -> bool {
 /// Whether `StackVarsProcessor` simplifies a method of `cl` as Kotlin: a fix
 /// that asks is on, the Kotlin plugin is on and `cl` has Kotlin metadata.
 pub fn is_kotlin_class(cl: StructClass) -> bool {
-    (kuna_fixes::enabled(KunaFix::KtFieldReadReuse)
-        || kuna_fixes::enabled(KunaFix::KtPartialInline))
-        && DecompilerContext::get_option(KotlinOptions::DECOMPILE_KOTLIN)
+    DecompilerContext::get_option(KotlinOptions::DECOMPILE_KOTLIN)
         && KotlinMetadataAnnotation::find(cl).is_some()
 }
 
 /// Whether a variable that stays keeps all of its uses, in a method of a class
 /// written as Kotlin (`kotlin`).
 pub fn keeps_variable(kotlin: bool) -> bool {
-    kuna_fixes::enabled(KunaFix::KtPartialInline) && kotlin
+    kotlin
 }

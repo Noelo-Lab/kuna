@@ -22,7 +22,6 @@ use crate::field_exprent::FieldExprent;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::import_collector::ImportCollector;
 use crate::interpreter_util::InterpreterUtil;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::method_descriptor::MethodDescriptor;
 use crate::new_exprent::NewExprent;
 use crate::p3_dataflow::kuna_source_increments;
@@ -133,7 +132,7 @@ pub struct EnumBodySeparator {
 }
 
 impl EnumBodySeparator {
-    /// Owed when the fix is on and `node` is declared with the `enum` keyword
+    /// Owed when `node` is declared with the `enum` keyword
     /// (the test of `write_class_definition`); `indent` is the class's.
     pub fn new(node: ClassNode, indent: i32) -> EnumBodySeparator {
         let (type_, access, cl) = node.with(|d| (d.type_, d.access, d.class_struct));
@@ -142,8 +141,7 @@ impl EnumBodySeparator {
         } else {
             access
         };
-        let pending = kuna_fixes::enabled(KunaFix::EnumBodySeparator)
-            && type_ != ClassNodeType::Anonymous
+        let pending = type_ != ClassNodeType::Anonymous
             && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
             && (flags & ACC_ENUM) != 0;
         EnumBodySeparator {

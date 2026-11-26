@@ -30,7 +30,6 @@ use crate::const_exprent::ConstExprent;
 use crate::decompile_record::DecompileRecord;
 use crate::decompiler_context::DecompilerContext;
 use crate::enum_processor::EnumProcessor;
-use crate::exit_exprent::Type as ExitType;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::field_descriptor::FieldDescriptor;
@@ -46,7 +45,6 @@ use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::java_pass_location::JavaPassLocation;
 use crate::fixes::asserts;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::fixes::nested_class_vars::captured_var_clash_name;
 use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
@@ -343,9 +341,7 @@ impl ClassWriter {
                     mw.with(|d| d.varproc).rerun_clashing(root);
                 }
             }
-            if kuna_fixes::enabled(KunaFix::CapturedVarClashName) {
-                captured_var_clash_name::inherit_clashing_names(wrapper);
-            }
+            captured_var_clash_name::inherit_clashing_names(wrapper);
         });
         if let Err(t) = result {
             let simple_name = node.with(|d| d.simple_name.clone());
@@ -588,23 +584,7 @@ impl ClassWriter {
                             };
                             if is_basic_block && exprents.as_ref().is_some_and(|e| e.len() == 1) {
                                 let first_expr = exprents.unwrap().get(0);
-                                let is_var_definition =
-                                    first_expr.try_as_assignment().is_some_and(|a| {
-                                        a.get_left().try_as_var().is_some_and(|v| v.is_definition())
-                                    });
-
-                                let is_throw = first_expr
-                                    .try_as_exit()
-                                    .is_some_and(|e| e.get_exit_type() == ExitType::Throw);
-
-                                let is_expression =
-                                    if kuna_fixes::enabled(KunaFix::StatementAsExpression) {
-                                        asserts::is_lambda_expression_body(
-                                            first_expr,
-                                        )
-                                    } else {
-                                        !is_var_definition && !is_throw
-                                    };
+                                let is_expression = asserts::is_lambda_expression_body(first_expr);
 
                                 if is_expression {
                                     simple_lambda = true;
@@ -1265,8 +1245,7 @@ impl ClassWriter {
             }
         }
 
-        let omit_permits = kuna_fixes::enabled(KunaFix::SealedPrivatePermits)
-            && class_writing::omit_permits(node, &permitted_sub_classes);
+        let omit_permits = class_writing::omit_permits(node, &permitted_sub_classes);
         if !is_enum && is_sealed && !omit_permits {
             buffer.append_possible_newline_alt(" ");
             buffer.append("permits ");
@@ -1787,11 +1766,7 @@ impl ClassWriter {
                     && !mt.has_modifier(ACC_PRIVATE);
 
             if should_apply_override {
-                let is_override = if kuna_fixes::enabled(KunaFix::OverrideInaccessibleMethod) {
-                    class_writing::overrides(cl, &mt.get_name(), &md)
-                } else {
-                    ClassWriter::search_for_method(Some(cl), &mt.get_name(), &md, false)
-                };
+                let is_override = class_writing::overrides(cl, &mt.get_name(), &md);
                 let already_has_override = annotation_attribute.is_some_and(|a| {
                     a.get_annotations()
                         .iter()
@@ -2275,15 +2250,11 @@ impl ClassWriter {
                     Some(name)
                 } else {
                     let name = varproc.get_var_name(VarVersionPair::new(index, 0));
-                    let table_name = kuna_fixes::enabled(KunaFix::NestedParamRename)
-                        .then(|| {
-                            nested_class_vars::table_name(
-                                varproc,
-                                VarVersionPair::new(index, 0),
-                                name.as_deref(),
-                            )
-                        })
-                        .flatten();
+                    let table_name = nested_class_vars::table_name(
+                        varproc,
+                        VarVersionPair::new(index, 0),
+                        name.as_deref(),
+                    );
                     table_name.or(name)
                 };
 
@@ -2829,55 +2800,6 @@ impl ClassWriter {
         );
 
         filter
-    }
-
-    /// Whether a non-static method `name`/`md` exists in `cl`'s supertypes (and `cl` itself when `search`).
-    fn search_for_method(
-        cl: Option<StructClass>,
-        name: &str,
-        md: &MethodDescriptor,
-        search: bool,
-    ) -> bool {
-        let Some(cl) = cl else {
-            return false;
-        };
-
-        let methods = cl.get_methods();
-
-        if search {
-            for method in methods.to_vec() {
-                if md.equals(&MethodDescriptor::parse_descriptor(
-                    &method.get_descriptor(),
-                )) && name == method.get_name()
-                    && !method.has_modifier(ACC_STATIC)
-                {
-                    return true;
-                }
-            }
-        }
-
-        if let Some(super_class) = cl.super_class() {
-            let super_class =
-                DecompilerContext::get_struct_context().get_class(&super_class.get_string());
-
-            let found_in_super_class = ClassWriter::search_for_method(super_class, name, md, true);
-
-            if found_in_super_class {
-                return true;
-            }
-        }
-
-        for iface_name in cl.get_interface_names() {
-            let iface = DecompilerContext::get_struct_context().get_class(&iface_name);
-
-            let found_in_iface = ClassWriter::search_for_method(iface, name, md, true);
-
-            if found_in_iface {
-                return true;
-            }
-        }
-
-        false
     }
 
     fn append_parameter_annotations(

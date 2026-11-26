@@ -10,7 +10,6 @@ use crate::k_dispatch::KExprentExt;
 use crate::k_type::KType;
 use crate::k_types::KTypes;
 use crate::kotlin_exprent;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -50,7 +49,7 @@ impl KConstExprent {
 
             let value = value.java_to_string();
             let type_ = VarType::new_signature_cl(&value, !value.starts_with('['));
-            if kuna_fixes::enabled(KunaFix::KtJavaTypeSyntax) && type_.array_dim > 0 {
+            if type_.array_dim > 0 {
                 buf.append_type_name_str(&KTypes::get_kotlin_type(Some(&type_)), &type_)
                     .append("::class.java");
             } else {
@@ -82,20 +81,14 @@ impl KConstExprent {
             return buf;
         }
 
-        if kuna_fixes::enabled(KunaFix::KtWhenCaseType)
-            && const_type.equals(&VarType::VARTYPE_CHAR())
-            && self.get_int_value() == 0xC
-        {
+        if const_type.equals(&VarType::VARTYPE_CHAR()) && self.get_int_value() == 0xC {
             let mut buf = TextBuffer::new();
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
             buf.append("'\\u000c'");
             return buf;
         }
 
-        if kuna_fixes::enabled(KunaFix::KtStringLiteralEscape)
-            && const_type.equals(&VarType::VARTYPE_STRING())
-            && !self.d(|d| d.was_condy)
-        {
+        if const_type.equals(&VarType::VARTYPE_STRING()) && !self.d(|d| d.was_condy) {
             let ascii =
                 DecompilerContext::get_option(IFernflowerPreferences::ASCII_STRING_CHARACTERS);
             let text = kt_string_literal_escape::kotlin_text(

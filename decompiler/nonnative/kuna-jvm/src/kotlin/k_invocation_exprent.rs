@@ -23,7 +23,6 @@ use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_exprent;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
@@ -49,9 +48,7 @@ impl KInvocationExprent {
                 property_method: None,
             })));
         let kinv = KInvocationExprent(inv);
-        let expr = if kuna_fixes::enabled(KunaFix::KtDefaultArgsCall)
-            && kt_default_args_call::resugar_call(inv)
-        {
+        let expr = if kt_default_args_call::resugar_call(inv) {
             inv
         } else {
             expr
@@ -64,20 +61,13 @@ impl KInvocationExprent {
 
         let method = cl.get_method(&expr.get_name(), &expr.get_string_descriptor());
         let mangled = expr.get_name().contains('-');
-        let method = if kuna_fixes::enabled(KunaFix::KtFacadeCall)
-            && !mangled
-            && method.is_none_or(|m| !KtAttrs::has(m, &KElement::KEY()))
-        {
-            kt_facade_call::part_method(
-                cl,
-                &expr.get_name(),
-                &expr.get_string_descriptor(),
-            )
-            .or(method)
+        let method = if !mangled && method.is_none_or(|m| !KtAttrs::has(m, &KElement::KEY())) {
+            kt_facade_call::part_method(cl, &expr.get_name(), &expr.get_string_descriptor())
+                .or(method)
         } else {
             method
         };
-        let method = if kuna_fixes::enabled(KunaFix::KtJvmNameCall) && !mangled && method.is_none() {
+        let method = if !mangled && method.is_none() {
             kt_jvm_name_call::inherited(cl, &expr.get_name(), &expr.get_string_descriptor())
         } else {
             method
@@ -120,7 +110,7 @@ impl KInvocationExprent {
         let (calling_data, property_method) =
             self.kd(|d| (d.calling_data.clone(), d.property_method));
 
-        if calling_data.is_none() && kuna_fixes::enabled(KunaFix::KtSyntheticAccessorCall) {
+        if calling_data.is_none() {
             if let Some(access) = kt_synthetic_accessor_call::resugar(self.0) {
                 self.kd_mut(|d| {
                     d.calling_data = Some(access.calling_data.clone());
@@ -136,10 +126,8 @@ impl KInvocationExprent {
             }
         }
 
-        if kuna_fixes::enabled(KunaFix::KtSuspendCallContinuation) {
-            if let Some(buf) = kt_suspend_call_continuation::write_context(self.0) {
-                return buf;
-            }
+        if let Some(buf) = kt_suspend_call_continuation::write_context(self.0) {
+            return buf;
         }
 
         if let Some(buf) = self.kuna_call(&calling_data, property_method, indent) {
@@ -150,15 +138,13 @@ impl KInvocationExprent {
             let property_method =
                 property_method.unwrap_or_else(|| npe("KInvocationExprent.propertyMethod"));
 
-            let top_level_prefix = (kuna_fixes::enabled(KunaFix::KtFacadeCall)
-                && self.is_static())
-            .then(|| kt_facade_call::property_prefix(self.0, property))
-            .flatten();
+            let top_level_prefix = self
+                .is_static()
+                .then(|| kt_facade_call::property_prefix(self.0, property))
+                .flatten();
             let mut buf = TextBuffer::new();
             buf.add_bytecode_mapping(self.get_bytecode().as_ref());
-            let super_qualifier = kuna_fixes::enabled(KunaFix::KtSuperPropertyAccess)
-                .then(|| kt_properties::super_qualifier(self.0))
-                .flatten();
+            let super_qualifier = kt_properties::super_qualifier(self.0);
             if let Some(super_qualifier) = super_qualifier {
                 buf.append(&super_qualifier).append_char('.');
             } else if let Some(instance) = self.get_instance() {
@@ -182,9 +168,7 @@ impl KInvocationExprent {
 
         if let Some(KElement::Function(function)) = &calling_data {
             if Flags::IS_INFIX.get(function.flags) {
-                if kuna_fixes::enabled(KunaFix::KtExtensionCall) {
-                    kt_extension_call::import_infix(self.0, function);
-                }
+                kt_extension_call::import_infix(self.0, function);
                 let mut buf = TextBuffer::new();
                 buf.add_bytecode_mapping(self.get_bytecode().as_ref());
                 let is_extension_function = function.receiver_type.is_some();
@@ -249,18 +233,14 @@ impl KInvocationExprent {
             return buf;
         }
 
-        if kuna_fixes::enabled(KunaFix::KtObjectMonitorCall) {
-            if let Some(buf) = kt_object_monitor_call::write(self.0, indent) {
-                return buf;
-            }
+        if let Some(buf) = kt_object_monitor_call::write(self.0, indent) {
+            return buf;
         }
 
         let kotlin_name = match &calling_data {
             Some(KElement::Function(function))
-                if kuna_fixes::enabled(KunaFix::KtJvmNameCall)
-                    && function.receiver_type.is_none()
-                    && kt_facade_call::top_level_package(&self.get_classname())
-                        .is_none() =>
+                if function.receiver_type.is_none()
+                    && kt_facade_call::top_level_package(&self.get_classname()).is_none() =>
             {
                 kt_jvm_name_call::kotlin_name(self.0, function)
             }
@@ -284,23 +264,15 @@ impl KInvocationExprent {
         match calling_data {
             Some(KElement::Function(function)) => {
                 if function.receiver_type.is_some() {
-                    return kuna_fixes::enabled(KunaFix::KtExtensionCall)
-                        .then(|| {
-                            kt_extension_call::write_function(
-                                self.0, function, precedence, indent,
-                            )
-                        })
-                        .flatten();
+                    return kt_extension_call::write_function(self.0, function, precedence, indent);
                 }
-                (kuna_fixes::enabled(KunaFix::KtFacadeCall) && self.is_static())
+                self.is_static()
                     .then(|| kt_facade_call::write_function(self.0, function, indent))
                     .flatten()
             }
             Some(KElement::Property(property)) => {
                 let method = property_method?;
-                if !kuna_fixes::enabled(KunaFix::KtExtensionCall)
-                    || !kt_extension_call::is_extension_accessor(self.0, method)
-                {
+                if !kt_extension_call::is_extension_accessor(self.0, method) {
                     return None;
                 }
                 kt_extension_call::write_property(

@@ -13,7 +13,6 @@ use crate::fixes::kt_calls::kt_facade_call;
 use crate::fixes::kt_calls::kt_object_instance;
 use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_names::kt_unescaped_name;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::link_constant::LinkConstant;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -265,23 +264,15 @@ impl FieldExprent {
 
     /// Java (`develop/1.13.0`): `toJava(int, boolean includeCondyComment)`.
     pub fn to_java_condy_comment(self, indent: i32, include_condy_comment: bool) -> TextBuffer {
-        if kuna_fixes::enabled(KunaFix::KtAccessorBackingField) {
-            if let Some(buf) = kt_accessor_backing_field::stringify(self) {
-                return buf;
-            }
+        if let Some(buf) = kt_accessor_backing_field::stringify(self) {
+            return buf;
         }
-        if kuna_fixes::enabled(KunaFix::KtObjectInstance)
-            && self.d(|d| d.is_static && d.name == "INSTANCE")
-            && writing_kotlin()
-        {
+        if self.d(|d| d.is_static && d.name == "INSTANCE") && writing_kotlin() {
             if let Some(buf) = kt_object_instance::object_name(self) {
                 return buf;
             }
         }
-        if kuna_fixes::enabled(KunaFix::KtFacadeCall)
-            && self.d(|d| d.is_static)
-            && writing_kotlin()
-        {
+        if self.d(|d| d.is_static) && writing_kotlin() {
             let (classname, name, descriptor) = self.d(|d| {
                 (
                     d.classname.clone(),
@@ -389,12 +380,8 @@ impl FieldExprent {
         let bytecode = self.get_bytecode();
         buf.add_bytecode_mapping(bytecode.as_ref());
 
-        if kuna_fixes::enabled(KunaFix::KtUnescapedName) {
-            let printed = kt_unescaped_name::member(&name);
-            buf.append_field_descriptor(&printed, false, &classname, &name, &descriptor);
-        } else {
-            buf.append_field_descriptor(&name, false, &classname, &name, &descriptor);
-        }
+        let printed = kt_unescaped_name::member(&name);
+        buf.append_field_descriptor(&printed, false, &classname, &name, &descriptor);
 
         buf
     }

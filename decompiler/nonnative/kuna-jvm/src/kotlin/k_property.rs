@@ -36,7 +36,6 @@ use crate::fixes::kt_declarations;
 use crate::fixes::kt_generated_members;
 use crate::fixes::kt_types::kt_type_parameter_id;
 use crate::method_wrapper::MethodWrapper;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::rt::jstring::java_string_hash;
 use crate::rt::{JavaEq, JavaHash};
@@ -191,26 +190,24 @@ impl KProperty {
             }
         }
 
-        if kuna_fixes::enabled(KunaFix::KtPropertyFieldFlags) {
-            if let Some(field) = self.underlying_field {
-                let delegated = Flags::IS_DELEGATED.get(flags);
-                for annotation in kt_properties::field_flag_annotations(field, delegated) {
-                    buf.append_indent(indent).append(&annotation).append_line_separator();
-                }
+        if let Some(field) = self.underlying_field {
+            let delegated = Flags::IS_DELEGATED.get(flags);
+            for annotation in kt_properties::field_flag_annotations(field, delegated) {
+                buf.append_indent(indent)
+                    .append(&annotation)
+                    .append_line_separator();
             }
         }
 
-        if kuna_fixes::enabled(KunaFix::KtSynchronizedAccessor) {
-            for (target, accessor) in [("get", &self.getter), ("set", &self.setter)] {
-                let synchronized = accessor
-                    .as_ref()
-                    .and_then(|a| (a.method_supplier)(class_wrapper))
-                    .is_some_and(|m| m.with(|d| d.method_struct).has_modifier(ACC_SYNCHRONIZED));
-                if synchronized {
-                    buf.append_indent(indent)
-                        .append(&format!("@{target}:Synchronized"))
-                        .append_line_separator();
-                }
+        for (target, accessor) in [("get", &self.getter), ("set", &self.setter)] {
+            let synchronized = accessor
+                .as_ref()
+                .and_then(|a| (a.method_supplier)(class_wrapper))
+                .is_some_and(|m| m.with(|d| d.method_struct).has_modifier(ACC_SYNCHRONIZED));
+            if synchronized {
+                buf.append_indent(indent)
+                    .append(&format!("@{target}:Synchronized"))
+                    .append_line_separator();
             }
         }
 
@@ -222,18 +219,14 @@ impl KProperty {
             buf.append("expect ");
         }
 
-        let modality_fix = kuna_fixes::enabled(KunaFix::KtMisplacedModality);
-        let is_override =
-            kuna_fixes::enabled(KunaFix::KtMissedOverride) && self.overrides(class_wrapper);
+        let is_override = self.overrides(class_wrapper);
         if Flags::MODALITY.get(flags) == Some(Modality::Final) {
             if Flags::IS_CONST.get(flags) {
                 buf.append("const ");
-            } else if !modality_fix
-                || matches!(
-                    KtAttrs::get(self.class_struct, &KElement::KEY()),
-                    Some(KElement::Class(_))
-                )
-            {
+            } else if matches!(
+                KtAttrs::get(self.class_struct, &KElement::KEY()),
+                Some(KElement::Class(_))
+            ) {
                 buf.append("final ");
             }
         } else if (!self.class_struct.has_modifier(ACC_INTERFACE)
@@ -267,9 +260,11 @@ impl KProperty {
         buf.append(&KotlinWriter::to_valid_kotlin_identifier(&self.name));
         let type_ = self.type_.as_ref().expect("NullPointerException: type");
         let type_buf = type_.stringify(indent);
-        let initializer_expr = self.initializer.as_ref().and_then(|init| init(class_wrapper));
-        let omit_type = kuna_fixes::enabled(KunaFix::KtUnrepresentableDeclaredType)
-            && initializer_expr.is_some()
+        let initializer_expr = self
+            .initializer
+            .as_ref()
+            .and_then(|init| init(class_wrapper));
+        let omit_type = initializer_expr.is_some()
             && !Flags::IS_DELEGATED.get(flags)
             && type_buf.content_equals(kt_unrepresentable_declared_type::UNREPRESENTABLE);
         if !omit_type {
@@ -296,14 +291,17 @@ impl KProperty {
             }
         }
 
-        if !has_initializer && kuna_fixes::enabled(KunaFix::KtFileStaticInitializer) {
-            if let Some(text) = self.underlying_field.and_then(kt_file_static_initializer::initializer) {
+        if !has_initializer {
+            if let Some(text) = self
+                .underlying_field
+                .and_then(kt_file_static_initializer::initializer)
+            {
                 buf.append(" = ").append_buffer(&text);
                 has_initializer = true;
             }
         }
 
-        if !has_initializer && kuna_fixes::enabled(KunaFix::KtDefaultPropertyInitializer) {
+        if !has_initializer {
             if let Some(literal) = self.default_initializer() {
                 buf.append(" = ").append(literal);
             }
@@ -316,11 +314,6 @@ impl KProperty {
                     .append_indent(indent + 1);
 
                 KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(getter.flags));
-
-                if !modality_fix {
-                    buf.append(&modality_name(Flags::MODALITY.get(getter.flags)))
-                        .append_char(' ');
-                }
 
                 if Flags::IS_EXTERNAL_ACCESSOR.get(getter.flags) {
                     buf.append("external ");
@@ -362,11 +355,6 @@ impl KProperty {
 
                 KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(setter.flags));
 
-                if !modality_fix {
-                    buf.append(&modality_name(Flags::MODALITY.get(setter.flags)))
-                        .append_char(' ');
-                }
-
                 if Flags::IS_EXTERNAL_ACCESSOR.get(setter.flags) {
                     buf.append("external ");
                 }
@@ -377,18 +365,9 @@ impl KProperty {
 
                 let method_wrapper = (setter.method_supplier)(class_wrapper)
                     .expect("NullPointerException: methodWrapper");
-                let _parameter = kuna_fixes::enabled(KunaFix::KtSetterParameterName).then(|| {
-                    let name = kt_properties::setter_parameter_name(
-                        self.setter_param_name.as_deref(),
-                    );
-                    buf.append("set(").append(&name).append(") ");
-                    kt_properties::enter_setter(method_wrapper, name)
-                });
-                if _parameter.is_none() {
-                    buf.append("set(")
-                        .append(self.setter_param_name.as_deref().unwrap_or("null"))
-                        .append(") ");
-                }
+                let name = kt_properties::setter_parameter_name(self.setter_param_name.as_deref());
+                buf.append("set(").append(&name).append(") ");
+                let _parameter = kt_properties::enter_setter(method_wrapper, name);
                 let _backing = self.backing_field_scope(method_wrapper);
                 let _receiver = self.receiver_scope(method_wrapper);
                 KotlinWriter::write_method_body(
@@ -412,11 +391,6 @@ impl KProperty {
                     KUtils::append_visibility(&mut buf, Flags::VISIBILITY.get(setter.flags));
                 }
 
-                if Flags::MODALITY.get(setter.flags) != Flags::MODALITY.get(flags) && !modality_fix {
-                    buf.append(&modality_name(Flags::MODALITY.get(setter.flags)))
-                        .append_char(' ');
-                }
-
                 if Flags::IS_EXTERNAL_ACCESSOR.get(setter.flags) {
                     buf.append("external ");
                 }
@@ -425,11 +399,10 @@ impl KProperty {
             }
             None if Flags::IS_VAR.get(flags)
                 && Flags::VISIBILITY.get(flags) != Some(Visibility::Private)
-                && !(kuna_fixes::enabled(KunaFix::KtJvmFieldSetter)
-                    && kt_properties::has_no_setter(
-                        self.underlying_field,
-                        Flags::IS_DELEGATED.get(flags),
-                    )) =>
+                && !kt_properties::has_no_setter(
+                    self.underlying_field,
+                    Flags::IS_DELEGATED.get(flags),
+                ) =>
             {
                 buf.append_line_separator()
                     .append_indent(indent + 1)
@@ -493,7 +466,7 @@ impl KProperty {
         accessor: MethodWrapper,
     ) -> Option<kt_accessor_backing_field::AccessorScope> {
         let field = self.underlying_field?;
-        (kuna_fixes::enabled(KunaFix::KtAccessorBackingField) && !Flags::IS_DELEGATED.get(self.flags))
+        (!Flags::IS_DELEGATED.get(self.flags))
             .then(|| kt_accessor_backing_field::enter(field, accessor))
     }
 
@@ -508,12 +481,10 @@ impl KProperty {
         };
 
         for property in proto_properties {
-            let _type_parameters = kuna_fixes::enabled(KunaFix::KtTypeParameterId).then(|| {
-                kt_type_parameter_id::member_scope(
-                    &property.get_type_parameter_list(),
-                    name_resolver,
-                )
-            });
+            let _type_parameters = kt_type_parameter_id::member_scope(
+                &property.get_type_parameter_list(),
+                name_resolver,
+            );
             let flags = property.get_flags();
 
             let jvm_prop = property.get_extension_property_signature();
@@ -576,15 +547,11 @@ impl KProperty {
                 getter_method = class_struct.get_method(&method_name, &desc);
                 if let Some(getter_method) = getter_method {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
-                    let getter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
-                        kt_properties::accessor_flags(
-                            property.has_getter_flags(),
-                            property.get_getter_flags(),
-                            flags,
-                        )
-                    } else {
-                        property.get_getter_flags()
-                    };
+                    let getter_flags = kt_properties::accessor_flags(
+                        property.has_getter_flags(),
+                        property.get_getter_flags(),
+                        flags,
+                    );
                     getter = Some(KPropertyAccessor::new(getter_flags, supplier));
 
                     if prop_desc.is_none() {
@@ -597,10 +564,7 @@ impl KProperty {
                 if let Some(companion_parent) = companion_parent {
                     if let Some(in_parent) = companion_parent
                         .get_method(&method_name, &desc)
-                        .filter(|m| {
-                            !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kt_generated_members::is_copy(*m)
-                        })
+                        .filter(|m| kt_generated_members::is_copy(*m))
                     {
                         KtAttrs::put(
                             in_parent,
@@ -620,15 +584,11 @@ impl KProperty {
                 setter_method = class_struct.get_method(&method_name, &desc);
                 if setter_method.is_some() {
                     let supplier = method_supplier(method_name.clone(), desc.clone());
-                    let setter_flags = if kuna_fixes::enabled(KunaFix::KtDefaultAccessorFlags) {
-                        kt_properties::accessor_flags(
-                            property.has_setter_flags(),
-                            property.get_setter_flags(),
-                            flags,
-                        )
-                    } else {
-                        property.get_setter_flags()
-                    };
+                    let setter_flags = kt_properties::accessor_flags(
+                        property.has_setter_flags(),
+                        property.get_setter_flags(),
+                        flags,
+                    );
                     setter = Some(KPropertyAccessor::new(setter_flags, supplier));
                     setter_param_name = Some(
                         name_resolver.resolve(property.get_setter_value_parameter().get_name()),
@@ -638,10 +598,7 @@ impl KProperty {
                 if let Some(companion_parent) = companion_parent {
                     if let Some(in_parent) = companion_parent
                         .get_method(&method_name, &desc)
-                        .filter(|m| {
-                            !kuna_fixes::enabled(KunaFix::KtCompanionStaticCopy)
-                                || kt_generated_members::is_copy(*m)
-                        })
+                        .filter(|m| kt_generated_members::is_copy(*m))
                     {
                         KtAttrs::put(
                             in_parent,
@@ -711,7 +668,7 @@ impl KProperty {
             };
 
             let mut key = InterpreterUtil::make_unique_key(&name, &var_type.to_string());
-            if let Some(f) = field.filter(|_| kuna_fixes::enabled(KunaFix::KtPropertyInitializerKey)) {
+            if let Some(f) = field {
                 key = InterpreterUtil::make_unique_key(&f.get_name(), &f.get_descriptor());
             }
             let initializer: Option<ExprentSupplier>;
@@ -741,10 +698,7 @@ impl KProperty {
                             None,
                         ))))
                     }));
-                } else if kuna_fixes::enabled(KunaFix::KtCompanionPropertyInitializer)
-                    && field_container != class_struct
-                    && f.has_modifier(ACC_STATIC)
-                {
+                } else if field_container != class_struct && f.has_modifier(ACC_STATIC) {
                     initializer = Some(kt_initializers::static_initializer(
                         field_container.qualified_name(),
                         key,
@@ -756,9 +710,7 @@ impl KProperty {
                 initializer = None;
             }
 
-            let extension = kuna_fixes::enabled(KunaFix::KtExtensionProperty)
-                .then(|| kt_extensions::parse(property, name_resolver))
-                .flatten();
+            let extension = kt_extensions::parse(property, name_resolver);
             let mut kprop = KProperty::new(
                 name,
                 type_,

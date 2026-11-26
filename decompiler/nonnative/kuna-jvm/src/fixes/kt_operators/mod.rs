@@ -14,7 +14,6 @@ use crate::exprent::Exprent;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
 use crate::function_exprent::FunctionType;
 use crate::k_function_exprent::{AnyFunctionType, KFunctionExprent, KFunctionType};
-use crate::kuna_fixes::{self, KunaFix};
 use crate::text_buffer::TextBuffer;
 use crate::type_family::TypeFamily;
 use crate::var_type::VarType;
@@ -75,8 +74,7 @@ fn negation(comparison: KFunctionExprent) -> Option<FunctionType> {
                     .get_expr_type_opt()
                     .is_some_and(|t| t.type_family == TypeFamily::Object)
             });
-            let identity = kuna_fixes::enabled(KunaFix::KtReferenceInequality)
-                && comparison.kd(|d| d.identity);
+            let identity = comparison.kd(|d| d.identity);
             (!references || identity).then_some(FunctionType::Ne)
         }
         _ => None,
@@ -86,11 +84,6 @@ fn negation(comparison: KFunctionExprent) -> Option<FunctionType> {
 /// The comparison that `xor`, an `xor` with `true`, negates, where the fix
 /// writes `xor` as the negated comparison.
 pub fn negated(xor: Exprent) -> Option<KFunctionExprent> {
-    if !kuna_fixes::enabled(KunaFix::KtNegatedEquality)
-        || !kuna_fixes::enabled(KunaFix::KtOperatorPrecedence)
-    {
-        return None;
-    }
     let xor = xor.try_as_k_function()?;
     if xor.get_func_type() != FunctionType::Xor {
         return None;

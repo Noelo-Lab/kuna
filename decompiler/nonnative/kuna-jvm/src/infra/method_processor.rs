@@ -39,7 +39,6 @@ use crate::infra::kuna_reclaim::ReclaimScope;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::intersection_cast_processor::IntersectionCastProcessor;
 use crate::java_pass_location::JavaPassLocation;
-use crate::kuna_fixes::{self, KunaFix};
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
 use crate::loop_extract_helper::LoopExtractHelper;
@@ -265,9 +264,7 @@ impl MethodProcessor {
 
         DeadCodeHelper::merge_basic_blocks(graph);
 
-        if kuna_fixes::enabled(KunaFix::OverlappingRanges) {
-            OverlappingRanges::split(graph);
-        }
+        OverlappingRanges::split(graph);
 
         if ExceptionDeobfuscator::has_obfuscated_exceptions(graph) {
             if !ExceptionDeobfuscator::handle_multiple_entry_exception_ranges(graph) {
@@ -489,7 +486,7 @@ impl MethodProcessor {
                 }
             }
 
-            if root.has_try_catch() && TryHelper::enhance_try_stats(root, cl) {
+            if root.has_try_catch() && TryHelper::enhance_try_stats(root) {
                 decompile_record.add("EnhanceTry", Some(root));
                 continue;
             }
@@ -522,9 +519,7 @@ impl MethodProcessor {
                 continue;
             }
 
-            if kuna_fixes::enabled(KunaFix::SplitConstructorCall)
-                && split_constructor_call::join_split_constructors(root)
-            {
+            if split_constructor_call::join_split_constructors(root) {
                 decompile_record.add("JoinSplitConstructors", Some(root));
                 continue;
             }
