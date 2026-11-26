@@ -1491,14 +1491,13 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
 /// Publish analysis diagnostics after simplification. A recovered jump's
 /// fallback diagnostic belongs to its call operation, not an address that can
 /// outlive the call when another operation from the same instruction survives.
+/// It is published ahead of the pipeline's own comments, as flow published it,
+/// so a pipeline warning at the same address keeps printing after it.
 fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
     if !arch.kuna_drive_publishes() {
         return;
     }
     let func_addr = fd.get_address().clone();
-    for (tp, ad, txt) in fd.drain_pending_comments() {
-        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
-    }
     for call in fd.call_specs().iter().filter(|call| call.is_bad_jump_table()) {
         let Some(op) = fd.obank().get(call.get_op()) else { continue; };
         if !op.is_dead() && matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
@@ -1509,6 +1508,9 @@ fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
                 "WARNING: Treating indirect jump as call",
             );
         }
+    }
+    for (tp, ad, txt) in fd.drain_pending_comments() {
+        arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
     }
 }
 
