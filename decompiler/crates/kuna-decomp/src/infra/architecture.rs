@@ -343,6 +343,10 @@ pub struct Architecture {
     /// on every path without a section table, so it is inert for the XML
     /// datatest oracle.
     pub globalref_ranges: Rc<Vec<(u64, u64)>>,
+    /// (kuna `ptrfromuse`) The image has a section table, so an empty
+    /// [`Self::globalref_ranges`] means it holds no data objects, not that
+    /// none are known.
+    pub section_table: bool,
     /// (kuna `cstringconst`) The `[start, end)` ranges of the loaded sections
     /// that hold only C string literals (a Mach-O `__cstring` section of type
     /// `S_CSTRING_LITERALS`). Empty without a section table.
@@ -2457,6 +2461,7 @@ impl Architecture {
             eh_sections: None,
             func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
+            section_table: false,
             cstring_ranges: Rc::new(Vec::new()),
             cstring_const: false, // (kuna) option cstringconst; reset_defaults sets the shipped default
             infer_pointers: false,
@@ -3777,6 +3782,7 @@ impl Architecture {
         ctx.analysis_valuewitness = self.analysis_valuewitness; // (kuna) valuewitness
         ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
         ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
+        ctx.section_table = self.section_table; // (kuna) ptrfromuse
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.nul_terminator = self.nul_terminator; // nulterminator
