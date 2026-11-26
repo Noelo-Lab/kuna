@@ -3,9 +3,13 @@ use kuna_dex::{Dex, Options};
 use crate::common::{fixture, read_class};
 
 fn translate(name: &str) -> Vec<(String, crate::common::Class)> {
+    translate_with(name, &Options::default())
+}
+
+fn translate_with(name: &str, opts: &Options) -> Vec<(String, crate::common::Class)> {
     let data = fixture(name);
     let dex = Dex::parse(&data).unwrap();
-    dex.translate_all(&Options::default(), 4)
+    dex.translate_all(opts, 4)
         .into_iter()
         .map(|r| {
             let t = r.unwrap();
@@ -23,8 +27,12 @@ fn method<'a>(classes: &'a [(String, crate::common::Class)], class: &str, name: 
 
 #[test]
 fn every_fixture_class_translates_at_version_50() {
+    let verifiable = Options {
+        verifiable: true,
+        ..Options::default()
+    };
     for f in ["debug.dex", "release.dex", "kotlin.dex"] {
-        let classes = translate(f);
+        let classes = translate_with(f, &verifiable);
         assert!(classes.len() > 5);
         for (name, c) in &classes {
             assert_eq!(c.version, 50, "{f} {name}");
@@ -113,3 +121,14 @@ fn an_untranslatable_method_fails_alone() {
     assert!(m.attrs.iter().any(|a| a == kuna_dex::ERROR_ATTRIBUTE));
     assert!(c.methods.iter().filter(|m| m.name != "ii").all(|m| !m.attrs.iter().any(|a| a == kuna_dex::ERROR_ATTRIBUTE)));
 }
+
+#[test]
+fn d8_lambda_classes_become_invokedynamic_again() {
+    let classes = translate("release.dex");
+    let objects = &classes.iter().find(|c| c.0 == "dx/Objects").unwrap().1;
+    assert_eq!(objects.version, 52);
+    assert!(objects.attrs.iter().any(|a| a == "BootstrapMethods"));
+    assert!(objects.utf8.iter().any(|s| s == "java/lang/invoke/LambdaMetafactory"));
+    assert!(objects.utf8.iter().any(|s| s == "applyAsInt"));
+}
+

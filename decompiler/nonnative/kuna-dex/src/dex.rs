@@ -179,6 +179,7 @@ pub struct Dex<'a> {
     method_handles: Table,
     by_type: OnceLock<BTreeMap<u32, u32>>,
     nesting: OnceLock<crate::class::Nesting>,
+    lambdas: OnceLock<BTreeMap<u32, crate::lambda::Lambda>>,
 }
 
 impl<'a> Dex<'a> {
@@ -248,6 +249,7 @@ impl<'a> Dex<'a> {
             method_handles: Table::default(),
             by_type: OnceLock::new(),
             nesting: OnceLock::new(),
+            lambdas: OnceLock::new(),
         };
         if map_off != 0 {
             dex.read_map(map_off)?;
@@ -372,6 +374,11 @@ impl<'a> Dex<'a> {
     /// Inner-class facts for every class of the file, built on first use.
     pub(crate) fn nesting(&self) -> &crate::class::Nesting {
         self.nesting.get_or_init(|| crate::class::Nesting::build(self))
+    }
+
+    /// The d8 lambda class of type `ty`, if it is one.
+    pub(crate) fn lambda(&self, ty: u32) -> Option<&crate::lambda::Lambda> {
+        self.lambdas.get_or_init(|| crate::lambda::scan(self)).get(&ty)
     }
 
     pub fn class_data(&self, off: u32) -> Result<ClassData> {

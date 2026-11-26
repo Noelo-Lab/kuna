@@ -562,6 +562,29 @@ impl<'d, 'a> Writer<'d, 'a> {
     }
 }
 
+/// The static fields `<clinit>` writes (d8 leaves trailing default static
+/// values out of the class's static values, so a final field without one and
+/// not written there is a constant with its type's default).
+fn clinit_puts(dex: &Dex, data: &crate::dex::ClassData) -> std::collections::BTreeSet<u32> {
+    let mut out = std::collections::BTreeSet::new();
+    for em in &data.direct_methods {
+        let is_clinit = dex
+            .method(em.method)
+            .and_then(|m| dex.string(m.name))
+            .is_ok_and(|n| n == b"<clinit>");
+        if !is_clinit || em.code_off == 0 {
+            continue;
+        }
+        let Ok(code) = dex.code_item(em.code_off) else { continue };
+        for x in crate::insn::decode(code.insns).unwrap_or_default() {
+            if (0x67..=0x6d).contains(&x.op) {
+                out.insert(x.idx);
+            }
+        }
+    }
+    out
+}
+
 /// Translates class definition `idx`.
 pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
     let def = dex.class_def(idx)?;
@@ -593,6 +616,7 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
     let field_anns: BTreeMap<u32, u32> = dir.fields.iter().copied().collect();
     let method_anns: BTreeMap<u32, u32> = dir.methods.iter().copied().collect();
     let param_anns: BTreeMap<u32, u32> = dir.parameters.iter().copied().collect();
+    let assigned = clinit_puts(dex, &data);
     let mut fields = Vec::new();
     for (i, ef) in data.static_fields.iter().chain(&data.instance_fields).enumerate() {
         let f = dex.field(ef.field)?;
@@ -602,8 +626,15 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
             None => Vec::new(),
         };
         let mut attrs = Vec::new();
-        if i < data.static_fields.len() {
-            if let Some(v) = statics.get(i) {
+        if i < data.static_fields.len() && !assigned.contains(&ef.field) {
+            let default = match desc.first() {
+                Some(b'Z' | b'B' | b'S' | b'C' | b'I') => Some(Value::Int(0)),
+                Some(b'J') => Some(Value::Long(0)),
+                Some(b'F') => Some(Value::Float(0)),
+                Some(b'D') => Some(Value::Double(0)),
+                _ => None,
+            };
+            if let Some(v) = statics.get(i).or(default.as_ref()) {
                 if let Some(c) = w.constant_value(v, desc, ef.access & 0x10 != 0)? {
                     let a = w.attr("ConstantValue", c.to_be_bytes().to_vec());
                     attrs.push(a);

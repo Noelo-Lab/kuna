@@ -7,7 +7,9 @@
 //! definitions form a stack, and one folds into an instruction's operand
 //! only when everything pending above it folds into the same instruction in
 //! evaluation order; anything else is stored first, in Dalvik order.
-//! Constants are emitted at every use they reach alone.
+//! Constants are emitted at every use they reach alone, and a join whose
+//! incoming values are all constants read once at the join's start gets them
+//! on the stack from each edge (`b = x > 3`, `c ? 5 : 7`), as javac writes it.
 
 use std::collections::BTreeMap;
 
@@ -44,6 +46,10 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     pc_end: Vec<u32>,
     block_pc: Vec<(u32, u32)>,
     next_block: Vec<u32>,
+    /// Joins that receive their value on the stack: block to its edges.
+    joins: BTreeMap<u32, Join>,
+    silent: Vec<bool>,
+    on_stack: Vec<bool>,
     stmts: Vec<(u32, u32)>,
     min_addr: u32,
 }
@@ -58,6 +64,16 @@ pub fn code_attribute(m: &Method, sh: &mut Shared) -> Result<Vec<u8>> {
         }
     }
     Err(err("branch offsets overflow".to_string()))
+}
+
+/// A join block entered with its phi's value on the stack: the constant op
+/// each predecessor brings, and a stub (push, then on to the join) for each
+/// constant arriving by a branch.
+struct Join {
+    edges: Vec<(u32, usize)>,
+    stubs: Vec<(usize, Label)>,
+    /// The phi's register and category when the join stores the value.
+    store: Option<(u32, Mask)>,
 }
 
 fn internal(desc: &[u8]) -> &[u8] {
@@ -100,6 +116,9 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             pc_end: vec![u32::MAX; m.ops.len()],
             block_pc: vec![(u32::MAX, u32::MAX); m.blocks.len()],
             next_block: vec![u32::MAX; m.blocks.len()],
+            joins: BTreeMap::new(),
+            silent: vec![false; m.ops.len()],
+            on_stack: vec![false; m.ops.len()],
             stmts: Vec::new(),
             min_addr: u32::MAX,
         }
@@ -129,8 +148,122 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         n == 1 && !phi && m.direct_uses[d.id as usize] == 1 && u > k && u < m.ops.len() && m.ops[u].block == o.block
     }
 
+    /// Finds the joins whose phi takes only constants on every edge: the value
+    /// stays on the stack when it is read once, as the first operand of the
+    /// join's first statement, and is stored at the join otherwise.
+    fn find_joins(&mut self) -> Result<()> {
+        let m = self.m;
+        let mut members: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+        for v in 0..m.def_op.len() as u32 {
+            members.entry(m.root(v)).or_default().push(v);
+        }
+        let mut preds: Vec<Vec<u32>> = vec![Vec::new(); m.blocks.len()];
+        let mut handler = vec![false; m.blocks.len()];
+        for (b, blk) in m.blocks.iter().enumerate().filter(|(_, b)| b.reachable) {
+            for &s in &blk.succs {
+                if !preds[s as usize].contains(&(b as u32)) {
+                    preds[s as usize].push(b as u32);
+                }
+            }
+            for h in &blk.handlers {
+                handler[h.1 as usize] = true;
+            }
+        }
+        for (i, (&j, &r)) in m.phi_block.iter().zip(&m.phi_reg).enumerate() {
+            let phi = m.defs + i as u32;
+            let root = m.root(phi);
+            let ju = j as usize;
+            let uses = m.web_uses.get(&root).map_or(0, |w| w.0);
+            let caught = m.handler_live[r as usize / 64] >> (r % 64) & 1 != 0;
+            if j == 0 || caught || handler[ju] || self.joins.contains_key(&j) || uses == 0 || m.direct_uses[phi as usize] != uses {
+                continue;
+            }
+            let web = &members[&root];
+            let consts = web.iter().all(|&v| {
+                v == phi || m.def_op.get(v as usize).is_some_and(|&k| k < m.ops.len() && matches!(m.ops[k].insn.op, 0x12..=0x1c))
+            });
+            if !consts {
+                continue;
+            }
+            let k = self.user[phi as usize];
+            let blk = &m.blocks[ju];
+            let direct = uses == 1 && k < m.ops.len() && m.ops[k].block == j && {
+                let quiet = (blk.start..k).all(|q| {
+                    let o = &m.ops[q];
+                    o.kind == Kind::Absorbed || o.insn.op == 0x00 || o.def.as_ref().is_some_and(|d| m.inline_const(d.id))
+                });
+                quiet && m.ops[k].uses.first().map(|u| u.val) == Some(phi) && !self.candidate(k)
+            };
+            let mut edges = Vec::new();
+            for &p in &preds[ju] {
+                match m.edge_const.get(&(j, r, p)) {
+                    Some(&v) if p != j && m.root(v) == root => edges.push((p, m.def_op[v as usize])),
+                    _ => break,
+                }
+            }
+            if edges.len() != preds[ju].len() || edges.len() < 2 {
+                continue;
+            }
+            for &v in web {
+                if v != phi {
+                    self.silent[m.def_op[v as usize]] = true;
+                }
+            }
+            let store = if direct {
+                self.on_stack[k] = true;
+                None
+            } else {
+                Some((r, m.cat[phi as usize]))
+            };
+            let mut stubs: Vec<(usize, Label)> = Vec::new();
+            for &(p, c) in &edges {
+                let last = &m.ops[m.blocks[p as usize].end - 1];
+                let branches = matches!(last.insn.op, 0x2b..=0x3d)
+                    && m.targets(last)?.iter().any(|&t| m.ops[m.ops.partition_point(|o| o.insn.addr < t)].block == j);
+                let key = &m.ops[c].insn;
+                if branches && !stubs.iter().any(|&(s, _)| m.ops[s].insn.lit == key.lit && m.ops[s].insn.idx == key.idx && m.ops[s].insn.op == key.op) {
+                    let l = self.asm.label();
+                    stubs.push((c, l));
+                }
+            }
+            self.joins.insert(j, Join { edges, stubs, store });
+        }
+        Ok(())
+    }
+
+    /// The constant op predecessor `p` brings to join `j`.
+    fn edge_value(&self, p: u32, j: u32) -> Option<usize> {
+        self.joins.get(&j)?.edges.iter().find(|e| e.0 == p).map(|e| e.1)
+    }
+
+    /// Where a branch from block `p` to block `t` lands: `t`, or the stub
+    /// pushing `p`'s constant for join `t`.
+    fn land(&self, p: u32, t: u32) -> Label {
+        let m = self.m;
+        if let (Some(c), Some(join)) = (self.edge_value(p, t), self.joins.get(&t)) {
+            let key = &m.ops[c].insn;
+            if let Some(&(_, l)) = join.stubs.iter().find(|&&(s, _)| {
+                let x = &m.ops[s].insn;
+                x.op == key.op && x.lit == key.lit && x.idx == key.idx
+            }) {
+                return l;
+            }
+        }
+        self.labels[t as usize]
+    }
+
+    fn join_cat(&self, j: u32) -> Mask {
+        let m = self.m;
+        if let Some((_, c)) = self.joins[&j].store {
+            return c;
+        }
+        let k = (m.blocks[j as usize].start..m.ops.len()).find(|&k| self.on_stack[k]).expect("join use");
+        m.use_cat(&m.ops[k], 0)
+    }
+
     fn run(&mut self) -> Result<()> {
         let m = self.m;
+        self.find_joins()?;
         let order = layout(m);
         for w in order.windows(2) {
             self.next_block[w[0] as usize] = w[1];
@@ -139,14 +272,39 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             let b = b as usize;
             let blk = &m.blocks[b];
             let start = self.asm.pc();
+            if let Some(join) = self.joins.get(&(b as u32)) {
+                let c = self.join_cat(b as u32);
+                let stubs = join.stubs.clone();
+                for (i, &(k, l)) in stubs.iter().enumerate() {
+                    self.asm.bind(l);
+                    self.asm.depth = 0;
+                    self.push_const(k, c)?;
+                    if i + 1 < stubs.len() {
+                        self.asm.branch(op::GOTO, self.labels[b], 0);
+                    }
+                }
+            }
             self.asm.bind(self.labels[b]);
             let catches = m.ops[blk.start].insn.op == 0x0d;
-            self.asm.depth = i32::from(catches);
+            self.asm.depth = i32::from(catches) + i32::from(self.joins.contains_key(&(b as u32)));
+            if let Some((r, c)) = self.joins.get(&(b as u32)).and_then(|j| j.store) {
+                let slot = self.slot(r, c)?;
+                self.asm.local(op::ISTORE, kind(c), slot, -size(c));
+            }
             for k in blk.start..blk.end {
                 self.pc_at[k] = self.asm.pc();
                 self.step(k, b)?;
             }
             self.flush()?;
+            let next = order.get(i + 1).copied();
+            if let Some(n) = next.filter(|&n| falls(&m.ops[blk.end - 1]) && self.joins.contains_key(&n)) {
+                let c = self.edge_value(b as u32, n).expect("join edge");
+                let cat = self.join_cat(n);
+                self.push_const(c, cat)?;
+                if !self.joins[&n].stubs.is_empty() {
+                    self.asm.branch(op::GOTO, self.labels[n as usize], 0);
+                }
+            }
             for k in blk.start..blk.end - 1 {
                 self.pc_end[k] = self.pc_at[k + 1];
             }
@@ -180,7 +338,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     fn step(&mut self, k: usize, b: usize) -> Result<()> {
         let m = self.m;
         let o = &m.ops[k];
-        if o.kind == Kind::Absorbed || o.insn.op == 0x00 {
+        if o.kind == Kind::Absorbed || o.insn.op == 0x00 || self.silent[k] {
             return Ok(());
         }
         if let Some(d) = &o.def {
@@ -374,6 +532,9 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         let o = &m.ops[k];
         let v = o.uses[u].val;
         let c = m.use_cat(o, u);
+        if u == 0 && self.on_stack[k] {
+            return Ok(());
+        }
         if m.inline_const(v) {
             return self.push_const(m.def_op[v as usize], c);
         }
@@ -474,6 +635,41 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         })
     }
 
+    /// The `invokedynamic` constant javac writes for a lambda or method reference.
+    fn metafactory(&mut self, l: &crate::lambda::Lambda) -> Result<u16> {
+        let dex = self.m.dex;
+        let mf = self.sh.pool.method(
+            b"java/lang/invoke/LambdaMetafactory",
+            b"metafactory",
+            b"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+            false,
+        );
+        let bsm = self.sh.pool.method_handle(6, mf);
+        let sam = self.proto_desc(l.sam_proto)?;
+        let sam = self.sh.pool.method_type(&sam);
+        let class = dex.method(l.method)?.class;
+        let iface = l.kind == 9 || (l.kind != 8 && (self.sh.interfaces)(class));
+        let target = self.method_ref(l.method, iface)?;
+        let handle = self.sh.pool.method_handle(l.kind, target);
+        let inst = self.sh.pool.method_type(&l.instantiated);
+        let entry = (bsm, vec![sam, handle, inst]);
+        let index = match self.sh.bootstrap.iter().position(|e| *e == entry) {
+            Some(i) => i,
+            None => {
+                self.sh.bootstrap.push(entry);
+                self.sh.bootstrap.len() - 1
+            }
+        };
+        let mut desc = vec![b'('];
+        for &t in &l.captures {
+            desc.extend_from_slice(dex.type_desc(t)?);
+        }
+        desc.push(b')');
+        desc.extend_from_slice(dex.type_desc(l.iface)?);
+        self.sh.version = self.sh.version.max(52);
+        Ok(self.sh.pool.invoke_dynamic(index as u16, dex.string(l.sam_name)?, &desc))
+    }
+
     fn invoke_dynamic(&mut self, site: u32) -> Result<u16> {
         let dex = self.m.dex;
         let values = dex.call_site(site)?;
@@ -508,7 +704,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     fn branch_target(&self, o: &Op) -> Result<Label> {
         let t = self.m.targets(o)?[0];
         let k = self.m.ops.partition_point(|x| x.insn.addr < t);
-        Ok(self.labels[self.m.ops[k].block as usize])
+        Ok(self.land(o.block, self.m.ops[k].block))
     }
 
     /// Emits op `k`'s operands and instruction; returns the category of the
@@ -520,6 +716,13 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         self.min_addr = self.min_addr.min(x.addr);
         let def_cat = o.def.as_ref().map(|d| m.def_cat(d)).unwrap_or(0);
         if let Kind::NewObject { ty } = o.kind {
+            if let Some(l) = m.dex.lambda(ty).filter(|_| !self.sh.verifiable) {
+                self.push_uses(k)?;
+                let r = self.metafactory(l)?;
+                let pops = self.uses_size(k);
+                self.asm.op(op::INVOKEDYNAMIC, &[(r >> 8) as u8, r as u8, 0, 0], 1 - pops);
+                return Ok(L);
+            }
             let c = self.class_ref(ty)?;
             self.asm.op_u16(op::NEW, c, 1);
             self.asm.op(op::DUP, &[], 1);
@@ -640,9 +843,15 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 Ok(L)
             }
             0x28..=0x2a => {
-                let t = self.branch_target(o)?;
-                let next = self.next_block[o.block as usize];
-                if next == u32::MAX || self.labels[next as usize] != t {
+                let addr = m.targets(o)?[0];
+                let tb = m.ops[m.ops.partition_point(|x| x.insn.addr < addr)].block;
+                let t = self.labels[tb as usize];
+                if let Some(c) = self.edge_value(o.block, tb) {
+                    let cat = self.join_cat(tb);
+                    self.push_const(c, cat)?;
+                }
+                let stubbed = self.joins.get(&tb).is_some_and(|j| !j.stubs.is_empty());
+                if self.next_block[o.block as usize] != tb || stubbed {
                     self.asm.branch(op::GOTO, t, 0);
                 }
                 Ok(0)
@@ -653,7 +862,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 let label_at = |e: &Self, rel: i32| -> Label {
                     let t = (i64::from(x.addr) + i64::from(rel)) as u32;
                     let k = e.m.ops.partition_point(|o| o.insn.addr < t);
-                    e.labels[e.m.ops[k].block as usize]
+                    e.land(o.block, e.m.ops[k].block)
                 };
                 if x.op == 0x2b {
                     let (first, rels) = packed_switch(m.code.insns, x.target())?;

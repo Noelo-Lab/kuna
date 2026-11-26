@@ -15,6 +15,7 @@ mod debug;
 mod dex;
 mod emit;
 mod insn;
+mod lambda;
 mod reader;
 
 pub use class::ERROR_ATTRIBUTE;
@@ -53,7 +54,8 @@ pub struct Options {
     pub min_version: u16,
     /// Keep classes at version 50 where the class itself allows, so the JVM's
     /// type-inferring verifier checks every method: library interface methods
-    /// are then called through `Methodref`, which verifies but fails if run.
+    /// are then called through `Methodref`, which verifies but fails if run,
+    /// and d8's lambda classes are instantiated as d8 wrote them.
     pub verifiable: bool,
 }
 

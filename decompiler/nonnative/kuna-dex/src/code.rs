@@ -138,6 +138,7 @@ pub struct Method<'d, 'a> {
     /// Number of def values; ids at or above are phis.
     pub defs: u32,
     pub phi_block: Vec<u32>,
+    pub phi_reg: Vec<u32>,
     /// Per value: its category (0 for a constant inlined at its uses).
     pub cat: Vec<Mask>,
     /// Per value: its type variable (webs joined by moves and compares).
@@ -151,6 +152,10 @@ pub struct Method<'d, 'a> {
     pub ref_type: BTreeMap<u32, Vec<u8>>,
     /// The declaring class's descriptor, for `this` in the local table.
     pub this_desc: Vec<u8>,
+    /// `(block, register, predecessor)` to the constant def arriving on that edge.
+    pub edge_const: BTreeMap<(u32, u32, u32), u32>,
+    /// Registers live into some exception handler (a bit per register).
+    pub handler_live: Vec<u64>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -225,6 +230,7 @@ impl<'d, 'a> Method<'d, 'a> {
             value_wide: Vec::new(),
             defs: 0,
             phi_block: Vec::new(),
+            phi_reg: Vec::new(),
             cat: Vec::new(),
             tvar: Vec::new(),
             web_uses: BTreeMap::new(),
@@ -232,6 +238,8 @@ impl<'d, 'a> Method<'d, 'a> {
             direct_uses: Vec::new(),
             ref_type: BTreeMap::new(),
             this_desc: Vec::new(),
+            edge_const: BTreeMap::new(),
+            handler_live: Vec::new(),
         };
         m.build_ops()?;
         m.build_blocks()?;
@@ -755,25 +763,57 @@ impl<'d, 'a> Method<'d, 'a> {
         }
         self.defs = self.parent.len() as u32;
         let live = self.liveness();
+        self.handler_live = vec![0; live.first().map_or(1, Vec::len)];
+        for blk in self.blocks.iter().filter(|b| b.reachable) {
+            for h in &blk.handlers {
+                for (x, y) in self.handler_live.iter_mut().zip(&live[h.1 as usize]) {
+                    *x |= y;
+                }
+            }
+        }
+        let mut rpo = vec![u32::MAX; n];
+        let mut post = Vec::new();
+        let mut seen = vec![false; n];
+        let mut stack: Vec<(u32, usize)> = vec![(0, 0)];
+        seen[0] = true;
+        while let Some(&mut (b, ref mut i)) = stack.last_mut() {
+            let blk = &self.blocks[b as usize];
+            let next = blk.succs.iter().chain(blk.handlers.iter().map(|h| &h.1)).nth(*i).copied();
+            *i += 1;
+            match next {
+                Some(s) if !seen[s as usize] => {
+                    seen[s as usize] = true;
+                    stack.push((s, 0));
+                }
+                Some(_) => {}
+                None => {
+                    post.push(b);
+                    stack.pop();
+                }
+            }
+        }
+        for (i, &b) in post.iter().rev().enumerate() {
+            rpo[b as usize] = i as u32;
+        }
         let mut flow = Flow {
             entry: vec![None; n],
             phis: BTreeMap::new(),
+            from: BTreeMap::new(),
             live,
-            queued: vec![false; n],
-            work: vec![0],
+            rpo,
+            work: std::collections::BTreeSet::new(),
         };
         flow.entry[0] = Some(entry0);
-        flow.queued[0] = true;
+        flow.work.insert((0, 0));
         let mut final_pass = false;
         loop {
-            while let Some(b) = flow.work.pop() {
-                flow.queued[b as usize] = false;
+            while let Some((_, b)) = flow.work.pop_first() {
                 let mut state = flow.entry[b as usize].clone().expect("entered");
                 let blk = self.blocks[b as usize].clone();
                 for k in blk.start..blk.end {
                     if self.ops[k].throws && !final_pass {
                         for &(_, h) in &blk.handlers {
-                            flow.merge(self, h, &state);
+                            flow.merge(self, b, h, &state);
                         }
                     }
                     if final_pass {
@@ -802,7 +842,7 @@ impl<'d, 'a> Method<'d, 'a> {
                 }
                 if !final_pass {
                     for &s in &blk.succs {
-                        flow.merge(self, s, &state);
+                        flow.merge(self, b, s, &state);
                     }
                 }
             }
@@ -812,7 +852,7 @@ impl<'d, 'a> Method<'d, 'a> {
             final_pass = true;
             flow.work = (0..n as u32)
                 .filter(|&b| flow.entry[b as usize].is_some())
-                .rev()
+                .map(|b| (flow.rpo[b as usize], b))
                 .collect();
         }
         let values = self.parent.len();
@@ -1069,19 +1109,22 @@ impl<'d, 'a> Method<'d, 'a> {
 }
 
 /// The forward value pass: block entry states (a value per live register),
-/// the phi created for each (block, register), and the worklist.
+/// the phi created for each (block, register), the one predecessor that
+/// supplied an entry value no phi joins yet, and the worklist in reverse
+/// postorder.
 struct Flow {
     entry: Vec<Option<Vec<u32>>>,
     phis: BTreeMap<(u32, u32), u32>,
+    from: BTreeMap<(u32, u32), u32>,
     live: Vec<Vec<u64>>,
-    queued: Vec<bool>,
-    work: Vec<u32>,
+    rpo: Vec<u32>,
+    work: std::collections::BTreeSet<(u32, u32)>,
 }
 
 impl Flow {
     /// Merges `incoming` into block `s`'s entry, creating or joining the
     /// block's phi where a live register receives a second value.
-    fn merge(&mut self, m: &mut Method, s: u32, incoming: &[u32]) {
+    fn merge(&mut self, m: &mut Method, from: u32, s: u32, incoming: &[u32]) {
         let su = s as usize;
         let mut changed = self.entry[su].is_none();
         let target = self.entry[su].get_or_insert_with(|| vec![UNDEF; incoming.len()]);
@@ -1089,13 +1132,30 @@ impl Flow {
             if inc == UNDEF || self.live[su][r / 64] >> (r % 64) & 1 == 0 {
                 continue;
             }
+            let k = m.def_op[inc as usize];
+            if k < m.ops.len() && matches!(m.ops[k].insn.op, 0x12..=0x1c) {
+                m.edge_const.insert((s, r as u32, from), inc);
+            } else {
+                m.edge_const.remove(&(s, r as u32, from));
+            }
             let cur = target[r];
+            let key = (s, r as u32);
             if cur == UNDEF {
                 target[r] = inc;
+                self.from.insert(key, from);
                 changed = true;
-            } else if cur != inc {
+            } else if cur == inc {
+                if self.from.get(&key).is_some_and(|&f| f != from) {
+                    self.from.insert(key, u32::MAX);
+                }
+            } else if self.from.get(&key) == Some(&from) {
+                target[r] = inc;
+                changed = true;
+            } else {
+                self.from.remove(&key);
                 let phi = *self.phis.entry((s, r as u32)).or_insert_with(|| {
                     m.phi_block.push(s);
+                    m.phi_reg.push(r as u32);
                     m.new_value(m.value_wide[inc as usize], usize::MAX - 1)
                 });
                 m.union(phi, inc);
@@ -1106,9 +1166,8 @@ impl Flow {
                 }
             }
         }
-        if changed && !self.queued[su] {
-            self.queued[su] = true;
-            self.work.push(s);
+        if changed {
+            self.work.insert((self.rpo[su], s));
         }
     }
 }

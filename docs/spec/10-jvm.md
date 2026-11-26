@@ -1769,7 +1769,15 @@ pending stack, and an op folds pending values into its operands only when they f
 of that stack in the operand order the JVM evaluates (`aput`, `iput` and `sput` push their
 operands in a different order than Dalvik lists them); every other pending value is flushed
 first, in Dalvik order, as a store, so no side effect, load or exception moves past another.
-A statement flushes everything pending before it is written. `add-int/lit` on one local
+A statement flushes everything pending before it is written. A join whose phi receives a
+constant on every incoming edge (a materialised boolean, `c ? 5 : 7`; d8 often hoists one
+constant above the branch) gets the constant pushed on each edge instead: a predecessor that
+jumps or falls into the join pushes its constant last, and a conditional or switch edge
+lands on a stub that pushes it, the stubs laid out right before the join as javac's arms are.
+The value then stays on the stack when it is read once, as the first operand of the join's
+first statement, and is stored into its local at the join otherwise; the constants themselves
+are not written. A register some exception handler reads is excluded, since its local would
+then be unwritten where the JVM merges handler states. `add-int/lit` on one local
 becomes `iinc`, `not-int` becomes `^ -1`, `rsub-int` pushes its literal first,
 `filled-new-array` becomes `newarray` and a `dup`/store per element, comparisons become
 `lcmp`/`fcmpl`/`fcmpg`/`dcmpl`/`dcmpg`, the switches `tableswitch` and `lookupswitch`
@@ -1790,18 +1798,33 @@ that throws and a `KunaDexError` attribute (a constant-pool string, laid out as
 `SourceFile`), which the engine turns into its failure comment
 (`decompiler/nonnative/kuna-jvm/src/infra/method_processor.rs (code_to_java_schedule)`).
 
+**Lambdas.** d8 desugars every `invokedynamic` to `LambdaMetafactory` into a class
+`X$$ExternalSyntheticLambdaN`. `decompiler/nonnative/kuna-dex/src/lambda.rs` recognises
+such a class once per file: it implements one interface, its constructor stores its
+captures in its fields in order, and its one method loads them, adapts its parameters
+(casts, unboxing), calls one implementation method (or `new`), and returns the result,
+boxed if needed. A `new` of it becomes the `invokedynamic` javac wrote: the interface
+method's name, the captures' types to the interface, and `metafactory` with the interface
+method's type, a handle to the implementation (static, virtual, interface, special or
+constructor reference, from the call) and the instantiated type (the implementation's
+parameter types after the captures, refined by the casts, boxed where the interface
+method takes references, and its return type, likewise). The engine then prints the
+lambda or method reference. A lambda class of any other shape (d8 inlined the body into
+it) is left as it is.
+
 **Classes.** `decompiler/nonnative/kuna-dex/src/class.rs` writes the members and the
 attributes of 10.3 from the system annotations, and `decompiler/nonnative/kuna-dex/src/classfile.rs`
 the constant pool and bytes. A class lists in `InnerClasses` itself and its outer chain, its
 member classes, and every class of the file whose `EnclosingClass` or `EnclosingMethod`
 names it (the engine links anonymous and local classes through their encloser's
 attribute). Static values become `ConstantValue` for primitives and strings when non-zero
-or the field is final. Since DEX does not mark a method's class as an interface, a static,
+or the field is final; a final primitive field with no static value (d8 drops trailing
+defaults) that `<clinit>` never writes gets its type's default. Since DEX does not mark a method's class as an interface, a static,
 `super` or direct call is an interface call when the class is an interface defined in the
 file or one of a short list of JDK interfaces. The class-file version is the lowest that
 expresses the class: 50 (or the `min_version` option, down to 49), 51 for method-handle and
 method-type constants, 52 for `invokedynamic`, interfaces with code, and interface calls
 other than `invokeinterface`. Its `verifiable` option keeps classes at their minimum by
-calling library interface methods through `Methodref` (verifiable, but failing if run), for
-checking translations with the JVM's own verifier.
+calling library interface methods through `Methodref` (verifiable, but failing if run) and
+keeping d8's lambda classes, for checking translations with the JVM's own verifier.
 

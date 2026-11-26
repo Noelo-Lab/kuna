@@ -907,22 +907,24 @@ plugin and Kotlin classes print as Kotlin. Code is translated so that the engine
 javac would have written: registers are typed by dataflow, each (register, type category)
 becomes one local, a value defined once and read once in a block stays on the operand stack
 as an expression, constants are written at each use, `new-instance` and its constructor call
-become `new T(...)`, and a block reached only by a `goto` follows its predecessor
-(`docs/spec/10-jvm.md` 10.17 has the algorithm). A method whose code cannot be translated
+become `new T(...)`, a value that only joins constants (`boolean b = x > 3`) is carried on
+the stack across the join, d8's lambda classes are turned back into the `invokedynamic`
+javac wrote (so lambdas and method references print as such), and a block reached only by a
+`goto` follows its predecessor (`docs/spec/10-jvm.md` 10.17 has the algorithm). A method whose code cannot be translated
 fails alone, with the engine's usual failure comment naming the reason
 (`DEX code not translated: ...`).
 
-**What is lost relative to class files.** d8's own work is not undone: register reuse
-and copy propagation, comparisons and constants shared between uses, code moved or
-merged across branches, lambdas and default methods desugared into synthetic classes
-(`$$ExternalSyntheticLambda0`, `$-CC`), string concatenation, records and nest-access
-bridges, and a `synchronized` method's lock written as an explicit `synchronized (this)`
+**What is lost relative to class files.** Except for lambdas, d8's own work is not
+undone: register reuse and copy propagation, comparisons and constants shared between uses,
+code moved or merged across branches, default and static interface methods moved into
+`$-CC` classes below min-api 24, the lambda classes themselves (still listed and printed),
+string concatenation, records and nest-access bridges, and a `synchronized` method's lock written as an explicit `synchronized (this)`
 block. Local names and types exist only in debug builds (a release build keeps lines and
-maybe parameter names). A value that crosses blocks (a materialised boolean, a `?:`
-operand) is a variable unless the translator rebuilds the javac form. DEX does not say
+maybe parameter names). A value that crosses blocks is a variable unless only constants
+join (a `?:` with computed arms prints as an `if`). DEX does not say
 whether a library class is an interface, so a static or `super` call into one is an
 interface call only for a short list of JDK interfaces. Class files are written at version
-50 (52 for interfaces with code and `invoke-custom`, 51 for method-handle constants), so
+50 (52 for interfaces with code, lambdas and `invoke-custom`, 51 for method-handle constants), so
 version-gated sugar the engine reconstructs from newer javac output does not apply.
 
 **How it is checked.** `tests/fixtures/jvm/dex/src` holds small Java and Kotlin programs
