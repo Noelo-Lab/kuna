@@ -482,8 +482,8 @@ The landing page and `/dev-viz/` share the Noelo Lab site's palette and typeface
 its layout: they are tool pages — one display line, then monospace throughout, small
 red-ticked section labels instead of a lab-page rail. The landing page opts into a dark
 theme that follows the reader's system setting (`<html data-theme="auto">`; the dark tokens
-reuse `/decompile/`'s palette, and the mark and the hero's mark-plus-wordmark lockup swap to
-their `-dark.svg` versions through `<picture>`); `/dev-viz/` stays light, since its charts
+reuse `/decompile/`'s palette, and the header and hero marks swap to `kuna-mark-dark.svg`
+through `<picture>`); `/dev-viz/` stays light, since its charts
 use fixed light colours. `/decompile/` has its own stylesheet
 on the same palette, dark by default (§4.2); `assets/js/highlight-c.js` is the single C
 highlighter shared by the compare panes and the decompiler. The landing

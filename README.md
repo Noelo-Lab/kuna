@@ -2,8 +2,8 @@
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="./integrations/web/assets/img/kuna-lockup-dark.svg">
-    <img src="./integrations/web/assets/img/kuna-lockup-light.svg" width="360" alt="kuna">
+    <source media="(prefers-color-scheme: dark)" srcset="./integrations/web/assets/img/kuna-mark-dark.svg">
+    <img src="./integrations/web/assets/img/kuna-mark.svg" width="240" alt="Kuna Logo">
   </picture>
 </p>
 

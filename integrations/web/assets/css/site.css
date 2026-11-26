@@ -180,7 +180,7 @@ p{margin:0;}
 .cmd .p{color:var(--red);}
 .cmd .c{color:var(--muted);}
 
-.mark{width:100%;margin:2px 0 0;}
+.mark{width:min(150px,60%);margin:2px 0 0;}
 .facts{list-style:none;margin:20px 0 0;padding:16px 0 0;border-top:1px solid var(--rule);
   display:flex;flex-direction:column;gap:8px;font-size:.75rem;line-height:1.6;}
 .facts li{color:var(--ink-2);}
@@ -359,7 +359,7 @@ body.app main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
      to shrink under it — the column (and the page) then overflow instead of
      .cmd scrolling inside its own overflow-x:auto box. */
   .hero{grid-template-columns:minmax(0,1fr);gap:36px;}
-  .mark{width:min(240px,70%);}
+  .mark{width:132px;}
   .facts{max-width:46ch;}
   .goals{grid-template-columns:1fr;gap:28px;}
   .panes{grid-template-columns:1fr;}

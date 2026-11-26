@@ -9,11 +9,6 @@ identically and load nothing from a third-party CDN.
 | `Jost.woff2` | Jost* (display: headings, wordmark) | [indestructible-type/Jost](https://github.com/indestructible-type/Jost) | SIL Open Font License 1.1 |
 | `RobotoMono-{Light,Regular,Bold}.woff2` | Roboto Mono (body, code, UI) | [googlefonts/RobotoMono](https://github.com/googlefonts/RobotoMono) | Apache License 2.0 |
 
-The wordmark in `../img/kuna-lockup-{light,dark}.svg` is set in
-[Space Grotesk](https://github.com/floriankarsten/space-grotesk) Medium (SIL Open Font
-License 1.1, Copyright 2020 The Space Grotesk Project Authors), converted to outlines; no
-Space Grotesk font file is shipped.
-
 Neither license restricts embedding or redistribution here; both require the notice above
 to travel with the files. The full texts live upstream:
 [OFL 1.1](https://openfontlicense.org/open-font-license-official-text/) ·
