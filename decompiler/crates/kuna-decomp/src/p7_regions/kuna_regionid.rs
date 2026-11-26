@@ -2509,6 +2509,45 @@ mod tests {
         }
     }
 
+    /// The cyclic loops of a synthetic graph with blocks `1..=n` and `edges`,
+    /// from the full analysis or from its loop half alone.
+    fn loops_of(n: uintb, edges: &[(uintb, uintb)], cyclic_only: bool) -> Vec<(uintb, Vec<uintb>, Vec<uintb>)> {
+        let mut ri = KunaRegionIdentifier::new();
+        let ids: Vec<KunaNodeId> = (1..=n).map(|a| ri.add_synthetic_block(a)).collect();
+        for &(a, b) in edges {
+            ri.add_synthetic_edge(ids[a as usize - 1], ids[b as usize - 1]);
+        }
+        if cyclic_only {
+            ri.compute_cyclic().unwrap();
+        } else {
+            ri.compute().unwrap();
+        }
+        let mut out: Vec<_> = ri
+            .cyclic_loops()
+            .into_iter()
+            .map(|l| (l.head_addr, l.body.into_iter().collect(), l.exits.into_iter().collect()))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn regionid_cyclic_only_matches_full() {
+        let graphs: &[(uintb, &[(uintb, uintb)])] = &[
+            // Nested loops, a diamond in the inner one.
+            (8, &[(1, 2), (2, 3), (3, 4), (3, 5), (4, 6), (5, 6), (6, 3), (6, 7), (7, 2), (7, 8)]),
+            // A loop with a break to a block outside it and an if-else in the body.
+            (9, &[(1, 2), (2, 3), (2, 9), (3, 4), (3, 8), (4, 5), (4, 6), (5, 7), (6, 7), (7, 2), (8, 9)]),
+            // Two loops in sequence, each with a two-way body.
+            (10, &[(1, 2), (2, 3), (2, 4), (3, 5), (4, 5), (5, 2), (5, 6), (6, 7), (7, 8), (7, 9), (8, 6), (9, 6), (6, 10)]),
+        ];
+        for &(n, edges) in graphs {
+            let full = loops_of(n, edges, false);
+            assert!(!full.is_empty());
+            assert_eq!(loops_of(n, edges, true), full);
+        }
+    }
+
     //
     // STUB(W7) block-graph adapter coverage (Input A: build_from_block_graph)
     //

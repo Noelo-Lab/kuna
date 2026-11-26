@@ -174,6 +174,10 @@ When the rule changed a choice and the result holds a `goto`,
 `ActionBlockStructure` structures the graph again without it and keeps the
 version with fewer (the region structurer's result is only kept against its
 own choice; where that fails, `CollapseStructure` decides as upstream). The
+first collapse is set aside and put back when it wins, instead of being
+collapsed a third time: both start from a fresh seed of the same blocks,
+which `blockaction.rs (copy_maps)` confirms by the copy each basic block maps
+to. The
 check is per structuring: the earlier structurings also decide which return
 blocks `ActionReturnSplit` and `returndup` copy, so a function can still end
 with one more `goto` than upstream, which on the decbench corpus happens to a
@@ -765,12 +769,11 @@ grown increment by increment (the archived plan is
 the retired region-structurer roadmap, git history) and made the default S8 engine
 by DIV-12 under `option regionstructure`.
 
-**Input.** `region_structurer.rs (run_region_structurer)` first runs the
-chapter-07 region identifier fresh over the real CFG
+**Input.** When `regionlooprefine` is on, `region_structurer.rs
+(run_region_structurer)` first runs the loop half of the chapter-07 region
+identifier fresh over the real CFG
 (`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regionid.rs
-(KunaRegionIdentifier)`) and consumes two things from it: the deterministic
-node order (tie-breaking for edge virtualization) and — when
-`regionlooprefine` is on — the `kuna_regionid.rs
+(KunaRegionIdentifier::compute_cyclic)`) and consumes its `kuna_regionid.rs
 (KunaRegionIdentifier::cyclic_loops)` projection: each loop's refined body
 and exit frontier keyed by block start address, which absorbs
 dominated switch-case successors that a purely structural natural-loop walk
@@ -914,6 +917,15 @@ code is byte-identical with the flag off or on.
 across the full datatest corpus (DIV-12's verification) and structurally
 cannot do worse: any function it cannot finish is re-structured by the
 upstream engine from a clean re-seed.
+
+Its result depends only on the basic-block graph, the loop-condition rule and
+the `o0jumps` gate, so `blockaction.rs (ActionBlockStructure)` remembers,
+within one application, that it failed under the current gate: the second
+structuring of `structure_held` and the `o0jumps` structuring with the record
+back on run on the same graph (restored with `restore_orientation`) and go
+straight to `CollapseStructure`. On the decbench `bash` the region structurer
+fails on four structurings in five, and each such failure costs several times
+the collapse that follows it.
 
 ## 8.3 The goto-quality pass family (angr)
 
