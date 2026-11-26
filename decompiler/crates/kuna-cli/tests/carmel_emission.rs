@@ -1090,6 +1090,71 @@ fn carmel_wide_paired_stack_separates_stride_and_operand_ports() {
 }
 
 #[test]
+fn carmel_wide_io_disconnected_destinations_keep_the_guarded_read() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-io-disconnected", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         static volatile unsigned short device_word = 0x96b5;\n\
+         static unsigned accesses;\n\
+         static volatile unsigned short *device(void) { ++accesses; return &device_word; }\n\
+         #define io_cell (*device())\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    for bank in 0..2 {
+        for selector in [0x46, 0x47] {
+            let packet = [bank << 6, 1, 2, 0xc6, selector, 0xc0];
+            let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+            let body = [packet, nop, nop, nop, nop, [0x2b, 0xd8, 0, 0x2b, 0xec, 0]];
+            fs::write(&binary, body.as_flattened()).unwrap();
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict",
+                "--assert", &format!("param 0 %CECFG{} unsigned short config", bank + 1),
+                "--assert", "param 1 %EST unsigned short status",
+                "--assert", "param 2 %CETBL unsigned short table",
+                "--assert", "param 3 %RL0 unsigned short old_rl0",
+                "--assert", "return %RL0 unsigned short",
+                "--assert", "data [io,0x102] volatile unsigned short io_cell",
+            ]);
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let c = function["code"].as_str().unwrap();
+            assert!(!c.contains("halt_") && c.contains("io_cell"), "{function}");
+            let name = format!("read_io_{bank}_{selector}");
+            writeln!(emitted, "#define sub_0 {name}\n{c}\n#undef sub_0").unwrap();
+            let selected = 0xff << (8 * bank);
+            let other = 0xffff ^ selected;
+            for (test, (config, table, expected)) in [
+                (0, 0, 0), (0, other, 0), (0, selected, 1), (0x1000, 0, 1),
+                (0x1000, selected, 1),
+            ].into_iter().enumerate() {
+                writeln!(calls,
+                    "accesses = 0;\n\
+                     if ({name}({config:#x},0,{table:#x},0x8732) != 0x8732 || \
+                         accesses != {expected} || device_word != 0x96b5) return {};",
+                    1 + 10 * usize::from(bank) + 5 * usize::from(selector - 0x46) + test,
+                ).unwrap();
+            }
+        }
+    }
+    emitted.push_str(&calls);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_mac_preg_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
@@ -1545,6 +1610,238 @@ fn carmel_wide_paired_pop_fallback_ports() {
         fs::remove_file(file).unwrap();
     }
     fs::remove_dir_all(fixture_specs).unwrap();
+}
+
+#[test]
+fn carmel_mac_and_parallel_add_result_ports_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    struct Route {
+        packet: [u8; 6],
+        results: &'static [(&'static str, [u16; 2])],
+        stores: [Option<(u16, u16)>; 2],
+    }
+    // Exercise both CETBL settings with DATA words live in the compiled C.
+    let routes = [
+        Route {
+            packet: [0xd2, 0x23, 0xfe, 0x13, 0x10, 0xc6],
+            results: &[("A0L", [0xfd1f; 2]), ("A0H", [0x0def; 2]), ("GB0", [0x8d; 2]),
+                       ("A4L", [0xf4c5; 2]), ("A4H", [0xff80; 2]), ("GB4", [0xff; 2]),
+                       ("X1", [0xa25e; 2]), ("X2", [0x5678; 2]), ("R4", [0x49; 2]),
+                       ("R7", [0xc04c; 2]), ("EST", [0x30, 0x3030])],
+            stores: [None; 2],
+        },
+        Route {
+            packet: [0xd1, 0x22, 0xbf, 0x51, 0xb6, 0x91],
+            results: &[("A3L", [0x9f26, 0]), ("A3H", [0x0def; 2]), ("GB3", [0x8d; 2]),
+                       ("A4L", [0xaf94, 0]), ("A4H", [0xf4c5, 0xf4c6]), ("GB4", [0x80; 2]),
+                       ("X1", [0x5fee; 2]), ("X2", [0x5678; 2]), ("R2", [0x8043; 2]),
+                       ("EST", [0, 0x3031])],
+            stores: [None; 2],
+        },
+        Route {
+            packet: [0xc3, 0x78, 0x50, 0x14, 0x11, 0x29],
+            results: &[("X1", [0xc460; 2]), ("X2", [0x15d0; 2]), ("R0", [0x41; 2]),
+                       ("R2", [0x8040; 2]), ("R4", [0x49; 2]), ("EST", [0, 0x3000])],
+            stores: [None, Some((0x8040, 0x5e41))],
+        },
+        Route {
+            packet: [0x51, 0x97, 0x4c, 0x5e, 0x33, 0xe1],
+            results: &[("A3L", [0; 2]), ("A3H", [0x1aac; 2]), ("GB3", [0x8d; 2]),
+                       ("FF1", [0x1234, 0xbffc]), ("FF2", [0xf678, 0xf05a]),
+                       ("X1", [0x5df9; 2]), ("X2", [0xa25e; 2]), ("R4", [0x49; 2]),
+                       ("R7", [0xc04c; 2]), ("EST", [0x30, 0x3870])],
+            stores: [None; 2],
+        },
+        Route {
+            packet: [0x94, 0xfd, 0x3c, 0x49, 0x6a, 0x21],
+            results: &[("A5L", [0x24b5, 0x6900]), ("A5H", [0xd1dd, 0x04d4]), ("GB5", [0x89, 0]),
+                       ("X1", [0x8040; 2]), ("X2", [0x515d; 2]), ("R6", [0x8047; 2]),
+                       ("EST", [0x35, 0x3004])],
+            stores: [None; 2],
+        },
+        Route {
+            packet: [0xdc, 0x0c, 0xd6, 0xb2, 0xfd, 0xae],
+            results: &[("X1", [0xf678; 2]), ("X2", [0x5678; 2]), ("R4", [0x47; 2]),
+                       ("FF2", [0xf678; 2]), ("EST", [0, 0x3000])],
+            stores: [None; 2],
+        },
+        Route {
+            packet: [0x4e, 0xd2, 0x20, 0x1f, 0x7c, 0xef],
+            results: &[("A1L", [0xecd0; 2]), ("A1H", [0x04d4; 2]), ("GB1", [0x6a; 2]),
+                       ("X1", [0x8040; 2]), ("X2", [0x5678, 0xcfc7]), ("EST", [0, 0x3400])],
+            stores: [None; 2],
+        },
+        Route {
+            packet: [0x11, 0x7a, 0xe2, 0x4b, 0x9d, 0x34],
+            results: &[("X1", [0xba98; 2]), ("X2", [0x7289; 2]), ("R1", [0x4042; 2]),
+                       ("R2", [0x803f; 2]), ("R7", [0xc04c; 2]), ("EST", [1, 0x3001])],
+            stores: [Some((0x4040, 0x1419)); 2],
+        },
+        Route {
+            packet: [0x2b, 0xec, 0, 0x4e, 0xde, 0x20],
+            results: &[("X1", [0xba98; 2]), ("X2", [0x04d4; 2]), ("EST", [0, 0x3000])],
+            stores: [None; 2],
+        },
+    ];
+    let data = [
+        [
+            0xac5f, 0x55ab, 0x6896, 0x36f3, 0xbd19, 0x9520, 0x994f, 0x59e1,
+            0x0ff5, 0x58ef, 0xaebd, 0xb9ec, 0x7c52, 0x07ca, 0xb5ca, 0xbd95,
+            0xf4ba, 0x396e, 0x4ab5, 0x9a7c, 0x3b25, 0xd79c, 0xdae3, 0x62cd,
+            0x3cb4, 0xc633, 0x9fa7, 0xed37, 0xf3b4, 0xb134, 0xb16f, 0x4d08,
+            0xa258, 0xecd6, 0xcbc4, 0x72db, 0x0745, 0xf961, 0x7343, 0xcaff,
+            0x5df9, 0xebe7, 0x8301, 0x5df1, 0xd244, 0x0ce5, 0xe5eb, 0xc196,
+            0x240d, 0x12ff, 0x3fac, 0x95c6, 0x57f2, 0x8cb7, 0x2d9b, 0x55a4,
+            0x7e24, 0x763a, 0x1279, 0x1798, 0x5932, 0x0ee6, 0x26a9, 0x4ee3,
+        ],
+        [
+            0x753b, 0xb9f5, 0x671e, 0x7d2a, 0xcb4b, 0x2f20, 0x93ef, 0xf4d7,
+            0x038e, 0x864c, 0x93da, 0x1e09, 0xadc8, 0xc3bf, 0x5979, 0x85c9,
+            0xc9af, 0xdd80, 0xe2f6, 0x7c6f, 0xce0a, 0xb80c, 0xdda4, 0x69bd,
+            0xa66b, 0x632b, 0x10d7, 0x6096, 0x1af5, 0xd93c, 0x3d9d, 0x338c,
+            0xc460, 0x6385, 0x59f6, 0x82c9, 0x25de, 0xd3e5, 0x86e4, 0x8540,
+            0x71bb, 0x03a3, 0x5dda, 0xcbfe, 0x8389, 0x7541, 0x9a46, 0x4768,
+            0x4733, 0x17e4, 0xfcf6, 0x774c, 0x8e61, 0x66e7, 0x925e, 0x2258,
+            0x19fe, 0x59b4, 0xb861, 0xfbc7, 0xd6a4, 0x9734, 0x93f2, 0x421e,
+        ],
+        [
+            0xef73, 0x481e, 0x41ca, 0xd4eb, 0xb9fb, 0xdb4b, 0x8ee4, 0x2423,
+            0x2905, 0xf50c, 0xb782, 0x7ba8, 0x6a96, 0x3d63, 0xd2e1, 0x22f0,
+            0xf224, 0x0149, 0x4ccf, 0xcca0, 0xe3ca, 0x49ab, 0xd634, 0xaa48,
+            0xb0af, 0x4ab3, 0x24e0, 0xe329, 0x466c, 0x6bba, 0x47b6, 0xfa64,
+            0x7c4b, 0x20fa, 0x1a62, 0x8be1, 0xef6e, 0x73d1, 0x5fee, 0x5d36,
+            0xa1c9, 0x1b2f, 0x4176, 0xdd4f, 0x1c16, 0x2c86, 0x203b, 0xfcfe,
+            0x20af, 0xc816, 0xf1e1, 0xd70d, 0x9b97, 0xfde3, 0xf007, 0xe512,
+            0x3410, 0x2355, 0x858c, 0xf90c, 0xba4c, 0x1103, 0x8210, 0x8218,
+        ],
+        [
+            0x807d, 0xdbab, 0x96df, 0x54e5, 0xdda2, 0x02b7, 0x86e4, 0xf00c,
+            0x8f40, 0x2941, 0x1659, 0x65f9, 0x3828, 0xe736, 0x7c28, 0x44a1,
+            0xa62e, 0x4153, 0xfe45, 0xf73d, 0x8f1b, 0x2b97, 0xd186, 0x7332,
+            0x1018, 0x3085, 0xd1f3, 0x7035, 0xd49a, 0x38c7, 0xc9da, 0x17f3,
+            0x0786, 0x5455, 0x5240, 0x5863, 0x1b5b, 0x0e31, 0xb4a9, 0x1aec,
+            0xa25e, 0x8a5a, 0x640c, 0xdfee, 0xcfc4, 0x09c1, 0xb5dd, 0x42ff,
+            0x629d, 0x6c80, 0xe3e1, 0xcea6, 0x1449, 0x0a27, 0x7fa7, 0xc841,
+            0xb26d, 0x3fee, 0x1380, 0x2d95, 0xba77, 0xdea6, 0x1ed4, 0x8d7d,
+        ],
+    ];
+    let specs = common::scratch_file("carmel-raw-mac-witness", "specs");
+    let relative = Path::new("Ghidra/Processors/Carmel/data/languages");
+    let installed = std::env::var_os("KUNA_SPECS").map(std::path::PathBuf::from)
+        .unwrap_or_else(|| common::repo_root().join("specs")).join(relative);
+    let target = specs.join(relative);
+    fs::create_dir_all(&target).unwrap();
+    for file in ["carmel.ldefs", "carmel.sla", "carmel.cspec"] {
+        fs::copy(installed.join(file), target.join(file)).unwrap();
+    }
+    let mut tracked = String::from("<context_data><tracked_set space=\"code\">\n");
+    // Map the known entry addresses without inserting any setup instruction.
+    // DATA remains writable; no operand or result word is tracked here.
+    for (register, value) in [
+        ("R0", 0x40), ("R1", 0x4040), ("R2", 0x8040), ("R4", 0x48),
+        ("R5", 0x4048), ("R6", 0x8048), ("R7", 0xc048),
+        ("RN0", 1), ("RN1", 2), ("RN2", 3), ("RN4", 1), ("RN6", 3), ("RN7", 4),
+        ("PACFG", 0), ("CECFG1", 0x1000),
+    ] {
+        writeln!(tracked, "<set name=\"{register}\" val=\"{value:#x}\"/>").unwrap();
+    }
+    tracked.push_str("</tracked_set></context_data>\n");
+    let pspec = fs::read_to_string(installed.join("carmel.pspec")).unwrap();
+    fs::write(target.join("carmel.pspec"),
+        pspec.replace("</processor_spec>", &(tracked + "</processor_spec>"))).unwrap();
+
+    let binary = common::scratch_file("carmel-raw-mac-witness", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n#include <stdio.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n",
+    );
+    let cells = (0..4).flat_map(|bank| (0x20..0x60).map(move |word| bank * 0x4000 + word));
+    for address in cells.clone() {
+        writeln!(emitted, "volatile unsigned short cell_{address:04x};").unwrap();
+    }
+    emitted.push_str("static volatile unsigned short *const cells[] = {\n");
+    for address in cells.clone() {
+        write!(emitted, "&cell_{address:04x},").unwrap();
+    }
+    emitted.push_str("};\nstatic const unsigned short seed[] = {\n");
+    for word in data.into_iter().flatten() {
+        write!(emitted, "{word:#x},").unwrap();
+    }
+    emitted.push_str(
+        "};\nstatic void reset_data(void) {\n\
+         for (unsigned i = 0; i < 256; ++i) *cells[i] = seed[i];\n}\n\
+         static bool check_data(unsigned index, unsigned short value) {\n\
+         for (unsigned i = 0; i < 256; ++i)\n\
+           if (*cells[i] != (i == index ? value : seed[i])) return false;\n\
+         return true;\n}\n",
+    );
+    let params = [
+        ("CETBL", 0), ("CECFG2", 0x1000), ("EST", 0), ("ECFG", 0),
+        ("A0L", 0x09a4), ("A0H", 0x4338), ("GB0", 0xea),
+        ("A1L", 0xecd0), ("A1H", 0x834c), ("GB1", 0x6a),
+        ("A3L", 0x9f26), ("A3H", 0x0def), ("GB3", 0x8d),
+        ("A4L", 0xaf94), ("A4H", 0xf4c5), ("GB4", 0x80),
+        ("A5L", 0x24b5), ("A5H", 0xd1dd), ("GB5", 0x89),
+        ("FF1", 0x1234), ("FF2", 0xf678), ("X1", 0xba98), ("X2", 0x5678),
+    ];
+    let reg_type = |reg: &str| if reg.starts_with("GB") { "unsigned char" } else { "unsigned short" };
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut calls = String::from("int main(void) {\n");
+    for (route_id, route) in routes.into_iter().enumerate() {
+        let code = [route.packet, nop, nop, nop, nop, nop, [0x2b, 0xd8, 0, 0x2b, 0xec, 0]];
+        fs::write(&binary, code.as_flattened()).unwrap();
+        for &(reg, results) in route.results {
+            let name = format!("mac_{route_id}_{}", reg.to_ascii_lowercase());
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict", "--assert",
+                &format!("return %{reg} {}", reg_type(reg)),
+            ]);
+            for (index, (param, _)) in params.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {index} %{param} {} in_{}",
+                    reg_type(param), param.to_ascii_lowercase())]);
+            }
+            for address in cells.clone() {
+                kuna.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short cell_{address:04x}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            assert_eq!(function["name"], "sub_1000");
+            let c = function["code"].as_str().unwrap();
+            assert!(!c.contains("halt_"), "{c}");
+            writeln!(emitted, "{}", c.replace("sub_1000", &name)).unwrap();
+            for (trial, expected) in results.into_iter().enumerate() {
+                let args = params.iter().map(|&(param, value)| {
+                    let value = if param == "CETBL" && trial == 1 { 0xffff } else { value };
+                    format!("{value:#x}")
+                }).collect::<Vec<_>>().join(",");
+                let (index, value) = route.stores[trial].map_or((256, 0), |(address, value)| {
+                    ((address >> 14) * 64 + (address & 0x3fff) - 0x20, value)
+                });
+                writeln!(calls,
+                    "reset_data();\n\
+                     if ({name}({args}) != {expected:#x} || !check_data({index},{value:#x})) {{\n\
+                     fputs(\"{name}, predicate {trial}\\n\", stderr); return 1; }}",
+                ).unwrap();
+            }
+        }
+    }
+    emitted.push_str(&calls);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+    fs::remove_dir_all(specs).unwrap();
 }
 
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {

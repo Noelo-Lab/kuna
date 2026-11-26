@@ -4064,6 +4064,19 @@ The covered long-DATA I/O source does not drive a DATA value onto the bus.
 It advances `R0` by two, including when only address enable is set. Zero
 is written to the I/O word only when execution is enabled.
 
+The wide I/O load selectors displayed as `RL0` and `selector_f0` do not
+publish a register result. The lift retains their I/O read when the selected
+CE bank enables execution or bit 12 of its configuration enables operand
+fetch. The read cannot be treated as a no-op merely because its result is
+discarded; volatile I/O declarations preserve it in emitted C.
+
+The mixed compact MAC and add packets keep each lane’s 40-bit arithmetic
+result separate from its physical write port. A narrow destination can
+receive the high word or an accumulator guard without changing which
+result supplies its ALU flags. Predicate and address enable independently
+control result publication and address updates; parallel lanes sample their
+DATA inputs before either lane’s stores become visible.
+
 For the lifted `LINK` forms, address enable can update `SP` and the
 selected frame register even when the result predicate suppresses the
 DATA store. Static CE-table loads that configure both banks sample the

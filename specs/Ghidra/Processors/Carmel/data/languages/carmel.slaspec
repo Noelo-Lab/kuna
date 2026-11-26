@@ -336,6 +336,14 @@ define token slot (24)
     slot_10_12 = (10,12)
     slot_9_12 = (9,12)
     slot_16_22 = (16,22)
+    slot_13_15 = (13,15)
+    slot_11_13 = (11,13)
+    slot_11_14 = (11,14)
+    slot_9_13 = (9,13)
+    slot_6_10 = (6,10)
+    slot_4_8 = (4,8)
+    slot_1_5 = (1,5)
+    slot_1_3 = (1,3)
     compact_frame_delta = (1,8) signed
     clrbtr_mask = (1,12) hex
     slot_13_22 = (13,22)
@@ -2800,6 +2808,370 @@ compact_long_left: "MPY" "CE1" "*R3","A2L","A1L" is slot_0_22=0x400723 { local p
 compact_long_left: "MPYUS" "CE1" "*R3","A2L","A1L" is slot_0_22=0x480723 { local previous:2 = EST; local enabled:2; unary_ce(CECFG1, previous, CETBL, 0, enabled); if (enabled == 0) goto <long_done>; local old_address:2 = R3; local a:8 = zext(A2L); local b:8 = (zext(A1L) ^ 0x8000) - 0x8000; local bits:8 = (a * b * (1 + zext(ECFG & 1))) & 0xffffffffff; local carry_out:1 = 0; local overflow:1 = 0; local result:8; local flags:2; compact_long_finish(bits, carry_out, overflow, 1:1, 1:1, result, flags); local next_address:2 = old_address + 1; *[data]:2 old_address = result:2; *[data]:2 next_address = result(2); EST = (previous & 0xffc4) | (flags << 0); <long_done> }
 :^compact_long_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x480723 & compact_long_left); (slot_mode=0 & nop_right) { build compact_long_left; }
 
+# Keep the complete 40-bit ALU result in a standard C width. Finish the
+# flags before narrowing the physical WB port to a high word or a guard.
+macro raw_mac_finish(exact, raw_adder, short_result, short_zero, store, result, flags) {
+    local bits:8 = exact & 0xffffffffff;
+    local negative:1 = bits >= 0x8000000000;
+    local extended:1 = bits > 0x7fffffff && bits < 0xff80000000;
+    local overflow:1 = exact + 0x8000000000 > 0xffffffffff;
+    local saturated:1 = (ECFG & 0x28) == 8;
+    local auto_limit:1 = (ECFG & 4) != 0;
+    local limited:1 = auto_limit && (((bits >> 31) ^ (bits >> 32)) & 1) != 0;
+    local loss:1 = limited || ((overflow || (short_result != 0 && extended)) && !saturated && !auto_limit);
+    local carry_out:1 = (raw_adder & 0x10000000000) != 0;
+    local zero:1 = bits == 0 || (short_zero != 0 && (bits >> 16) == 0);
+    flags = zext(carry_out) | (zext(overflow) << 1) | (zext(loss) << 2) |
+            (zext(zero) << 3) | (zext(negative) << 4) | (zext(extended) << 5);
+    limited = limited || (store != 0 && saturated && extended);
+    result = bits;
+    if (!limited) goto <done>;
+    result = 0x7fffffff + zext(negative) * 0xff00000001;
+    flags = flags | 4;
+  <done>
+}
+
+macro raw_mac_flags(flags, active, shift) {
+    flags = (flags & ~(0x3b:2 << shift)) | (active << shift);
+}
+
+macro raw_mac_product(left, right, sign_left, sign_right, product) {
+    local a:8 = zext(left);
+    local b:8 = zext(right);
+    if (sign_left == 0) goto <left_ready>;
+    a = (a ^ 0x8000) - 0x8000;
+  <left_ready>
+    if (sign_right == 0) goto <right_ready>;
+    b = (b ^ 0x8000) - 0x8000;
+  <right_ready>
+    product = a * b * (1 + zext(ECFG & 1));
+}
+
+macro raw_mac_round_sub(base, left, right, result, flags) {
+    local product:8;
+    raw_mac_product(left, right, 1:1, 1:1, product);
+    local exact:8 = (base ^ 0x8000000000) - 0x8000000000 - product;
+    local bias:8 = 0x8000;
+    if ((ECFG & 2) == 0) goto <bias_ready>;
+    bias = 0x7fff + ((exact >> 16) & 1);
+  <bias_ready>
+    local raw:8 = base + (~product & 0xffffffffff) + 1 + bias;
+    exact = (exact + bias) & 0xffffffffffff0000;
+    raw_mac_finish(exact, raw, 0:1, 0:1, 0:1, result, flags);
+    result = result & 0xffffff0000;
+}
+
+macro raw_mac_add(left, right, carry_in, short_result, store, result, flags) {
+    local exact:8 = left + right + carry_in;
+    local raw:8 = (left & 0xffffffffff) + (right & 0xffffffffff) + carry_in;
+    raw_mac_finish(exact, raw, short_result, 0:1, store, result, flags);
+}
+
+macro raw_mac_word(value, result) {
+    result = ((zext(value) ^ 0x8000) - 0x8000) << 16;
+}
+
+macro raw_mac_predicate(cfg, bank, enabled, addresses) {
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    addresses = enabled | ((cfg >> 12) & 1);
+}
+
+@define RAW_MAC_SEQ "((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))"
+@define RAW_MAC_PAR "carmel_issue=1 & slot_mode=0"
+@define RAW_MAC_A4_SHIFT "slot_16_22=0x52 & slot_14_15=0 & slot_11_13=4 & slot_6_10=15 & slot_1_5=31 & slot_0_0=0"
+@define RAW_MAC_A4_ROUND "slot_16_22=0x51 & slot_14_15=0 & slot_11_13=4 & slot_6_10=10 & slot_1_5=31 & slot_0_0=1"
+@define RAW_MAC_A3_ROUND "slot_16_22=0x51 & slot_13_15=5 & slot_9_11=3 & slot_6_8=2 & slot_1_5=8 & slot_0_0=1"
+
+:MACSU "A4","*R7+=RN7","OP2" is $(RAW_MAC_SEQ) & $(RAW_MAC_A4_SHIFT) {
+    local address:2 = R7;
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    X1 = *[data]:2 address;
+    # The OP2 input is disconnected. The signed addend enters at bit 16.
+    local exact:8 = ((zext(GB4) ^ 0x80) - 0x80) * 0x10000 + zext(A4H);
+    local result:8;
+    local active:2;
+    raw_mac_finish(exact, 0:8, 0:1, 0:1, 0:1, result, active);
+    A4L = result:2;
+    A4H = result(2);
+    GB4 = result(4);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    publish_alu_ce(flags);
+}
+
+:ADD "A0","*R4++","A3" is $(RAW_MAC_SEQ) & slot_16_22=0x13 & slot_12_14=1 & slot_9_11=0 & slot_4_8=12 & slot_1_3=3 & slot_15_15=0 & slot_0_0=0 {
+    local address:2 = R4;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    local word:2 = *[data]:2 address;
+    local base:8;
+    compact_long_sample(A3L, A3H, GB3, base);
+    local result:8;
+    local active:2;
+    raw_mac_add((zext(word) ^ 0x8000) - 0x8000, (base ^ 0x8000000000) - 0x8000000000, 0:8, 0:1, 0:1, result, active);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    publish_alu_ce(flags);
+}
+
+:MSUR "CE1" "A4","*R2+=RN2","OP2" is $(RAW_MAC_SEQ) & $(RAW_MAC_A4_ROUND) {
+    local enabled:2;
+    local addresses:2;
+    raw_mac_predicate(CECFG1, 0, enabled, addresses);
+    local flags:2 = EST & 0xcfff;
+    if (addresses == 0) goto <publish>;
+    local address:2 = R2;
+    modify_ptr(R2, RN2, RM2, RL2, 4, 1);
+    local word:2 = *[data]:2 address;
+    X1 = word;
+    if (enabled == 0) goto <publish>;
+    local base:8;
+    compact_long_sample(A4L, A4H, GB4, base);
+    local result:8;
+    local active:2;
+    raw_mac_round_sub(base, word, 0:2, result, active);
+    A4L = result:2;
+    A4H = result(2);
+    GB4 = result(4);
+    raw_mac_flags(flags, active, 0);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:MSUR "CE1" "A3","*R2+RN2","RN0" is $(RAW_MAC_SEQ) & $(RAW_MAC_A3_ROUND) {
+    local enabled:2;
+    local addresses:2;
+    raw_mac_predicate(CECFG1, 0, enabled, addresses);
+    local flags:2 = EST & 0xcfff;
+    if (addresses == 0) goto <publish>;
+    local address:2 = R2 + RN2;
+    local word:2 = *[data]:2 address;
+    X1 = word;
+    if (enabled == 0) goto <publish>;
+    local base:8;
+    compact_long_sample(A3L, A3H, GB3, base);
+    local result:8;
+    local active:2;
+    raw_mac_round_sub(base, word, RN0, result, active);
+    A3L = result:2;
+    A3H = result(2);
+    GB3 = result(4);
+    raw_mac_flags(flags, active, 0);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:MPY "X2","*R1","*R0+=RN0" is $(RAW_MAC_SEQ) & slot_16_22=0x43 & slot_15_15=0 & slot_11_14=15 & slot_6_10=1 & slot_1_5=8 & slot_0_0=0 {
+    local first_address:2 = R1;
+    local second_address:2 = R0;
+    modify_ptr(R0, RN0, RM0, RL0, 0, 1);
+    local first:2 = *[data]:2 first_address;
+    local second:2 = *[data]:2 second_address;
+    local product:8;
+    raw_mac_product(first, second, 1:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish(product, product & 0xffffffffff, 1:1, 1:1, 0:1, result, active);
+    X1 = first;
+    X2 = result(2);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    publish_alu_ce(flags);
+}
+
+:ADDC "CE1" "*R2","R4","*R4++" is $(RAW_MAC_SEQ) & slot_16_22=0x14 & slot_15_15=0 & slot_11_14=2 & slot_6_10=4 & slot_1_5=20 & slot_0_0=1 {
+    local enabled:2;
+    local addresses:2;
+    raw_mac_predicate(CECFG1, 0, enabled, addresses);
+    local flags:2 = EST & 0xcfff;
+    if (addresses == 0) goto <publish>;
+    local old_r4:2 = R4;
+    local destination:2 = R2;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    local word:2 = *[data]:2 old_r4;
+    if (enabled == 0) goto <publish>;
+    local a:8;
+    local b:8;
+    raw_mac_word(old_r4, a);
+    raw_mac_word(word, b);
+    local result:8;
+    local active:2;
+    raw_mac_add(a, b, zext(EST & 1) << 16, 1:1, 1:1, result, active);
+    *[data]:2 destination = result(2);
+    raw_mac_flags(flags, active, 0);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:MSUR "A3","*R4++","*R6+RN6" "||" "MSUUS" "CE2" "FF12","*R7+=RN7","A0L" is ($(RAW_MAC_PAR) & slot_16_22=0x51 & slot_13_15=4 & slot_9_11=3 & slot_4_8=20 & slot_1_3=6 & slot_0_0=0); (slot_mode=0 & slot_16_22=0x5e & slot_14_15=0 & slot_11_13=6 & slot_6_10=15 & slot_1_5=16 & slot_0_0=1) {
+    local enabled:2;
+    local addresses:2;
+    raw_mac_predicate(CECFG2, 1, enabled, addresses);
+    local first_address:2 = R4;
+    local second_address:2 = R6 + RN6;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    local first:2 = *[data]:2 first_address;
+    local second:2 = *[data]:2 second_address;
+    local base:8;
+    compact_long_sample(A3L, A3H, GB3, base);
+    local left_result:8;
+    local left_flags:2;
+    raw_mac_round_sub(base, first, second, left_result, left_flags);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, left_flags, 0);
+    X1 = first;
+    A3L = left_result:2;
+    A3H = left_result(2);
+    GB3 = left_result(4);
+    if (addresses == 0) goto <publish>;
+    local right_address:2 = R7;
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    local word:2 = *[data]:2 right_address;
+    X2 = word;
+    if (enabled == 0) goto <publish>;
+    local product:8;
+    raw_mac_product(word, A0L, 0:1, 1:1, product);
+    local pair:8 = (zext(FF2) << 16) | zext(FF1);
+    local right_result:8;
+    local right_flags:2;
+    raw_mac_finish(pair - product, pair + (~product & 0xffffffffff) + 1, 0:1, 0:1, 0:1, right_result, right_flags);
+    FF1 = right_result:2;
+    FF2 = right_result(2);
+    raw_mac_flags(flags, right_flags, 6);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:ADDC "X2","A4L","*R6--" is $(RAW_MAC_SEQ) & slot_16_22=0x14 & slot_15_15=1 & slot_11_14=15 & slot_6_10=20 & slot_1_5=30 & slot_0_0=0 {
+    local address:2 = R6;
+    modify_ptr(R6, RN6, RM6, RL6, 12, 3);
+    local word:2 = *[data]:2 address;
+    local a:8;
+    local b:8;
+    raw_mac_word(A4L, a);
+    raw_mac_word(word, b);
+    local result:8;
+    local active:2;
+    raw_mac_add(a, b, zext(EST & 1) << 16, 1:1, 0:1, result, active);
+    X2 = result(2);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    publish_alu_ce(flags);
+}
+
+:MPYUS "CE1" "A5","R2","A0L" is $(RAW_MAC_SEQ) & slot_16_22=0x49 & slot_13_15=3 & slot_9_11=5 & slot_4_8=2 & slot_1_3=0 & slot_0_0=1 {
+    local enabled:2;
+    local addresses:2;
+    raw_mac_predicate(CECFG1, 0, enabled, addresses);
+    local flags:2 = EST & 0xcfff;
+    if (addresses == 0) goto <publish>;
+    local first:2 = R2;
+    X1 = first;
+    if (enabled == 0) goto <publish>;
+    local product:8;
+    raw_mac_product(first, A0L, 0:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish(product, product & 0xffffffffff, 0:1, 0:1, 0:1, result, active);
+    A5L = result:2;
+    A5H = result(2);
+    GB5 = result(4);
+    raw_mac_flags(flags, active, 0);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:MPYUS "discard","FF2","*R4--" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_40_45=0x1c & wide_0_22=0x32fdae {
+    local address:2 = R4;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 3);
+    local word:2 = *[data]:2 address;
+    X1 = FF2;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:MPYUU "A1H","R2","A0L" "||" "ADDABS" "CE2" "X2","RN6","*R7+RN7" is ($(RAW_MAC_PAR) & slot_16_22=0x4e & slot_13_15=6 & slot_9_12=9 & slot_4_8=2 & slot_1_3=0 & slot_0_0=0); (slot_mode=0 & slot_16_22=0x1f & slot_13_15=3 & slot_9_12=14 & slot_4_8=14 & slot_1_3=7 & slot_0_0=1) {
+    local enabled:2;
+    local addresses:2;
+    raw_mac_predicate(CECFG2, 1, enabled, addresses);
+    local first:2 = R2;
+    local product:8;
+    raw_mac_product(first, A0L, 0:1, 0:1, product);
+    local left_result:8;
+    local left_flags:2;
+    raw_mac_finish(product, product & 0xffffffffff, 1:1, 1:1, 0:1, left_result, left_flags);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, left_flags, 0);
+    X1 = first;
+    A1H = left_result(2);
+    if (addresses == 0) goto <publish>;
+    local address:2 = R7 + RN7;
+    local word:2 = *[data]:2 address;
+    if (enabled == 0) goto <publish>;
+    local a:8;
+    local b:8;
+    raw_mac_word(RN6, a);
+    raw_mac_word(word, b);
+    if (a s>= 0) goto <absolute>;
+    a = -a;
+  <absolute>
+    local right_result:8;
+    local right_flags:2;
+    raw_mac_add(a, b, 0:8, 1:1, 0:1, right_result, right_flags);
+    X2 = right_result(2);
+    raw_mac_flags(flags, right_flags, 6);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:ADD "*R1+=RN1","*R7+=RN7","*R5" "||" "MPYUS" "X2","*R4+RN4","*R2--" is ($(RAW_MAC_PAR) & slot_16_22=0x11 & slot_14_15=1 & slot_9_13=29 & slot_4_8=14 & slot_1_3=1 & slot_0_0=0); (slot_mode=0 & slot_16_22=0x4b & slot_13_15=4 & slot_9_12=14 & slot_6_8=4 & slot_1_5=26 & slot_0_0=0) {
+    local destination:2 = R1;
+    local left_first:2 = R7;
+    local left_second:2 = R5;
+    local right_first:2 = R4 + RN4;
+    local right_second:2 = R2;
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+    modify_ptr(R2, RN2, RM2, RL2, 4, 3);
+    local term1:2 = *[data]:2 left_first;
+    local term2:2 = *[data]:2 left_second;
+    local multiplier:2 = *[data]:2 right_first;
+    local multiplicand:2 = *[data]:2 right_second;
+    local a:8;
+    local b:8;
+    raw_mac_word(term1, a);
+    raw_mac_word(term2, b);
+    local left_result:8;
+    local left_flags:2;
+    raw_mac_add(a, b, 0:8, 1:1, 1:1, left_result, left_flags);
+    local product:8;
+    raw_mac_product(multiplier, multiplicand, 0:1, 1:1, product);
+    local right_result:8;
+    local right_flags:2;
+    raw_mac_finish(product, product & 0xffffffffff, 1:1, 1:1, 0:1, right_result, right_flags);
+    # The multiplier consumes its fetched input, not the incoming X2.
+    # The word result then supersedes that OF latch in WB.
+    X2 = right_result(2);
+    *[data]:2 destination = left_result(2);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, left_flags, 0);
+    raw_mac_flags(flags, right_flags, 6);
+    publish_alu_ce(flags);
+}
+
+:^nop_left "||" "MPYUU" "X2","R2","A0L" is ($(RAW_MAC_PAR) & nop_left); (slot_mode=0 & slot_16_22=0x4e & slot_13_15=6 & slot_9_12=15 & slot_4_8=2 & slot_1_3=0 & slot_0_0=0) {
+    local product:8;
+    raw_mac_product(R2, A0L, 0:1, 0:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish(product, product & 0xffffffffff, 1:1, 1:1, 0:1, result, active);
+    X2 = result(2);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, active, 6);
+    publish_alu_ce(flags);
+}
+
 # Immediate address-unit transfers and fixed long strides.
 macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
     local base:2 = pointer;
@@ -3272,6 +3644,26 @@ peripheral_literal: peripheral_literal_bits is peripheral_literal_bits { export 
 :MOVE "A0L",io_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_11=0x640 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { A0L = io_word; }
 :MOVE "CE1" "A0L",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_11=0x640 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; A0L = io_word; <peripheral_done> }
 :MOVE "CE2" "A0L",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_11=0x640 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; A0L = io_word; <peripheral_done> }
+
+io_discard_dst: "RL0" is wide_0_11=0x6c0 { }
+io_discard_dst: "selector_f0" is wide_0_11=0x7c0 { }
+io_discard_source: "IO["^io_word_address^"]" is io_word_address { export *[const]:2 io_word_address; }
+
+macro io_read_discard(address, config, bank) {
+    local enabled:2;
+    unary_ce(config, EST, CETBL, bank, enabled);
+    if (enabled == 0 && (config & 0x1000) == 0) goto <peripheral_done>;
+    local ignored:2 = *[io]:2 address;
+    <peripheral_done>
+}
+
+:MOVE "CE1" io_discard_dst,io_discard_source is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_14_22=0x119 & wide_40_45=0x0 & io_discard_dst & io_discard_source {
+    io_read_discard(io_discard_source, CECFG1, 0);
+}
+:MOVE "CE2" io_discard_dst,io_discard_source is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_14_22=0x119 & wide_40_45=0x0 & io_discard_dst & io_discard_source {
+    io_read_discard(io_discard_source, CECFG2, 1);
+}
+
 :MOVE "RN7",io_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_11=0x6bc & wide_14_22=0x119 & wide_40_45=0x0 & io_word { RN7 = io_word; }
 :MOVE "CE1" "RN7",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_11=0x6bc & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && ((CECFG1 & 0x1000) == 0)) goto <peripheral_done>; RN7 = io_word; <peripheral_done> }
 :MOVE "CE2" "RN7",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_11=0x6bc & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && ((CECFG2 & 0x1000) == 0)) goto <peripheral_done>; RN7 = io_word; <peripheral_done> }
