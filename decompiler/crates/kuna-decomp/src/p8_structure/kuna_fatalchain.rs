@@ -14,9 +14,9 @@
 //! nested `if`s with the call after all of them.  [`relax`] drops the later
 //! tests of such a chain from the complex set the structurer reads; at the final
 //! structuring position [`record_hits`] checks that each one prints at most
-//! [`MAX_STMTS`] statement before its test and otherwise sends it back through
-//! the `condstmts` reanalysis as complex.  A structuring that relaxed and prints
-//! more gotos than one that did not is not kept.
+//! [`MAX_STMTS`] statement before its test; otherwise the drive analyzes the
+//! function again without relaxing that test ([`next_veto`]).  A structuring
+//! that relaxed and prints more gotos than one that did not is not kept.
 //!
 //! After the tree is final, [`ActionFatalChain`] turns `if (chain) { R } f();`
 //! (where `R` does not fall through) into `if (!chain) f(); R`, at any depth.
@@ -120,6 +120,10 @@ pub(crate) fn chains(data: &Funcdata) -> Vec<(BlockId, Vec<BlockId>)> {
     out
 }
 
+fn max_stmts() -> int4 {
+    std::env::var("KUNA_FC_MAXSTMTS").ok().and_then(|v| v.parse().ok()).unwrap_or(MAX_STMTS)
+}
+
 fn start(data: &Funcdata, bb: BlockId) -> Address {
     data.bblocks_block_start(bb)
 }
@@ -129,7 +133,7 @@ fn start(data: &Funcdata, bb: BlockId) -> Address {
 fn fits(data: &Funcdata, bb: BlockId) -> bool {
     let ops = data.bb_ops(bb);
     !crate::p8_structure::kuna_condfold::block_carries_comment(data, &ops)
-        && crate::p8_structure::kuna_condfold::printed_shape(data, &ops).is_some_and(|s| s.stmts - 1 <= MAX_STMTS)
+        && crate::p8_structure::kuna_condfold::printed_shape(data, &ops).is_some_and(|s| s.stmts - 1 <= max_stmts())
 }
 
 /// Whether a structuring of `data` now would relax a block.
@@ -152,7 +156,7 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
                 continue;
             }
             let a = start(data, c);
-            if data.condstmts_seed().contains(&a) || (high && !fits(data, c)) {
+            if data.condstmts_seed().contains(&a) || data.fatalchain_veto().contains(&a) || (high && !fits(data, c)) {
                 continue;
             }
             if !high && crate::p8_structure::kuna_condfold::block_carries_comment(data, &data.bb_ops(c)) {
@@ -169,7 +173,7 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
 
 /// At the final structuring position: every relaxed block the structure folded
 /// into a condition that prints more than [`MAX_STMTS`] statements before its
-/// test is recorded for the `condstmts` reanalysis, which keeps it complex.
+/// test is recorded; the drive analyzes the function again without relaxing it.
 pub(crate) fn record_hits(data: &mut Funcdata) {
     if data.fatalchain_relaxed().is_empty() || !data.is_high_on() || data.sblocks_get_size() == 0 {
         return;
@@ -182,8 +186,18 @@ pub(crate) fn record_hits(data: &mut Funcdata) {
         }
     }
     for a in hits {
-        data.add_condstmts_hit(a);
+        data.add_fatalchain_hit(a);
     }
+}
+
+/// The veto for another analysis of `fd`, or `None` when it recorded nothing new.
+pub fn next_veto(fd: &Funcdata) -> Option<BTreeSet<Address>> {
+    let hits = fd.fatalchain_hits();
+    let veto = fd.fatalchain_veto();
+    if hits.iter().all(|a| veto.contains(a)) {
+        return None;
+    }
+    Some(veto.union(hits).cloned().collect())
 }
 
 /// The basic blocks printed as the right operand of a `&&` / `||`.

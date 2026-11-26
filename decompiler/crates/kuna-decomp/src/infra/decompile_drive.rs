@@ -2127,6 +2127,7 @@ fn decompile_func_full_with_objects_inner(
     let mut attempt = |prefollowed: Option<Funcdata>,
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
+                       fatalchain_veto: &std::collections::BTreeSet<Address>,
                        elfmain: Option<&crate::kuna_elfmaindecl::Runtime>,
                        latch_join: bool|
      -> KunaResult<Funcdata> {
@@ -2151,6 +2152,7 @@ fn decompile_func_full_with_objects_inner(
             fd.withdraw_stack_store_guard();
         }
         fd.set_condstmts_seed(condstmts_seed.clone());
+        fd.set_fatalchain_veto(fatalchain_veto.clone());
         fd.kuna_latch_join_withdrawn = !latch_join;
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
@@ -2375,21 +2377,29 @@ fn decompile_func_full_with_objects_inner(
             // (kuna `stackstoreguard`) A function whose final layout spoiled what the
             // guard needs is analyzed again from scratch without it.
             let mut seed = std::collections::BTreeSet::new();
+            let mut veto = std::collections::BTreeSet::new();
             let mut unguarded = false;
-            let mut result = match attempt(prefollowed.take(), false, &seed, elfmain, latch_join) {
+            let mut result = match attempt(prefollowed.take(), false, &seed, &veto, elfmain, latch_join) {
                 Ok(fd) if fd.stack_store_guard_spoiled() => {
                     unguarded = true;
-                    attempt(None, true, &seed, elfmain, latch_join)
+                    attempt(None, true, &seed, &veto, elfmain, latch_join)
                 }
                 other => other,
             };
             // (kuna `condstmts`) A function whose final structure folded a block over the
-            // cap is analyzed again with that block complex from the first structuring on.
+            // cap is analyzed again with that block complex from the first structuring on;
+            // (kuna `condfold noreturn`) one whose relaxed chain test prints too wide, again
+            // without relaxing that test.
             for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
                 let Ok(fd) = &result else { break };
-                let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
-                seed = next;
-                match attempt(None, unguarded, &seed, elfmain, latch_join) {
+                let next = crate::p8_structure::kuna_condstmts::next_seed(fd);
+                let next_veto = crate::p8_structure::kuna_fatalchain::next_veto(fd);
+                if next.is_none() && next_veto.is_none() {
+                    break;
+                }
+                seed = next.unwrap_or(seed);
+                veto = next_veto.unwrap_or(veto);
+                match attempt(None, unguarded, &seed, &veto, elfmain, latch_join) {
                     Ok(fd) => result = Ok(fd),
                     Err(_) => break,
                 }

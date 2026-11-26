@@ -3944,7 +3944,8 @@ impl Action for ActionBlockStructure {
 
 impl ActionBlockStructure {
     /// (kuna `condfold noreturn`) A structuring that relaxed a chain into a
-    /// no-return call and printed more gotos than one that did not is replaced.
+    /// no-return call is kept only when it prints no goto; otherwise the function
+    /// is structured again without the relaxation.
     fn structure_held(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         use crate::p8_structure::kuna_o0jumps as o0j;
         if data.sblocks_get_size() != 0 || !crate::p8_structure::kuna_fatalchain::pending(data) {
@@ -3953,11 +3954,7 @@ impl ActionBlockStructure {
         let saved = o0j::orientation(data);
         let relaxed = data.fatalchain_relaxed().clone();
         let res = self.structure_once(data, ctx);
-        if data.fatalchain_relaxed().len() == relaxed.len() || ctx.deadline_expired() {
-            return res;
-        }
-        let with = o0j::gotos(data);
-        if with == 0 {
+        if data.fatalchain_relaxed().len() == relaxed.len() || ctx.deadline_expired() || o0j::gotos(data) == 0 {
             return res;
         }
         data.sblocks_clear();
@@ -3966,12 +3963,7 @@ impl ActionBlockStructure {
         data.set_fatalchain_hold(true);
         let held = self.structure_once(data, ctx);
         data.set_fatalchain_hold(false);
-        if o0j::gotos(data) < with {
-            return held;
-        }
-        data.sblocks_clear();
-        o0j::restore_orientation(data, &saved);
-        self.structure_once(data, ctx)
+        held
     }
 
     fn structure_once(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
