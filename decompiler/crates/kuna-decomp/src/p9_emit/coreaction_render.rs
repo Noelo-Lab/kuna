@@ -904,13 +904,13 @@ impl Action for ActionConstantPtr {
 
 /// C++ `ActionConstantPtr::searchForSpaceAttribute` (coreaction.cc:972): from a
 /// constant, walk forward through INT_ADD/COPY/INDIRECT/MULTIEQUAL (up to 3 hops)
-/// looking for a LOAD/STORE whose space-id constant names the access space, or a
-/// pointer data-type carrying a space attribute.  Returns the discovered space or
+/// looking for the address operand of a LOAD or STORE, or a pointer data-type
+/// carrying a space attribute. Returns the discovered space or
 /// `None`.
 fn search_for_space_attribute(data: &Funcdata, mut vn: VarnodeId, mut op: OpId) -> Option<Rc<AddrSpace>> {
     for _ in 0..3 {
         // If the Varnode is explicitly a pointer carrying a space attribute, use it.
-        let dt = Rc::clone(data.vbank().get(vn)?.get_type());
+        let dt = data.vbank().get(vn)?.get_type();
         if dt.get_metatype() == type_metatype::TYPE_PTR {
             if let Some(spc) = dt.get_pointer_space() {
                 if spc.get_addr_size() as int4 == data.vbank().get(vn)?.get_size() {
@@ -934,34 +934,22 @@ fn search_for_space_attribute(data: &Funcdata, mut vn: VarnodeId, mut op: OpId) 
                     None => break,
                 }
             }
-            OpCode::CPUI_LOAD => {
-                let in0 = data.obank().get(op)?.get_in(0)?;
-                return Some(space_from_const(data, in0));
-            }
-            OpCode::CPUI_STORE => {
-                let in1 = data.obank().get(op)?.get_in(1)?;
-                if in1 == vn {
-                    let in0 = data.obank().get(op)?.get_in(0)?;
-                    return Some(space_from_const(data, in0));
+            OpCode::CPUI_LOAD | OpCode::CPUI_STORE => {
+                let access = data.obank().get(op)?;
+                if access.get_in(1) != Some(vn) {
+                    return None;
                 }
-                return None;
+                return Some(space_from_const(data, access.get_in(0)?));
             }
             _ => return None,
         }
     }
-    // C++ tail descend scan: any LOAD/STORE reading vn directly.
-    let descend: Vec<OpId> = data.vbank().get(vn)?.descend_iter().collect();
-    for op in descend {
-        let opc = data.obank().get(op)?.code();
-        if opc == OpCode::CPUI_LOAD {
-            let in0 = data.obank().get(op)?.get_in(0)?;
-            return Some(space_from_const(data, in0));
-        } else if opc == OpCode::CPUI_STORE {
-            let in1 = data.obank().get(op)?.get_in(1)?;
-            if in1 == vn {
-                let in0 = data.obank().get(op)?.get_in(0)?;
-                return Some(space_from_const(data, in0));
-            }
+    for op in data.vbank().get(vn)?.descend_iter() {
+        let access = data.obank().get(op)?;
+        if matches!(access.code(), OpCode::CPUI_LOAD | OpCode::CPUI_STORE)
+            && access.get_in(1) == Some(vn)
+        {
+            return Some(space_from_const(data, access.get_in(0)?));
         }
     }
     None
@@ -1183,6 +1171,14 @@ fn is_pointer(
             _ => true,
         };
         if !declared_ok {
+            return None;
+        }
+        if spc.get_word_size() != 1
+            && search_for_space_attribute(data, vn, op)
+                .is_none_or(|access| access.get_index() != spc.get_index())
+            && !(crate::kuna_inferfuncentry::entry_escape_applies(opc, numeric.contains(&vn_offset))
+                && kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr))
+        {
             return None;
         }
         rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;

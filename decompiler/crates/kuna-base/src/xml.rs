@@ -2338,7 +2338,8 @@ mod tests {
         // and kuna-jump-as-call-liveness / only a reachable fallback call keeps its warning
         // and kuna-scalar-stack-pointer / a locked integer SP projects its value; ordinary frames keep locals
         // and kuna-mips-octeon-elf32-o64 / an Octeon ELF32 image declaring O64 or no ABI loads as Octeon O64
-        assert_eq!(count, 935, "corpus file count drifted");
+        // and kuna-word-index-scalar / a word index matching a global stays numeric without pointer evidence
+        assert_eq!(count, 936, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

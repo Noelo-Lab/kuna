@@ -24,7 +24,7 @@ use std::fmt::Write as _;
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_base::address::Address;
 use kuna_console::engine::{
-    bootstrap_from_image_with_isa, bootstrap_from_raw, ArmIsa, ConsoleProgram, EntryLookupError,
+    bootstrap_from_image_with_isa, bootstrap_from_raw, ArmIsa, Bootstrap, ConsoleProgram, EntryLookupError,
     EntrySelector, FunctionEntry, ObjectLocation,
 };
 // The decompile loop + result shape live in the shared decompile-project core
@@ -1589,12 +1589,14 @@ fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), S
 
 /// Which bundle of driver defaults a surface takes in [`load_program`].
 ///
-/// Both variants take the same DISCOVERY policy (DIV-20/DIV-68); they differ only
-/// in whether the Listing is built on an architecture where it discovers nothing.
+/// Inventory and decompilation share discovery policy; byte-oriented queries
+/// do not need function discovery on a headerless image.
 #[derive(Clone, Copy)]
 pub(crate) enum DriverDefaults {
     /// `kuna functions` — enumeration only.
     Inventory,
+    /// `disassemble`, `read`, and `raw-pcode` over explicitly mapped bytes.
+    RawView,
     /// `kuna functions` — inventory without body-only string markup.
     Functions,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
@@ -1621,7 +1623,7 @@ impl DriverDefaults {
     /// second decode of the same bytes. The DIV-20/DIV-68 discovery flags it
     /// still takes — the reference walk consumes both of them directly.
     fn wants_listing(&self) -> bool {
-        !matches!(self, DriverDefaults::Query)
+        !matches!(self, DriverDefaults::Query | DriverDefaults::RawView)
     }
 
     fn functions_inventory(&self) -> bool {
@@ -1798,7 +1800,10 @@ fn load_program_with_rust_profiles(
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
-    let mut prog = if args.raw_image {
+    let mut prog = if args.raw_image && matches!(defaults, DriverDefaults::RawView) {
+        Bootstrap::new(&spec_roots).target(target).arm_isa(args.isa)
+            .raw_view(&binary, args.base.expect("raw parser requires --base"))
+    } else if args.raw_image {
         // (kuna `--jobs`) A raw image's discovery (`rawdiscover`) is a serial
         // sweep and descent, not the lane-parallel object walk, so the decode
         // lanes have nothing to run. Say so, rather than accept the flag and do

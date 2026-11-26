@@ -2126,7 +2126,7 @@ fn raw_image_rejects_missing_metadata_and_object_only_surfaces() {
         (&["decompile-graph", &binary, "--raw-image", "--target", target, "--base", "0",
            "--entry", "0"], "not supported by decompile-graph"),
         (&["disassemble", &binary, "0", "--raw-image", "--target", target, "--base", "0"],
-         "unknown option --raw-image"),
+         "raw ARM32 input requires --isa"),
     ];
     for (args, expected) in cases {
         let (_stdout, stderr, ok) = run_kuna(args);
