@@ -364,6 +364,7 @@ struct Followed {
 fn follow_rows(prog: &ConsoleProgram, region: &Window, count: Option<usize>) -> Followed {
     let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
     let stop = region.stop();
+    let word_size = prog.code_unit_bytes();
     let in_window = |a: u64| a >= region.start && stop.is_none_or(|end| a < end);
     let mut evidence = FixedRefs::default();
     let mut claimed: BTreeMap<u64, Row> = BTreeMap::new();
@@ -395,6 +396,10 @@ fn follow_rows(prog: &ConsoleProgram, region: &Window, count: Option<usize>) -> 
             // No instruction may reach past mapped memory. The window's own end
             // is NOT a ceiling: the straight line lists the instruction
             // straddling it whole, and `--follow` must not list less.
+            if word_size > 1 && !addr.is_multiple_of(word_size) {
+                undecodable.insert(addr);
+                break;
+            }
             let decoded = prog
                 .disassemble_at_into(addr, &mut mnem, &mut body)
                 .ok()
@@ -529,6 +534,7 @@ fn decode_rows(
 ) -> (Vec<Row>, bool, FixedRefs) {
     let cap = if region.derived { Some(DERIVED_INSTRUCTION_CAP) } else { None };
     let stop = region.stop();
+    let word_size = prog.code_unit_bytes();
     let alignment = u64::try_from(prog.arch().translate().get_alignment()).unwrap_or(1);
     let mut rows: Vec<Row> = Vec::new();
     let mut evidence = FixedRefs::default();
@@ -552,9 +558,9 @@ fn decode_rows(
         // An instruction that runs off the end of mapped memory was decoded out
         // of the load image's zero fill, not out of the file, so it is not an
         // instruction: the mapped bytes under it are listed as `.byte` instead.
-        let decoded = prog
-            .disassemble_at_into(addr, &mut mnem, &mut body)
-            .ok()
+        let decoded = (word_size == 1 || addr.is_multiple_of(word_size))
+            .then(|| prog.disassemble_at_into(addr, &mut mnem, &mut body).ok())
+            .flatten()
             .filter(|&n| n > 0)
             .filter(|&n| {
                 !region.mapped_end.is_some_and(|m| addr.saturating_add(n as u64) > m)
@@ -576,7 +582,8 @@ fn decode_rows(
                 addr = addr.saturating_add(len as u64);
             }
             _ => {
-                let want = recovery_span(addr, resume_grid(alignment, witness), stop);
+                let grid = if word_size > 1 { word_size } else { resume_grid(alignment, witness) };
+                let want = recovery_span(addr, grid, stop);
                 // A span that will not read whole falls back to the one byte
                 // that is always safe; a row never claims bytes it cannot show.
                 if !prog.read_bytes_into(addr, want as usize, &mut raw)
