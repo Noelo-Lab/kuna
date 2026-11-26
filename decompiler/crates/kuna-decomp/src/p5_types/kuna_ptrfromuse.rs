@@ -331,8 +331,11 @@ enum BaseEvidence {
 /// space's pointer bounds, `resolveConstant` into that space, then the global
 /// scope.  A symbol there settles it.  Address-like with no symbol does not,
 /// and must not be read as one either way -- a stripped image's `.bss` table
-/// carries no symbol at all, while a struct big enough to reach past the bound
-/// (bzip2's 0x13f0-byte `bzFile`) is a real pointer reached at a real offset.
+/// carries no symbol at all.  When the image has a section table, a constant in
+/// none of its data sections and not in code is no object's address, and in
+/// code a function is not one either, so a struct big enough to reach past the
+/// bound (bzip2's 0x13f0-byte `bzFile`) is read at a real offset.  Code keeps
+/// the other grades: tables are linked into it.
 fn const_base_evidence(data: &Funcdata, op: OpId, cvn: VarnodeId) -> BaseEvidence {
     let glb = data.get_arch();
     let (off, size) = match data.vbank().get(cvn) {
@@ -344,6 +347,11 @@ fn const_base_evidence(data: &Funcdata, op: OpId, cvn: VarnodeId) -> BaseEvidenc
         None => return BaseEvidence::No,
     };
     if spc.get_pointer_lower_bound() > off || spc.get_pointer_upper_bound() < off {
+        return BaseEvidence::No;
+    }
+    let objects = &glb.elem_ptr_ranges;
+    let in_data = !glb.section_table || crate::kuna_globalref::in_ranges(objects, off);
+    if !in_data && !crate::kuna_globalref::in_ranges(&glb.litpool_const, off) {
         return BaseEvidence::No;
     }
     let point = match data.obank().get(op) {
@@ -358,8 +366,20 @@ fn const_base_evidence(data: &Funcdata, op: OpId, cvn: VarnodeId) -> BaseEvidenc
     if rampoint.is_invalid() {
         return BaseEvidence::No;
     }
+    if !in_data && glb.function_name_at(&rampoint).is_some() {
+        return BaseEvidence::No;
+    }
     let invalid = Address::new_invalid();
     match glb.query_container_global(&rampoint, 1, &invalid) {
+        Some(entry)
+            if !in_data
+                && entry
+                    .symbol_type
+                    .as_ref()
+                    .is_some_and(|t| t.get_metatype() == type_metatype::TYPE_CODE) =>
+        {
+            BaseEvidence::No
+        }
         Some(_) => BaseEvidence::Object,
         None => BaseEvidence::Maybe,
     }

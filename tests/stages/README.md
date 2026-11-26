@@ -100,6 +100,17 @@ the integer, the call and the field `s->next` beside it, a stand-alone
 `if (p)` and a chain that is a loop's condition stay truthy. Under `option
 truthycond on` every test is truthy.
 
+`kuna-ptrfromuse-faroffset.xml` checks option `ptrfromuse` on a parameter
+read only at field offsets of 0x1000 or more, in an x86-64 shared object, the
+same object stripped, an x86-64 non-PIE executable and an AArch64 shared
+object (`tests/fixtures/field-offset-pointers/`). Reads at 0x1000 and at
+0x48a0 make the parameter `void *`, as reads at 0xff8 always did, and the field
+at 0x1000 in the x86-64 shared object, whose first function also sits at
+0x1000, prints through the parameter instead of as `&near_leaf[a0]`. A
+parameter that indexes a `.data`, `.bss` or `.text` table, named or not, stays
+an integer. A fifth object has no data section at all, and its one function,
+at 0x1000, reads its own record at that offset.
+
 `kuna-rangetest.xml` checks option `rangetest` (default `auto`) on gcc -O2
 x86-64, which folds two comparisons of one value into one unsigned comparison
 of a subtraction. By default an inside range on an `unsigned char` (95
