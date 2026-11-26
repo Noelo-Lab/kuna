@@ -879,7 +879,10 @@ rax is undefined. `kuna-regpiece.xml` pins the same fix on `sh_openpipe`.
 is returned beside another call's result: two functions that tail-call each
 other and a declared `int forward_byte`, the shape of readline's
 `rl_forward_char`. The partner's call output narrows with the RETURN, so both
-return `int4` and the declared call is not zero-extended.
+return `int4` and the declared call is not zero-extended. A second chunk
+covers an indirect tail call and a signed and an unsigned declared result side
+by side. `kuna-tailcycle-pairreturn.xml` pins the i386 case that does not
+narrow: a declared `long long` in `edx:eax` keeps the whole pair.
 
 `gh1922-declared-caller-readarg-thumb.xml` checks Thumb callers with declared
 fixed parameter lists that save `r3` as gcc's alignment pad (`push {r3, lr}`):

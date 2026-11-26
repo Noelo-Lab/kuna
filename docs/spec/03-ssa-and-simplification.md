@@ -2918,7 +2918,11 @@ sshbuf_len(b)` declares an `unsigned int`, a `uint32_t` caller of an unstated
 callee does not mask it (`v1 & 0xffffffff`), an ARM caller tests a `bool`
 callee's result as a byte, and a function returning a declared `int` on one
 path and an unlocked call's result on another returns `int` instead of
-printing the declared call zero-extended.
+printing the declared call zero-extended. An indirect call narrows the same way
+as a direct one, and the declared `int` and `unsigned` results of two calls
+beside an unlocked one give a single 4-byte return. A declared result that
+fills a register pair (i386 `long long` in `edx:eax`) marks no byte unconsumed,
+so the RETURN keeps the pair and the unlocked call beside it keeps both halves.
 (kuna) A call pull whose dropped bits
 are known zero, because the wide input's non-zero mask lies inside the logical
 mask, is recorded on the call's spec when the rewrite commits

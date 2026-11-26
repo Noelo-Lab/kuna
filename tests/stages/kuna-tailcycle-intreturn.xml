@@ -30,6 +30,25 @@
     output).  No option: the 8-byte return is false about the program.
     Pass 1 (`protoorder off`) keeps the partner unstated, as the first member
     of a call cycle sees it; pass 2 (the default) states it first.
+
+    The second chunk (clang 20 -O2, image base 0x500000) holds two more
+    shapes, with `ext_s` declared `int` and `ext_u` declared `unsigned`:
+
+        int via_ptr(int (*g)(int, int), int c, int k) {
+            if (mb() == 1) return ext_s(c, k);
+            if (c < 0) return g(-c, k);                  jmpq *%rax
+            point += c; return 0;
+        }
+        int mixed(int c, int k) {
+            if (mb() == 1) return ext_s(c, k);
+            if (c < 0) return ext_u(-c, k);
+            if (c > 100) return partner_u(c, k);
+            point += c; return 0;
+        }
+
+    The indirect call's output narrows like a direct one's, and a signed
+    and an unsigned declared result beside an unlocked call give one
+    4-byte return with neither declared call cast.
 -->
 <bytechunk space="ram" offset="0x4012b0">
 55535089f389fde8940000004883f801741c833dab10000000751385ed781e012da310000031c04883c4085b5dc389ef89de4883c4085b5de973000000f7dd89
@@ -41,6 +60,20 @@ c3
 <symbol space="ram" offset="0x401300" name="backward_char"/>
 <symbol space="ram" offset="0x401350" name="mb_cur_max"/>
 <symbol space="ram" offset="0x401360" name="forward_byte"/>
+<bytechunk space="ram" offset="0x501310">
+5541565389d389f54989fee8a00000004883f801750d89ef89de5b415e5de99d00000085ed780d012de710000031c05b415e5dc3f7dd89ef89de4c89f05b415e
+5dffe0666666662e0f1f84000000000055535089f389fde8540000004883f801750f89ef89de4883c4085b5de94f00000085ed781483fd65722089ef89de4883
+c4085b5de977000000f7dd89ef89de4883c4085b5de936000000012d7410000031c04883c4085b5dc3cccccccccccccc4863055d10000048ffc0c30f1f440000
+8d043703054b100000890545100000c38b053e10000001f729f8890534100000c36666666666662e0f1f8400000000008d043733051b100000890515100000c3
+8d04370b050b100000890505100000c3c3
+</bytechunk>
+<symbol space="ram" offset="0x501310" name="via_ptr"/>
+<symbol space="ram" offset="0x501360" name="mixed"/>
+<symbol space="ram" offset="0x5013c0" name="mb"/>
+<symbol space="ram" offset="0x5013d0" name="ext_s"/>
+<symbol space="ram" offset="0x5013e0" name="ext_u"/>
+<symbol space="ram" offset="0x501400" name="partner_s"/>
+<symbol space="ram" offset="0x501410" name="partner_u"/>
 </binaryimage>
 <script>
   <com>parse line extern int4 forward_byte(int4 count,int4 key);</com>
@@ -58,10 +91,24 @@ c3
   <com>lo fu backward_char</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>parse line extern int4 ext_s(int4 a,int4 b);</com>
+  <com>parse line extern uint4 ext_u(int4 a,int4 b);</com>
+  <com>option protoorder off</com>
+  <com>lo fu via_ptr</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="tailcycle #1: both partners return the declared callee's 4 bytes" min="4" max="4">^int4 (forward|backward)_char\(int4 a0,int4 a1\)$</stringmatch>
 <stringmatch name="tailcycle #2: the declared int is returned as it is, not zero-extended" min="4" max="4">^  return forward_byte\(-?a0,a1\); // tail-call$</stringmatch>
-<stringmatch name="tailcycle #3: no return claims the upper half of rax" min="0" max="0">uint8|\(uint4\)forward_byte</stringmatch>
-<stringmatch name="tailcycle #4: the partner's result is read at the same width" min="4" max="4">^  int4 v1; // eax$</stringmatch>
+<stringmatch name="tailcycle #3: no return claims the upper half of rax" min="0" max="0">uint8|\(uint4\)(forward_byte|ext_s|ext_u)</stringmatch>
+<stringmatch name="tailcycle #4: the partner's or the pointer's result is read at the same width" min="5" max="5">^  int4 v1; // eax$</stringmatch>
+<stringmatch name="tailcycle #5: an indirect call's result narrows with the RETURN" min="1" max="1">^int4 via_ptr\(</stringmatch>
+<stringmatch name="tailcycle #6: the indirect call is returned through the narrowed local" min="1" max="1">^  v1 = \(\*a0\)\(-a1,a2\); // jump-as-call$</stringmatch>
+<stringmatch name="tailcycle #7: a signed and an unsigned declared result give one 4-byte return" min="1" max="1">^u?int4 mixed\(</stringmatch>
+<stringmatch name="tailcycle #8: both declared calls are returned as they are" min="3" max="3">^  +return ext_[su]\(-?a[01],a[12]\); // tail-call$</stringmatch>
+<stringmatch name="tailcycle #9: the unlocked call beside them is read at 4 bytes" min="1" max="1">^  uint4 v1; // eax$</stringmatch>
 </decompilertest>

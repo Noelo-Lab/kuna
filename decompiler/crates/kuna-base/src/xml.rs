@@ -2336,7 +2336,8 @@ mod tests {
         // and kuna-elfv1-symbolextent / a descriptor symbol's size bounds the code behind it
         // and kuna-rangetest(-thumb) / a merged range test prints as its two comparisons, a switch bound check keeps it
         // and kuna-tailcycle-intreturn / a declared int beside a partner's result is a 4-byte return
-        assert_eq!(count, 931, "corpus file count drifted");
+        // and kuna-tailcycle-pairreturn / a declared register-pair return beside another call's stays whole
+        assert_eq!(count, 932, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
