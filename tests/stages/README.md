@@ -109,7 +109,11 @@ at 0x1000 in the x86-64 shared object, whose first function also sits at
 0x1000, prints through the parameter instead of as `&near_leaf[a0]`. A
 parameter that indexes a `.data`, `.bss` or `.text` table, named or not, stays
 an integer. A fifth object has no data section at all, and its one function,
-at 0x1000, reads its own record at that offset.
+at 0x1000, reads its own record at that offset. Two more images
+(`absolute.c`) pin the limits of the reading: a read of the absolute address
+0x40020000 at an offset in the parameter, a byte table at the start of
+`.rodata` indexed from a character (`letters[c - 'a']`), and a relocatable
+object's extern table each keep an integer parameter.
 
 `kuna-rangetest.xml` checks option `rangetest` (default `auto`) on gcc -O2
 x86-64, which folds two comparisons of one value into one unsigned comparison

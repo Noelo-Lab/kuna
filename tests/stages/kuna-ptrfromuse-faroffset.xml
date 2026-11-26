@@ -29,6 +29,12 @@
     the bound, where `get_code`'s parameter was a pointer before this change.
     `code_only_x86_64.so` (`code_only.c`) has no data section at all, and its
     one function, `update`, sits at 0x1000 and reads its record there.
+    `absolute_x86_64.so` and `absolute_x86_64.o` (`absolute.c`) are the
+    controls for the two limits: `read_reg` reads a peripheral-style absolute
+    address 0x40020000 past 1 MiB, `letter_rank` indexes a byte table at the
+    start of `.rodata` from a character (`&letters - 0x61`, just below the
+    section), and in the relocatable object `get_ext` indexes an extern table
+    whose slot sits outside every section. Each parameter stays an integer.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -138,6 +144,21 @@ c3
   <com>load addr 0x1000</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/absolute_x86_64.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x1000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1010</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/field-offset-pointers/absolute_x86_64.o</com>
+  <com>read symbols</com>
+  <com>load addr 0x400030</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="A parameter read only at 0x1000 and 0x1004 is a pointer" min="4" max="4">bool page_leaf\(void \*a0,int4 a1\)</stringmatch>
@@ -150,4 +171,7 @@ c3
 <stringmatch name="A subscript of a bss table stays an integer" min="4" max="4">put_bss\(int8 a0,char a1\)</stringmatch>
 <stringmatch name="A subscript of a table linked into code stays an integer" min="3" max="3">get_code\(int8 a0\)</stringmatch>
 <stringmatch name="A subscript of a local table stays an integer" min="4" max="4">get_local\(int8 a0\)</stringmatch>
+<stringmatch name="An absolute address past 1 MiB outside every section is no field offset" min="1" max="1">read_reg\(int8 a0\)</stringmatch>
+<stringmatch name="A byte table indexed from a character just below its section stays an integer" min="1" max="1">letter_rank\(int8 a0\)</stringmatch>
+<stringmatch name="An index into the extern table of a relocatable object stays an integer" min="1" max="1">get_ext\(int8 a0\)</stringmatch>
 </decompilertest>
