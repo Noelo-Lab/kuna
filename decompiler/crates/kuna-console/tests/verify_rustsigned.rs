@@ -58,6 +58,7 @@ fn body(binary: &Path, name: &str) -> String {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn signed_byte_operators_match_native_values_and_effects() {
     let source = root().join("tests/fixtures/rust-signed-bytes/signed.rs");
     let native = common::scratch_file("rustsigned-native", "elf");

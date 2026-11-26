@@ -450,6 +450,113 @@ context bit, so stacked boolean comparisons collapse fully. `option
 truthycond off` restores upstream Ghidra's explicit comparisons, exercised
 by `tests/stages/kuna-cnorm-truthycond.xml`.
 
+The default value, `ptrchain`, makes one exception to the truthy form. When the
+comparison is itself an operand of a printed `&&` or `||` and the value it
+tests prints as a plain pointer variable, the comparison stays: `p && n`
+prints as `(p != NULL) && (n)` and `!p || !n` as `(p == NULL) || (!n)`. Source
+code spells a pointer test that way inside an `if`, ternary or returned chain
+more often than not. Integers, flags, stand-alone conditions such as `if (p)`
+and the chain that is a loop's condition keep the truthy form, because there
+the bare `while (p && ...)` is the common spelling. A second mod bit,
+`CHAIN_OPERAND`, marks the operand of the chain. It is set on each clause of a
+condition block (`printc.rs (PrintC::emit_block_condition)`, through
+`kuna_truthycond.rs (PrintC::mark_chain_operand)`, which covers the `if`,
+ternary and returned forms that print a chain) and on the operands of a
+`&&`/`||` operator inside one expression. The `for`, `while` and `do` emitters
+set a third bit, `LOOP_CONDITION`, while they print the loop's condition, and
+under it no operand is marked. `op_push_ir` keeps the bit only through the comparison
+itself, the branch that carries it and a `!` that is absorbed into the
+comparison. A printed `!`, any other operator and a clause that prints
+statements first (the comma form `(v = f(), !v)`) clear it, so only the direct
+operand of `&&`/`||` qualifies. `kuna_truthycond.rs
+(PrintC::bare_pointer_variable)` accepts a value that prints as a variable
+name and nothing else: not an expression, a constant, a partial or field
+access, an address-of form or a global. Its declared type must be a pointer.
+`option truthycond on` restores the truthy form everywhere. This value is
+exercised by `tests/stages/kuna-ptrchain.xml`.
+
+**Range tests (P9/`condition-form`, `option rangetest`).** An optimizing
+compiler folds the two comparisons `A <= x && x <= C` into one unsigned
+comparison of `x - A` against `C - A` (gcc's range-test folding, a
+`sub`/`lea` before `cmp`/`ja`), and `x < A || C < x` into its negation; a
+compiler also lowers a run of consecutive `case` labels sharing one body
+that way. The IR keeps the merged test, an `INT_LESS` or `INT_LESSEQUAL` of
+a constant and the subtraction (`INT_SUB` of the constant after
+`RuleAddUnsigned`, or `INT_ADD` of its negation), and upstream prints it as
+`(unsigned int)(x - A) <= B`. `RuleRangeMeld` never produces this form, since
+its `translate2Op` yields only one-sided comparisons, so every merged test
+in the output is the compiler's. Under `option rangetest`, whose default is
+`auto`, `printc.rs (PrintC::op_binary_ir)` prints the test as the two
+comparisons it stands for, `A <= x && x <= A + B`, or `x < A || A + B < x`
+for the negation, after the negate-token flip has settled which comparison
+prints. `kuna_rangetest.rs (orient)` reads the printed comparison as
+`t <= H` or `H < t` whichever side holds the constant.
+
+`kuna_rangetest.rs (PrintC::range_split)` splits only where the two
+comparisons give the merged test's truth value for every input, in the types
+the C prints. The test selects the `n`-bit values of `x` in `[A, A + H]`,
+which is one interval only when `A` is not zero and `A + H < 2^n`
+(`kuna_rangetest.rs (interval)`); a range that wraps, such as gcc's
+`(unsigned int)(x + 0x10) < 0x20` for `-16 <= x && x < 16`, keeps its
+merged form. Two C comparisons read `x`'s printed value. When the printed
+type is unsigned and `n` bits wide that value is the `n`-bit value itself.
+Otherwise, when `A + H < 2^(n-1)`, every value in the interval reads the
+same in either signedness and every other value falls outside it, negative
+or at least `2^(n-1)`, so the split is exact whatever C's promotions do
+(`kuna_rangetest.rs (exact)`). `kuna_rangetest.rs (PrintC::range_operand)`
+looks through the casts around the subtraction and, under it, through
+same-size casts, a zero extension when `A + H` fits the narrower value and a
+sign extension when it fits that value's non-negative half, and takes the
+deepest value whose printed type passes. It never takes a cast's own
+output, because `castimplied` can print a cast as its input, whose type is
+then the one C reads. An enum, pointer, float or boolean type keeps the
+merged form, as does a printed type of another width. The value prints
+twice, so it must print the same each time: a non-volatile variable, or an
+expression printed in place from copies, loads, extensions, pieces, pointer
+arithmetic and integer arithmetic within eight operations. The bound check
+of a switch stays merged: a test whose branch enters a block that ends in a
+computed jump, directly or through one block with a single exit
+(`kuna_rangetest.rs (branches_to_switch)`), or whose subtraction or value
+reaches a `BRANCHIND` within ten data-flow steps
+(`kuna_rangetest.rs (feeds_switch)`). ARM `tbb`/`tbh` dispatch prints such
+a check before its `switch`.
+
+The split prints its own `&&` or `||` where the comparison printed, so the
+operator stack parenthesizes it against an enclosing operator. One place has
+no enclosing operator to do that: the first clause of a printed `&&`/`||`
+chain, `printc.rs (PrintC::emit_block_condition)`, prints its branch with an
+empty stack, and its condition gets no parenthesis of its own when the chain
+is itself the second clause of another chain, where `COMMA_SEPARATE` is set.
+`emit_block_condition` names the chain's operator in `range_chain_head` while
+its first clause prints, and `kuna_rangetest.rs (PrintC::emit_range_split)`
+wraps a split in parentheses there when that operator binds tighter than the
+split's own, so `(x < A || C < x) && (y != 5)` keeps its grouping.
+
+`auto` splits everywhere except in two places, which the decbench corpus
+measured as the merged form's own (`kuna_rangetest.rs (PrintC::range_split_site)`).
+One is a loop's condition, where the printer has set `LOOP_CONDITION`. The
+other is a stand-alone condition, an `if` test that is not an operand of
+`&&`/`||`, whose range holds at most 16 values: a short run of values is more
+often a `switch` whose consecutive case labels share one body, or an
+`ISDIGIT`-style macro, than two comparisons the source wrote. `op_push_ir`
+records the print modifiers an unsigned comparison is reached with in
+`range_entry`, before its dispatch scopes them off; a comparison with
+`CONDITION_CONTEXT` and without `CHAIN_OPERAND` is a stand-alone condition. A
+returned or assigned test and an operand of `&&`/`||` split whatever their
+size. There is no separate rule for unoptimized code: gcc folds two
+comparisons at -O0 as well, and the case lists that print merged there are
+short. The 17-value threshold was chosen on one half of the decbench projects
+and checked on the other. Against `merged`, `auto` makes 50 more optimized
+functions (O2, no inlining) match the source's control flow exactly (54
+gained, 4 lost; +36 on the tuning half, +14 on the held-out half) and 12 more
+unoptimized ones (16 gained, 4 lost; +7 and +5), with no function lost or
+added. `split` splits every exact site and `merged` keeps the one
+comparison. The values are exercised by `tests/stages/kuna-rangetest.xml`
+and `tests/stages/kuna-rangetest-thumb.xml`, and
+`kuna-cli/tests/rangetest_round_trip.rs` compiles the printed C under gcc and
+clang at -O0 and -O2 and compares each function with its source at the
+boundary values.
+
 **Brace form (P9/`brace-form`, `option braceelide`).** A single-statement if
 body renders braceless with the statement indented on the next line (kuna
 default, DIV-38): `printc.rs (PrintC::emit_block_if)` consults
@@ -553,6 +660,13 @@ inline-rendered warnings still qualifies for `braceelide`. `option
 warnstyle banner` restores upstream Ghidra's full
 `/* WARNING: ... */` lines, exercised by
 `tests/stages/kuna-cnorm-warnstyle.xml`.
+
+The indirect-jump fallback warning belongs to the call operation that
+replaced the jump. `decompile_drive.rs (drain_pipeline_comments)` publishes
+it after simplification, ahead of the pipeline's own comments, for each
+bad-jump-table call that is still live. If analysis proves the path
+unreachable and removes that call, no warning is emitted for it, even when
+other operations from the same instruction survive.
 
 ## 9.1 Casts
 
@@ -1637,9 +1751,9 @@ and the shift reads it the same (`(unsigned int)v4 < 32u ? (unsigned int)1 << v4
 Which shifts carry the guard is option `armshiftguard`
 (`p9_emit/kuna_armshiftguard.rs (guard_needed)`). The guard is a `?:` that no
 source writes, so it costs a branch in the printed control flow of every
-firmware bit operation such as `1 << (pin & 0x1f)`. Under the default `needed`
-the planner first asks whether the count can reach 32 at all: its non-zero
-mask, the set of bits it may hold, is the engine's stored mask (chapter
+firmware bit operation such as `1 << (pin & 0x1f)`. The planner first asks
+whether the count can reach 32 at all: its non-zero mask, the set of bits it
+may hold, is the engine's stored mask (chapter
 [03](03-ssa-and-simplification.md), `ActionNonzeroMask`) intersected with the
 mask re-derived over its definition at print time
 (`kuna_boolbyte::value_mask`), so a Varnode created after the last mask pass is
@@ -1649,22 +1763,61 @@ binary-operator path, printing `x << n` like any other shift. This covers a
 count masked with `& 0x1f` or narrower, a field extracted by shift and mask
 (`(c & 0xfff) >> 8`), a remainder by 32 or less, a narrow zero-extended
 value, a left-shifted small field (`(c & 7) << 2`), a sum of disjoint or small
-masks, and a variable whose every reaching definition is one of these. A count
-the mask cannot bound keeps its guard, including a loop counter whose bound is
-only a branch and the double-word shift complement `(n - 0x20 & 0xff)` that a
-compiler's inline 64-bit shift relies on. `always` restores the guard on every
-qualifying shift; `never` drops it everywhere, printing the plain C shift
-`x << (n & 0xff)`. Under `never` a count that reaches 32 prints as undefined C
-instead of the machine's zero: for a source shift by a variable that is the
-same undefined behavior the source had, but for the low word of a compiler's
-inline 64-bit shift, whose complement count is out of range on every call, the
-printed C no longer computes the binary's value. The register-count right
-shifts (`LSR`/`ASR` by register, `INT_RIGHT`/`INT_SRIGHT` of the same
-`n & 0xff`) are not guarded under any value. The 12-byte reproduction and
-emitted-form checks are in `tests/stages/kuna-arm-register-shift.xml` (unbounded
-counts, so the default keeps them guarded); signed comparison and ASR consumers
-are in `tests/stages/kuna-arm-register-shift-signed.xml`; the three values on
-clang Thumb code (a masked count, a four-bit field, an unbounded count) are in
+masks, and a variable whose every reaching definition is one of these. Under
+`needed` that proof is the whole rule, and a count the mask cannot bound keeps
+its guard, including a loop counter whose bound is only a branch.
+
+Under the default `wide` an unbounded count also prints the plain shift
+`x << (n & 0xff)` unless it belongs to a lowered double-word shift
+(`p9_emit/kuna_armshiftwide.rs (double_word_count)`). Where the program wrote
+a 32-bit shift by a variable, the plain shift is undefined for exactly the
+counts the source's own shift was, so the guard adds a branch without adding
+a defined value. A 64-bit shift is different: 32-bit ARM has none, so gcc and
+clang inline one and libgcc's `__aeabi_llsl`, `__aeabi_llsr` and
+`__aeabi_lasr` implement one by shifting each word by the program's count `n`
+and by the complements `n - 32` and `32 - n` and ORing the pieces (gcc's left
+shift is `hi << n | lo << (n - 32) | lo >> (32 - n)` and `lo << n`). For half
+of all counts each complement is out of range, and `hi << n` and `lo << n`
+reach 32 whenever `n` does; the sequence computes the 64-bit result only
+because the machine yields 0 there. A register `ROR` lifts the same way, as
+`x >> s | x << (32 - s)`, with `32 - s` reaching 32 at a rotation by zero.
+`double_word_count` recognizes these counts by the complement itself. Each
+count's low byte is written as `coef * atom + add` modulo 256 (`affine_count`)
+by looking through copies, casts, zero and sign extensions, a low subpiece,
+an AND whose mask keeps the low byte, a constant sum or difference, negation,
+bitwise NOT, multiplication by a constant and a left shift by a constant
+below 8. The count is followed from its atom forward through the same steps,
+and through MULTIEQUALs in both directions, to every register shift (left or
+right) whose count is connected to it; a shift by a phi also counts as a
+shift by each phi input on that input's edge, so complements computed before
+a join (a label entered from two paths) or carried out of a loop whose first
+iteration was peeled into constants still meet. The count keeps its guard
+when some atom of that connected set is shifted by two counts with opposite
+coefficients whose constants sum to a multiple of 32: `n` and `32 - n`,
+`n - 32` and `32 - n`, `n - 0x21` and `0x21 - n` where a program's
+`1ULL << (n - 1)` folded its `- 1` into both complements, or `i * 4 - 0x20`
+and `i * -4 + 0x20` for a scaled count. Every left shift connected to such a
+pair keeps its guard, `n` itself included. A source shift by `n - 32` beside a
+shift by `n` (`flag << (shift - 32)` under `if (shift > 31)`) has no
+opposite-sign partner and prints unguarded. A walk that exceeds its budget
+keeps the guard. The recognition cannot see a 64-bit left shift whose high
+word is dead or whose low word is known zero, which leaves one word shift by
+`n` and nothing else, nor hand-written assembly that relies on the machine's
+0: both look like a 32-bit shift by a variable and print unguarded.
+
+`always` restores the guard on every qualifying shift; `never` drops it
+everywhere, the lowered 64-bit shift included, where the printed C no longer
+computes the binary's value. The register-count right shifts (`LSR`/`ASR` by
+register, `INT_RIGHT`/`INT_SRIGHT` of the same `n & 0xff`) are not guarded
+under any value, so the right shifts of a lowered 64-bit shift (`lo >> n`,
+`hi >> (n - 32)`, `lo >> (32 - n)`) already print as undefined C for the
+counts the machine maps to 0. The 12-byte reproduction and emitted-form
+checks are in `tests/stages/kuna-arm-register-shift.xml` (unbounded counts:
+the default prints them plain, a `needed` pass keeps them guarded); signed
+comparison and ASR consumers are in
+`tests/stages/kuna-arm-register-shift-signed.xml`; the four values on clang
+Thumb code (a masked count, a four-bit field, an unbounded count, and clang's
+inline 64-bit left and right shifts) are in
 `tests/stages/kuna-armshiftguard.xml`.
 
 **(kuna) Fixed ARM LSL with a signed operand in C.** A constant-count 32-bit
@@ -4368,6 +4521,34 @@ corpus. The ranges bound which constant addresses become `&dat_<addr>`; a
 lies, a GOT slot or an import address table entry included (*The declaration*
 below).
 
+In an address space whose unit is larger than a byte (CP1600 `ram`, the AVR
+and PIC code spaces), a constant can be a machine word index without being a C
+object address. An exact symbol match does not prove that an untyped or integer
+constant is a pointer there:
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs (is_pointer)`
+also requires address-use evidence in that space. Followed forward through at
+most three INT_ADD, COPY, INDIRECT or MULTIEQUAL steps
+(`coreaction_render.rs (search_for_space_attribute)`), the constant must become
+the address operand of a LOAD or STORE in that space, or reach a value whose
+pointer type names it. A CP1600 function declared to return `uint2` that
+returns 0x65a7 therefore prints `return 0x65a7;`, not `return (uint2)&cell;`.
+The pointer type inferred for the stack-base register (the cspec's stack
+pointer, CP1600 `R6`) is not an address use either. A constant COPYed into that
+register needs the same evidence when neither the constant nor the register is
+type-locked (`coreaction_render.rs (copies_to_inferred_stack_base)`). So a word
+index that a branch selects into `R6` and the function then returns as an
+integer keeps both numeric alternatives. Pointer-typed uses still resolve as
+addresses: the same function declared to return `uint2 *` prints
+`return &cell;`, and so does a constant passed to a declared pointer parameter,
+stored into a pointer-typed global, compared with a pointer, or held in `R6` and
+stored through. In both cases an exact function entry is still accepted, on the
+same two readings as the function-entry escape
+(`decompiler/crates/kuna-decomp/src/p5_types/kuna_inferfuncentry.rs
+(entry_escape_applies)`, applied by `coreaction_render.rs
+(lacks_word_address_use)`). A C function pointer on these targets is the
+entry's word address, so an AVR callback passed to an undeclared registration
+function keeps its name, and so does a function entry selected into `R6`.
+
 **What one function knows.** `kuna_globalref.rs (plan)` walks the function
 once when its document starts, and records three facts:
 
@@ -4928,16 +5109,31 @@ operations, for cosmetic cast suppression, and for other output languages.
 conversion serves explicit casts, COPY assignments, returns and typed STORE
 values. It uses the printed source type and requires a one-byte integer value
 and a one-byte Boolean destination. Enum values, nonintegers and inconsistent
-storage widths retain their existing handling. An implied call must have a
-compatible byte result in its call prototype or the verified scalar call-result
-conversion described below. Wider results must retain their
-separate narrowing operation: a byte extracted from a callback result becomes
-`callback() as u8 != 0`, not a comparison of the complete result. The expression
+storage widths retain their existing handling. An implied call takes its
+result type from its call prototype or the verified scalar call-result
+conversion described below and, when neither states one (or the prototype's
+output is `void`), from the callee's recovered return type. A Boolean result
+keeps the cast, which is valid Rust; a one-byte integer result prints
+`call() != 0`; any other result, unknown or wider, prints `call() as u8 != 0`,
+which tests the low byte the caller reads whatever the callee's printed return
+type is, where a bare `call() as bool` would not compile. Wider results must
+retain their separate narrowing operation: a byte extracted from a callback
+result becomes `callback() as u8 != 0`, not a comparison of the complete result. The expression
 also replaces the outer Boolean cast when the `boolbyte` SUBPIECE path inserts
 an intermediate unsigned-byte cast. Rust retains the intermediate cast even
 when the upper bits are proven zero, so both truncation forms yield a valid
 Boolean expression. The source is evaluated once, and the normal
-operator stack preserves surrounding Boolean and arithmetic precedence.
+operator stack preserves surrounding Boolean and arithmetic precedence. The
+comparison uses C's `!=` token, which keeps the parentheses around a bitwise
+operand (`(value as u8 & 0x55) != 0`), except directly under another
+comparison, where it takes Rust's own token: Rust comparisons do not chain, so
+`(f() != 0) != g` is parenthesised rather than printed as `f() != 0 != g`. A
+constant of Boolean type prints as `false` or `true` where what consumes it is
+Boolean too (`kuna_rustboolcast.rs (rust_boolean_constant)`): the return value
+of a function that returns `bool`, a declared `bool` variable a copy assigns
+(followed through implied copies), or the other side of `==` or `!=`. Elsewhere
+it keeps its integer spelling, because a merged variable can be declared at an
+integer type while one of its pieces is typed Boolean.
 Cosmetic cast suppression disables the conversion.
 C and Go emission are unchanged.
 

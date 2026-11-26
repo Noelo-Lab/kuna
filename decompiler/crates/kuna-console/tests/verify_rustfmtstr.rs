@@ -273,6 +273,7 @@ fn every_live_string_and_argument_word_is_required() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn unchanged_string_macros_reproduce_native_streams_and_panic_payloads() {
     use crate::common;
     use std::process::Command;

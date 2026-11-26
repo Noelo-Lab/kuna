@@ -26,7 +26,7 @@ use kuna_base::types::{int4, int8, uint4, uintb};
 
 use kuna_num::opcodes::OpCode;
 
-use crate::dtype::TypeFactory;
+use crate::dtype::{TypeFactory, type_metatype};
 use crate::funcdata::Funcdata;
 use crate::op::pcodeop_flags;
 use crate::context::{OpId, TypeOp, VarnodeId};
@@ -45,8 +45,12 @@ impl Funcdata {
     /// it is the input it is typed as a pointer to the space.  A base register
     /// that is **already** marked and is defined by `INT_ADD` is split so a stale
     /// multi-descendant chain doesn't block promotion (`splitUses`).
+    ///
+    /// An explicitly typed integer input at the exact SP storage is not a
+    /// synthetic frame base.
     pub fn spacebase(&mut self) {
         let numspaces = self.get_arch().manage().num_spaces();
+        let stack_index = self.get_arch().manage().get_stack_space().map(|spc| spc.get_index());
         for j in 0..numspaces {
             let spc = match self.get_arch().manage().get_space(j) {
                 Some(s) => Rc::clone(s),
@@ -64,6 +68,27 @@ impl Funcdata {
                 };
                 let point_size = point.size as int4;
                 let point_addr = Address::new(point_space, point.offset);
+
+                if stack_index == Some(spc.get_index()) {
+                    let proto = self.get_func_proto();
+                    if proto.has_store()
+                        && (0..proto.num_params()).any(|slot| {
+                            proto.get_param(slot).is_some_and(|param| {
+                                param.is_type_locked()
+                                    && param.get_size() == point_size
+                                    && param.get_address() == point_addr
+                                    && param.get_type().is_some_and(|ty| {
+                                        matches!(
+                                            ty.get_metatype(),
+                                            type_metatype::TYPE_INT | type_metatype::TYPE_UINT
+                                        )
+                                    })
+                            })
+                        })
+                    {
+                        continue;
+                    }
+                }
 
                 // Datatype *ct = glb->types->getTypeSpacebase(spc, getAddress());
                 // Datatype *ptr = glb->types->getTypePointer(point.size, ct, wordsize);

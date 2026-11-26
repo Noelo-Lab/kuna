@@ -277,6 +277,7 @@ fn panic_recovery_requires_no_return_and_exact_argument_count() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn recovered_panics_match_native_payloads() {
     use crate::common;
     use std::collections::BTreeMap;

@@ -238,3 +238,29 @@ fn msvc_gate_picks_one_reading_of_an_msvc_name() {
     assert_eq!(on[1].model, Some("__thiscall"));
     assert!(on[1].msvc && !on[0].msvc);
 }
+
+/// A pointee named by a type the program already defines points at that
+/// definition. An Android image holds the NDK's complete `_JNIEnv`, which an
+/// opaque shell of the same name could not replace, and declining the shell
+/// once dropped every C++ helper that takes a `JNIEnv *`.
+#[test]
+fn a_held_aggregate_is_the_pointee() {
+    let types = kuna_decomp::dtype::TypeFactoryImpl::new();
+    types.set_default_alignment_map();
+    types.set_max_basetype_size(8);
+    types.setup_sizes(Some(8), 8, 4);
+    types.set_core_type("char", 1, type_metatype::TYPE_INT, true).unwrap();
+    types.cache_core_types().unwrap();
+    let shell = types.get_type_struct("_JNIEnv").unwrap();
+    let word = types.get_base(8, type_metatype::TYPE_UINT).unwrap();
+    let field = kuna_decomp::dtype::TypeField::new(0, 0, "functions", word);
+    let env = types
+        .set_fields_struct_raw(&shell, vec![field], Vec::new(), 8, 8, 0)
+        .unwrap();
+    let d = decl("_Z6pbkdf2P7_JNIEnvP7_jclassP11_jbyteArrayS4_iii");
+    let pieces = build_pieces(&d, false, &types, 8, 1).expect("the signature is kept");
+    assert_eq!(pieces.intypes.len(), 7);
+    assert!(Rc::ptr_eq(&pieces.intypes[0].get_ptr_to().unwrap(), &env));
+    let class = pieces.intypes[1].get_ptr_to().unwrap();
+    assert!(class.is_incomplete() && class.get_name() == "_jclass");
+}

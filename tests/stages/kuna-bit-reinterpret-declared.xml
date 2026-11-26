@@ -14,6 +14,8 @@
 <symbol space="ram" offset="0x1050" name="s_ternary"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>parse line extern void clampg(float4 a, float4 b);</com>
   <com>parse line extern float4 s_select(uint4 x, float4 y);</com>
   <com>parse line extern float8 s_ternary(int4 c, uint8 a, uint8 b);</com>

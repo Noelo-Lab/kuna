@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_245() {
-    assert_eq!(kuna_num_settables(), 245);
-    assert_eq!(SETTABLE_TABLE.len(), 245);
+fn settable_count_is_247() {
+    assert_eq!(kuna_num_settables(), 247);
+    assert_eq!(SETTABLE_TABLE.len(), 247);
 }
 
 #[test]
-fn tier_counts_are_50_core_132_transform_63_analysis() {
+fn tier_counts_are_50_core_133_transform_64_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,8 +74,7 @@ fn tier_counts_are_50_core_132_transform_63_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    // +1 transform for `deobfuscate` (the deobfuscation plane's technique list).
-    assert_eq!((core, transform, analysis), (50, 132, 63));
+    assert_eq!((core, transform, analysis), (50, 133, 64));
 }
 
 #[test]
@@ -470,6 +469,7 @@ fn option_values_live_value_present_for_78() {
         // read at the analysis COMMIT boundary (console-side via kuna_live_value),
         // like the analysis-pass gates above. Default-on, ELF-only.
         "itaniumrtti",
+        "jniregister",
         // (kuna `lazyfuncs`) The deferred entry commit -- read console-side at
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
@@ -606,9 +606,13 @@ fn option_values_live_value_present_for_78() {
                             // `Architecture::arm_constant_shift`.
                             | "armconstshift"
                             // (kuna) `armshiftguard` takes a MODE
-                            // (`always|needed|never`) over an enum field; its
+                            // (`always|needed|wide|never`) over an enum field; its
                             // live value is `Architecture::arm_shift_guard`.
                             | "armshiftguard"
+                            // (kuna) `rangetest` takes a MODE
+                            // (`merged|split|auto`) over an enum field; its
+                            // live value is `Architecture::range_test`.
+                            | "rangetest"
                             // (kuna) `constselectjump` takes a MODE
                             // (`off|reentry|on`) over an enum field, for the
                             // same reason.  Its live value is
@@ -717,6 +721,10 @@ fn option_values_live_value_present_for_78() {
                             // `warnstyle` and `int3pad` are here.  Its live
                             // value is `Architecture::signedness`.
                             | "signedness"
+                            // (kuna) `boolbranch` takes `fold|keep|return`
+                            // over two fields; its live value is read from
+                            // `Architecture::bool_ret` and `bool_branch_keep`.
+                            | "boolbranch"
                     ) || PASS_GATES.contains(&st.option),
                     "unexpected option with no live reader: {}",
                     st.option
@@ -899,7 +907,8 @@ fn option_values_live_value_present_for_78() {
     // +1 for `bytestorewidth` (live_field = byte_store_width).
     // +1 for `varargsave` (live_field = vararg_save).
     // +1 for `boolbranch` (live_field = bool_branch_keep).
-    assert_eq!(with_live, 90);
+    // -1: `boolbranch` became three-valued (fold|keep|return) with no `live_field`.
+    assert_eq!(with_live, 89);
 }
 
 #[test]
@@ -1165,8 +1174,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 each for `swifthelpers` and `valuewitness`.
     // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
     // +1 for `boolbranch`; its P3 row sits after `bytestorewidth`.
-    // +1 for `deobfuscate`; its P2 row sits beside `loweredswitch`.
-    assert_eq!(json.matches("},\n").count(), 244);
+    assert_eq!(json.matches("},\n").count(), 246);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

@@ -124,6 +124,12 @@ pub struct FuncResult {
     /// every error record, and on every run that did not ask for it
     /// ([`DecompileOptions::want_callee_hints`]).
     pub callee_hints: Vec<u64>,
+    /// (kuna `coverage`) The bytes of every instruction the decompile decoded
+    /// for this function, in the units of `address`
+    /// ([`crate::kuna_coverage::output_ranges`]): the body [`size`](Self::size)
+    /// only bounds. Kept when the C fails to render; empty when the decompile
+    /// itself failed or never ran.
+    pub ranges: Vec<(u64, u64)>,
     /// (kuna `structsynth`) What this decompile asked the synthesized-structure
     /// ledger, recorded only by a `--jobs` worker whose architecture carries the
     /// shard hook, so the parent can name every `struct_N` as the serial run
@@ -602,6 +608,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -642,6 +649,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -670,6 +678,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -981,6 +990,7 @@ pub fn decompile_pulled(
                 drop(budget);
                 prog.arch_mut().print_mut().restore_line_size(line_size);
                 fd.set_display_name(&original_display);
+                let ranges = crate::kuna_coverage::output_ranges(prog, &fd);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
@@ -1015,6 +1025,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints,
+                        ranges,
                         synth: None,
                         pointerargs,
                         warnings,
@@ -1041,6 +1052,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints: Vec::new(),
+                        ranges,
                         synth: None,
                         pointerargs: None,
                         warnings: Vec::new(),
@@ -1068,6 +1080,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -2415,6 +2428,7 @@ mod tests {
             aliases: vec![],
             object_location: None,
             callee_hints: vec![],
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),

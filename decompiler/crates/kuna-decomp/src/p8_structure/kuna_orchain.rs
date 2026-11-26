@@ -79,17 +79,59 @@ pub const ELEM_ORCHAIN: ElementId = ElementId::new("orchain", 4136);
 /// `CollapseStructure::rule_block_or` would perform on this CFG — i.e. the blocks a
 /// `returndup` split must leave shared.  See the module header for the predicate.
 pub(crate) fn shortcircuit_shared_targets(data: &Funcdata) -> BTreeSet<BlockId> {
-    let mut shared: BTreeSet<BlockId> = BTreeSet::new();
+    let (mut shared, _) = replay(data);
     let nbb = data.bblocks_get_size();
     if nbb < 3 {
         return shared;
+    }
+
+    // The value-materialisation join.  Before the constants are propagated into the
+    // epilogue phi, a chain's two terminal arms are not the RETURN block itself but
+    // one bare `v = K` block each (`COPY` + `BRANCH`, one out-edge), and the RETURN
+    // block sits one edge further on.  It is the *first* `returndup` invocation of the
+    // schedule's fullloop that sees that graph, and splitting there separates the two
+    // arms of the 0/1 select the source wrote as a single expression — the diamond
+    // `iteboolean`/`iteregion` re-roll — before the second invocation can decline
+    // anything.  So a block joining two or more single-exit arms that are themselves
+    // shared fold targets is protected as well.
+    let joins: Vec<BlockId> = (0..nbb)
+        .map(|i| data.bblocks_get_block(i))
+        .filter(|&u| {
+            let blk = data.bblocks_ref().block(u);
+            blk.size_in() > 1
+                && (0..blk.size_in())
+                    .map(|k| blk.get_in(k))
+                    .filter(|t| {
+                        shared.contains(t) && data.bblocks_ref().block(*t).size_out() == 1
+                    })
+                    .count()
+                    > 1
+        })
+        .collect();
+    shared.extend(joins);
+    shared
+}
+
+/// (kuna `retshape`) Each block's in-degree once every fold the replay finds
+/// is made: a block whose in-edges all come from one short-circuit chain has
+/// one left.
+pub(crate) fn folded_in_degree(data: &Funcdata) -> BTreeMap<BlockId, int4> {
+    replay(data).1
+}
+
+/// The fold replay: the shared out-targets and the in-degrees it leaves.
+fn replay(data: &Funcdata) -> (BTreeSet<BlockId>, BTreeMap<BlockId, int4>) {
+    let mut shared: BTreeSet<BlockId> = BTreeSet::new();
+    let mut indeg: BTreeMap<BlockId, int4> = BTreeMap::new();
+    let nbb = data.bblocks_get_size();
+    if nbb < 3 {
+        return (shared, indeg);
     }
 
     // Condition nodes, keyed by the block that heads them: a fold rewrites the head's
     // out-targets in place and kills the absorbed node, which is how a whole chain
     // collapses onto its leftmost operand.
     let mut outs: BTreeMap<BlockId, [BlockId; 2]> = BTreeMap::new();
-    let mut indeg: BTreeMap<BlockId, int4> = BTreeMap::new();
     let mut dead: BTreeSet<BlockId> = BTreeSet::new();
     for i in 0..nbb {
         let b = data.bblocks_get_block(i);
@@ -163,32 +205,7 @@ pub(crate) fn shortcircuit_shared_targets(data: &Funcdata) -> BTreeSet<BlockId> 
             break;
         }
     }
-
-    // The value-materialisation join.  Before the constants are propagated into the
-    // epilogue phi, a chain's two terminal arms are not the RETURN block itself but
-    // one bare `v = K` block each (`COPY` + `BRANCH`, one out-edge), and the RETURN
-    // block sits one edge further on.  It is the *first* `returndup` invocation of the
-    // schedule's fullloop that sees that graph, and splitting there separates the two
-    // arms of the 0/1 select the source wrote as a single expression — the diamond
-    // `iteboolean`/`iteregion` re-roll — before the second invocation can decline
-    // anything.  So a block joining two or more single-exit arms that are themselves
-    // shared fold targets is protected as well.
-    let joins: Vec<BlockId> = (0..nbb)
-        .map(|i| data.bblocks_get_block(i))
-        .filter(|&u| {
-            let blk = data.bblocks_ref().block(u);
-            blk.size_in() > 1
-                && (0..blk.size_in())
-                    .map(|k| blk.get_in(k))
-                    .filter(|t| {
-                        shared.contains(t) && data.bblocks_ref().block(*t).size_out() == 1
-                    })
-                    .count()
-                    > 1
-        })
-        .collect();
-    shared.extend(joins);
-    shared
+    (shared, indeg)
 }
 
 /// The CFG predecessors of `b` (the raw bblocks in-edges — a superset of the

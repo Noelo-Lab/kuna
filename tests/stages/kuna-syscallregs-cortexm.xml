@@ -34,6 +34,8 @@ eff3148010f0010f1abf002002df012070470020
 <symbol space="ram" offset="0x8564" name="xPortRaisePrivilege"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>lo fu xPortRaisePrivilege</com>
   <com>decompile</com>
   <com>print C</com>

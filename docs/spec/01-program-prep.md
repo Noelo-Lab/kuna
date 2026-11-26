@@ -338,9 +338,31 @@ and treats FP ANY as unspecified. Call recovery uses the same evidence, includin
 in images without section headers. Non-Octeon target selection is unchanged.
 Octeon III accepts the VZ capability declaration emitted by its compiler;
 this does not assert that every privileged VZ instruction is modeled.
-Octeon N32/N64 selection does not intercept ELF32 O32 images, including
+Octeon selection does not intercept ELF32 O32 or EABI images, including
 little-endian images carrying Octeon machine flags: they retain generic MIPS
-selection, and an explicit target still takes precedence.
+selection, and an explicit target still takes precedence. A big-endian ELF32
+image that is not N32 and declares O64, or no ABI at all, with the original
+Octeon machine tag and the MIPS64r2 ISA selects `MIPS:BE:64:octeon-32addr:o64`,
+the only Octeon O64 model, so `bbit`, `seq`, `cins`, `exts` and the 64-bit
+loads and stores decode and the fifth integer argument comes from the stack
+slot at SP + 32. Without an ABI declaration the evidence for O32 is
+`EF_MIPS_32BITMODE`, which GNU as writes for O32 code on a 64-bit ISA, an
+ABI-flags record with 32-bit GPRs, or a GCC `.mdebug.abi*` marker section
+naming another ABI; an image with none of them, including one without section
+headers, has 64-bit registers, which O32 never declares, and is taken as O64.
+That is the assumption the generic selector already makes for a no-ABI ELF32
+image with a 64-bit ISA, with the same note, and `--target` overrides it. The
+original Octeon has no FPU, so an image without a float declaration is taken
+as soft-float; with no GNU attribute or
+ABI-flags record, the header's FP64, NaN2008 or legacy hard-float bit is that
+declaration. An ABI-flags record must declare what the N32/N64 path requires
+of a soft-float profile, with the Octeon ISA extension or none. Such an image
+that instead declares hard float, 32-bit registers, another ISA or ISA
+extension, another ABI in its `.mdebug.abi*` marker (`.mdebug.abiO64`
+agrees), Octeon Plus or a later Octeon generation (none has an O64 model), or
+is little-endian keeps the generic selection it had before, and a note gives
+the reason and, for a big-endian image, the explicit Octeon O64 target. Only
+the machine tag identifies these images: an ISA extension alone does not.
 
 (kuna) A RISC-V ELF whose `Tag_RISCV_arch` attribute lists `zcmp` or `zcmt`
 selects the `RISCV:LE:32:Zcmp` or `RISCV:LE:64:Zcmp` language
@@ -2350,19 +2372,37 @@ funcsym stream:
   and table reads per code word; an image that exhausts it gets no PIC names. Both byte orders
   are supported. Off keeps PIC stubs unresolved; BSS-PLT and absolute stubs
   are unaffected. In the console, set the option before `load file`; CLI
-  options are bridged before either loader runs. The `abi` mode is opt-in because
-  the proof walks every function:
+  options are bridged before either loader runs. The `abi` mode is off in the
+  catalog default because the proof walks every function:
   about 0.15-0.3 s for libstdc++ or libc, which makes listing a PPC32 PIC
   image's functions about 1.05-1.35x slower and a single-function decompile
   of a large library up to 2.9x. A meet updates the stored state in place and
   reports whether it changed, and a stub is found from any byte it covers by
   one hash lookup.
-  The default path and other formats pay nothing, and the proof runs once per
-  image content. Resolved PPC32 import names take
+  The `aggressive` preset sets `abi`, and `auto` selects that preset for files
+  under 500 KiB, so a small PPC32 PIC image gets the names without the option;
+  larger files and the catalog default keep `off`. A front end applies the
+  preset's `abi` before it loads the image, the browser restoring the
+  load-option environment afterwards; the console's `mode` on an open image
+  sets it for the next `load file` and keeps the live mode, and the Ghidra
+  preset layer skips it. `kuna xrefs` loads under `reliable` unless `--mode`
+  names another preset, so it names these imports only with `--mode
+  aggressive` or the option. Other formats pay nothing,
+  and the proof runs once per image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
   prototypes, no-return facts and name-based xrefs therefore see the same
   imported identity, including when a terminal call has no mapped fall-through
   bytes. This does not add a sectionless PPC32 resolver.
+  A CLI run that leaves the option short of `abi` (by `--option`, its mode
+  preset or `KUNA_PPC32PICIMPORTS`) on an image whose `.plt` holds validated
+  slots and whose code has r30-relative stubs says so in a `ppc32-pic-imports`
+  note, counted by
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (pic_stub_count)`.
+  The count is of complete stub shapes, so `abi` may name fewer. The note
+  reads the 20-byte ELF header first and goes no further unless it is ELF32
+  `EM_PPC`; it then resolves the mode the subcommand loads under (`xrefs`
+  defaults to `reliable`, the others to `auto`). `strings` and `read`,
+  which print no import names, get no note.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
@@ -3006,6 +3046,30 @@ is alignment padding, 694 of 1,093 functions; MSVC lays a switch table out after
 its function in `.text`, and ARM a literal pool, both bytes of the function), and
 another raw language would need its own table and literal-pool readers.
 
+(kuna `coverage`) **A decompile reports the exact body beside the bound**
+(always on; `decompiler/crates/kuna-console/src/kuna_coverage.rs (output_ranges)`).
+The flow records the bytes of every instruction it decodes for a function, delay
+slots included (§2, `decoded_ranges`), so a decompile knows its function's body,
+code it goes on to prove dead included. Mapped to the target's address units as
+`line_mappings` is, the ranges ride `FuncResult::ranges` across the `--jobs` wire
+and the result store. A function whose C failed to render keeps its ranges, since
+it was decoded; a function whose decompile failed has none. Over a batch,
+`Code::measure_results` sets those ranges against the bytes the image holds for the
+CODE spans the extent clip uses: the section table, or else the executable load
+segments. The spans are snapshotted, a bit per byte for whether it is NUL, before a
+`--jobs` parent drops its program. The measure gives three counts:
+
+- the bytes some function lifted;
+- the bytes covered by a function that decompiled without an error;
+- the NUL bytes no function lifted.
+
+The NUL bytes are alignment fill or a zero-filled tail far more often than code, so
+they are left out of the total a share is taken of. Only bytes inside the spans
+count, so a block lifted outside them, such as an `--addr` into data, adds nothing.
+`decompile-all --json --coverage` reports the measure as `coverage`, and a
+whole-binary project export's completion line reports its two shares. Nothing here
+changes what is decompiled or printed.
+
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name
 resolves at flow time. A PE Import Address Table slot and a Mach-O symbol-pointer
@@ -3290,6 +3354,36 @@ it could not reach a decode: `strings --no-xrefs` walks no references, so pairin
 the two is a usage error.
 
 ## 1.4 Metadata analyzers
+
+Android ELF images with an Android identification note or an Android dynamic
+linker use the Android NDK r30 JNI declarations on AArch64, ARM, x86-64 and
+i386. The public C layout describes calls made from both C and C++. Each
+JNIEnv and JavaVM function pointer occupies its NDK-defined slot at the
+target pointer width. The types preserve the JNI scalar and reference names,
+the jvalue union, and the target ABI for variadic and va_list calls. The
+loader binds the NDK's named functions to actual definitions and imports.
+The header and its ABI verification are maintained with
+`scripts/gen_android_jni.py`. An installed Kuna uses the embedded declarations.
+
+`jniregister` is on by default. Starting with the JavaVM supplied to
+JNI_OnLoad, a bounded instruction walk follows the environment through
+GetEnv or AttachCurrentThread and the class through FindClass. At a proven
+RegisterNatives call it resolves the constant table and count, checks the
+relocated name and descriptor and the executable implementation address, and
+binds each unambiguous Java method at that address. The walk stays inside
+JNI_OnLoad, so a registration made by a helper it calls is not recovered. A
+table, or a class, name or descriptor string, that the walk stores into or
+whose address it passes to code it does not model is not read from the image,
+because its contents may differ at run time. The entries are available
+to function enumeration and to single-function decompilation in a fresh
+process. A managed reference in the descriptor establishes the ordinary JNI
+ABI. A descriptor consisting entirely of primitives can also describe an
+Android critical native method, so the recovered name alone does not fix its
+native parameter list. An ordinary method's second implicit parameter is a
+generic object reference until the static/instance distinction is known.
+A JNI long export with a reference argument supplies input types while its
+return is recovered from code. A short export name alone supplies neither the
+Java descriptor nor the static/instance flag.
 
 The always-on core, in pass order (`passes.rs (passes_for)`):
 
@@ -5080,7 +5174,9 @@ moves.
   to a pointer of any depth, a primitive (at its LP64/ILP32 width and with the
   sign C++ gives it, so `char16_t` is `unsigned short`), or — as a POINTEE only —
   a named opaque structure carrying the bare innermost class name (upstream's
-  placeholder structure). An aggregate passed **by value**, an array, a function pointer, a
+  placeholder structure). A struct or union the program's types already hold under
+  that name is the pointee instead, so an Android image's C++ helper that takes a
+  `_JNIEnv *` points at the NDK's `_JNIEnv`. An aggregate passed **by value**, an array, a function pointer, a
   pointer-to-member or an overloaded operator refuses the whole signature: the
   mangling carries no layout, and a wrong width shifts every following parameter.
   The **return type is deliberately not applied**. Itanium encodes one only for a
@@ -7615,10 +7711,23 @@ and x86 images this removes 492 starts, every one inside a sized symbol, and add
 none. A stripped shared object
 keeps the sizes of its exported functions in `.dynsym`, and those filter the same
 way; an image with no sized function symbol (a fully stripped executable, Mach-O)
-is unchanged. The rule trusts the size: a symbol-less routine that hand-written
-assembly places inside another function's `.size`, and that only a data pointer
-reaches, loses its pattern start. One with an FDE or a direct call is still found
-by those passes.
+is unchanged. A PowerPC64 ELFv1 symbol names a function descriptor in `.opd` and states
+the size of the code, so its extent starts at the descriptor's validated code word; a
+descriptor symbol whose word does not validate gives none. Where a sized symbol at the
+code word states its own size, as the `.name` symbols of the dot-symbol ABI (GCC's
+`-mcall-aixdesc`, GMP's assembly) do, the descriptor symbol states the descriptor's 24
+bytes and is left out. A function whose code is itself 24 bytes is filtered like any
+other; so is a dot-symbol function whose `.name` symbol a stripped image did not keep,
+which under-protects a longer one and lets the descriptor's 24 bytes cover what follows a
+shorter one. The Listing walk is not seeded with the code behind ELFv1 symbols, so a call
+an exported body makes, or a descriptor with no symbol, may be seen by nothing but the
+guesses the rule drops: a start that the code word of a descriptor at any aligned
+`.opd` word names, or that a `bl` in executable code targets, is kept
+(`entry/mod.rs (elfv1_named_starts)`). The rule trusts the size: a symbol-less routine
+that hand-written assembly places inside another function's `.size`, and that only a
+data pointer reaches, loses its pattern start, as does one behind an ELFv1 descriptor
+symbol that states more than its code, such as 24 or 16 bytes for 8, with no `.name`
+symbol beside it. One with an FDE or a direct call is still found by those passes.
 
 **LSDA landing pads** (`eh_frame_full`, default-off): the deeper
 `GccExceptionAnalyzer` markup — follow each FDE's CIE `L` augmentation to its

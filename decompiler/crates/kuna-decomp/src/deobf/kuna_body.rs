@@ -216,11 +216,26 @@ pub fn restructure_settled(fd: &Funcdata) -> bool {
     fd.kuna_body().policy.restructure_after_deadcode && !fd.is_high_on() && fd.get_heritage_pass() == fd.deadcode_settled_pass()
 }
 
-/// Record the blocks whose branch a structuring of the body negated, so the
-/// next structuring can start from the emitted orientation.
+/// Before `ActionBlockStructure` structures `fd`: drop a structure of the body
+/// that [`restructure_settled`] says to build again, and put the branches back
+/// in the orientation the emitter chose ([`unflip_structure`]).  The action's
+/// own second tries are taken from the orientation this leaves.
+pub fn begin_structure(fd: &mut Funcdata) {
+    if fd.sblocks_get_size() != 0 {
+        if !restructure_settled(fd) {
+            return;
+        }
+        fd.sblocks_clear();
+    }
+    unflip_structure(fd);
+}
+
+/// Record the blocks whose branch the structuring of the body negated, so the
+/// next one can start from the emitted orientation.  A second try, which the
+/// action takes from the orientation of the first, replaces the record.
 pub fn record_structure_flips(fd: &mut Funcdata, flips: &[BlockId]) {
     if fd.kuna_body().policy.restructure_after_deadcode {
-        fd.kuna_structure_flips_mut().extend_from_slice(flips);
+        *fd.kuna_structure_flips_mut() = flips.to_vec();
     }
 }
 

@@ -422,15 +422,41 @@ impl KunaRegionIdentifier {
         // borrowing `self` for the node pool / region pool (the C++ keeps both
         // as members; Rust's borrow checker needs the explicit split).
         let mut g = std::mem::take(&mut self.work_graph);
-        self.pick_connected_component(&mut g); // RI _pick_one_connected_component
-        self.make_supergraph(&mut g)?; // RI _make_supergraph
-        self.start_node = Some(self.get_start_node(&g)?); // RI l.121
-        self.compute_node_order(&g)?; // RI l.122
+        self.prepare(&mut g)?;
         let top = self.make_regions(&mut g)?; // RI l.123
         self.work_graph = g;
         self.top_region = Some(top);
         self.build_regions_by_block_addrs(); // RI l.126
         Ok(top)
+    }
+
+    /// Run only the loop half of [`compute`](Self::compute): the cyclic regions
+    /// [`cyclic_loops`](Self::cyclic_loops) reads.  The acyclic regions `compute`
+    /// goes on to build inside and around them only wrap existing nodes, so they
+    /// leave each loop's head address, leaf blocks and successors as they are.
+    /// The identifier has no top region afterwards.
+    pub fn compute_cyclic(&mut self) -> KunaResult<()> {
+        if self.computed {
+            return Ok(());
+        }
+        self.computed = true;
+        if self.work_graph.num_nodes() == 0 {
+            return Err(KunaError::lowlevel("kuna regionid: empty input graph"));
+        }
+        let mut g = std::mem::take(&mut self.work_graph);
+        self.prepare(&mut g)?;
+        self.make_cyclic_regions(&mut g)?;
+        self.work_graph = g;
+        Ok(())
+    }
+
+    /// RI l.119-122: one connected component, the supergraph, the start node and
+    /// the node order.
+    fn prepare(&mut self, g: &mut KunaRegionGraph) -> KunaResult<()> {
+        self.pick_connected_component(g); // RI _pick_one_connected_component
+        self.make_supergraph(g)?; // RI _make_supergraph
+        self.start_node = Some(self.get_start_node(g)?); // RI l.121
+        self.compute_node_order(g) // RI l.122
     }
 
     /// Result (None before compute) (C++ `getTopRegion`).
@@ -1357,8 +1383,9 @@ impl KunaRegionIdentifier {
         Ok(region_id)
     }
 
-    /// RI `_make_regions` (l.435) (C++ `makeRegions`).
-    fn make_regions(&mut self, g: &mut KunaRegionGraph) -> KunaResult<RegionPayloadId> {
+    /// The cyclic phase of RI `_make_regions` (l.435): make the loop regions until
+    /// no loop header is left.
+    fn make_cyclic_regions(&mut self, g: &mut KunaRegionGraph) -> KunaResult<Vec<RegionPayloadId>> {
         let mut structured_loop_headers: BTreeSet<KunaNodeId> = BTreeSet::new(); // Membership only
         let mut new_regions: Vec<RegionPayloadId> = Vec::new();
 
@@ -1430,6 +1457,13 @@ impl KunaRegionIdentifier {
                 break;
             }
         }
+        Ok(new_regions)
+    }
+
+    /// RI `_make_regions` (l.435) (C++ `makeRegions`).
+    fn make_regions(&mut self, g: &mut KunaRegionGraph) -> KunaResult<RegionPayloadId> {
+        let guard_max = kuna_guard_cap(g.num_nodes());
+        let new_regions = self.make_cyclic_regions(g)?;
 
         // Acyclic phase: process each cyclic region's body, then the residual
         // graph (RI l.484 wraps the residual graph in a top-level GraphRegion;
@@ -2472,6 +2506,45 @@ mod tests {
         let got = sorted(&col.addrs);
         for i in 0..4 {
             assert_eq!(got[i], (i + 1) as uintb);
+        }
+    }
+
+    /// The cyclic loops of a synthetic graph with blocks `1..=n` and `edges`,
+    /// from the full analysis or from its loop half alone.
+    fn loops_of(n: uintb, edges: &[(uintb, uintb)], cyclic_only: bool) -> Vec<(uintb, Vec<uintb>, Vec<uintb>)> {
+        let mut ri = KunaRegionIdentifier::new();
+        let ids: Vec<KunaNodeId> = (1..=n).map(|a| ri.add_synthetic_block(a)).collect();
+        for &(a, b) in edges {
+            ri.add_synthetic_edge(ids[a as usize - 1], ids[b as usize - 1]);
+        }
+        if cyclic_only {
+            ri.compute_cyclic().unwrap();
+        } else {
+            ri.compute().unwrap();
+        }
+        let mut out: Vec<_> = ri
+            .cyclic_loops()
+            .into_iter()
+            .map(|l| (l.head_addr, l.body.into_iter().collect(), l.exits.into_iter().collect()))
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn regionid_cyclic_only_matches_full() {
+        let graphs: &[(uintb, &[(uintb, uintb)])] = &[
+            // Nested loops, a diamond in the inner one.
+            (8, &[(1, 2), (2, 3), (3, 4), (3, 5), (4, 6), (5, 6), (6, 3), (6, 7), (7, 2), (7, 8)]),
+            // A loop with a break to a block outside it and an if-else in the body.
+            (9, &[(1, 2), (2, 3), (2, 9), (3, 4), (3, 8), (4, 5), (4, 6), (5, 7), (6, 7), (7, 2), (8, 9)]),
+            // Two loops in sequence, each with a two-way body.
+            (10, &[(1, 2), (2, 3), (2, 4), (3, 5), (4, 5), (5, 2), (5, 6), (6, 7), (7, 8), (7, 9), (8, 6), (9, 6), (6, 10)]),
+        ];
+        for &(n, edges) in graphs {
+            let full = loops_of(n, edges, false);
+            assert!(!full.is_empty());
+            assert_eq!(loops_of(n, edges, true), full);
         }
     }
 

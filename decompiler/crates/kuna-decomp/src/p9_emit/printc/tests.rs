@@ -1441,6 +1441,8 @@ fn option_defaults_match_reset_defaults_printc() {
     // (kuna) DIV-37: boolean-context zero comparisons render in truthy form
     // (`option truthycond off` restores the explicit comparisons).
     assert!(o.truthy_cond);
+    // (kuna `truthycond ptrchain`) pointer operands of && / || keep their comparison.
+    assert!(o.truthy_ptr_chain);
     // (kuna) DIV-38: single-statement if bodies drop their braces
     // (`option braceelide off` restores the braced form).
     assert!(o.brace_elide);

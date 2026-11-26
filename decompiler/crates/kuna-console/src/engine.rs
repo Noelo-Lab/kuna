@@ -933,6 +933,12 @@ impl ConsoleProgram {
         }
     }
 
+    /// How many bytes one target address unit is: the code space's word size on
+    /// a raw image, else 1.
+    pub fn code_unit_bytes(&self) -> u64 {
+        self.raw_address_units.map_or(1, |(word_size, _)| word_size)
+    }
+
     /// Resolve a function entry address by symbol name (the `queryFunction`
     /// hook): scan the binaryimage symbols read at load.  `None` if no symbol of
     /// that name exists.
@@ -3335,6 +3341,9 @@ impl ConsoleProgram {
                 };
                 let _import_proofs =
                     kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
+                if self.arch().android_jni {
+                    crate::kuna_androidjni::collect(self.arch(), &bytes, &mut merged);
+                }
                 let image_path = std::path::Path::new(&path);
                 let image_path = image_path.exists().then_some(image_path);
                     // Deferred entry-discovery passes FIRST: their entries must be
@@ -4655,7 +4664,7 @@ pub(crate) fn bootstrap_raw_image(
     path: &str,
     target: &str,
     base: u64,
-    entries: &[u64],
+    entries: Option<&[u64]>,
     isa: Option<ArmIsa>,
     languages: &(impl Languages + ?Sized),
     bytes: Option<Vec<u8>>,
@@ -4665,11 +4674,13 @@ pub(crate) fn bootstrap_raw_image(
             "raw image input requires --target <SLEIGH-language-id>",
         ));
     }
-    if entries.is_empty() {
-        return Err(KunaError::lowlevel(
+    let entries = match entries {
+        Some([]) => return Err(KunaError::lowlevel(
             "raw image input requires at least one --entry or --addr",
-        ));
-    }
+        )),
+        Some(entries) => entries,
+        None => &[],
+    };
 
     let registry = build_registry();
     let capability = RawBinaryArchitectureCapability::new();
@@ -4917,7 +4928,7 @@ pub(crate) fn bootstrap_mz_bytes(
         path,
         target,
         image.base,
-        &[entry],
+        Some(&[entry]),
         isa,
         languages,
         Some(image.module.clone()),
@@ -5346,6 +5357,7 @@ pub(crate) fn bootstrap_object(
     // conflict #4, analysis-port-log.md). Bound to the real-ELF path ONLY — the
     // XML <binaryimage> bootstrap never runs these, so the datatest parity oracle
     // is structurally untouched.
+    let android_jni = crate::kuna_androidjni::load(sleigh.base().unwrap(), &bytes)?;
     let mut pending_analysis = kuna_analysis::passes::run_default_analyses_per_pass(
         &bytes,
         &loader,
@@ -5356,6 +5368,10 @@ pub(crate) fn bootstrap_object(
         // `Listing::build` can decode through it. Default-off ⇒ unused.
         sleigh.base().unwrap().translate(),
     );
+    if let Some(facts) = android_jni {
+        sleigh.base_mut().unwrap().android_jni = true;
+        pending_analysis.insert(0, ("android_jni", facts));
+    }
     pending_analysis.extend(input_isa_stash(input_context_paints));
     let mut nullable = std::collections::BTreeMap::<u64, Vec<_>>::new();
     for record in loader.nullable_relocations() {
@@ -5412,6 +5428,7 @@ pub(crate) fn bootstrap_object(
         &kuna_sleigh::loadimage::LoadImage::get_segments(&loader),
     );
     let globalref_ranges: Vec<(u64, u64)> = loader.data_object_ranges().to_vec();
+    let section_table = !loader.section_metadata().is_empty();
     let cstring_ranges: Vec<(u64, u64)> =
         kuna_decomp::kuna_cstringconst::literal_sections(
             loader.section_metadata().iter().map(|s| (s.name.as_str(), s.kind.as_str(), s.vma, s.size)),
@@ -5647,6 +5664,7 @@ pub(crate) fn bootstrap_object(
 
     // (kuna `globalref`) ... and the sections a program's data objects live in.
     prog.arch_mut().globalref_ranges = std::rc::Rc::new(globalref_ranges);
+    prog.arch_mut().section_table = section_table;
     // (kuna `cstringconst`) ... and the sections that hold only string literals.
     prog.arch_mut().cstring_ranges = std::rc::Rc::new(cstring_ranges);
 

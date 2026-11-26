@@ -24,7 +24,7 @@ use std::fmt::Write as _;
 use kuna_analysis::loader::macho_fat::SlicePref;
 use kuna_base::address::Address;
 use kuna_console::engine::{
-    bootstrap_from_image_with_isa, bootstrap_from_raw, ArmIsa, ConsoleProgram, EntryLookupError,
+    bootstrap_from_image_with_isa, bootstrap_from_raw, ArmIsa, Bootstrap, ConsoleProgram, EntryLookupError,
     EntrySelector, FunctionEntry, ObjectLocation,
 };
 // The decompile loop + result shape live in the shared decompile-project core
@@ -76,6 +76,9 @@ pub(crate) struct Args {
     /// record collections left out of the document. Omitting `variables` also
     /// sets `no_vars`, so the extraction is skipped too.
     pub(crate) omit: Omit,
+    /// (kuna `coverage`) `--coverage` (`decompile-all --json`, whole binary
+    /// only): add the run-level `coverage` object.
+    pub(crate) coverage: bool,
     /// `--max-fn-seconds N` (decompile-all / decompile-project): per-function
     /// decompile watchdog budget in seconds; `0` disables.  A function that
     /// exceeds it is recorded as that function's `error` (the batch continues)
@@ -169,6 +172,7 @@ impl Args {
             entry_seeds: Vec::new(),
             no_vars: false,
             omit: Omit::default(),
+            coverage: false,
             max_fn_seconds: 0,
             max_fn_memory: Some(0),
             options: Vec::new(),
@@ -674,6 +678,7 @@ pub fn run(argv: &[String]) -> i32 {
                         &run.interior,
                         &run.declared,
                         args.omit,
+                        run.code.as_ref().map(|code| code.measure_results(&run.funcs)).as_ref(),
                     )
                 }),
             };
@@ -1303,6 +1308,7 @@ fn run_summary(args: &Args, filters: &Filters) -> i32 {
         return 1;
     };
     let mut summary = summarize(&args.binary, &prog, filters, &graph, &all, &selected);
+    summary.runtime.extend(crate::ppc32_pic_note::hint(&args.binary, &args.options));
     if let Some(manifest) = &rust_manifest {
         summary.rust_fields = crate::rust_signatures::fields(manifest, prog.rust_profile_report());
     }
@@ -1354,6 +1360,9 @@ struct AllRun {
     interior: crate::interior::Interiors,
     /// The caller's declarations, as the document reports them.
     declared: crate::funcdecl::Declared,
+    /// (kuna `coverage`) The executable bytes for `--coverage`, kept before a
+    /// `--jobs` parent drops the program.
+    code: Option<kuna_console::kuna_coverage::Code>,
 }
 
 /// Load + analyze the binary once, narrow the target list, then decompile what
@@ -1375,6 +1384,13 @@ fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
     let interior = crate::interior::selections(&prog, args, &targets);
     let declared = crate::funcdecl::Declared::of(&prog);
     let whole = targets.len() == discovered && args.addrs.is_empty() && args.names.is_none();
+    if args.coverage && !whole {
+        return Err(format!(
+            "--coverage measures the whole binary; the triage filters kept {} of {discovered} functions",
+            targets.len()
+        ));
+    }
+    let code = args.coverage.then(|| kuna_console::kuna_coverage::Code::of(&prog));
     let (callee_first, explicit) = callee_first_decision(&prog, args, targets.len(), whole);
     // `--jobs N`: hand the targets to the worker pool and release the parent's
     // program (2.0 GB on an 18 MB PE) before the workers start — nothing below
@@ -1409,7 +1425,7 @@ fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
             arm_frames,
             None,
         )?;
-        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior, declared });
+        return Ok(AllRun { funcs: pooled.results, discovered, assertions, interior, declared, code });
     }
     if explicit && prog.arch().protoorder.is_on() && !whole {
         eprintln!(
@@ -1424,7 +1440,7 @@ fn decompile_all(args: &mut Args, filters: &Filters) -> Result<AllRun, String> {
         note_custom_inert(&prog, targets.len());
         decompile_entries(&mut prog, args, targets, /* pointer_arguments= */ true, !whole)
     };
-    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared })
+    Ok(AllRun { funcs, discovered, assertions: prog.assertion_outcomes(), interior, declared, code })
 }
 
 /// Arm the per-function budgets `args` asks for: the wall-clock watchdog on the
@@ -1573,12 +1589,14 @@ fn list_functions(args: &Args) -> Result<(ConsoleProgram, Vec<FunctionEntry>), S
 
 /// Which bundle of driver defaults a surface takes in [`load_program`].
 ///
-/// Both variants take the same DISCOVERY policy (DIV-20/DIV-68); they differ only
-/// in whether the Listing is built on an architecture where it discovers nothing.
+/// Inventory and decompilation share discovery policy; byte-oriented queries
+/// do not need function discovery on a headerless image.
 #[derive(Clone, Copy)]
 pub(crate) enum DriverDefaults {
     /// `kuna functions` — enumeration only.
     Inventory,
+    /// `disassemble`, `read`, and `raw-pcode` over explicitly mapped bytes.
+    RawView,
     /// `kuna functions` — inventory without body-only string markup.
     Functions,
     /// `kuna decompile-all` / `kuna decompile-project` — enumeration plus bodies.
@@ -1605,7 +1623,7 @@ impl DriverDefaults {
     /// second decode of the same bytes. The DIV-20/DIV-68 discovery flags it
     /// still takes — the reference walk consumes both of them directly.
     fn wants_listing(&self) -> bool {
-        !matches!(self, DriverDefaults::Query)
+        !matches!(self, DriverDefaults::Query | DriverDefaults::RawView)
     }
 
     fn functions_inventory(&self) -> bool {
@@ -1782,7 +1800,10 @@ fn load_program_with_rust_profiles(
 
     let spec_roots = spec_roots(args.sleighpath.as_deref());
     let target = args.target.as_deref().unwrap_or("");
-    let mut prog = if args.raw_image {
+    let mut prog = if args.raw_image && matches!(defaults, DriverDefaults::RawView) {
+        Bootstrap::new(&spec_roots).target(target).arm_isa(args.isa)
+            .raw_view(&binary, args.base.expect("raw parser requires --base"))
+    } else if args.raw_image {
         // (kuna `--jobs`) A raw image's discovery (`rawdiscover`) is a serial
         // sweep and descent, not the lane-parallel object walk, so the decode
         // lanes have nothing to run. Say so, rather than accept the flag and do
@@ -2325,7 +2346,7 @@ pub(crate) fn render_selected_json(
 ) -> String {
     let mut out = Vec::new();
     write_selected_json(
-        &mut out, binary, funcs, options, error, total, assertions, interior, declared, omit,
+        &mut out, binary, funcs, options, error, total, assertions, interior, declared, omit, None,
     )
     .expect("rendering the document into memory");
     String::from_utf8(out).expect("the document is ASCII")
@@ -2345,12 +2366,17 @@ pub(crate) fn write_selected_json(
     interior: &crate::interior::Interiors,
     declared: &crate::funcdecl::Declared,
     omit: Omit,
+    coverage: Option<&kuna_console::kuna_coverage::Coverage>,
 ) -> std::io::Result<()> {
     let language = crate::loadtime::explicit_output_language(options)
         .and_then(kuna_decomp::kuna_lang::OutLang::from_print_name)
         .map(|lang| lang.print_name()).unwrap_or("c-language");
-    let (head, tail) =
+    let (mut head, tail) =
         document_fields(binary, funcs.len(), language, error, total, assertions, declared, omit);
+    if let Some(coverage) = coverage {
+        let after = head.iter().position(|(key, _)| key == "count").map_or(head.len(), |at| at + 1);
+        head.insert(after, ("coverage".to_string(), coverage_json(coverage)));
+    }
     let records = funcs.iter().map(|f| function_json(f, interior, declared, omit));
     crate::jsonfmt::write_indent2_streamed(out, &head, "functions", records, &tail)?;
     out.write_all(b"\n")
@@ -2555,6 +2581,9 @@ fn function_json(
         ),
         ("warnings".into(), Json::Array(f.warnings.iter().map(warning_json).collect())),
     ]);
+    if !omit.ranges {
+        record.push(("ranges".into(), Json::Array(f.ranges.iter().map(|&range| range_json(range)).collect())));
+    }
     if !omit.line_mappings {
         record.push((
             "line_mappings".into(),
@@ -2611,6 +2640,33 @@ fn warning_json(warning: &kuna_decomp::kuna_functionwarnings::Warning) -> Json {
         ("message".into(), Json::Str(warning.message())),
         ("line".into(), Json::Number(warning.line.to_string())),
         ("address".into(), warning.address.map_or(Json::Null, |a| Json::Number(a.to_string()))),
+    ])
+}
+
+/// One of a record's `ranges`, half-open as `[start, end)`.
+fn range_json((start, end): (u64, u64)) -> Json {
+    Json::Object(vec![
+        ("start".into(), Json::Number(start.to_string())),
+        ("start_hex".into(), Json::Str(format!("0x{start:x}"))),
+        ("end".into(), Json::Number(end.to_string())),
+        ("end_hex".into(), Json::Str(format!("0x{end:x}"))),
+    ])
+}
+
+/// The run-level `coverage` object.
+fn coverage_json(coverage: &kuna_console::kuna_coverage::Coverage) -> Json {
+    let count = |n: u64| Json::Number(n.to_string());
+    let share = |share: Option<f64>| share.map_or(Json::Null, |share| Json::Number(format!("{share:.4}")));
+    Json::Object(vec![
+        ("executable_bytes".into(), count(coverage.executable_bytes)),
+        ("unlifted_nul_bytes".into(), count(coverage.unlifted_nul_bytes)),
+        ("lifted_bytes".into(), count(coverage.lifted_bytes)),
+        ("decompiled_bytes".into(), count(coverage.decompiled_bytes)),
+        ("lifted_share".into(), share(coverage.lifted_share())),
+        ("decompiled_share".into(), share(coverage.decompiled_share())),
+        ("functions".into(), count(coverage.functions as u64)),
+        ("decompiled_functions".into(), count(coverage.decompiled_functions as u64)),
+        ("unlifted_functions".into(), count(coverage.unlifted_functions as u64)),
     ])
 }
 
@@ -2751,6 +2807,7 @@ mod provenance_json_tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -2964,6 +3021,7 @@ pub(crate) fn parse_args_with_filters(
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
     let mut no_vars = false;
     let mut omit = Omit::default();
+    let mut coverage = false;
     let mut max_fn_seconds: Option<u64> = None;
     let mut max_fn_memory: Option<u64> = None;
     let mut options: Vec<(String, String)> = Vec::new();
@@ -3015,6 +3073,7 @@ pub(crate) fn parse_args_with_filters(
             }
             "--no-vars" => no_vars = true,
             "--omit" if matches!(cmd, "decompile-all" | "decompile") => omit.add(&take(argv, &mut i, "--omit")?)?,
+            "--coverage" if cmd == "decompile-all" => coverage = true,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
@@ -3177,6 +3236,14 @@ pub(crate) fn parse_args_with_filters(
         }
         no_vars |= omit.variables;
     }
+    if coverage {
+        if !json {
+            return Err("--coverage adds a key to the --json document; add --json".into());
+        }
+        if names.is_some() || !addrs.is_empty() {
+            return Err("--coverage measures the whole binary; drop --functions and --addr".into());
+        }
+    }
 
     if raw_image {
         if cmd == "decompile-graph" {
@@ -3328,6 +3395,7 @@ pub(crate) fn parse_args_with_filters(
             entry_seeds,
             no_vars,
             omit,
+            coverage,
             max_fn_seconds,
             max_fn_memory,
             options,
@@ -3385,7 +3453,7 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 fn usage_decompile_all() {
     eprintln!(
         "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
-         \x20                   [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
+         \x20                   [--no-vars] [--omit aliases,ranges,line_mappings,variables,types] [--coverage] \\\n\
          \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
@@ -3403,9 +3471,11 @@ fn usage_decompile_all() {
          at (a header warning at the entry); `error` is set only for a failed\n\
          function.\n\
          --omit KEY[,KEY].. (with --json) leaves those record collections out of\n\
-         every record -- aliases, line_mappings, variables (with stack_objects),\n\
+         every record -- aliases, ranges, line_mappings, variables (with stack_objects),\n\
          types -- and lists them in a top-level `omitted` array, so an omitted\n\
          collection is never mistaken for an empty one.\n\
+         --coverage (with --json, whole binary only) adds a top-level `coverage`:\n\
+         the executable bytes, the parts decoded and decompiled, and their shares.\n\
          --no-vars skips the variable extraction and leaves `variables` empty.\n\
          --max-fn-seconds N caps ONE function's decompile at N seconds (default 10\n\
          for unfiltered fast runs, 120 otherwise; 0 disables); a function over\n\

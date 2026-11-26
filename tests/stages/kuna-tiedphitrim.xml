@@ -185,9 +185,14 @@ b801000000c3
 <symbol space="ram" offset="0x315f0" name="use9"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <!-- looptest (default proven) prints the loops this test pins as do-while with the
        test at the top (their entry tests fold to true); kept bottom-tested here. -->
   <com>option looptest binary</com>
+  <!-- loopcondhoist (default on) makes xa11's and xa13's bottom tests their loop
+       conditions; kept off so the head-tested loops this test pins stay. -->
+  <com>option loopcondhoist off</com>
   <com>lo fu sum_msvc</com>
   <com>decompile</com>
   <com>print C</com>

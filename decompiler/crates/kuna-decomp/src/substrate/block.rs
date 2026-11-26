@@ -655,6 +655,10 @@ impl FlowBlock {
     pub fn get_in_label(&self, i: int4) -> uint4 {
         self.intothis[i as usize].label
     }
+    /// (kuna) The label of the i-th \e out edge.
+    pub fn get_out_label(&self, i: int4) -> uint4 {
+        self.outofthis[i as usize].label
+    }
     /// Get the \b false output FlowBlock (C++ `getFalseOut`).
     pub fn get_false_out(&self) -> BlockId {
         self.get_out(0)
@@ -2620,7 +2624,7 @@ impl BlockGraph {
     /// edge) at `new`, so no `goto` is left naming a freed node.  A clause and the
     /// sole component it is unwrapped to share their front leaf, so the goto keeps
     /// its label and its landing statement.
-    fn kuna_free_replaced(&mut self, old: BlockId, new: BlockId) {
+    pub(crate) fn kuna_free_replaced(&mut self, old: BlockId, new: BlockId) {
         for blk in self.arena.values_mut() {
             match &mut blk.kind {
                 BlockKind::Goto { gototarget, .. } | BlockKind::If { gototarget, .. } => {

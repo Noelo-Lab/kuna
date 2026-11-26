@@ -30,7 +30,10 @@
 //!   stores one element through the destination, and computes nothing else:
 //!   a copy loads the element through the source, a fill stores a value
 //!   defined before the loop;
-//! * nothing outside the loop reads a value the body computes.
+//! * nothing outside the loop reads a value the body computes;
+//! * each pointer is as wide as an address or a compiler-spec pointer (a
+//!   compare's too): an x86-64 address-size override steps EDI/ESI, which wrap
+//!   at 4 GiB as no builtin can.
 //!
 //! A destination in the function's own frame (the stack pointer plus a
 //! constant) is declined: the builtin is placed after heritage, so the frame
@@ -189,6 +192,19 @@ fn mask(width: i32) -> u64 {
     }
 }
 
+/// Is `v` as wide as an address of the default data space, or as a pointer of
+/// the compiler spec? A narrower pointer (`rep stos` with an address-size
+/// override, through EDI on x86-64) wraps within its own width, which no C
+/// copy, fill or compare can express. 32-bit code on the 64-bit model
+/// (`x86:LE:64:compat32`) steps the program's own 4-byte pointers. With no
+/// default data space to compare against, the rewrite is refused.
+fn full_width(data: &Funcdata, v: VarnodeId) -> bool {
+    let arch = data.get_arch();
+    let Some(space) = arch.manage().get_default_data_space().map(|s| s.get_addr_size() as i32) else { return false };
+    let pointer = arch.types().map(|t| t.get_size_of_pointer()).filter(|&p| p > 0);
+    size(data, v).is_some_and(|width| width >= space || pointer.is_some_and(|p| width >= p))
+}
+
 fn def_block(data: &Funcdata, v: VarnodeId) -> Option<BlockId> {
     op(data, data.vbank().get(v)?.get_def()?)?.get_parent()
 }
@@ -339,7 +355,7 @@ fn match_rep(data: &Funcdata, head: BlockId) -> Option<Rep> {
     let stored = st.get_in(2)?;
     let width = size(data, stored)?;
     let dst = ptrs.iter().find(|(out, _, _)| *out == st_ptr)?;
-    if in_frame(data, dst.1) {
+    if in_frame(data, dst.1) || !full_width(data, dst.0) {
         return None;
     }
     if dst.2 != width as u64 {
@@ -353,7 +369,7 @@ fn match_rep(data: &Funcdata, head: BlockId) -> Option<Rep> {
             }
             let ld_ptr = copied(data, ld.get_in(1)?);
             let src = ptrs.iter().find(|(out, _, _)| *out == ld_ptr)?;
-            if src.2 != width as u64 || src.0 == dst.0 {
+            if src.2 != width as u64 || src.0 == dst.0 || !full_width(data, src.0) {
                 return None;
             }
             Element::Copy { src_out: src.0, src_in: src.1 }
@@ -684,7 +700,7 @@ fn match_compare(data: &Funcdata, head: BlockId) -> Option<Compare> {
         }
     }
     let [(p0, b0), (p1, b1)] = loads[..] else { return None };
-    if p0 == p1 {
+    if p0 == p1 || !full_width(data, p0) || !full_width(data, p1) {
         return None;
     }
     // The count and the two pointers; every other phi is a flag.

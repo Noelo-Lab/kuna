@@ -1309,10 +1309,13 @@ number of rebuilds. For a devirtualized body the blocks each structuring
 negated are recorded on the `Funcdata`
 (`kuna_body.rs (record_structure_flips)`), and `ActionBlockStructure`
 negates them again before it builds the next tree
-(`kuna_body.rs (unflip_structure)`), skipping a block that no longer ends in
-a two-way CBRANCH. Every structuring then starts from the orientation the
-emitter chose, so the result depends on the program and not on how often it
-was structured.
+(`kuna_body.rs (begin_structure)`, `kuna_body.rs (unflip_structure)`),
+skipping a block that no longer ends in a two-way CBRANCH. Every structuring
+then starts from the orientation the emitter chose, so the result depends on
+the program and not on how often it was structured. The action's own second
+tries (the `loopcontinue auto` and `condfold noreturn` comparisons, which put
+the out-edges back and structure again) start from that orientation as well,
+and the record holds the negations of the try that was kept.
 
 Pinned by `tests/stages/kuna-devirtualize.xml`. It runs two passes over the
 synthetic `devirt_vm_x86_64` fixture, a push/ret-dispatched stack-machine

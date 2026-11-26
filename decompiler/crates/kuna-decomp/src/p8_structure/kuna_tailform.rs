@@ -1,13 +1,14 @@
-//! (kuna `tailform`) Choose the form of a function-tail `if` by the size of its
-//! conditional part.
+//! (kuna `tailform`) Choose the form of a function-tail `if` by its
+//! conditional part: saved logistic weights over its features by default
+//! (`model`), its printed size under `on` / `<n>`.
 //!
 //! At the end of a function `if (c) { S } return K;` and `if (!c) return K; S;
 //! return K;` are the same program, and the binary does not record which one
 //! the author wrote: whether the compiler shared the epilogue or gave a path
 //! its own `ret` (or a tail call) decides the form the structurer recovers.
 //! Authors wrap a short tail and guard a long one, so after the tree is final
-//! this pass re-spells the function's top-level tail by the printed size of
-//! its conditional part:
+//! this pass re-spells the function's top-level tail (shown here with the size
+//! rule; the model makes the same two rewrites):
 //!
 //! * **wrap** -- `if (c) return K; S1 .. Sk; return K;` with a tail of at most
 //!   `max` lines becomes `if (!c) { S1 .. Sk } return K;`.  `K` is nothing
@@ -31,8 +32,8 @@
 //! `RETURN` (a return that now falls off the function, or one split away from
 //! the statements of its block) and one flagged [`F_RET_ONLY`] prints only it.
 //!
-//! [`decide`] is the whole size policy: it maps a [`TailSite`] to wrap / guard
-//! / leave, so a different decision function can replace it.
+//! [`decide`] is the whole policy: it maps a [`TailSite`] to wrap / guard /
+//! leave, so a different decision function can replace it.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::{int4, uint4, uintb};
@@ -56,8 +57,9 @@ pub const F_RET_SKIP: uint4 = 0x4000_0000;
 /// Leaf flag: print only the leaf's tail `RETURN`.
 pub const F_RET_ONLY: uint4 = 0x8000_0000;
 
-/// The shipped threshold: a conditional tail of at most this many printed
-/// lines is wrapped, a longer one guarded.
+/// The `on` threshold: a conditional tail of at most this many printed lines
+/// is wrapped, a longer one guarded.  It also decides under `model` where the
+/// weights do not apply.
 pub const DEFAULT_MAX_LINES: u32 = 4;
 
 /// Bound on the edits made in one function (each edit moves one `if`).
@@ -89,6 +91,14 @@ pub struct TailFormPolicy {
     pub loop_test: LoopTestMode,
 }
 
+impl TailFormPolicy {
+    /// The shipped default, `tailform model`.
+    pub fn shipped() -> Self {
+        TailFormPolicy { rule: TailRule::Model, ..Default::default() }
+    }
+}
+
+/// The `on` policy: the 4-line threshold.
 impl Default for TailFormPolicy {
     fn default() -> Self {
         TailFormPolicy {
@@ -191,7 +201,7 @@ impl Action for ActionTailForm {
 
 /// The value a bare `return` hands back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RetKey {
+pub(crate) enum RetKey {
     Void,
     Const(int4, uintb),
     Vn(VarnodeId),
@@ -223,10 +233,10 @@ enum Edit {
 /// (`Ls`/`Graph`) and every condition-list prefix of a top-level `if` hoisted
 /// into one sequence.
 #[derive(Default)]
-struct View {
-    list: Vec<BlockId>,
-    conds: Vec<(BlockId, BlockId)>,
-    dropped: Vec<BlockId>,
+pub(crate) struct View {
+    pub(crate) list: Vec<BlockId>,
+    pub(crate) conds: Vec<(BlockId, BlockId)>,
+    pub(crate) dropped: Vec<BlockId>,
 }
 
 struct Ctx {
@@ -303,7 +313,7 @@ fn run(data: &mut Funcdata, policy: &TailFormPolicy) -> usize {
 /// The guard `if`s the `looptest` plan of the current tree drops; this pass
 /// leaves them, and everything around them, to that plan.  The printer's sign
 /// plan does not exist yet, so counters keep their high's own declared type.
-fn claimed_guards(data: &Funcdata, mode: LoopTestMode) -> Vec<BlockId> {
+pub(crate) fn claimed_guards(data: &Funcdata, mode: LoopTestMode) -> Vec<BlockId> {
     let Some(root) = data.sblocks_ref().root else { return Vec::new() };
     if mode == LoopTestMode::Binary {
         return Vec::new();
@@ -316,7 +326,7 @@ fn holds_claimed(data: &Funcdata, cx: &Ctx, b: BlockId) -> bool {
     cx.claimed.contains(&b) || data.sblocks_ref().block(b).get_list().iter().any(|&c| holds_claimed(data, cx, c))
 }
 
-fn top_container(data: &Funcdata) -> Option<BlockId> {
+pub(crate) fn top_container(data: &Funcdata) -> Option<BlockId> {
     let g = data.sblocks_ref();
     let root = g.root?;
     let list = g.block(root).get_list();
@@ -334,7 +344,7 @@ fn returns_void(data: &Funcdata) -> bool {
         .unwrap_or(false)
 }
 
-fn build_view(data: &Funcdata, top: BlockId) -> View {
+pub(crate) fn build_view(data: &Funcdata, top: BlockId) -> View {
     let mut v = View::default();
     for &c in data.sblocks_ref().block(top).get_list() {
         push_item(data, c, &mut v);
@@ -378,7 +388,7 @@ fn push_item(data: &Funcdata, c: BlockId, v: &mut View) {
 /// keeps only its condition's last component, and the emptied containers are
 /// freed.  Declines (changing nothing) when a container it would free carries a
 /// label or is named by a goto.
-fn materialize(data: &mut Funcdata, top: BlockId, view: View) -> bool {
+pub(crate) fn materialize(data: &mut Funcdata, top: BlockId, view: View) -> bool {
     if view.dropped.is_empty() && view.conds.is_empty() {
         return true;
     }
@@ -408,7 +418,7 @@ fn materialize(data: &mut Funcdata, top: BlockId, view: View) -> bool {
     true
 }
 
-fn goto_refs(data: &Funcdata) -> Vec<BlockId> {
+pub(crate) fn goto_refs(data: &Funcdata) -> Vec<BlockId> {
     let mut out = Vec::new();
     for blk in data.sblocks_ref().arena.values() {
         match blk.kind() {
@@ -606,7 +616,7 @@ fn wrapped_site(data: &Funcdata, cx: &Ctx, ifb: BlockId, r: BlockId, conds: &[(B
     Some(if cx.elide { lines.saturating_sub(terminal_returns(data, clause, RetKey::Void, true)) } else { lines })
 }
 
-fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)]) -> BlockId {
+pub(crate) fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)]) -> BlockId {
     conds
         .iter()
         .find(|&&(i, _)| i == ifb)
@@ -615,13 +625,13 @@ fn cond_of(data: &Funcdata, ifb: BlockId, conds: &[(BlockId, BlockId)]) -> Block
 }
 
 /// An `if` with one arm and no `goto`.
-fn plain_if(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn plain_if(data: &Funcdata, b: BlockId) -> bool {
     let b = data.sblocks_ref().block(b);
     b.get_type() == BlockType::If && b.get_size() == 2 && b.get_if_goto_target().is_none()
 }
 
 /// `Some(K)` when `ifb` prints `if (c) return K;`.
-fn guard_key(data: &Funcdata, ifb: BlockId) -> Option<RetKey> {
+pub(crate) fn guard_key(data: &Funcdata, ifb: BlockId) -> Option<RetKey> {
     if !plain_if(data, ifb) {
         return None;
     }
@@ -682,7 +692,7 @@ fn value_key(data: &Funcdata, vn: VarnodeId) -> Option<RetKey> {
 
 /// `Some(K)` when `b` (a leaf, or a one-element list of one) prints only
 /// `return K;` and carries no label.
-fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
+pub(crate) fn bare_return(data: &Funcdata, b: BlockId) -> Option<RetKey> {
     let g = data.sblocks_ref();
     let mut b = b;
     while matches!(g.block(b).get_type(), BlockType::Ls | BlockType::Graph) && g.block(b).get_size() == 1 {
@@ -774,7 +784,7 @@ fn truncated(data: &Funcdata, b: BlockId) -> bool {
     true
 }
 
-fn labelled(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn labelled(data: &Funcdata, b: BlockId) -> bool {
     let g = data.sblocks_ref();
     if g.block(b).is_unstructured_target() {
         return true;
@@ -784,7 +794,7 @@ fn labelled(data: &Funcdata, b: BlockId) -> bool {
 
 /// Whether control can leave `b` at its bottom (not a return, a no-return call
 /// or a goto).
-fn falls_through(data: &Funcdata, b: BlockId) -> bool {
+pub(crate) fn falls_through(data: &Funcdata, b: BlockId) -> bool {
     let g = data.sblocks_ref();
     match g.block(b).get_type() {
         BlockType::Ls | BlockType::Graph => g.block(b).get_list().last().is_none_or(|&l| falls_through(data, l)),
@@ -807,7 +817,7 @@ fn falls_through(data: &Funcdata, b: BlockId) -> bool {
 /// The printer's statement test for one op of a leaf (see
 /// `PrintC::emit_basic_block_ops`), resolving the ambiguous cases toward
 /// "prints".
-fn op_prints(data: &Funcdata, o: OpId) -> bool {
+pub(crate) fn op_prints(data: &Funcdata, o: OpId) -> bool {
     let Some(op) = data.obank().get(o) else {
         return false;
     };
@@ -882,7 +892,7 @@ fn count_lines(data: &Funcdata, b: BlockId, conds: &[(BlockId, BlockId)]) -> usi
 
 /// Whether the condition `c` can be negated in place: its leaves' basic blocks
 /// end in a `CBRANCH` and no other leaf of the tree prints them.
-fn negatable(data: &Funcdata, c: BlockId) -> bool {
+pub(crate) fn negatable(data: &Funcdata, c: BlockId) -> bool {
     let g = data.sblocks_ref();
     match g.block(c).get_type() {
         BlockType::Copy => {
@@ -906,7 +916,7 @@ fn copies_of(data: &Funcdata, bb: BlockId) -> usize {
 /// Negate the printed condition `c` (C++ `FlowBlock::negateCondition`):
 /// flip each leaf's `CBRANCH` and swap its edges, De Morgan through a
 /// `BlockCondition`.
-fn negate(data: &mut Funcdata, c: BlockId, top: bool) {
+pub(crate) fn negate(data: &mut Funcdata, c: BlockId, top: bool) {
     match data.sblocks_ref().block(c).get_type() {
         BlockType::Copy => {
             if let Some(bb) = data.sblocks_ref().block(c).get_copy() {
@@ -1008,7 +1018,7 @@ fn guard(data: &mut Funcdata, cx: &mut Ctx, list: &[BlockId], i: usize) -> bool 
     true
 }
 
-fn free_subtree(data: &mut Funcdata, b: BlockId) {
+pub(crate) fn free_subtree(data: &mut Funcdata, b: BlockId) {
     let kids = data.sblocks_ref().block(b).get_list().to_vec();
     for k in kids {
         free_subtree(data, k);
@@ -1068,7 +1078,7 @@ pub fn only_return(data: &Funcdata, leaf: BlockId) -> Option<OpId> {
     (data.obank().get(tail)?.code() == OpCode::CPUI_RETURN).then_some(tail)
 }
 
-/// The `tailform off|on|<n>|<void>,<value>` option.
+/// The `tailform off|on|wrap|guard|model|<n>|<void>,<value>` option.
 pub struct OptionTailForm;
 
 impl OptionTailForm {
@@ -1083,7 +1093,7 @@ impl OptionTailForm {
             "wrap" => return Ok((Some(rule(TailRule::Wrap)), "Function-tail form policy: wrap every tail".to_string())),
             "guard" => return Ok((Some(rule(TailRule::Guard)), "Function-tail form policy: guard every tail".to_string())),
             "model" => {
-                return Ok((Some(rule(TailRule::Model)), "Function-tail form policy: the saved logistic model".to_string()))
+                return Ok((Some(TailFormPolicy::shipped()), "Function-tail form policy: the saved logistic model".to_string()))
             }
             _ => match p1.split_once(',') {
                 Some((v, k)) => TailFormPolicy {

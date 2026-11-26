@@ -367,10 +367,15 @@ fn verify_filemanage_fs_layouts_match_cpp_oracle() {
         ("D|install|", format!("{}/inst/Ghidra/bin/decomp", r)),
         ("D|none|", format!("{}/plain/Ghidra/bin/decomp", r)),
     ] {
+        // A rebuilt root joins its elements with '/'; on Windows the
+        // temporary directory it came from reads C:\Users\..., so the two are
+        // compared with every separator spelled '/'.
+        let same_path =
+            |p: &str| -> String { p.chars().map(|c| if FileManage::is_separator(c) { '/' } else { c }).collect() };
         let expect = subst(oracle_line(&oracle, tag).trim_start_matches(tag));
         assert_eq!(
-            FileManage::discover_ghidra_root(&argv0),
-            expect,
+            same_path(&FileManage::discover_ghidra_root(&argv0)),
+            same_path(&expect),
             "discoverGhidraRoot {} diverges",
             tag
         );

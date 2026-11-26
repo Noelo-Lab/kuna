@@ -9,7 +9,8 @@
 
     Stage / sub-stage: P8 "goto-quality", a print-tree edit after final
     structuring.  The P0 assertion `option tailform off|on|<n>|<void>,<value>`
-    sets the size threshold.
+    sets the size threshold (the default, `model`, decides by saved weights
+    instead: kuna-tailform-model.xml).
 
     The bytes are .text of decompiler/crates/kuna-analysis/tests/fixtures/
     tailform.c built by gcc 11.4 at -O2 (tailform_gcc_O2_x86_64):
@@ -21,7 +22,7 @@
     control), and walk_list (a long loop body behind its NULL test).
 
     Pass 1 runs with `option tailform off` and prints the binary's form.
-    Pass 2 (`option tailform on`, the default) wraps the short tails, drops
+    Pass 2 (`option tailform on`, the size rule) wraps the short tails, drops
     the repeated return and guards the long body; first_value is the same.
     walk_list's guard belongs to `looptest`, which prints the loop as
     `while (a0)` in both passes; only with `option looptest binary` (pass 3)
@@ -52,6 +53,7 @@ c366662e0f1f8400000000000f1f4000f30f1efa85f67830534889fbe81ffeffff4885db741a662e
 <symbol space="ram" offset="0x1470" name="first_value"/>
 </binaryimage>
 <script>
+  <com>option truthycond on</com>
   <com>option tailform off</com>
   <com>lo fu note_if_zero</com>
   <com>decompile</com>

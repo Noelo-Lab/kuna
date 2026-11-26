@@ -57,6 +57,7 @@ pub mod kuna_stackassign;
 pub mod kuna_stackbytes;
 pub mod kuna_stacklayout;
 pub mod kuna_truthycond;
+pub mod kuna_rangetest; // (kuna) a merged unsigned range test printed as its two comparisons
 pub mod kuna_braceelide;
 pub mod kuna_labelstmt; // (kuna) every printed C label labels a statement
 pub mod kuna_warnstyle;
@@ -66,6 +67,7 @@ pub mod kuna_bytearrayc;
 pub(crate) mod kuna_bytearrayslice;
 pub mod kuna_armregistershift; // (kuna) defined C for ARM register-controlled LSL
 pub mod kuna_armshiftguard; // (kuna) when a register-controlled ARM LSL prints its range guard
+pub mod kuna_armshiftwide; // (kuna) the register shift counts of a lowered double-word shift
 pub mod kuna_armconstantshift;
 pub(crate) mod kuna_acleintrinsics; // (kuna) AArch64 barrier, hint and memory-tagging user ops as ACLE intrinsics
 pub mod kuna_emptystrconst;

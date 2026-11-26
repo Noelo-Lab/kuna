@@ -1,0 +1,98 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8:default">
+<!--
+    kuna `option loopcontinue` value `auto` (the default), P8 goto-quality: in
+    a function the per-function detector (p3_dataflow/kuna_unoptimized.rs)
+    calls unoptimized, the jump statements read from the raw block graph
+    (p8_structure/kuna_o0jumps.rs) keep the tests the source wrote as separate
+    statements apart.
+
+    gcc 12 -mthumb -mcpu=cortex-m3 -O0 -fno-pic -fno-stack-protector of
+        int scan(int n, const char *s) {
+            int found = 0;
+            for (int i = 0; i < n; i++) {
+                struct ch *c = get(i);
+                if (c == 0 || c->type != 7)
+                    continue;
+                if (c->addr == 0)
+                    continue;
+                if (match(s, c->addr)) {
+                    use(i);
+                    found = 1;
+                }
+            }
+            return found;
+        }
+        int first(int n) {
+            int i;
+            for (i = 0; i < n; i++) {
+                if (test(i))
+                    break;
+                use(i);
+            }
+            return i;
+        }
+        void skip(int n) {
+            int i = 0;
+            do {
+                i++;
+                if (test(i))
+                    continue;
+                use(i);
+            } while (i < n);
+        }
+    with get, match, use and test reading and writing globals.  Each bare
+    `continue;`/`break;` is a `nop` (Thumb `bf00`) block the test branches
+    to; the plain `if` branches straight to the loop's step.
+
+    Pass 1 (default auto): scan keeps the two tests that share the first
+    continue in one condition and the third test apart (#1, #2), and the plain
+    `if` stays an `if` (#3); first keeps its loop test and prints the break
+    (#4, #5); skip prints its continue (#6).  Pass 2 (option loopcontinue on):
+    the four tests of scan fold into one chain (#7), first's break test folds
+    into the loop condition (#8) and skip nests its call (#9).
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">80b586b000af7860396000237b6100233b6123e0386900f065f8f860fb68002b16d0fb681b68072b12d1fb685b68002b10d0fb685b681946386800f065f80346002b08d0386900f072f801237b6102e000bf00e000bf3b6901333b613a697b689a42d7db7b6918461837bd4680bd80b584b000af78600023fb600be0f86800f065f80346002b0ad1f86800f050f8fb680133fb60fa687b689a42efdb00e000bffb6818461037bd4680bd80b584b000af78600023fb60fb680133fb60f86800f045f80346002b03d1f86800f030f800e000bffa687b689a42eddb00bf00bf1037bd4680bd80b483b000af78607b6803f00703044a52f8233018460c37bd4680bc704700bf7011010080b483b000af786039607b681a783b681b789a420cbf01230023dbb218460c37bd4680bc704780b483b000af7860044a7b68136000bf0c37bd4680bc704700bfb011010080b483b000af78607b6803f00703044a52f8233018460c37bd4680bc704700bf90110100</bytechunk>
+<symbol space="ram" offset="0x10000" name="scan"/>
+<symbol space="ram" offset="0x1006e" name="first"/>
+<symbol space="ram" offset="0x100aa" name="skip"/>
+<symbol space="ram" offset="0x100e4" name="get"/>
+<symbol space="ram" offset="0x10108" name="match"/>
+<symbol space="ram" offset="0x1012e" name="use"/>
+<symbol space="ram" offset="0x1014c" name="test"/>
+</binaryimage>
+
+<script>
+  <com>option truthycond on</com>
+  <com>set context TMode 1 [ram,0x10000] [ram,0x1016f]</com>
+  <com>lo fu scan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu skip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loopcontinue on</com>
+  <com>lo fu scan</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu skip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #1: two tests share the first continue (pass 1)" min="1" max="1">^    if \(\(!v\d\) \|\| \(v\d->field_0x0 != 7\)\) continue;$</stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #2: the third test has its own continue (pass 1)" min="1" max="1">^    if \(!v\d->field_0x[48]\) continue;$</stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #3: the plain if stays an if (pass 1)" min="1" max="1">^    if \(match\(a1,v\d\)\) \{$</stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #4: first keeps its loop test (pass 1)" min="1" max="1">^  for \(v1 = 0; v1 &lt; a0; v1 = v1 \+ 1\) \{$</stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #5: first prints its break (pass 1)" min="1" max="1">^    if \(test\(v1\)\) break;$</stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #6: skip prints its continue (pass 1)" min="1" max="1">^    if \(test\(v1\)\) continue;$</stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #7: with loopcontinue on scan folds its tests (pass 2)" min="1" max="1">^    if \(\(\(\(v\d\) &amp;&amp; \(v\d->field_0x0 == 7\)\) &amp;&amp; \(v\d->field_0x[48]\)\) &amp;&amp; </stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #8: with loopcontinue on first folds its break test (pass 2)" min="1" max="1">^  while \(\(v1 &lt; a0 &amp;&amp; \(!test\(v1\)\)\)\) \{$</stringmatch>
+<stringmatch name="LOOPCONTINUE AUTO THUMB #9: with loopcontinue on skip nests its call (pass 2)" min="1" max="1">^    if \(!test\(v1\)\)$</stringmatch>
+</decompilertest>

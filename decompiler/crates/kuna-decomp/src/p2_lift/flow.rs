@@ -1525,7 +1525,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
         // we re-derive the live cursor by tracking which ops are still dead.
         let mut cursor = start;
         while let Some(curop) = cursor {
-            op = Some(curop);
+            let previous = op.replace(curop);
             // Advance the cursor before the body may delete the tail.
             cursor = self.dead_next(curop);
             if *startbasic {
@@ -1558,7 +1558,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                         }
                     } else if cursor.is_none()
                         && self.data.get_size() > 0
-                        && self.tail_call_kind(curop, &destaddr) == Some("tailcalljump")
+                        && self.tail_call_kind(curop, previous, &destaddr) == Some("tailcalljump")
                     {
                         self.recover_conditional_tail_call(curop, &destaddr)?;
                         *isfallthru = true;
@@ -1590,7 +1590,7 @@ impl<'a, E: FlowEnvironment> FlowInfo<'a, E> {
                             cursor = None;
                         }
                         *startbasic = true;
-                    } else if let Some(tailkind) = self.tail_call_kind(curop, &destaddr) {
+                    } else if let Some(tailkind) = self.tail_call_kind(curop, previous, &destaddr) {
                         // (kuna) tee-O2 tail-jump: a direct `jmp` to another known
                         // function's entry is a tail call, instead of
                         // new_address()-following the jump INTO the callee (which
@@ -1889,6 +1889,10 @@ following this call as a branch"
 
     /// Which tail-jump rule, if either, claims this direct machine branch?
     ///
+    /// An unconditional branch immediately after a call at the same instruction
+    /// address can encode its explicit resume point. A conditional branch still
+    /// makes a separate control-flow decision after the call.
+    ///
     /// A target inside the current function's declared extent is
     /// intraprocedural, so neither inference rule is consulted there. Else,
     /// [`kuna_tailcalljump`](crate::kuna_tailcalljump) is asked first, so a
@@ -1897,13 +1901,16 @@ following this call as a branch"
     /// crate::kuna_tailcallframe) then gets the targets the symbol table does not
     /// know.  The returned name is the option that fired, so the introduced call
     /// is attributable to the rule that introduced it.
-    fn tail_call_kind(&self, op: OpId, dest: &Address) -> Option<&'static str> {
-        let site = self
-            .data
-            .obank()
-            .get(op)
-            .expect("tail_call_kind: stale op")
-            .get_addr();
+    fn tail_call_kind(&self, op: OpId, previous: Option<OpId>, dest: &Address) -> Option<&'static str> {
+        let branch = self.data.obank().get(op).expect("tail_call_kind: stale op");
+        let site = branch.get_addr();
+        if branch.code() == OpCode::CPUI_BRANCH
+            && previous.and_then(|p| self.data.obank().get(p)).is_some_and(|p| {
+                p.get_addr() == site && matches!(p.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+            })
+        {
+            return None;
+        }
         select_inferred_tail_call(
             self.applied_branch_overrides.contains(site),
             self.is_inside_declared_extent(dest),
@@ -4367,7 +4374,7 @@ truncating the fall-through here"
         }
         self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
         self.setup_callind_specs(op)?;
-        // The no-return / thunk fc bookkeeping (fc->setBadJumpTable / setNoReturn /
+        // The no-return / thunk fc bookkeeping (fc->setNoReturn /
         // setInternal) is the W4 FuncCallSpecs surface -- STUB(W4); the op-code
         // change to CALLIND is the load-bearing CFG effect.
         // Create an artificial return after the call.
@@ -4377,7 +4384,7 @@ truncating the fall-through here"
             0
         };
         let addr = self.data.obank().get(op).unwrap().get_addr().clone();
-        // C++ flow.cc:766/773 emits a warning in the callother/normal failure modes.
+        // Keep the fallback classification on its call through simplification.
         match mode {
             RecoveryMode::FailCallother => {
                 // fc->setNoReturn(true) is the STUB(W4) FuncCallSpecs surface.
@@ -4385,8 +4392,9 @@ truncating the fall-through here"
             }
             RecoveryMode::FailThunk => {}
             _ => {
-                // fc->setBadJumpTable(true) is the STUB(W4) FuncCallSpecs surface.
-                self.data.warning("Treating indirect jump as call", &addr);
+                if let Some(index) = self.data.get_call_specs_index(op) {
+                    self.data.get_call_specs_mut(index).set_bad_jump_table(true);
+                }
             }
         }
         let truncop = self.artificial_halt(&addr, return_type)?;
@@ -4612,6 +4620,41 @@ impl<E: FlowEnvironment> PcodeEmit for FlowEmit<'_, '_, E> {
         crate::kuna_localstackviews::record_native(self.fd, op);
         self.emitted.push(op);
     }
+}
+
+/// (kuna `coverage`) The bytes of every instruction in `fd`'s `visited` map,
+/// delay slots included (each entry's size is the step the flow took over it):
+/// engine byte offsets in the entry's space, half-open, ascending and joined
+/// where they touch. An entry whose first op is an artificial halt (a decode
+/// failure, a flow cut, a stub the flow filled in) was never decoded and is left
+/// out.
+#[allow(clippy::mutable_key_type)]
+pub fn decoded_ranges(fd: &Funcdata, visited: &VisitedMap) -> Vec<(u64, u64)> {
+    let space = fd.get_address().get_space();
+    let mut out: Vec<(u64, u64)> = Vec::new();
+    for (addr, stat) in visited {
+        let Some(size) = u64::try_from(stat.size).ok().filter(|&size| size > 0) else {
+            continue;
+        };
+        let halt = fd
+            .obank()
+            .find_op(&stat.seqnum)
+            .and_then(|op| fd.obank().get(op))
+            .is_some_and(|op| op.get_halt_type() != 0);
+        let elsewhere = match (addr.get_space(), space) {
+            (Some(at), Some(entry)) => !std::rc::Rc::ptr_eq(at, entry),
+            (at, entry) => at.is_some() != entry.is_some(),
+        };
+        if halt || elsewhere {
+            continue;
+        }
+        let (start, end) = (addr.get_offset(), addr.get_offset().saturating_add(size));
+        match out.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => out.push((start, end)),
+        }
+    }
+    out
 }
 
 /// Free-function `FlowInfo::target` over an explicit `(Funcdata, visited)` pair

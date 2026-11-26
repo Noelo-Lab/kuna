@@ -611,9 +611,9 @@ impl XrefIndex {
 /// carry the addresses.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct FullOp {
-    pub(super) opcode: OpCode,
-    pub(super) out: Option<VarnodeData>,
-    pub(super) ins: Vec<VarnodeData>,
+    pub(crate) opcode: OpCode,
+    pub(crate) out: Option<VarnodeData>,
+    pub(crate) ins: Vec<VarnodeData>,
 }
 
 /// A capturing [`PcodeEmit`] that keeps every emitted op whole.

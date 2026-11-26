@@ -1532,12 +1532,22 @@ decomp_command!(
 
 decomp_command!(
     /// C++ `IfcMapaddress`: `map address <addr> <typedeclaration>`.
+    /// `map address data [space,addr] <typedeclaration>` maps a processor global.
     IfcMapaddress,
     fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
         {
             let dcp = dcp_mut(status)?;
             if dcp.conf.is_none() {
                 return Err(IfaceError::execution("No load image present"));
+            }
+        }
+        if s.skip_ws().peek() == Some(b'd') {
+            let text = s.rest();
+            if let Some(spec) = text.strip_prefix("data ") {
+                let prog = dcp_mut(status)?.conf.as_mut().expect("conf checked above");
+                let (space, addr, decl) = crate::assertsyntax::parse_data(spec).map_err(IfaceError::parse)?;
+                return crate::assertions::apply_data(prog, space, addr, decl)
+                    .map_err(IfaceError::execution);
             }
         }
         let fd_present = dcp_mut(status)?.fd.is_some();

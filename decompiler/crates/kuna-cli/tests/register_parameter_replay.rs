@@ -4,6 +4,7 @@ use crate::common;
 use std::process::Command;
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn independent_byte_hash_and_pointer_values_do_not_share_a_register_local() {
     let fixture = common::fixture("lifetimes_register_domains_x86_64");
     common::process::required_output(&mut Command::new(&fixture));
@@ -110,6 +111,7 @@ fn independent_byte_hash_and_pointer_values_do_not_share_a_register_local() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn renaming_the_dispatch_key_keeps_the_incoming_property() {
     let fixture = common::fixture("lifetimes_x86_64");
     common::process::required_output(&mut Command::new(&fixture));

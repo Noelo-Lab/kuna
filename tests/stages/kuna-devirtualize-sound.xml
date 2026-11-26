@@ -17,7 +17,8 @@
     f_sum (#1, #2): a counted loop, `for (i = 0; i < 10; i++) s += i`, whose
     exit test is a `setl` the virtual JZ tests and a cmov selects on; the
     loop exits and accumulates.
-    f_eq (#3): a do-while whose exit test is an equality on the counter.
+    f_eq (#3): a do-while whose exit test is an equality on the counter. It
+    prints tested at the top, the same program as its counter starts at 0.
     f_big (#4): a loop bound of 2^40, beyond what the counter's known bits
     reach in the rounds it takes to converge.
     f_mem (#5, shared with f_corr) and f_corr (#6): a branch on a comparison
@@ -201,17 +202,22 @@ c3
 </script>
 <stringmatch name="DEVIRTUALIZE-SOUND #1: f_sum, the loop exits on i &lt; 10" min="1" max="1">\(SBORROW8\(v3,10\) &amp;&amp; v1\)\) break;</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #2: f_sum, the loop accumulates" min="1" max="1">v2 \+= v3;</stringmatch>
-<stringmatch name="DEVIRTUALIZE-SOUND #3: f_eq, the exit tests the counter" min="1" max="1">\} while \(v2 != 7\);</stringmatch>
+<stringmatch name="DEVIRTUALIZE-SOUND #3: f_eq, the exit tests the counter" min="1" max="1">v2 = 0;
+while \(v2 != 7\) \{
+v1 \+= a0;
+v2 \+= 1;
+\}</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #4: f_big, the loop exits at 2^40" min="1" max="1">\(SBORROW8\(v2,0x10000000000\) &amp;&amp; v1\)\) break;</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #5: f_mem and f_corr, the stored comparison is tested" min="2" max="2">if \(\(SBORROW8\(a0,5\) \|\| v1\) &amp;&amp; \(!SBORROW8\(a0,5\) \|\| !v1\)\)</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #6: f_corr, both correlated returns" min="1" max="1">return v2 \+ 10;
 return v2 \+ 0x14;</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #7: f_call, the call's argument is the computed value" min="1" max="1">return a0 \* 3 \+ ext\(a0 \* 3,</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #8: f_tbl, the table element is loaded" min="1" max="1">v1 = \*\(int8 \*\)\(v3 \* 8 \+ 0x412000\);</stringmatch>
-<stringmatch name="DEVIRTUALIZE-SOUND #9: f_tbl, the found path stays" min="1" max="1">\(SBORROW8\(v1,100\) &amp;&amp; v2\)\) break;
+<stringmatch name="DEVIRTUALIZE-SOUND #9: f_tbl, the found path stays" min="1" max="1">\(SBORROW8\(v1,100\) &amp;&amp; v2\)\)
+return v3;
 v3 \+= 1;
 \}
-return v3;</stringmatch>
+return -1;</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #10: f_glob, the global is tested" min="1" max="1">if \(!dat_413020\)</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #11: f_gcall, the global is re-read after the call" min="1" max="1">if \(!dat_413028\)</stringmatch>
 <stringmatch name="DEVIRTUALIZE-SOUND #12: f_ptr, the stored field is tested after the join" min="1" max="1">if \(\*a0 == 1\)</stringmatch>
