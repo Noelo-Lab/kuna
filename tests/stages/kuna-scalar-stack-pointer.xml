@@ -1,0 +1,47 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7:default">
+<!-- Both projections execute `add r0, sp, #16; bx lr`. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">10008de21eff2fe1</bytechunk>
+<bytechunk space="ram" offset="0x1010" readonly="true">10008de21eff2fe1</bytechunk>
+<!-- ordinary saves LR, reserves a frame, stores 42 in a word, calls consume
+     with its address, reloads the word and restores SP and PC. -->
+<bytechunk space="ram" offset="0x1100" readonly="true">
+10402de9 08d04de2 2a10a0e3 04108de5 04008de2 390000eb 04009de5 08d08de2 1080bde8
+</bytechunk>
+<!-- consume increments the word through its pointer. -->
+<bytechunk space="ram" offset="0x1200" readonly="true">001090e5011081e2001080e51eff2fe1</bytechunk>
+<symbol space="ram" offset="0x1000" name="project_unsigned"/>
+<symbol space="ram" offset="0x1010" name="project_signed"/>
+<symbol space="ram" offset="0x1100" name="ordinary"/>
+<symbol space="ram" offset="0x1200" name="consume"/>
+</binaryimage>
+<script>
+  <com>map param project_unsigned::0 %sp uint4 input_sp</com>
+  <com>map return project_unsigned::%r0 uint4</com>
+  <com>map param project_signed::0 %sp int4 signed_sp</com>
+  <com>map return project_signed::%r0 int4</com>
+  <com>parse line extern void consume(int4 *p);</com>
+  <com>map return ordinary::%r0 int4</com>
+  <com>lo fu project_unsigned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu project_signed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ordinary</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>map param ordinary::0 %sp int4 *pointer_sp</com>
+  <com>lo fu ordinary</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SCALAR-SP #1: unsigned projection returns the declared SP plus 16" min="1" max="1">^  return input_sp \+ (0x10|16);$</stringmatch>
+<stringmatch name="SCALAR-SP #2: signed projection returns the declared SP plus 16" min="1" max="1">^  return signed_sp \+ (0x10|16);$</stringmatch>
+<stringmatch name="SCALAR-SP #3: ordinary frame has no explicit SP parameter" min="1" max="1">^int4 ordinary\(void\)$</stringmatch>
+<stringmatch name="SCALAR-SP #4: pointer SP control has a locked pointer parameter" min="1" max="1">^int4 ordinary\(int4 \*pointer_sp\)$</stringmatch>
+<stringmatch name="SCALAR-SP #5: both frame controls initialize the local" min="2" max="2">^  v[0-9]+ = (0x2a|42);$</stringmatch>
+<stringmatch name="SCALAR-SP #6: both frame controls pass the address of the local" min="2" max="2">^  consume\(&amp;v[0-9]+\);$</stringmatch>
+<stringmatch name="SCALAR-SP #7: both frame controls reload the local" min="2" max="2">^  return v[0-9]+;$</stringmatch>
+</decompilertest>

@@ -1390,6 +1390,17 @@ rewrite `LOAD/STORE` through a spacebase-relative pointer into direct
 affine by `ActionStackPtrFlow` (§6.5). Everything below consumes the
 `(stack, offset)` Varnodes those links produce.
 
+A type-locked signed or unsigned integer parameter in the exact stack-pointer
+register storage (same address and width) represents the incoming SP value.
+`Funcdata::spacebase` leaves it out of stack-frame promotion, so arithmetic on
+that value does not become the address of a synthetic local. The whole frame is
+then addressed through that value: a function that also pushes, spills or keeps
+locals through SP gets no frame locals, and those accesses print as memory
+relative to the parameter (`*(int *)(input_sp - 0xc) = 0x2a`). Inferred inputs,
+partial-width or offset declarations, and parameters of any other type (a
+pointer, a float, an undefined word) still use the ordinary stack model. The
+parameter check is limited to the architecture's stack space.
+
 **Keeping non-locals out** (`decompiler/crates/kuna-decomp/src/p4_calls/coreaction_protos.rs
 (ActionRestrictLocal)` → `funcdata_spacebase.rs (Funcdata::restrict_local)`,
 in `mainloop`). Stack storage that belongs to someone else is marked
