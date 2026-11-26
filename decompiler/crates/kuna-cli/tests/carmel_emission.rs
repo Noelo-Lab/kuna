@@ -5582,6 +5582,52 @@ fn carmel_wide_rotate_routes_through_carry_and_physical_writeback() {
 }
 
 #[test]
+fn carmel_cliw_parallel_reads_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let image = common::scratch_file("carmel-cliw-parallel", "xml");
+    let source = image.with_extension("c");
+    let executable = image.with_extension("exe");
+    let target = "Carmel:BE:24:default:default";
+    // A0 is overwritten by MAC1, but ALU1 doubles the incoming A0.
+    // The two LOADs use separate physical DATA banks.
+    fs::write(&image, format!(
+        "<binaryimage arch=\"{target}\">\n\
+         <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">804000c6428080c400c642908c6000dc01022bd8002bec00</bytechunk>\n\
+         <bytechunk space=\"cliw\" offset=\"0\" readonly=\"true\">844fe10421184047f282529d</bytechunk>\n\
+         <symbol space=\"code\" offset=\"0\" name=\"cliw_pair\"/>\n</binaryimage>\n"
+    )).unwrap();
+    let mut c = String::from("#include <stdbool.h>\n\
+        volatile unsigned short bank0 = 0x1111, bank4 = 0xaaaa;\n");
+    for reg in ["A0L", "A1L", "FF1", "FF2"] {
+        let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .arg("decompile").arg(&image).args(["cliw_pair", "--target", target, "--assert-strict",
+                "--assert", "param 0 %A0L unsigned short a0",
+                "--assert", "param 1 %A0H unsigned short high0",
+                "--assert", "param 2 %GB0 unsigned char guard0",
+                "--assert", "param 3 %ECFG unsigned short ecfg",
+                "--assert", "data [data,0x4000] volatile unsigned short bank0",
+                "--assert", "data [data,0xc400] volatile unsigned short bank4",
+                "--assert", &format!("return %{reg} unsigned short")]));
+        let code = String::from_utf8(output.stdout).unwrap();
+        assert!(!code.contains("halt_") && !code.to_lowercase().contains("warning:"), "{code}");
+        writeln!(c, "#define cliw_pair projection_{reg}\n{code}\n#undef cliw_pair").unwrap();
+    }
+    c.push_str("int main(void) {\n\
+        if (projection_A0L(7, 0, 0, 0) != 0x9f4a) return 1;\n\
+        if (projection_A1L(7, 0, 0, 0) != 14) return 2;\n\
+        if (projection_FF1(7, 0, 0, 0) != 0x1111) return 3;\n\
+        if (projection_FF2(7, 0, 0, 0) != 0xaaaa) return 4;\n\
+        return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [image, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_cliw_extended_source_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

@@ -4580,6 +4580,17 @@ shifts the trial bit into `BTR1` instead. These two forms preserve
 arithmetic status. The covered invocation refreshes condition feedback;
 these routes neither consume DATA operands nor model other lane mixes.
 
+The covered CLIW DATA templates bind MA1 and MA2 to the independent R0
+and R4 address generators, or combine MA1 and its continuation into a
+two-word operand. The ALUs and MACs sample the incoming accumulator and
+DATA values, even when another lane publishes a new value to the same
+register. A predicate inhibits its execution lane, not operand fetch or
+the independent LOAD lane. In the four-port postincrement form, MA3 and
+MA4 use the next physical R4 and R0 addresses respectively; consecutive
+calls to the same template see the published updates. The covered
+`MAXM` form records the effective DATA word address in `MINMAX` on
+replacement. These routes do not invoke peripheral plug-ins.
+
 For the short postmodify MA1 and MA2 routes with only a register
 accumulator add active, each write-qualified port independently
 stores zero at its incoming DATA address. Read qualifiers do not

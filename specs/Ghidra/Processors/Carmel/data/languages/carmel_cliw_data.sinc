@@ -1,0 +1,208 @@
+# Immutable DATA templates: address selection is independent of lane predicates.
+@define CLIW_DM "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_20_22=5 & carmel_cliw_known=1 & template_index"
+@define CLIW_DM_IDLE1 "tpl_73_95=0x3fffff"
+@define CLIW_DM_IDLE2 "tpl_24_31=0xff & tpl_32_46=0x3fff"
+@define CLIW_DM_LOAD12 "tpl_49_51=4 & tpl_0_2=5"
+@define CLIW_DM_NO_LOADS "tpl_49_51=0 & tpl_0_2=0"
+@define CLIW_DM_MPY1 "tpl_91_95=16 & tpl_87_90=8 & tpl_83_86=9 & tpl_78_82=31 & tpl_73_77>=16 & tpl_73_77<=21 & mac_lo & mac_hi & mac_guard"
+@define CLIW_DM_MPY2_SQUARE "cliw_mac2_op=16 & cliw_mac2_left=1 & cliw_mac2_right=1 & cliw_mac2_addend_hi=3 & cliw_mac2_addend_lo=7 & cliw_mac2_dest=18"
+@define CLIW_DM_SHORT "$(CLIW_DM) & cliw_address_bank=12 & wide_34_46=0x318 & wide_0_0=0"
+
+# The selector modes here are local to the bank-12 R0/R4 pair.
+cliw_dm_first: is wide_10_14=0 { local addr:2 = R0; export addr; }
+cliw_dm_first: is wide_10_14=8 { local addr:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); export addr; }
+cliw_dm_first: is wide_10_14=16 { local addr:2 = R0 + RF0; export addr; }
+cliw_dm_first: is wide_10_14=20 { local addr:2 = R0 + RN0; export addr; }
+cliw_dm_second: is wide_3_7=0 { local addr:2 = R4; export addr; }
+cliw_dm_second: is wide_3_7=4 { local addr:2 = R4; modify_ptr(R4, RN4, RM4, RL4, 8, 1); export addr; }
+cliw_dm_second: is wide_3_7=8 { local addr:2 = R4; modify_ptr(R4, RN4, RM4, RL4, 8, 2); export addr; }
+cliw_dm_second: is wide_3_7=12 { local addr:2 = R4; modify_ptr(R4, RN4, RM4, RL4, 8, 3); export addr; }
+cliw_dm_second: is wide_3_7=16 { local addr:2 = R4 + RF4; export addr; }
+
+:CLIW template_index is $(CLIW_DM_SHORT) & wide_8_9=1 & wide_1_2=1 & cliw_dm_first & cliw_dm_second &
+    $(CLIW_DM_MPY1) & $(CLIW_DM_IDLE2) & tpl_67_72=31 & tpl_18_23=31 & $(CLIW_DM_LOAD12) {
+    local first:2 = *[data]:2 cliw_dm_first;
+    local second:2 = *[data]:2 cliw_dm_second;
+    X1 = first;
+    FF1 = first;
+    FF2 = second;
+    local flags:2;
+    signed_product_result(mac_lo, mac_hi, mac_guard, first, second, flags);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+# Both ALUs read the incoming accumulators, not the peer MAC writebacks.
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & cliw_terminal_ma4=24 &
+    (cliw_terminal_ma3_condition=24 | cliw_terminal_ma3_condition=152) & index_high_0=0 &
+    wide_10_14=0 & wide_3_7=0 & wide_8_9=1 & wide_1_2=1 & wide_0_0 & cliw_mac1_predicate &
+    $(CLIW_DM_MPY1) & tpl_73_77=16 & $(CLIW_DM_MPY2_SQUARE) & $(CLIW_DM_LOAD12) &
+    tpl_67_72=32 & tpl_64_66=4 & tpl_62_63=0 & tpl_57_61=16 & tpl_52_56=17 &
+    tpl_18_23=32 & tpl_13_17=18 & tpl_8_12=18 & tpl_3_7=19 {
+    local first:2 = *[data]:2 R0;
+    local second:2 = *[data]:2 R4;
+    local factor:2 = A1L;
+    local old0:8;
+    local old2:8;
+    cliw_alu_sample(A0L, A0H, GB0, old0);
+    cliw_alu_sample(A2L, A2H, GB2, old2);
+    local enable:2;
+    local predicate_mac:1 = cliw_mac1_predicate;
+    local predicate_alu:1 = wide_0_0;
+    unary_ce(CECFG1, EST, CETBL, 0, enable);
+    local flags:2 = EST & 0xcfff;
+    local mac_flags:2;
+    local alu_flags:2;
+    local result:8;
+    X1 = first;
+    FF1 = first;
+    FF2 = second;
+    if (enable == 0 && predicate_mac != 0) goto <skip_mac>;
+    signed_product_result(mac_lo, mac_hi, mac_guard, first, second, mac_flags);
+    flags = flags | (mac_flags & 4);
+  <skip_mac>
+    if (enable == 0 && predicate_alu != 0) goto <skip_alu>;
+    cliw_alu_add(old0, old0, result, alu_flags);
+    write_accumulator40(A1L, A1H, GB1, result);
+    flags = (flags & 0xffc4) | alu_flags;
+  <skip_alu>
+    signed_product_result(A2L, A2H, GB2, factor, factor, mac_flags);
+    cliw_alu_add(old2, old2, result, alu_flags);
+    write_accumulator40(A3L, A3H, GB3, result);
+    publish_alu_ce((flags & 0xf13f) | ((alu_flags | (mac_flags & 4)) << 6));
+}
+
+:CLIW template_index is $(CLIW_DM_SHORT) & wide_8_9=2 & wide_1_2=2 & wide_10_14=8 & wide_3_7=8 &
+    cliw_dm_first & cliw_dm_second & $(CLIW_DM_NO_LOADS) &
+    tpl_91_95=16 & tpl_87_90=4 & tpl_83_86=2 & tpl_78_82=31 & tpl_73_77=24 &
+    cliw_mac2_op=16 & cliw_mac2_left=4 & cliw_mac2_right=2 & cliw_mac2_addend_hi=3 & cliw_mac2_addend_lo=7 & cliw_mac2_dest=19 &
+    tpl_67_72=36 & tpl_64_66=2 & tpl_62_63=1 & tpl_52_56=25 & tpl_18_23=31 {
+    local moved:2 = A1H;
+    local left:2 = A0H;
+    local right:2 = A2L;
+    local product:8;
+    raw_mac_product(left, right, 1:1, 1:1, product);
+    local result:8;
+    local flags:2;
+    raw_mac_finish(product, 0:8, 1:1, 0:1, 1:1, result, flags);
+    local mac_flags:2;
+    signed_product_result(A3L, A3H, GB3, left, right, mac_flags);
+    *[data]:2 cliw_dm_first = result(2);
+    *[data]:2 cliw_dm_second = moved;
+    publish_alu_ce((EST & 0xc13f) | (flags & 4) | (mac_flags << 6));
+}
+
+@define CLIW_DM_LONG "$(CLIW_DM) & cliw_address_bank=13 & wide_34_46=0x318 & wide_0_0=0 & wide_10_14=28 & wide_3_7=8 & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_18_23=31"
+:CLIW template_index is $(CLIW_DM_LONG) & wide_8_9=1 & wide_1_2=1 &
+    tpl_67_72=36 & tpl_64_66=6 & tpl_62_63=0 & tpl_52_56=16 {
+    local low_addr:2 = R0;
+    local high_addr:2 = low_addr + 1;
+    local low:2 = *[data]:2 low_addr;
+    local high:2 = *[data]:2 high_addr;
+    local bits:8 = ((zext(high) * 0x10000 + zext(low)) ^ 0x80000000) - 0x80000000;
+    A0L = low;
+    A0H = high;
+    GB0 = bits(4);
+    modify_ptr_scaled(R0, RN0, RM0, RL0, 0, 2, 2:2);
+    local flags:2;
+    cliw_alu_status(bits & 0xffffffffff, flags);
+    publish_alu_ce((EST & 0xcfc7) | flags);
+}
+:CLIW template_index is $(CLIW_DM_LONG) & wide_8_9=2 & wide_1_2=2 &
+    tpl_67_72=36 & tpl_64_66=4 & tpl_62_63=1 & tpl_52_56=24 {
+    local low_addr:2 = R0;
+    local high_addr:2 = low_addr + 1;
+    *[data]:2 low_addr = A1L;
+    *[data]:2 high_addr = A1H;
+    modify_ptr_scaled(R0, RN0, RM0, RL0, 0, 2, 2:2);
+}
+
+macro cliw_dm_word_add(left, right, word, flags) {
+    local a:8 = ((zext(left) ^ 0x8000) - 0x8000) << 16;
+    local b:8 = ((zext(right) ^ 0x8000) - 0x8000) << 16;
+    local exact:8 = a + b;
+    local raw:8 = (a & 0xffffffffff) + (b & 0xffffffffff);
+    local result:8;
+    raw_mac_finish(exact, raw, 1:1, 0:1, 1:1, result, flags);
+    word = result(2);
+}
+:CLIW template_index is $(CLIW_DM_SHORT) & wide_8_9=3 & wide_1_2=3 & wide_10_14=8 & wide_3_7=12 &
+    cliw_dm_first & cliw_dm_second & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) &
+    tpl_67_72=32 & tpl_64_66=6 & tpl_62_63=0 & tpl_57_61=9 & tpl_52_56=24 &
+    tpl_18_23=32 & tpl_13_17=25 & tpl_8_12=10 & tpl_3_7=25 {
+    local first:2 = *[data]:2 cliw_dm_first;
+    local second:2 = *[data]:2 cliw_dm_second;
+    local out1:2;
+    local out2:2;
+    local flags1:2;
+    local flags2:2;
+    cliw_dm_word_add(first, A1H, out1, flags1);
+    cliw_dm_word_add(second, A2H, out2, flags2);
+    *[data]:2 cliw_dm_first = out1;
+    *[data]:2 cliw_dm_second = out2;
+    publish_alu_ce((EST & 0xc104) | flags1 | (flags2 << 6));
+}
+
+# Four physical postincrements: MA3 follows MA2 on R4, MA4 follows MA1 on R0.
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & cliw_terminal_ma3_condition=8 & cliw_terminal_ma4=8 & wide_0_0=0 &
+    wide_8_9=1 & wide_1_2=1 & wide_10_14=8 & wide_3_7=8 & cliw_dm_first & cliw_dm_second & $(CLIW_DM_NO_LOADS) &
+    tpl_91_95=24 & tpl_87_90=8 & tpl_83_86=9 & tpl_78_82=18 & tpl_73_77=18 &
+    cliw_mac2_op=24 & cliw_mac2_left=11 & cliw_mac2_right=10 & cliw_mac2_addend_hi=2 & cliw_mac2_addend_lo=3 & cliw_mac2_dest=19 &
+    tpl_67_72=28 & tpl_64_66=6 & tpl_62_63=0 & tpl_57_61=4 & tpl_52_56=4 &
+    tpl_18_23=20 & tpl_13_17=27 & tpl_8_12=5 & tpl_3_7=5 {
+    build cliw_dm_first;
+    build cliw_dm_second;
+    local ma3:2 = R4;
+    local ma4:2 = R0;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    modify_ptr(R0, RN0, RM0, RL0, 0, 2);
+    local first:2 = *[data]:2 cliw_dm_first;
+    local second:2 = *[data]:2 cliw_dm_second;
+    local third:2 = *[data]:2 ma3;
+    local fourth:2 = *[data]:2 ma4;
+    local base2:8;
+    local base3:8;
+    cliw_alu_sample(A2L, A2H, GB2, base2);
+    cliw_alu_sample(A3L, A3H, GB3, base3);
+    local product2:8;
+    local product3:8;
+    raw_mac_product(first, second, 1:1, 1:1, product2);
+    raw_mac_product(fourth, third, 1:1, 1:1, product3);
+    local result2:8;
+    local result3:8;
+    local flags2:2;
+    local flags3:2;
+    cliw_alu_add(base2, product2 & 0xffffffffff, result2, flags2);
+    cliw_alu_add(base3, product3 & 0xffffffffff, result3, flags3);
+    X1 = first;
+    X2 = fourth;
+    write_accumulator40(A2L, A2H, GB2, result2);
+    write_accumulator40(A3L, A3H, GB3, result3);
+    if (first s<= A4L) goto <min_second>;
+    A4L = first;
+  <min_second>
+    if (fourth s>= A5L) goto <parallel_done>;
+    A5L = fourth;
+  <parallel_done>
+    publish_alu_ce((EST & 0xcfff) | (flags2 & 4) | ((flags3 & 4) << 6));
+}
+
+:CLIW template_index is $(CLIW_DM_SHORT) & wide_8_9=1 & wide_1_2=1 & wide_10_14=0 & wide_3_7=24 &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_18_23=31 &
+    tpl_67_72=26 & tpl_64_66=6 & tpl_62_63=0 & tpl_57_61=1 & tpl_52_56=1 {
+    local address:2 = R0;
+    local value:2 = *[data]:2 address;
+    if (value s<= A1L) goto <maxm_done>;
+    A1L = value;
+    MINMAX = address;
+  <maxm_done>
+}
+
+@undef CLIW_DM_LONG
+@undef CLIW_DM_SHORT
+@undef CLIW_DM_MPY2_SQUARE
+@undef CLIW_DM_MPY1
+@undef CLIW_DM_NO_LOADS
+@undef CLIW_DM_LOAD12
+@undef CLIW_DM_IDLE2
+@undef CLIW_DM_IDLE1
+@undef CLIW_DM

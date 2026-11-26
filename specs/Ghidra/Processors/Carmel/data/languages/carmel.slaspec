@@ -631,6 +631,7 @@ define token wide (48)
     cliw_address_bank = (16,19)
     cliw_terminal_ma4 = (34,38)
     cliw_terminal_ma3_condition = (39,46)
+    cliw_mac1_predicate = (46,46)
     swap_reg_lo = (40,42)
     swap_reg_full = (40,43)
     swap_reg_short_group = (43,45)
@@ -8590,6 +8591,9 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "R6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa6 & wide_14_22=0x119 & literal_word { R6 = literal_word; }
 :MOVE "R7",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa7 & wide_14_22=0x119 & literal_word { R7 = literal_word; }
 :MOVE "RN0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa8 & wide_14_22=0x119 & literal_word { RN0 = literal_word; }
+:MOVE "RN4",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xac & wide_14_22=0x119 & literal_word { RN4 = literal_word; }
+:MOVE "RF0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xb8 & wide_14_22=0x119 & literal_word { RF0 = literal_word; }
+:MOVE "RF4",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xbc & wide_14_22=0x119 & literal_word { RF4 = literal_word; }
 :MOVE "RN3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xab & wide_14_22=0x119 & literal_word { RN3 = literal_word; }
 :MOVE "RN5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xad & wide_14_22=0x119 & literal_word { RN5 = literal_word; }
 :MOVE "RN6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xae & wide_14_22=0x119 & literal_word { RN6 = literal_word; }
@@ -9148,6 +9152,8 @@ macro cliw_round_subtract(lo, hi, guard, left, right) {
 @undef CLIW_EXT_IDLE_2
 @undef CLIW_EXT_NO_LOADS
 @undef CLIW_EXT_CALL
+
+@include "carmel_cliw_data.sinc"
 
 # Only the qualified short MA1/MA2 write ports are visible to DATA.
 cliw_ma1_clear: is cliw_ma1_write=0 { }
