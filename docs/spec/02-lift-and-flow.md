@@ -3874,6 +3874,14 @@ conversion of Carmel indirect CODE-word operands to byte offsets: the SLEIGH
 translator does not rescale an indirect target for an unrelated three-byte
 code space.
 
+Compact `ADD` can use `FF12` as an unsigned 32-bit input or store the
+low 32 bits of the sum into it, with `FF1` below `FF2`. Its address-unit
+register input is a value, not a DATA access: `Rn` is zero-extended
+and `RNn` is sign-extended. The single-word FF and X destinations take
+the upper result word and test zero above the low word. The parallel
+right slot reverses the X destination selectors and uses its own flag
+lane. These register results do not apply the DATA store's `SR1` shift.
+
 Compact signed half-register `CMP` sets Z and M from the signed comparison
 and clears V in its issue lane. It preserves the lane's other arithmetic
 bits and the other lane. CE feedback samples the incoming flags before

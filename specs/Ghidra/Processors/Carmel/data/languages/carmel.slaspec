@@ -466,6 +466,12 @@ define token slot (24)
     slot_11_12 = (11,12)
     slot_11_11 = (11,11)
     slot_12_22 = (12,22)
+    compact_aux_acc_dst = (9,11)
+    compact_aux_dst_lo = (9,11)
+    compact_aux_dst_hi = (9,11)
+    compact_aux_dst_guard = (9,11)
+    compact_aux_word_left = (7,10)
+    compact_aux_word_right = (7,10)
     slot_10_12 = (10,12)
     slot_9_12 = (9,12)
     slot_16_22 = (16,22)
@@ -886,6 +892,12 @@ attach variables [indexed_load_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [indexed_load_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [indexed_load_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [indexed_load_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [compact_aux_acc_dst] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [compact_aux_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [compact_aux_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [compact_aux_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [compact_aux_word_left] [_ _ _ _ _ _ FF1 FF2 _ _ _ _ _ _ X1 X2];
+attach variables [compact_aux_word_right] [_ _ _ _ _ _ FF1 FF2 _ _ _ _ _ _ X2 X1];
 attach variables [indexed_load_ptr] [R0 R1];
 attach variables [indexed_load_inc] [RN0 RN1];
 attach values [indexed_load_shift] [0 2];
@@ -3868,6 +3880,114 @@ macro compact_long_finish(bits, carry_out, overflow, data_result, mixed, result,
     result = result >> ((ECFG >> 5) & 1);
   <finish>
 }
+
+macro compact_aux_add(lhs, rhs, word_result, result, flags) {
+    local sum:8 = lhs + rhs;
+    local bits:8 = sum & 0xffffffffff;
+    local carry_out:1 = sum >= 0x10000000000;
+    local overflow:1 = ((lhs ^ rhs) < 0x8000000000) && ((lhs ^ bits) >= 0x8000000000);
+    compact_long_finish(bits, carry_out, overflow, 0:1, 0:1, result, flags);
+    if (word_result == 0) goto <done>;
+    flags = (flags & 0xfff7) | (zext((bits >> 16) == 0) << 3);
+    if ((flags & 0x20) == 0 || (ECFG & 4) != 0 || (ECFG & 0x28) == 8) goto <done>;
+    flags = flags | 4;
+  <done>
+}
+
+compact_aux_agu: pair_ptr_1 is slot_1_5<=7 & pair_ptr_1 {
+    local bits:8 = zext(pair_ptr_1);
+    export bits;
+}
+compact_aux_agu: pair_rn_1 is slot_1_5>=8 & slot_1_5<=15 & pair_rn_1 {
+    local bits:8 = sext(pair_rn_1) & 0xffffffffff;
+    export bits;
+}
+
+@define COMPACT_AUX_LONG "slot_12_22=0x12b & compact_aux_agu"
+
+compact_aux_long: compact_aux_acc_dst,"FF12",compact_aux_agu is $(COMPACT_AUX_LONG)
+    & slot_6_8>=6 & slot_9_11<=5 & compact_aux_acc_dst & compact_aux_dst_lo & compact_aux_dst_hi & compact_aux_dst_guard {
+    build compact_aux_agu;
+    local pair:8 = (zext(FF2) << 16) | zext(FF1);
+    local result:8;
+    local flags:2;
+    compact_aux_add(pair, compact_aux_agu, 0:1, result, flags);
+    compact_aux_dst_lo = result:2;
+    compact_aux_dst_hi = result(2);
+    compact_aux_dst_guard = result(4);
+    export flags;
+}
+compact_aux_long: "FF12",indexed_load_acc,compact_aux_agu is $(COMPACT_AUX_LONG)
+    & slot_9_11>=6 & slot_6_8<=5 & indexed_load_acc & indexed_load_lo & indexed_load_hi & indexed_load_guard {
+    build compact_aux_agu;
+    local lhs:8;
+    compact_long_sample(indexed_load_lo, indexed_load_hi, indexed_load_guard, lhs);
+    local result:8;
+    local flags:2;
+    compact_aux_add(lhs, compact_aux_agu, 0:1, result, flags);
+    FF1 = result:2;
+    FF2 = result(2);
+    export flags;
+}
+
+compact_aux_word_sum: cmp_full_lhs_full,cmp_full_rhs_full is slot_12_22=0x132 & slot_11_11=1
+    & slot_4_6<=5 & slot_1_3<=5 & (slot_7_10=6 | slot_7_10=7 | slot_7_10=14 | slot_7_10=15)
+    & cmp_full_lhs_full & cmp_full_lhs_lo & cmp_full_lhs_hi & cmp_full_lhs_guard
+    & cmp_full_rhs_full & cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard {
+    local lhs:8;
+    local rhs:8;
+    compact_long_sample(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard, lhs);
+    compact_long_sample(cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, rhs);
+    local result:8;
+    local flags:2;
+    compact_aux_add(lhs, rhs, 1:1, result, flags);
+    local word:2 = result(2);
+    local packed:4 = (zext(flags) << 16) | zext(word);
+    export packed;
+}
+
+compact_aux_left_payload: compact_aux_long is compact_aux_long { build compact_aux_long; export compact_aux_long; }
+compact_aux_right_payload: compact_aux_long is compact_aux_long { build compact_aux_long; export compact_aux_long; }
+compact_aux_left_payload: compact_aux_word_left,compact_aux_word_sum is compact_aux_word_left & compact_aux_word_sum {
+    build compact_aux_word_sum;
+    compact_aux_word_left = compact_aux_word_sum:2;
+    local flags:2 = compact_aux_word_sum(2);
+    export flags;
+}
+compact_aux_right_payload: compact_aux_word_right,compact_aux_word_sum is compact_aux_word_right & compact_aux_word_sum {
+    build compact_aux_word_sum;
+    compact_aux_word_right = compact_aux_word_sum:2;
+    local flags:2 = compact_aux_word_sum(2);
+    export flags;
+}
+
+compact_aux_ce1: is slot_0_0=0 { export 1:2; }
+compact_aux_ce1: "CE1" is slot_0_0=1 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0:2, enabled); export enabled; }
+compact_aux_ce2: is slot_0_0=0 { export 1:2; }
+compact_aux_ce2: "CE2" is slot_0_0=1 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1:2, enabled); export enabled; }
+
+compact_aux_left: "ADD" compact_aux_ce1 compact_aux_left_payload is compact_aux_ce1 & compact_aux_left_payload {
+    local prev:2 = EST;
+    build compact_aux_ce1;
+    if (compact_aux_ce1 == 0) goto <publish>;
+    build compact_aux_left_payload;
+    EST = (prev & 0xffc4) | compact_aux_left_payload;
+  <publish>
+    publish_ce_feedback(EST & 0xcfff, prev);
+}
+compact_aux_right: "ADD" compact_aux_ce2 compact_aux_right_payload is compact_aux_ce2 & compact_aux_right_payload {
+    local prev:2 = EST;
+    build compact_aux_ce2;
+    if (compact_aux_ce2 == 0) goto <publish>;
+    build compact_aux_right_payload;
+    EST = (prev & 0xf13f) | (compact_aux_right_payload << 6);
+  <publish>
+    publish_ce_feedback(EST & 0xcfff, prev);
+}
+
+:^compact_aux_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_aux_left); (slot_mode=0 & nop_right) { build compact_aux_left; }
+:^nop_left "||" compact_aux_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_aux_right) { build compact_aux_right; }
+:^compact_aux_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_aux_left { build compact_aux_left; }
 
 # The unqualified binary ALU routes input selectors through the chosen result bank.
 @define WIDE_ALIAS_ALU "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & logic_ce_bank=0"

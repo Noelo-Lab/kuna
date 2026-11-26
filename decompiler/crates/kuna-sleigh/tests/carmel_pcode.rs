@@ -1811,6 +1811,45 @@ fn reti_ce1_veto_preserves_the_active_frame_and_address_enable_consumes_it() {
 }
 
 #[test]
+fn compact_aux_add_distinguishes_pair_width_address_values_and_word_flags() {
+    for (raw, expected, flags) in [
+        (0x12b380, 0x81236756, 0x3020),
+        (0x12b3c0, 0x81236756, 0x3020),
+        (0x12b390, 0x81233455, 0x3021),
+    ] {
+        let mut m = Machine::new(0, &[(raw, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x3300), ("RN0", 0xffff), ("FF1", 0x3456), ("FF2", 0x8123), ("CETBL", 0xffff)]);
+        m.seed_data(0x3300, 0x7abc);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A1"), m.reg("EST")), (expected, flags));
+    }
+    for raw in [0x12bc00, 0x12be00] {
+        let mut m = Machine::new(0, &[(raw, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x3300), ("A0", 0x23456789), ("CETBL", 0xffff)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("FF1"), m.reg("FF2"), m.reg("A0"), m.reg("EST")),
+                   (0x9a89, 0x2345, 0x23456789, 0x3000));
+    }
+    for (left, right, reg, a0, a1, ecfg, table, expected, flags) in [
+        (0x132b02, NOP, "FF1", 0, 1, 0, 0xffff, 0, 0x3008),
+        (0x132b82, NOP, "FF2", 0x80000000, 0x7fffffff, 4, 0xffff, 0x7fff, 0x3024),
+        (0x132f02, NOP, "X1", 0x80000000, 0x7fffffff, 8, 0xffff, 0xffff, 0x3020),
+        (NOP, 0x132f02, "X2", 0x80000000, 0x7fffffff, 8, 0xffff, 0xffff, 0x3800),
+        (0x132f82, NOP, "X2", 0x23456789, 0x03654321, 0x20, 0xffff, 0x26aa, 0x3000),
+        (0x132f83, NOP, "X2", 0x23456789, 0x03654321, 0, 0, 0x5678, 0),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", a0), ("A1", a1), ("ECFG", ecfg), ("CETBL", table),
+                 ("CECFG1", 0x1000), ("X2", 0x5678)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg(reg), m.reg("EST"), m.reg("A0"), m.reg("A1")), (expected, flags, a0, a1));
+    }
+}
+
+#[test]
 fn compact_arithmetic_packet_routes() {
     for table in [0, 0xffff] {
         let on = table != 0;
