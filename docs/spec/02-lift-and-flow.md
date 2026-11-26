@@ -4064,6 +4064,20 @@ even on a CE veto. The separately addressable sequential right store
 does not execute its left neighbor; on entry at that left issue, the
 qualified indexed ADDC retires as a separate read-modify-write.
 
+The wide signed `MOVE` DATA mux supports the indirect and postincrement
+routes with at least one long DATA operand. It samples both old word
+addresses. Each postincrement uses its own operand's stride, one for a
+word and two for a long, with the selected pointer's address mode.
+The source is a signed word or a low-word-first long; the saved loop
+start and end sources instead extend their unsigned 24-bit values.
+`ECFG.SR1` shifts the sampled value before storing it. A long write
+uses the low word at the old destination and the high word at the next
+wrapping DATA address. A short destination takes the high word of a
+long source. CE can permit address generation and operand fetch while
+vetoing the DATA write. Arithmetic flags stay unchanged; CE feedback
+is still published. A pair of postincrements of the same pointer
+remains unimplemented rather than assuming that both updates retire.
+
 The supported compact paired stack routes allocate two DATA words.
 `PUSH` writes the first source at old `SP` and the second just below it;
 the open second selector supplies `0xffff`. `POP` consumes the top word

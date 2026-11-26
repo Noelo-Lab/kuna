@@ -284,6 +284,46 @@ fn signed_compact_address_move_uses_the_issue_lane_and_preserves_arithmetic_flag
 }
 
 #[test]
+fn wide_signed_move_data_mux() {
+    // Seed nonzero arithmetic flags as if an earlier ALU issue retired.
+    for (fetch, cfg, table, ecfg, dst, expected, pointers, status) in [
+        ((0xc6b222, 0xc3611c), (0, 0), 0, 0, 0xc048, (0x8123, 0xffff), (0x8048, 0xc048), 0x24),
+        ((0x960040, 0xc3615c), (0, 0), 0, 0x20, 0xc048, (0xc091, 0xffff), (0x8049, 0xc04a), 0x24),
+        ((0x960040, 0xc3615d), (0, 0), 0, 0, 0xc048, (0x8123, 0xa456), (0x804a, 0xc04a), 0x24),
+        ((0x960040, 0xc3605d), (0, 0), 0, 0, 0xc048, (0xa456, 0x5678), (0x804a, 0xc049), 0x24),
+        ((0x160040, 0xc3615c), (0, 0), 0, 0, 0xc048, (0x1234, 0x5678), (0x8048, 0xc048), 0x24),
+        ((0x160040, 0xc3615c), (0x1000, 0), 0, 0, 0xc048, (0x1234, 0x5678), (0x8049, 0xc04a), 0x24),
+        ((0x160040, 0xc3615c), (0, 0), 0xffff, 0, 0xc048, (0x8123, 0xffff), (0x8049, 0xc04a), 0x3024),
+        ((0x560040, 0xc3615c), (0x1000, 0), 0xff00, 0, 0xc048, (0x8123, 0xffff), (0x8049, 0xc04a), 0x2024),
+        ((0x924030, 0xc3615f), (0, 0), 0, 0, 0xc048, (0x2345, 0x81), (0x8048, 0xc04a), 0x24),
+        ((0x93a55a, 0xc3615f), (0, 0), 0, 0x20, 0xc048, (0xa291, 0x49), (0x8048, 0xc04a), 0x24),
+        ((0x96a55a, 0xc3615d), (0, 0), 0, 0, 0xffff, (0x8123, 0xa456), (0x804a, 1), 0x24),
+    ] {
+        let mode = if fetch.0 & 0x800000 == 0 { 4 } else { 5 };
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], &[(0, mode, 6), (2, 1, 0)], None);
+        m.seed(&[("R6", 0x8048), ("R7", dst), ("RN6", 3), ("RN7", 4),
+                 ("CECFG1", cfg.0), ("CECFG2", cfg.1), ("CETBL", table),
+                 ("ECFG", ecfg), ("EST", 0x24), ("LSA1", 0x812345), ("LEA1", 0x934522)]);
+        let upper = (dst + 1) & 0xffff;
+        let sentinel = (dst + 2) & 0xffff;
+        for (address, word) in [(0x8048, 0x8123), (0x8049, 0xa456), (dst, 0x1234),
+                                (upper, 0x5678), (sentinel, 0xdead)] {
+            m.seed_data(address, word);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.data(dst), m.data(upper)), expected);
+        assert_eq!((m.reg("R6"), m.reg("R7")), pointers);
+        assert_eq!((m.reg("EST"), m.reg("LSA1"), m.reg("LEA1")), (status, 0x812345, 0x934522));
+        assert_eq!((m.data(0x8048), m.data(0x8049), m.data(sentinel)), (0x8123, 0xa456, 0xdead));
+    }
+    for (fetch, mode) in [((0x0f0040, 0xc3615e), 4), ((0x3d0040, 0xc3615e), 4), ((0x9655aa, 0xc36159), 5)] {
+        let mut m = Machine::new(0, &[fetch], &[(0, mode, 0)], None);
+        assert!(matches!(m.start(0), Err(KunaError::Unimpl { .. })));
+    }
+}
+
+#[test]
 fn compact_data_move_reads_the_old_address_and_uses_the_new_signed_increment() {
     for (cfg, value, rn, pointer, accumulator, flags) in [
         (0, 0, 3, 0x414b, 0, 8),

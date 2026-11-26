@@ -589,6 +589,15 @@ define token wide (48)
     wide_move_load_opcode = (5,22)
     wide_move_base = (40,42)
     wide_move_load_dst = (2,4)
+    wide_smove_src_mode = (43,45)
+    wide_smove_dst_mode = (5,9)
+    wide_smove_dst_long = (8,8)
+    wide_smove_src_r0 = (40,40)
+    wide_smove_src_r1 = (41,41)
+    wide_smove_src_r2 = (42,42)
+    wide_smove_dst_r0 = (2,2)
+    wide_smove_dst_r1 = (3,3)
+    wide_smove_dst_r2 = (4,4)
     wide_logic_rmw_op = (18,19)
     wide_logic_rmw_route = (0,17)
     wide_alias_logic_dst = (10,17)
@@ -9908,6 +9917,135 @@ data_load_dst: "R7" is wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x29c & w
     local word:2 = *[data]:2 address;
     local shift:1 = (ECFG & 0x20) != 0;
     *[data]:2 R0 = word s>> shift;
+}
+
+# The signed MOVE mux uses separate DATA widths for the source and destination AGUs.
+wide_smove_word_src: "*"^wide_move_base is wide_smove_src_mode=0 & wide_move_base { }
+wide_smove_word_src: "*"^wide_move_base^"++" is wide_smove_src_mode=2
+    & wide_move_base & wide_logic_rhs_modulo & wide_logic_rhs_bound & wide_logic_rhs_mode_shift {
+    modify_ptr(wide_move_base, 0:2, wide_logic_rhs_modulo, wide_logic_rhs_bound, wide_logic_rhs_mode_shift, 2:2);
+}
+wide_smove_long_src: "long *"^wide_move_base is wide_smove_src_mode=0 & wide_move_base { }
+wide_smove_long_src: "long *"^wide_move_base^"++" is wide_smove_src_mode=2
+    & wide_move_base & wide_logic_rhs_modulo & wide_logic_rhs_bound & wide_logic_rhs_mode_shift {
+    modify_ptr_scaled(wide_move_base, 0:2, wide_logic_rhs_modulo, wide_logic_rhs_bound, wide_logic_rhs_mode_shift, 2:2, 2:2);
+}
+wide_smove_dst_update: wide_logic_lhs_ptr is wide_logic_lhs_ptr & wide_smove_dst_long
+    & wide_logic_lhs_modulo & wide_logic_lhs_bound & wide_logic_lhs_mode_shift {
+    local stride:2 = 1 + wide_smove_dst_long;
+    modify_ptr_scaled(wide_logic_lhs_ptr, 0:2, wide_logic_lhs_modulo, wide_logic_lhs_bound, wide_logic_lhs_mode_shift, 2:2, stride);
+}
+wide_smove_dst: "*"^wide_logic_lhs_ptr is wide_smove_dst_mode=0 & wide_logic_lhs_ptr { }
+wide_smove_dst: "long *"^wide_logic_lhs_ptr is wide_smove_dst_mode=8 & wide_logic_lhs_ptr { }
+wide_smove_dst: "*"^wide_smove_dst_update^"++" is wide_smove_dst_mode=2 & wide_smove_dst_update {
+    build wide_smove_dst_update;
+}
+wide_smove_dst: "long *"^wide_smove_dst_update^"++" is wide_smove_dst_mode=10 & wide_smove_dst_update {
+    build wide_smove_dst_update;
+}
+wide_smove_saved: "LSA1" is wide_40_45=0x12 { export LSA1; }
+wide_smove_saved: "LEA1" is wide_40_45=0x13 { export LEA1; }
+
+macro wide_smove_read_long(address, value) {
+    local low:2 = *[data]:2 address;
+    local upper:2 = address + 1;
+    local high:2 = *[data]:2 upper;
+    value = (zext(high) << 16) | zext(low);
+}
+macro wide_smove_write_long(address, value) {
+    local upper:2 = address + 1;
+    *[data]:2 address = value(0);
+    *[data]:2 upper = value(2);
+}
+macro wide_smove_sr1(value, shifted) {
+    local scale:4 = zext((ECFG & 0x20) != 0);
+    shifted = value s>> scale;
+}
+
+@define WIDE_SIGNED_MOVE "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_10_22=0x10d8 & wide_ce_prefix & wide_smove_dst & wide_logic_lhs_ptr"
+
+# Dual updates to a single pointer can stop in the address stage.
+@define WIDE_SIGNED_MOVE_SAFE "wide_smove_src_mode=0 | wide_smove_dst_mode=0 | wide_smove_dst_mode=8 | (wide_smove_src_r0=0 & wide_smove_dst_r0=1) | (wide_smove_src_r0=1 & wide_smove_dst_r0=0) | (wide_smove_src_r1=0 & wide_smove_dst_r1=1) | (wide_smove_src_r1=1 & wide_smove_dst_r1=0) | (wide_smove_src_r2=0 & wide_smove_dst_r2=1) | (wide_smove_src_r2=1 & wide_smove_dst_r2=0)"
+
+:MOVE wide_ce_prefix wide_smove_dst,wide_smove_word_src is $(WIDE_SIGNED_MOVE)
+    & ($(WIDE_SIGNED_MOVE_SAFE)) & wide_move_base & wide_0_1=0 & wide_smove_dst_long=1 & wide_smove_word_src {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (agu == 0) goto <publish>;
+    local source:2 = wide_move_base;
+    local dest:2 = wide_logic_lhs_ptr;
+    build wide_smove_word_src;
+    build wide_smove_dst;
+    local word:2 = *[data]:2 source;
+    if (execute == 0) goto <publish>;
+    local value:4 = sext(word);
+    local shifted:4;
+    wide_smove_sr1(value, shifted);
+    wide_smove_write_long(dest, shifted);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:MOVE wide_ce_prefix wide_smove_dst,wide_smove_long_src is $(WIDE_SIGNED_MOVE)
+    & ($(WIDE_SIGNED_MOVE_SAFE)) & wide_move_base & wide_0_1=1 & wide_smove_dst_long=0 & wide_smove_long_src {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (agu == 0) goto <publish>;
+    local source:2 = wide_move_base;
+    local dest:2 = wide_logic_lhs_ptr;
+    build wide_smove_long_src;
+    build wide_smove_dst;
+    local value:4;
+    wide_smove_read_long(source, value);
+    if (execute == 0) goto <publish>;
+    local shifted:4;
+    wide_smove_sr1(value, shifted);
+    *[data]:2 dest = shifted(2);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:MOVE wide_ce_prefix wide_smove_dst,wide_smove_long_src is $(WIDE_SIGNED_MOVE)
+    & ($(WIDE_SIGNED_MOVE_SAFE)) & wide_move_base & wide_0_1=1 & wide_smove_dst_long=1 & wide_smove_long_src {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (agu == 0) goto <publish>;
+    local source:2 = wide_move_base;
+    local dest:2 = wide_logic_lhs_ptr;
+    build wide_smove_long_src;
+    build wide_smove_dst;
+    local value:4;
+    wide_smove_read_long(source, value);
+    if (execute == 0) goto <publish>;
+    local shifted:4;
+    wide_smove_sr1(value, shifted);
+    wide_smove_write_long(dest, shifted);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:MOVE wide_ce_prefix wide_smove_dst,wide_smove_saved is $(WIDE_SIGNED_MOVE)
+    & wide_0_1=3 & (wide_smove_dst_mode=8 | wide_smove_dst_mode=10) & wide_smove_saved {
+    build wide_ce_prefix;
+    local execute:2;
+    local agu:2;
+    wide_issue_enable(wide_ce_prefix, execute, agu);
+    if (agu == 0) goto <publish>;
+    local dest:2 = wide_logic_lhs_ptr;
+    build wide_smove_dst;
+    if (execute == 0) goto <publish>;
+    local value:4 = zext(wide_smove_saved);
+    local shifted:4;
+    wide_smove_sr1(value, shifted);
+    wide_smove_write_long(dest, shifted);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
 }
 
 # EQ1 returns: sample the incoming EST and pop only on the taken path.
