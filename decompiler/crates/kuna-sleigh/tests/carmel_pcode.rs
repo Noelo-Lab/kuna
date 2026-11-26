@@ -1434,6 +1434,119 @@ fn wide_mac_reads_all_24_saved_code_address_bits_as_unsigned() {
     assert_eq!((m.reg("LC1"), m.reg("LSA1"), m.reg("X1"), m.reg("EST") & 0x3f), (0xfe, 0xfef876, 3, 1));
 }
 
+fn wide_product_machine(packet: u64) -> Machine {
+    let mode = if packet >> 47 == 0 { 4 } else { 5 };
+    Machine::new(0, &[((packet >> 24) as u32, (packet & 0xffffff) as u32), (NOP, NOP)],
+                 &[(0, mode, 6), (2, 1, 0)], None)
+}
+
+#[test]
+fn wide_mul_disconnected_and_control_outputs_keep_their_own_flag_lanes() {
+    for (packet, flags, ff1, lc1) in [
+        (0x910000b385a1, 0x3000, 0x1234, 0x5555),
+        (0x910000b38ea1, 0x3020, 0x1234, 0x5555),
+        (0x910000b38fa1, 0x3000, 0x1234, 0x5555),
+        (0x910000b3bea1, 0x3024, 0xfffe, 0x5555),
+        (0x910000b3d4a1, 0x3024, 0x1234, 0xfffe),
+        (0x910000b3d8a1, 0x3024, 0x1234, 0x5555),
+    ] {
+        let mut m = wide_product_machine(packet);
+        let guard = 0xadaabbccdd;
+        m.seed(&[("A0", 0xffff), ("A1", 0xffff), ("A5", guard), ("X1", 0xba98),
+                 ("FF1", 0x1234), ("LC1", 0x5555), ("CETBL", 0xffff)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("FF1"), m.reg("LC1")), (flags, ff1, lc1), "{packet:012x}");
+        assert_eq!((m.reg("A0"), m.reg("A5"), m.reg("LC"), m.reg("X1")), (0xffff, guard, 0, 0xba98));
+    }
+    for (packet, x1) in [(0xa20000b38601, 0x8000), (0xe606ffb3d34f, 0x1aec), (0x79b71db28f5b, 0x5dda)] {
+        let mut m = wide_product_machine(packet);
+        m.seed(&[("R0", 0x40), ("R5", 0x4048), ("RN5", 2), ("R7", 0xc048),
+                 ("LEA1", 0x78bbbb), ("X1", 0xba98), ("CETBL", 0xffff)]);
+        m.seed_data(0x40, 0x8000);
+        m.seed_data(0xc047, 0x1aec);
+        m.seed_data(0x404a, 0x5dda);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("X1"), m.reg("LEA1"), m.reg("EST")), (x1, 0x78bbbb, 0x3000));
+        assert_eq!((m.reg("R0"), m.reg("R5"), m.reg("R7")), (0x40, 0x4048, 0xc048));
+    }
+    for (dst, config, word, flags) in [
+        (0x8e, 0, 0x3344, 0x3000), (0xbe, 0, 0, 0x3008), (0xbe, 4, 0xfffe, 0x3020),
+    ] {
+        let mut m = wide_product_machine(0xd1a701b300a1 | (dst << 8));
+        let input = if config == 4 { 0xffff } else { 1 };
+        m.seed(&[("A0L", input), ("A1L", input), ("FF1", 0x3344), ("CETBL", 0xffff), ("ECFG", config)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("FF1"), m.reg("EST")), (word, flags));
+    }
+}
+
+#[test]
+fn wide_rounded_product_uses_same_result_and_literal_ports_as_multiply() {
+    for (packet, a0, x1, ff1, lc1, flags) in [
+        (0xf3a701b585e7, 0x4123, 0, 0x3210, 0x5151, 0x3000),
+        (0xd1a701b58ea1, 0x4123, 0xba98, 0x3210, 0x5151, 0x3010),
+        (0xd1a701b5bea1, 0x4123, 0xba98, 0xf706, 0x5151, 0x3010),
+        (0xd1a701b5d4a1, 0x4123, 0xba98, 0x3210, 0xf706, 0x3010),
+        (0xd1a701b5d3a1, 0x4123, 0xba98, 0x3210, 0x5151, 0x3000),
+        (0xd1a701b5d8a1, 0x4123, 0xba98, 0x3210, 0x5151, 0x3010),
+        (0xd0a701b5889f, 0x160000, 0x55, 0x3210, 0x5151, 0x3000),
+        (0xcfa701b588a1, 0xffe95b0000, 0xba98, 0x3210, 0x5151, 0x3010),
+        (0xd0a701b5489f, 0x4123, 0x55, 0x3210, 0x5151, 0x3000),
+    ] {
+        let mut m = wide_product_machine(packet);
+        m.seed(&[("A0", 0x4123), ("A1", 0xdcba), ("A5", 0xadaabbccdd), ("X1", 0xba98),
+                 ("R0", 0x40), ("LC1", 0x5151), ("LEA1", 0x2566), ("FF1", 0x3210), ("CETBL", 0xffff)]);
+        m.seed_data(0xffff, 0x55);
+        m.seed_data(0x40, 0x8000);
+        m.seed_data(0x41, 0x4321);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("X1"), m.reg("FF1"), m.reg("LC1"), m.reg("EST")),
+                   (a0, x1, ff1, lc1, flags), "{packet:012x}");
+        assert_eq!((m.reg("LEA1"), m.reg("A5"), m.data(0xffff)), (0x2566, 0xadaabbccdd, 0x55));
+        let expected_store = if packet == 0xd0a701b5489f { (0x41, 0, 0x16) } else { (0x40, 0x8000, 0x4321) };
+        assert_eq!((m.reg("R0"), m.data(0x40), m.data(0x41)), expected_store);
+    }
+    for (packet, cfg1, cfg2, table, pointer, latch, word, flags) in [
+        (0x10a701b5489f, 0, 0, 0, 0x40, 0x7777, 0x4321, 0),
+        (0x10a701b5489f, 0x1000, 0, 0, 0x41, 0x55, 0x4321, 0),
+        (0x50a701b5489f, 0, 0x1000, 0, 0x41, 0x55, 0x4321, 0),
+        (0x10a701b5489f, 0, 0, 0xffff, 0x41, 0x55, 0x15, 0x3000),
+        (0xd0a701b5489f, 0, 0, 0, 0x41, 0x55, 0x15, 0),
+    ] {
+        let mut m = wide_product_machine(packet);
+        m.seed(&[("A0L", 0x4000), ("R0", 0x40), ("X1", 0x7777), ("CETBL", table),
+                 ("CECFG1", cfg1), ("CECFG2", cfg2)]);
+        m.seed_data(0xffff, 0x55);
+        m.seed_data(0x41, 0x4321);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R0"), m.reg("X1"), m.data(0x41), m.reg("EST")), (pointer, latch, word, flags));
+    }
+    for (packet, config, left, right, flags, high) in [
+        (0xd1a701b5bea1, 0x22, 0x4000, 2, 0x3000, 1),
+        (0xd1a701b5bea1, 0x25, 0x8000, 0x8000, 0x3024, 0x7fff),
+        (0xd1a701b548a1, 0x22, 0x4000, 2, 0x3008, 0),
+        (0xd1a701b548a1, 0x25, 0x8000, 0x8000, 0x3024, 0x3fff),
+    ] {
+        let mut m = wide_product_machine(packet);
+        m.seed(&[("A0L", left), ("A1L", right), ("R0", 0x40), ("CETBL", 0xffff), ("ECFG", config)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        let result = if (packet >> 8) & 0xff == 0x48 { m.data(0x41) } else { m.reg("FF1") };
+        assert_eq!((m.reg("EST"), result), (flags, high));
+    }
+    let mut m = wide_product_machine(0xd0a701b59e9f);
+    m.seed(&[("A0L", 0x4000), ("X1", 0x7777), ("CETBL", 0xffff)]);
+    m.seed_data(0xffff, 0x55);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("X1"), m.reg("EST")), (0x15, 0x3000));
+}
+
 #[test]
 fn compact_return_retires_only_its_counted_issues_and_pops_the_link() {
     let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 0)];

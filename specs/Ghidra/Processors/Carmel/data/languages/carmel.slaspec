@@ -6702,6 +6702,195 @@ macro raw_mac_word(value, result) {
     result = ((zext(value) ^ 0x8000) - 0x8000) << 16;
 }
 
+# Plain products have a separate result mux from accumulating MAC.
+wide_mpy_kind: "MPY"   is wide_acc_mac_op=0x30 { export 3:1; }
+wide_mpy_kind: "MPYSU" is wide_acc_mac_op=0x31 { export 1:1; }
+wide_mpy_kind: "MPYUS" is wide_acc_mac_op=0x32 { export 2:1; }
+wide_mpy_kind: "MPYUU" is wide_acc_mac_op=0x33 { export 0:1; }
+wide_mpy_kind: "MPYR"  is wide_acc_mac_op=0x35 { export 7:1; }
+
+wide_mpy_enable: is carmel_issue=5 & wide_left_mode=1 { export 3:2; }
+wide_mpy_enable: " CE1" is carmel_issue=4 & wide_left_mode=0 & wide_mac_prefix=0 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    enabled = enabled | ((CECFG1 & 0x1000) >> 11);
+    export enabled;
+}
+wide_mpy_enable: " CE2" is carmel_issue=4 & wide_left_mode=0 & wide_mac_prefix=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    enabled = enabled | ((CECFG2 & 0x1000) >> 11);
+    export enabled;
+}
+
+wide_mpy_first: "A0L" is wide_acc_mac_first=0x50 { export A0L; }
+wide_mpy_first: "*R0" is wide_acc_mac_first=0 {
+    local address:2 = R0;
+    export *[data]:2 address;
+}
+wide_mpy_first: "*R7+"^wide_acc_mac_displacement is wide_acc_mac_first=0x27 & wide_acc_mac_displacement {
+    local address:2 = R7 + wide_acc_mac_displacement;
+    export *[data]:2 address;
+}
+wide_mpy_first: "*R5+RN5" is wide_acc_mac_first=0x2d {
+    local address:2 = R5 + RN5;
+    export *[data]:2 address;
+}
+wide_mpy_first: "*0xffff" is wide_acc_mac_first=0x4f {
+    local address:2 = 0xffff;
+    export *[data]:2 address;
+}
+wide_mpy_first: "unbound" is wide_acc_mac_first=0x73 { export 0:2; }
+
+wide_mpy_second: "A0L" is wide_40_45=0x10 & wide_0_0=1 { export A0L; }
+wide_mpy_second: "A1L" is wide_40_45=0x11 & wide_0_0=1 { export A1L; }
+wide_mpy_second: "R2"  is wide_40_45=0x22 & wide_0_0=1 { export R2; }
+wide_mpy_second: "R6"  is wide_40_45=0x26 & wide_0_0=1 { export R6; }
+wide_mpy_second: "unbound" is wide_40_45=0x33 & wide_0_0=1 { export 0:2; }
+wide_mpy_second: "unbound" is wide_40_45=0x39 & wide_0_0=1 { export 0:2; }
+wide_mpy_second: "#"^wide_acc_mac_absolute is wide_40_45=0x0f & wide_0_0=1 & wide_acc_mac_absolute {
+    export *[const]:2 wide_acc_mac_absolute;
+}
+
+wide_mpy_discard: "discard" is (wide_acc_mac_dst>=0x80 & wide_acc_mac_dst<0x87) |
+    wide_acc_mac_dst=0x8f | wide_acc_mac_dst=0xd2 | wide_acc_mac_dst=0xd3 |
+    wide_acc_mac_dst=0xd5 | wide_acc_mac_dst=0xd7 {}
+
+wide_mpy_word: "FF1" is wide_acc_mac_dst=0xbe { export FF1; }
+wide_mpy_word: "LC1" is wide_acc_mac_dst=0xd4 { export LC1; }
+
+wide_mpy_latch: is wide_acc_mac_first=0x50 {
+    local bypass:2;
+    export bypass;
+}
+wide_mpy_latch: is wide_acc_mac_first!=0x50 { export X1; }
+
+wide_mpy_flags_only: "RMW2" is wide_acc_mac_dst=0x8e { export 0:1; }
+wide_mpy_flags_only: "discard" is wide_acc_mac_dst=0xd8 { export 1:1; }
+
+@define WIDE_MPY "wide_right_mode=1 & wide_mpy_kind & wide_mpy_enable & wide_mpy_first & wide_mpy_second & wide_mpy_latch"
+
+macro wide_mpy_result(first, second, kind, narrow, store, shift, product, result, flags) {
+    local signedness:1 = kind & 3;
+    raw_mac_product(first, second, signedness & 1, signedness & 2, product);
+    local raw:8 = product & 0xffffffffff;
+    local rounded:1 = (kind & 4) != 0;
+    if (!rounded) goto <finish>;
+    local quantum:8 = 0x10000 << shift;
+    local bias:8 = quantum >> 1;
+    product = (product + bias) & -quantum;
+    raw = raw + bias;
+  <finish>
+    local active:2;
+    raw_mac_finish_limit(product, raw, narrow | store, narrow, store,
+                         signedness == 3, result, active);
+    raw_mac_flags(flags, active, 0);
+    if (!rounded) goto <done>;
+    result = result & 0xffffff0000;
+  <done>
+}
+
+:^wide_mpy_kind^wide_mpy_enable wide_mpy_discard,wide_mpy_first,wide_mpy_second is
+    $(WIDE_MPY) & wide_mpy_discard {
+    build wide_mpy_enable;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_first;
+    wide_mpy_latch = wide_mpy_first;
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:^wide_mpy_kind^wide_mpy_enable wide_mpy_flags_only,wide_mpy_first,wide_mpy_second is
+    $(WIDE_MPY) & wide_mpy_flags_only {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_first;
+    local first:2 = wide_mpy_first;
+    wide_mpy_latch = first;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local result:8;
+    local product:8;
+    wide_mpy_result(first, wide_mpy_second, wide_mpy_kind, wide_mpy_flags_only, 0:1, 0:4, product, result, flags);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:^wide_mpy_kind^wide_mpy_enable wide_mpy_word,wide_mpy_first,wide_mpy_second is
+    $(WIDE_MPY) & wide_mpy_word {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_first;
+    local first:2 = wide_mpy_first;
+    wide_mpy_latch = first;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local result:8;
+    local product:8;
+    wide_mpy_result(first, wide_mpy_second, wide_mpy_kind, 1:1, 0:1, 0:4, product, result, flags);
+    wide_mpy_word = result(2);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:^wide_mpy_kind^wide_mpy_enable "X1",wide_mpy_first,wide_mpy_second is
+    $(WIDE_MPY) & wide_acc_mac_dst=0x9e {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_first;
+    local first:2 = wide_mpy_first;
+    wide_mpy_latch = first;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local result:8;
+    local product:8;
+    wide_mpy_result(first, wide_mpy_second, wide_mpy_kind, 1:1, 0:1, 0:4, product, result, flags);
+    X1 = result(2);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:^wide_mpy_kind^wide_mpy_enable "A0",wide_mpy_first,wide_mpy_second is
+    $(WIDE_MPY) & wide_acc_mac_dst=0x88 {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_first;
+    local first:2 = wide_mpy_first;
+    wide_mpy_latch = first;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local result:8;
+    local product:8;
+    wide_mpy_result(first, wide_mpy_second, wide_mpy_kind, 0:1, 0:1, 0:4, product, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:^wide_mpy_kind^wide_mpy_enable "*R0++",wide_mpy_first,wide_mpy_second is
+    $(WIDE_MPY) & wide_acc_mac_dst=0x48 {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_first;
+    local address:2 = R0;
+    modify_ptr(R0, 0:2, RM0, RL0, 0, 2);
+    local first:2 = wide_mpy_first;
+    wide_mpy_latch = first;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local result:8;
+    local product:8;
+    local shift:4 = zext((ECFG >> 5) & 1);
+    wide_mpy_result(first, wide_mpy_second, wide_mpy_kind, 0:1, 1:1, shift, product, result, flags);
+    result = (result >> shift) | (result & 0x8000000000);
+    compact_pair_fft(product, result, (wide_mpy_kind & 3) == 3, flags);
+    compact_pair_long_store(address, result);
+  <publish>
+    publish_alu_ce(flags);
+}
+
 # The guard and control ports use the upper word of the same scaled product,
 # but align their addends differently. Neither port drives arithmetic flags.
 macro wide_mac_guard_result(guard, product, alignment) {

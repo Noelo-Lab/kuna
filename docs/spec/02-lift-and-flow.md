@@ -4002,6 +4002,21 @@ The result multiplexer selects a complete `A5` update, the flags-only
 lane with addend -1, the fallback DATA word, or the high-word result
 into `A0L` without changing its high half or guard.
 
+Wide nonaccumulating multiply has its own result mux. Guard and
+disconnected control selectors discard the product without driving
+arithmetic status; they do not suppress an enabled first-input fetch or
+its `X1` latch. The full flags-only lane uses the product without a MAC
+addend. The narrow flags-only lane and the `FF1`, `X1`, and saved `LC1`
+word results instead test zero after dropping the low word and report
+extension and narrowing loss separately. An explicit `X1` result
+supersedes its earlier operand latch. The extra literal connects to the
+second input only; the corresponding first-input selector reads DATA
+at `0xffff` and latches that word. `MPYR` rounds ties upward. `SR1`
+moves the rounding boundary and shifts the stored pair on the long
+DATA port only. A qualified long DATA result captures the old pointer
+and performs the address update and operand latch when AEN allows
+them, even if the execution predicate suppresses the result and flags.
+
 The supported CE-qualified wide `DIVIDE` forms distinguish a short absolute
 DATA operand from a literal and from a long absolute DATA operand. Long
 DATA contains the low word first; the second word address wraps. The trial
