@@ -7,16 +7,19 @@
     Twenty-five leaves open with std 4,-8(1); addis 5,3,1; addi 3,5,n.  The same
     three instructions occur inside sample, which a symbol in .dynsym sizes at 28
     bytes:
-        0xeb8  cmpdi 3,0 / beq 0xed0 / nop
-        0xec4  std 4,-8(1) / addis 5,3,1 / addi 3,5,7
-        0xed0  blr
+        0x1068  cmpdi 3,0 / beq 0x1080 / nop
+        0x1074  std 4,-8(1) / addis 5,3,1 / addi 3,5,7
+        0x1080  blr
     The size was read as that of the bytes at the descriptor, so the gap walk
-    named sub_ec4 and sample ended there without its result.
+    named sub_1074 and sample ended there without its result.  exact24 is the same
+    shape in 24 bytes with no .name symbol.
 
-    These keep their starts: the routine behind sample that has no symbol (0xed4),
-    inner, a symbol inside outer (0xef0), and the routine behind the 8 bytes of
-    dotted (0xf24), whose symbol states its descriptor's 24 bytes as the dot-symbol
-    ABI does.  kuna-cli's elfv1_entries covers a call target inside a function.
+    These keep their starts: the routine behind sample that has no symbol
+    (0x1084), inner, a symbol inside outer (0x10a0), the routine behind the 8
+    bytes of dotted (0x10d4), whose descriptor symbol states the 24 bytes of its
+    descriptor and whose .dotted symbol the 8, as the dot-symbol ABI does, the code
+    a descriptor with no symbol names inside local (0x1144), and the target of a
+    call from caller, which nothing calls, inside reached (0x1128).
 
     Stage: P1 program prep (code/data partition), option aif (the drivers' default
     on every architecture but x86-64).  Single pass per byte order.
@@ -38,6 +41,9 @@
   <com>lo fu sample</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu exact24</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfv1_symbol_extent_le.so</com>
   <com>option listing on</com>
@@ -47,12 +53,17 @@
   <com>lo fu sample</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu exact24</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="elfv1-symbolextent #1: sample is listed" min="2" max="2">0xeb8 sample</stringmatch>
-<stringmatch name="elfv1-symbolextent #2: no start inside sample" min="0" max="0">sub_ec4</stringmatch>
-<stringmatch name="elfv1-symbolextent #3: sample keeps its result" min="2" max="2">a0 \+= 0x10007;|return a0 \+ 0x10007;</stringmatch>
-<stringmatch name="elfv1-symbolextent #4: the routine behind sample is a start" min="2" max="2">0xed4 sub_ed4</stringmatch>
-<stringmatch name="elfv1-symbolextent #5: a symbol inside outer is a start" min="2" max="2">0xef0 inner</stringmatch>
-<stringmatch name="elfv1-symbolextent #6: a descriptor's own size bounds no code" min="2" max="2">0xf24 sub_f24</stringmatch>
+<stringmatch name="elfv1-symbolextent #1: sample and exact24 are listed" min="4" max="4">0x10(68 sample|e4 exact24)</stringmatch>
+<stringmatch name="elfv1-symbolextent #2: no start inside sample or exact24" min="0" max="0">sub_10(74|ec)</stringmatch>
+<stringmatch name="elfv1-symbolextent #3: sample and exact24 keep their results" min="4" max="4">a0 \+= 0x1000[7f];|return a0 \+ 0x1000[7f];</stringmatch>
+<stringmatch name="elfv1-symbolextent #4: the routine behind sample is a start" min="2" max="2">0x1084 sub_1084</stringmatch>
+<stringmatch name="elfv1-symbolextent #5: a symbol inside outer is a start" min="2" max="2">0x10a0 inner</stringmatch>
+<stringmatch name="elfv1-symbolextent #6: a descriptor's own size bounds no code" min="2" max="2">0x10d4 sub_10d4</stringmatch>
+<stringmatch name="elfv1-symbolextent #7: a descriptor with no symbol names a start" min="2" max="2">0x1144 sub_1144</stringmatch>
+<stringmatch name="elfv1-symbolextent #8: a call from an uncalled export names a start" min="2" max="2">0x1128 sub_1128</stringmatch>
 </decompilertest>

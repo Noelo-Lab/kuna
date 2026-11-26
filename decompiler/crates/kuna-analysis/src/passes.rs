@@ -1354,8 +1354,9 @@ pub fn run_listing_consumers_replaying_observed(
                 bracket(listing.exec_ranges()), None,
             ));
             let bodies = crate::entry::sized_function_bodies(&file);
+            let named = crate::entry::elfv1_named_starts(&file);
             aif_out.entries = checked.entries;
-            aif_out.entries.retain(|&vma| !crate::entry::inside_body(&bodies, vma));
+            aif_out.entries.retain(|&vma| !crate::entry::inside_body(&bodies, vma) || named.binary_search(&vma).is_ok());
             if !checked.pool_entries.is_empty() {
                 let mut pool_out = AnalysisOutput::default();
                 pool_out.entries = checked.pool_entries;
