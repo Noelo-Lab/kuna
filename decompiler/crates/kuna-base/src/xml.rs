@@ -2339,8 +2339,9 @@ mod tests {
         // and kuna-scalar-stack-pointer / a locked integer SP projects its value; ordinary frames keep locals
         // and kuna-mips-octeon-elf32-o64 / an Octeon ELF32 image declaring O64 or no ABI loads as Octeon O64
         // and kuna-word-index-scalar / a word index matching a global stays numeric without pointer evidence
+        // and kuna-sparc-trap-resume / a branch after a delay-slot trap is the trap's resume
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
-        assert_eq!(count, 937, "corpus file count drifted");
+        assert_eq!(count, 938, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
