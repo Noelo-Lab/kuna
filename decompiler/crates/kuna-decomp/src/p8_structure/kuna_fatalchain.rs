@@ -55,8 +55,8 @@ fn enabled(data: &Funcdata) -> bool {
 /// Whether a chain may fold into a block that is not a no-return call.
 fn any_target(data: &Funcdata) -> bool {
     data.get_arch().cond_fold_chain == ChainFold::Auto
+        && !data.chainfold_withdrawn()
         && !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(data)
-        && (std::env::var_os("KUNA_CF_FP").is_none() || !crate::p3_dataflow::kuna_unoptimized::frame_pointer(data))
 }
 
 /// Whether basic block `bb` ends in the halt flow plants after a call to a
@@ -169,7 +169,9 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
     }
     let high = data.is_high_on();
     let mut hits: Vec<Address> = Vec::new();
-    for (_, ch) in chains(data, any_target(data)) {
+    let mut ordinary = false;
+    for (t, ch) in chains(data, any_target(data)) {
+        let before = hits.len();
         for &c in &ch[1..] {
             if !complex.contains(&c) {
                 continue;
@@ -186,10 +188,24 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
             complex.remove(&c);
             hits.push(a);
         }
+        ordinary |= hits.len() > before && !noreturn_tail(data, t);
     }
     for a in hits {
         data.add_fatalchain_relaxed(a);
     }
+    if ordinary {
+        data.set_chainfold_any(true);
+    }
+}
+
+/// The gotos a function prints whose kept structuring folded a chain into an
+/// ordinary block, or `None` when it prints none or folded no such chain.
+pub(crate) fn late_gotos(fd: &Funcdata) -> Option<int4> {
+    if !fd.chainfold_any() {
+        return None;
+    }
+    let n = crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd);
+    (n > 0).then_some(n)
 }
 
 /// The basic blocks a condition prints.

@@ -315,6 +315,12 @@ pub struct Funcdata {
     kuna_fatalchain_relaxed: std::collections::BTreeSet<Address>,
     /// (kuna `condfold noreturn`) Set while a structuring must not relax.
     kuna_fatalchain_hold: bool,
+    /// (kuna `condfold auto`) A kept structuring folded a chain into an
+    /// ordinary block.
+    kuna_chainfold_any: bool,
+    /// (kuna `condfold auto`) Set by the drive: fold no chain into an ordinary
+    /// block.  Survives `clear()`.
+    kuna_chainfold_withdrawn: bool,
     /// (kuna `earlyrestart`) Set when heritage bumped a space's dead-code delay
     /// in this pass: the analysis is about to be thrown away and redone.
     kuna_restart_now: bool,
@@ -876,6 +882,8 @@ impl Funcdata {
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             kuna_fatalchain_relaxed: std::collections::BTreeSet::new(),
             kuna_fatalchain_hold: false,
+            kuna_chainfold_any: false,
+            kuna_chainfold_withdrawn: false,
             kuna_restart_now: false,
             dead_wave_log: None,
             dead_cascade_now: false,
@@ -2805,6 +2813,28 @@ impl Funcdata {
         self.kuna_fatalchain_relaxed = set;
     }
 
+    /// (kuna `condfold auto`) Whether a kept structuring folded a chain into an
+    /// ordinary block.
+    pub fn chainfold_any(&self) -> bool {
+        self.kuna_chainfold_any
+    }
+
+    /// (kuna `condfold auto`) Record whether a kept structuring folded a chain
+    /// into an ordinary block.
+    pub fn set_chainfold_any(&mut self, any: bool) {
+        self.kuna_chainfold_any = any;
+    }
+
+    /// (kuna `condfold auto`) Whether the drive withdrew folds into ordinary blocks.
+    pub fn chainfold_withdrawn(&self) -> bool {
+        self.kuna_chainfold_withdrawn
+    }
+
+    /// (kuna `condfold auto`) Withdraw or allow folds into ordinary blocks.
+    pub fn set_chainfold_withdrawn(&mut self, withdrawn: bool) {
+        self.kuna_chainfold_withdrawn = withdrawn;
+    }
+
     /// (kuna `condfold noreturn`) Whether structuring must not relax.
     pub fn fatalchain_held(&self) -> bool {
         self.kuna_fatalchain_hold
@@ -4575,6 +4605,7 @@ impl Funcdata {
         self.kuna_hiddenret_vetoed.clear();
         self.kuna_condstmts_hits.clear();
         self.kuna_fatalchain_relaxed.clear();
+        self.kuna_chainfold_any = false;
         self.kuna_restart_now = false;
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow() (funcdata.cc:95):

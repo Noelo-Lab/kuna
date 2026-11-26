@@ -3953,6 +3953,7 @@ impl ActionBlockStructure {
         }
         let saved = o0j::orientation(data);
         let relaxed = data.fatalchain_relaxed().clone();
+        let any = data.chainfold_any();
         let res = self.structure_once(data, ctx);
         if data.fatalchain_relaxed().len() == relaxed.len() || ctx.deadline_expired() || o0j::gotos(data) == 0 {
             return res;
@@ -3960,6 +3961,7 @@ impl ActionBlockStructure {
         data.sblocks_clear();
         o0j::restore_orientation(data, &saved);
         data.set_fatalchain_relaxed(relaxed);
+        data.set_chainfold_any(any);
         data.set_fatalchain_hold(true);
         let held = self.structure_once(data, ctx);
         data.set_fatalchain_hold(false);
