@@ -1,0 +1,34 @@
+{
+  "opportunity": "kuna-android-jni::countBytes",
+  "test_name": "kuna-android-jni",
+  "binary": "tests/fixtures/android-jni/aarch64-linux-android.so",
+  "selector": "0x48c0",
+  "func_addr": "0x48c0",
+  "option": "jniregister",
+  "flag": "analysis_jniregister",
+  "source_decompiler": "kuna",
+  "change_kind": "analysis-enablement",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_command": "taskset -c 30 python3 -m docs.features.jniregister.speed",
+  "speed_off_ms": 100.675,
+  "speed_on_ms": 102.334,
+  "speed_delta_pct": 1.65,
+  "speed_samples": 100,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "paired_child_cpu": {
+    "off_ms": 98.029,
+    "on_ms": 98.251,
+    "delta_pct": 0.23
+  },
+  "pipeline_off_then_on": {
+    "command": "taskset -c 30 python3 -m scripts.pipeline.timeit --option jniregister --binary tests/fixtures/android-jni/aarch64-linux-android.so --selector 0x48c0 --func-addr 0x48c0 --repeat 31",
+    "off_ms": 66.83,
+    "on_ms": 83.12,
+    "delta_pct": 24.38,
+    "samples_per_state": 31
+  }
+}
