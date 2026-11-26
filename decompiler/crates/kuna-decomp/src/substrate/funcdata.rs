@@ -315,12 +315,6 @@ pub struct Funcdata {
     kuna_fatalchain_relaxed: std::collections::BTreeSet<Address>,
     /// (kuna `condfold noreturn`) Set while a structuring must not relax.
     kuna_fatalchain_hold: bool,
-    /// (kuna `condfold noreturn`) Block starts never to relax; set by the drive
-    /// and kept across `clear()`.
-    kuna_fatalchain_veto: std::collections::BTreeSet<Address>,
-    /// (kuna `condfold noreturn`) Relaxed block starts the final structure prints
-    /// too wide.
-    kuna_fatalchain_hits: std::collections::BTreeSet<Address>,
     /// (kuna `earlyrestart`) Set when heritage bumped a space's dead-code delay
     /// in this pass: the analysis is about to be thrown away and redone.
     kuna_restart_now: bool,
@@ -882,8 +876,6 @@ impl Funcdata {
             kuna_condstmts_hits: std::collections::BTreeSet::new(),
             kuna_fatalchain_relaxed: std::collections::BTreeSet::new(),
             kuna_fatalchain_hold: false,
-            kuna_fatalchain_veto: std::collections::BTreeSet::new(),
-            kuna_fatalchain_hits: std::collections::BTreeSet::new(),
             kuna_restart_now: false,
             dead_wave_log: None,
             dead_cascade_now: false,
@@ -2813,26 +2805,6 @@ impl Funcdata {
         self.kuna_fatalchain_relaxed = set;
     }
 
-    /// (kuna `condfold noreturn`) Block starts never to relax.
-    pub fn fatalchain_veto(&self) -> &std::collections::BTreeSet<Address> {
-        &self.kuna_fatalchain_veto
-    }
-
-    /// (kuna `condfold noreturn`) Install the block starts never to relax.
-    pub fn set_fatalchain_veto(&mut self, veto: std::collections::BTreeSet<Address>) {
-        self.kuna_fatalchain_veto = veto;
-    }
-
-    /// (kuna `condfold noreturn`) Relaxed block starts printed too wide.
-    pub fn fatalchain_hits(&self) -> &std::collections::BTreeSet<Address> {
-        &self.kuna_fatalchain_hits
-    }
-
-    /// (kuna `condfold noreturn`) Record a relaxed block start printed too wide.
-    pub fn add_fatalchain_hit(&mut self, addr: Address) {
-        self.kuna_fatalchain_hits.insert(addr);
-    }
-
     /// (kuna `condfold noreturn`) Whether structuring must not relax.
     pub fn fatalchain_held(&self) -> bool {
         self.kuna_fatalchain_hold
@@ -4603,7 +4575,6 @@ impl Funcdata {
         self.kuna_hiddenret_vetoed.clear();
         self.kuna_condstmts_hits.clear();
         self.kuna_fatalchain_relaxed.clear();
-        self.kuna_fatalchain_hits.clear();
         self.kuna_restart_now = false;
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow() (funcdata.cc:95):

@@ -3970,7 +3970,6 @@ impl ActionBlockStructure {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
             crate::p8_structure::kuna_condstmts::record_hits(data);
-            crate::p8_structure::kuna_fatalchain::record_hits(data);
             return 0; // Already structured
         }
         data.install_switch_defaults();

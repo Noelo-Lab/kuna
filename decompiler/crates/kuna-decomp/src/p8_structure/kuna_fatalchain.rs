@@ -12,11 +12,11 @@
 //! so `BlockBasic::isComplex` counts the call, a store and the branch and
 //! `ruleBlockOr` declines every later test: the chain prints as a ladder of
 //! nested `if`s with the call after all of them.  [`relax`] drops the later
-//! tests of such a chain from the complex set the structurer reads; at the final
-//! structuring position [`record_hits`] checks that each one prints at most
-//! [`MAX_STMTS`] statement before its test; otherwise the drive analyzes the
-//! function again without relaxing that test ([`next_veto`]).  A structuring
-//! that relaxed and prints more gotos than one that did not is not kept.
+//! tests of such a chain from the complex set the structurer reads.  A test
+//! that then prints more statements before its comparison than the
+//! `condstmts` cap allows is caught by that option's final check, which
+//! analyzes the function again with the test complex.  A structuring that
+//! relaxed and prints a goto is not kept.
 //!
 //! After the tree is final, [`ActionFatalChain`] turns `if (chain) { R } f();`
 //! (where `R` does not fall through) into `if (!chain) f(); R`, at any depth.
@@ -35,15 +35,14 @@ use crate::context::BlockId;
 use crate::funcdata::Funcdata;
 use crate::p8_structure::kuna_tailform as tf;
 
-/// Statements a relaxed test may print in front of its comparison.
-pub const MAX_STMTS: int4 = 1;
-
 pub(crate) fn enabled(data: &Funcdata) -> bool {
     data.get_arch().cond_fold_noreturn
 }
 
 /// Whether basic block `bb` ends in the halt flow plants after a call to a
-/// subroutine that does not return.
+/// subroutine that does not return, and that call carries the warning the
+/// printer shows as `// no-return` (a flow cut at the next function's entry
+/// carries another one).
 pub(crate) fn noreturn_tail(data: &Funcdata, bb: BlockId) -> bool {
     use crate::op::pcodeop_flags as f;
     let Some(op) = data.bb_op_tail(bb).and_then(|t| data.obank().get(t)) else {
@@ -56,12 +55,13 @@ pub(crate) fn noreturn_tail(data: &Funcdata, bb: BlockId) -> bool {
     {
         return false;
     }
-    let mut cur = data.bb_op_head(bb);
-    while let Some(o) = cur {
-        if data.obank().get(o).is_some_and(|o| matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)) {
-            return true;
+    let mut prev = op.basic_neighbours().0;
+    while let Some(p) = prev {
+        let Some(o) = data.obank().get(p) else { return false };
+        if matches!(o.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER) {
+            return data.kuna_noreturn_note(o.get_addr());
         }
-        cur = data.bb_op_next(o);
+        prev = o.basic_neighbours().0;
     }
     false
 }
@@ -120,20 +120,18 @@ pub(crate) fn chains(data: &Funcdata) -> Vec<(BlockId, Vec<BlockId>)> {
     out
 }
 
-fn max_stmts() -> int4 {
-    std::env::var("KUNA_FC_MAXSTMTS").ok().and_then(|v| v.parse().ok()).unwrap_or(MAX_STMTS)
-}
-
 fn start(data: &Funcdata, bb: BlockId) -> Address {
     data.bblocks_block_start(bb)
 }
 
-/// Whether `bb` prints at most [`MAX_STMTS`] statements before its test and
-/// carries no comment the condition printer would drop.
+/// Whether `bb` prints no more statements before its test than the
+/// `condstmts` cap allows and carries no comment the condition printer would
+/// drop.
 fn fits(data: &Funcdata, bb: BlockId) -> bool {
     let ops = data.bb_ops(bb);
+    let cap = data.get_arch().cond_stmts;
     !crate::p8_structure::kuna_condfold::block_carries_comment(data, &ops)
-        && crate::p8_structure::kuna_condfold::printed_shape(data, &ops).is_some_and(|s| s.stmts - 1 <= max_stmts())
+        && crate::p8_structure::kuna_condfold::printed_shape(data, &ops).is_some_and(|s| cap < 0 || s.stmts - 1 <= cap)
 }
 
 /// Whether a structuring of `data` now would relax a block.
@@ -143,7 +141,7 @@ pub(crate) fn pending(data: &Funcdata) -> bool {
 
 /// Drop the later tests of every chain into a no-return call from `complex`,
 /// except a block the `condstmts` seed keeps complex.  Before implied flags
-/// exist the printed form is checked later by [`record_hits`]; after, here.
+/// exist the printed width is checked later by `condstmts`; after, here.
 pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
     if !enabled(data) || data.fatalchain_held() {
         return;
@@ -156,7 +154,7 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
                 continue;
             }
             let a = start(data, c);
-            if data.condstmts_seed().contains(&a) || data.fatalchain_veto().contains(&a) || (high && !fits(data, c)) {
+            if data.condstmts_seed().contains(&a) || (high && !fits(data, c)) {
                 continue;
             }
             if !high && crate::p8_structure::kuna_condfold::block_carries_comment(data, &data.bb_ops(c)) {
@@ -169,59 +167,6 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
     for a in hits {
         data.add_fatalchain_relaxed(a);
     }
-}
-
-/// At the final structuring position: every relaxed block the structure folded
-/// into a condition that prints more than [`MAX_STMTS`] statements before its
-/// test is recorded; the drive analyzes the function again without relaxing it.
-pub(crate) fn record_hits(data: &mut Funcdata) {
-    if data.fatalchain_relaxed().is_empty() || !data.is_high_on() || data.sblocks_get_size() == 0 {
-        return;
-    }
-    let mut hits = Vec::new();
-    for bb in folded_leaves(data) {
-        let a = start(data, bb);
-        if data.fatalchain_relaxed().contains(&a) && !fits(data, bb) {
-            hits.push(a);
-        }
-    }
-    for a in hits {
-        data.add_fatalchain_hit(a);
-    }
-}
-
-/// The veto for another analysis of `fd`, or `None` when it recorded nothing new.
-pub fn next_veto(fd: &Funcdata) -> Option<BTreeSet<Address>> {
-    let hits = fd.fatalchain_hits();
-    let veto = fd.fatalchain_veto();
-    if hits.iter().all(|a| veto.contains(a)) {
-        return None;
-    }
-    Some(veto.union(hits).cloned().collect())
-}
-
-/// The basic blocks printed as the right operand of a `&&` / `||`.
-fn folded_leaves(data: &Funcdata) -> Vec<BlockId> {
-    let g = data.sblocks_ref();
-    let mut out = Vec::new();
-    let mut stack = vec![data.sblocks_root()];
-    while let Some(b) = stack.pop() {
-        let blk = g.block(b);
-        if blk.get_type() == BlockType::Condition {
-            let mut ops = vec![blk.get_block(1)];
-            while let Some(o) = ops.pop() {
-                match g.block(o).get_type() {
-                    BlockType::Copy => out.extend(g.block(o).get_copy()),
-                    BlockType::Condition => ops.extend([g.block(o).get_block(0), g.block(o).get_block(1)]),
-                    _ => {}
-                }
-            }
-        }
-        for i in 0..blk.get_size() {
-            stack.push(blk.get_block(i));
-        }
-    }
-    out
 }
 
 /// The basic blocks a condition prints.
