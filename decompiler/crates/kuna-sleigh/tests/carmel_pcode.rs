@@ -1731,6 +1731,76 @@ fn wide_product_machine(packet: u64) -> Machine {
 }
 
 #[test]
+fn wide_insert_keeps_the_agu_gate_and_result_ports_separate() {
+    let words = [(0x4036, 0xdda4), (0x4037, 0x69bd), (0x4044, 0x25de), (0x4045, 0xd3e5),
+                 (0x8040, 0x7c4b), (0x8041, 0x20fa), (0x8043, 0x8be1)];
+    for (packet, table, ff1, ff2, old_a2, r2, a2, high, low, est) in [
+        (0x23d72cf8952d, 0, 0x1234, 0xf678, 0x87b0084b74, 0x8043, 0x87b0084b74, 0x20fa, 0x69bd, 0),
+        (0x23d72cf8952d, 0xffff, 0x1234, 0xf678, 0x87b0084b74, 0x8043, 0x87b0084b74, 0x234a, 0x69bd, 0x3000),
+        (0x23c204f904c3, 0, 0x1234, 0xf678, 0x87b0084b74, 0x8040, 0x87b0084b74, 0x20fa, 0x69bd, 0),
+        (0x23c204f904c3, 0xffff, 0x1234, 0xf678, 0x87b0084b74, 0x8040, 0xe0b0084b74, 0x20fa, 0x69bd, 0x3000),
+        (0xa3f4f6f8c225, 0, 0x1234, 0xf678, 0x87b0084b74, 0x8041, 0x87b0084b74, 0x20fa, 0xc4bd, 0),
+        (0xa3f4f6f8c225, 0xffff, 0x1234, 0xf678, 0x87b0084b74, 0x8041, 0x87b0084b74, 0x20fa, 0xc4bd, 0x3000),
+        (0x23c204f904c3, 0xffff, 15, 3, 0x87b0084b74, 0x8040, 0x03b0084b74, 0x20fa, 0x69bd, 0x3000),
+        (0x23c204f904c3, 0xffff, 16, 3, 0xb0084b74, 0x8040, 0x06b0084b74, 0x20fa, 0x69bd, 0x3008),
+        (0x23c204f904c3, 0xffff, 31, 24, 0x87b0084b74, 0x8040, 0xb0084b74, 0x20fa, 0x69bd, 0x3000),
+    ] {
+        let mut m = wide_product_machine(packet);
+        m.seed(&[("R1", 0x4040), ("R2", 0x8040), ("RN2", 3), ("A2", old_a2),
+                 ("FF1", ff1), ("FF2", ff2), ("CETBL", table), ("CECFG1", 0x1000), ("CECFG2", 0x1000)]);
+        for (address, native) in words {
+            m.seed_data(address, native);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R2"), m.reg("A2"), m.reg("EST")), (r2, a2, est), "{packet:x}");
+        assert_eq!((m.reg("R1"), m.reg("FF1"), m.reg("FF2")), (0x4040, ff1, ff2));
+        for (address, incoming) in words {
+            let expected = match address {
+                0x8041 => high,
+                0x4037 => low,
+                _ => incoming,
+            };
+            assert_eq!(m.data(address), expected, "{packet:x}, DATA[{address:x}]");
+        }
+    }
+}
+
+#[test]
+fn wide_insert_checks_three_data_ports_after_postmodify() {
+    for (address, source, pacfg, retires) in [
+        (0x4036u16, 0x0030u16, 0, false),
+        (0x8004, 0xf003, 0, false),
+        (0x7fff, 0x7ffd, 0, false),
+        (0x7fff, 0x8002, 0, false),
+        (0x7fff, 0x7ffc, 0, true),
+        (0x7fff, 0x8003, 0, true),
+        (0xffff, 0x0002, 0, true),
+        (0xffff, 0xfffd, 0, true),
+        (0x4036, 0x8041, 0x10, true),
+    ] {
+        let mut m = wide_product_machine(0xa3f4f6f8c225);
+        let next = address.wrapping_add(1);
+        let incremented = source.wrapping_add(1);
+        m.seed(&[("R1", u64::from(address.wrapping_add(10))), ("R2", u64::from(source)),
+                 ("FF1", 0), ("FF2", 16), ("PACFG", pacfg)]);
+        m.seed_data(u64::from(address), 0x8d00);
+        m.seed_data(u64::from(next), 0xb600);
+        m.seed_data(u64::from(source), 0xa500);
+        m.start(0).unwrap();
+        if retires {
+            assert_eq!(m.step(), 6);
+        } else {
+            assert_eq!(m.emulator.execute_instruction().unwrap_err().explain(), "Userop not hooked");
+        }
+        assert_eq!(m.reg("R2"), u64::from(incremented));
+        assert_eq!(m.data(u64::from(address)), if retires { 0xa500 } else { 0x8d00 });
+        assert_eq!(m.data(u64::from(next)), 0xb600);
+        assert_eq!(m.data(u64::from(source)), 0xa500);
+    }
+}
+
+#[test]
 fn wide_abs_uses_the_connected_result_bank() {
     for (packet, input, config, expected, flags) in [
         (0xe0269bc22a23, 0xea433809a4, 0, 0x15bcc7f65c, 0x20),

@@ -7294,6 +7294,100 @@ macro compact_pair_read_check(first, second) {
   <fetch>
 }
 
+macro wide_insert_bits(original, source, result) {
+    local count:4 = zext(FF2 & 31);
+    local offset:4 = zext(FF1 & 31);
+    local mask:8 = 0x7fffffff >> (31 - count);
+    result = (original & ~(mask << offset)) | ((source & mask) << offset);
+}
+
+macro wide_insert_read_pair(address, next, original) {
+    local lo:2 = *[data]:2 address;
+    local hi:2 = *[data]:2 next;
+    original = (zext(hi) << 16) | zext(lo);
+}
+
+macro wide_insert_store_pair(address, next, source, original, status) {
+    local result:8;
+    wide_insert_bits(original, source, result);
+    status = (status & 0xfff7) | (zext(result:4 == 0) << 3);
+    compact_pair_fft(result, result, 0:1, status);
+    *[data]:2 address = result:2;
+    *[data]:2 next = result(2);
+}
+
+# The address override can allocate and postmodify without publishing a result.
+:INSERT "CE1" "*R2+=RN2:long","FF1","FF2:FF1" is
+    carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=0
+    & wide_0_22=0x78952d & wide_40_45=0x23 {
+    local first:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, first);
+    local status:2 = EST & 0xcfff;
+    if (first == 0 && (CECFG1 & 0x1000) == 0) goto <feedback>;
+    local address:2 = R2;
+    local next:2 = address + 1;
+    if ((PACFG & 0x30) == 0x10) goto <reversed>;
+    transfer_address_word(R2, RM2, RL2, 4, RN2, R2);
+    goto <sample>;
+  <reversed>
+    modify_ptr(R2, RN2, RM2, RL2, 4, 1);
+  <sample>
+    local original:8;
+    wide_insert_read_pair(address, next, original);
+    if (first == 0) goto <feedback>;
+    wide_insert_store_pair(address, next, zext(FF1), original, status);
+  <feedback>
+    local second:2;
+    unary_ce(CECFG2, EST, CETBL, 1:2, second);
+    EST = status | (first << 12) | (second << 13);
+}
+
+:INSERT "CE1" "GB2","*R1+"^wide_shift_dst_disp^":long","FF2:FF1" is
+    carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=0
+    & wide_0_22=0x7904c3 & wide_40_45=0x23 & wide_shift_dst_disp {
+    local first:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, first);
+    local status:2 = EST & 0xcfff;
+    if (first == 0 && (CECFG1 & 0x1000) == 0) goto <feedback>;
+    local address:2 = R1 + wide_shift_dst_disp;
+    local next:2 = address + 1;
+    local source:8;
+    wide_insert_read_pair(address, next, source);
+    if (first == 0) goto <feedback>;
+    local result:8;
+    wide_insert_bits(zext(GB2), source, result);
+    GB2 = result(2);
+    status = (status & 0xfff7) | (zext(result:2 == 0) << 3);
+  <feedback>
+    local second:2;
+    unary_ce(CECFG2, EST, CETBL, 1:2, second);
+    EST = status | (first << 12) | (second << 13);
+}
+
+:INSERT "*R1+"^wide_shift_dst_disp^":long","*R2++","FF2:FF1" is
+    carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_0_22=0x78c225 & wide_40_45=0x23 & wide_shift_dst_disp {
+    local address:2 = R1 + wide_shift_dst_disp;
+    local next:2 = address + 1;
+    local source_addr:2 = R2;
+    transfer_address_word(R2, RM2, RL2, 4, 1:2, R2);
+    # A long RMW and a short source reserve three words in one issue.
+    if (((address ^ next) | (address ^ source_addr)) < 0x8000) goto <stopped>;
+    local bank:2 = source_addr & 0xc000;
+    if (bank == 0 || bank == 0xc000) goto <sample>;
+    if (((address ^ source_addr) & 0xc001) != 0 && ((next ^ source_addr) & 0xc001) != 0) goto <sample>;
+  <stopped>
+    carmel_data_read_conflict();
+    goto <stopped>;
+  <sample>
+    local original:8;
+    wide_insert_read_pair(address, next, original);
+    local source:2 = *[data]:2 source_addr;
+    local status:2 = EST & 0xcfff;
+    wide_insert_store_pair(address, next, sext(source), original, status);
+    publish_ce_feedback(status, EST);
+}
+
 compact_mpy_word_kind: "MPY"   is slot_15_22=0x84 { export 3:1; }
 compact_mpy_word_kind: "MPYSU" is slot_15_22=0x8c { export 1:1; }
 compact_mpy_word_kind: "MPYUS" is slot_15_22=0x94 { export 2:1; }

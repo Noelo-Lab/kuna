@@ -4841,6 +4841,23 @@ retain both flags and leave the result destination unchanged despite DATA
 operand allocation and postmodify. Both CE banks sample incoming feedback,
 not the `Z` flag produced by the same issue.
 
+The covered wide `INSERT` DATA and guard routes use the low five bits of
+`FF2` for width and `FF1` for offset. The CE1 indexed result samples the
+long word at incoming `R2` and its wrapped successor before any store.
+Its CE1 address override can advance `R2` by `RN2` without allowing either
+DATA word or the arithmetic flags to be written. The CE1 guard result
+reads the long word at `R1` plus a signed displacement without modifying
+`R1`; it writes bits 16–23 of the insertion to `GB2`, but tests the low word
+for `Z`, leaving the accumulator halves unchanged.
+
+The unqualified long `INSERT` result uses `R1` plus a signed displacement
+for the two destination words and samples the short source at incoming
+`R2` before `R2` postincrements. The three reads must fit the DATA read
+ports before publication. Both long results store the low word first and
+test the low 32 bits for `Z`; the FFT magnitude tap can also set its sticky
+flag when enabled. Other status bits are preserved, and both CE banks
+sample incoming feedback, not the new `Z` from the same issue.
+
 The covered unqualified arithmetic shifts write the upper result word.
 The two short stores sample their signed input at `DATA[0xffff]`;
 the indexed store takes its count from `RL0`, while the incrementing
