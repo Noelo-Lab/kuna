@@ -225,6 +225,7 @@ fn hidden_fixture(kind: &str) -> (Sleigh, Rc<AddrSpace>, Listing) {
 #[test]
 fn mixed_call_and_branch_preserve_local_paths_without_promoting_callees() {
     use crate::listing::model::RawOp;
+    use kuna_base::space::spacetype;
     use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
 
     let (engine, space) = arm(vec![
@@ -239,15 +240,28 @@ fn mixed_call_and_branch_preserve_local_paths_without_promoting_callees() {
         Vec::new(), Vec::new(), Vec::new(), vec![(BASE, callee + 4)],
     );
     let target = |offset| Some(VarnodeData { space: Some(Rc::clone(&space)), offset, size: 4 });
-    for (call, jump, direct_callee, has_fall, terminal) in [
-        (OpCode::CPUI_CALL, OpCode::CPUI_BRANCH, Some(callee), false, false),
-        (OpCode::CPUI_CALLIND, OpCode::CPUI_CBRANCH, None, true, false),
-        (OpCode::CPUI_CALL, OpCode::CPUI_CBRANCH, Some(callee), false, true),
+    for (call, jump, direct_callee, has_fall, terminal, relative_skip) in [
+        (OpCode::CPUI_CALL, OpCode::CPUI_BRANCH, Some(callee), false, false, None),
+        (OpCode::CPUI_CALLIND, OpCode::CPUI_CBRANCH, None, true, false, None),
+        (OpCode::CPUI_CALL, OpCode::CPUI_CBRANCH, Some(callee), false, true, Some(false)),
+        (OpCode::CPUI_CALL, OpCode::CPUI_CBRANCH, Some(callee), false, true, Some(true)),
     ] {
         let mut ops = vec![
             RawOp { opcode: call, in0: direct_callee.and_then(target) },
             RawOp { opcode: jump, in0: target(BASE + 8) },
         ];
+        match relative_skip {
+            Some(false) => ops.swap(0, 1),
+            Some(true) => ops.insert(0, RawOp {
+                opcode: OpCode::CPUI_CBRANCH,
+                in0: Some(VarnodeData {
+                    space: Some(Rc::new(AddrSpace::new_for_decode(spacetype::IPTR_CONSTANT))),
+                    offset: 2,
+                    size: 4,
+                }),
+            }),
+            None => {}
+        }
         if terminal {
             ops.push(RawOp { opcode: OpCode::CPUI_RETURN, in0: None });
         }
@@ -255,6 +269,8 @@ fn mixed_call_and_branch_preserve_local_paths_without_promoting_callees() {
         let probe = Rc::new(ProbedInsn {
             len: 4, encoded_len: 4, kind: c.flow.kind, is_call: c.flow.is_call,
             is_terminal: c.flow.is_terminal, fall_through: c.fall_through,
+            post_call_branches: kuna_callresume::candidate(c.flow, c.fall_through, !c.branches().is_empty())
+                && kuna_callresume::all_branches_after_call(&ops),
             call_count: c.calls().len(), flows: c.flows.clone(), mnemonic: Rc::from("CALL"),
             operands: String::new(), reusable: None,
         });

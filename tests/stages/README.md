@@ -250,6 +250,9 @@ it as a third function beside the caller and callee.
 without a matching trained fingerprint. Mismatched temporaries and an
 uncorroborated frame-shaped byte sequence are not entries.
 
+`kuna-sparc32-call-gap.xml` checks that a terminating call in a speculative
+gap body does not consume the following independent entry.
+
 `ghangr-go-paniccheck-return.xml` checks that a returning Go panic helper
 falls through to the terminal `runtime.gopanic` call. It also checks the
 helper's conditional throw and shows the caller's sentinel with the known

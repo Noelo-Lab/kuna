@@ -2343,7 +2343,8 @@ mod tests {
         // and kuna-ptrfromuse-faroffset / a parameter read only at field offsets of 0x1000 or more is a pointer
         // and kuna-sparc-call-continuation / a delayed call has one function target
         // and kuna-sparc64-large-frame / an untrained, corroborated SPARC64 gap entry
-        assert_eq!(count, 940, "corpus file count drifted");
+        // and kuna-sparc32-call-gap / a speculative caller does not absorb the following entry
+        assert_eq!(count, 941, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
