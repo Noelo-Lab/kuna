@@ -63,9 +63,23 @@ fn strip_comments(src: &str) -> String {
     line.replace_all(&block.replace_all(src, " "), "").into_owned()
 }
 
-fn typedefs(src: &str) -> BTreeMap<String, String> {
+/// Typedefs by name. A name defined twice with different types (one per
+/// preprocessor branch, say) maps to `None`: which one the binary was built
+/// with is not known here.
+fn typedefs(src: &str) -> BTreeMap<String, Option<String>> {
     let re = Regex::new(r"typedef\s+([^;{}()]+?)\s+(\w+)\s*;").expect("regex");
-    re.captures_iter(src).map(|c| (c[2].to_string(), c[1].trim().to_string())).collect()
+    let mut defs: BTreeMap<String, Option<String>> = BTreeMap::new();
+    for c in re.captures_iter(src) {
+        let ty = c[1].split_whitespace().collect::<Vec<_>>().join(" ");
+        defs.entry(c[2].to_string())
+            .and_modify(|d| {
+                if d.as_deref() != Some(ty.as_str()) {
+                    *d = None;
+                }
+            })
+            .or_insert(Some(ty));
+    }
+    defs
 }
 
 fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
@@ -117,21 +131,24 @@ fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
     Some((size, if plain_char { sizes.char_signed } else { !unsigned }))
 }
 
-/// `(size, signed, pointer)` of a spelled type, through typedefs.
-fn resolve(spelling: &str, defs: &BTreeMap<String, String>, sizes: CSizes, depth: u32) -> Option<(u32, bool, bool)> {
+/// `(size, signed, pointer)` of a spelled type, through typedefs; an error
+/// names a typedef defined more than one way.
+fn resolve(spelling: &str, defs: &BTreeMap<String, Option<String>>, sizes: CSizes, depth: u32) -> Result<Option<(u32, bool, bool)>, String> {
     if spelling.contains('*') {
-        return Some((sizes.pointer, false, true));
+        return Ok(Some((sizes.pointer, false, true)));
     }
     let words: Vec<&str> = spelling
         .split_whitespace()
         .filter(|w| !matches!(*w, "const" | "volatile" | "static" | "inline" | "extern" | "register"))
         .collect();
     if words.len() == 1 && depth < 8 {
-        if let Some(inner) = defs.get(words[0]) {
-            return resolve(inner, defs, sizes, depth + 1);
+        match defs.get(words[0]) {
+            Some(Some(inner)) => return resolve(inner, defs, sizes, depth + 1),
+            Some(None) => return Err(format!("typedef `{}` is defined more than one way", words[0])),
+            None => {}
         }
     }
-    base_type(&words, sizes).map(|(size, signed)| (size, signed, false))
+    Ok(base_type(&words, sizes).map(|(size, signed)| (size, signed, false)))
 }
 
 /// Read `function`'s return type from C source.
@@ -144,12 +161,19 @@ pub fn from_source(src: &str, function: &str, source: &str, sizes: CSizes) -> Re
         regex::escape(function)
     ))
     .expect("regex");
-    let caps = re
+    let found: Vec<_> = re
         .captures_iter(&clean)
-        .find(|c| !c[2].split_whitespace().any(|w| matches!(w, "return" | "else" | "case" | "goto")))
-        .ok_or_else(|| format!("{source}: no declaration of {function}"))?;
-    let spelling = caps[2].trim().to_string();
+        .filter(|c| !c[2].split_whitespace().any(|w| matches!(w, "return" | "else" | "case" | "goto")))
+        .collect();
+    let caps = found.first().ok_or_else(|| format!("{source}: no declaration of {function}"))?;
+    let words = |c: &regex::Captures| c[2].split_whitespace().filter(|w| !matches!(*w, "static" | "inline" | "extern")).collect::<Vec<_>>().join(" ");
+    let spelling = caps[2].split_whitespace().collect::<Vec<_>>().join(" ");
+    let first = words(caps);
+    if let Some(other) = found.iter().map(words).find(|o| *o != first) {
+        return Err(format!("{source}: {function} is declared returning both `{first}` and `{other}`"));
+    }
     let (size, signed, pointer) = resolve(&spelling, &defs, sizes, 0)
+        .map_err(|e| format!("{source}: return type of {function}: {e}"))?
         .ok_or_else(|| format!("{source}: cannot size return type `{spelling}` of {function}"))?;
     let declaration = format!("{} {}({})", spelling, function, caps[3].split_whitespace().collect::<Vec<_>>().join(" "));
     Ok(Contract { ret: CType { spelling, size, signed, pointer }, declaration, source: source.to_string() })
@@ -183,6 +207,22 @@ mod tests {
         let wide = "unsigned __int128 m(unsigned long a);\nNI unsigned q(int x);";
         assert_eq!(from_source(wide, "m", "s", ARM).unwrap().ret.size, 16);
         assert!(from_source(wide, "q", "s", ARM).is_err());
+    }
+
+    /// A typedef each preprocessor branch defines its own way, or a function
+    /// declared with two return types, gives no contract: which one the binary
+    /// was built with is not known.
+    #[test]
+    fn ambiguous_return_types_are_refused() {
+        let src = "#ifdef TARGET_64\ntypedef uint64_t result_t;\n#else\ntypedef uint32_t result_t;\n#endif\nresult_t f(void);\n";
+        let e = from_source(src, "f", "s", ARM).unwrap_err();
+        assert!(e.contains("typedef `result_t` is defined more than one way"), "{e}");
+        let same = "typedef unsigned int u32;\ntypedef unsigned  int u32;\nu32 g(void);\n";
+        assert_eq!(from_source(same, "g", "s", ARM).unwrap().ret.size, 4);
+        let two = "#if A\nlong h(void);\n#else\nshort h(void);\n#endif\n";
+        assert!(from_source(two, "h", "s", ARM).unwrap_err().contains("declared returning both"));
+        let decl_and_def = "static int k(void);\nint k(void) { return 1; }\n";
+        assert_eq!(from_source(decl_and_def, "k", "s", ARM).unwrap().ret.size, 4);
     }
 
     /// Plain `char` takes the target's signedness; spelled out, it does not.

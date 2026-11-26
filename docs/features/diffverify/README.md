@@ -42,7 +42,10 @@ ins16  DIFFERS  (run 1 of 256)
   C prototype is given (`--contract FILE.c`). Plain `char` there is unsigned on the
   System V ABIs of ARM, AArch64, PowerPC, RISC-V and s390, and signed on x86, Apple
   Silicon and Windows ARM; a source that mentions `-fsigned-char` or
-  `-funsigned-char` (in a comment) overrides it.
+  `-funsigned-char` (in a comment) overrides it. The source is read without a
+  preprocessor, so a return type it cannot tell (a typedef defined two ways, one per
+  `#ifdef` branch, or two declarations with different return types) gives no contract:
+  `check` stops with an error naming it.
 - **Not checked: the printed C.** A fault in the C printer (a cast, an operator's
   precedence, a type's spelling) is not in the IR, so `AGREES` cannot rule it out. That
   is Tier P, a separate axis (`proposal.md`).
@@ -69,8 +72,8 @@ ins16  DIFFERS  (run 1 of 256)
 |---|---|
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides, or ran past `--budget` ops on both sides, are not counted, and the report says how many. A run past the budget on one side only makes the function `UNKNOWN(budget)`: one side may loop where the other does not. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
-| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call leaves out only itself and what follows it in that run: the calls and memory before it are still compared. |
-| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run. `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
+| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call or overlapping copy leaves out only itself and what follows it in that run: the calls, system calls and memory before it are still compared, and a doubt about a callee's recovered prototype there is still `UNKNOWN`. |
+| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run, or a system call whose registers kuna passes with a gap (§9). `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
 Exit status: 1 when a function differs, 3 when a file could not be checked, 2 for a usage
@@ -168,8 +171,9 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
    returns `UNKNOWN` where a difference rests on a guess. It also reruns kuna's side with
    other values in anything kuna's C reads but never assigns. Both sides start a
    parameter kuna's recovered prototype types `bool` at 0 or 1; a function that agrees is
-   then run again with any byte there, and agreeing only on 0 and 1 is
-   `UNKNOWN(assumed-domain)`, since the domain is kuna's claim, not the program's.
+   then run again with any byte there. Differing there, or ending `UNKNOWN` there, is
+   `UNKNOWN(assumed-domain)`, since the domain is kuna's claim, not the program's; a
+   declared divergence there is the verdict.
    Declared prototypes and the extensions the ABI documents keep their domain.
 7. **Report.** `report.rs` prints the verdict as text or JSON.
 
@@ -278,7 +282,27 @@ run yet.
   another slot), and how to judge those needs a design first.
 - **The domain of an inferred narrow parameter.** An inferred `bool` is also checked with
   any byte (§5); an `int` kuna infers in a register the ABI extends is still checked only
-  with extended values, which is right only when the inferred width is.
+  with extended values, which is right only when the inferred width is. Checking those
+  with any value too gave false `UNKNOWN`s (MIPS O32 `negative`), so it waits for a
+  rule that tells a width kuna inferred from one the ABI fixes.
+- **Registers a callee run for real changes against its prototype.** The machine puts
+  back the registers the callee's prototype says it preserves, and only notes a change
+  as a suspect. That prototype is kuna's, so a callee that changes one kuna thinks
+  preserved can agree. Keeping the change instead moved verdicts the check cannot yet
+  explain (`ls` `O0` `hash_insert`), so it waits.
+- **A return to another address.** At the top level, a `RETURN` to an address that is
+  not the run's return address still counts as a return when the target is unmapped or
+  kuna makes no branch there (`add rsp, 8; ret`). Refusing it moved verdicts that need
+  triage first: returns whose target is the instruction itself (interrupt returns), and
+  ones that read `0xffff` or `0x8000` off the stack.
+- **The caller's stack.** Memory compared at exit is everything outside the stack
+  region. Above the return address lie the incoming stack arguments, which the callee
+  owns and kuna may fold into variables, and then the caller's frame; a write there is
+  not compared yet. Telling the two apart needs the incoming argument area's size from
+  the machine side, not from kuna's prototype.
+- **Replaying a counterexample, and concolic paths of failed runs.** A `DIFFERS`
+  prints its inputs as text; there is no `--replay` of a saved input, and a run that
+  ran past the budget or trapped gives the concolic worklist no branches.
 - **Stack arguments to a callee run for real.** The machine's callee runs on the
   machine's arguments and kuna's side replays its effect. A register argument kuna gets
   wrong is caught by rerunning the machine with kuna's value (the callee reads it); a
@@ -307,9 +331,22 @@ run yet.
   value there is reported as a suspect. A caller that reads those bytes is where a
   too-narrow return shows, when that caller is checked.
 - **System-call arguments.** kuna passes a system call the registers its block sets
-  up, in order, and may leave some out; each one it passes is compared with the
-  machine's register, but which ones a given call needs is not modelled, so one it
-  leaves out is not a difference here.
+  up, in order, and may leave some out. When they are the first argument registers,
+  each is compared with the machine's register at its place (one the machine never
+  touched holds its starting value). Which ones a given call needs is not modelled, so
+  one left out at the end is not a difference. One left out in the middle (the block
+  sets `r8` and `r9` but not `r10`) makes kuna's C pass the later values in the wrong
+  registers; its IR reads the right ones, so the check reports
+  `UNKNOWN(unsupported-op)` rather than agree or differ (`kuna-x64syscall`
+  `pointer_before`, pass `on`).
+- **Arguments kuna recovered for a callee it has no prototype for.** At a call, the
+  arguments compared are the callee prototype's parameters. One kuna recovered from the
+  registers a call sets up (`sink(7)` where `sink` has no prototype) is checked only
+  where the machine runs the callee and the callee reads it; for a callee outside the
+  image it is not compared.
+- **Which local function a PLT stub leads to.** A call kuna binds past a PLT stub is
+  checked to be a call to that stub. Where the stub leads comes from relocations the
+  machine side does not apply, so kuna's choice of target is not checked.
 - **Speed.** Comparing memory by page rather than by byte, a lifting cache shared by a
   worker's functions, and overlapping z3 queries with runs. None is at the top of the
   current profile.

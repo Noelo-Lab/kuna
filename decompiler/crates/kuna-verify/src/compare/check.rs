@@ -232,10 +232,13 @@ pub fn check_function(prog: &ConsoleProgram, fd: &Funcdata, contract: Option<&Co
         } else if let Verdict::Agrees(n) = wide.verdict {
             report.lines.push(format!("note     a parameter kuna's recovered prototype types bool also took any byte, in {n} runs that agree"));
         } else {
-            report.lines.push(format!(
-                "note     a parameter kuna's recovered prototype types bool held only 0 or 1: with any byte the check ended {}, so the agreement covers only that domain",
-                wide.verdict.label()
-            ));
+            report.lines.push(format!("note     with any byte in a parameter kuna's recovered prototype types bool, the check ended {}", wide.verdict.label()));
+            report.verdict = match wide.verdict {
+                d @ Verdict::Diverges(_) => d,
+                _ => Verdict::Unknown(
+                    "UNKNOWN(assumed-domain: agrees while a parameter kuna's recovered prototype types bool holds 0 or 1; with any byte the check could not tell)".into(),
+                ),
+            };
         }
     }
     if opts.concolic > 0 {
@@ -371,7 +374,7 @@ fn check_runs(
             m = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
             g = graph::run(&env, &program, run, opts.budget, &calls, m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]), None);
         }
-        let (mo, go) = match (m, g) {
+        let (mut mo, mut go) = match (m, g) {
             (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
                 trapped.get_or_insert(t);
                 trapped_runs += 1;
@@ -422,13 +425,17 @@ fn check_runs(
                     diverged.get_or_insert(divergence::SWITCH_RUNON.id);
                     continue;
                 }
-                if go.overlapping_copy {
-                    diverged.get_or_insert(divergence::COPY_OVERLAP.id);
-                    continue;
-                }
                 (mo, go)
             }
         };
+        let overlap = go.overlapping_copy;
+        if let Some((nc, ne)) = overlap {
+            go.calls.truncate(nc);
+            go.events.truncate(ne);
+            mo.calls.truncate(nc);
+            mo.events.truncate(ne);
+            go.call_inputs.retain(|c| c.with.call.is_some_and(|k| k < nc));
+        }
         let differs = |mut lines: Vec<String>| {
             let at = usize::from(lines.first().is_some_and(|l| l.starts_with("contract")));
             lines.insert(at, input_line(prog, &env, run, &claim));
@@ -536,6 +543,21 @@ fn check_runs(
                 continue;
             }
             return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
+        }
+        if let Some(gap) = crate::compare::observe::event_gap(prog, &mo.events, &go.events) {
+            unknown.get_or_insert(Halt::Unsupported(gap));
+            continue;
+        }
+        if overlap.is_some() {
+            match argument_doubt.clone() {
+                Some(s) => {
+                    unknown.get_or_insert(Halt::Doubtful(s));
+                }
+                None => {
+                    diverged.get_or_insert(divergence::COPY_OVERLAP.id);
+                }
+            }
+            continue;
         }
         if mo.noreturn != go.noreturn && (doubtful || undefined) {
             unknown.get_or_insert(doubt(&["one side returns".to_string()]));

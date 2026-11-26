@@ -73,4 +73,13 @@ entry that no longer applies can be removed.
   Compared a system call's arguments to the syscall registers by position. kuna's
   `x64syscall` passes only the registers the block provably sets, in order, so a pass
   that leaves one out became a false `DIFFERS` (`kuna-x64syscall` `pointer_before`).
-  The arguments are matched as a subsequence of the registers.
+  They are matched in order from the first argument register; a match only as a
+  subsequence, with a register skipped in the middle, is `UNKNOWN`, since kuna's C then
+  passes the later values in the wrong registers.
+- 2026-11-26 · Claude Opus 5.5 · PR #1830
+  Skipped every comparison of a run in which kuna's `memcpy` overlapped. A fault before
+  the copy then read as the declared `copy-overlap`. A declared divergence cuts only
+  what follows it; what came before is compared.
+- 2026-11-26 · Claude Opus 5.5 · PR #1830
+  Took a system-call register the machine never touched as matching any value. It
+  holds its starting value, which the machine side now records at the call.

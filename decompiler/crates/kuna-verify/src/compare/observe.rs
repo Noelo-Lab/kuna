@@ -168,6 +168,10 @@ pub(crate) fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &
             return differs(vec![l], suspects);
         }
         let site = calls.site(gc.at);
+        if let Some(stub) = site.plt_stub.filter(|&s| !mc.indirect && !reaches_stub(env, mc.target, s)) {
+            let l = format!("call {n} at {:#x}: the machine calls {}, kuna binds the call past the PLT stub at {stub:#x}", gc.at, target(mc.target));
+            return differs(vec![l], suspects);
+        }
         if gc.args.len() < site.params {
             let l = format!(
                 "call {n} to {}: kuna passes {} arguments, and the prototype it gives the callee takes {}",
@@ -232,6 +236,12 @@ pub(crate) fn ptrauth_trap(m: &[UserEvent], g: &[UserEvent]) -> bool {
     })
 }
 
+/// The machine's call goes to `stub`, directly or through thunks.
+pub(crate) fn reaches_stub(env: &Env, machine: Option<u64>, stub: u64) -> bool {
+    machine == Some(stub)
+        || code_target(env, machine).is_some_and(|m| m == stub || machine::transparent_target(env, m) == machine::transparent_target(env, stub))
+}
+
 /// The first system call or trap the two sides reach differently.
 pub(crate) fn compare_events(prog: &ConsoleProgram, m: &[UserEvent], g: &[UserEvent]) -> Option<Vec<String>> {
     let regs = if g.iter().any(|e| crate::calls::SYSTEM_USEROPS.contains(&e.name.as_str())) {
@@ -255,17 +265,32 @@ pub(crate) fn compare_events(prog: &ConsoleProgram, m: &[UserEvent], g: &[UserEv
     Some(vec![format!("user op {}: machine {}, kuna {}", n + 1, show(m.get(n)), show(g.get(n)))])
 }
 
+/// How kuna's system-call inputs match the machine's registers.
+#[derive(PartialEq)]
+enum EventMatch {
+    Same,
+    /// The values match registers in order, but not the first ones: kuna's
+    /// IR skips a register, and the order its C passes them in does not say
+    /// which.
+    Gap,
+    Differs,
+}
+
 /// Same op at the same place with the same inputs. Past the machine op's own
 /// inputs kuna attaches the registers a system call reads: the number register
 /// and then some of the argument registers in order, each matched against
 /// what the machine's register file holds in it.
 pub(crate) fn same_event(m: &UserEvent, g: &UserEvent, regs: &[Storage]) -> bool {
+    match_event(m, g, regs) != EventMatch::Differs
+}
+
+fn match_event(m: &UserEvent, g: &UserEvent, regs: &[Storage]) -> EventMatch {
     if m.at != g.at || m.name != g.name || g.ins.len() < m.ins.len() || m.ins[..] != g.ins[..m.ins.len()] {
-        return false;
+        return EventMatch::Differs;
     }
     let extra = &g.ins[m.ins.len()..];
     if extra.is_empty() || regs.is_empty() || !crate::calls::SYSTEM_USEROPS.contains(&m.name.as_str()) {
-        return extra.is_empty() || !crate::calls::SYSTEM_USEROPS.contains(&m.name.as_str());
+        return if extra.is_empty() || !crate::calls::SYSTEM_USEROPS.contains(&m.name.as_str()) { EventMatch::Same } else { EventMatch::Differs };
     }
     let file: HashMap<u64, u8> = m.file.iter().copied().collect();
     let held = |st: &Storage| -> Option<u128> {
@@ -278,12 +303,35 @@ pub(crate) fn same_event(m: &UserEvent, g: &UserEvent, regs: &[Storage]) -> bool
         }
         Some(v)
     };
-    let fits = |v: u128, st: &Storage| held(st).is_none_or(|h| h == v & crate::value::mask(st.size));
-    if !fits(extra[0], &regs[0]) {
-        return false;
+    let fits = |v: u128, st: &Storage| held(st).is_some_and(|h| h == v & crate::value::mask(st.size));
+    if extra.len() > regs.len() || !fits(extra[0], &regs[0]) {
+        return EventMatch::Differs;
+    }
+    if extra[1..].iter().zip(&regs[1..]).all(|(&v, st)| fits(v, st)) {
+        return EventMatch::Same;
     }
     let mut left = regs[1..].iter();
-    extra[1..].iter().all(|&v| left.any(|st| fits(v, st)))
+    if extra[1..].iter().all(|&v| left.any(|st| fits(v, st))) {
+        EventMatch::Gap
+    } else {
+        EventMatch::Differs
+    }
+}
+
+/// The first system call whose inputs kuna takes from the registers with a
+/// gap: its IR reads them, but its C's argument order does not say which.
+pub(crate) fn event_gap(prog: &ConsoleProgram, m: &[UserEvent], g: &[UserEvent]) -> Option<String> {
+    if !g.iter().any(|e| crate::calls::SYSTEM_USEROPS.contains(&e.name.as_str())) {
+        return None;
+    }
+    let regs = crate::calls::SyscallAbi::of(prog).inputs;
+    m.iter().zip(g).find(|(a, b)| match_event(a, b, &regs) == EventMatch::Gap).map(|(a, b)| {
+        format!(
+            "system call at {:#x}: kuna passes {} of its argument registers, not the first ones in order, so its C does not say which it reads",
+            a.at,
+            b.ins.len().saturating_sub(a.ins.len() + 1)
+        )
+    })
 }
 
 /// The first observable two machine runs differ in.

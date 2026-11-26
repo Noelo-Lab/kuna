@@ -906,7 +906,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                         ins.push(read(&mut m.state, vn)?);
                     }
                     let k = m.events.len();
-                    let file = m.state.register_file();
+                    let file = if system { m.state.register_file_with(&crate::calls::SyscallAbi::of(env.prog).inputs) } else { m.state.register_file() };
                     m.events.push(crate::calls::UserEvent { at: addr, name, ins, file });
                     if trap {
                         return Ok(Exit::NoReturn);

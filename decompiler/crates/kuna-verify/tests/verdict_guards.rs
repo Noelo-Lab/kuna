@@ -495,3 +495,50 @@ fn thunks_that_set_a_scratch_register_are_different_calls() {
     assert!(!targets.is_empty(), "{rows:?}");
     assert!(targets.iter().all(|r| r["killed"] == true), "{targets:?}");
 }
+
+/// `gap`: `mov eax,1; mov edi,2; mov edx,3; syscall; ret`. kuna's IR reads
+/// RAX, RDI and RDX and skips RSI, so the order its C passes them in does not
+/// say which registers the kernel gets: the check cannot tell, and says so
+/// instead of agreeing.
+#[test]
+fn a_system_call_that_skips_a_register_is_not_an_agreement() {
+    let text = [0xb8, 1, 0, 0, 0, 0xbf, 2, 0, 0, 0, 0xba, 3, 0, 0, 0, 0x0f, 0x05, 0xc3];
+    let path = object("gap", &text, &[("gap", 0, text.len() as u64)], &[]);
+    let r = &check(&path, &["gap"], &Options::default())[0];
+    let label = r.verdict.label();
+    assert!(label.starts_with("UNKNOWN(unsupported-op: system call at 0x"), "{}", r.render());
+    assert!(label.contains("not the first ones in order"), "{}", r.render());
+}
+
+/// `g(p, n)`: `p[16] = 7` (an int), `sink()`, then `rep movsb` of 16 bytes
+/// from `p` to `p + (n & 7) + 1`, an overlap kuna's `memcpy` does not define
+/// and kuna cannot see. The copy is a declared divergence, but what the run did
+/// before it is still compared: a mutant of the store dies at the call.
+#[test]
+fn a_call_before_an_overlapping_copy_is_still_compared() {
+    let text = [
+        0x53, 0x55, 0x48, 0x89, 0xfb, 0x89, 0xd5, 0xc7, 0x43, 0x40, 7, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0x83, 0xe5, 0x07, 0x48, 0x89, 0xde,
+        0x48, 0x8d, 0x7c, 0x2b, 0x01, 0xb9, 0x10, 0, 0, 0, 0xf3, 0xa4, 0x5d, 0x5b, 0xc3,
+    ];
+    let path = object("overlap", &text, &[("g", 0, text.len() as u64)], &[(15, "sink")]);
+    let r = &check(&path, &["g"], &Options::default())[0];
+    assert_eq!(r.verdict.label(), "DIVERGES(copy-overlap)", "{}", r.render());
+    let script = kuna_verify::session::binary_script(&path.to_string_lossy(), &["g".to_string()], &[]);
+    let mut killed = Vec::new();
+    kuna_verify::session::run_steps(script, None, &[specs()], true, None, |step| {
+        let kuna_verify::session::Step::Decompiled { prog, fd, .. } = step else { return };
+        let opts = Options::default();
+        let env = kuna_verify::state::Env::new(prog, opts.seed).unwrap();
+        let calls = kuna_verify::calls::sites(fd, &env);
+        let program = kuna_verify::program::compile(prog, fd, &calls);
+        for m in kuna_verify::mutate::mutants(&program, &calls).into_iter().filter(|m| m.operator == kuna_verify::mutate::Operator::Constant) {
+            if let Some((r, what, _)) = kuna_verify::check::check_mutant(prog, fd, &opts, m) {
+                killed.push((what, r.verdict.label()));
+            }
+        }
+    })
+    .unwrap();
+    let stored: Vec<_> = killed.iter().filter(|(what, _)| what.ends_with("at 0x400007")).collect();
+    assert!(!stored.is_empty(), "{killed:?}");
+    assert!(stored.iter().all(|(_, label)| label == "DIFFERS"), "{killed:?}");
+}

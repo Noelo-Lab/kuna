@@ -878,7 +878,7 @@
   "tests/stages/kuna-wrapsplit-be.xml": ["f AGREES(256)","g AGREES(256)"],
   "tests/stages/kuna-wrapsplit.xml": ["f AGREES(256)","g AGREES(256)","h AGREES(256)","k AGREES(256)"],
   "tests/stages/kuna-wsignload-a64.xml": ["lsh AGREES(256)","lsb AGREES(256)","lsh_idx AGREES(256)","lsb_idx AGREES(256)","lsh_neg AGREES(256)","lsb_neg AGREES(256)","lsh_pre AGREES(256)","lsb_post AGREES(256)","tbl AGREES(256)","lsh64 AGREES(256)","lsb_neg64 AGREES(256)"],
-  "tests/stages/kuna-x64syscall.xml": ["kernel_call DIFFERS","plain_add AGREES(256)","split_setup DIFFERS","pointer_before AGREES(256)","kernel_call AGREES(256)","plain_add AGREES(256)","split_setup AGREES(256)","pointer_before AGREES(256)","kernel_call AGREES(256)","plain_add AGREES(256)","split_setup AGREES(256)","pointer_before AGREES(256)"],
+  "tests/stages/kuna-x64syscall.xml": ["kernel_call DIFFERS","plain_add AGREES(256)","split_setup DIFFERS","pointer_before AGREES(256)","kernel_call AGREES(256)","plain_add AGREES(256)","split_setup AGREES(256)","pointer_before UNKNOWN(unsupported-op)","kernel_call AGREES(256)","plain_add AGREES(256)","split_setup AGREES(256)","pointer_before AGREES(256)"],
   "tests/stages/kuna-x86-16-fpuemu.xml": ["scale UNKNOWN(unsupported-op)","scale UNKNOWN(unsupported-op)","fles UNKNOWN(unsupported-op)"],
   "tests/stages/kuna-x86-16-protected-rel16.xml": [],
   "tests/stages/kuna-x86-16-real-rel16.xml": ["com_main UNKNOWN(unsupported-op)","far_caller UNKNOWN(unsupported-op)","f UNKNOWN(unsupported-op)","r UNKNOWN(unsupported-op)","k UNKNOWN(unsupported-op)","s UNKNOWN(unsupported-op)"],

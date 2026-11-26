@@ -928,6 +928,20 @@ impl<'e, 'p> State<'e, 'p> {
         self.flags.iter().enumerate().filter(|(_, f)| **f & PRESENT != 0).map(|(i, _)| (i as u64, self.regs[i])).collect()
     }
 
+    /// The register file, with the bytes of `regs` nothing has read or written
+    /// yet added at the value they start the run with, without reading them.
+    pub fn register_file_with(&self, regs: &[crate::storage::Storage]) -> Vec<(u64, u8)> {
+        let mut file = self.register_file();
+        for st in regs.iter().filter(|st| st.space.get_index() == self.env.register.get_index()) {
+            for off in st.off..st.off + u64::from(st.size) {
+                if self.flags.get(off as usize).is_none_or(|f| f & PRESENT == 0) {
+                    file.push((off, self.env.initial_byte(self.run, &self.env.register, off)));
+                }
+            }
+        }
+        file
+    }
+
     /// Put back every register byte `before` held, except those in `keep`:
     /// a callee run for real leaves the registers the calling convention says
     /// it preserves as they were. Returns the offsets the callee had changed.

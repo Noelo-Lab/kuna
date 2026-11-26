@@ -27,8 +27,9 @@ pub struct Outcome {
     /// A switch met a selector no row of its table carries.
     pub unmatched_switch: bool,
     /// A `memcpy` builtin ran with its destination inside its source, ahead
-    /// of it: the overlap `rep movs` defines and `memcpy` does not.
-    pub overlapping_copy: bool,
+    /// of it: the overlap `rep movs` defines and `memcpy` does not. Holds how
+    /// many calls and events the run had made before the first such copy.
+    pub overlapping_copy: Option<(usize, usize)>,
     pub calls: Vec<Record>,
     /// The run ended in a call kuna says does not return.
     pub noreturn: bool,
@@ -93,7 +94,7 @@ struct Run<'e, 'p, 'c> {
     /// Steps a memory builtin took, charged to the budget like the loop it
     /// replaces.
     charged: u64,
-    overlapping_copy: bool,
+    overlapping_copy: Option<(usize, usize)>,
 }
 
 enum Flow {
@@ -106,12 +107,16 @@ enum Flow {
 impl Run<'_, '_, '_> {
     /// Whether the machine's callee is kuna's, so its recorded effect may be
     /// replayed: the same address, the same code through thunks, a call kuna
-    /// bound past a stub, or a target of kuna's that is not code in the image
-    /// (an import, a PIC GOT slot), which the call check leaves alone.
-    fn same_callee(&self, machine: Option<u64>, kuna: Option<u64>, resolved: bool) -> bool {
+    /// bound past the PLT stub the machine calls, an injection, or a target of
+    /// kuna's that is not code in the image (an import, a PIC GOT slot), which
+    /// the call check leaves alone.
+    fn same_callee(&self, machine: Option<u64>, kuna: Option<u64>, site: &crate::calls::Site) -> bool {
         let env = self.state.env;
+        if let Some(stub) = site.plt_stub {
+            return crate::compare::observe::reaches_stub(env, machine, stub);
+        }
         let (m, k) = (crate::compare::observe::code_target(env, machine), crate::compare::observe::code_target(env, kuna));
-        resolved
+        site.resolved
             || m == k
             || k.is_none_or(|k| !env.is_code(k))
             || m.zip(k).is_some_and(|(m, k)| crate::machine::transparent_target(env, m) == crate::machine::transparent_target(env, k))
@@ -310,8 +315,8 @@ impl Run<'_, '_, '_> {
         match name {
             "memcpy" => {
                 let src = ptr(b);
-                if dst > src && dst - src < bytes {
-                    self.overlapping_copy = true;
+                if dst > src && dst - src < bytes && self.overlapping_copy.is_none() {
+                    self.overlapping_copy = Some((self.records.len(), self.events.len()));
                 }
                 let mut data = Vec::with_capacity(bytes as usize);
                 for i in 0..bytes {
@@ -406,7 +411,7 @@ impl Run<'_, '_, '_> {
                 }
                 let k = self.records.len() - 1;
                 self.check_inputs(op, k)?;
-                let real = self.replay.get(k).filter(|r| r.at == at && self.same_callee(r.target, target, site.resolved)).and_then(|r| r.effect.clone());
+                let real = self.replay.get(k).filter(|r| r.at == at && self.same_callee(r.target, target, site)).and_then(|r| r.effect.clone());
                 match real {
                     Some(effect) => self.state.replay(&effect),
                     None => {
@@ -582,7 +587,7 @@ pub fn run(
         unmatched_switch: false,
         records: Vec::new(),
         charged: 0,
-        overlapping_copy: false,
+        overlapping_copy: None,
     };
     if let Some(f) = &program.vararg {
         r.va_start(env, f)?;

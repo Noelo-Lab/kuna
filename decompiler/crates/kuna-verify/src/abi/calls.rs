@@ -75,6 +75,8 @@ pub struct Site {
     /// kuna bound the call past a PLT stub or replaced it with an injection:
     /// its target comes from relocations or a fixup the machine does not run.
     pub resolved: bool,
+    /// The PLT stub kuna bound the call past: the machine's call goes there.
+    pub plt_stub: Option<u64>,
     /// Where each CALL input lives for the callee: its prototype parameter,
     /// or the trial kuna's recovery matched it to.
     pub input_storage: Vec<Option<Storage>>,
@@ -403,6 +405,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                 ret_ext: crate::abi::return_extension(env, proto),
                 input_storage,
                 resolved: fc.plt_stub().is_some() || proto.get_inject_id() >= 0,
+                plt_stub: fc.plt_stub().map(|a| a.get_offset()),
             },
         );
     }
@@ -421,6 +424,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         ret_ext: None,
         input_storage: Vec::new(),
         resolved: false,
+        plt_stub: None,
     };
     let graph = fd.bblocks_ref();
     let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|i| fd.bblocks_get_block(i)).collect();
