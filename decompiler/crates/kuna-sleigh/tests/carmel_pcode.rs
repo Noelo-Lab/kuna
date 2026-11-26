@@ -877,6 +877,38 @@ fn wide_binary_unbound_ports() {
 }
 
 #[test]
+fn compact_accumulator_stack_round_trips_words_and_extends_the_guard() {
+    let mut m = Machine::new(0, &[(0x303780, NOP), (NOP, 0x303380), (NOP, NOP)],
+                             &[(0, 1, 6), (2, 1, 6), (4, 1, 0)], None);
+    m.seed(&[("A0", 0xaa8001abcd), ("SP", 0), ("ECFG", 0x10), ("EST", 0x17)]);
+    m.seed_data(1, 0x3ab1);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("SP"), m.data(0), m.data(0xffff), m.data(1)), (0xfffe, 0x8001, 0xabcd, 0x3ab1));
+    assert_eq!((m.reg("A0"), m.reg("EST")), (0xaa8001abcd, 0x4017));
+    assert_eq!(m.step(), 12);
+    assert_eq!((m.reg("SP"), m.reg("A0"), m.reg("EST")), (0, 0xff8001abcd, 0x4014));
+}
+
+#[test]
+fn paired_pop_updates_distinct_halves_and_both_flag_lanes() {
+    let mut m = Machine::new(0, &[(0x809891, 0xca0000), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A0", 0xaa1234abcd), ("A1", 0x9876543210), ("SP", 0x4002), ("EST", 0x4fff)]);
+    m.seed_data(0x4003, 0x8001);
+    m.seed_data(0x4004, 0);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("SP"), m.reg("A0"), m.reg("A1"), m.reg("EST")),
+               (0x4004, 0xaa0000abcd, 0x9876548001, 0x450c));
+    assert_eq!((m.data(0x4003), m.data(0x4004)), (0x8001, 0));
+
+    let mut collision = Machine::new(0, &[(0x809098, 0xca0000), (NOP, NOP)],
+                                     &[(0, 5, 6), (2, 1, 0)], None);
+    let error = collision.start(0).expect_err("a split POP must not write two halves of the same accumulator");
+    assert!(matches!(error, KunaError::BadData { .. }), "{error:?}");
+}
+
+#[test]
 fn wide_logic_flags_include_the_guard_even_when_the_word_result_is_zero() {
     let mut m = Machine::new(0, &[(0xc9c1a7, 0xea8222), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
     m.seed(&[("A0", 0xcc00000000), ("A1", 0), ("R0", 64), ("EST", 0x3000)]);
@@ -1389,4 +1421,179 @@ fn reti_ce1_veto_preserves_the_active_frame_and_address_enable_consumes_it() {
         assert_eq!(m.step(), 3 * dst);
         assert_eq!((m.reg("SP"), m.reg("TRAPCTX"), m.reg("PSTATUS")), (sp, context, 0x10));
     }
+}
+
+#[test]
+fn compact_arithmetic_packet_routes() {
+    for table in [0, 0xffff] {
+        let on = table != 0;
+        let mut m = Machine::new(0, &[(0x3b5d27, 0x1a031c), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("CETBL", table), ("A0", 0xea433809a4), ("A3L", 38), ("RN1", 2),
+                 ("R7", 0xc048), ("X2", 0x5678)]);
+        m.seed_data(0xc048, 0xa25e);
+        m.seed_data(0xc049, 0x8a5a);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg("A0"), 0xea433899b0);
+        assert_eq!(m.reg("EST"), if on { 0x3930 } else { 0x0900 });
+        assert_eq!((m.data(0xc048), m.data(0xc049)), if on { (0, 0) } else { (0xa25e, 0x8a5a) });
+
+        let mut m = Machine::new(0, &[(0x08b756, 0x4a2001), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("CETBL", table), ("R0", 0x40), ("R3", 0xc040), ("RN3", 4),
+                 ("A4", 0x80f4c5af94), ("A5", 0x89d1dd24b5), ("X2", 0x5678)]);
+        m.seed(&[("CECFG2", 0x1000)]);
+        m.seed_data(0x40, 0xa258);
+        m.seed_data(0xc040, 0x0786);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R3"), m.reg("X2"), m.reg("A5")), (0xc044, 0xa258, 0x89d1dd24b5));
+        assert_eq!((m.reg("A4"), m.reg("EST")), if on { (0x80f4c50028, 0x3011) } else { (0x80f4c5af94, 0x11) });
+
+        let mut m = Machine::new(0, &[(0x183c2f, 0x0336a7), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("CETBL", table), ("R5", 0x4048), ("RN5", 2), ("R7", 0xc048),
+                 ("A0L", 0x09a4), ("A2", 0x87b0084b74), ("A3", 0x8d0def9f26)]);
+        m.seed(&[("CECFG1", 0x1000), ("CECFG2", 0x1000)]);
+        for (addr, value) in [(0xc048, 0xa25e), (0xc049, 0x8a5a), (0x4048, 0x71bb), (0x4049, 0x03a3)] {
+            m.seed_data(addr, value);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R5"), m.reg("R7")), (0x404a, 0xc049));
+        assert_eq!(m.reg("EST"), if on { 0x3d00 } else { 0 });
+        assert_eq!(m.data(0xc048), if on { 0x6746 } else { 0xa25e });
+        assert_eq!((m.data(0x4048), m.data(0x4049)), if on { (0xac4e, 0xa218) } else { (0x71bb, 0x03a3) });
+
+        let mut m = Machine::new(0, &[(0x1b332e, 0x41964f), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("CETBL", table), ("R1", 0x4040), ("R6", 0x8048), ("R7", 0xc048),
+                 ("A2", 0x87b0084b74), ("FF1", 0x1234), ("FF2", 0xf678)]);
+        m.seed(&[("CECFG2", 0x1000)]);
+        m.seed_data(0x4040, 0xc460);
+        m.seed_data(0xc048, 0xa25e);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R1"), m.reg("X2")), (0x403f, 0xc460));
+        assert_eq!((m.reg("A2"), m.reg("EST")), if on { (0x15cedb40, 0x3034) } else { (0x87b0084b74, 0x34) });
+        assert_eq!((m.data(0x8048), m.data(0x8049)), (0x5da8, 0xa680));
+    }
+}
+
+#[test]
+fn compact_arithmetic_indexed_rmw_uses_the_encoded_register_and_pointer() {
+    let mut m = Machine::new(0, &[(0x936c9a, NOP)], &[(0, 2, 3), (1, 3, 0)], None);
+    m.seed(&[("RN1", 2), ("R5", 0x4048), ("RN5", 2)]);
+    m.seed_data(0x404a, 0x5dda);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 3);
+    assert_eq!((m.reg("RN1"), m.reg("R5"), m.reg("EST")), (0x5ddc, 0x4048, 0));
+    assert_eq!(m.data(0x404a), 0x5dda);
+}
+
+#[test]
+fn compact_arithmetic_alternate_shift_and_addabs_selectors() {
+    // R6 and A1L are selected instead of R7 and A0L; selector 15 still uses X2.
+    let mut m = Machine::new(0, &[(0x3b5927, 0x1a071e), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    m.seed(&[("CETBL", 0xffff), ("A0H", 0x4338), ("A3L", 2),
+             ("RN1", 2), ("R6", 0x8048), ("R7", 0xc048), ("X2", 0x5678)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A1L"), m.reg("EST")), (0x99b0, 0x3900));
+    assert_eq!((m.data(0x8048), m.data(0x8049), m.data(0xc048)), (8, 0, 0));
+}
+
+#[test]
+fn compact_arithmetic_operand_fetch_requires_address_qualification() {
+    let mut m = Machine::new(0, &[(0x1b332e, 0x41964f), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    m.seed(&[("R1", 0x4040), ("R6", 0x8048), ("R7", 0xc048), ("X2", 0x5678),
+             ("A2", 0x87b0084b74), ("FF1", 0x1234), ("FF2", 0xf678)]);
+    m.seed_data(0x4040, 0xc460);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("R1"), m.reg("X2"), m.reg("A2")), (0x4040, 0x5678, 0x87b0084b74));
+    assert_eq!((m.data(0x8048), m.data(0x8049)), (0x5da8, 0xa680));
+}
+
+#[test]
+fn compact_arithmetic_fft_shift_uses_signed_data_bits_not_the_guard() {
+    let mut m = Machine::new(0, &[(0x3b5d27, 0x1a031c), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    for (mode, threshold, shift, table, high, fft) in [
+        (0,    31, 31, 0xff, 0x8000, 0),
+        (0x10, 31, 31, 0xff, 0x8000, 0x4000),
+        (0x10, 1,  27, 0xff, 0x0800, 0x4000),
+        (0x10, 7,  27, 0xff, 0x0800, 0),
+        (0x10, 0,  39, 0xff, 0,      0),
+        (0x10, 0,  31, 0,    0x5555, 0),
+    ] {
+        m.seed(&[("EST", 0), ("ECFG", mode), ("FFTV", threshold), ("CETBL", table),
+                 ("RN1", 1), ("A3L", shift), ("R7", 0xc048), ("A0H", 0x6000), ("X2", 0)]);
+        m.seed_data(0xc049, 0x5555);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg("EST") & 0x4000, fft);
+        assert_eq!((m.reg("A0L"), m.data(0xc049)), (0x6000, high));
+    }
+}
+
+#[test]
+fn compact_arithmetic_fft_dual_stores_test_after_alim_but_before_saturation() {
+    let mut m = Machine::new(0, &[(0x183c2f, 0x0336a7), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    for (mode, table, threshold, short, right, est) in [
+        (0x10, 0xff,   31, 0x8000, 0x5555, 0x5024),
+        (0x14, 0xff,   31, 0x7fff, 0x5555, 0x1024),
+        (0x18, 0xff,   31, 0x7fff, 0x5555, 0x5024),
+        (0x1c, 0xff,   31, 0x7fff, 0x5555, 0x1024),
+        (0x30, 0xff,   31, 0x4000, 0x5555, 0x1024),
+        (0x10, 0xff00, 27, 1,      0xa218, 0x2d00),
+        (0x14, 0xff00, 27, 1,      0x8000, 0x6d00),
+        (0x18, 0xff00, 27, 1,      0x8000, 0x2d00),
+    ] {
+        m.seed(&[("EST", 0), ("ECFG", mode), ("FFTV", threshold), ("CETBL", table),
+                 ("R5", 0x4048), ("RN5", 2), ("R7", 0xc048),
+                 ("A0L", 0x7fff), ("A2", 0x87b0084b74), ("A3", 0x8d0def9f26)]);
+        m.seed_data(0xc048, 1);
+        m.seed_data(0x4049, 0x5555);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.data(0xc048), m.data(0x4049)), (est, short, right));
+    }
+}
+
+#[test]
+fn compact_arithmetic_fft_samples_the_long_store_not_the_multiply() {
+    let mut m = Machine::new(0, &[(0x1b332e, 0x41964f), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    for (mode, high, fft) in [(0x10, 0xa680, 0x4000), (0x30, 0x5340, 0)] {
+        m.seed(&[("EST", 0), ("ECFG", mode), ("FFTV", 21), ("CETBL", 0),
+                 ("R1", 0x4040), ("R6", 0x8048), ("R7", 0xc048),
+                 ("A2", 0x87b0084b74), ("FF1", 0x1234), ("FF2", 0xf678)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST") & 0x4000, m.data(0x8049)), (fft, high));
+    }
+    m.seed(&[("EST", 0), ("ECFG", 0x11), ("FFTV", 0), ("CETBL", 0xff00),
+             ("R1", 0x4040), ("A2", 0), ("FF1", 0), ("FF2", 0)]);
+    m.seed_data(0x4040, 0x8000);
+    m.seed_data(0xc048, 0x8000);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("EST") & 0x4000, m.reg("A2"), m.data(0x8049)), (0, 0x80000000, 0));
+}
+
+#[test]
+fn compact_arithmetic_fft_survives_a_later_below_threshold_issue() {
+    let fetches = [
+        (0x183c2f, 0x0336a7), (NOP, NOP), (NOP, NOP), (NOP, NOP),
+        (NOP, NOP), (0x3b5d27, 0x1a031c), (NOP, NOP),
+    ];
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 6), (12, 1, 0)];
+    let mut m = Machine::new(0, &fetches, &issues, None);
+    m.seed(&[("ECFG", 0x10), ("CETBL", 0xffff), ("R5", 0x4048), ("RN5", 2),
+             ("R7", 0xc048), ("RN1", 2), ("A0", 0xea433809a4), ("A2", 0x87b0084b74),
+             ("A3", 0x8d0def9f26), ("X2", 0x5678)]);
+    m.seed_data(0xc048, 0xa25e);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!(m.reg("EST"), 0x7d00);
+    for next in [12, 18, 24, 30, 36] {
+        assert_eq!(m.step(), next);
+    }
+    assert_eq!(m.reg("EST"), 0x7930);
 }

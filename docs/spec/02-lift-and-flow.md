@@ -4070,6 +4070,17 @@ or an open second source, and an open first destination with `R4`.
 The other covered routes use the left lane with an inactive right lane.
 These compact ports do not inherit wide-pair `EST` or predication effects.
 
+A compact accumulator `PUSH` stores the high word at old `SP` and the
+low word below it. The guard is not stored. FFT mode sets the sticky
+request if any of the high word's top six bits are set. Compact
+accumulator `POP` reconstructs the two words and sign-extends the high
+word into the guard. It sets zero and sign from the complete restored
+value. A marked wide `POP` to halves of distinct accumulators leaves the
+other halves and guards alone. It computes zero and sign for each word
+in its own flag lane. For these accumulator forms, CE samples incoming
+feedback, before the new stack flags are published. A wide pair aimed
+at two halves of the same accumulator has result contention and is not lifted.
+
 In the covered compact parallel logic routes, a CE veto does not
 suppress DATA address generation when the physical lane's override is
 enabled. Two postincrements of the same pointer capture consecutive
@@ -4118,6 +4129,36 @@ operand fetch, the first-input latch, and the encoded pointer update.
 Paired operations read their inputs before either lane writes DATA, and
 the long result uses the captured destination rather than the advanced
 pointer.
+
+In the covered parallel compact routes, a qualified left logical shift
+writes the low 32 bits to DATA and derives flags from the full 40-bit
+shift. Its unconditional secondary `ADDABS` reads `X2` for either latch
+selector and writes a half-register independently of the shift predicate.
+The primary `SUBC` high-half `RMW1` route computes flags but has no
+register writeback. The paired secondary `MPYUS` writes the high product
+word to the selected half, not to the primary RMW register.
+
+An open accumulator input on the covered long `ADDABS` route selects the
+unsigned `FF12` pair. The stored sum uses the incoming accumulator even
+when the paired secondary multiply replaces that accumulator. Secondary
+multiply operand fetch updates `X2` and can advance pointers when the
+address override permits fetch even though CE2 vetoes the result. The
+latch receives the first DATA word, not the second.
+In the covered paired DATA `ADDABS`/`SUB`, both lanes reserve their
+qualified addresses before result qualification. The short store uses
+the incoming source address despite its postincrement. A conflicting
+DATA bus reservation stops before either result or status is published.
+In these routes, `ECFG.FFT` tests signed bits 31:26 of each qualified
+DATA result. A magnitude strictly greater than the low five bits of
+`FFTV` sets sticky `EST` bit 14. The test ignores the accumulator guard
+and sees automatic limiting and the DATA right shift where applicable,
+but not final DATA saturation. The register-half `ADDABS` and multiply
+results do not drive this test.
+
+The unqualified sequential indexed `ADD RMW1` to an address or stride
+register writes a word sum without selecting the arithmetic flag mux.
+Unrecognized compact selectors remain unlifted rather than being
+interpreted as inactive slots.
 
 In the covered dual compact arithmetic packets with `OP1`/`OP2`, both
 temporary DATA reads use the incoming addresses. The two AGUs still

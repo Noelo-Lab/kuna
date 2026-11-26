@@ -483,6 +483,7 @@ define token slot (24)
     compact_stack_form = (4,22)
     compact_stack_first = (5,8)
     compact_stack_second = (1,4)
+    compact_stack_acc = (1,3)
     compact_unary_data_dst = (4,7)
     compact_unary_data_form = (8,22)
     clrbtr_mask = (1,12) hex
@@ -505,6 +506,44 @@ define token slot (24)
     hw_loop_reg_delay = (0,2)
     hw_loop_reg_source = (9,14)
     repeat_count = (0,9)
+    slot_5_9 = (5,9)
+    slot_4_6 = (4,6)
+    slot_7_10 = (7,10)
+    pair_op_11 = (11,22)
+    pair_shift_source = (5,9)
+    pair_abs_source = (5,9)
+    pair_word_6 = (6,10)
+    pair_half_11 = (11,14)
+    pair_count = (1,4)
+    pair_indexed_reg = (4,8)
+    pair_acc_4 = (4,6)
+    pair_acc_11 = (11,13)
+    pair_acc_4_lo = (4,6)
+    pair_acc_4_hi = (4,6)
+    pair_acc_4_gb = (4,6)
+    pair_acc_11_lo = (11,13)
+    pair_acc_11_hi = (11,13)
+    pair_acc_11_gb = (11,13)
+    pair_ptr_1 = (1,3)
+    pair_rn_1 = (1,3)
+    pair_rm_1 = (1,3)
+    pair_rl_1 = (1,3)
+    pair_bank_1 = (1,3)
+    pair_ptr_6 = (6,8)
+    pair_rm_6 = (6,8)
+    pair_rl_6 = (6,8)
+    pair_bank_6 = (6,8)
+    pair_ptr_7 = (7,9)
+    pair_rn_7 = (7,9)
+    pair_rm_7 = (7,9)
+    pair_rl_7 = (7,9)
+    pair_bank_7 = (7,9)
+    pair_ptr_10 = (10,12)
+    pair_rn_10 = (10,12)
+    pair_rm_10 = (10,12)
+    pair_rl_10 = (10,12)
+    pair_bank_10 = (10,12)
+    pair_ptr_11 = (11,13)
 ;
 
 define token wide (48)
@@ -629,6 +668,12 @@ define token wide (48)
     wide_0_2 = (0,2)
     stack_pair_first = (32,39)
     stack_pair_second = (24,31)
+    stack_split_first = (32,35)
+    stack_split_second = (24,27)
+    stack_split_first_acc = (32,34)
+    stack_split_second_acc = (24,26)
+    stack_split_first_bank = (36,39)
+    stack_split_second_bank = (28,31)
     stack_pair_push = (40,40)
     wide_24_45 = (24,45)
     transfer_roles_imm = (24,39) hex
@@ -774,10 +819,12 @@ attach variables [address_literal_dst] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 
 attach variables [packed_dst_r] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [wide_move_base wide_move_load_dst wide_logic_lhs_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [packed_lhs_hi packed_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
-attach variables [packed_dst_acc packed_lhs_acc packed_rhs_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [packed_dst_acc packed_lhs_acc packed_rhs_acc compact_stack_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [packed_dst_lo packed_lhs_lo packed_rhs_lo wide_shift_low_dst] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [packed_dst_hi wide_logic_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_guard packed_lhs_guard packed_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [stack_split_first stack_split_second]
+    [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [indexed_load_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [indexed_load_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [indexed_load_hi] [A0H A1H A2H A3H A4H A5H _ _];
@@ -832,6 +879,19 @@ attach variables [x_alu_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [x_alu_acc_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [x_alu_acc_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [x_alu_acc_gb] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [pair_shift_source pair_abs_source pair_word_6] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
+attach variables [pair_half_11] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [pair_count] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
+attach variables [pair_indexed_reg] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
+attach variables [pair_acc_4 pair_acc_11] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [pair_acc_4_lo pair_acc_11_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [pair_acc_4_hi pair_acc_11_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [pair_acc_4_gb pair_acc_11_gb] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [pair_ptr_1 pair_ptr_6 pair_ptr_7 pair_ptr_10 pair_ptr_11] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [pair_rn_1 pair_rn_7 pair_rn_10] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [pair_rm_1 pair_rm_6 pair_rm_7 pair_rm_10] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [pair_rl_1 pair_rl_6 pair_rl_7 pair_rl_10] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [pair_bank_1 pair_bank_6 pair_bank_7 pair_bank_10] [0 2 4 6 8 10 12 14];
 attach variables [wide_lc_r] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [wide_lc_rn] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [wide_lim8_pointer] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
@@ -6277,6 +6337,265 @@ macro parallel_shift_fetch(a, b, copy_preg, word_result, first, second) {
     publish_alu_ce(flags);
 }
 
+# FFT samples the signed upper six bits of the DATA word pair; final
+# DATA saturation is downstream of the tap, unlike ALIM and SR1.
+macro compact_pair_fft(raw, stored, arithmetic, status) {
+    if ((ECFG & 0x10) == 0 || (status & 0x4000) != 0) goto <done>;
+    local sample:4 = stored:4;
+    if (arithmetic == 0 || (ECFG & 0x28) != 8) goto <compare>;
+    sample = raw:4;
+    if ((ECFG & 4) == 0 || ((((raw >> 31) ^ (raw >> 32)) & 1) == 0)) goto <compare>;
+    sample = 0x7fffffff + zext((raw & 0x8000000000) != 0);
+  <compare>
+    local top:4 = sample s>> 26;
+    local limit:4 = zext(FFTV & 31);
+    if (top s>= -limit && top s<= limit) goto <done>;
+    status = status | 0x4000;
+  <done>
+}
+
+macro compact_pair_read_check(first, second) {
+    if (((first ^ second) & 0xc001) != 0) goto <fetch>;
+    local region:2 = first & 0xc000;
+    if (region == 0 || region == 0xc000) goto <fetch>;
+  <stopped>
+    carmel_data_read_conflict();
+    goto <stopped>;
+  <fetch>
+}
+
+macro compact_pair_long_store(address, result) {
+    local upper:2 = address + 1;
+    *[data]:2 address = result:2;
+    *[data]:2 upper = result(2);
+}
+
+macro compact_pair_shift(value, count, result, flags) {
+    local input:8 = zext(value);
+    local n:4 = (zext(count & 127) ^ 64) - 64;
+    local carry_out:1 = (EST & 1) != 0;
+    result = input;
+    if (n == 0) goto <finish>;
+    if (n s< 0) goto <right>;
+    if (n <= 40) goto <left>;
+    n = 40;
+  <left>
+    carry_out = ((input >> (40 - n)) & 1) != 0;
+    result = (input << n) & 0xffffffffff;
+    goto <finish>;
+  <right>
+    local distance:4 = 0 - n;
+    if (distance <= 40) goto <shift_right>;
+    distance = 40;
+  <shift_right>
+    carry_out = ((input >> (distance - 1)) & 1) != 0;
+    result = input >> distance;
+  <finish>
+    shift_flags(result, carry_out, flags);
+}
+
+macro compact_pair_addabs_word(left, right, store, raw, result, flags) {
+    local a:8 = ((zext(left) ^ 0x8000) - 0x8000) << 16;
+    local b:8 = zext(right) << 16;
+    if (right < 0x8000) goto <add>;
+    b = 0x100000000 - b;
+  <add>
+    raw = a + b;
+    raw_mac_finish(raw, (a & 0xffffffffff) + b, 1:1, 0:1, store, result, flags);
+}
+
+# The right ADDABS selects the physical X2 input, including selector 14.
+:LSHIFT "CE1" pair_ptr_10,pair_shift_source,pair_count "||" "ADDABS" x_alu_half_dst,pair_abs_source,"X2" is
+    (carmel_issue=1 & slot_mode=0 & slot_14_22=0xed & slot_0_0=1 & pair_ptr_10 &
+     pair_rn_10 & pair_rm_10 & pair_rl_10 & pair_bank_10 & slot_13_13 & slot_5_9<30 &
+     pair_shift_source & slot_1_4<14 & pair_count);
+    (slot_mode=0 & slot_14_22=0x68 & slot_0_0=0 & slot_10_12<6 & x_alu_half_dst &
+     slot_5_9>=24 & slot_5_9<30 & pair_abs_source & (slot_1_4=14 | slot_1_4=15)) {
+    local address:2 = pair_ptr_10;
+    local a:2 = pair_shift_source;
+    local count:2 = pair_count;
+    local rhs:2 = X2;
+    local addend:2 = pair_abs_source;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <execute>;
+    modify_ptr(pair_ptr_10, pair_rn_10, pair_rm_10, pair_rl_10, pair_bank_10, slot_13_13);
+  <execute>
+    local result:8;
+    local active:2;
+    local sum:8;
+    compact_pair_addabs_word(addend, rhs, 0:1, sum, result, active);
+    local status:2 = EST & 0xcfff;
+    raw_mac_flags(status, active, 6);
+    x_alu_half_dst = result(2);
+    if (enabled == 0) goto <publish>;
+    compact_pair_shift(a, count, result, active);
+    status = (status & 0xffc6) | active;
+    compact_pair_fft(result, result, 0:1, status);
+    compact_pair_long_store(address, result);
+  <publish>
+    publish_alu_ce(status);
+}
+
+# RMW1's high-half selector consumes the SUBC computation but has no
+# register writeback on the primary parallel lane. MPYUS still fills X2.
+:SUBC "RMW1","A5H",pair_ptr_1 "||" "MPYUS CE2" pair_half_11,pair_ptr_6,logical_right is
+    (carmel_issue=1 & slot_mode=0 & slot_15_22=0x11 & slot_11_14=6 & slot_6_10=29 &
+     slot_4_5=1 & slot_0_0=0 & pair_ptr_1 & pair_rn_1 & pair_rm_1 & pair_rl_1 & pair_bank_1);
+    (slot_mode=0 & slot_15_22=0x94 & slot_0_0=1 & (slot_11_14<5 | (slot_11_14>=8 & slot_11_14<13)) &
+     pair_half_11 & slot_6_10<8 & pair_ptr_6 & logical_right) {
+    local sub_address:2 = pair_ptr_1;
+    local mul_address:2 = pair_ptr_6;
+    local factor:2 = logical_right;
+    local subtrahend:8;
+    local carry_in:8 = zext(EST & 1);
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    modify_ptr(pair_ptr_1, pair_rn_1, pair_rm_1, pair_rl_1, pair_bank_1, 1:2);
+    local fetch_right:1 = enabled != 0 || (CECFG2 & 0x1000) != 0;
+    if (!fetch_right) goto <left_fetch>;
+    compact_pair_read_check(sub_address, mul_address);
+  <left_fetch>
+    local sub_word:2 = *[data]:2 sub_address;
+    local minuend:8 = ((zext(A5H) ^ 0x8000) - 0x8000) << 16;
+    subtrahend = ((zext(sub_word) ^ 0x8000) - 0x8000) << 16;
+    local result:8;
+    local active:2;
+    raw_mac_finish(minuend - subtrahend + carry_in - 1,
+                   (minuend & 0xffffffffff) + (~subtrahend & 0xffffffffff) + carry_in,
+                   1:1, 0:1, 0:1, result, active);
+    local status:2 = EST & 0xcfff;
+    raw_mac_flags(status, active, 0);
+    if (!fetch_right) goto <publish>;
+    local mul_word:2 = *[data]:2 mul_address;
+    X2 = mul_word;
+    if (enabled == 0) goto <publish>;
+    local product:8;
+    raw_mac_product(mul_word, factor, 0:1, 1:1, product);
+    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 1:1, 0:1, 0:1, result, active);
+    pair_half_11 = result(2);
+    raw_mac_flags(status, active, 6);
+  <publish>
+    publish_alu_ce(status);
+}
+
+# The short indexed RMW1 route writes address/increment registers without
+# selecting a result flag mux or changing the indexed pointer.
+:ADD "RMW1" pair_indexed_reg,pair_ptr_1 is carmel_issue=2 & slot_mode=1 & slot_13_22=0x9b &
+    slot_9_12=6 & slot_4_8<16 & slot_0_0=0 & pair_indexed_reg & pair_ptr_1 & pair_rn_1 {
+    local address:2 = pair_ptr_1 + pair_rn_1;
+    pair_indexed_reg = pair_indexed_reg + *[data]:2 address;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+define pcodeop carmel_data_write_conflict;
+
+# Both DATA write addresses reserve their bus before either lane evaluates
+# its result predicate. The source postincrement uses the incoming word.
+:ADDABS "CE1" pair_ptr_11,pair_word_6,pair_ptr_1 "||" "SUB CE2" pair_ptr_7,pair_acc_4,cmp_full_rhs_full is
+    (carmel_issue=1 & slot_mode=0 & slot_15_22=0x30 & slot_11_14<8 & pair_ptr_11 &
+     slot_6_10<30 & pair_word_6 & slot_1_5>=22 & slot_1_5<24 & slot_0_0=1 &
+     pair_ptr_1 & pair_rm_1 & pair_rl_1 & pair_bank_1);
+    (slot_mode=0 & pair_op_11=0x66 & slot_7_10>=8 & slot_7_10<14 & pair_ptr_7 & pair_rn_7 &
+     pair_rm_7 & pair_rl_7 & pair_bank_7 & slot_4_6<6 & slot_1_3<6 & pair_acc_4 & cmp_full_rhs_full &
+     pair_acc_4_lo & pair_acc_4_hi & pair_acc_4_gb &
+     cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard & slot_0_0=1) {
+    local short_address:2 = pair_ptr_11;
+    local source_address:2 = pair_ptr_1;
+    local long_address:2 = pair_ptr_7;
+    local word:2 = pair_word_6;
+    local a:8;
+    local b:8;
+    compact_long_sample(pair_acc_4_lo, pair_acc_4_hi, pair_acc_4_gb, a);
+    compact_long_sample(cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, b);
+    local first_on:2;
+    local second_on:2;
+    unary_ce(CECFG1, EST, CETBL, 0, first_on);
+    unary_ce(CECFG2, EST, CETBL, 1, second_on);
+    local first_address_on:1 = first_on != 0 || (CECFG1 & 0x1000) != 0;
+    local second_address_on:1 = second_on != 0 || (CECFG2 & 0x1000) != 0;
+    if (!first_address_on) goto <second_agu>;
+    modify_ptr(pair_ptr_1, 0:2, pair_rm_1, pair_rl_1, pair_bank_1, 2:2);
+  <second_agu>
+    if (!second_address_on) goto <operands>;
+    modify_ptr(pair_ptr_7, pair_rn_7, pair_rm_7, pair_rl_7, pair_bank_7, 1:2);
+    if (!first_address_on) goto <operands>;
+    if (((short_address ^ long_address) & 0x8000) != 0) goto <operands>;
+  <stopped>
+    carmel_data_write_conflict();
+    goto <stopped>;
+  <operands>
+    local status:2 = EST & 0xcfff;
+    local active:2;
+    local result:8;
+    if (!first_address_on) goto <second>;
+    local operand:2 = *[data]:2 source_address;
+    if (first_on == 0) goto <second>;
+    local sum:8;
+    compact_pair_addabs_word(word, operand, 1:1, sum, result, active);
+    raw_mac_flags(status, active, 0);
+    if ((ECFG & 0x20) == 0) goto <write_short>;
+    result = (result >> 1) | (result & 0x8000000000);
+  <write_short>
+    compact_pair_fft(sum, result, 1:1, status);
+    *[data]:2 short_address = result(2);
+  <second>
+    if (second_on == 0) goto <publish>;
+    local bits:8 = (a - b) & 0xffffffffff;
+    local overflow:1 = ((a ^ b) >= 0x8000000000) && ((a ^ bits) >= 0x8000000000);
+    compact_long_finish(bits, a >= b, overflow, 1:1, 0:1, result, active);
+    raw_mac_flags(status, active, 6);
+    compact_pair_fft(bits, result, 1:1, status);
+    compact_pair_long_store(long_address, result);
+  <publish>
+    publish_alu_ce(status);
+}
+
+# An open whole-accumulator ADDABS operand selects the unsigned FF12 pair
+# on this route. The right MPY samples both DATA words independently of CE2.
+:ADDABS pair_ptr_7,pair_acc_4,"FF12" "||" "MPY CE2" pair_acc_11,pair_ptr_6,pair_ptr_1 is
+    (carmel_issue=1 & slot_mode=0 & pair_op_11=0x366 & slot_0_0=0 & slot_7_10<8 &
+     slot_4_6<6 & pair_acc_4 & (slot_1_3=6 | slot_1_3=7) & pair_ptr_7 & pair_acc_4_lo & pair_acc_4_hi & pair_acc_4_gb);
+    (slot_mode=0 & slot_14_22=0x106 & slot_0_0=1 & slot_11_13<6 & pair_acc_11 &
+     slot_6_10>=24 & slot_1_5<8 & pair_ptr_6 & pair_rm_6 & pair_rl_6 & pair_bank_6 & pair_ptr_1 &
+     pair_acc_11_lo & pair_acc_11_hi & pair_acc_11_gb) {
+    local address:2 = pair_ptr_7;
+    local first:2 = pair_ptr_6;
+    local second:2 = pair_ptr_1;
+    local a:8;
+    compact_long_sample(pair_acc_4_lo, pair_acc_4_hi, pair_acc_4_gb, a);
+    local b:8 = (zext(FF2) << 16) | zext(FF1);
+    local raw:8 = a + b;
+    local bits:8 = raw & 0xffffffffff;
+    local stored:8;
+    local active:2;
+    compact_long_finish(bits, raw > 0xffffffffff, a < 0x8000000000 && bits >= 0x8000000000,
+                        1:1, 0:1, stored, active);
+    local status:2 = EST & 0xcfff;
+    raw_mac_flags(status, active, 0);
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <store>;
+    modify_ptr(pair_ptr_6, 0:2, pair_rm_6, pair_rl_6, pair_bank_6, 3:2);
+    compact_pair_read_check(first, second);
+    local mul_left:2 = *[data]:2 first;
+    local mul_right:2 = *[data]:2 second;
+    X2 = mul_left;
+    if (enabled == 0) goto <store>;
+    local product:8;
+    raw_mac_product(mul_left, mul_right, 1:1, 1:1, product);
+    local result:8;
+    raw_mac_finish(product, product & 0xffffffffff, 0:1, 0:1, 0:1, result, active);
+    pair_acc_11_lo = result:2;
+    pair_acc_11_hi = result(2);
+    pair_acc_11_gb = result(4);
+    raw_mac_flags(status, active, 6);
+  <store>
+    compact_pair_fft(bits, stored, 1:1, status);
+    compact_pair_long_store(address, stored);
+    publish_alu_ce(status);
+}
+
 macro raw_mac_round_sub(base, left, right, result, flags) {
     local product:8;
     raw_mac_product(left, right, 1:1, 1:1, product);
@@ -8391,6 +8710,31 @@ macro compact_pop_words(first, second) {
 @define COMPACT_POP_PAIR "slot_9_22=0x1818 & slot_0_0=0"
 @define COMPACT_STACK_FF12 "slot_1_3=6 & slot_0_0=0"
 
+stack_push_acc: "PUSH" compact_stack_acc is compact_stack_form=0x30378 & slot_0_0=0 & compact_stack_acc {
+    local high:2 = compact_stack_acc(2);
+    local low:2 = compact_stack_acc:2;
+    local flags:2 = EST & 0xcfff;
+    paired_push_words(high, low, high, 1:2, flags);
+    publish_ce_feedback(flags, EST);
+}
+
+stack_pop_acc: "POP" compact_stack_acc is compact_stack_form=0x30338 & slot_0_0=0 & compact_stack_acc {
+    local high:2;
+    local low:2;
+    compact_pop_words(high, low);
+    local value:4 = (zext(high) << 16) | zext(low);
+    compact_stack_acc = sext(value);
+    local flags:2 = (zext(value == 0) << 3) | (zext(value s< 0) << 4);
+    publish_ce_feedback((EST & 0xcfc4) | flags, EST);
+}
+
+:^stack_push_acc is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & stack_push_acc { build stack_push_acc; }
+:^stack_push_acc "||" nop_right is (carmel_issue=1 & slot_mode=0 & stack_push_acc); (slot_mode=0 & nop_right) { build stack_push_acc; }
+:^nop_left "||" stack_push_acc is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & stack_push_acc) { build stack_push_acc; }
+:^stack_pop_acc is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & stack_pop_acc { build stack_pop_acc; }
+:^stack_pop_acc "||" nop_right is (carmel_issue=1 & slot_mode=0 & stack_pop_acc); (slot_mode=0 & nop_right) { build stack_pop_acc; }
+:^nop_left "||" stack_pop_acc is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & stack_pop_acc) { build stack_pop_acc; }
+
 :PUSH "R0","R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_PUSH_PAIR) & compact_stack_first=0 & compact_stack_second=0); (slot_mode=0 & nop_right) {
     compact_push_words(R0, R4);
 }
@@ -8476,6 +8820,26 @@ macro paired_push_registers(at_sp, below_sp, connected) {
 
 @define STACK_POP_MARKED "$(STACK_PAIR) & carmel_issue=5 & wide_left_mode=1 & stack_pair_push=0"
 @define STACK_POP_CE2 "$(STACK_PAIR_CE2) & stack_pair_push=0"
+
+stack_split_distinct: is stack_split_first_acc=0 & stack_split_second_acc!=0 { }
+stack_split_distinct: is stack_split_first_acc=1 & stack_split_second_acc!=1 { }
+stack_split_distinct: is stack_split_first_acc=2 & stack_split_second_acc!=2 { }
+stack_split_distinct: is stack_split_first_acc=3 & stack_split_second_acc!=3 { }
+stack_split_distinct: is stack_split_first_acc=4 & stack_split_second_acc!=4 { }
+stack_split_distinct: is stack_split_first_acc=5 & stack_split_second_acc!=5 { }
+
+:POP stack_split_first,stack_split_second is $(STACK_POP_MARKED) & wide_0_22=0x4a0000
+    & stack_split_first_bank=9 & stack_split_second_bank=9 & stack_split_second_acc<6
+    & stack_split_first & stack_split_second & stack_split_distinct {
+    local first:2;
+    local second:2;
+    compact_pop_words(first, second);
+    stack_split_second = second;
+    stack_split_first = first;
+    local flags:2 = (zext(first == 0) << 3) | (zext(first s< 0) << 4)
+                  | (zext(second == 0) << 9) | (zext(second s< 0) << 10);
+    publish_ce_feedback((EST & 0xc104) | flags, EST);
+}
 
 stack_pop_r7: "*R7++RN7" is stack_pair_second=0x0f { export 0:2; }
 stack_pop_r7: "*R7++RN7:long" is stack_pair_second=0x4f { export 1:2; }
