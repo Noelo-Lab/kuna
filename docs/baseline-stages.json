@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5520,
-    5520
+    5527,
+    5527
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2724,6 +2724,13 @@
     "data:SAVED-XMM-WIN64 fixture #1: unaffected XMM6-9 lane spills are absent from the local frame",
     "data:SAVED-XMM-WIN64 fixture #2: the disjoint caller-owned Rect still reaches its helper and return",
     "data:SAVED-XMM-WIN64 fixture #3: an observed XMM spill stays mapped at its frame slot",
+    "data:SCALAR-SP #1: unsigned projection returns the declared SP plus 16",
+    "data:SCALAR-SP #2: signed projection returns the declared SP plus 16",
+    "data:SCALAR-SP #3: ordinary frame has no explicit SP parameter",
+    "data:SCALAR-SP #4: pointer SP control has a locked pointer parameter",
+    "data:SCALAR-SP #5: both frame controls initialize the local",
+    "data:SCALAR-SP #6: both frame controls pass the address of the local",
+    "data:SCALAR-SP #7: both frame controls reload the local",
     "data:SDIVPOW2 #1: a cmovs before sar prints as the division",
     "data:SDIVPOW2 #2: a cmovns over the 64-bit dividend prints as the division",
     "data:SDIVPOW2 #3: an offset folded into both values divides the offset dividend",
