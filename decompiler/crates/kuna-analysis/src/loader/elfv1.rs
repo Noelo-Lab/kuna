@@ -9,29 +9,41 @@ pub struct Descriptor {
     pub toc: Option<u64>,
 }
 
-/// A descriptor's entry, TOC and environment words.
-pub const DESCRIPTOR_SIZE: u64 = 24;
-
 #[derive(Clone, Debug, Default)]
 pub struct Descriptors(pub Vec<Descriptor>);
+
+/// Which .opd addresses [`Descriptors::read_candidates`] validates: those symbols and the
+/// entry name, or every aligned word, giving up on the first uncertain one or skipping it.
+#[derive(Clone, Copy, PartialEq)]
+enum Scan { Named, Imports, Every }
 
 impl Descriptors {
     /// Only an ABI-v1/unspecified linked ELF with a file-backed .opd qualifies.
     pub fn read(file: &object::File<'_>) -> Self {
-        Self::read_candidates(file, false, &[])
+        Self::read_candidates(file, Scan::Named, &[])
     }
 
     /// Also validate descriptors at `extra` addresses, such as `.dynamic` function pointers.
     pub fn read_at(file: &object::File<'_>, extra: &[u64]) -> Self {
-        Self::read_candidates(file, false, extra)
+        Self::read_candidates(file, Scan::Named, extra)
     }
 
     /// Scan aligned .opd words conservatively for import ambiguity, without supplying loader seeds.
     pub(super) fn read_for_imports(file: &object::File<'_>) -> Self {
-        Self::read_candidates(file, true, &[])
+        Self::read_candidates(file, Scan::Imports, &[])
     }
 
-    fn read_candidates(file: &object::File<'_>, scan: bool, extra: &[u64]) -> Self {
+    /// The code words of every descriptor at an aligned .opd word, named or not, sorted. A word
+    /// an uncertain relocation writes is left out.
+    pub fn code_words(file: &object::File<'_>) -> Vec<u64> {
+        let mut out: Vec<u64> = Self::read_candidates(file, Scan::Every, &[]).0.into_iter().map(|d| d.entry).collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    fn read_candidates(file: &object::File<'_>, mode: Scan, extra: &[u64]) -> Self {
+        let scan = mode != Scan::Named;
         if file.format() != BinaryFormat::Elf || file.architecture() != Architecture::PowerPc64
             || !matches!(file.kind(), ObjectKind::Executable | ObjectKind::Dynamic)
             || !matches!(file.flags(), FileFlags::Elf { e_flags, .. } if e_flags & 3 <= 1)
@@ -62,7 +74,7 @@ impl Descriptors {
                 relocated_word(&relocations, address.checked_add(start as u64)?, value)
             };
             let Some(entry) = word(0) else {
-                if scan { return Self::default(); }
+                if mode == Scan::Imports { return Self::default(); }
                 continue;
             };
             let toc = word(8);

@@ -12,9 +12,10 @@ unbounded 32-bit count as well, `never` drops the 64-bit shifts' guards,
 guard-free shift of a signed literal keeps its unsigned conversion.
 
 `kuna-elfv1-symbolextent.xml` checks that the gap walk (`aif`) names no function
-inside the code of a sized PowerPC64 ELFv1 symbol, in both byte orders, and keeps a
-routine with no symbol, a symbol inside another function, and a routine behind a
-descriptor that states its own size.
+inside the code of a sized PowerPC64 ELFv1 symbol, 28 or 24 bytes long, in both byte
+orders. It keeps a routine with no symbol, a symbol, a call target and a descriptor's
+code inside other functions, and a routine behind a descriptor symbol that states the
+descriptor's size beside a `.name` symbol.
 
 `kuna-returndup-auto.xml` checks option `returndup` (default `auto`) on gcc -O0
 x86-64: a guard clause `if (!c) return 0;` keeps its own return, a body that

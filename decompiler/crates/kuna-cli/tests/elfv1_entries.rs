@@ -401,9 +401,10 @@ fn elfv1_calls_keep_their_short_circuit_condition() {
     }
 }
 
-/// The gap walk names no start inside `sample`, which a dynamic symbol sizes through
-/// its descriptor. It keeps the routine behind it (0xed4), a symbol (0xef0) and a call
-/// target (0xf0c) inside other functions, and the routine behind `dotted` (0xf24).
+/// The gap walk names no start inside `sample` or `exact24`, which dynamic symbols size
+/// through their descriptors. It keeps the routines behind `sample` and `dotted`, a symbol,
+/// two call targets (one called only by an uncalled export) and a descriptor's code inside
+/// other functions.
 #[test]
 fn a_gap_walk_start_is_outside_the_code_a_descriptor_symbol_sizes() {
     for name in ["elfv1_symbol_extent_be.so", "elfv1_symbol_extent_le.so"] {
@@ -413,14 +414,18 @@ fn a_gap_walk_start_is_outside_the_code_a_descriptor_symbol_sizes() {
         let listed: serde_json::Value = serde_json::from_str(&out).unwrap();
         let sizes: std::collections::BTreeMap<u64, u64> = listed["functions"].as_array().unwrap().iter()
             .map(|f| (f["address"].as_u64().unwrap(), f["size"].as_u64().unwrap())).collect();
-        assert_eq!(sizes.len(), 34, "{name}: {out}");
-        assert_eq!(sizes.get(&0xeb8), Some(&28), "{name}");
-        assert!(!sizes.contains_key(&0xec4), "{name}");
-        for kept in [0xed4, 0xef0, 0xf0c, 0xf24] {
+        assert_eq!(sizes.len(), 40, "{name}: {out}");
+        assert_eq!((sizes.get(&0x1068), sizes.get(&0x10e4)), (Some(&28), Some(&24)), "{name}");
+        for guess in [0x1074, 0x10ec] {
+            assert!(!sizes.contains_key(&guess), "{name}: {guess:#x}");
+        }
+        for kept in [0x1084, 0x10a0, 0x10bc, 0x10d4, 0x1128, 0x1144] {
             assert!(sizes.contains_key(&kept), "{name}: {kept:#x}");
         }
-        let (out, err, rc) = common::run_kuna(&["decompile", &image, "sample"]);
-        assert_eq!(rc, 0, "{err}");
-        assert!(out.contains("0x10007") && out.contains("return a0"), "{name}: {out}");
+        for function in ["sample", "exact24"] {
+            let (out, err, rc) = common::run_kuna(&["decompile", &image, function]);
+            assert_eq!(rc, 0, "{err}");
+            assert!(out.contains("return a0") && !out.contains("funcboundflow"), "{name} {function}: {out}");
+        }
     }
 }
