@@ -102,7 +102,9 @@ operand of `&&` and a returned one print as their two comparisons, while a
 stand-alone test of ten values and a loop condition stay merged; `option
 rangetest split` splits those two as well. `x >= -16 && x < 16`, whose range
 wraps past zero, stays merged under every value, and `option rangetest merged`
-prints every test as compiled. `kuna-rangetest-thumb.xml` checks clang -O2
+prints every test as compiled. A split `||` that heads an `&&` chain nested as
+the second clause of an `||` keeps its own parentheses, since that clause
+prints none. `kuna-rangetest-thumb.xml` checks clang -O2
 Thumb: the bound check that clang emits before a `tbb` switch table prints
 before the recovered `switch` and keeps its one comparison under every value.
 

@@ -9,15 +9,19 @@
        int isdig(int c) { return c >= '0' && c <= '9'; }
        int small(int x) { return x >= -16 && x < 16; }
        int number(const char *s) { int n = 0; while (*s >= '0' && *s <= '9') { n = n * 10 + (*s - '0'); s++; } return n; }
+       int ctl(int b, int c) { int n = 0; while (b > 0) { b = b - 1; if (b == 7 || ((c < 9 || c > 10) && c != 5)) n += c; knob = b; } return n; }
 
      gcc folds each pair of comparisons into one unsigned comparison of a
      subtraction. By default the stand-alone tests of 95 and 30 values, the
      operand of && and the returned test print as the two comparisons; the
      ten-value stand-alone test and the loop condition stay merged, and split
      splits them too. small's range wraps past zero, so every value keeps it
-     merged. Under rangetest merged every test prints as compiled. -->
+     merged. In ctl the split || heads an && chain that is itself the second
+     clause of an ||, where the clause gets no parenthesis of its own, so the
+     split carries one. Under rangetest merged every test prints as compiled. -->
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0x11b0" readonly="true">f30f1efa8d47e03c5e770a400fb6ff893d4f2e0000c3662e0f1f840000000000f30f1efa8d47ff83f81d770c893d322e000031c0c30f1f00b8ffffffffc36690f30f1efa8d47ff83f81d7606893d122e0000c366662e0f1f8400000000006690f30f1efa8d47d03c09770a400fb6ff893def2d0000c3662e0f1f840000000000f30f1efa83ee614080fe190f96c231c083ff020f9fc021d0c30f1f8000000000f30f1efa83ef3031c083ff090f96c0c3f30f1efa6681ef000431c06681ffffbb0f96c0c366662e0f1f84000000000090f30f1efa48b8feffffffffffff1f488d57ff4839c27709488d04fd00000000c348c7c0ffffffffc30f1f840000000000f30f1efa83c71031c083ff1f0f96c0c3f30f1efa0fb6074531c08d50d080fa097723660f1f44000083e830438d14804883c7010fbec0448d04500fb6078d50d080fa0976e34489c0c30f1f8000000000</bytechunk>
+<bytechunk space="ram" offset="0x1390" readonly="true">f30f1efa8d47ff4531c085ff7e278d56f70f1f800000000083f807740a83fa01760883fe0574034101f08905542c000083e80173e34489c0c3</bytechunk>
 <bytechunk space="ram" offset="0x4010">0000000000000000</bytechunk>
 <symbol space="ram" offset="0x11b0" name="printable"/>
 <symbol space="ram" offset="0x11d0" name="bits"/>
@@ -29,6 +33,7 @@
 <symbol space="ram" offset="0x1280" name="scaled"/>
 <symbol space="ram" offset="0x12b0" name="small"/>
 <symbol space="ram" offset="0x12c0" name="number"/>
+<symbol space="ram" offset="0x1390" name="ctl"/>
 <symbol space="ram" offset="0x4014" name="knob"/>
 </binaryimage>
 <script>
@@ -42,6 +47,7 @@
 <com>parse line extern long scaled(unsigned long n);</com>
 <com>parse line extern int small(int x);</com>
 <com>parse line extern int number(char *s);</com>
+<com>parse line extern int ctl(int b, int c);</com>
 <com>lo fu printable</com>
 <com>decompile</com>
 <com>print C</com>
@@ -61,6 +67,9 @@
 <com>decompile</com>
 <com>print C</com>
 <com>lo fu number</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu ctl</com>
 <com>decompile</com>
 <com>print C</com>
 <com>option rangetest merged</com>
@@ -85,6 +94,9 @@
 <com>lo fu number</com>
 <com>decompile</com>
 <com>print C</com>
+<com>lo fu ctl</com>
+<com>decompile</com>
+<com>print C</com>
 <com>option rangetest split</com>
 <com>lo fu printable</com>
 <com>decompile</com>
@@ -107,6 +119,9 @@
 <com>lo fu number</com>
 <com>decompile</com>
 <com>print C</com>
+<com>lo fu ctl</com>
+<com>decompile</com>
+<com>print C</com>
 <com>quit</com>
 </script>
 <stringmatch name="RANGETEST #1: an inside range on an unsigned char prints as two comparisons under auto and split" min="2" max="2">^  if \(0x20 &lt;= c &amp;&amp; c &lt;= 0x7e\)$</stringmatch>
@@ -121,4 +136,6 @@
 <stringmatch name="RANGETEST #10: merged keeps the unsigned char test" min="1" max="1">^  if \(0x5f &gt; \(uint1\)\(c - 0x20\)\)$</stringmatch>
 <stringmatch name="RANGETEST #11: merged keeps the int test" min="1" max="1">^  if \(\(uint4\)\(n - 1U\) &gt; 0x1d\)$</stringmatch>
 <stringmatch name="RANGETEST #12: merged keeps the returned test" min="1" max="1">^  return \(uint4\)\(c - 0x30U\) &lt;= 9;$</stringmatch>
+<stringmatch name="RANGETEST #13: an outside range heading a chain nested in || keeps its own parentheses" min="2" max="2">^    if \(\(b == 7\) \|\| \(\(\(c &lt; 9 \|\| 10 &lt; c\) &amp;&amp; \(c != 5\)\)\)\)$</stringmatch>
+<stringmatch name="RANGETEST #14: merged keeps the test heading the nested chain" min="1" max="1">^    if \(\(b == 7\) \|\| \(\(2 &lt;= \(uint4\)\(c - 9U\) &amp;&amp; \(c != 5\)\)\)\)$</stringmatch>
 </decompilertest>

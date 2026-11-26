@@ -2,7 +2,8 @@
 //! comparisons it stands for. The gcc -O2 image is printed under each value;
 //! the splits each value prints, and the tests every value keeps merged (a
 //! wrapping range, a signed 16-bit value whose range crosses its sign bit, a
-//! switch), must print as expected, and the printed C is compiled beside the
+//! switch), must print as expected, a split `||` heading a nested `&&` must
+//! keep its own parentheses, and the printed C is compiled beside the
 //! fixture source (functions renamed `s_<name>`) under gcc and clang at -O0
 //! and -O2: every printed function must return what the source returns and
 //! leave `knob` as the source does, at each range's boundaries, 0 and the
@@ -14,7 +15,7 @@ use std::process::Command;
 const SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/rangetest.c");
 
 const FUNCS: &[&str] =
-    &["printable", "bits", "reject", "digit", "lower_after", "isdig", "is_port", "scaled", "small", "number", "pick"];
+    &["printable", "bits", "reject", "digit", "lower_after", "isdig", "is_port", "scaled", "small", "number", "pick", "ctl"];
 
 const PRELUDE: &str = "#include <stdbool.h>\n#define RANGETEST_NO_MAIN\n";
 
@@ -40,7 +41,7 @@ static void check(const char *what, unsigned long long in, long long got, long l
   } while (0)
 int main(void) {
   static const unsigned long long V[] = {
-    0, 1, 2, 3, 8, 9, 0xf, 0x10, 0x1e, 0x1f, 0x20, 0x21, 0x2f, 0x30, 0x39, 0x3a, 0x60, 0x61, 0x7a, 0x7b,
+    0, 1, 2, 3, 5, 8, 9, 0xa, 0xb, 0xf, 0x10, 0x1e, 0x1f, 0x20, 0x21, 0x2f, 0x30, 0x39, 0x3a, 0x60, 0x61, 0x7a, 0x7b,
     0x7e, 0x7f, 0x80, 0xff, 0x100, 0x3ff, 0x400, 0xbfff, 0xc000, 0x7fff, 0x8000, 0xffff, 0x10000,
     0x7fffffff, 0x80000000, 0xffffffe0, 0xffffffef, 0xfffffff0, 0xffffffff, 0x100000000ULL,
     0x1fffffffffffffffULL, 0x2000000000000000ULL, 0x7fffffffffffffffULL, 0x8000000000000000ULL,
@@ -58,6 +59,8 @@ int main(void) {
     PAIR(pick, int, int, v);
     for (int a = 2; a <= 3; a++)
       check("lower_after", v, (unsigned char)F(lower_after)(a, (char)v), s_lower_after(a, (char)v));
+    for (int b = 0; b <= 9; b += 9)
+      check("ctl", v, (int)F(ctl)(b, (int)v), s_ctl(b, (int)v));
     char s[4] = {(char)v, (char)(v >> 8), '7', 0};
     check("number", v, (int)F(number)(s), s_number(s));
   }
@@ -83,6 +86,8 @@ const SPELLED: &[(&[&str], &str, &str)] = &[
     (&["auto", "split"], "scaled", "  if (1 <= a0 && a0 <= 0x1fffffffffffffff)"),
     (&["merged", "auto"], "number", "  while ((unsigned char)(v1 - 0x30U) <= 9) {"),
     (&["split"], "number", "  while (0x30 <= v1 && v1 <= 0x39) {"),
+    (&["merged"], "ctl", "    if ((a0 == 7) || ((2 <= (unsigned int)(a1 - 9U) && (a1 != 5))))"),
+    (&["auto", "split"], "ctl", "    if ((a0 == 7) || (((a1 < 9 || 10 < a1) && (a1 != 5))))"),
 ];
 
 /// The tests no value splits.

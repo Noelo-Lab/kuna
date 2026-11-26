@@ -247,12 +247,22 @@ impl PrintC {
         }
     }
 
-    /// Print `split`: `lo <= x && x <= hi` or `x < lo || hi < x`.
+    /// Print `split`: `lo <= x && x <= hi` or `x < lo || hi < x`. The first
+    /// clause of a chain nested in a comma-separated clause prints with no
+    /// parenthesis of its own, so a split there that binds looser than the
+    /// chain's operator carries its own.
     pub(crate) fn emit_range_split(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId, s: RangeSplit) {
         use crate::printc::tokens::{BOOLEAN_AND, BOOLEAN_OR, LESS_EQUAL, LESS_THAN};
+        use crate::prettyprint::Emit;
+        use crate::printlanguage::{CLOSE_PAREN, OPEN_PAREN};
         let key = Some(crate::printc::op_key(op));
+        let tok = if s.inside { &BOOLEAN_AND } else { &BOOLEAN_OR };
+        let paren = self.rpn_is_empty()
+            && self.context.is_set(modifiers::COMMA_SEPARATE)
+            && self.range_chain_head.is_some_and(|head| head.precedence > tok.precedence);
+        let id = paren.then(|| self.emit.open_paren(OPEN_PAREN, 0));
+        self.push_op(tok, key);
         if s.inside {
-            self.push_op(&BOOLEAN_AND, key);
             self.push_op(&LESS_EQUAL, key);
             self.push_constant_ir(s.lo, s.size, op);
             self.push_vn_ir(fd, arch, s.x, s.reader);
@@ -260,13 +270,15 @@ impl PrintC {
             self.push_vn_ir(fd, arch, s.x, s.reader);
             self.push_constant_ir(s.hi, s.size, op);
         } else {
-            self.push_op(&BOOLEAN_OR, key);
             self.push_op(&LESS_THAN, key);
             self.push_vn_ir(fd, arch, s.x, s.reader);
             self.push_constant_ir(s.lo, s.size, op);
             self.push_op(&LESS_THAN, key);
             self.push_constant_ir(s.hi, s.size, op);
             self.push_vn_ir(fd, arch, s.x, s.reader);
+        }
+        if let Some(id) = id {
+            self.emit.close_paren(CLOSE_PAREN, id);
         }
     }
 }

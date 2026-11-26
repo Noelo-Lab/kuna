@@ -1,5 +1,6 @@
 /* kuna `rangetest` fixture: range tests that gcc -O2 folds into one unsigned
-   comparison of a subtraction, a wrapping one, a loop test and a switch.
+   comparison of a subtraction, a wrapping one, a loop test, a switch and a
+   test that heads a chain nested in another.
    Built with Ubuntu 22.04's gcc 11.4:
      gcc -O2 -fno-inline -o rangetest_gcc_O2_x86_64 rangetest.c  */
 #include <stdio.h>
@@ -83,6 +84,17 @@ int pick(int x)
     default: return -1;
     }
     return 0;
+}
+
+int ctl(int b, int c)
+{
+    int n = 0;
+    while (b-- > 0) {
+        if (b == 7 || ((c < 9 || c > 10) && c != 5))
+            n += c;
+        knob = b;
+    }
+    return n;
 }
 
 #ifndef RANGETEST_NO_MAIN
