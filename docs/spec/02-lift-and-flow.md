@@ -3940,6 +3940,16 @@ The DATA result writes the captured operand address, not the postmodified
 pointer. Its width and shift controls apply after the widened status is
 computed.
 
+The lifted wide `ADD2` and `SUB2` short-result forms use the upper lane
+without a carry or borrow from the lower lane. CE2 gates the result; an
+`ADD2` result aliased to its first accumulator-half input leaves the other
+half and guard byte unchanged. `MIN2` compares signed lanes independently,
+shifting a strict left-wins bit into `BTR1` for the upper lane and `BTR2`
+for the lower lane. The covered `MIN2` RMW and `OP3` sinks publish the
+backtraces but do not write an accumulator or DATA result. Their displaced
+long source still reads both words at the original address and updates the
+pointer once. Packed computation preserves the arithmetic flags.
+
 Covered compact `EXTRACTS` and `EXTRACTZ` use the low five descriptor
 bits for width and the low five bits of its high word for offset. The
 two flag-word aliases exchange those roles. A parallel right issue
@@ -4020,6 +4030,19 @@ For the lifted `LINK` forms, address enable can update `SP` and the
 selected frame register even when the result predicate suppresses the
 DATA store. Static CE-table loads that configure both banks sample the
 same incoming `EST`; one new latch cannot feed the other within that issue.
+
+Covered wide paired `PUSH` and `POP` reserve two DATA words on `SP`
+when address processing is enabled, independent of the execution
+predicate and of the short or long `R6` postincrement. The disconnected
+first `PUSH` register port supplies all ones; the disconnected second
+port repeats the first word. A first DATA selector instead displaces
+the accumulator word to old `SP` and supplies all ones at old `SP-1`.
+The predicated `PUSH` stores require execution enable. With `ECFG` bit
+four set, the connected source can set sticky high-word status; the
+all-ones open port cannot. The paired `POP` reads its top word at old
+`SP+1`: the direct `RN4` port accepts it before writeback predication,
+while the `A3L` port and its word flags require
+execution enable.
 
 Only a covered immutable CLIW record in a normalized bank can specialize a
 reference. Located TASKING images and XML can supply such a bank. Raw CODE
