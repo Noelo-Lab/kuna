@@ -3976,6 +3976,12 @@ Wide logical operations on address-register words write the saved counter
 postincrements its address register by two words and computes status from
 the complete 40-bit result without writing an operand.
 
+For covered CE2 `LIM8` forms, a signed word outside the unsigned byte range
+sets sticky `L1` even when the result port is disconnected. Connected
+selectors write the clamped word to the input's `RM6` port, `FF1`, or the
+saved counter `LC1`; the listing retains the encoded selector names. A CE2
+veto suppresses both writeback and the limit flag update.
+
 Covered unqualified wide `ADD` and `XOR` select their operand banks from
 the result route. The accumulator ADD route reads signed address and
 flag words, saved loop bounds, full accumulators, or constant minus one.
@@ -4014,6 +4020,13 @@ suppress the address update when the override is enabled. The disconnected
 `PSTATUS` result still runs its DATA address effect. The covered `MSU`
 latches its first input into `X1` and sends the high result word to
 `INTBASE` without driving arithmetic status.
+
+The printed wide ALU selector does not always identify a write port. Direct
+`PSTATUS` and `USER_IO` can discard the result, while the covered SUB aliases
+write the upper word of an unaligned difference without driving ALU flags.
+The `io_space` selector can drive word flags without accessing IO. The
+covered MSU `LC` selector updates the saved `LC1`, not the active counter.
+An MSU word DATA result tests for zero without its discarded low bits.
 
 Covered wide address transfers add the low 16-bit displacement to a word
 source or the `R3` address unit. Saving a CODE address preserves its upper
@@ -4178,6 +4191,9 @@ with 16-bit words. Neither aliases a `data` word at the same numeric address.
 The covered long-DATA I/O source does not drive a DATA value onto the bus.
 It advances `R0` by two, including when only address enable is set. Zero
 is written to the I/O word only when execution is enabled.
+
+The wide `0xf0` source drives zero without reading DATA. Its qualified
+forms gate that I/O write, not the two condition-enable writebacks.
 
 The covered disconnected wide I/O and EXT load selectors have no register
 writeback. The lift retains the bus read and, for the covered qualified
