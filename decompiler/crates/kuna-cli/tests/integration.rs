@@ -342,6 +342,9 @@ mod retshape_round_trip;
 #[path = "boolret_round_trip.rs"]
 mod boolret_round_trip;
 
+#[path = "rangetest_round_trip.rs"]
+mod rangetest_round_trip;
+
 #[path = "tailform_round_trip.rs"]
 mod tailform_round_trip;
 

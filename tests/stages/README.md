@@ -99,6 +99,20 @@ the integer, the call and the field `s->next` beside it, a stand-alone
 `if (p)` and a chain that is a loop's condition stay truthy. Under `option
 truthycond on` every test is truthy.
 
+`kuna-rangetest.xml` checks option `rangetest` (default `auto`) on gcc -O2
+x86-64, which folds two comparisons of one value into one unsigned comparison
+of a subtraction. By default an inside range on an `unsigned char` (95
+values), an outside range on an `int` (30 values), a range test that is an
+operand of `&&` and a returned one print as their two comparisons, while a
+stand-alone test of ten values and a loop condition stay merged; `option
+rangetest split` splits those two as well. `x >= -16 && x < 16`, whose range
+wraps past zero, stays merged under every value, and `option rangetest merged`
+prints every test as compiled. A split `||` that heads an `&&` chain nested as
+the second clause of an `||` keeps its own parentheses, since that clause
+prints none. `kuna-rangetest-thumb.xml` checks clang -O2
+Thumb: the bound check that clang emits before a `tbb` switch table prints
+before the recovered `switch` and keeps its one comparison under every value.
+
 `kuna-sdivpow2.xml` checks signed divisions by a power of two whose
 correction of a negative dividend gcc x86-64 emits as a conditional move
 (`lea; test; cmovs; sar`): `x / 8` at -O0 and `x / 1024` of a `long` at -O2
