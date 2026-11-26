@@ -572,7 +572,7 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
         dex,
         pool: Pool::new(),
         bootstrap: Vec::new(),
-        version: opts.min_version.max(50),
+        version: opts.min_version.max(49),
     };
     let this = w.pool.class(name);
     let superclass = if def.superclass == NO_INDEX {
