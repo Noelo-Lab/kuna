@@ -4377,7 +4377,7 @@ truncating the fall-through here"
             0
         };
         let addr = self.data.obank().get(op).unwrap().get_addr().clone();
-        // C++ flow.cc:766/773 emits a warning in the callother/normal failure modes.
+        // Keep the fallback classification on its call through simplification.
         match mode {
             RecoveryMode::FailCallother => {
                 // fc->setNoReturn(true) is the STUB(W4) FuncCallSpecs surface.
@@ -4385,8 +4385,9 @@ truncating the fall-through here"
             }
             RecoveryMode::FailThunk => {}
             _ => {
-                // fc->setBadJumpTable(true) is the STUB(W4) FuncCallSpecs surface.
-                self.data.warning("Treating indirect jump as call", &addr);
+                if let Some(index) = self.data.get_call_specs_index(op) {
+                    self.data.get_call_specs_mut(index).set_bad_jump_table(true);
+                }
             }
         }
         let truncop = self.artificial_halt(&addr, return_type)?;

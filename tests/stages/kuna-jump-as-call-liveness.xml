@@ -1,0 +1,22 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7:default">
+<!-- cmp r1,r1; bxne r0; bx lr. The predicated indirect path cannot run. -->
+<bytechunk space="ram" offset="0x10000" readonly="true">010051e110ff2f111eff2fe1</bytechunk>
+<!-- cmp r1,#0; bxne r0; bx lr. The same indirect operation can run. -->
+<bytechunk space="ram" offset="0x10010" readonly="true">000051e310ff2f111eff2fe1</bytechunk>
+<symbol space="ram" offset="0x10000" name="dead_jump"/>
+<symbol space="ram" offset="0x10010" name="live_jump"/>
+</binaryimage>
+<script>
+  <com>lo fu dead_jump</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu live_jump</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="JUMPAS-CALL #1: only the live indirect path warns" min="1" max="1">// jump-as-call</stringmatch>
+<stringmatch name="JUMPAS-CALL #2: the pruned branch does not warn on the return" min="0" max="0">return;[ \t]*// jump-as-call</stringmatch>
+<stringmatch name="JUMPAS-CALL #3: the live indirect target still renders as a call" min="1" max="1">\(\*[a-zA-Z_][a-zA-Z_0-9]*\)\(\);</stringmatch>
+</decompilertest>

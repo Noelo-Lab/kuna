@@ -1488,11 +1488,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     }
 }
 
-/// Flush any analysis comments the **action pipeline** buffered on the `Funcdata`
-/// (e.g. the `branchflip:` warning that `ActionBranchFlip` records at S8) into the
-/// comment database for emit.  The flow-time `Funcdata::warning`s are drained in
-/// `follow_flow_on_fd` before the pipeline runs; warnings raised *inside* the
-/// pipeline land here.  No-op when nothing was buffered.
+/// Publish analysis diagnostics after simplification. A recovered jump's
+/// fallback diagnostic belongs to its call operation, not an address that can
+/// outlive the call when another operation from the same instruction survives.
 fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
     if !arch.kuna_drive_publishes() {
         return;
@@ -1500,6 +1498,17 @@ fn drain_pipeline_comments(arch: &mut Architecture, fd: &mut Funcdata) {
     let func_addr = fd.get_address().clone();
     for (tp, ad, txt) in fd.drain_pending_comments() {
         arch.commentdb.add_comment_no_duplicate(tp, &func_addr, &ad, &txt);
+    }
+    for call in fd.call_specs().iter().filter(|call| call.is_bad_jump_table()) {
+        let Some(op) = fd.obank().get(call.get_op()) else { continue; };
+        if !op.is_dead() && matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND) {
+            arch.commentdb.add_comment_no_duplicate(
+                crate::architecture::comment_type::warning,
+                &func_addr,
+                op.get_addr(),
+                "WARNING: Treating indirect jump as call",
+            );
+        }
     }
 }
 
