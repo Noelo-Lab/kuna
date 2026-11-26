@@ -3882,6 +3882,25 @@ the upper result word and test zero above the low word. The parallel
 right slot reverses the X destination selectors and uses its own flag
 lane. These register results do not apply the DATA store's `SR1` shift.
 
+For compact `ADD` with a half result and a first operand selector `30` or
+`31`, the unbound input is zero and the other word supplies the result.
+The accumulator `ADD` form with a postincrementing DATA input and selector
+`30` or `31` in the second position instead sign-extends the DATA word. It
+reads the incoming address and updates the pointer without writing X.
+In signed compact `MPY`, selectors `30` and `31` in the first position
+mirror the other accumulator-half input and do not write X. With a
+postincrementing DATA input first, these selectors in the second position
+supply zero but do not suppress the first input's DATA read, pointer
+update, or X latch write.
+
+These interpretations apply to sequential issues and parallel issues with
+a NOP peer; they do not assume a source for tokens in an active pair.
+Either sequential slot and the parallel left lane use CE1 and X1. The
+parallel right lane uses CE2 and X2. Address enable can reserve DATA and
+update the pointer and any connected X latch even when CE vetoes the
+arithmetic. Arithmetic updates its own lane's flags and preserves any
+already-set L bit.
+
 Compact signed half-register `CMP` sets Z and M from the signed comparison
 and clears V in its issue lane. It preserves the lane's other arithmetic
 bits and the other lane. CE feedback samples the incoming flags before
@@ -4794,6 +4813,16 @@ address register without changing it. A short source is sign-extended.
 A long source takes its high word from the wrapped next DATA address.
 The result is zero-extended from the selected field, and `Z` replaces
 the arithmetic flags.
+
+For the long indirect DATA source and `BTR2` result, descriptor selectors
+`0x7c` and `0x7e` both take the low five bits of `FF2` for width and
+`FF1` for offset; the extra payload is not an immediate descriptor.
+The source is the signed word pair at the incoming address register and
+its wrapped successor, without postmodify. `EXTRACTS` sign-extends the
+selected field and `EXTRACTZ` zero-extends it; an empty field yields zero.
+`BTR2` gets the low word, but `Z` and `M` describe the untruncated result,
+and both CE banks sample incoming feedback. Selector `0x7d` is rejected
+before issue, not treated as an alias of either binding.
 
 The covered CE1 short store uses `FF2` for width and `FF1` for offset, not
 `X1`. CE1 enables the store and flag write, while its address-override bit

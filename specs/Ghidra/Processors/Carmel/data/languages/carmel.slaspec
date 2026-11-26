@@ -5764,6 +5764,98 @@ macro compact_x_or_acc(lo, hi, guard, lhs, rhs) {
 :^nop_left "||" "ADD" "CE2" x_alu_acc,x_alu_secondary_lhs,logical_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_13_22=0x94 & $(X_ALU_ACC)) { compact_x_add_acc(x_alu_acc_lo, x_alu_acc_hi, x_alu_acc_gb, x_alu_secondary_lhs, logical_right); }
 :^nop_left "||" "OR" "CE2" x_alu_acc,x_alu_secondary_lhs,logical_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_13_22=0x354 & $(X_ALU_ACC)) { compact_x_or_acc(x_alu_acc_lo, x_alu_acc_hi, x_alu_acc_gb, x_alu_secondary_lhs, logical_right); }
 
+# OP1/OP2 are disconnected on these ADD input ports only when the peer is idle.
+compact_token_left_alu: "OP1" is slot_5_9=30 { }
+compact_token_left_alu: "OP2" is slot_5_9=31 { }
+compact_token_right: "OP1" is slot_1_5=30 { }
+compact_token_right: "OP2" is slot_1_5=31 { }
+compact_token_ce1: "" is slot_0_0=0 { export 0:1; }
+compact_token_ce1: "CE1" is slot_0_0=1 { export 1:1; }
+compact_token_ce2: "" is slot_0_0=0 { export 0:1; }
+compact_token_ce2: "CE2" is slot_0_0=1 { export 1:1; }
+
+@define COMPACT_TOKEN_SEQ "((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))"
+@define COMPACT_TOKEN_PAR "carmel_issue=1 & slot_mode=0"
+@define COMPACT_TOKEN_DATA "slot_9_10=2 & pair_ptr_6 & pair_rm_6 & pair_rl_6 & pair_bank_6"
+@define COMPACT_TOKEN_ACC "slot_11_13<6 & pair_acc_11 & pair_acc_11_lo & pair_acc_11_hi & pair_acc_11_gb"
+@define COMPACT_TOKEN_ADD_HALF "slot_14_22=0x48 & slot_10_12<6 & x_alu_half_dst & compact_token_left_alu & slot_1_4<14 & pair_count"
+@define COMPACT_TOKEN_ADD_ACC "slot_14_22=0x4b & $(COMPACT_TOKEN_DATA) & $(COMPACT_TOKEN_ACC) & compact_token_right"
+
+macro compact_token_enable(cfg, bank, qualified, enabled) {
+    enabled = 1;
+    if (qualified == 0) goto <done>;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+  <done>
+}
+
+macro compact_token_read(ptr, modulo, bound, shift, word) {
+    local address:2 = ptr;
+    modify_ptr(ptr, 0:2, modulo, bound, shift, 2:2);
+    word = *[data]:2 address;
+}
+
+macro compact_token_flags(flags, active, bank) {
+    local shift:4 = zext(bank) * 6;
+    flags = (flags & ~(0x3b:2 << shift)) | (active << shift);
+}
+
+macro compact_token_add_half(dst, word, cfg, bank, qualified) {
+    local flags:2 = EST & 0xcfff;
+    local enabled:2;
+    compact_token_enable(cfg, bank, qualified, enabled);
+    if (enabled == 0) goto <publish>;
+    local active:2 = (zext(word == 0) << 3) | (zext(word >= 0x8000) << 4);
+    dst = word;
+    compact_token_flags(flags, active, bank);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+macro compact_token_add_acc(lo, hi, guard, ptr, modulo, bound, shift, cfg, bank, qualified) {
+    local flags:2 = EST & 0xcfff;
+    local enabled:2;
+    compact_token_enable(cfg, bank, qualified, enabled);
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <publish>;
+    local word:2;
+    compact_token_read(ptr, modulo, bound, shift, word);
+    if (enabled == 0) goto <publish>;
+    local active:2 = (zext(word == 0) << 3) | (zext(word >= 0x8000) << 4);
+    local result:8 = sext(word);
+    write_accumulator40(lo, hi, guard, result);
+    compact_token_flags(flags, active, bank);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:ADD compact_token_ce1 x_alu_half_dst,compact_token_left_alu,pair_count is
+    $(COMPACT_TOKEN_SEQ) & $(COMPACT_TOKEN_ADD_HALF) & compact_token_ce1 {
+    compact_token_add_half(x_alu_half_dst, pair_count, CECFG1, 0:2, compact_token_ce1);
+}
+:ADD compact_token_ce1 x_alu_half_dst,compact_token_left_alu,pair_count "||" nop_right is
+    ($(COMPACT_TOKEN_PAR) & $(COMPACT_TOKEN_ADD_HALF) & compact_token_ce1); (slot_mode=0 & nop_right) {
+    compact_token_add_half(x_alu_half_dst, pair_count, CECFG1, 0:2, compact_token_ce1);
+}
+:^nop_left "||" "ADD" compact_token_ce2 x_alu_half_dst,compact_token_left_alu,pair_count is
+    ($(COMPACT_TOKEN_PAR) & nop_left); (slot_mode=0 & $(COMPACT_TOKEN_ADD_HALF) & compact_token_ce2) {
+    compact_token_add_half(x_alu_half_dst, pair_count, CECFG2, 1:2, compact_token_ce2);
+}
+
+:ADD compact_token_ce1 pair_acc_11,"*"^pair_ptr_6^"++",compact_token_right is
+    $(COMPACT_TOKEN_SEQ) & $(COMPACT_TOKEN_ADD_ACC) & compact_token_ce1 {
+    compact_token_add_acc(pair_acc_11_lo, pair_acc_11_hi, pair_acc_11_gb,
+                          pair_ptr_6, pair_rm_6, pair_rl_6, pair_bank_6, CECFG1, 0:2, compact_token_ce1);
+}
+:ADD compact_token_ce1 pair_acc_11,"*"^pair_ptr_6^"++",compact_token_right "||" nop_right is
+    ($(COMPACT_TOKEN_PAR) & $(COMPACT_TOKEN_ADD_ACC) & compact_token_ce1); (slot_mode=0 & nop_right) {
+    compact_token_add_acc(pair_acc_11_lo, pair_acc_11_hi, pair_acc_11_gb,
+                          pair_ptr_6, pair_rm_6, pair_rl_6, pair_bank_6, CECFG1, 0:2, compact_token_ce1);
+}
+:^nop_left "||" "ADD" compact_token_ce2 pair_acc_11,"*"^pair_ptr_6^"++",compact_token_right is
+    ($(COMPACT_TOKEN_PAR) & nop_left); (slot_mode=0 & $(COMPACT_TOKEN_ADD_ACC) & compact_token_ce2) {
+    compact_token_add_acc(pair_acc_11_lo, pair_acc_11_hi, pair_acc_11_gb,
+                          pair_ptr_6, pair_rm_6, pair_rl_6, pair_bank_6, CECFG2, 1:2, compact_token_ce2);
+}
+
 # The logical RMW1 result bus reaches accumulator halves, but the
 # address/increment and FF word ports receive zero without ALU status.
 macro compact_logic_rmw1_zero(target, cfg, bank, address, qualified) {
@@ -6870,7 +6962,9 @@ compact_mpy_latching_first: "R2" is compact_mul_left=2 { export R2; }
 compact_mpy_latching_first: "RN2" is compact_mul_left=10 { export RN2; }
 compact_mpy_latching_first: "FF1" is compact_mul_left=22 { export FF1; }
 
-:MPY "A0",compact_mpy_latching_first,"A2L" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_9_22=0x20b0 & compact_mpy_latching_first & compact_mul_right=2); (slot_mode=0 & nop_right) {
+:MPY "A0",compact_mpy_latching_first,"A2L" "||" nop_right is
+    ($(COMPACT_ROUTED_MPY) & slot_9_22=0x20b0 & (slot_4_8=2 | slot_4_8=10 | slot_4_8=22) &
+     compact_mpy_latching_first & compact_mul_right=2); (slot_mode=0 & nop_right) {
     local first:2 = compact_mpy_latching_first;
     X1 = first;
     compact_routed_mpy_acc(first, A2L);
@@ -6891,6 +6985,74 @@ compact_mpy_direct_second: "FF2" is slot_1_5=23 { export FF2; }
     local first:2 = *[data]:2 address;
     X1 = first;
     compact_routed_mpy_acc(first, second);
+}
+
+# First-position OP1/OP2 takes the ordinary half on input two, bypassing X.
+# In position two it supplies zero, but the first input still drives OF and X.
+compact_token_left_mpy: "OP1" is slot_4_8=30 { }
+compact_token_left_mpy: "OP2" is slot_4_8=31 { }
+@define COMPACT_TOKEN_MPY_SQUARE "slot_12_22=0x416 & slot_9_11<6 & compact_aux_acc_dst & compact_aux_dst_lo & compact_aux_dst_hi & compact_aux_dst_guard & compact_token_left_mpy & compact_mul_right"
+@define COMPACT_TOKEN_MPY_DATA "slot_14_22=0x104 & $(COMPACT_TOKEN_DATA) & $(COMPACT_TOKEN_ACC) & compact_token_right"
+
+macro compact_token_mpy_square(lo, hi, guard, word, cfg, bank, qualified) {
+    local flags:2 = EST & 0xcfff;
+    local enabled:2;
+    compact_token_enable(cfg, bank, qualified, enabled);
+    if (enabled == 0) goto <publish>;
+    local product:8;
+    raw_mac_product(word, word, 1:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish(product, product & 0xffffffffff, 0:1, 0:1, 0:1, result, active);
+    write_accumulator40(lo, hi, guard, result);
+    compact_token_flags(flags, active, bank);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+macro compact_token_mpy_data(lo, hi, guard, ptr, modulo, bound, shift, latch, cfg, bank, qualified) {
+    local flags:2 = EST & 0xcfff;
+    local enabled:2;
+    compact_token_enable(cfg, bank, qualified, enabled);
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <publish>;
+    compact_token_read(ptr, modulo, bound, shift, latch);
+    if (enabled == 0) goto <publish>;
+    write_accumulator40(lo, hi, guard, 0:8);
+    compact_token_flags(flags, 8:2, bank);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:MPY compact_token_ce1 compact_aux_acc_dst,compact_token_left_mpy,compact_mul_right is
+    $(COMPACT_TOKEN_SEQ) & $(COMPACT_TOKEN_MPY_SQUARE) & compact_token_ce1 {
+    compact_token_mpy_square(compact_aux_dst_lo, compact_aux_dst_hi, compact_aux_dst_guard,
+                             compact_mul_right, CECFG1, 0:2, compact_token_ce1);
+}
+:MPY compact_token_ce1 compact_aux_acc_dst,compact_token_left_mpy,compact_mul_right "||" nop_right is
+    ($(COMPACT_TOKEN_PAR) & $(COMPACT_TOKEN_MPY_SQUARE) & compact_token_ce1); (slot_mode=0 & nop_right) {
+    compact_token_mpy_square(compact_aux_dst_lo, compact_aux_dst_hi, compact_aux_dst_guard,
+                             compact_mul_right, CECFG1, 0:2, compact_token_ce1);
+}
+:^nop_left "||" "MPY" compact_token_ce2 compact_aux_acc_dst,compact_token_left_mpy,compact_mul_right is
+    ($(COMPACT_TOKEN_PAR) & nop_left); (slot_mode=0 & $(COMPACT_TOKEN_MPY_SQUARE) & compact_token_ce2) {
+    compact_token_mpy_square(compact_aux_dst_lo, compact_aux_dst_hi, compact_aux_dst_guard,
+                             compact_mul_right, CECFG2, 1:2, compact_token_ce2);
+}
+
+:MPY compact_token_ce1 pair_acc_11,"*"^pair_ptr_6^"++",compact_token_right is
+    $(COMPACT_TOKEN_SEQ) & $(COMPACT_TOKEN_MPY_DATA) & compact_token_ce1 {
+    compact_token_mpy_data(pair_acc_11_lo, pair_acc_11_hi, pair_acc_11_gb, pair_ptr_6, pair_rm_6, pair_rl_6,
+                           pair_bank_6, X1, CECFG1, 0:2, compact_token_ce1);
+}
+:MPY compact_token_ce1 pair_acc_11,"*"^pair_ptr_6^"++",compact_token_right "||" nop_right is
+    ($(COMPACT_TOKEN_PAR) & $(COMPACT_TOKEN_MPY_DATA) & compact_token_ce1); (slot_mode=0 & nop_right) {
+    compact_token_mpy_data(pair_acc_11_lo, pair_acc_11_hi, pair_acc_11_gb, pair_ptr_6, pair_rm_6, pair_rl_6,
+                           pair_bank_6, X1, CECFG1, 0:2, compact_token_ce1);
+}
+:^nop_left "||" "MPY" compact_token_ce2 pair_acc_11,"*"^pair_ptr_6^"++",compact_token_right is
+    ($(COMPACT_TOKEN_PAR) & nop_left); (slot_mode=0 & $(COMPACT_TOKEN_MPY_DATA) & compact_token_ce2) {
+    compact_token_mpy_data(pair_acc_11_lo, pair_acc_11_hi, pair_acc_11_gb, pair_ptr_6, pair_rm_6, pair_rl_6,
+                           pair_bank_6, X2, CECFG2, 1:2, compact_token_ce2);
 }
 
 define pcodeop carmel_data_read_conflict;
@@ -9644,6 +9806,32 @@ wide_lshift_intbase_src: "PACFG" is wide_shift_source_tail=0x1d5 { export PACFG;
     local flags:2 = zext(result == 0) << 3;
     publish_alu_ce(flags);
 }
+
+macro wide_extract_btr2(source, signed_result) {
+    local count:4 = zext(FF2 & 31);
+    local start:4 = zext(FF1 & 31);
+    local mask:4 = 0x7fffffff >> (31 - count);
+    # Bias before the unsigned shift to preserve signed input even for a concatenated word pair.
+    local bias:4 = 0x80000000;
+    local field:4 = (((source ^ bias) >> start) - (bias >> start)) & mask;
+    local sign:4 = ((mask + 1) >> 1) * zext(signed_result);
+    local result:4 = (field ^ sign) - sign;
+    BTR2 = result:2;
+    local flags:2 = (zext(field == 0) << 3) | (zext((field & sign) != 0) << 4);
+    publish_ce_feedback((EST & 0xcfe7) | flags, EST);
+}
+
+@define WIDE_EXTRACT_BTR2 "$(WIDE_ORIGINAL_BITS) & packed_dst=0xe & packed_lhs_group=8 & wide_0_0=1 & (wide_40_45=0x3c | wide_40_45=0x3e) & wide_bitfield_data"
+
+:EXTRACTS "BTR2",wide_bitfield_data,"FF2:FF1" is $(WIDE_EXTRACT_BTR2) & packed_opcode=0xeb {
+    wide_extract_btr2(wide_bitfield_data, 1:1);
+}
+
+:EXTRACTZ "BTR2",wide_bitfield_data,"FF2:FF1" is $(WIDE_EXTRACT_BTR2) & packed_opcode=0xef {
+    wide_extract_btr2(wide_bitfield_data, 0:1);
+}
+
+@undef WIDE_EXTRACT_BTR2
 
 :EXTRACTZ "long *R2","GB2","long *R6+=RN6" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0xe & wide_0_22=0x768504 {
     local dest:2 = R2;

@@ -2493,6 +2493,64 @@ fn wide_extrema_reserved_result_still_rejects_lift() {
 }
 
 #[test]
+fn compact_unbound_token_input_ports() {
+    for (op, result, r0, r1, x1, est) in [
+        (0x1203c2, 0xab1234fffe, 0x4126, 0x8127, 0x2b, 0x914),
+        (0x1203e2, 0xab1234fffe, 0x4126, 0x8127, 0x2b, 0x914),
+        (0x12c47c, 0xffffff8833, 0x4126, 0x8128, 0x2b, 0x914),
+        (0x12c47e, 0xffffff8833, 0x4126, 0x8128, 0x2b, 0x914),
+        (0x4161e4, 0x14d10, 0x4126, 0x8127, 0x2b, 0x904),
+        (0x4161f4, 0x14d10, 0x4126, 0x8127, 0x2b, 0x904),
+        (0x41043c, 0, 0x4127, 0x8127, 0xff80, 0x90c),
+        (0x41043e, 0, 0x4127, 0x8127, 0xff80, 0x90c),
+    ] {
+        let mut m = Machine::new(0, &[(op, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0xab12344321), ("A1L", 0xfffe), ("A2L", 0xfedc),
+                 ("X1", 0x2b), ("X2", 0x13), ("EST", 0x924), ("R0", 0x4126), ("R1", 0x8127)]);
+        m.seed_data(0x4126, 0xff80);
+        m.seed_data(0x8127, 0x8833);
+        m.start(0).unwrap_or_else(|error| panic!("{op:06x}: {error}"));
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("R0"), m.reg("R1"), m.reg("X1"), m.reg("X2"), m.reg("EST")),
+                   (result, r0, r1, x1, 0x13, est), "{op:06x}");
+        assert_eq!((m.data(0x4126), m.data(0x8127)), (0xff80, 0x8833));
+    }
+
+    for (cfg, table, a0, r0, x2, est) in [
+        (0, 0, 0x54321, 0x127, 0x13, 0),
+        (0x1000, 0, 0x54321, 0x124, 0x8833, 0),
+        (0x1000, 0xff00, 0, 0x124, 0x8833, 0x2200),
+    ] {
+        let mut m = Machine::new(0, &[(NOP, 0x41043d), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0x54321), ("R0", 0x127), ("X1", 0x2b), ("X2", 0x13),
+                 ("PACFG", 3), ("RM0", 3), ("RL0", 0x120), ("CECFG2", cfg), ("CETBL", table)]);
+        m.seed_data(0x127, 0x8833);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("R0"), m.reg("X1"), m.reg("X2"), m.reg("EST")),
+                   (a0, r0, 0x2b, x2, est));
+    }
+
+    let mut m = Machine::new(0, &[(NOP | SEQUENTIAL, 0x4161ec), (NOP, NOP)],
+                             &[(0, 2, 3), (1, 3, 6), (2, 1, 0)], None);
+    m.seed(&[("A2H", 0x8000), ("ECFG", 5), ("X1", 0x2b), ("X2", 0x13)]);
+    m.start(1).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A0"), m.reg("X1"), m.reg("X2"), m.reg("EST")), (0x7fffffff, 0x2b, 0x13, 0x24));
+
+    for (op, source) in [(0x416024, 7), (0x4160a4, 11), (0x416164, 13)] {
+        let mut m = Machine::new(0, &[(op, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R2", 7), ("RN2", 11), ("FF1", 13), ("A2L", 9), ("X1", 0x2b)]);
+        m.start(0).unwrap_or_else(|error| panic!("{op:06x}: {error}"));
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("X1")), (source * 9, source));
+    }
+
+    let mut m = Machine::new(0, &[(0x1203c2, INC_A1)], &[(0, 1, 0)], None);
+    assert!(matches!(m.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })));
+}
+
+#[test]
 fn compact_word_multiply_narrows_each_signedness_variant() {
     for (op, a, b, ecfg, word, flags) in [
         (0x424c9a, 3, 4, 0, 0, 0x08),

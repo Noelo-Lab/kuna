@@ -1360,10 +1360,47 @@ fn carmel_wide_extract_selects_descriptor_and_result_ports() {
            ("LSA1W", 0x123456), ("RN3", 5), ("PACFG", 0xc0), ("RM2", 7), ("RL2", 0xc03d)],
          &[(0xc040, 0x8001, 0x8001), (0xc03d, 0x1234, 0x1234)],
          &[("R3", 0xc03d), ("LSA1W", 0x123456), ("EST", 8)]),
+        ([0xfc, 0x89, 0x61, 0xf5, 0x8e, 0x8b], &[(5, 0x4048)],
+         &[("CECFG1", 0x2000), ("CECFG2", 0x2000), ("CETBL", 0), ("EST", 0x24),
+           ("FF1", 0x113), ("FF2", 0x105)],
+         &[(0x4048, 0x5678, 0x5678), (0x4049, 0xbc92, 0xbc92)],
+         &[("BTR2", 0xfff2), ("R5", 0x4048), ("EST", 0x34)]),
+        ([0xfe, 0xa5, 0x2f, 0xf5, 0x8e, 0x8b], &[(5, 0xffff)],
+         &[("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff), ("EST", 0),
+           ("FF1", 0), ("FF2", 20)],
+         &[(0xffff, 0, 0), (0, 8, 8)],
+         &[("BTR2", 0), ("R5", 0xffff), ("EST", 0x3010)]),
+        ([0xfc, 0x89, 0x61, 0xf7, 0x8e, 0x8b], &[(5, 0x4048)],
+         &[("CECFG1", 0x2000), ("CECFG2", 0x2000), ("CETBL", 0), ("EST", 0x11),
+           ("FF1", 31), ("FF2", 5)],
+         &[(0x4048, 0x5678, 0x5678), (0x4049, 0xbc92, 0xbc92)],
+         &[("BTR2", 31), ("R5", 0x4048), ("EST", 1)]),
+        ([0xfe, 0x89, 0x61, 0xf7, 0x8e, 0x8b], &[(5, 0x4048)],
+         &[("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0), ("EST", 0x10),
+           ("FF1", 19), ("FF2", 0)],
+         &[(0x4048, 0x5678, 0x5678), (0x4049, 0xbc92, 0xbc92)],
+         &[("BTR2", 0), ("R5", 0x4048), ("EST", 8)]),
+        ([0xfc, 0x89, 0x61, 0xf5, 0x8e, 0x8b], &[(5, 0x4048)],
+         &[("CECFG1", 0x0888), ("CECFG2", 0x0888), ("CETBL", 0x8080), ("EST", 8),
+           ("FF1", 19), ("FF2", 5)],
+         &[(0x4048, 0x5678, 0x5678), (0x4049, 0xbc92, 0xbc92)],
+         &[("BTR2", 0xfff2), ("EST", 0x3010)]),
     ];
     let binary = common::scratch_file("carmel-wide-extract-ports", "bin");
     let source = binary.with_extension("c");
     let executable = binary.with_extension("exe");
+    for opcode in [0xf5, 0xf7] {
+        fs::write(&binary, [0xfd, 0x89, 0x61, opcode, 0x8e, 0x8b]).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), "0x1000", "--addr", "--raw-image", "--target",
+            "Carmel:BE:24:default:default", "--base", "0x1000", "--count", "1", "--json",
+        ]);
+        let doc: Value = serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{stdout}\n{stderr}"));
+        assert_eq!(status, 1, "{doc}");
+        assert_eq!(doc["error"]["address"], 0x1000, "{doc}");
+        assert!(doc["instructions"].as_array().unwrap().is_empty(), "{doc}");
+        assert!(doc["error"]["message"].as_str().unwrap().contains("rejected before issue"), "{doc}");
+    }
     let ce_rows = [
         (0x1000, 0x1000, 0xffff, 0, 0xf3, 0x79, 0x49, 0x3000),
         (0x1000, 0x1000, 0, 1, 0xf3, 0x5df9, 0x49, 1),
@@ -1379,7 +1416,10 @@ fn carmel_wide_extract_selects_descriptor_and_result_ports() {
     let cases = routes.iter().copied().chain((0..ce_rows.len()).map(|i| {
         (ce1_gb3, &[(4, 0x48)][..], ce_inputs[i].as_slice(), &ce_words[i][..], &ce_outputs[i][..])
     }));
-    let mut generated = String::from("#include <stdbool.h>\n#include <stdint.h>\n#include <stdio.h>\n");
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n#include <stdio.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n",
+    );
     let mut calls = String::from("int main(void) {\n");
     let c_type = |reg: &str| match reg {
         "GB2" | "GB3" => "unsigned char",
