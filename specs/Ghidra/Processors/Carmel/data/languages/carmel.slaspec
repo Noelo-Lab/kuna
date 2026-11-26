@@ -316,6 +316,11 @@ define token slot (24)
     compact_mac_right = (1,3)
     compact_msu_left = (4,8)
     compact_msu_right = (1,3)
+    parallel_logic_dst = (11,14)
+    parallel_logic_src = (6,10)
+    parallel_word_dst = (10,13)
+    parallel_word_src = (5,9)
+    slot_1_4 = (1,4)
     shift_count = (1,7) signed
     shift_count_encoding = (1,7)
     slot_1_7 = (1,7)
@@ -2775,6 +2780,253 @@ macro compact_logic_rmw_word(target, cfg, bank, address, op, to_data) {
     local address:2 = R3 + RN3;
     compact_logic_rmw_word(R2, CECFG2, 1:2, address, 0:2, 1:1);
 }
+
+# Covered parallel logic lanes. Address override drives the AGU and OF
+# even when CE vetoes the result. The next postmodify can use that AGU value.
+macro parallel_logic_access(cfg, bank, enabled, access) {
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    access = enabled != 0 || ((cfg & 0x1000) != 0);
+}
+
+macro parallel_or_r6(cfg, bank, result, enabled) {
+    local access:1;
+    parallel_logic_access(cfg, bank, enabled, access);
+    result = 0;
+    if (!access) goto <done>;
+    local address:2 = R6;
+    modify_ptr(R6, 0:2, RM6, RL6, 12, 2);
+    local word:2 = *[data]:2 address;
+    result = word | R2;
+  <done>
+}
+
+macro parallel_or_r5(cfg, bank, result, enabled) {
+    local access:1;
+    parallel_logic_access(cfg, bank, enabled, access);
+    result = 0;
+    if (!access) goto <done>;
+    local address:2 = R5;
+    modify_ptr(R5, 0:2, RM4, RL4, 10, 2);
+    local first:2 = *[data]:2 R7;
+    local second:2 = *[data]:2 address;
+    result = first | second;
+  <done>
+}
+
+macro parallel_xor_r4_r6(cfg, bank, result, enabled) {
+    local access:1;
+    parallel_logic_access(cfg, bank, enabled, access);
+    result = 0;
+    if (!access) goto <done>;
+    local first_address:2 = R4;
+    local second_address:2 = R6;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 1);
+    modify_ptr(R6, 0:2, RM6, RL6, 12, 2);
+    local first:2 = *[data]:2 first_address;
+    local second:2 = *[data]:2 second_address;
+    result = first ^ second;
+  <done>
+}
+
+macro parallel_xor_r5(result, enabled) {
+    local access:1;
+    parallel_logic_access(CECFG2, 1:2, enabled, access);
+    result = 0;
+    if (!access) goto <done>;
+    local address:2 = R5;
+    modify_ptr(R5, 0:2, RM4, RL4, 10, 3);
+    local word:2 = *[data]:2 address;
+    result = R7 ^ word;
+  <done>
+}
+
+macro parallel_logic_status(result, shift) {
+    local flags:2 = zext(result == 0) << 3;
+    commit_logic_flags(flags, shift);
+}
+
+# WB results are already visible when register contention stops the issue.
+# Neither status publication nor the next issue belongs to the stop path.
+define pcodeop carmel_register_write_conflict;
+macro parallel_logic_conflict() {
+  <stopped>
+    carmel_register_write_conflict();
+    goto <stopped>;
+}
+
+macro parallel_logic_full_half(half, full_cfg, full_bank, half_cfg, half_bank, shares) {
+    local full_result:2;
+    local half_result:2;
+    local full_enabled:2;
+    local half_enabled:2;
+    parallel_or_r6(full_cfg, full_bank, full_result, full_enabled);
+    parallel_or_r5(half_cfg, half_bank, half_result, half_enabled);
+    if (full_enabled == 0) goto <half_only>;
+    A2L = full_result;
+    A2H = 0;
+    GB2 = 0;
+    if (shares && half_enabled != 0) goto <conflict>;
+    parallel_logic_status(full_result, 6 * full_bank);
+  <half_only>
+    if (half_enabled == 0) goto <status>;
+    half = half_result;
+    parallel_logic_status(half_result, 6 * half_bank);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+    goto <done>;
+  <conflict>
+    parallel_logic_conflict();
+  <done>
+}
+
+macro parallel_logic_halves() {
+    local left:2;
+    local right:2;
+    local ce1:2;
+    local ce2:2;
+    parallel_or_r5(CECFG1, 0:2, left, ce1);
+    parallel_or_r5(CECFG2, 1:2, right, ce2);
+    if (ce1 == 0) goto <right_port>;
+    A2H = left;
+  <right_port>
+    if (ce2 == 0) goto <left_status>;
+    A2L = right;
+    if (ce1 != 0) goto <conflict>;
+    parallel_logic_status(right, 6);
+  <left_status>
+    if (ce1 == 0) goto <status>;
+    parallel_logic_status(left, 0);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+    goto <done>;
+  <conflict>
+    parallel_logic_conflict();
+  <done>
+}
+
+macro parallel_logic_xor_pair(acc_half, shares) {
+    local left:2;
+    local right:2;
+    local ce1:2;
+    local ce2:2;
+    parallel_xor_r4_r6(CECFG1, 0:2, left, ce1);
+    parallel_xor_r5(right, ce2);
+    if (ce1 == 0) goto <right_port>;
+    acc_half = left;
+  <right_port>
+    if (ce2 == 0) goto <left_status>;
+    X2 = right;
+    if (shares && ce1 != 0) goto <conflict>;
+    parallel_logic_status(right, 6);
+  <left_status>
+    if (ce1 == 0) goto <status>;
+    parallel_logic_status(left, 0);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+    goto <done>;
+  <conflict>
+    parallel_logic_conflict();
+  <done>
+}
+
+macro parallel_logic_ff12_pair() {
+    local left:2;
+    local right:2;
+    local ce1:2;
+    local ce2:2;
+    parallel_or_r6(CECFG1, 0:2, left, ce1);
+    parallel_or_r6(CECFG2, 1:2, right, ce2);
+    if (ce1 == 0) goto <right_port>;
+    FF1 = left;
+    FF2 = 0;
+  <right_port>
+    if (ce2 == 0) goto <left_status>;
+    FF1 = right;
+    FF2 = 0;
+    if (ce1 != 0) goto <conflict>;
+    parallel_logic_status(right, 6);
+  <left_status>
+    if (ce1 == 0) goto <status>;
+    parallel_logic_status(left, 0);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+    goto <done>;
+  <conflict>
+    parallel_logic_conflict();
+  <done>
+}
+
+macro parallel_logic_mac_ff12(latch, mac_shift, word_shift) {
+    local direct_word:2 = A4L | A0L;
+    local incoming:2 = FF2;
+    local operand:2 = *[data]:2 R7;
+    local product:8 = sext(operand) * zext(R7) * (1 + zext(ECFG & 1));
+    local mask:8 = 0xffffffffff;
+    local raw:8 = zext(incoming) + (product & mask);
+    local result:8;
+    local flags:2;
+    compact_long_finish(raw & mask, raw > mask, 0:1, 0:1, 0:1, result, flags);
+    latch = operand;
+    # The paired result suppresses the direct FF word, not that lane's flags.
+    FF1 = result:2;
+    FF2 = result(2);
+    parallel_logic_status(direct_word, word_shift);
+    local packed:2 = (EST & 0xcfff & ~(0x3b << mac_shift)) | (flags << mac_shift);
+    publish_alu_ce(packed);
+}
+
+@define PAR_LOGIC_LEFT "carmel_issue=1 & slot_mode=0"
+@define PAR_LOGIC_OR_R6 "slot_15_22=0xd5 & parallel_logic_src=22 & logical_right=2 & slot_0_0=1"
+@define PAR_LOGIC_OR_R5 "slot_15_22=0xd3 & parallel_logic_src=7 & logical_right=21 & slot_0_0=1"
+@define PAR_LOGIC_XOR_R4_R6 "slot_15_22=0xdb & parallel_logic_src=12 & logical_right=22 & slot_0_0=1"
+@define PAR_LOGIC_XOR_R5 "slot_15_22=0xd9 & parallel_logic_src=7 & logical_right=29 & slot_0_0=1"
+@define PAR_LOGIC_DIRECT_OR "slot_14_22=0x1a8 & parallel_word_src=20 & slot_1_4=0 & slot_0_0=0"
+@define PAR_LOGIC_MAC_FF12 "slot_14_22=0x148 & parallel_logic_dst=7 & parallel_logic_src=7 & logical_right=7 & slot_0_0=0"
+
+:OR "CE1" "A2","*R6++","R2" "||" "OR" "CE2" "A2H","*R7","*R5++" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_OR_R6) & parallel_logic_dst=10); (slot_mode=0 & $(PAR_LOGIC_OR_R5) & parallel_logic_dst=10) { parallel_logic_full_half(A2H, CECFG1, 0:2, CECFG2, 1:2, 1:1); }
+:OR "CE1" "A2H","*R7","*R5++" "||" "OR" "CE2" "A2","*R6++","R2" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_OR_R5) & parallel_logic_dst=10); (slot_mode=0 & $(PAR_LOGIC_OR_R6) & parallel_logic_dst=10) { parallel_logic_full_half(A2H, CECFG2, 1:2, CECFG1, 0:2, 1:1); }
+:OR "CE1" "A2","*R6++","R2" "||" "OR" "CE2" "A2L","*R7","*R5++" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_OR_R6) & parallel_logic_dst=10); (slot_mode=0 & $(PAR_LOGIC_OR_R5) & parallel_logic_dst=2) { parallel_logic_full_half(A2L, CECFG1, 0:2, CECFG2, 1:2, 1:1); }
+:OR "CE1" "A2","*R6++","R2" "||" "OR" "CE2" "A0H","*R7","*R5++" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_OR_R6) & parallel_logic_dst=10); (slot_mode=0 & $(PAR_LOGIC_OR_R5) & parallel_logic_dst=8) { parallel_logic_full_half(A0H, CECFG1, 0:2, CECFG2, 1:2, 0:1); }
+:OR "CE1" "A2H","*R7","*R5++" "||" "OR" "CE2" "A2L","*R7","*R5++" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_OR_R5) & parallel_logic_dst=10); (slot_mode=0 & $(PAR_LOGIC_OR_R5) & parallel_logic_dst=2) { parallel_logic_halves(); }
+
+:XOR "CE1" "A0L","*R4+=RN4","*R6++" "||" "XOR" "CE2" "X2","R7","*R5--" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_XOR_R4_R6) & parallel_logic_dst=0); (slot_mode=0 & $(PAR_LOGIC_XOR_R5) & parallel_logic_dst=15) { parallel_logic_xor_pair(A0L, 1:1); }
+:XOR "CE1" "A0H","*R4+=RN4","*R6++" "||" "XOR" "CE2" "X2","R7","*R5--" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_XOR_R4_R6) & parallel_logic_dst=8); (slot_mode=0 & $(PAR_LOGIC_XOR_R5) & parallel_logic_dst=14) { parallel_logic_xor_pair(A0H, 1:1); }
+:XOR "CE1" "A1L","*R4+=RN4","*R6++" "||" "XOR" "CE2" "X2","R7","*R5--" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_XOR_R4_R6) & parallel_logic_dst=1); (slot_mode=0 & $(PAR_LOGIC_XOR_R5) & parallel_logic_dst=15) { parallel_logic_xor_pair(A1L, 0:1); }
+:OR "X1","A4L","A0L" "||" "XOR" "CE2" "A0L","*R4+=RN4","*R6++" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_DIRECT_OR) & parallel_word_dst=14); (slot_mode=0 & $(PAR_LOGIC_XOR_R4_R6) & parallel_logic_dst=0) {
+    local left:2 = A4L | A0L;
+    local right:2;
+    local enabled:2;
+    parallel_xor_r4_r6(CECFG2, 1:2, right, enabled);
+    X1 = left;
+    parallel_logic_status(left, 0);
+    if (enabled == 0) goto <status>;
+    A0L = right;
+    parallel_logic_status(right, 6);
+  <status>
+    publish_alu_ce(EST & 0xcfff);
+}
+:OR "X2","A4L","A0L" "||" "ADD" "CE2" "A0L","A0H","X2" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_DIRECT_OR) & parallel_word_dst=15); (slot_mode=0 & slot_14_22=0x48 & parallel_word_dst=0 & parallel_word_src=24 & slot_1_4=14 & slot_0_0=1) {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1:2, enabled);
+    local old_x2:2 = X2;
+    local left:2 = A4L | A0L;
+    X2 = left;
+    if (enabled == 0) goto <status>;
+    local mask:8 = 0xffffffffff;
+    local sum:8 = ((sext(A0H) << 16) & mask) + ((sext(old_x2) << 16) & mask);
+    local result:8;
+    local flags:2;
+    compact_long_finish(sum & mask, sum > mask, 0:1, 0:1, 0:1, result, flags);
+    A0L = result(2);
+    parallel_logic_conflict();
+  <status>
+    parallel_logic_status(left, 0);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:OR "FF2","A4L","A0L" "||" "MACHUS" "FF12","*R7","R7" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_DIRECT_OR) & parallel_word_dst=7); (slot_mode=0 & $(PAR_LOGIC_MAC_FF12)) { parallel_logic_mac_ff12(X2, 6, 0); }
+:MACHUS "FF12","*R7","R7" "||" "OR" "FF1","A4L","A0L" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_MAC_FF12)); (slot_mode=0 & $(PAR_LOGIC_DIRECT_OR) & parallel_word_dst=6) { parallel_logic_mac_ff12(X1, 0, 6); }
+:OR "CE1" "FF12","*R6++","R2" "||" "OR" "CE2" "FF12","*R6++","R2" is ($(PAR_LOGIC_LEFT) & $(PAR_LOGIC_OR_R6) & parallel_logic_dst=14); (slot_mode=0 & $(PAR_LOGIC_OR_R6) & parallel_logic_dst=14) { parallel_logic_ff12_pair(); }
 
 # The left DATA ports feed PReg, not the multiplier or X1. Only the
 # existing accumulator reaches the MAC result; the secondary ALU sees zero.

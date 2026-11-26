@@ -3886,6 +3886,21 @@ result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
 `CLRBTR` clears only its physical backtrace port; a veto preserves it.
 
+In the covered compact parallel logic routes, a CE veto does not
+suppress DATA address generation when the physical lane's override is
+enabled. Two postincrements of the same pointer capture consecutive
+addresses. Both lanes sample data before publishing results or updating
+status. Full accumulator writeback wins over a half of that accumulator,
+and two half writes can both land, but both cases stop for contention
+when the overlapping result ports are enabled. `X2` has separate
+storage but shares `A0`'s contention selector. The paired `FF12` MAC
+result supersedes a direct `FF1` or `FF2` write without stopping; the
+suppressed word result still contributes its lane's status. Two
+enabled paired FF writers contend after the right result lands. The
+modeled contention path stops after register writeback and before
+status publication; it does not fall through. Two unconditional
+writes to the same direct FF word remain unimplemented.
+
 In the covered compact two-DATA MAC and secondary `OP1`/`OP2` packets, the
 left reads feed temporary ports rather than the multiplier or `X1`.
 The unchanged accumulator drives the first status lane. The secondary
