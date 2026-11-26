@@ -111,8 +111,6 @@ Three tiers:
 | Math.PI where the source had a numeric literal | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
 | Long.MAX_VALUE or Double.MAX_VALUE instead of the number | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
 | need raw digits of a float constant | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
-| int variable printed as boolean true/false | [`jvm_boolean_as_int`](#jvm_boolean_as_int----on--off-default-on) |
-| 1 and 0 where true and false were expected (option is off) | [`jvm_boolean_as_int`](#jvm_boolean_as_int----on--off-default-on) |
 | string literal shows odd or invisible characters | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | homoglyphs in a compared string | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | terminal mangles non-ASCII text in decompiled strings | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
@@ -406,15 +404,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** substrate/const_exprent · vineflower · vineflower-option
 - **Also spelled:** `keep-literals`, `lit`
 - **Example:** `kuna decompile app.jar com.ex.Math2 --option jvm_keep_literals on`
-
-### `jvm_boolean_as_int` -- on | off, default `on`
-
-- **Symptoms:** int variable printed as boolean true/false; 1 and 0 where true and false were expected (option is off).
-- **What it does:** Let the int constant 1, not only 0, take boolean type during type inference, so flags stored with iconst_1/iconst_0 print as true and false.
-- **When to flip:** Turn off when booleans are being inferred where the code really works with the ints 0 and 1 (handwritten or non-Java bytecode).
-- **Where / provenance:** substrate/const_exprent · vineflower · vineflower-option
-- **Also spelled:** `boolean-as-int`, `bto`
-- **Example:** `kuna decompile app.jar com.ex.Flags --option jvm_boolean_as_int off`
 
 ### `jvm_ascii_strings` -- on | off, default `off`
 

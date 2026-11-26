@@ -16,7 +16,6 @@ impl IFernflowerPreferences {
     pub const DECOMPILE_GENERIC_SIGNATURES: &str = "decompile-generics";
     pub const DECOMPILE_PREVIEW: &str = "decompile-preview";
     pub const LITERALS_AS_IS: &str = "keep-literals";
-    pub const BOOLEAN_TRUE_ONE: &str = "boolean-as-int";
     pub const ASCII_STRING_CHARACTERS: &str = "ascii-strings";
     pub const SYNTHETIC_NOT_SET: &str = "synthetic-not-set";
     pub const UNDEFINED_PARAM_TYPE_OBJECT: &str = "undefined-as-object";
@@ -92,7 +91,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::DECOMPILE_INNER, "1".to_string()),
             (IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, "1".to_string()),
             (IFernflowerPreferences::LITERALS_AS_IS, "0".to_string()),
-            (IFernflowerPreferences::BOOLEAN_TRUE_ONE, "1".to_string()),
             (IFernflowerPreferences::ASCII_STRING_CHARACTERS, "0".to_string()),
             (IFernflowerPreferences::SYNTHETIC_NOT_SET, "0".to_string()),
             (IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT, "1".to_string()),
@@ -192,7 +190,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "DECOMPILE_GENERIC_SIGNATURES", key: IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, short_name: Some("dgs"), name: Some("Decompile Generics"), description: Some("Decompile generics in classes, methods, fields, and variables."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILE_PREVIEW", key: IFernflowerPreferences::DECOMPILE_PREVIEW, short_name: Some("dpr"), name: Some("Decompile Preview Features"), description: Some("Decompile features marked as preview or incubating in the latest Java versions."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "LITERALS_AS_IS", key: IFernflowerPreferences::LITERALS_AS_IS, short_name: Some("lit"), name: Some("Keep Literals As Is"), description: Some("Keep NaN, infinities, and pi values as is without resugaring them."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "BOOLEAN_TRUE_ONE", key: IFernflowerPreferences::BOOLEAN_TRUE_ONE, short_name: Some("bto"), name: Some("Represent boolean as 0/1"), description: Some("Represent integers 0 and 1 as booleans."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "ASCII_STRING_CHARACTERS", key: IFernflowerPreferences::ASCII_STRING_CHARACTERS, short_name: Some("asc"), name: Some("ASCII String Characters"), description: Some("Encode non-ASCII characters in string and character literals as Unicode escapes."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "SYNTHETIC_NOT_SET", key: IFernflowerPreferences::SYNTHETIC_NOT_SET, short_name: Some("nns"), name: Some("Synthetic Not Set"), description: Some("Treat some known structures as synthetic even when not explicitly set."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "UNDEFINED_PARAM_TYPE_OBJECT", key: IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT, short_name: Some("uto"), name: Some("Treat Undefined Param Type As Object"), description: Some("Treat nameless types as java.lang.Object."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

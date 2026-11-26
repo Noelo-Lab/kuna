@@ -122,28 +122,6 @@ tier = "core"
 symptoms = "Math.PI where the source had a numeric literal|Long.MAX_VALUE or Double.MAX_VALUE instead of the number|need raw digits of a float constant"
 
 [[option]]
-option = "jvm_boolean_as_int"
-vineflower = "boolean-as-int"
-short = "bto"
-aliases = ["boolean-as-int", "bto"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "substrate"
-subphase = "const_exprent"
-strength = "HARD"
-rewind = "substrate"
-issue = ""
-summary = "Let the int constant 1, not only 0, take boolean type during type inference, so flags stored with iconst_1/iconst_0 print as true and false."
-use_when = "Turn off when booleans are being inferred where the code really works with the ints 0 and 1 (handwritten or non-Java bytecode)."
-example = "kuna decompile app.jar com.ex.Flags --option jvm_boolean_as_int off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.BOOLEAN_TRUE_ONE (boolean-as-int, -bto)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "int variable printed as boolean true/false|1 and 0 where true and false were expected (option is off)"
-
-[[option]]
 option = "jvm_ascii_strings"
 vineflower = "ascii-strings"
 short = "asc"

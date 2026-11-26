@@ -729,7 +729,7 @@ each variable version gets a lower and an upper bound in the type lattice of
 `decompiler/nonnative/kuna-jvm/src/substrate/var_type.rs`, seeded from the method
 descriptor and from every expression that defines or uses it, and the bounds are
 propagated over the direct graph to a fixed point. Integer constants start at the
-narrowest type that can hold them; with `jvm_boolean_as_int` the constant `1` (not only
+narrowest type that can hold them; the constant `1` (not only
 `0`) may also become `boolean`, so flags stored with `iconst_1`/`iconst_0` print as
 `true`/`false`. Before renumbering, the lattice's internal types become Java types: an
 integer-constant type becomes `byte`, `short` or `char`, and the null type `Object`.
