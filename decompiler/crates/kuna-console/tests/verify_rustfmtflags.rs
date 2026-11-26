@@ -149,6 +149,7 @@ fn version_identity_and_language_are_required() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn recovered_expressions_reproduce_native_stdout_and_stderr() {
     use crate::common;
     use std::collections::BTreeMap;
