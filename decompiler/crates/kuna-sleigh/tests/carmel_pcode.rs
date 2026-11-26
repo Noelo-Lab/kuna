@@ -3136,3 +3136,35 @@ fn compact_frames_publish_ce_feedback() {
         assert_eq!((m.data(0), m.data(0x8030), m.data(0x8008)), (0xaa00, saved, 0x9820));
     }
 }
+
+#[test]
+fn wide_link_publishes_ce_after_frame_address_phase() {
+    let packets = [
+        (0xbffffc, 0xc60283), (NOP, NOP), (0x3ffffc, 0xc60283), (NOP, NOP),
+        (0x2d521e, 0xc62fc0), (NOP, NOP), (0x3ffffc, 0xc60313), (NOP, NOP),
+        (0x7ffffc, 0xc60313), (NOP, NOP),
+    ];
+    let issues = [
+        (0, 5, 6), (2, 1, 6), (4, 4, 6), (6, 1, 6), (8, 4, 6),
+        (10, 1, 6), (12, 4, 6), (14, 1, 6), (16, 4, 6), (18, 1, 0),
+    ];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (pc, table, ce1, expected) in [
+        (0, 0x0100, 0, (0x6000, 0x802c, 0x802f, 0x0100, 0x0400)),
+        (4, 0x0100, 0, (0x2000, 0x8030, 0x0400, 0x0100, 0x5aa5)),
+        (4, 0x0100, 0x1000, (0x2000, 0x802c, 0x802f, 0x0100, 0x5aa5)),
+        (8, 0x0001, 0, (0x5000, 0xd24e, 0x0400, 0x0001, 0xffff)),
+        (12, 0x0100, 0x1000, (0x1000, 0x802c, 0x0400, 0x802f, 0x0100)),
+        (16, 0x0101, 0, (0x1000, 0x802c, 0x0400, 0x802f, 0x5aa5)),
+    ] {
+        m.seed(&[("SP", 0x8030), ("R0", 0x0400), ("EST", 0), ("ECFG", 0x10),
+                 ("CECFG1", ce1), ("CECFG2", 0), ("CETBL", table)]);
+        m.seed_data(0x8030, 0x5aa5);
+        m.seed_data(0x802f, 0x1234);
+        m.start(pc).unwrap();
+        assert_eq!(m.step(), 3 * (pc + 2));
+        assert_eq!((m.reg("EST"), m.reg("SP"), m.reg("R0"), m.reg("CETBL"), m.data(0x8030)),
+                   expected, "CODE[{pc}], CETBL={table:#x}, CECFG1={ce1:#x}");
+        assert_eq!(m.data(0x802f), 0x1234);
+    }
+}

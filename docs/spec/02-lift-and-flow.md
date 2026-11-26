@@ -5050,15 +5050,16 @@ selected frame register even when the result predicate suppresses the
 DATA store. Static CE-table loads that configure both banks sample the
 same incoming `EST`; one new latch cannot feed the other within that issue.
 
-Compact `LINK` and `LEAVE` publish both CE latches from the same incoming
-condition taps. `LEAVE CE1` still publishes the latches when its predicate
-blocks the DATA read and frame update. Address enable can permit those
-effects without forcing the CE1 latch true.
+`LINK` and compact `LEAVE` publish both CE latches even when the
+predicate blocks the frame access. The banks sample the same condition
+taps. Address enable can allow `LEAVE CE1` to restore the frame without
+forcing the CE1 latch true.
 
 If a wide `LINK` writes `CECFG1`, `CECFG2`, or `CETBL`, the incoming
 controls enable the address phase. The store then evaluates the selected
 predicate using the updated controls; it still saves the old register
-word at the old `SP`. A static predicate samples the incoming CE latch.
+word at the old `SP`. The updated controls also determine the feedback
+from both banks. A static predicate samples the incoming CE latch.
 
 For a wide `LINK` with a disconnected frame port, address enable changes
 only `SP`. The selected CE bank independently gates a 16-bit all-ones
