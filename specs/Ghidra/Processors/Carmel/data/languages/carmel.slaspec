@@ -10964,10 +10964,10 @@ macro paired_push_words(at_sp, below_sp, connected, enabled, flags) {
   <done>
 }
 
-macro compact_push_words(at_sp, below_sp) {
-    local old_sp:2 = SP;
-    SP = old_sp - 2;
-    paired_push_data(old_sp, at_sp, below_sp);
+macro compact_push_words(at_sp, below_sp, checked) {
+    local flags:2 = EST & 0xcfff;
+    paired_push_words(at_sp, below_sp, checked, 1:2, flags);
+    publish_ce_feedback(flags, EST);
 }
 
 macro compact_pop_words(first, second) {
@@ -11001,39 +11001,47 @@ macro compact_pop_words(first, second) {
 stack_push_acc: "PUSH" compact_stack_acc is compact_stack_form=0x30378 & slot_0_0=0 & compact_stack_acc {
     local high:2 = compact_stack_acc(2);
     local low:2 = compact_stack_acc:2;
-    local flags:2 = EST & 0xcfff;
-    paired_push_words(high, low, high, 1:2, flags);
-    publish_ce_feedback(flags, EST);
+    compact_push_words(high, low, high);
 }
 
 stack_pop_acc: "POP" compact_stack_acc is compact_stack_form=0x30338 & slot_0_0=0 & compact_stack_acc {
+    export compact_stack_acc;
+}
+
+macro compact_pop_accumulator(destination, shift) {
     local high:2;
     local low:2;
     compact_pop_words(high, low);
     local value:4 = (zext(high) << 16) | zext(low);
-    compact_stack_acc = sext(value);
+    destination = sext(value);
     local flags:2 = (zext(value == 0) << 3) | (zext(value s< 0) << 4);
-    publish_ce_feedback((EST & 0xcfc4) | flags, EST);
+    publish_ce_feedback((EST & 0xcfff & ~(0x3b << shift)) | (flags << shift), EST);
 }
 
 :^stack_push_acc is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & stack_push_acc { build stack_push_acc; }
 :^stack_push_acc "||" nop_right is (carmel_issue=1 & slot_mode=0 & stack_push_acc); (slot_mode=0 & nop_right) { build stack_push_acc; }
 :^nop_left "||" stack_push_acc is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & stack_push_acc) { build stack_push_acc; }
-:^stack_pop_acc is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & stack_pop_acc { build stack_pop_acc; }
-:^stack_pop_acc "||" nop_right is (carmel_issue=1 & slot_mode=0 & stack_pop_acc); (slot_mode=0 & nop_right) { build stack_pop_acc; }
-:^nop_left "||" stack_pop_acc is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & stack_pop_acc) { build stack_pop_acc; }
+:^stack_pop_acc is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & stack_pop_acc {
+    compact_pop_accumulator(stack_pop_acc, 0:2);
+}
+:^stack_pop_acc "||" nop_right is (carmel_issue=1 & slot_mode=0 & stack_pop_acc); (slot_mode=0 & nop_right) {
+    compact_pop_accumulator(stack_pop_acc, 0:2);
+}
+:^nop_left "||" stack_pop_acc is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & stack_pop_acc) {
+    compact_pop_accumulator(stack_pop_acc, 6:2);
+}
 
 :PUSH "R0","R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_PUSH_PAIR) & compact_stack_first=0 & compact_stack_second=0); (slot_mode=0 & nop_right) {
-    compact_push_words(R0, R4);
+    compact_push_words(R0, R4, R0);
 }
 :PUSH "R0","ASTATUS" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_PUSH_PAIR) & compact_stack_first=0 & compact_stack_second=13); (slot_mode=0 & nop_right) {
-    compact_push_words(R0, ASTATUS);
+    compact_push_words(R0, ASTATUS, R0);
 }
 :PUSH "ASTATUS","open" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_PUSH_PAIR) & compact_stack_first=13 & compact_stack_second=15); (slot_mode=0 & nop_right) {
-    compact_push_words(ASTATUS, 0xffff:2);
+    compact_push_words(ASTATUS, 0xffff:2, ASTATUS);
 }
 :PUSH "FF12" is carmel_issue=2 & slot_mode=1 & compact_stack_form=0x30378 & $(COMPACT_STACK_FF12) {
-    compact_push_words(FF1, FF2);
+    compact_push_words(FF1, FF2, 0:2);
 }
 :^nop_left "||" "POP" "R0","R4" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=0 & compact_stack_second=0) {
     local first:2;
@@ -11041,6 +11049,7 @@ stack_pop_acc: "POP" compact_stack_acc is compact_stack_form=0x30338 & slot_0_0=
     compact_pop_words(first, second);
     R4 = second;
     R0 = first;
+    publish_alu_ce(EST & 0xcfff);
 }
 :POP "FF12" "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_stack_form=0x30338 & $(COMPACT_STACK_FF12)); (slot_mode=0 & nop_right) {
     local first:2;
@@ -11048,6 +11057,7 @@ stack_pop_acc: "POP" compact_stack_acc is compact_stack_form=0x30338 & slot_0_0=
     compact_pop_words(first, second);
     FF2 = second;
     FF1 = first;
+    publish_alu_ce(EST & 0xcfff);
 }
 :POP "ASTATUS","R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=13 & compact_stack_second=0); (slot_mode=0 & nop_right) {
     local first:2;
@@ -11055,6 +11065,7 @@ stack_pop_acc: "POP" compact_stack_acc is compact_stack_form=0x30338 & slot_0_0=
     compact_pop_words(first, second);
     R4 = second;
     ASTATUS = first & 3;
+    publish_alu_ce(EST & 0xcfff);
 }
 :POP "R0","ASTATUS" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=0 & compact_stack_second=13); (slot_mode=0 & nop_right) {
     local first:2;
@@ -11062,6 +11073,7 @@ stack_pop_acc: "POP" compact_stack_acc is compact_stack_form=0x30338 & slot_0_0=
     compact_pop_words(first, second);
     ASTATUS = second & 3;
     R0 = first;
+    publish_alu_ce(EST & 0xcfff);
 }
 :POP "open","R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_POP_PAIR) & compact_stack_first=14 & compact_stack_second=0); (slot_mode=0 & nop_right) {
     local second:2;

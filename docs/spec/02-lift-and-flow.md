@@ -5108,6 +5108,14 @@ the parallel `POP` advance `SP` and load `R5` and `RL2` from old `SP+1`
 and `SP+2`, respectively. The shift and the stack access qualify
 separately; both CE latches update after the packet.
 
+Compact paired register `PUSH` uses the word saved at the old `SP` for
+the sticky-status check. Sequential `PUSH FF12` uses two word stores
+without that check. The fixed register pairs publish both CE latches.
+Compact accumulator `POP` sets zero and negative in the right flag
+bank only when it occupies the right side of a parallel issue; a
+sequential `POP` uses the left bank. CE feedback for that issue samples
+the flags from before the `POP`.
+
 The covered single wide postincrement `POP` advances `SP` and `R7` by
 one DATA word or two for a long operand. The fixed stride does not use
 `RN7`; the `R7` update still uses its configured address window. In the

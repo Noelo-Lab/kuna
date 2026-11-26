@@ -1132,7 +1132,7 @@ fn compact_accumulator_stack_round_trips_words_and_extends_the_guard() {
     assert_eq!((m.reg("SP"), m.data(0), m.data(0xffff), m.data(1)), (0xfffe, 0x8001, 0xabcd, 0x3ab1));
     assert_eq!((m.reg("A0"), m.reg("EST")), (0xaa8001abcd, 0x4017));
     assert_eq!(m.step(), 12);
-    assert_eq!((m.reg("SP"), m.reg("A0"), m.reg("EST")), (0, 0xff8001abcd, 0x4014));
+    assert_eq!((m.reg("SP"), m.reg("A0"), m.reg("EST")), (0, 0xff8001abcd, 0x4417));
 }
 
 #[test]
@@ -3225,4 +3225,32 @@ fn compact_shift_and_pop_use_independent_predicates() {
         assert_eq!((m.reg("EST"), m.reg("SP"), m.reg("FF1"), m.reg("R5"), m.reg("RL2")), expected);
         assert_eq!((m.reg("FF2"), m.data(top), m.data(next)), (0xface, 0x84bd, 0x9365));
     }
+}
+
+#[test]
+fn compact_direct_stack_checks_the_connected_high_word_and_publishes_ce() {
+    let mut m = Machine::new(
+        0, &[(0x303400, NOP), (0xb0378c, NOP), (NOP, 0x303000), (NOP, NOP)],
+        &[(0, 1, 6), (2, 2, 3), (3, 3, 6), (4, 1, 6), (6, 1, 0)], None,
+    );
+    for (pc, high, low, expected) in [
+        (0, 0x8001, 0x0123, 0x7000),
+        (0, 0x0123, 0x8001, 0x3000),
+        (2, 0x8001, 0x0123, 0x3000),
+    ] {
+        m.seed(&[("SP", 0x8030), ("EST", 0), ("ECFG", 0x10), ("CETBL", 0x0101),
+                 ("R0", high), ("R4", low), ("FF1", high), ("FF2", low)]);
+        m.start(pc).unwrap();
+        let end = if pc == 0 { 6 } else { 9 };
+        assert_eq!(m.step(), end);
+        assert_eq!((m.reg("SP"), m.data(0x8030), m.data(0x802f), m.reg("EST")),
+                   (0x802e, high, low, expected));
+    }
+    m.seed(&[("SP", 0x8030), ("EST", 0x4024), ("CETBL", 0x0100)]);
+    m.seed_data(0x8031, 0x8000);
+    m.seed_data(0x8032, 0xffff);
+    m.start(4).unwrap();
+    assert_eq!(m.step(), 18);
+    assert_eq!((m.reg("SP"), m.reg("R0"), m.reg("R4"), m.reg("EST")),
+               (0x8032, 0xffff, 0x8000, 0x6024));
 }
