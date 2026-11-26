@@ -5066,6 +5066,13 @@ only `SP`. The selected CE bank independently gates a 16-bit all-ones
 store at the old `SP`, not the computed one. The store can set sticky
 high-word status when `ECFG` bit four is set.
 
+Wide single-word `PUSH` and `POP` publish both CE latches even when
+address processing is disabled. Address enable alone can decrement `SP`
+for `PUSH`, but the store also needs execution enable. A performed store
+can set sticky high-word status. For a direct-register `POP`, address
+enable is sufficient to read the word at old `SP+1` and update both the
+destination and `SP`.
+
 Covered wide paired `PUSH` and `POP` reserve two DATA words on `SP`
 when address processing is enabled, independent of the execution
 predicate and of the short or long `R6` postincrement. The disconnected

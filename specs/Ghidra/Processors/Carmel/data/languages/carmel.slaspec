@@ -726,6 +726,8 @@ define token wide (48)
     wide_frame_delta_0 = (24,45) hex
     wide_frame_delta_22 = (0,1) hex
     stack_ce_bank = (46,46)
+    stack_single_reg = (40,42)
+    stack_single_bank = (43,45)
     wide_stack_pop_control = (3,13)
     link_qualifier = (10,13)
     link_ce_register = (2,4)
@@ -1034,7 +1036,7 @@ attach variables [pair_rn_1 pair_rn_6 pair_rn_7 pair_rn_10] [RN0 RN1 RN2 RN3 RN4
 attach variables [pair_rm_1 pair_rm_6 pair_rm_7 pair_rm_10] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
 attach variables [pair_rl_1 pair_rl_6 pair_rl_7 pair_rl_10] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
 attach values [pair_bank_1 pair_bank_6 pair_bank_7 pair_bank_10] [0 2 4 6 8 10 12 14];
-attach variables [wide_lc_r] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [wide_lc_r stack_single_reg] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [wide_lc_rn] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [wide_lim8_pointer] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [compact_mul_left] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
@@ -10825,66 +10827,55 @@ macro wide_frame_link_open_ce(displacement, config, bank) {
 :LINK "CE1" "open",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_2_9=0xf0 & wide_14_22=0x118 & link_qualifier=0xb & frame_displacement { wide_frame_link_open_ce(frame_displacement, CECFG1, 0:2); }
 :LINK "CE2" "open",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_2_9=0xf0 & wide_14_22=0x118 & link_qualifier=0xb & frame_displacement { wide_frame_link_open_ce(frame_displacement, CECFG2, 1:2); }
 :LINK "open",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xff & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { wide_frame_link_open(frame_displacement, 0xffff:2); }
-:PUSH "GB0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x0 { local address:2 = SP; SP = address - 1; local saved:2 = sext(GB0); *[data]:2 address = saved; }
-:PUSH "CE1" "GB0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x0 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = sext(GB0); *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "GB0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x0 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = sext(GB0); *[data]:2 address = saved; <stack_done> }
-:PUSH "R0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x20 { local address:2 = SP; SP = address - 1; local saved:2 = R0; *[data]:2 address = saved; }
-:PUSH "CE1" "R0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x20 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R0; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x20 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R0; *[data]:2 address = saved; <stack_done> }
-:PUSH "R1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x21 { local address:2 = SP; SP = address - 1; local saved:2 = R1; *[data]:2 address = saved; }
-:PUSH "CE1" "R1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x21 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R1; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x21 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R1; *[data]:2 address = saved; <stack_done> }
-:PUSH "R2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x22 { local address:2 = SP; SP = address - 1; local saved:2 = R2; *[data]:2 address = saved; }
-:PUSH "CE1" "R2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x22 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R2; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x22 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R2; *[data]:2 address = saved; <stack_done> }
-:PUSH "R3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x23 { local address:2 = SP; SP = address - 1; local saved:2 = R3; *[data]:2 address = saved; }
-:PUSH "CE1" "R3" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x23 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R3; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R3" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x23 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R3; *[data]:2 address = saved; <stack_done> }
-:PUSH "R4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x24 { local address:2 = SP; SP = address - 1; local saved:2 = R4; *[data]:2 address = saved; }
-:PUSH "CE1" "R4" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x24 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R4; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R4" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x24 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R4; *[data]:2 address = saved; <stack_done> }
-:PUSH "R5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x25 { local address:2 = SP; SP = address - 1; local saved:2 = R5; *[data]:2 address = saved; }
-:PUSH "CE1" "R5" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x25 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R5; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R5" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x25 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R5; *[data]:2 address = saved; <stack_done> }
-:PUSH "R6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x26 { local address:2 = SP; SP = address - 1; local saved:2 = R6; *[data]:2 address = saved; }
-:PUSH "CE1" "R6" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x26 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R6; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R6" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x26 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R6; *[data]:2 address = saved; <stack_done> }
-:PUSH "R7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x27 { local address:2 = SP; SP = address - 1; local saved:2 = R7; *[data]:2 address = saved; }
-:PUSH "CE1" "R7" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x27 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R7; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "R7" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x6 & wide_14_22=0x12c & wide_40_45=0x27 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = R7; *[data]:2 address = saved; <stack_done> }
-:PUSH "open" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x7 & wide_14_22=0x12c & wide_40_45=0x18 { local address:2 = SP; SP = address - 1; local saved:2 = 0; *[data]:2 address = saved; }
-:PUSH "CE1" "open" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x7 & wide_14_22=0x12c & wide_40_45=0x18 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = 0; *[data]:2 address = saved; <stack_done> }
-:PUSH "CE2" "open" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x7 & wide_14_22=0x12c & wide_40_45=0x18 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP; SP = address - 1; if (enabled == 0) goto <stack_done>; local saved:2 = 0; *[data]:2 address = saved; <stack_done> }
-:POP "R0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x20 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R0 = word; }
-:POP "CE1" "R0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x20 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R0 = word; <stack_done> }
-:POP "CE2" "R0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x20 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R0 = word; <stack_done> }
-:POP "R1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x21 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R1 = word; }
-:POP "CE1" "R1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x21 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R1 = word; <stack_done> }
-:POP "CE2" "R1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x21 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R1 = word; <stack_done> }
-:POP "R2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x22 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R2 = word; }
-:POP "CE1" "R2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x22 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R2 = word; <stack_done> }
-:POP "CE2" "R2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x22 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R2 = word; <stack_done> }
-:POP "R3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x23 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R3 = word; }
-:POP "CE1" "R3" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x23 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R3 = word; <stack_done> }
-:POP "CE2" "R3" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x23 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R3 = word; <stack_done> }
-:POP "R4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x24 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R4 = word; }
-:POP "CE1" "R4" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x24 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R4 = word; <stack_done> }
-:POP "CE2" "R4" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x24 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R4 = word; <stack_done> }
-:POP "R5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x25 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R5 = word; }
-:POP "CE1" "R5" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x25 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R5 = word; <stack_done> }
-:POP "CE2" "R5" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x25 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R5 = word; <stack_done> }
-:POP "R6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x26 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R6 = word; }
-:POP "CE1" "R6" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x26 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R6 = word; <stack_done> }
-:POP "CE2" "R6" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x26 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R6 = word; <stack_done> }
-:POP "R7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x27 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R7 = word; }
-:POP "CE1" "R7" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x27 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R7 = word; <stack_done> }
-:POP "CE2" "R7" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x27 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; R7 = word; <stack_done> }
-:POP "RM0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x32 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; RM0 = word & 0x0fff; }
-:POP "CE1" "RM0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x32 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; RM0 = word & 0x0fff; <stack_done> }
-:POP "CE2" "RM0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x32 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; RM0 = word & 0x0fff; <stack_done> }
-:POP "ASTATUS" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x39 { local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; ASTATUS = word & 3; }
-:POP "CE1" "ASTATUS" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x39 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; ASTATUS = word & 3; <stack_done> }
-:POP "CE2" "ASTATUS" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_0_2=0x2 & wide_14_22=0x12c & wide_40_45=0x39 { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <stack_done>; local address:2 = SP + 1; SP = address; local word:2 = *[data]:2 address; ASTATUS = word & 3; <stack_done> }
+
+@define STACK_SINGLE "wide_right_mode=1 & wide_14_22=0x12c & ((carmel_issue=5 & wide_left_mode=1) | (carmel_issue=4 & wide_left_mode=0)) & wide_ce_prefix"
+
+macro single_push_word(prefix, source) {
+    local enabled:2;
+    local agu:2;
+    wide_issue_enable(prefix, enabled, agu);
+    if (agu == 0) goto <publish>;
+    local address:2 = SP;
+    SP = address - 1;
+    if (enabled == 0) goto <publish>;
+    local saved:2 = source;
+    frame_store(address, saved);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro single_pop_word(prefix, destination, mask) {
+    local enabled:2;
+    local agu:2;
+    wide_issue_enable(prefix, enabled, agu);
+    if (agu == 0) goto <publish>;
+    local address:2 = SP + 1;
+    SP = address;
+    local word:2 = *[data]:2 address;
+    destination = word & mask;
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:PUSH wide_ce_prefix "GB0" is $(STACK_SINGLE) & wide_0_2=0x6 & wide_40_45=0x0 {
+    single_push_word(wide_ce_prefix, sext(GB0));
+}
+:PUSH wide_ce_prefix stack_single_reg is $(STACK_SINGLE) & wide_0_2=0x6 & stack_single_bank=4 & stack_single_reg {
+    single_push_word(wide_ce_prefix, stack_single_reg);
+}
+:PUSH wide_ce_prefix "open" is $(STACK_SINGLE) & wide_0_2=0x7 & wide_40_45=0x18 {
+    single_push_word(wide_ce_prefix, 0:2);
+}
+:POP wide_ce_prefix stack_single_reg is $(STACK_SINGLE) & wide_0_2=0x2 & stack_single_bank=4 & stack_single_reg {
+    single_pop_word(wide_ce_prefix, stack_single_reg, 0xffff:2);
+}
+:POP wide_ce_prefix "RM0" is $(STACK_SINGLE) & wide_0_2=0x2 & wide_40_45=0x32 {
+    single_pop_word(wide_ce_prefix, RM0, 0x0fff:2);
+}
+:POP wide_ce_prefix "ASTATUS" is $(STACK_SINGLE) & wide_0_2=0x2 & wide_40_45=0x39 {
+    single_pop_word(wide_ce_prefix, ASTATUS, 3:2);
+}
+@undef STACK_SINGLE
 
 @define SINGLE_POP_R7 "wide_right_mode=1 & wide_14_22=0x12c & wide_40_45=0x17 & wide_stack_pop_control=0x5c7"
 @define SINGLE_POP_R7_CE1 "$(SINGLE_POP_R7) & carmel_issue=4 & wide_left_mode=0 & stack_ce_bank=0"

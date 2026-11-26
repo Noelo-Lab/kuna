@@ -3168,3 +3168,37 @@ fn wide_link_publishes_ce_after_frame_address_phase() {
         assert_eq!(m.data(0x802f), 0x1234);
     }
 }
+
+#[test]
+fn wide_single_stack_uses_address_enable_and_publishes_both_latches() {
+    let packets = [
+        (0xa0b91c, 0xcb1456), (0x60b91c, 0xcb1456), (0x20b91c, 0xcb1452),
+        (0x39b91c, 0xcb1452), (0x988b47, 0xcb3aa7), (NOP, NOP),
+    ];
+    let issues = [(0, 5, 6), (2, 4, 6), (4, 4, 6), (6, 4, 6), (8, 5, 6), (10, 1, 0)];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (pc, table, address_enable, est, ecfg, expected) in [
+        (0, 0x0100, 0, 0x0000, 0x10, (0x6000, 0x802f, 0x0400, 3, 0x0400)),
+        (0, 0x0001, 0, 0x1024, 0x10, (0x5024, 0x802f, 0x0400, 3, 0x0400)),
+        (0, 0x0001, 0, 0x0000, 0x00, (0x1000, 0x802f, 0x0400, 3, 0x0400)),
+        (2, 0x0001, 0, 0x0000, 0x10, (0x1000, 0x8030, 0x0400, 3, 0x5aa5)),
+        (2, 0x0001, 0x1000, 0x1024, 0x10, (0x1024, 0x802f, 0x0400, 3, 0x5aa5)),
+        (2, 0x0100, 0, 0x0000, 0x10, (0x6000, 0x802f, 0x0400, 3, 0x0400)),
+        (4, 0x0100, 0, 0x0000, 0x10, (0x2000, 0x8030, 0x0400, 3, 0x5aa5)),
+        (4, 0x0100, 0x1000, 0x2024, 0x10, (0x2024, 0x8031, 0x8abc, 3, 0x5aa5)),
+        (6, 0x0100, 0x1000, 0x0000, 0x10, (0x2000, 0x8031, 0x0400, 0, 0x5aa5)),
+        (8, 0x0101, 0, 0x4024, 0x10, (0x7024, 0x802f, 0x0400, 3, 0)),
+    ] {
+        m.seed(&[("SP", 0x8030), ("R0", 0x0400), ("ASTATUS", 3), ("EST", est),
+                 ("ECFG", ecfg), ("CECFG1", address_enable), ("CECFG2", address_enable),
+                 ("CETBL", table)]);
+        m.seed_data(0x802f, 0x1234);
+        m.seed_data(0x8030, 0x5aa5);
+        m.seed_data(0x8031, 0x8abc);
+        m.start(pc).unwrap();
+        assert_eq!(m.step(), 3 * (pc + 2));
+        assert_eq!((m.reg("EST"), m.reg("SP"), m.reg("R0"), m.reg("ASTATUS"), m.data(0x8030)),
+                   expected, "CODE[{pc}], CETBL={table:#x}, AEN={address_enable:#x}");
+        assert_eq!((m.data(0x802f), m.data(0x8031)), (0x1234, 0x8abc));
+    }
+}
