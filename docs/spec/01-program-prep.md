@@ -346,13 +346,14 @@ Octeon machine tag and the MIPS64r2 ISA selects `MIPS:BE:64:octeon-32addr:o64`,
 the only Octeon O64 model, so `bbit`, `seq`, `cins`, `exts` and the 64-bit
 loads and stores decode and the fifth integer argument comes from the stack
 slot at SP + 32. Without an ABI declaration the evidence for O32 is
-`EF_MIPS_32BITMODE`, which GCC writes for O32 code on a 64-bit ISA, or a GCC
-`.mdebug.abi*` marker section naming another ABI; an image with neither,
-including one without section headers, has 64-bit registers, which O32 never
-declares, and is taken as O64. That is the assumption the generic selector
-already makes for a no-ABI ELF32 image with a 64-bit ISA, with the same note,
-and `--target` overrides it. The original Octeon has no FPU, so an image
-without a float declaration is taken as soft-float; with no GNU attribute or
+`EF_MIPS_32BITMODE`, which GNU as writes for O32 code on a 64-bit ISA, an
+ABI-flags record with 32-bit GPRs, or a GCC `.mdebug.abi*` marker section
+naming another ABI; an image with none of them, including one without section
+headers, has 64-bit registers, which O32 never declares, and is taken as O64.
+That is the assumption the generic selector already makes for a no-ABI ELF32
+image with a 64-bit ISA, with the same note, and `--target` overrides it. The
+original Octeon has no FPU, so an image without a float declaration is taken
+as soft-float; with no GNU attribute or
 ABI-flags record, the header's FP64, NaN2008 or legacy hard-float bit is that
 declaration. An ABI-flags record must declare what the N32/N64 path requires
 of a soft-float profile, with the Octeon ISA extension or none. Such an image
