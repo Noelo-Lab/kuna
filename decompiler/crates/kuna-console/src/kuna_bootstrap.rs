@@ -169,7 +169,15 @@ impl<'a, L: LanguageSource + ?Sized> Bootstrap<'a, L> {
     pub fn raw(&self, path: &str, base: u64, entries: &[u64]) -> KunaResult<ConsoleProgram> {
         let isa = self.resolved_isa()?;
         let _load = self.enter();
-        bootstrap_raw_image(path, self.target, base, entries, isa, self.languages, None)
+        bootstrap_raw_image(path, self.target, base, Some(entries), isa, self.languages, None)
+    }
+
+    /// Load a headerless image for byte and instruction queries, without
+    /// declaring a function entry or triggering function discovery.
+    pub fn raw_view(&self, path: &str, base: u64) -> KunaResult<ConsoleProgram> {
+        let isa = self.resolved_isa()?;
+        let _load = self.enter();
+        bootstrap_raw_image(path, self.target, base, None, isa, self.languages, None)
     }
 
     /// Load a UEFI TE image, as [`bootstrap_from_te`](crate::engine::bootstrap_from_te) does.

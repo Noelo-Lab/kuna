@@ -24,7 +24,7 @@
 //!   format [<func>::]<addr> <fmt> [<val>]  force constant       P9 literal-format
 //!   isolate [<func>::]<symbol>             isolate              P6 merge-aggressiveness
 //!   typedef <C declaration>                parse line           P5
-//!   data <addr> <C typedeclaration>        map address          P5 const-pointer
+//!   data <addr|[space,addr]> <decl>       map address          P5 const-pointer
 //!   comment [<func>::]<addr> <text>        comment instruction  P9
 //!   flow [<func>::]<addr> <flowkind>       override flow        P2 flow-classification
 //!   callee [<func>::]<addr> <name|addr>    override indirect    P2 flow-classification
@@ -117,8 +117,8 @@ pub enum Body {
     Typedef { decl: String },
     /// `prototype <func> <C declaration>` — the function's signature.
     Prototype { func: String, decl: String },
-    /// `data <addr> <C typedeclaration>` — a named, typed global.
-    Data { addr: u64, decl: String },
+    /// `data <addr|[space,addr]> <C typedeclaration>` — a named, typed global.
+    Data { addr: u64, space: Option<String>, decl: String },
     /// `param [<func>::]<i> <storage> <C typedeclaration>` — a locked input.
     Param { func: Option<String>, index: int4, storage: String, decl: String },
     /// `return [<func>::]<storage> <C typedeclaration>` — a locked return.
@@ -336,6 +336,26 @@ pub(crate) fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, Stri
     Ok(Address::new(space, vma))
 }
 
+fn named_data_addr(prog: &ConsoleProgram, name: &str, units: u64) -> Result<Address, String> {
+    use kuna_base::space::{spacetype::IPTR_PROCESSOR, AddrSpace};
+
+    let manage = prog.arch().manage();
+    let processor = |space: &&Rc<AddrSpace>| space.get_type() == IPTR_PROCESSOR;
+    let space = manage.get_space_by_name(name).filter(processor).ok_or_else(|| {
+        let known: Vec<&str> = (0..manage.num_spaces())
+            .filter_map(|i| manage.get_space(i))
+            .filter(processor)
+            .map(|space| space.get_name())
+            .collect();
+        format!("unknown processor space {name:?} (this target has: {})", known.join(", "))
+    })?;
+    let offset = units
+        .checked_mul(u64::from(space.get_word_size()))
+        .filter(|&offset| offset <= space.get_highest())
+        .ok_or_else(|| format!("address {units:#x} is outside space {name:?}"))?;
+    Ok(Address::new(Rc::clone(space), offset))
+}
+
 /// Parse a storage token (`%RDI`, `[stack,-0x18,8]`, `s0x10`) through the
 /// console's own machine-address grammar, so `--assert` and the console spell
 /// storage the same way.
@@ -491,12 +511,14 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
         }
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
         Body::JumpTable { addr, targets } => crate::jump_targets::install(prog, *addr, targets),
-        Body::Data { addr, decl } => apply_data(prog, *addr, decl),
+        Body::Data { addr, space, decl } => apply_data(prog, space.as_deref(), *addr, decl),
         Body::Readonly { addr, size } => {
-            paint_property(prog, *addr, *size, kuna_decomp::varnode::varnode_flags::readonly)
+            let first = data_addr(prog, *addr)?;
+            paint_property(prog, first, *size, kuna_decomp::varnode::varnode_flags::readonly)
         }
         Body::Volatile { addr, size } => {
-            paint_property(prog, *addr, *size, kuna_decomp::varnode::varnode_flags::volatil)
+            let first = data_addr(prog, *addr)?;
+            paint_property(prog, first, *size, kuna_decomp::varnode::varnode_flags::volatil)
         }
         // Handled by the decompile loop.
         _ => Err("internal: not a program-scoped directive".into()),
@@ -517,14 +539,13 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
 /// pre-`read symbols` ordering mean the same thing.
 fn paint_property(
     prog: &mut ConsoleProgram,
-    vma: u64,
+    first: Address,
     size: int4,
     flag: uint4,
 ) -> Result<(), String> {
     if size <= 0 {
         return Err("a range needs a size of at least one byte".into());
     }
-    let first = data_addr(prog, vma)?;
     let space = first
         .get_space()
         .cloned()
@@ -914,13 +935,20 @@ fn apply_cross_function(
     Ok(())
 }
 
-/// `data <addr> <C typedeclaration>` — the in-process twin of the global branch
-/// of `map address` (`IfcMapaddress`): a named, typed, name+type-locked global
-/// mapped at `addr`, so a load through that address renders by name.
-fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), String> {
+/// Map a named, typed, name+type-locked global so a load from that address
+/// renders by name.
+pub(crate) fn apply_data(
+    prog: &mut ConsoleProgram,
+    space: Option<&str>,
+    units: u64,
+    decl: &str,
+) -> Result<(), String> {
     use kuna_decomp::varnode::varnode_flags;
+    let addr = match space {
+        Some(name) => named_data_addr(prog, name, units)?,
+        None => data_addr(prog, units)?,
+    };
     let org = data_org(prog);
-    let addr = data_addr(prog, vma)?;
     let (ct, name, volatile) =
         crate::grammar::parse_type_with_volatile(decl, prog.arch().types(), org)
             .map_err(|e| e.explain().to_string())?;
@@ -946,7 +974,7 @@ fn apply_data(prog: &mut ConsoleProgram, vma: u64, decl: &str) -> Result<(), Str
         .map_err(|e| e.explain().to_string())?;
     arch.symboltab.set_attribute(sym, flags);
     if volatile && size > 0 {
-        paint_property(prog, vma, size, varnode_flags::volatil)?;
+        paint_property(prog, addr, size, varnode_flags::volatil)?;
     }
     Ok(())
 }

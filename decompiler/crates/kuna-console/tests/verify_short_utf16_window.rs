@@ -69,6 +69,7 @@ fn explicit_wchar_data_types_a_short_utf16_window_and_preserves_controls() {
         "data 0x402000 wchar_t window_class[3]",
         Body::Data {
             addr: 0x402000,
+            space: None,
             decl: "wchar_t window_class[3]".into(),
         },
     )]);

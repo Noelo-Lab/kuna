@@ -866,7 +866,11 @@ impl ObjectLoadImage {
         if emit_diagnostics {
             for note in crate::loader::kuna_mipstarget::notes(
                 &file, &String::from_utf8_lossy(&archtype), target.is_some(),
-            ) {
+            )
+            .into_iter()
+            .chain(crate::loader::kuna_mipsocteon::notes(
+                &file, &String::from_utf8_lossy(&archtype), target.is_some(),
+            )) {
                 kuna_base::notes::say_once(filename, &format!("[kuna target] {filename}: {note}"));
             }
         }
