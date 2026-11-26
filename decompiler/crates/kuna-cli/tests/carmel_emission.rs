@@ -922,6 +922,93 @@ fn carmel_wide_unary_fetch_updates_only_the_connected_status_and_address() {
 }
 
 #[test]
+fn carmel_compact_bank_exchange_executes_in_emitted_c() {
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    let binary = common::scratch_file("carmel-compact-bank-exchange", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let qualified = [0x2b, 0xec, 0, 0x2b, 0x80, 3];
+    fs::write(&binary, [qualified, ret].as_flattened()).unwrap();
+    let (stdout, stderr, status) = common::run_kuna(&[
+        "disassemble", binary.to_str().unwrap(), "0", "--raw-image", "--target", TARGET,
+        "--base", "0", "--count", "1", "--json",
+    ]);
+    assert_eq!(status, 0, "{stdout}\n{stderr}");
+    let listing: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(listing["instructions"][0]["text"], "nop || ifexe bankxchg(a3,est);");
+    let (_, _, status) = common::run_kuna(&[
+        "raw-pcode", binary.to_str().unwrap(), "0", "--raw-image", "--target", TARGET,
+        "--base", "0", "--count", "1", "--json",
+    ]);
+    assert_eq!(status, 1, "qualification must not silently lift");
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        fs::remove_file(binary).unwrap();
+        return;
+    }
+
+    type Projection = (&'static str, &'static [(&'static str, u16)], u16);
+    let right: &[Projection] = &[
+        ("A3L", &[("A3LS", 0x4455)], 0x4455),
+        ("A3H", &[("A3HS", 0x2233)], 0x2233),
+        ("GB3", &[("GB3S", 0x11)], 0x11),
+        ("A3LS", &[("A3L", 0)], 0),
+        ("A3HS", &[("A3H", 0)], 0),
+        ("GB3S", &[("GB3", 0)], 0),
+        ("EST", &[("ESTS", 0x234), ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0)], 0x234),
+        ("ESTS", &[("EST", 0)], 0),
+    ];
+    let left: &[Projection] = &[
+        ("PACFG", &[("PACFG", 0x0020), ("PACFGS", 0x5555)], 0x0455),
+        ("PACFGS", &[("PACFG", 0x0020), ("PACFGS", 0x5555)], 0x5120),
+        ("R0", &[("R0S", 0x5555)], 0x5555),
+        ("RN0", &[("RN0S", 0x1234)], 0x1234),
+        ("R5", &[("R5S", 0x5558)], 0x5558),
+        ("A2L", &[("A2LS", 0x3f29)], 0x3f29),
+        ("A2H", &[("A2HS", 0xfb87)], 0xfb87),
+        ("GB2", &[("GB2S", 0xf9)], 0xf9),
+        ("EST", &[("ESTS", 0x15aa), ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff)], 0x35aa),
+        ("ESTS", &[("EST", 0)], 0),
+    ];
+    let kind = |reg: &str| if reg.starts_with("GB") { "unsigned char" } else { "unsigned short" };
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut main = String::from("int main(void) {\n");
+    for (slot, (base, fetch, rows)) in [
+        ("0", [0x2b, 0xec, 0, 0x2b, 0x80, 2], right),
+        ("0x1000", [0x2b, 0xb0, 0xbe, 0x2b, 0xec, 0], left),
+    ].into_iter().enumerate() {
+        fs::write(&binary, [fetch, nop, ret].as_flattened()).unwrap();
+        for (i, &(reg, inputs, expected)) in rows.iter().enumerate() {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                base, "--addr", "--raw-image", "--target", TARGET, "--base", base, "--json",
+                "--assert-strict", "--assert", &format!("return %{reg} {}", kind(reg)),
+            ]);
+            for (arg, &(input, _)) in inputs.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {arg} %{input} {} in_{}", kind(input), input.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let document: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &document["functions"][0];
+            assert!(function["error"].is_null() && function["truncated"] != true, "{function}");
+            let body = function["code"].as_str().unwrap();
+            let name = format!("bank_{slot}_{i}");
+            writeln!(emitted, "{}", body.replace(function["name"].as_str().unwrap(), &name)).unwrap();
+            let values = inputs.iter().map(|&(_, value)| format!("{value:#x}")).collect::<Vec<_>>().join(", ");
+            writeln!(main, "if ({name}({values}) != {expected:#x}) return {};", 16 * slot + i + 1).unwrap();
+        }
+    }
+    emitted.push_str(&main);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_wide_shift_result_lane_selects_carry_and_zero() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

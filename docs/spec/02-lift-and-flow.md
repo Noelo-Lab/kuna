@@ -3944,6 +3944,19 @@ static bank retains its latch. A pure `NOP` takes one further feedback
 step for dynamic banks without changing arithmetic flags or static
 latches.
 
+Unqualified compact `BANKXCHG` swaps selected `R`/`RN` pairs and
+their two-bit `PACFG` fields, and selected `RM`/`RL` pairs, with the
+shadow bank. It does not access DATA. Bit 1 additionally exchanges the
+whole accumulator and `EST` with their shadows: `A3` in the right
+parallel lane, `A2` otherwise. The supported parallel peers are NOP
+and unqualified register `CMPU`. A result exchange saves the incoming
+`EST` and restores the shadow word in place of the same-issue compare
+flags. Without a result exchange, the comparison publishes its own
+C/Z. Compact `CMPU` updates CE using the incoming feedback, not the
+comparison's newly produced C/Z. Qualified bank exchanges are listed
+but not lifted: dispatch and result qualification can sample different
+feedback in a dependent stream.
+
 Signed immediate `MOVE` distinguishes the early address-qualified ports
 from late DATA or accumulator results. The indexed store captures the old
 address and updates the pointer when AEN permits it, even if the late

@@ -2,6 +2,7 @@
 use std::{cell::RefCell, path::PathBuf, rc::Rc};
 
 use kuna_base::{address::Address, error::{KunaError, KunaResult}, space::AddrSpace};
+use kuna_num::opcodes::OpCode;
 use kuna_sleigh::{
     emulate::{BreakTableCallBack, Emulate, EmulatePcodeCache},
     globalcontext::ContextInternal,
@@ -695,6 +696,120 @@ fn bank_exchange_swaps_only_selected_pointer_configuration_bits() {
     assert_eq!(m.step(), 6);
     assert_eq!((m.reg("R0"), m.reg("R0S"), m.reg("RN0"), m.reg("RN0S")), (0xabcd, 0x1234, 5, 3));
     assert_eq!((m.reg("PACFG"), m.reg("PACFGS"), m.reg("R1"), m.reg("R1S")), (0x5155, 0xfffa, 0x1111, 0x2222));
+}
+
+fn step_bank_without_data(m: &mut Machine, next: u64) {
+    assert!(m.emulator.num_current_ops() > 0);
+    for i in 0..m.emulator.num_current_ops() {
+        let op = m.emulator.get_op_by_index(i).get_opcode();
+        assert!(!matches!(op, OpCode::CPUI_LOAD | OpCode::CPUI_STORE | OpCode::CPUI_CALLOTHER));
+    }
+    assert_eq!(m.step(), 3 * next);
+}
+
+#[test]
+fn compact_bank_exchange_routes_all_address_selects() {
+    for (select, pairs) in [
+        (0, &[("R0", "R0S"), ("RN0", "RN0S")][..]),
+        (1, &[("R1", "R1S"), ("RN1", "RN1S")][..]),
+        (2, &[("R2", "R2S"), ("RN2", "RN2S")][..]),
+        (3, &[("R3", "R3S"), ("RN3", "RN3S")][..]),
+        (4, &[("R4", "R4S"), ("RN4", "RN4S")][..]),
+        (5, &[("R5", "R5S"), ("RN5", "RN5S")][..]),
+        (6, &[("R6", "R6S"), ("RN6", "RN6S")][..]),
+        (7, &[("R7", "R7S"), ("RN7", "RN7S")][..]),
+        (8, &[("RM0", "RM0S"), ("RL0", "RL0S")][..]),
+        (9, &[("RM2", "RM2S"), ("RL2", "RL2S")][..]),
+        (10, &[("RM4", "RM4S"), ("RL4", "RL4S")][..]),
+        (11, &[("RM6", "RM6S"), ("RL6", "RL6S")][..]),
+    ] {
+        let slot = SEQUENTIAL | 0x2b8000 | 1 << (2 + select);
+        let mut m = Machine::new(0, &[(slot, NOP)], &[(0, 2, 3), (1, 3, 0)], None);
+        m.seed(&[("PACFG", 0x9999), ("PACFGS", 0x6666), ("ESTS", 0x2240), ("CETBL", 0x00ff)]);
+        for (i, &(a, s)) in pairs.iter().enumerate() {
+            m.seed(&[(a, 0x4100 + i as u64), (s, 0x5100 + i as u64)]);
+        }
+        m.start(0).unwrap();
+        step_bank_without_data(&mut m, 1);
+        for (i, &(a, s)) in pairs.iter().enumerate() {
+            assert_eq!((m.reg(a), m.reg(s)), (0x5100 + i as u64, 0x4100 + i as u64));
+        }
+        let mask = if select < 8 { 3 << (2 * select) } else { 0 };
+        assert_eq!((m.reg("PACFG"), m.reg("PACFGS")), (0x9999 ^ mask, 0x6666 ^ mask));
+        assert_eq!((m.reg("EST"), m.reg("ESTS")), (0x1000, 0x2240));
+    }
+}
+
+#[test]
+fn compact_bank_exchange_orders_compare_and_restores_full_accumulators() {
+    const BANK: u32 = 0x2b8006;
+    const CMPU: u32 = 0x20ba02;
+    for (fetch, alu, primary, prior, first, second) in [
+        ((BANK, CMPU), true, true, 0, 0x2240, 0x0249),
+        ((CMPU, BANK), true, false, 0, 0x2240, 0x0249),
+        ((NOP, BANK), true, false, 0, 0x2240, 0x0249),
+        ((SEQUENTIAL | NOP, BANK), true, true, 1, 0x2240, 0x0249),
+        ((SEQUENTIAL | BANK, NOP), true, true, 0, 0x2240, 0x0249),
+        ((BANK ^ 2, CMPU), false, true, 0, 0x0240, 0x0249),
+        ((CMPU, BANK ^ 2), false, false, 0, 0x0009, 0x0009),
+    ] {
+        let sequential = fetch.0 & SEQUENTIAL != 0;
+        let metadata = if sequential {
+            &[(0, 2, 3), (1, 3, 6), (2, 1, 6), (4, 1, 0)][..]
+        } else {
+            &[(0, 1, 6), (2, 1, 6), (4, 1, 0)][..]
+        };
+        let mut m = Machine::new(0, &[fetch, (CMPU, NOP), (NOP, NOP)], metadata, None);
+        let a2 = (0x1245623789, 0x9878765432);
+        let a3 = (0x975312468a, 0x2468ace0ff);
+        m.seed(&[("A0L", 5), ("A1L", 5), ("A2", a2.0), ("A2S", a2.1),
+                 ("A3", a3.0), ("A3S", a3.1), ("ESTS", 0x2240), ("R0", 0x1234), ("R0S", 0x4567)]);
+        m.start(0).unwrap();
+        if prior != 0 {
+            assert_eq!(m.step(), 3);
+        }
+        step_bank_without_data(&mut m, if sequential && prior == 0 { 1 } else { 2 });
+        assert_eq!((m.reg("R0"), m.reg("R0S")), (0x4567, 0x1234));
+        assert_eq!((m.reg("A2"), m.reg("A2S")), if alu && primary { (a2.1, a2.0) } else { a2 });
+        assert_eq!((m.reg("A3"), m.reg("A3S")), if alu && !primary { (a3.1, a3.0) } else { a3 });
+        assert_eq!((m.reg("EST"), m.reg("ESTS")), (first, if alu { 0 } else { 0x2240 }));
+        if sequential && prior == 0 {
+            assert_eq!(m.step(), 6);
+        }
+        assert_eq!(m.step(), 12);
+        assert_eq!(m.reg("EST"), second);
+    }
+}
+
+#[test]
+fn compact_bank_exchange_leaves_qualified_and_unverified_peers_unlifted() {
+    for packet in [(0x2b8007, NOP), (NOP, 0x2b8007), (0x2b8006, 0x315270)] {
+        let mut m = Machine::new(0, &[packet], &[(0, 1, 0)], None);
+        assert!(matches!(m.start(0), Err(KunaError::Unimpl { .. })));
+    }
+}
+
+#[test]
+fn compact_cmpu_samples_ce_before_publishing_its_flags() {
+    const CMPU: u32 = 0x20ba02;
+    for (fetch, metadata, steps, flags, refresh) in [
+        ((CMPU, NOP), &[(0, 1, 6), (2, 1, 6), (4, 1, 0)][..], 1, 0x0009, 0x1009),
+        ((NOP, CMPU), &[(0, 1, 6), (2, 1, 6), (4, 1, 0)][..], 1, 0x0240, 0x2240),
+        ((SEQUENTIAL | CMPU, NOP), &[(0, 2, 3), (1, 3, 6), (2, 1, 6), (4, 1, 0)][..], 1, 0x0009, 0x1009),
+        ((SEQUENTIAL | NOP, CMPU), &[(0, 2, 3), (1, 3, 6), (2, 1, 6), (4, 1, 0)][..], 2, 0x0009, 0x1009),
+    ] {
+        for (cfg1, cfg2, table, prior_ce) in [(0x222, 0x333, 0x8080, 0), (0, 0, 0xff00, 0x2000)] {
+            let mut m = Machine::new(0, &[fetch, (NOP, NOP), (NOP, NOP)], metadata, None);
+            m.seed(&[("A0L", 5), ("A1L", 5), ("CECFG1", cfg1), ("CECFG2", cfg2), ("CETBL", table)]);
+            m.start(0).unwrap();
+            for _ in 0..steps {
+                m.step();
+            }
+            assert_eq!(m.reg("EST"), flags | prior_ce);
+            m.step();
+            assert_eq!(m.reg("EST"), if prior_ce == 0 { refresh } else { flags | prior_ce });
+        }
+    }
 }
 
 #[test]

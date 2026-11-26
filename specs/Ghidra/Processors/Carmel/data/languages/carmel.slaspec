@@ -174,6 +174,7 @@ define register offset=0x2a0 size=4 [ LOOP_FIRST_AT1 LOOP_FIRST_AT2 LOOP_FIRST_A
 define register offset=0x2b0 size=4 [ LOOP_LAST_AT1 LOOP_LAST_AT2 LOOP_LAST_AT3 LOOP_LAST_AT4 ];
 define register offset=0x2c0 size=4 [ LOOP_FIRST_WORD1 LOOP_FIRST_WORD2 LOOP_FIRST_WORD3 LOOP_FIRST_WORD4 ];
 define register offset=0x2d0 size=4 [ LOOP_LAST_WORD1 LOOP_LAST_WORD2 LOOP_LAST_WORD3 LOOP_LAST_WORD4 ];
+define register offset=0x2e0 size=2 [ RM0S RM2S RM4S RM6S RL0S RL2S RL4S RL6S ESTS ];
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -299,6 +300,8 @@ define token slot (24)
     cmp_rhs = (1,4)
     cmpu_lhs = (5,9)
     cmpu_rhs = (1,4)
+    bank_exchange_mask = (2,13) hex
+    bank_exchange_alu = (1,1)
     slot_7_22 = (7,22)
     slot_6_6 = (6,6)
     mac_preg_form = (12,15)
@@ -1399,9 +1402,6 @@ with : hw_loop_phase=1 {
 :"CMP" cmp_lhs,cmp_rhs is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xffc7) | (flags << 0); }
 :"CMP" cmp_lhs,cmp_rhs "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs); (slot_mode=0 & nop_right) { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xffc7) | (flags << 0); }
 :^nop_left "||" "CMP" cmp_lhs,cmp_rhs is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x826 & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmp_lhs & cmp_rhs) { local lhs:2 = cmp_lhs; local rhs:2 = cmp_rhs; local flags:2 = (zext(lhs == rhs) << 3) | (zext(lhs s< rhs) << 4); EST = (EST & 0xf1ff) | (flags << 6); }
-:"CMPU" cmpu_lhs,cmpu_rhs is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_10_22=0x82e & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmpu_lhs & cmpu_rhs { local lhs:2 = cmpu_lhs; local rhs:2 = cmpu_rhs; local flags:2 = (zext(lhs == rhs) << 3) | zext(lhs >= rhs); EST = (EST & 0xfff6) | (flags << 0); }
-:"CMPU" cmpu_lhs,cmpu_rhs "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x82e & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmpu_lhs & cmpu_rhs); (slot_mode=0 & nop_right) { local lhs:2 = cmpu_lhs; local rhs:2 = cmpu_rhs; local flags:2 = (zext(lhs == rhs) << 3) | zext(lhs >= rhs); EST = (EST & 0xfff6) | (flags << 0); }
-:^nop_left "||" "CMPU" cmpu_lhs,cmpu_rhs is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0x0 & slot_10_22=0x82e & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14) & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmpu_lhs & cmpu_rhs) { local lhs:2 = cmpu_lhs; local rhs:2 = cmpu_rhs; local flags:2 = (zext(lhs == rhs) << 3) | zext(lhs >= rhs); EST = (EST & 0xfdbf) | (flags << 6); }
 
 # Do not materialize a 40-bit C temporary to compare two accumulators.
 macro compare_full(lhs_lo, lhs_hi, lhs_guard, rhs_lo, rhs_hi, rhs_guard, shift) {
@@ -2047,6 +2047,126 @@ macro publish_alu_ce(flags) {
 }
 :^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & nop_right) {
     publish_alu_ce(EST & 0xcfff);
+}
+
+compact_cmpu: "CMPU" cmpu_lhs,cmpu_rhs is slot_0_0=0 & slot_10_22=0x82e
+    & (slot_7_9=4 | slot_6_9=10 | slot_7_9=6 | slot_6_9=14)
+    & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & cmpu_lhs & cmpu_rhs {
+    local flags:2 = (zext(cmpu_lhs == cmpu_rhs) << 3) | zext(cmpu_lhs >= cmpu_rhs);
+    export flags;
+}
+
+:^compact_cmpu is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_cmpu {
+    build compact_cmpu;
+    publish_ce_feedback((EST & 0xcff6) | compact_cmpu, EST);
+}
+:^compact_cmpu "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_cmpu); (slot_mode=0 & nop_right) {
+    build compact_cmpu;
+    publish_ce_feedback((EST & 0xcff6) | compact_cmpu, EST);
+}
+:^nop_left "||" compact_cmpu is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_cmpu) {
+    build compact_cmpu;
+    publish_ce_feedback((EST & 0xcdbf) | (compact_cmpu << 6), EST);
+}
+
+macro bank_pointer(active, shadow, increment, shadow_increment, mask) {
+    local difference:2 = (PACFG ^ PACFGS) & mask;
+    PACFG = PACFG ^ difference;
+    PACFGS = PACFGS ^ difference;
+    swap16(active, shadow);
+    swap16(increment, shadow_increment);
+}
+
+compact_bank_address: "BANKXCHG" bank_exchange_mask is slot_14_22=0xae & slot_0_0=0 & bank_exchange_mask {
+    local mask:2 = bank_exchange_mask;
+    if ((mask & 0x001) == 0) goto <r1>;
+    bank_pointer(R0, R0S, RN0, RN0S, 0x0003);
+  <r1>
+    if ((mask & 0x002) == 0) goto <r2>;
+    bank_pointer(R1, R1S, RN1, RN1S, 0x000c);
+  <r2>
+    if ((mask & 0x004) == 0) goto <r3>;
+    bank_pointer(R2, R2S, RN2, RN2S, 0x0030);
+  <r3>
+    if ((mask & 0x008) == 0) goto <r4>;
+    bank_pointer(R3, R3S, RN3, RN3S, 0x00c0);
+  <r4>
+    if ((mask & 0x010) == 0) goto <r5>;
+    bank_pointer(R4, R4S, RN4, RN4S, 0x0300);
+  <r5>
+    if ((mask & 0x020) == 0) goto <r6>;
+    bank_pointer(R5, R5S, RN5, RN5S, 0x0c00);
+  <r6>
+    if ((mask & 0x040) == 0) goto <r7>;
+    bank_pointer(R6, R6S, RN6, RN6S, 0x3000);
+  <r7>
+    if ((mask & 0x080) == 0) goto <rm0>;
+    bank_pointer(R7, R7S, RN7, RN7S, 0xc000);
+  <rm0>
+    if ((mask & 0x100) == 0) goto <rm2>;
+    swap16(RM0, RM0S);
+    swap16(RL0, RL0S);
+  <rm2>
+    if ((mask & 0x200) == 0) goto <rm4>;
+    swap16(RM2, RM2S);
+    swap16(RL2, RL2S);
+  <rm4>
+    if ((mask & 0x400) == 0) goto <rm6>;
+    swap16(RM4, RM4S);
+    swap16(RL4, RL4S);
+  <rm6>
+    if ((mask & 0x800) == 0) goto <done>;
+    swap16(RM6, RM6S);
+    swap16(RL6, RL6S);
+  <done>
+}
+
+bank_alu2: is bank_exchange_alu=0 { export 0:2; }
+bank_alu2: ",A2,EST" is bank_exchange_alu=1 { export 1:2; }
+bank_alu3: is bank_exchange_alu=0 { export 0:2; }
+bank_alu3: ",A3,EST" is bank_exchange_alu=1 { export 1:2; }
+
+macro compact_bank_result(exchange, low, low_shadow, high, high_shadow, guard, guard_shadow, flags) {
+    if (exchange == 0) goto <address_only>;
+    swap16(low, low_shadow);
+    swap16(high, high_shadow);
+    local old_guard:1 = guard;
+    guard = guard_shadow;
+    guard_shadow = old_guard;
+    # Save the incoming word, not the peer's C/Z. The restore wins over the peer.
+    swap16(EST, ESTS);
+    goto <done>;
+  <address_only>
+    publish_ce_feedback(flags, EST);
+  <done>
+}
+
+:^compact_bank_address^bank_alu2 is
+    ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_bank_address & bank_alu2 {
+    build compact_bank_address;
+    compact_bank_result(bank_alu2, A2L, A2LS, A2H, A2HS, GB2, GB2S, EST & 0xcfff);
+}
+:^compact_bank_address^bank_alu2 "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & compact_bank_address & bank_alu2); (slot_mode=0 & nop_right) {
+    build compact_bank_address;
+    compact_bank_result(bank_alu2, A2L, A2LS, A2H, A2HS, GB2, GB2S, EST & 0xcfff);
+}
+:^nop_left "||" compact_bank_address^bank_alu3 is
+    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_bank_address & bank_alu3) {
+    build compact_bank_address;
+    compact_bank_result(bank_alu3, A3L, A3LS, A3H, A3HS, GB3, GB3S, EST & 0xcfff);
+}
+:^compact_bank_address^bank_alu2 "||" compact_cmpu is
+    (carmel_issue=1 & slot_mode=0 & compact_bank_address & bank_alu2); (slot_mode=0 & compact_cmpu) {
+    build compact_cmpu;
+    build compact_bank_address;
+    compact_bank_result(bank_alu2, A2L, A2LS, A2H, A2HS, GB2, GB2S, (EST & 0xcdbf) | (compact_cmpu << 6));
+}
+:^compact_cmpu "||" compact_bank_address^bank_alu3 is
+    (carmel_issue=1 & slot_mode=0 & compact_cmpu); (slot_mode=0 & compact_bank_address & bank_alu3) {
+    build compact_cmpu;
+    build compact_bank_address;
+    compact_bank_result(bank_alu3, A3L, A3LS, A3H, A3HS, GB3, GB3S, (EST & 0xcff6) | compact_cmpu);
 }
 
 wide_ce_prefix: is wide_left_mode=1 { local kind:2 = 0; export kind; }
