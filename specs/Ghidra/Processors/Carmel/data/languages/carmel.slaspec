@@ -5228,6 +5228,115 @@ macro minmax_signed_flags(left, right) {
     publish_alu_ce(EST & 0xcfff);
 }
 
+macro minmax_store_long(address, value) {
+    local upper:2 = address + 1;
+    *[data]:2 address = value:2;
+    *[data]:2 upper = value(2);
+}
+
+macro minmax_signed_max_word(lhs, rhs, selected) {
+    local left:8 = sext(lhs);
+    local right:8 = sext(rhs);
+    selected = lhs;
+    if (left s>= right) goto <flags>;
+    selected = rhs;
+  <flags>
+    minmax_signed_flags(left, right);
+}
+
+minmax_store_indexed: is wide_40_45=0x3c {
+    local address:2 = R7;
+    if ((PACFG & 0xc000) != 0x4000) goto <ordinary>;
+    local reversed:2;
+    local step:2;
+    reverse_word(address, reversed);
+    reverse_word(RN7, step);
+    local sum:2 = reversed + step;
+    reverse_word(sum, R7);
+    goto <done>;
+  <ordinary>
+    minmax_ref_update(R7, RM6, RL6, 14, RN7, address);
+  <done>
+    export address;
+}
+
+# The unbound selector reads one word at the all-ones DATA address, even
+# when the result is stored as a pair and an independent literal is encoded.
+minmax_store_source: "*0xffff" is wide_0_22=0x48c5f7 {
+    local sample:2 = *[data]:2 0xffff:2;
+    export sample;
+}
+minmax_store_source: "A1L" is wide_0_22=0x48c5f8 { export A1L; }
+
+@define WIDE_EXTREMA_STORE "$(WIDE_MINMAX) & carmel_issue=4 & minmax_ce_bank=1"
+@define EXTREMA_INDEXED "$(WIDE_EXTREMA_STORE) & minmax_store_indexed"
+@define EXTREMA_INDEXED_PREDICATE "if ((minmax_predicate & 2) == 0) goto <feedback>; build minmax_store_indexed; if ((minmax_predicate & 1) == 0) goto <feedback>;"
+:MAX minmax_predicate "long *R7+=RN7","*0xffff","A4H" is $(EXTREMA_INDEXED) & wide_0_22=0x48c4f7 {
+    $(EXTREMA_INDEXED_PREDICATE)
+    local sample:2 = *[data]:2 0xffff:2;
+    local word:2;
+    minmax_signed_max_word(A4H, sample, word);
+    local extended:4 = sext(word);
+    minmax_store_long(minmax_store_indexed, extended);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAX minmax_predicate "*R7+=RN7","*0xffff","A4H" is $(EXTREMA_INDEXED) & wide_0_22=0x48c0f7 {
+    $(EXTREMA_INDEXED_PREDICATE)
+    local sample:2 = *[data]:2 0xffff:2;
+    local word:2;
+    minmax_signed_max_word(A4H, sample, word);
+    *[data]:2 minmax_store_indexed = word;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAX minmax_predicate "long *R7--",minmax_store_source,wide_load_literal_bits is $(WIDE_EXTREMA_STORE) & wide_40_45=0x2f & minmax_store_source & wide_load_literal_bits {
+    if ((minmax_predicate & 2) == 0) goto <feedback>;
+    local address:2;
+    minmax_ref_update(R7, RM6, RL6, 14, -2:2, address);
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    build minmax_store_source;
+    local word:2;
+    minmax_signed_max_word(wide_load_literal_bits:2, minmax_store_source, word);
+    local extended:4 = sext(word);
+    minmax_store_long(address, extended);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MINBTR2 minmax_predicate "long *R7+=RN7","*0xffff","A4H" is $(EXTREMA_INDEXED) & wide_0_22=0x48a4f7 {
+    $(EXTREMA_INDEXED_PREDICATE)
+    local sample:2 = *[data]:2 0xffff:2;
+    local left:8 = sext(A4H);
+    local right:8 = sext(sample);
+    local take_right:1 = right s< left;
+    BTR2 = (BTR2 << 1) | zext(take_right);
+    minmax_signed_flags(left, right);
+    local extended:4 = left:4;
+    if (!take_right) goto <write>;
+    extended = right:4;
+  <write>
+    minmax_store_long(minmax_store_indexed, extended);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAXU minmax_predicate "long *R7+=RN7","*0xffff","A4H" is $(EXTREMA_INDEXED) & wide_0_22=0x48d4f7 {
+    $(EXTREMA_INDEXED_PREDICATE)
+    local sample:2 = *[data]:2 0xffff:2;
+    local left:8 = zext(A4H);
+    local right:8 = zext(sample);
+    minmax_unsigned_flags(left, right);
+    local extended:4 = left:4;
+    if (left >= right) goto <write>;
+    extended = right:4;
+  <write>
+    minmax_store_long(minmax_store_indexed, extended);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+@undef EXTREMA_INDEXED_PREDICATE
+@undef EXTREMA_INDEXED
+@undef WIDE_EXTREMA_STORE
+
 # The word port is the upper half of the low 32-bit lane, not the low
 # half of the shifter. Z still observes the guard above that word.
 macro wide_shift_ports(input, count_word, left_tap, right_bias, arithmetic, result, flags) {

@@ -4172,6 +4172,15 @@ accumulator result ports publish signed or unsigned comparison flags.
 An enabled reference address stage still postmodifies the pointer when the
 comparison keeps the old value or a qualified result is vetoed.
 
+The covered stored `MAX`, `MAXU`, and `MINBTR2` forms sample the unbound
+word selector at `DATA[0xffff]`, not the encoded literal and not the
+adjacent wrapped DATA cell. A separate literal selector still uses its
+encoded word. The operation compares word inputs and stores the selected
+word at the captured `R7`; long destinations add a sign- or zero-extended
+high word at the next wrapped address. `MINBTR2` shifts the comparison
+decision into `BTR2`. CE2 can enable postmodify without enabling writeback;
+when both stages are vetoed, neither address nor result changes.
+
 For covered wide shift routes, the word result uses the upper half of
 the low 32-bit lane. The word and long carry taps differ, and the guard
 can keep the zero flag clear when the written word is zero.

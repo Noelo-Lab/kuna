@@ -1643,6 +1643,90 @@ fn carmel_wide_minmax_address_ports_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_wide_stored_extrema_keep_the_data_and_literal_ports_distinct() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-stored-extrema", "bin");
+    let specs = binary.with_extension("specs");
+    tracked_carmel_entry_specs(&specs, &[("R7", 0xc048)], 0, 0);
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         volatile unsigned short out_low, out_high, source_word, wrap_word, literal_cell;\n",
+    );
+    let mut calls = String::from("int main(void) {\nwrap_word = 0xcafe; literal_cell = 0x5678;\n");
+    let inputs = ["A4H", "A1L", "BTR2", "RN7", "PACFG", "RM6", "RL6", "CECFG1", "CECFG2", "CETBL", "EST", "ECFG"];
+    let routes = [
+        ([0x7c, 0x99, 0x23, 0xc8, 0xc4, 0xf7], 0x9a12, 0xffee, 0x3010, 0xffee, 0xffff, 0xc04c, 7),
+        ([0x7c, 0x99, 0x23, 0xc8, 0xc0, 0xf7], 0x2468, 0xffee, 0x3000, 0x2468, 0x9876, 0xc04c, 7),
+        ([0x6f, 0x6b, 0x48, 0xc8, 0xc5, 0xf7], 0x2468, 0xffee, 0x3010, 0x6b48, 0, 0xc046, 7),
+        ([0x6f, 0x99, 0x23, 0xc8, 0xc5, 0xf8], 0x2468, 0xffee, 0x3000, 0xecd0, 0xffff, 0xc046, 7),
+        ([0x7c, 0xa4, 0x54, 0xc8, 0xa4, 0xf7], 0xa454, 0xa454, 0x3008, 0xa454, 0xffff, 0xc04c, 14),
+        ([0x7c, 0x99, 0x23, 0xc8, 0xd4, 0xf7], 0x2468, 0xffee, 0x3000, 0xffee, 0, 0xc04c, 7),
+        ([0x7c, 0x99, 0x23, 0xc8, 0xa4, 0xf7], 0x8afe, 0xffee, 0x3010, 0x8afe, 0xffff, 0xc04c, 15),
+    ];
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    for (index, (packet, data, a4h, flags, low, high, address, trace)) in routes.into_iter().enumerate() {
+        let trace_seed = if index == 6 { 0x8007 } else { 7 };
+        fs::write(&binary, [packet, nop, nop, nop, ret].as_flattened()).unwrap();
+        for (reg, expected) in [("EST", flags), ("R7", address), ("BTR2", trace)] {
+            let name = format!("extrema_{index}_{}", reg.to_ascii_lowercase());
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "data [data,0xc048] volatile unsigned short out_low",
+                "--assert", "data [data,0xc049] volatile unsigned short out_high",
+                "--assert", "data [data,0xffff] volatile unsigned short source_word",
+                "--assert", "data [data,0] volatile unsigned short wrap_word",
+                "--assert", "data [data,0x9923] volatile unsigned short literal_cell",
+            ]);
+            for (i, input) in inputs.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let c = function["code"].as_str().unwrap();
+            assert!(!c.contains("halt_"), "{function}");
+            writeln!(emitted, "{}", c.replace("sub_0", &name)).unwrap();
+            let failure = index + 1;
+            writeln!(calls,
+                "source_word = {data:#x}; out_low = 0x1234; out_high = 0x9876;\n\
+                 if ({name}({a4h:#x},0xecd0,{trace_seed:#x},4,0,0,0,0x1000,0x1000,0xffff,0,0) != {expected:#x} ||\
+                     out_low != {low:#x} || out_high != {high:#x} || source_word != {data:#x} ||\
+                     wrap_word != 0xcafe || literal_cell != 0x5678) return {failure};").unwrap();
+            let veto = match reg { "R7" => address, "BTR2" => trace_seed, _ => 0 };
+            writeln!(calls,
+                "out_low = 0x1234; out_high = 0x9876;\n\
+                 if ({name}({a4h:#x},0xecd0,{trace_seed:#x},4,0,0,0,0x1000,0x1000,0,0,0) != {veto:#x} ||\
+                     out_low != 0x1234 || out_high != 0x9876) return {failure};").unwrap();
+            if index == 0 && reg == "R7" {
+                writeln!(calls,
+                    "if ({name}(0xffee,0xecd0,7,9,0,0,0,0x1000,0,0,0,0) != 0xc048 ||\
+                         out_low != 0x1234 || out_high != 0x9876) return 7;\n\
+                     if ({name}(0xffee,0xecd0,7,9,0x4000,0,0,0x1000,0x1000,0xffff,0,0) != 0xc045 ||\
+                         out_low != 0xffee || out_high != 0xffff) return 8;\n\
+                     if ({name}(0xffee,0xecd0,7,9,0xc000,0xc040,15,0x1000,0x1000,0xffff,0,0) != 0x10 ||\
+                         out_low != 0xffee || out_high != 0xffff) return 9;").unwrap();
+            }
+        }
+    }
+    emitted.push_str(&calls);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_wide_alu_aliases_keep_result_and_flag_ports_distinct() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
