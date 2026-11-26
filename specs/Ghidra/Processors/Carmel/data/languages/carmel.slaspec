@@ -4468,7 +4468,7 @@ macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
     result = candidate:2;
 }
 
-macro wide_adjust_result(left, right, subtract, sticky_enabled, result) {
+macro wide_adjust_result(left, right, subtract, unsigned_right, sticky_enabled, result) {
     local mask:8 = 0xffffffffff;
     local sign:8 = 0x8000000000;
     local lhs:8 = left;
@@ -4483,6 +4483,9 @@ macro wide_adjust_result(left, right, subtract, sticky_enabled, result) {
   <status>
     result = raw & mask;
     local overflow:1 = (sign_difference == subtracting) && (((lhs ^ result) & sign) != 0);
+    if (unsigned_right == 0) goto <adjust_flags>;
+    overflow = raw >= sign + ((lhs & sign) << 1);
+  <adjust_flags>
     local flags:2 = zext(carry_bit) | (zext(overflow) << 1)
                   | (zext(overflow && sticky_enabled) << 2) | (zext(result == 0) << 3)
                   | (zext(result >= sign) << 4)
@@ -4505,7 +4508,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     if (enabled == 0) goto <finish>;
     local right:8 = (zext(word) << 16) | ((0 - zext(word >= 0x8000)) & 0xff00000000);
     local result:8;
-    wide_adjust_result(zext(R1), right, 0:1, 1:1, result);
+    wide_adjust_result(zext(R1), right, 0:1, 0:1, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -4522,7 +4525,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     local word:2 = *[data]:2 source;
     if (enabled == 0) goto <finish>;
     local result:8;
-    wide_adjust_result(zext(destination), zext(word), 0:1, 1:1, result);
+    wide_adjust_result(zext(destination), zext(word), 0:1, 0:1, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -4536,7 +4539,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     if (enabled == 0) goto <finish>;
     local word:4 = zext(low) | (zext(high) << 16);
     local result:8;
-    wide_adjust_result(zext(R1), sext(word), wide_adjust_high, 1:1, result);
+    wide_adjust_result(zext(R1), sext(word), wide_adjust_high, 0:1, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -4552,7 +4555,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     local left:8;
     compact_long_sample(A0L, A0H, GB0, left);
     local result:8;
-    wide_adjust_result(left, sext(word), 0:1, 1:1, result);
+    wide_adjust_result(left, sext(word), 0:1, 0:1, 1:1, result);
     A0L = result:2;
     A0H = result(2);
     GB0 = result(4);
@@ -4568,7 +4571,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     modify_ptr_scaled(R1, RN1, RM0, RL0, 2, 2, stride);
     if (enabled == 0) goto <finish>;
     local result:8;
-    wide_adjust_result(zext(destination), zext(wide_load_literal), 1:1, 1:1, result);
+    wide_adjust_result(zext(destination), zext(wide_load_literal), 1:1, 0:1, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -4580,7 +4583,7 @@ macro wide_adjust_immediate_a0(operand, subtract) {
     compact_long_sample(A0L, A0H, GB0, original);
     local result:8;
     local sticky_enabled:1 = (ECFG & 0xc) == 0;
-    wide_adjust_result(original, operand, subtract, sticky_enabled, result);
+    wide_adjust_result(original, operand, subtract, 0:1, sticky_enabled, result);
     A0L = result:2;
     A0H = result(2);
     GB0 = result(4);
@@ -4605,6 +4608,28 @@ macro wide_adjust_immediate_a0(operand, subtract) {
     wide_adjust_immediate_a0(operand, 1:1);
 }
 @undef WIDE_ADJUST_IMMEDIATE
+
+:ADDL "A0","A2" is $(WIDE_ROUTED_ALU) & wide_13_22=0x210 & wide_adjust_op=4
+    & wide_40_45=0xa & wide_0_1=2 & wide_2_9=0x88 {
+    local left:8;
+    local right:8;
+    compact_long_sample(A0L, A0H, GB0, left);
+    compact_long_sample(A2L, A2H, GB2, right);
+    local result:8;
+    local automatic:1 = (ECFG & 4) != 0;
+    local sticky_enabled:1 = !automatic && (ECFG & 0x28) != 8;
+    wide_adjust_result(left, right, 0:1, 1:1, sticky_enabled, result);
+    if (!automatic || (((result >> 31) ^ (result >> 32)) & 1) == 0) goto <writeback>;
+    EST = EST | 4;
+    result = 0x7fffffff;
+    if ((EST & 0x10) == 0) goto <writeback>;
+    result = 0xff80000000;
+  <writeback>
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_alu_ce(EST & 0xcfff);
+}
 
 # Inputs have already been widened or aligned by their physical ports.
 macro wide_routed_arithmetic(left, right, adjust, subtract, word_result, data_result, result) {
@@ -4642,6 +4667,50 @@ macro wide_routed_arithmetic(left, right, adjust, subtract, word_result, data_re
     flags = flags | 4;
   <publish>
     publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+@define WIDE_ADD_LITERAL_PORT "$(WIDE_ROUTED_ALU) & wide_alias_add_op=8 & wide_40_45=0xf & wide_0_0=1 & wide_load_literal_bits"
+
+:ADD "A0","GB1",wide_load_literal_bits is $(WIDE_ADD_LITERAL_PORT) & wide_alias_add_dst=0x88 & wide_alias_add_lhs=0x81 {
+    local left:8 = zext(GB1);
+    local right:8 = sext(wide_load_literal_bits:2);
+    local result:8;
+    wide_routed_arithmetic(left, right, 0:1, 0:1, 0:1, 0:1, result);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+}
+
+macro wide_add_a0_literal_word(operand, result) {
+    local left:8;
+    compact_long_sample(A0L, A0H, GB0, left);
+    local right:8 = sext(operand);
+    wide_routed_arithmetic(left, right, 0:1, 0:1, 1:1, 0:1, result);
+}
+
+:ADD "A0L","A0",wide_load_literal_bits is $(WIDE_ADD_LITERAL_PORT) & wide_alias_add_dst=0x90 & wide_alias_add_lhs=0x88 {
+    local result:8;
+    wide_add_a0_literal_word(wide_load_literal_bits:2, result);
+    A0L = result(2);
+}
+
+:ADD "EST","A0",wide_load_literal_bits is $(WIDE_ADD_LITERAL_PORT) & wide_alias_add_dst=0xc1 & wide_alias_add_lhs=0x88 {
+    local unused:8;
+    wide_add_a0_literal_word(wide_load_literal_bits:2, unused);
+}
+
+@undef WIDE_ADD_LITERAL_PORT
+
+:SUB "RMW2","A0L","*R4" is $(WIDE_ROUTED_ALU) & wide_alias_add_op=0 & wide_0_0=0
+    & wide_alias_add_dst=0x87 & wide_alias_add_lhs=0x90 & wide_40_45=4 {
+    local address:2 = R4;
+    local word:2 = *[data]:2 address;
+    local left:8 = (sext(A0L) & 0xffffff) << 16;
+    local right:8 = (sext(word) & 0xffffff) << 16;
+    local result:8;
+    wide_routed_arithmetic(left, right, 0:1, 1:1, 1:1, 1:1, result);
+    result = result >> ((ECFG >> 5) & 1);
+    *[data]:2 address = result(2);
 }
 
 :ADDC2 "*"^absolute_data_addr,"MINMAX","GB1" is $(WIDE_ROUTED_ALU) & logic_ce_bank=1 & wide_alias_add_op=0xd & wide_alias_add_dst=0x3b & wide_alias_add_lhs=0xba & wide_40_45=1 & wide_0_0=1 & absolute_data_addr {
@@ -10580,30 +10649,55 @@ macro frame_store(address, saved) {
     EST = EST | 0x4000;
   <frame_store_done>
 }
-:LINK "R0",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1620 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R0; local frame:2 = old_sp - 1; R0 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R0" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5800); (slot_mode=0 & nop_right) { local address:2 = R0 + 1; SP = address; R0 = *[data]:2 address; }
-:LEAVE "CE1" "R0" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5801); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R0 + 1; SP = address; R0 = *[data]:2 address; <stack_done> }
-:LINK "R1",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1621 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R1; local frame:2 = old_sp - 1; R1 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5802); (slot_mode=0 & nop_right) { local address:2 = R1 + 1; SP = address; R1 = *[data]:2 address; }
-:LEAVE "CE1" "R1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5803); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R1 + 1; SP = address; R1 = *[data]:2 address; <stack_done> }
-:LINK "R2",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1622 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R2; local frame:2 = old_sp - 1; R2 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5804); (slot_mode=0 & nop_right) { local address:2 = R2 + 1; SP = address; R2 = *[data]:2 address; }
-:LEAVE "CE1" "R2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5805); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R2 + 1; SP = address; R2 = *[data]:2 address; <stack_done> }
-:LINK "R3",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1623 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R3; local frame:2 = old_sp - 1; R3 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5806); (slot_mode=0 & nop_right) { local address:2 = R3 + 1; SP = address; R3 = *[data]:2 address; }
-:LEAVE "CE1" "R3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5807); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R3 + 1; SP = address; R3 = *[data]:2 address; <stack_done> }
-:LINK "R4",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1624 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R4; local frame:2 = old_sp - 1; R4 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5808); (slot_mode=0 & nop_right) { local address:2 = R4 + 1; SP = address; R4 = *[data]:2 address; }
-:LEAVE "CE1" "R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5809); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R4 + 1; SP = address; R4 = *[data]:2 address; <stack_done> }
-:LINK "R5",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1625 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R5; local frame:2 = old_sp - 1; R5 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R5" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580a); (slot_mode=0 & nop_right) { local address:2 = R5 + 1; SP = address; R5 = *[data]:2 address; }
-:LEAVE "CE1" "R5" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580b); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R5 + 1; SP = address; R5 = *[data]:2 address; <stack_done> }
-:LINK "R6",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1626 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R6; local frame:2 = old_sp - 1; R6 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R6" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580c); (slot_mode=0 & nop_right) { local address:2 = R6 + 1; SP = address; R6 = *[data]:2 address; }
-:LEAVE "CE1" "R6" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580d); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R6 + 1; SP = address; R6 = *[data]:2 address; <stack_done> }
-:LINK "R7",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1627 & compact_frame_delta); (slot_mode=0 & nop_right) { local small:1 = compact_frame_delta; local old_sp:2 = SP; local saved:2 = R7; local frame:2 = old_sp - 1; R7 = frame; SP = old_sp + sext(small); frame_store(old_sp, saved); }
-:LEAVE "R7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580e); (slot_mode=0 & nop_right) { local address:2 = R7 + 1; SP = address; R7 = *[data]:2 address; }
-:LEAVE "CE1" "R7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580f); (slot_mode=0 & nop_right) { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <stack_done>; local address:2 = R7 + 1; SP = address; R7 = *[data]:2 address; <stack_done> }
+
+macro compact_frame_link(frame_reg, delta) {
+    local small:1 = delta;
+    local old_sp:2 = SP;
+    local saved:2 = frame_reg;
+    frame_reg = old_sp - 1;
+    SP = old_sp + sext(small);
+    frame_store(old_sp, saved);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro compact_frame_leave(frame_reg, qualified) {
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, EST, CETBL, 0, first);
+    unary_ce(CECFG2, EST, CETBL, 1, second);
+    if (qualified != 0 && first == 0 && (CECFG1 & 0x1000) == 0) goto <publish>;
+    local address:2 = frame_reg + 1;
+    SP = address;
+    frame_reg = *[data]:2 address;
+  <publish>
+    EST = (EST & 0xcfff) | (first << 12) | (second << 13);
+}
+
+:LINK "R0",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1620 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R0, compact_frame_delta); }
+:LEAVE "R0" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5800); (slot_mode=0 & nop_right) { compact_frame_leave(R0, 0:2); }
+:LEAVE "CE1" "R0" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5801); (slot_mode=0 & nop_right) { compact_frame_leave(R0, 1:2); }
+:LINK "R1",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1621 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R1, compact_frame_delta); }
+:LEAVE "R1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5802); (slot_mode=0 & nop_right) { compact_frame_leave(R1, 0:2); }
+:LEAVE "CE1" "R1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5803); (slot_mode=0 & nop_right) { compact_frame_leave(R1, 1:2); }
+:LINK "R2",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1622 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R2, compact_frame_delta); }
+:LEAVE "R2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5804); (slot_mode=0 & nop_right) { compact_frame_leave(R2, 0:2); }
+:LEAVE "CE1" "R2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5805); (slot_mode=0 & nop_right) { compact_frame_leave(R2, 1:2); }
+:LINK "R3",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1623 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R3, compact_frame_delta); }
+:LEAVE "R3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5806); (slot_mode=0 & nop_right) { compact_frame_leave(R3, 0:2); }
+:LEAVE "CE1" "R3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5807); (slot_mode=0 & nop_right) { compact_frame_leave(R3, 1:2); }
+:LINK "R4",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1624 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R4, compact_frame_delta); }
+:LEAVE "R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5808); (slot_mode=0 & nop_right) { compact_frame_leave(R4, 0:2); }
+:LEAVE "CE1" "R4" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c5809); (slot_mode=0 & nop_right) { compact_frame_leave(R4, 1:2); }
+:LINK "R5",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1625 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R5, compact_frame_delta); }
+:LEAVE "R5" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580a); (slot_mode=0 & nop_right) { compact_frame_leave(R5, 0:2); }
+:LEAVE "CE1" "R5" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580b); (slot_mode=0 & nop_right) { compact_frame_leave(R5, 1:2); }
+:LINK "R6",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1626 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R6, compact_frame_delta); }
+:LEAVE "R6" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580c); (slot_mode=0 & nop_right) { compact_frame_leave(R6, 0:2); }
+:LEAVE "CE1" "R6" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580d); (slot_mode=0 & nop_right) { compact_frame_leave(R6, 1:2); }
+:LINK "R7",compact_frame_delta "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_9_22=0x1627 & compact_frame_delta); (slot_mode=0 & nop_right) { compact_frame_link(R7, compact_frame_delta); }
+:LEAVE "R7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580e); (slot_mode=0 & nop_right) { compact_frame_leave(R7, 0:2); }
+:LEAVE "CE1" "R7" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x2c580f); (slot_mode=0 & nop_right) { compact_frame_leave(R7, 1:2); }
+
 frame_displacement: encoded is wide_frame_delta_0 & wide_frame_delta_22 [ encoded = wide_frame_delta_0 | (wide_frame_delta_22 << 22); ] { export *[const]:2 encoded; }
 
 :LINK wide_ce_prefix link_ce_register,frame_displacement is carmel_issue=4 & wide_left_mode=0

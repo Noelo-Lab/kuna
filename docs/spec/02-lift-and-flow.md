@@ -4328,6 +4328,21 @@ Wide logical operations on address-register words write the saved counter
 postincrements its address register by two words and computes status from
 the complete 40-bit result without writing an operand.
 
+The wide literal `ADD` into `A0` from `GB1` zero-extends the incoming guard
+byte and sign-extends the literal. With `A0` as the source, the `A0L` result
+writes only the upper word of the 40-bit arithmetic result into `A0L`.
+Zero status in this word mode tests the bits above the discarded low word,
+including the guard. The `EST` destination uses the same word status but
+does not write the arithmetic result word.
+
+Wide `SUB RMW2,A0L,*R4` aligns both signed words in the upper arithmetic
+lane and writes to the second input's effective address. DATA saturation
+and right shift follow the arithmetic status calculation. The split
+long-source `SUB` with implicit DATA reads stays unlifted because its
+operand fetch can stop depending on issue history. The guard-byte
+read/modify/write `SUB` also stays unlifted: without a new flag mask,
+prior issues can change its zero status.
+
 For covered CE2 `LIM8` forms, a signed word outside the unsigned byte range
 sets sticky `L1` even when the result port is disconnected. Connected
 selectors write the clamped word to the input's `RM6` port, `FF1`, or the
@@ -4649,6 +4664,16 @@ Wide immediate `ADDL` and `SUBL` use an unsigned literal in the low word.
 They adjust the full 40-bit accumulator, computing carry and overflow
 across that width. Nonzero limiting-mode bits suppress the sticky overflow
 update without saturating the accumulator or suppressing the overflow flag.
+
+Wide `ADDL A0,A2` reads both halves and the guards of its accumulators
+and writes all 40 bits of `A0` without accessing DATA or advancing `R7`.
+It computes 40-bit carry from unsigned inputs, and checks overflow
+with a signed left input and a zero-extended right input. Status uses
+the wrapped sum. Saturation mode suppresses the sticky overflow update
+without clamping this route. Automatic limiting clamps when bits 31 and
+32 differ and sets the sticky flag. The indexed short and long `R7` forms
+and the disconnected result stay unlifted: their flags can depend on
+prior issues even with identical architectural operand state.
 
 For covered qualified compact `ADD` and `SUB` word read-modify-write forms,
 the left parallel lane computes flags but cannot write back to the first
@@ -5024,6 +5049,11 @@ For the lifted `LINK` forms, address enable can update `SP` and the
 selected frame register even when the result predicate suppresses the
 DATA store. Static CE-table loads that configure both banks sample the
 same incoming `EST`; one new latch cannot feed the other within that issue.
+
+Compact `LINK` and `LEAVE` publish both CE latches from the same incoming
+condition taps. `LEAVE CE1` still publishes the latches when its predicate
+blocks the DATA read and frame update. Address enable can permit those
+effects without forcing the CE1 latch true.
 
 If a wide `LINK` writes `CECFG1`, `CECFG2`, or `CETBL`, the incoming
 controls enable the address phase. The store then evaluates the selected

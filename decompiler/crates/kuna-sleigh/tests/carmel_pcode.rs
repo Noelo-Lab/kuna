@@ -2908,6 +2908,80 @@ fn wide_lshift_control_aliases() {
 }
 
 #[test]
+fn wide_arithmetic_result_port_lanes() {
+    let cases = [
+        (1, 0x911103, 0xea433809a4, 0xf100000000, 0, 0xf2, 0x3000),
+        (0x8000, 0x911103, 0xea433809a4, 0x8000000000, 0, 0xffffff8080, 0x3010),
+        (1, 0x912111, 0x1234, 0xf100000000, 0, 0, 0x3008),
+        (1, 0x912111, 0x007fffffff, 0xf100000000, 4, 0x7fff7fff, 0x3024),
+        (0, 0x918311, 0x0180000001, 0xf100000000, 0, 0x0180000001, 0x3024),
+        (0xffff, 0x918311, 0x8000000000, 0xf100000000, 0, 0x8000000000, 0x3027),
+    ];
+    let mut packets = [(NOP, NOP); 7];
+    packets[..6].copy_from_slice(&cases.map(|(imm, right, ..)| (0x8f0000 | imm, right)));
+    let issues = [(0, 5, 6), (2, 5, 6), (4, 5, 6), (6, 5, 6), (8, 5, 6), (10, 5, 6), (12, 1, 0)];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (n, (_, _, a0, a1, config, result, flags)) in cases.into_iter().enumerate() {
+        let pc = 2 * n as u64;
+        m.seed(&[("A0", a0), ("A1", a1), ("CETBL", 0xffff), ("ECFG", config), ("EST", 0)]);
+        m.start(pc).unwrap();
+        assert_eq!(m.step(), 3 * (pc + 2));
+        assert_eq!((m.reg("A0"), m.reg("A1"), m.reg("EST")), (result, a1, flags));
+    }
+
+    let packets = [(0x842345, 0x810f20), (NOP, NOP), (0x842345, 0x8085ca), (0x842345, 0x810dc6)];
+    let issues = [(0, 5, 6), (2, 1, 6), (4, 5, 6), (6, 5, 0)];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (address, input, a0l, config, result, flags) in [
+        (0x48, 0x5df9, 0x09a4, 0, 0xabab, 0x3010),
+        (0x1240, 0x71c7, 0x1240, 0, 0xa079, 0x3010),
+        (0x48, 0xee50, 0x1240, 0x20, 0x11f8, 0x3000),
+        (0x48, 0x8000, 0x7fff, 8, 0x7fff, 0x3024),
+    ] {
+        m.seed(&[("R4", address), ("A0L", a0l), ("CETBL", 0xffff), ("ECFG", config), ("EST", 0)]);
+        m.seed_data(address, input);
+        m.seed_data(address + 1, 0x6c19);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0L"), m.reg("R4"), m.reg("EST")), (a0l, address, flags));
+        assert_eq!((m.data(address), m.data(address + 1)), (result, 0x6c19));
+    }
+    for pc in [4, 6] {
+        assert!(matches!(m.start(pc), Err(KunaError::Unimpl { instruction_length: 6, .. })));
+    }
+}
+
+#[test]
+fn wide_addl_routes_the_full_accumulator_input() {
+    let packets = [(0x8aaa3f, 0xc21222), (NOP, NOP), (0x8aaa3f, 0xc2103e), (0x8aaa3f, 0xc2113e),
+                   (0x8aaa3f, 0xc2123e)];
+    let issues = [(0, 5, 6), (2, 1, 6), (4, 5, 6), (6, 5, 6), (8, 5, 0)];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (a0, a2, ecfg, result, flags) in [
+        (0xea433809a4, 0x10, 0, 0xea433809b4, 0x30),
+        (0xea433809a4, 0xf123456789, 0, 0xdb667d712d, 0x37),
+        (0x8000000000, 1, 0, 0x8000000001, 0x30),
+        (0x100000, 0x00123456, 0, 0x223456, 0),
+        (0x100000, 0xff00123456, 0, 0xff00223456, 0x36),
+        (0, 0x0080000000, 4, 0x7fffffff, 0x24),
+        (0, 0xff7fffffff, 4, 0xff80000000, 0x36),
+        (0, 0xff7fffffff, 8, 0xff7fffffff, 0x32),
+        (0, 0xff7fffffff, 0x28, 0xff7fffffff, 0x36),
+    ] {
+        m.seed(&[("A0", a0), ("A2", a2), ("R7", 0xc060), ("RN7", 4), ("ECFG", ecfg), ("EST", 0)]);
+        m.seed_data(0xc060, 0x7777);
+        m.seed_data(0xc061, 0x5678);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R7"), m.reg("A0"), m.reg("EST")), (0xc060, result, flags));
+        assert_eq!((m.reg("A2"), m.data(0xc060), m.data(0xc061)), (a2, 0x7777, 0x5678));
+    }
+    for pc in [4, 6, 8] {
+        assert!(matches!(m.start(pc), Err(KunaError::Unimpl { instruction_length: 6, .. })));
+    }
+}
+
+#[test]
 fn wide_lshift_loop_input_feedback() {
     let mut issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 5, 6), (12, 1, 0)];
     for (right, count, a1l, expected_a0, ff1, est) in [
@@ -3035,4 +3109,30 @@ fn packed_banks_displacements_wide() {
 
     let mut m = Machine::new(0, &[(0xb20701, 0xe220c8), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
     assert!(matches!(m.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })));
+}
+
+#[test]
+fn compact_frames_publish_ce_feedback() {
+    let packets = [(0x2c41b0, NOP), (0x2c5800, NOP), (0x2c5801, NOP), (NOP, NOP)];
+    let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (pc, table, ce1, est, sp, frame, saved) in [
+        (0, 0x0001, 0, 0x5000, 0x8008, 0x802f, 0xffff),
+        (0, 0x0100, 0, 0x6000, 0x8008, 0x802f, 0xffff),
+        (2, 0x0101, 0, 0x3000, 0, 0xaa00, 0xbe27),
+        (4, 0x0001, 0, 0x1000, 0, 0xaa00, 0xbe27),
+        (4, 0x0100, 0, 0x2000, 0x8030, 0xffff, 0xbe27),
+        (4, 0x0100, 0x1000, 0x2000, 0, 0xaa00, 0xbe27),
+    ] {
+        m.seed(&[("R0", 0xffff), ("SP", 0x8030), ("EST", 0), ("ECFG", 0x10),
+                 ("CECFG1", ce1), ("CECFG2", 0), ("CETBL", table)]);
+        m.seed_data(0, 0xaa00);
+        m.seed_data(0x8030, 0xbe27);
+        m.seed_data(0x8008, 0x9820);
+        m.start(pc).unwrap();
+        assert_eq!(m.step(), 3 * (pc + 2));
+        assert_eq!((m.reg("EST"), m.reg("SP"), m.reg("R0")), (est, sp, frame),
+                   "CODE[{pc}], CETBL={table:#x}, CECFG1={ce1:#x}");
+        assert_eq!((m.data(0), m.data(0x8030), m.data(0x8008)), (0xaa00, saved, 0x9820));
+    }
 }
