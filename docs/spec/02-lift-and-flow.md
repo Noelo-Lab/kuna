@@ -3914,6 +3914,16 @@ even when AEN permits the PACFG update. The early EST view does not
 replace the retired status word: CE feedback and the following compact
 INC use the guest flag state, not the debugger-visible EX transient.
 
+Signed immediate `MOVE` distinguishes the early address-qualified ports
+from late DATA or accumulator results. The indexed store captures the old
+address and updates the pointer when AEN permits it, even if the late
+predicate vetoes the store. `ECFG`, `MINMAX`, CE configuration, `PSTATUS`,
+`USER_IO`, and `PACFG` use their connected control ports. `PSTATUS`
+refreshes the live counter and bounds from saved frame 1; the immediate
+`USER_IO` port writes the full word. `OP3` discards the signed value but
+still publishes flags, whereas an immediate write to `EST` changes only
+the transient EX view.
+
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified

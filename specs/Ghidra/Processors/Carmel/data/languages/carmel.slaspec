@@ -944,6 +944,15 @@ macro refresh_live_loop(counter, start, end) {
     publish_loop_word(end, LEAH, LEAL);
 }
 
+macro select_saved_loop_frame(word) {
+    local value:2 = word;
+    local depth:2 = value & 3;
+    depth = depth | ((value & 4) * zext(depth == 0));
+    PSTATUS = (PSTATUS & 0xffe0) | (value & 0x18) | (depth * zext((value & 8) != 0));
+    refresh_live_loop(LC1, LSA1W, LEA1W);
+    LOOP_FRAME = 1;
+}
+
 # Publications are pending in the live frame, not in a per-instruction owner
 # slot. When phases coincide, immediate address writes precede dynamic EX.
 macro publish_loop_address(due, value, pending, address, high, low, bit, depth, level) {
@@ -3183,11 +3192,7 @@ wide_load_execute: "CECFG1","A0L" is wide_0_9=0x30a & wide_40_45=0x10 & wide_loa
 }
 wide_load_execute: "PSTATUS","A0L" is wide_0_9=0x356 & wide_40_45=0x10 & wide_load_mode {
     wide_load_set_mode(wide_load_mode, 10);
-    local depth:2 = A0L & 3;
-    depth = depth | ((A0L & 4) * zext(depth == 0));
-    PSTATUS = (PSTATUS & 0xffe0) | (A0L & 0x18) | (depth * zext((A0L & 8) != 0));
-    refresh_live_loop(LC1, LSA1W, LEA1W);
-    LOOP_FRAME = 1;
+    select_saved_loop_frame(A0L);
 }
 wide_load_execute: "USER_IO","A0L" is wide_0_9=0x35e & wide_40_45=0x10 & wide_load_mode {
     wide_load_set_mode(wide_load_mode, 14);
@@ -7976,6 +7981,127 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "*R0",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
 :MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 :MOVE "*R0++",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
+
+@define WIDE_MOVS_IMMEDIATE "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_14_22=0x119 & literal_word & wide_movs_prefix"
+wide_movs_prefix: is wide_left_mode=1 { local kind:2 = 0; export kind; }
+wide_movs_prefix: "CE1" is wide_left_mode=0 & unary_wide_ce_bank=0 { local kind:2 = 1; export kind; }
+wide_movs_prefix: "CE2" is wide_left_mode=0 & unary_wide_ce_bank=1 { local kind:2 = 2; export kind; }
+
+macro wide_movs_enable(prefix, result, address) {
+    result = 1;
+    address = 1;
+    if (prefix == 0) goto <done>;
+    if (prefix == 2) goto <second>;
+    unary_ce(CECFG1, EST, CETBL, 0:2, result);
+    address = zext(result != 0 || (CECFG1 & 0x1000) != 0);
+    goto <done>;
+  <second>
+    unary_ce(CECFG2, EST, CETBL, 1:2, result);
+    address = zext(result != 0 || (CECFG2 & 0x1000) != 0);
+  <done>
+}
+
+:MOVE wide_movs_prefix "*R0+=RN0",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0x08 {
+    local result:2;
+    local address_enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, address_enabled);
+    if (address_enabled == 0) goto <done>;
+    local address:2 = R0;
+    modify_ptr(R0, RN0, RM0, RL0, 0, 1);
+    if (result == 0) goto <done>;
+    local value:2 = literal_word s>> ((ECFG >> 5) & 1);
+    *[data]:2 address = value;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro movs_accumulator_flags(word, result, flags) {
+    if (result == 0) goto <done>;
+    local value:2 = word;
+    flags = (flags & 0xffc4) | (zext(value == 0) << 3) | (zext(value >= 0x8000) << 4);
+  <done>
+}
+
+:MOVE wide_movs_prefix "OP3",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0x8e {
+    local result:2;
+    local address_enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, address_enabled);
+    local flags:2 = EST & 0xcfff;
+    movs_accumulator_flags(literal_word, result, flags);
+    publish_alu_ce(flags);
+}
+
+# System-port qualification follows the address gate, not DATA writeback.
+:MOVE wide_movs_prefix "MINMAX",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xba {
+    local result:2; local enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, enabled);
+    if (enabled == 0) goto <done>;
+    MINMAX = literal_word;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE wide_movs_prefix "ECFG",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc0 {
+    local result:2; local enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, enabled);
+    if (enabled == 0) goto <done>;
+    ECFG = literal_word & 0x3f;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE wide_movs_prefix "EST",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc1 {
+    build wide_movs_prefix;
+    # This port writes only the transient EX debugger view.
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE wide_movs_prefix "CECFG1",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc2 {
+    local result:2; local enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, enabled);
+    if (enabled == 0) goto <done>;
+    CECFG1 = literal_word & 0x3fff;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE wide_movs_prefix "CETBL",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xc4 {
+    local result:2; local enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, enabled);
+    if (enabled == 0) goto <done>;
+    CETBL = literal_word;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE wide_movs_prefix "PSTATUS",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xd5 {
+    local result:2; local enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, enabled);
+    if (enabled == 0) goto <done>;
+    select_saved_loop_frame(literal_word);
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE wide_movs_prefix "USER_IO",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xd7 {
+    local result:2; local enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, enabled);
+    if (enabled == 0) goto <done>;
+    USER_IO = literal_word;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MOVE wide_movs_prefix "PACFG",literal_word is $(WIDE_MOVS_IMMEDIATE) & wide_2_11=0xda {
+    local result:2; local enabled:2;
+    build wide_movs_prefix;
+    wide_movs_enable(wide_movs_prefix, result, enabled);
+    if (enabled == 0) goto <done>;
+    PACFG = literal_word;
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
 
 # Unsigned MOVE consumes a word or a 24-bit saved loop address.
 macro moveu_flags(value) { EST = (EST & 0xffc4) | (zext(value == 0) << 3); }
