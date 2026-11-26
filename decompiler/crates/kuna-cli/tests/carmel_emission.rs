@@ -847,6 +847,112 @@ fn carmel_wide_shift_result_lane_selects_carry_and_zero() {
 }
 
 #[test]
+fn carmel_original_wide_bitfield_ports_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-original-wide-bits", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short word_0040, word_0048, word_02ca, word_02cb, word_8012,\n\
+         word_804a, word_c048, word_c049, word_c04f, word_ffff;\n",
+    );
+    let routes: [([u8; 6], Option<(u8, u16)>, &[&str], &[u16], &[&str]); 7] = [
+        ([0xe9, 0xb4, 0x0a, 0xf6, 0x31, 0xb1], Some((0, 0x40)),
+            &["PACFG", "RM0", "RL0", "FF1", "FF2"], &[0x40, 0xffff], &["EST", "R0"]),
+        ([0xb0, 0xe3, 0x11, 0xf2, 0x11, 0xfb], Some((0, 0x40)),
+            &["PACFG", "RM0", "RL0", "RN0", "ECFG"], &[0x40, 0xffff], &["EST", "R0"]),
+        ([0xf9, 0x05, 0x88, 0xf3, 0x0b, 0x71], None,
+            &["RF0", "ASTATUS"], &[], &["EST"]),
+        ([0xea, 0x75, 0xbf, 0xf2, 0x21, 0xe9], Some((0, 0x40)),
+            &["PACFG", "RM0", "RL0", "RN2", "ECFG"], &[0x40, 0xffff], &["EST", "R0"]),
+        ([0xa6, 0x02, 0xca, 0xf3, 0xce, 0xf2], Some((6, 0x8048)),
+            &[], &[0x02ca, 0x02cb, 0x8012, 0x804a], &["EST"]),
+        ([0xf4, 0x28, 0x9e, 0xf3, 0xa7, 0x8c], Some((4, 0x48)),
+            &["PACFG", "RM4", "RL4", "BTR1"], &[0x48], &["EST", "R4"]),
+        ([0xed, 0xe2, 0x07, 0xf3, 0x88, 0xef], Some((7, 0xc048)),
+            &["PACFG", "RM6", "RL6", "RN5", "ECFG"], &[0xc048, 0xc049, 0xc04f], &["EST", "R7", "CETBL"]),
+    ];
+    for (route, (packet, pointer, inputs, cells, outputs)) in routes.into_iter().enumerate() {
+        let mut code = Vec::new();
+        if let Some((r, address)) = pointer {
+            let [hi, lo] = address.to_be_bytes();
+            code.extend([0x80, hi, lo, 0xc6, 0x42, 0x80 + 4 * r]);
+        }
+        code.extend(packet);
+        code.extend([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        fs::write(&binary, code).unwrap();
+        for reg in outputs {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict",
+                "--assert", &format!("return %{reg} unsigned short"),
+            ]);
+            for (i, name) in ["CECFG1", "CECFG2", "CETBL", "EST"].into_iter()
+                .chain(inputs.iter().copied()).enumerate()
+            {
+                kuna.args(["--assert", &format!("param {i} %{name} unsigned short in_{}", name.to_ascii_lowercase())]);
+            }
+            for address in cells {
+                kuna.args(["--assert", &format!("data [data,0x{address:x}] volatile unsigned short word_{address:04x}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let name = format!("route_{route}_{}", reg.to_ascii_lowercase());
+            writeln!(emitted, "{}", function["code"].as_str().unwrap().replace("sub_0", &name)).unwrap();
+        }
+    }
+    emitted.push_str(r"
+int main(void) {
+    word_0040 = 0x1234; word_ffff = 0xffff;
+    if (route_0_est(0x1000,0x1000,0,0,0,0,0,0,12) != 8 || word_0040 != 0) return 1;
+    if (route_0_est(0x1000,0x1000,0xffff,0,0,0,0,0,0) != 0x3008 ||
+        route_0_r0(0x1000,0x1000,0xffff,0,2,3,0,31,31) != 0x43) return 2;
+    word_ffff = 0x1234;
+    if (route_1_est(0x1000,0x1000,0,0,0,0,3,3,0) != 0x20 || word_0040 != 0x91a0) return 3;
+    if (route_1_r0(0x1000,0x1000,0xffff,0,1,0,0,0x80,0) != 0xc0) return 4;
+    if (route_2_est(0x1000,0x1000,0,0,0xffff,0x7f) != 1) return 5;
+    if (route_2_est(0x1000,0x1000,0xffff,0,0,0x7f) != 0x3000) return 6;
+    word_ffff = 0x8001;
+    if (route_3_est(0x1000,0x1000,0,0,0,0,0,0x7f,0) != 0x11 || word_0040 != 0xc000) return 7;
+    if (route_3_r0(0x1000,0x1000,0xffff,0,3,0,0x40,0x7f,0) != 0x40) return 8;
+    word_02ca = 1; word_02cb = 0; word_8012 = 0; word_804a = 0x7f;
+    if (route_4_est(0x1000,0x1000,0,0) != 0) return 9;
+    word_8012 = 0x7f;
+    if (route_4_est(0x1000,0x1000,0xffff,0) != 0x3001) return 10;
+    word_02ca = 0; word_02cb = 1; word_8012 = 16;
+    if (route_4_est(0x1000,0x1000,0,0) != 1) return 11;
+    word_0048 = 0x7f;
+    if (route_5_r4(0x1000,0x1000,0,0,0,0,0,0xffff) != 0xffe6 ||
+        route_5_est(0x1000,0x1000,0xffff,0,0,0,0,0xffff) != 0x3000) return 12;
+    word_c048 = 0x5678; word_c049 = 0x9234; word_c04f = 0x3210;
+    if (route_6_cetbl(0x1000,0x1000,0,0,0,0,0,0x7f,0) != 0xc91a) return 13;
+    if (route_6_est(0x1000,0x1000,0xffff,0,0,0,0,0x7f,0) != 0x2010) return 14;
+    if (route_6_r7(0x1000,0x1000,0,0,0x8000,7,0,0x7f,0) != 0xc047) return 15;
+    if (word_c048 != 0x5678 || word_c049 != 0x9234 || word_c04f != 0x3210 ||
+        word_ffff != 0x8001 || word_0048 != 0x7f || word_02cb != 1 || word_8012 != 16) return 16;
+    word_c048 = 0; word_c049 = 0x4000;
+    if (route_6_cetbl(0x1000,0x1000,0,0,0,0,0,1,4) != 0x7fff ||
+        route_6_est(0x1000,0x1000,0,0,0,0,0,1,4) != 0x3024) return 17;
+    if (route_2_est(0x1000,0x1000,0xffff,9,0xffff,0) != 0x3009) return 18;
+    return 0;
+}
+");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_logic_rmw_routes_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

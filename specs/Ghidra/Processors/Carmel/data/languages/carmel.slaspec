@@ -1335,7 +1335,7 @@ macro reverse_word(value, reversed) {
     reversed = (x << 8) | (x >> 8);
 }
 
-macro modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, width) {
+macro modify_ptr_scaled_window(reg, increment, rm, rl, shift, modifier, width, explicit_mask) {
     local action:2 = modifier;
     if (action == 0) goto <done>;
     local incoming:2 = reg;
@@ -1364,7 +1364,7 @@ macro modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, width) {
     if (zext(result) < size) goto <publish>;
     goto <wrap>;
   <explicit>
-    size = zext(rm & 0xfff) + 1;
+    size = zext(rm & explicit_mask) + 1;
     local limit:4 = zext(rl) + size;
     if (limit <= 0x10000 && rl <= result && zext(result) < limit) goto <publish>;
   <wrap>
@@ -1376,6 +1376,10 @@ macro modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, width) {
   <publish>
     reg = result;
   <done>
+}
+
+macro modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, width) {
+    modify_ptr_scaled_window(reg, increment, rm, rl, shift, modifier, width, 0xfff:2);
 }
 
 macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
@@ -6497,6 +6501,89 @@ macro wide_shift_ports(input, count_word, left_tap, right_bias, arithmetic, resu
     *[data]:2 dest = result(2);
     publish_alu_ce((EST & 0xcfc6) | flags);
 }
+
+@define WIDE_ORIGINAL_BITS "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1"
+
+:EXTRACTZ "*R0--","IOSPACE","FF1:FF2" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x29 & wide_0_22=0x7631b1 {
+    local dest:2 = R0;
+    modify_ptr_scaled_window(R0, 0:2, RM0, RL0, 0, 3, 1:2, 0xffff:2);
+    # The IOSPACE input is unbound; all field descriptors extract zero.
+    *[data]:2 dest = 0;
+    publish_alu_ce((EST & 0xcfe7) | 8);
+}
+
+macro wide_shift_fallback_word(dest, count) {
+    local word:2 = *[data]:2 0xffff:2;
+    local input:8 = sext(word) * 0x10000;
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 16:4, 1:1, result, flags);
+    shift_limit(result, flags);
+    *[data]:2 dest = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:ASHIFT "*R0+=RN0","*0xffff","RL0" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x30 & wide_0_22=0x7211fb {
+    local dest:2 = R0;
+    local count:2 = RL0;
+    modify_ptr_scaled_window(R0, RN0, RM0, RL0, 0, 1, 1:2, 0xffff:2);
+    wide_shift_fallback_word(dest, count);
+}
+
+:ASHIFT "*R0++","*0xffff","RN2" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x2a & wide_0_22=0x7221e9 {
+    local dest:2 = R0;
+    modify_ptr_scaled_window(R0, 0:2, RM0, RL0, 0, 2, 1:2, 0xffff:2);
+    wide_shift_fallback_word(dest, RN2);
+}
+
+macro wide_shift_carry_only(input, count) {
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 0:4, 1:1, result, flags);
+    publish_alu_ce((EST & 0xcffe) | (flags & 1));
+}
+
+:ASHIFT "discard","RF0","ASTATUS" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x39 & wide_0_22=0x730b71 {
+    local input:8 = sext(RF0);
+    wide_shift_carry_only(input, ASTATUS);
+}
+
+:ASHIFT "discard","long *"^absolute_data_addr,"*(R6+"^wide_shift_dst_disp^")" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x26 & wide_0_22=0x73cef2 & absolute_data_addr & wide_shift_dst_disp {
+    local address:2 = absolute_data_addr;
+    local upper:2 = address + 1;
+    local count_addr:2 = R6 + sext(wide_shift_dst_disp:1);
+    local low:2 = *[data]:2 address;
+    local high:2 = *[data]:2 upper;
+    local count:2 = *[data]:2 count_addr;
+    local input:8 = sext(high) * 0x10000 + zext(low);
+    wide_shift_carry_only(input, count);
+}
+
+:ASHIFT "discard","BTR1","*R4+="^wide_shift_dst_disp is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x34 & wide_0_22=0x73a78c & wide_shift_dst_disp {
+    local addr:2 = R4;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    modify_ptr_scaled_window(R4, delta, RM4, RL4, 8, 4, 1:2, 0xffff:2);
+    local count:2 = *[data]:2 addr;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:ASHIFT "CETBL","long *R7+="^wide_shift_dst_disp,"RN5" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x2d & wide_0_22=0x7388ef & wide_shift_dst_disp {
+    local addr:2 = R7;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    modify_ptr_scaled_window(R7, delta, RM6, RL6, 14, 4, 1:2, 0xffff:2);
+    local upper:2 = addr + 1;
+    local low:2 = *[data]:2 addr;
+    local high:2 = *[data]:2 upper;
+    local input:8 = sext(high) * 0x10000 + zext(low);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, RN5, 32:4, 16:4, 1:1, result, flags);
+    shift_limit(result, flags);
+    CETBL = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+@undef WIDE_ORIGINAL_BITS
 
 @define PACKED_WIDE "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1"
 @define PACKED_WIDE_CE1 "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=0"

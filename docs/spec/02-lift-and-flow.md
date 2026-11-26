@@ -4333,6 +4333,24 @@ For covered wide shift routes, the word result uses the upper half of
 the low 32-bit lane. The word and long carry taps differ, and the guard
 can keep the zero flag clear when the written word is zero.
 
+The covered memory-result `EXTRACTZ` takes its field descriptor from
+`FF2:FF1`, but the unbound `IOSPACE` source supplies zero. It still writes
+zero to the incoming `R0` address, postdecrements `R0`, and sets `Z`
+without changing unrelated arithmetic flags.
+
+The covered unqualified arithmetic shifts write the upper result word.
+The two short stores sample their signed input at `DATA[0xffff]`;
+the indexed store takes its count from `RL0`, while the incrementing
+store uses `RN2`. The long-source control result reads two words at the
+incoming `R7` and its wrapped successor, then publishes the word to
+`CETBL` before computing condition feedback. The disconnected register
+and long DATA result ports can still publish carry. The disconnected
+loop-address route instead only reads the count at incoming `R4` and
+postmodifies that pointer; it leaves the arithmetic flags and loop
+address unchanged. For these forms the implicit circular window starts
+at zero; the explicit window uses the programmed bound. A DATA allocation
+or decode stop is not a supported retirement.
+
 Covered compact word shifts align their input to the upper word of the
 40-bit shifter. They publish the selected word but set `Z`, `M`, and `E`
 from the entire aligned result, and select carry from the 16-bit input
