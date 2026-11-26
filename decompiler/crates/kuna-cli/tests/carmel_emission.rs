@@ -87,7 +87,10 @@ fn carmel_delay_refuses_unmodeled_data_order_without_discarding_the_slot() {
             let [instruction] = instructions.as_slice() else { panic!("{doc}"); };
             let ops: Vec<_> = instruction["ops"].as_array().unwrap().iter().filter_map(|op| {
                 let opcode = op["opcode"].as_str().unwrap();
-                matches!(opcode, "LOAD" | "STORE" | "BRANCH" | "CBRANCH" | "CALL").then_some(opcode)
+                let data_access = matches!(opcode, "LOAD" | "STORE");
+                let transfer = matches!(opcode, "BRANCH" | "CBRANCH" | "CALL")
+                    && op["inputs"][0]["space"] == "code";
+                (data_access || transfer).then_some(opcode)
             }).collect();
             assert_eq!(ops, expected, "{doc}");
         }
@@ -2000,9 +2003,11 @@ fn carmel_wide_alu_aliases_keep_result_and_flag_ports_distinct() {
     let binary = common::scratch_file("carmel-wide-alu-aliases", "bin");
     let source = binary.with_extension("c");
     let executable = binary.with_extension("exe");
-    let of_specs = [1u8, 2, 3].map(|route| binary.with_extension(format!("of{route}")));
-    for (index, specs) in of_specs.iter().enumerate() {
-        tracked_carmel_entry_specs(specs, &[("R0", 0x100)], 0, index as u8 + 1);
+    let of_specs = [0u8, 1, 2, 3].map(|route| binary.with_extension(format!("of{route}")));
+    let tracked = [STATIC_CE[0], STATIC_CE[1], ("R0", 0x100)];
+    for (route, specs) in of_specs.iter().enumerate() {
+        let count = if route == 0 { 2 } else { 3 };
+        tracked_carmel_entry_specs(specs, &tracked[..count], 0, route as u8);
     }
     let mut emitted = String::from(
         "#include <stdbool.h>\n#include <stdint.h>\n\
@@ -2045,14 +2050,12 @@ fn carmel_wide_alu_aliases_keep_result_and_flag_ports_distinct() {
         fs::write(&binary, image.as_flattened()).unwrap();
         let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
         let route = match name {
-            "xor_disconnected" => Some(0),
-            "add_acc" | "xor_store" | "add_long" => Some(1),
-            "add_redirected" => Some(2),
-            _ => None,
+            "xor_disconnected" => 1,
+            "add_acc" | "xor_store" | "add_long" => 2,
+            "add_redirected" => 3,
+            _ => 0,
         };
-        if let Some(route) = route {
-            kuna.env("KUNA_SPECS", &of_specs[route]);
-        }
+        kuna.env("KUNA_SPECS", &of_specs[route]);
         kuna.arg("decompile").arg(&binary).args([
             "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
             "--base", "0", "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
@@ -2117,6 +2120,8 @@ fn carmel_wide_alu_aliases_keep_result_and_flag_ports_distinct() {
         fs::remove_file(file).unwrap();
     }
 }
+
+const STATIC_CE: [(&str, u16); 2] = [("CECFG1", 0x2000), ("CECFG2", 0x2000)];
 
 fn tracked_carmel_entry_specs(destination: &Path, tracked: &[(&str, u16)], site: u32, route: u8) {
     let languages = Path::new("Ghidra/Processors/Carmel/data/languages");
@@ -3292,13 +3297,14 @@ fn carmel_uncommon_native_ports_execute_in_emitted_c() {
         fs::write(&binary, [
             route.packet, [0x2b, 0xec, 0, 0x2b, 0xec, 0], [0x2b, 0xd8, 0, 0x2b, 0xec, 0],
         ].as_flattened()).unwrap();
-        let specs = if route.tracked.is_empty() {
-            None
-        } else {
-            let path = binary.with_extension(format!("specs-{row}"));
-            tracked_carmel_entry_specs(&path, route.tracked, 0, 0);
-            Some(path)
-        };
+        let mut tracked = Vec::from(route.tracked);
+        for (name, value) in STATIC_CE {
+            if !route.tracked.iter().chain(route.inputs).any(|&(reg, _)| reg == name) {
+                tracked.push((name, value));
+            }
+        }
+        let specs = binary.with_extension(format!("specs-{row}"));
+        tracked_carmel_entry_specs(&specs, &tracked, 0, 0);
         for (i, _) in route.cells.iter().enumerate() {
             writeln!(c, "static volatile unsigned short backing_{row}_{i};").unwrap();
             if route.bus_access.is_some_and(|(cell, _)| cell == i) {
@@ -3310,9 +3316,7 @@ fn carmel_uncommon_native_ports_execute_in_emitted_c() {
         for &(register, expected) in route.results {
             let name = format!("uncommon_{row}_{}", register.to_ascii_lowercase());
             let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
-            if let Some(path) = &specs {
-                kuna.env("KUNA_SPECS", path);
-            }
+            kuna.env("KUNA_SPECS", &specs);
             kuna.arg("decompile").arg(&binary).args([
                 "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
                 "--json", "--assert-strict", "--assert", &format!("return %{register} {}", c_type(register)),
@@ -3342,7 +3346,7 @@ fn carmel_uncommon_native_ports_execute_in_emitted_c() {
                 writeln!(calls, "if (backing_{row}_{i} != {after:#x}) return {};", row + 64).unwrap();
             }
         }
-        spec_dirs.extend(specs);
+        spec_dirs.push(specs);
     }
     c.push_str(&calls);
     c.push_str("return 0;\n}\n");
@@ -3656,8 +3660,10 @@ fn carmel_compact_shift_lane_ports_execute_in_emitted_c() {
     let binary = common::scratch_file("carmel-compact-shift-ports", "bin");
     let source = binary.with_extension("c");
     let executable = binary.with_extension("exe");
-    let specs = binary.with_extension("specs");
-    tracked_carmel_entry_specs(&specs, &[("R7", 0xc048)], 0, 0);
+    let specs = [0, 1, 2].map(|profile| binary.with_extension(format!("specs-{profile}")));
+    tracked_carmel_entry_specs(&specs[0], &STATIC_CE, 0, 0);
+    tracked_carmel_entry_specs(&specs[1], &STATIC_CE[1..], 0, 0);
+    tracked_carmel_entry_specs(&specs[2], &[STATIC_CE[1], ("R7", 0xc048)], 0, 0);
     let mut c = String::from(
         "#include <stdbool.h>\n#include <stdint.h>\n\
          #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
@@ -3675,12 +3681,10 @@ fn carmel_compact_shift_lane_ports_execute_in_emitted_c() {
                        inputs: &[&str],
                        states: &[(&[u16], u16, Option<(u16, u16)>)],
                        addr: Option<u16>| {
-        let use_specs = addr == Some(0xc048);
         fs::write(&binary, [packet[0], packet[1], [0x2b, 0xd8, 0], NOP].as_flattened()).unwrap();
         let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
-        if use_specs {
-            kuna.env("KUNA_SPECS", &specs);
-        }
+        let profile = if addr == Some(0xc048) { 2 } else { usize::from(inputs.contains(&"CECFG1")) };
+        kuna.env("KUNA_SPECS", &specs[profile]);
         let c_type = |reg: &str| if reg.starts_with("GB") { "unsigned char" } else { "unsigned short" };
         kuna.arg("decompile").arg(&binary).args([
             "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
@@ -3761,7 +3765,9 @@ fn carmel_compact_shift_lane_ports_execute_in_emitted_c() {
     c.push_str("return 0;\n}\n");
     fs::write(&source, &c).unwrap();
     run_emitted_c(&source, &executable, &c);
-    fs::remove_dir_all(specs).unwrap();
+    for path in specs {
+        fs::remove_dir_all(path).unwrap();
+    }
     for file in [binary, source, executable] {
         fs::remove_file(file).unwrap();
     }
