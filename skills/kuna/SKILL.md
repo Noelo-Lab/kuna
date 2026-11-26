@@ -115,6 +115,29 @@ workers, every directive must be a `jumptable`. Use `--jobs 1` for a mixed
 file. For project exports with assertions, use serial, non-streaming mode.
 See `kuna docs cli` for a runnable example and address conventions.
 
+## Read VM-protected functions
+
+Kuna devirtualizes by default: a function protected by a VM-based obfuscator (VMProtect,
+Themida, Tigress Virtualize) prints as the program the VM runs, not as its interpreter.
+Find these by their header, `// warn: devirtualize: VM-protected function recovered (...)`,
+or in `--json` by a warning whose `kind` is `devirtualize`. The header also states what
+the recovery assumed, such as bytecode in writable memory being what the file holds.
+
+- `devirtualize: incomplete: ...` in the header means the recovery was cut short or still
+  holds protector state. Treat that body as a lead, not as the program.
+- A recovered body is not the function's instructions: `kuna disassemble` shows the stub
+  or interpreter and cannot confirm it. A body can also be wrong with no warning (lost
+  stack-array accesses are the known case), so confirm answer-critical logic by execution.
+- `--deobfuscate off` prints the protected code as it is, for studying the VM itself.
+- `--deobfuscate devirtualize` runs the technique on the requested function without
+  waiting for its detection. Try it with `kuna decompile` on a function that still prints
+  as a stub or dispatch loop.
+- `--assert 'import SLOT NAME'` names a call through an import slot whose name the
+  protector stripped.
+
+`--deobfuscate LIST` takes `auto` (the default), `off`, or technique names separated by
+commas, wherever `--option` is accepted. `devirtualize` is the one technique so far.
+
 ## Follow challenge clues and verify critical operations
 
 Search the export for input handling, prompts, and success/failure paths. If needed,
