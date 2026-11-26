@@ -4292,6 +4292,146 @@ fn carmel_compact_secondary_rotate_only_updates_its_address_generators() {
     }
 }
 
+#[test]
+fn carmel_compact_mpy_samples_physical_inputs_and_publishes_x1() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    type Registers = &'static [(&'static str, u16)];
+    const R0_POST: Registers = &[("R0", 0x100), ("PACFG", 0), ("RM0", 0), ("RL0", 0)];
+    const R1_POST: Registers = &[("R1", 0x120), ("PACFG", 0), ("RM0", 0), ("RL0", 0)];
+    const BOTH_POST: Registers = &[("R0", 0x100), ("R1", 0x120), ("PACFG", 0), ("RM0", 0), ("RL0", 0)];
+    const R2_POST: Registers = &[("R2", 0x140), ("PACFG", 0), ("RM2", 0), ("RL2", 0)];
+    const R0_INDIRECT: Registers = &[("R0", 0x100)];
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let cells = [(0x100, 101), (0x101, 0x4444), (0x103, 104), (0x120, 117),
+                 (0x121, 0x5555), (0x124, 121), (0x140, 133), (0x141, 0x6666)];
+    let seeds = [("A0L", 0x4321), ("A0H", 5), ("GB0", 0), ("A2L", 9), ("X1", 17), ("X2", 19),
+                 ("R0", 0x100), ("R1", 0x120), ("R2", 0x140), ("RN2", 5), ("FF1", 11), ("FF2", 13),
+                 ("EST", 0), ("ECFG", 0), ("CECFG1", 0), ("CECFG2", 0), ("CETBL", 0)];
+    // Raw selector, tracked AGU seed, live register overrides, DATA[R0], product (or
+    // preserved A0), X1, pointer updates as a bitmask, EST, and count of DATA reads.
+    let rows: [(u32, Registers, Registers, u16, u64, u16, u8, u16, u8); 19] = [
+        (0x416024, &[], &[], 101, 2880, 320, 0, 0, 0), // R2, not DATA[R2].
+        (0x4160a4, &[], &[], 101, 45, 5, 0, 0, 0), // RN2.
+        (0x416164, &[], &[], 101, 99, 11, 0, 0, 0), // FF1.
+        (0x416144, &[], &[], 101, 153, 17, 0, 0, 0), // Incoming X1.
+        (0x410400, R0_POST, &[], 101, 25856, 101, 1, 0, 1), // DATA[old R0] * old R0.
+        (0x410428, R0_POST, &[], 101, 1717, 101, 1, 0, 1), // DATA[old R0] * old X1.
+        (0x41042e, R0_POST, &[], 101, 1313, 101, 1, 0, 1), // Second FF2 does not latch.
+        (0x418422, BOTH_POST, &[], 101, 11817, 101, 3, 0, 2),
+        (0x41d022, R1_POST, &[], 101, 1989, 17, 2, 0, 1),
+        (0x414024, &[("R0", 0x100), ("RN0", 3)], &[], 101, 936, 104, 0, 0, 1),
+        (0x41f402, &[("R1", 0x120), ("RN1", 4)], &[], 101, 2057, 17, 0, 0, 1),
+        (0x41506c, &[], &[], 101, 121, 11, 0, 0, 0), // OP3 squares FF1.
+        (0x41d064, R2_POST, &[], 101, 17689, 133, 4, 0, 1), // OP3 fetches and advances once.
+        (0x427024, R0_INDIRECT, &[("A2L", 0x1234)], 101, 0x54321, 7, 0, 0, 1),
+        (0x410400, R0_POST, &[("EST", 0x1b7)], 0xff00, 0xff_ffff_0000, 0xff00, 1, 0x10, 1),
+        (0x410428, R0_POST, &[("EST", 0x1b7), ("X1", 0xffff)], 0xff00, 256, 0xff00, 1, 0, 1),
+        (0x427024, R0_INDIRECT, &[("A2L", 1), ("EST", 0xcfc4), ("CETBL", 0xffff)],
+            1, 0x54321, 0, 0, 0x3008, 1), // Narrow result is zero, full product is not.
+        (0x427024, R0_INDIRECT, &[("A2L", 0x8000), ("ECFG", 1)], 0x8000, 0x54321, 0x8000, 0, 0x24, 1),
+        (0x427024, R0_INDIRECT, &[("A2L", 0x8000), ("ECFG", 5)], 0x8000, 0x54321, 0x7fff, 0, 0x24, 1),
+    ];
+    let binary = common::scratch_file("carmel-compact-mpy-latch", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         static unsigned reads;\n\
+         static volatile unsigned short *port(volatile unsigned short *p) { ++reads; return p; }\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    for (address, _) in cells {
+        writeln!(c, "static volatile unsigned short backing_{address:x};\n\
+                     #define cell_{address:x} (*port(&backing_{address:x}))").unwrap();
+    }
+    let mut spec_dirs = Vec::new();
+    let c_type = |reg: &str| if reg.starts_with("GB") { "unsigned char" } else { "unsigned short" };
+    for (i, (raw, tracked, inputs, data0, a0, x1, post, est, access_count)) in rows.into_iter().enumerate() {
+        let word = raw.to_be_bytes();
+        let packet = [word[1], word[2], word[3], 0x2b, 0xec, 0];
+        let specs = if tracked.is_empty() {
+            None
+        } else {
+            let path = binary.with_extension(format!("specs-{i}"));
+            tracked_carmel_entry_specs(&path, tracked, 0, 0);
+            Some(path)
+        };
+        let params = seeds.iter().filter(|(reg, _)| !tracked.iter().any(|(r, _)| reg == r))
+            .map(|&(reg, seed)| (reg, inputs.iter().find(|&&(r, _)| r == reg).map_or(seed, |&(_, n)| n)))
+            .collect::<Vec<_>>();
+        let arguments = params.iter().map(|&(_, n)| n.to_string()).collect::<Vec<_>>().join(",");
+        let outputs = [("A0L", a0 as u16), ("A0H", (a0 >> 16) as u16), ("GB0", (a0 >> 32) as u16),
+                       ("X1", x1), ("X2", 19), ("R0", 0x100 + u16::from(post & 1)),
+                       ("R1", 0x120 + u16::from((post >> 1) & 1)),
+                       ("R2", 0x140 + u16::from((post >> 2) & 1)), ("EST", est)];
+        let body = [packet, nop, ret];
+        // Independent copies let one load emit each return projection.
+        fs::write(&binary, body.as_flattened().repeat(outputs.len())).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        if let Some(path) = &specs {
+            kuna.env("KUNA_SPECS", path);
+        }
+        kuna.arg("decompile-all").arg(&binary).args([
+            "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--jobs", "1", "--assert-strict",
+        ]);
+        for (addr, _) in cells {
+            kuna.args(["--assert", &format!("data [data,{addr:#x}] volatile unsigned short cell_{addr:x}")]);
+        }
+        let names = std::array::from_fn::<_, 9, _>(|projection| {
+            let addr = projection * body.as_flattened().len() / 3;
+            let function = format!("sub_{addr:x}");
+            let (reg, _) = outputs[projection];
+            kuna.args(["--addr", &format!("{addr:#x}"), "--assert",
+                       &format!("return {function}::%{reg} {}", c_type(reg))]);
+            for (n, &(input, _)) in params.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {function}::{n} %{input} {} in_{n}", c_type(input))]);
+            }
+            function
+        });
+        let out = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let functions = json["functions"].as_array().unwrap();
+        assert_eq!(functions.len(), outputs.len(), "{json}");
+        assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+        for (((reg, expected), old_name), fun) in outputs.into_iter().zip(names).zip(functions) {
+            assert_eq!(fun["name"], old_name, "{fun}");
+            let text = fun["code"].as_str().unwrap();
+            assert!(fun["error"].is_null() && !text.contains("halt_"), "{raw:06x} {reg}: {fun}");
+            let name = format!("mpy_{i}_{reg}");
+            writeln!(c, "#define {old_name} {name}\n{text}\n#undef {old_name}").unwrap();
+            for (addr, seed) in cells {
+                let value = if addr == 0x100 { data0 } else { seed };
+                writeln!(calls, "backing_{addr:x} = {value:#x};").unwrap();
+            }
+            writeln!(calls, "reads = 0;\nif ({name}({arguments}) != {expected:#x}) return {};", i + 1).unwrap();
+            if reg == if raw == 0x427024 { "X1" } else { "A0L" } {
+                writeln!(calls, "if (reads != {access_count}) return {};", i + 32).unwrap();
+            }
+            for (addr, seed) in cells {
+                let value = if addr == 0x100 { data0 } else { seed };
+                writeln!(calls, "if (backing_{addr:x} != {value:#x}) return {};", i + 64).unwrap();
+            }
+        }
+        spec_dirs.extend(specs);
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for path in spec_dirs {
+        fs::remove_dir_all(path).unwrap();
+    }
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

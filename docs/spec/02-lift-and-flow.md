@@ -3995,6 +3995,20 @@ instead reads DATA and writes the word to the original destination
 address when CE2 permits. Other peer and operand routes can exhaust the
 physical read ports and are not inferred from these forms.
 
+For the unqualified primary `MPY` forms with an idle peer, only the
+first physical multiplier input can load `X1`. Accumulator halves and
+`X1` itself bypass the latch; a second DATA or register input does not
+replace it. A second `X1` operand uses the incoming latch. Register
+sources and effective addresses are sampled before postmodify, including
+when the same address register supplies both a DATA address and a
+multiply input. Indexed reads use the sum but do not advance the pointer.
+An unbound first `OP3` squares the other source: it fetches and
+postmodifies a DATA operand only once and follows that source's latch
+rule. A dual DATA fetch stops after address updates if both addresses
+request the same single-read bank. An explicit `X1` destination publishes
+the product's high word instead of the input latch, with zero and loss
+flags for the narrow result rather than the full accumulator.
+
 Covered compact indexed multiply forms select the short DATA pointer bank
 opposite the long DATA destination. The physical issue lane independently
 selects the `X` latch and the `EST` flag bank. Only the first input loads

@@ -4903,6 +4903,116 @@ macro raw_mac_product(left, right, sign_left, sign_right, product) {
     product = a * b * (1 + zext(ECFG & 1));
 }
 
+# The unqualified primary MPY with an idle peer publishes a fresh status
+# word. Sample both physical inputs before a pointer update or X1 write.
+macro compact_routed_mpy_acc(left, right) {
+    local product:8;
+    raw_mac_product(left, right, 1:1, 1:1, product);
+    local result:8;
+    local flags:2;
+    raw_mac_finish(product, product & 0xffffffffff, 0:1, 0:1, 0:1, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_alu_ce(flags);
+}
+
+@define COMPACT_ROUTED_MPY "carmel_issue=1 & slot_mode=0 & slot_0_0=0"
+
+compact_mpy_latching_first: "R2" is compact_mul_left=2 { export R2; }
+compact_mpy_latching_first: "RN2" is compact_mul_left=10 { export RN2; }
+compact_mpy_latching_first: "FF1" is compact_mul_left=22 { export FF1; }
+
+:MPY "A0",compact_mpy_latching_first,"A2L" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_9_22=0x20b0 & compact_mpy_latching_first & compact_mul_right=2); (slot_mode=0 & nop_right) {
+    local first:2 = compact_mpy_latching_first;
+    X1 = first;
+    compact_routed_mpy_acc(first, A2L);
+}
+
+:MPY "A0","X1","A2L" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_9_22=0x20b0 & compact_mul_left=20 & compact_mul_right=2); (slot_mode=0 & nop_right) {
+    compact_routed_mpy_acc(X1, A2L);
+}
+
+compact_mpy_direct_second: "R0" is slot_1_5=0 { export R0; }
+compact_mpy_direct_second: "X1" is slot_1_5=20 { export X1; }
+compact_mpy_direct_second: "FF2" is slot_1_5=23 { export FF2; }
+
+:MPY "A0","*R0++",compact_mpy_direct_second "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x10410 & compact_mpy_direct_second); (slot_mode=0 & nop_right) {
+    local address:2 = R0;
+    local second:2 = compact_mpy_direct_second;
+    modify_ptr(R0, 0:2, RM0, RL0, 0, 2);
+    local first:2 = *[data]:2 address;
+    X1 = first;
+    compact_routed_mpy_acc(first, second);
+}
+
+define pcodeop carmel_data_read_conflict;
+
+:MPY "A0","*R0++","*R1++" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x10610 & slot_1_5=17); (slot_mode=0 & nop_right) {
+    local first_address:2 = R0;
+    local second_address:2 = R1;
+    modify_ptr(R0, 0:2, RM0, RL0, 0, 2);
+    modify_ptr(R1, 0:2, RM0, RL0, 2, 2);
+    # The two middle regions have separate one-read ports for even and odd words.
+    if (((first_address ^ second_address) & 0xc001) != 0) goto <fetch>;
+    local region:2 = first_address & 0xc000;
+    if (region == 0 || region == 0xc000) goto <fetch>;
+  <stopped>
+    carmel_data_read_conflict();
+    goto <stopped>;
+  <fetch>
+    local first:2 = *[data]:2 first_address;
+    local second:2 = *[data]:2 second_address;
+    X1 = first;
+    compact_routed_mpy_acc(first, second);
+}
+
+:MPY "A0","X1","*R1++" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x10740 & slot_1_5=17); (slot_mode=0 & nop_right) {
+    local address:2 = R1;
+    modify_ptr(R1, 0:2, RM0, RL0, 2, 2);
+    local second:2 = *[data]:2 address;
+    compact_routed_mpy_acc(X1, second);
+}
+
+:MPY "A0","*R0+RN0","A2L" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x10500 & slot_1_5=18); (slot_mode=0 & nop_right) {
+    local address:2 = R0 + RN0;
+    local first:2 = *[data]:2 address;
+    X1 = first;
+    compact_routed_mpy_acc(first, A2L);
+}
+
+:MPY "A0","X1","*R1+RN1" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x107d0 & slot_1_5=1); (slot_mode=0 & nop_right) {
+    local address:2 = R1 + RN1;
+    local second:2 = *[data]:2 address;
+    compact_routed_mpy_acc(X1, second);
+}
+
+:MPY "A0","OP3","FF1" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x10541 & slot_1_5=22); (slot_mode=0 & nop_right) {
+    X1 = FF1;
+    compact_routed_mpy_acc(FF1, FF1);
+}
+
+:MPY "A0","OP3","*R2++" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x10741 & slot_1_5=18); (slot_mode=0 & nop_right) {
+    local address:2 = R2;
+    modify_ptr(R2, 0:2, RM2, RL2, 4, 2);
+    local operand:2 = *[data]:2 address;
+    X1 = operand;
+    compact_routed_mpy_acc(operand, operand);
+}
+
+:MPY "X1","*R0","A2L" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x109c0 & slot_1_5=18); (slot_mode=0 & nop_right) {
+    local first:2 = *[data]:2 R0;
+    X1 = first;
+    local product:8;
+    raw_mac_product(first, A2L, 1:1, 1:1, product);
+    local result:8;
+    local flags:2;
+    raw_mac_finish(product, product & 0xffffffffff, 1:1, 1:1, 0:1, result, flags);
+    # The explicit high-word write supersedes the input latch in this issue.
+    X1 = result(2);
+    publish_alu_ce(flags);
+}
+
 macro raw_mac_round_sub(base, left, right, result, flags) {
     local product:8;
     raw_mac_product(left, right, 1:1, 1:1, product);
