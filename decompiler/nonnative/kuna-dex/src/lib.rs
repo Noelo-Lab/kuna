@@ -8,10 +8,16 @@
 //! untrusted: every offset and count is checked, and a malformed file or
 //! method is an error, never a panic.
 
+mod class;
+mod classfile;
+mod code;
 mod debug;
 mod dex;
+mod emit;
 mod insn;
 mod reader;
+
+pub use class::ERROR_ATTRIBUTE;
 
 pub use debug::{DebugInfo, Local};
 pub use dex::{
@@ -39,12 +45,48 @@ pub(crate) fn err(message: String) -> Error {
     Error(message)
 }
 
+/// How classes are written.
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
+    /// The lowest class-file major version to write; a class needing more
+    /// (`invokedynamic`, method handles, interface code) gets what it needs.
+    pub min_version: u16,
+    /// Keep classes at version 50 where the class itself allows, so the JVM's
+    /// type-inferring verifier checks every method: library interface methods
+    /// are then called through `Methodref`, which verifies but fails if run.
+    pub verifiable: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            min_version: 50,
+            verifiable: false,
+        }
+    }
+}
+
+/// One translated class.
+#[derive(Clone, Debug)]
+pub struct Translated {
+    /// Internal name (`com/a/B`).
+    pub name: String,
+    pub bytes: Vec<u8>,
+    /// `name(descriptor): reason` for each method whose code failed.
+    pub failures: Vec<String>,
+}
+
 /// Whether `head` starts a DEX file.
 pub fn is_dex(head: &[u8]) -> bool {
     head.len() >= 4 && &head[..4] == b"dex\n"
 }
 
 impl Dex<'_> {
+    /// Translates class definition `idx` to class-file bytes.
+    pub fn translate(&self, idx: u32, opts: &Options) -> Result<Translated> {
+        class::translate(self, idx, opts)
+    }
+
     /// The internal name of class definition `idx`.
     pub fn class_name(&self, idx: u32) -> Result<String> {
         let desc = self.type_desc(self.class_def(idx)?.class)?;
@@ -53,6 +95,41 @@ impl Dex<'_> {
             .and_then(|d| d.strip_suffix(b";"))
             .unwrap_or(desc);
         Ok(mutf8_to_string(name))
+    }
+
+    /// Translates every class on up to `threads` threads, in definition order.
+    pub fn translate_all(&self, opts: &Options, threads: usize) -> Vec<Result<Translated>> {
+        let n = self.class_count() as usize;
+        let threads = threads.clamp(1, 64).min(n.div_ceil(64).max(1));
+        if threads == 1 {
+            return (0..n as u32).map(|i| self.translate(i, opts)).collect();
+        }
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let mut parts: Vec<(usize, Result<Translated>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..threads)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let mut out = Vec::new();
+                        loop {
+                            let start = next.fetch_add(32, std::sync::atomic::Ordering::Relaxed);
+                            if start >= n {
+                                break;
+                            }
+                            for i in start..(start + 32).min(n) {
+                                out.push((i, self.translate(i as u32, opts)));
+                            }
+                        }
+                        out
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|h| h.join().unwrap_or_default())
+                .collect()
+        });
+        parts.sort_by_key(|p| p.0);
+        parts.into_iter().map(|p| p.1).collect()
     }
 
     /// Parses one method's debug info against its code item.

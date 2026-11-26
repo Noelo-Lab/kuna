@@ -9,7 +9,6 @@ pub fn fixture(name: &str) -> Vec<u8> {
 
 pub struct Method {
     pub name: String,
-    pub desc: String,
     pub max_stack: u16,
     pub max_locals: u16,
     pub code: Vec<u8>,
@@ -97,10 +96,9 @@ pub fn read_class(b: &[u8]) -> Class {
     for _ in 0..nm {
         r.u16();
         let name = utf8[r.u16() as usize].clone();
-        let desc = utf8[r.u16() as usize].clone();
+        r.u16();
         let mut m = Method {
             name,
-            desc,
             max_stack: 0,
             max_locals: 0,
             code: Vec::new(),

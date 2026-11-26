@@ -178,6 +178,7 @@ pub struct Dex<'a> {
     call_sites: Table,
     method_handles: Table,
     by_type: OnceLock<BTreeMap<u32, u32>>,
+    nesting: OnceLock<crate::class::Nesting>,
 }
 
 impl<'a> Dex<'a> {
@@ -246,6 +247,7 @@ impl<'a> Dex<'a> {
             call_sites: Table::default(),
             method_handles: Table::default(),
             by_type: OnceLock::new(),
+            nesting: OnceLock::new(),
         };
         if map_off != 0 {
             dex.read_map(map_off)?;
@@ -365,6 +367,11 @@ impl<'a> Dex<'a> {
             })
             .get(&ty)
             .copied()
+    }
+
+    /// Inner-class facts for every class of the file, built on first use.
+    pub(crate) fn nesting(&self) -> &crate::class::Nesting {
+        self.nesting.get_or_init(|| crate::class::Nesting::build(self))
     }
 
     pub fn class_data(&self, off: u32) -> Result<ClassData> {
