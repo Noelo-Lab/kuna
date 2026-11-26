@@ -248,6 +248,52 @@ fn signed_compact_compare_preserves_flags_and_samples_incoming_feedback() {
 }
 
 #[test]
+fn compact_status_move_uses_agu_and_restores_the_saved_loop_frame() {
+    for (placement, raw, value, ce1, ce2, table, status, pointer) in [
+        (0, 0x31b541, 0x000d, 0x1000, 0, 0, 0xe009, 0x100),
+        (0, 0x31b541, 0x000c, 0x1000, 0, 0, 0xe00c, 0x100),
+        (0, 0x31b541, 0xffff, 0x1000, 0, 0, 0xe01b, 0x100),
+        (0, 0x31b541, 0x0004, 0x1000, 0, 0, 0xe000, 0x100),
+        (0, 0x31b541, 0x0009, 0, 0x1000, 0, 0xe010, 0x100),
+        (1, 0x31b541, 0x0009, 0, 0x1000, 0, 0xe009, 0x100),
+        (1, 0x31b541, 0x0009, 0x1000, 0, 0, 0xe010, 0x100),
+        (2, 0x31b541, 0x0009, 0x1000, 0, 0, 0xe009, 0x100),
+        (2, 0x31b541, 0x0009, 0, 0x1000, 0, 0xe010, 0x100),
+        (0, 0x31b540, 0x0009, 0, 0, 0, 0xe009, 0x100),
+        (0, 0x31b551, 0x0009, 0x1000, 0, 0, 0xe009, 0x103),
+        (0, 0x31b561, 0x0009, 0x1000, 0, 0, 0xe009, 0x101),
+        (0, 0x31b571, 0x0009, 0x1000, 0, 0, 0xe009, 0xff),
+    ] {
+        let fetch = match placement {
+            0 => (raw, NOP),
+            1 => (NOP, raw),
+            _ => (NOP | 0x800000, raw),
+        };
+        let parallel = [(0, 1, 6), (2, 1, 0)];
+        let sequential = [(0, 2, 3), (1, 3, 3), (2, 1, 0)];
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)],
+                                 if placement == 2 { &sequential[..] } else { &parallel[..] }, None);
+        m.seed(&[("PSTATUS", 0xe010), ("LC", 7), ("LSAH", 2), ("LSAL", 0x1010),
+                 ("LEAH", 2), ("LEAL", 0x1018), ("LC1", 0xabcd), ("LSA1W", 0x442238),
+                 ("LEA1W", 0x55323a), ("R0", 0x100), ("RN0", 3),
+                 ("CECFG1", ce1), ("CECFG2", ce2), ("CETBL", table)]);
+        m.seed_data(0x100, value);
+        m.seed_data(0x101, 0x1b);
+        m.seed_data(0x103, 0x1b);
+        m.seed_data(0xff, 0x1b);
+        m.start(0).unwrap();
+        if placement == 2 {
+            assert_eq!(m.step(), 3);
+        }
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("PSTATUS"), m.reg("R0")), (status, pointer));
+        let frame = (m.reg("LC"), m.reg("LSAH"), m.reg("LSAL"), m.reg("LEAH"), m.reg("LEAL"));
+        assert_eq!(frame, if status == 0xe010 { (7, 2, 0x1010, 2, 0x1018) } else { (0xabcd, 0x44, 0x2238, 0x55, 0x323a) });
+        assert_eq!(m.data(0x100), value);
+    }
+}
+
+#[test]
 fn explicit_status_loads_drive_the_next_conditional_transfer() {
     let mut pop = Machine::new(0, &[(0xb02642, 0x281c0c), (INC_A2, NOP), (0x21ace6, NOP), (NOP, NOP)],
                                &[(0, 2, 3), (1, 3, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)], None);

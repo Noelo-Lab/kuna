@@ -2352,6 +2352,72 @@ macro compact_load_enabled(qualified, cfg, bank, enabled) {
   <ready>
 }
 
+compact_status_data: "*"^pair_ptr_1 is slot_4_5=0 & pair_ptr_1 {
+    local address:2 = pair_ptr_1;
+    export *[data]:2 address;
+}
+
+@define STATUS_AGU "pair_ptr_1 & pair_rm_1 & pair_rl_1 & pair_bank_1"
+
+compact_status_data: "*"^pair_ptr_1^"+="^pair_rn_1 is slot_4_5=1 & $(STATUS_AGU) & pair_rn_1 {
+    local address:2 = pair_ptr_1;
+    modify_ptr(pair_ptr_1, pair_rn_1, pair_rm_1, pair_rl_1, pair_bank_1, 1:2);
+    export *[data]:2 address;
+}
+compact_status_data: "*"^pair_ptr_1^"++" is slot_4_5=2 & $(STATUS_AGU) {
+    local address:2 = pair_ptr_1;
+    modify_ptr(pair_ptr_1, 0:2, pair_rm_1, pair_rl_1, pair_bank_1, 2:2);
+    export *[data]:2 address;
+}
+compact_status_data: "*"^pair_ptr_1^"--" is slot_4_5=3 & $(STATUS_AGU) {
+    local address:2 = pair_ptr_1;
+    modify_ptr(pair_ptr_1, 0:2, pair_rm_1, pair_rl_1, pair_bank_1, 3:2);
+    export *[data]:2 address;
+}
+
+compact_status_ce1: is slot_0_0=0 { export 1:2; }
+compact_status_ce1: "CE1" is slot_0_0=1 {
+    local enabled:2;
+    compact_load_enabled(1:1, CECFG1, 0:2, enabled);
+    export enabled;
+}
+compact_status_ce2: is slot_0_0=0 { export 1:2; }
+compact_status_ce2: "CE2" is slot_0_0=1 {
+    local enabled:2;
+    compact_load_enabled(1:1, CECFG2, 1:2, enabled);
+    export enabled;
+}
+
+compact_status_first: "MOVE" compact_status_ce1 "PSTATUS",compact_status_data is slot_6_22=0xc6d5
+    & compact_status_ce1 & compact_status_data {
+    build compact_status_ce1;
+    if (compact_status_ce1 == 0) goto <done>;
+    build compact_status_data;
+    select_saved_loop_frame(compact_status_data);
+  <done>
+}
+compact_status_second: "MOVE" compact_status_ce2 "PSTATUS",compact_status_data is slot_6_22=0xc6d5
+    & compact_status_ce2 & compact_status_data {
+    build compact_status_ce2;
+    if (compact_status_ce2 == 0) goto <done>;
+    build compact_status_data;
+    select_saved_loop_frame(compact_status_data);
+  <done>
+}
+
+:^compact_status_first "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_status_first); (slot_mode=0 & nop_right) {
+    build compact_status_first;
+    publish_alu_ce(EST & 0xcfff);
+}
+:^nop_left "||" compact_status_second is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_status_second) {
+    build compact_status_second;
+    publish_alu_ce(EST & 0xcfff);
+}
+:^compact_status_first is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_status_first {
+    build compact_status_first;
+    publish_alu_ce(EST & 0xcfff);
+}
+
 macro compact_load_pacfg(shift, mode) {
     local lane:4 = shift;
     local value:2 = mode;

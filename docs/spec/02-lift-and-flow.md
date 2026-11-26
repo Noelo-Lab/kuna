@@ -3882,6 +3882,13 @@ absolute DATA `LOAD EST` instead replaces the low fifteen status bits
 with a DATA word. `POP EST` reads at the incremented word-addressed `SP`.
 The new flags are visible to a conditional branch in the next issue.
 
+Compact `MOVE PSTATUS,*Rn` uses address enable for the DATA read and
+status write. A qualified parallel-right issue uses CE2; either
+sequential slot uses CE1. The DATA word replaces the low status bits,
+and the instruction restores the live counter and CODE bounds from the
+first saved loop frame. Postmodification applies after sampling the
+address, even if the result predicate is false but address enable is set.
+
 Wide extended and unbound guard-source `CALLABS` reads only DATA word
 `0xffff` and zero-extends it to a CODE word address. The encoded literal
 and adjacent DATA word do not drive the target. CE1/CE2 address enable
