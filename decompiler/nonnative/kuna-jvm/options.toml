@@ -100,28 +100,6 @@ tier = "core"
 symptoms = "nonsense generic types from a tampered Signature attribute|need erased types that match the method descriptors|raw List where List<String> was expected (option is off)"
 
 [[option]]
-option = "jvm_ensure_synchronized_monitors"
-vineflower = "ensure-synchronized-monitors"
-short = "esm"
-aliases = ["ensure-synchronized-monitors", "esm"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "infra"
-subphase = "method_processor"
-strength = "HARD"
-rewind = "infra"
-issue = ""
-summary = "When a monitorenter has no matching monitorexit on some path, extend the synchronized range to where the exit should be so the block still becomes synchronized (..) { }."
-use_when = "Turn off when the inferred extent of a synchronized block looks wrong and the raw monitor operations are wanted."
-example = "kuna decompile app.jar com.ex.Lock --option jvm_ensure_synchronized_monitors off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.ENSURE_SYNCHRONIZED_MONITOR (ensure-synchronized-monitors, -esm)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "synchronized block covers more code than expected|MonitorEnter/MonitorExit pseudo-calls instead of synchronized|unbalanced monitor in handwritten bytecode"
-
-[[option]]
 option = "jvm_decompile_enums"
 vineflower = "decompile-enums"
 short = "den"

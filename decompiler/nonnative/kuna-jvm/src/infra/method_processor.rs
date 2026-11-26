@@ -252,9 +252,7 @@ impl MethodProcessor {
             ExceptionDeobfuscator::remove_empty_ranges(graph);
         }
 
-        if DecompilerContext::get_option(IFernflowerPreferences::ENSURE_SYNCHRONIZED_MONITOR) {
-            DeadCodeHelper::extend_synchronized_range_to_monitorexit(graph);
-        }
+        DeadCodeHelper::extend_synchronized_range_to_monitorexit(graph);
 
         DeadCodeHelper::incorporate_value_returns(graph);
 

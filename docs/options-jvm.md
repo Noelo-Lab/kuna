@@ -42,9 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| synchronized block covers more code than expected | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
-| MonitorEnter/MonitorExit pseudo-calls instead of synchronized | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
-| unbalanced monitor in handwritten bytecode | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
 | enum written as class extends Enum with $VALUES | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
 | need the generated values()/valueOf() bodies | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
 | enum constant initializers hide tampered code | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
@@ -166,15 +163,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_ensure_synchronized_monitors` -- on | off, default `on`
-
-- **Symptoms:** synchronized block covers more code than expected; MonitorEnter/MonitorExit pseudo-calls instead of synchronized; unbalanced monitor in handwritten bytecode.
-- **What it does:** When a monitorenter has no matching monitorexit on some path, extend the synchronized range to where the exit should be so the block still becomes synchronized (..) { }.
-- **When to flip:** Turn off when the inferred extent of a synchronized block looks wrong and the raw monitor operations are wanted.
-- **Where / provenance:** infra/method_processor · vineflower · vineflower-option
-- **Also spelled:** `ensure-synchronized-monitors`, `esm`
-- **Example:** `kuna decompile app.jar com.ex.Lock --option jvm_ensure_synchronized_monitors off`
 
 ### `jvm_decompile_enums` -- on | off, default `on`
 
