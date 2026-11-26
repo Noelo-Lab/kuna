@@ -431,7 +431,7 @@ alternates two views of the variables:
   expression; the two-branch assignment of a ternary becomes `?:`; the javac null check
   `outer.getClass()` before a qualified `outer.new Inner()` is dropped
   (`jvm_remove_getclass`); the pre-Java-5 `class$` idiom is folded into a class literal
-  (`jvm_decompile_java4`, finished at class level by section 10.11).
+  (finished at class level by section 10.11).
 - **SSAU** (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/ssau_constructor_sparse_ex.rs`):
   versions also change at every use, which yields a graph of definitions and uses. On
   the first round it marks effectively-final variables; on every round
@@ -882,7 +882,7 @@ tree, the late method passes of section 10.9 and then the class-level rewrites o
 initializers out of `<clinit>` and the constructors into the field declarations and drops
 a constructor's leading argument-less `super()` (`jvm_hide_empty_super`);
 `decompiler/nonnative/kuna-jvm/src/p4_calls/class_reference14_processor.rs` turns the
-Java 1.4 class-literal cache into `X.class` (`jvm_decompile_java4`);
+Java 1.4 class-literal cache into `X.class`;
 `decompiler/nonnative/kuna-jvm/src/p8_structure/enum_processor.rs` removes `$VALUES`,
 `values()`, `valueOf()` and the hidden name and ordinal constructor parameters
 (`jvm_decompile_enums`); and

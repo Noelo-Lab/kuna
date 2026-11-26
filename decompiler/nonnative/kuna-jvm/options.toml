@@ -78,28 +78,6 @@ tier = "analysis"
 symptoms = "Outer$Inner written as a separate class instead of nested|anonymous class body lands in the wrong method|need each class file decompiled on its own"
 
 [[option]]
-option = "jvm_decompile_java4"
-vineflower = "decompile-java4"
-short = "dc4"
-aliases = ["decompile-java4", "dc4"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p3_dataflow"
-subphase = "simplify_exprents_helper, class_writer"
-strength = "HARD"
-rewind = "p3_dataflow"
-issue = ""
-summary = "Turn the pre-Java-5 class-literal idiom (a synthetic static class$(String) helper, a cached Class field and Class.forName) back into Foo.class."
-use_when = "Turn off to see the literal class$ helper calls and cache fields in Java 1.4-and-older class files, e.g. when the helper was tampered with."
-example = "kuna decompile legacy.jar com.ex.Old --option jvm_decompile_java4 off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILE_CLASS_1_4 (decompile-java4, -dc4)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "class$(\"java.lang.String\") calls instead of String.class|static Class class$java$lang$String fields in old class files|need the raw Class.forName cache logic"
-
-[[option]]
 option = "jvm_decompile_assert"
 vineflower = "decompile-assert"
 short = "das"

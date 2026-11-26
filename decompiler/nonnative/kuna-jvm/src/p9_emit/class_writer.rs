@@ -322,7 +322,6 @@ impl ClassWriter {
 
             if node.with(|d| d.type_) == ClassNodeType::Root
                 && cl.get_version().has14_class_references()
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_CLASS_1_4)
             {
                 ClassReference14Processor::process_class_references(node);
             }

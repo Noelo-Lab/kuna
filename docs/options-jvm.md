@@ -42,9 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| class$("java.lang.String") calls instead of String.class | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
-| static Class class$java$lang$String fields in old class files | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
-| need the raw Class.forName cache logic | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
 | if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
 | $assertionsDisabled field visible | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
 | assert hides a check that must be read literally | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
@@ -178,15 +175,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_decompile_java4` -- on | off, default `on`
-
-- **Symptoms:** class$("java.lang.String") calls instead of String.class; static Class class$java$lang$String fields in old class files; need the raw Class.forName cache logic.
-- **What it does:** Turn the pre-Java-5 class-literal idiom (a synthetic static class$(String) helper, a cached Class field and Class.forName) back into Foo.class.
-- **When to flip:** Turn off to see the literal class$ helper calls and cache fields in Java 1.4-and-older class files, e.g. when the helper was tampered with.
-- **Where / provenance:** p3_dataflow/simplify_exprents_helper, class_writer · vineflower · vineflower-option
-- **Also spelled:** `decompile-java4`, `dc4`
-- **Example:** `kuna decompile legacy.jar com.ex.Old --option jvm_decompile_java4 off`
 
 ### `jvm_decompile_assert` -- on | off, default `on`
 

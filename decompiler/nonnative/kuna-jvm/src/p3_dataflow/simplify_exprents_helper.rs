@@ -134,9 +134,6 @@ impl SimplifyExprentsHelper {
         let expressions = stat.get_exprents();
         match expressions {
             None => {
-                let process_class14 =
-                    DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_CLASS_1_4);
-
                 loop {
                     let mut changed = false;
 
@@ -152,7 +149,7 @@ impl SimplifyExprentsHelper {
 
                         changed = IfHelper::merge_ifs(st, set_reordered_ifs)
                             || Self::build_iff(st, ssa)
-                            || process_class14 && Self::collapse_inlined_class14(st);
+                            || Self::collapse_inlined_class14(st);
 
                         if changed {
                             break;
