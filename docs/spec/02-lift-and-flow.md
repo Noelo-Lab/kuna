@@ -3938,6 +3938,15 @@ result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
 `CLRBTR` clears only its physical backtrace port; a veto preserves it.
 
+The wide MAC flag sink computes on a full-width addend of -1, without a
+DATA read or write. The fallback word lane sign-extends DATA at `0xffff`
+and aligns it to bit 16 when `ECFG.MS` also doubles the product.
+For MACR on this lane, rounding ties upward precedes flag calculation;
+`SR1` moves the rounding boundary to bit 17. For unrounded operations
+`SR1` does not enter flag calculation. Limiting and the final DATA
+shift select the stored word separately from the arithmetic flags.
+MACSU bypasses DATA limiting.
+
 The supported CE-qualified wide `DIVIDE` forms distinguish a short absolute
 DATA operand from a literal and from a long absolute DATA operand. Long
 DATA contains the low word first; the second word address wraps. The trial

@@ -113,6 +113,10 @@ Selected CE2 logical shifts use configuration-word sources and preserve
 the destination on a veto. An unconnected configuration input stops before issue.
 Covered wide signed/unsigned multiply-subtract forms select the addend
 from the result bank and keep the first multiplier's `X1` latch.
+The full-width wide MAC flag sink accumulates from a constant -1 without
+reading DATA. Selected wide MAC, MACSU, MSU and MACR forms instead
+read and write the single fallback DATA word at `0xffff`; the encoded
+literal does not address that word.
 Other wide effects include selected EXTRACTS, EXTRACTZ, INSERT, DIVIDE,
 divide-with-trace, logic and unary arithmetic routes. Unqualified
 BANKXCHG exchanges selected pointer or accumulator banks. Predicated logic

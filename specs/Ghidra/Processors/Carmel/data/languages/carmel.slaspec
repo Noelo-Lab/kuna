@@ -5366,25 +5366,29 @@ compact_long_left: "MPYUS" "CE1" "*R3","A2L","A1L" is slot_0_22=0x480723 { local
 
 # Keep the complete 40-bit ALU result in a standard C width. Finish the
 # flags before narrowing the physical WB port to a high word or a guard.
-macro raw_mac_finish(exact, raw_adder, short_result, short_zero, store, result, flags) {
+macro raw_mac_finish_limit(exact, raw_adder, short_result, short_zero, store, limit_product, result, flags) {
     local bits:8 = exact & 0xffffffffff;
     local negative:1 = bits >= 0x8000000000;
     local extended:1 = bits > 0x7fffffff && bits < 0xff80000000;
     local overflow:1 = exact + 0x8000000000 > 0xffffffffff;
     local saturated:1 = (ECFG & 0x28) == 8;
     local auto_limit:1 = (ECFG & 4) != 0;
-    local limited:1 = auto_limit && (((bits >> 31) ^ (bits >> 32)) & 1) != 0;
+    local limited:1 = limit_product != 0 && auto_limit && (((bits >> 31) ^ (bits >> 32)) & 1) != 0;
     local loss:1 = limited || ((overflow || (short_result != 0 && extended)) && !saturated && !auto_limit);
     local carry_out:1 = (raw_adder & 0x10000000000) != 0;
     local zero:1 = bits == 0 || (short_zero != 0 && (bits >> 16) == 0);
     flags = zext(carry_out) | (zext(overflow) << 1) | (zext(loss) << 2) |
             (zext(zero) << 3) | (zext(negative) << 4) | (zext(extended) << 5);
-    limited = limited || (store != 0 && saturated && extended);
+    limited = limited || (limit_product != 0 && store != 0 && saturated && extended);
     result = bits;
     if (!limited) goto <done>;
     result = 0x7fffffff + zext(negative) * 0xff00000001;
     flags = flags | 4;
   <done>
+}
+
+macro raw_mac_finish(exact, raw_adder, short_result, short_zero, store, result, flags) {
+    raw_mac_finish_limit(exact, raw_adder, short_result, short_zero, store, 1:1, result, flags);
 }
 
 macro compact_ff12_store(negate, long_result) {
@@ -5768,6 +5772,60 @@ macro wide_mac_control_result(destination, delta) {
 @define WIDE_ACC_MAC "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1"
 @define WIDE_ACC_MAC_A01 "$(WIDE_ACC_MAC) & wide_acc_mac_first=0x50 & wide_0_0=1 & wide_40_45=0x11"
 @define WIDE_ACC_MAC_A01_WORD "$(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x28"
+
+macro wide_mac_fallback_word(product, subtract, rounded, limit_product) {
+    local address:2 = 0xffff;
+    local word:2 = *[data]:2 address;
+    local base:8 = ((zext(word) ^ 0x8000) - 0x8000) * (1 + 0xffff * zext(ECFG & 1));
+    local term:8 = product ^ (0 - subtract);
+    local exact:8 = base + term + subtract;
+    local adder:8 = (base & 0xffffffffff) + (term & 0xffffffffff) + subtract;
+    local shift:4 = zext((ECFG >> 5) & 1);
+    if (rounded == 0) goto <round_done>;
+    # This port rounds ties upward regardless of R. SR1 moves the rounding
+    # boundary from bit 16 to bit 17, not just the final extraction.
+    local quantum:8 = 0x10000 << shift;
+    local bias:8 = quantum >> 1;
+    exact = (exact + bias) & -quantum;
+    adder = adder + bias;
+  <round_done>
+    local result:8;
+    local flags:2;
+    raw_mac_finish_limit(exact, adder, 1:1, 1:1, 1:1, limit_product, result, flags);
+    local stored:8 = result >> (16 + shift);
+    *[data]:2 address = stored:2;
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+
+:MAC "RMW2","A0L","A1L" is $(WIDE_ACC_MAC_A01_WORD) & wide_acc_mac_dst=0x8e {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 1:1, product);
+    # The full lane reads a hardwired 40-bit -1 and only drives status.
+    local result:8;
+    local flags:2;
+    raw_mac_add(-1:8, product, 0:8, 0:1, 0:1, result, flags);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+:MAC "*0xffff","A0L","A1L" is $(WIDE_ACC_MAC_A01_WORD) & wide_acc_mac_dst=0x8f {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 1:1, product);
+    wide_mac_fallback_word(product, 0:8, 0:1, 1:1);
+}
+:MACSU "*0xffff","A0L","A1L" is $(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x29 & wide_acc_mac_dst=0x8f {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 0:1, product);
+    wide_mac_fallback_word(product, 0:8, 0:1, 0:1);
+}
+:MSU "*0xffff","A0L","A1L" is $(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x2c & wide_acc_mac_dst=0x8f {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 1:1, product);
+    wide_mac_fallback_word(product, 1:8, 0:1, 1:1);
+}
+:MACR "*0xffff","A0L","A1L" is $(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x20 & wide_acc_mac_dst=0x8f {
+    local product:8;
+    raw_mac_product(A0L, A1L, 1:1, 1:1, product);
+    wide_mac_fallback_word(product, 0:8, 1:1, 1:1);
+}
 
 :MACH "GB3","A0L","A1L" is $(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x27 & wide_acc_mac_dst=0x83 {
     local product:8;

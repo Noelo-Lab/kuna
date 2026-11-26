@@ -2814,6 +2814,59 @@ fn carmel_wide_mac_guard_and_control_ports_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_wide_mac_flag_sink_and_fallback_word_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    const RETURN: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let binary = common::scratch_file("carmel-wide-mac-fallback", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short word;\n");
+    let mut calls = String::from("int main(void) {\n");
+    let ports = ["A0L", "A1L", "ECFG", "EST", "CECFG1", "CECFG2", "CETBL"];
+    let rows = [
+        (0xa8, 0x8e, 0, 2, 1, 0x8000, 0x8000, 0x3001),
+        (0xa8, 0x8f, 0, 0, 1, 0x8000, 0xffff, 0x3010),
+        (0xa8, 0x8f, 9, 0x8000, 0x8000, 0, 0x7fff, 0x3024),
+        (0xa8, 0x8f, 0x21, 0x8000, 0x8000, 0, 0x4000, 0x3024),
+        (0xa9, 0x8f, 5, 0x7fff, 0xffff, 0, 0xfffd, 0x3020),
+        (0xac, 0x8f, 1, 0x4000, 4, 1, 0xffff, 0x3010),
+        (0xa0, 0x8f, 0x22, 0x4000, 4, 0, 1, 0x3000),
+    ];
+    for (i, (op, dst, cfg, left, right, old, stored, est)) in rows.into_iter().enumerate() {
+        let body = [[0x91, 0x4a, 0xc3, op, dst, 0xa1], RETURN];
+        fs::write(&binary, body.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--target", TARGET,
+            "--base", "0x1000", "--json", "--assert-strict",
+            "--assert", "return %EST unsigned short",
+            "--assert", "data [data,0xffff] volatile unsigned short word",
+        ]);
+        for (j, reg) in ports.iter().enumerate() {
+            kuna.args(["--assert", &format!("param {j} %{reg} unsigned short in_{}", reg.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &doc["functions"][0];
+        let emitted = function["code"].as_str().unwrap();
+        assert!(function["error"].is_null() && !emitted.contains("halt_"), "{function}");
+        writeln!(c, "#define sub_1000 mac_{i}\n{emitted}\n#undef sub_1000").unwrap();
+        writeln!(calls, "word = {old}; if (mac_{i}({left},{right},{cfg},0,4096,4096,65535) != {est} || word != {stored}) return {};",
+                 i + 1).unwrap();
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_parallel_logic_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
