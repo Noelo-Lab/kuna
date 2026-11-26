@@ -4374,6 +4374,27 @@ long DATA route writes neither an ALU result nor ALU flags, but
 postdecrements `R6` by two words when CE2 or its address-update override
 permits it.
 
+The disconnected binary ports are not interchangeable. The covered
+unqualified `SUBRC1` with result selector `0xd3` still fetches two DATA
+words at `R + RN` but produces neither a result nor arithmetic flags.
+With word inputs and result selector `0xd8`, it discards the result but
+computes status from signed words aligned to the high lane, including
+the incoming carry. Neither route accesses I/O. For CE1 wide logic with
+`0xd8` as the first input, that input supplies zero; the postdecrement
+source reads one word at the incoming pointer. The address-update
+override can perform the fetch and decrement even if CE1 vetoes the
+accumulator-half write and logic status update.
+
+In the covered unqualified wide logic with result selector `0xd8`, no
+register or I/O result is written. The DATA input still reads two words
+at the old pointer and advances it by the signed displacement. The
+logic flags use the long DATA value and the zero-extended incoming
+register word, even when that register is the updated pointer. For the
+qualified short `XOR`, selector `0x4e` supplies 40 bits of ones. The
+absolute DATA word is zero-extended before XOR, so the sign flag is set
+even when the low result word is zero. CE2 controls flags and the
+single-word store; its address override can still allow the read.
+
 In the covered qualified `MUL` and `MULUS` forms, the address override
 allows the DATA fetch, its postincrement, and the multiplier input latch
 even when CE vetoes accumulator and ALU flag writeback. A compact right

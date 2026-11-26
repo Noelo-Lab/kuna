@@ -108,8 +108,9 @@ impl Machine {
         // Bank alignment is independent of the target's address scaling (in particular CODE's 3).
         for (name, alignment) in [("code", 8), ("data", 2), ("io", 2), ("ext", 2), ("register", 8), ("unique", 8)] {
             let space = Rc::clone(manager.get_space_by_name(name).unwrap());
+            let capacity = if name == "unique" { 512 } else { 128 };
             state.set_memory_bank(Rc::new(RefCell::new(MemoryHashOverlay::new(
-                space, alignment, 64, 128, None,
+                space, alignment, 64, capacity, None,
             ))));
         }
         let state = Rc::new(RefCell::new(state));
@@ -809,6 +810,69 @@ fn compact_cmpu_samples_ce_before_publishing_its_flags() {
             m.step();
             assert_eq!(m.reg("EST"), if prior_ce == 0 { refresh } else { flags | prior_ce });
         }
+    }
+}
+
+#[test]
+fn wide_binary_unbound_ports() {
+    let machine = |left, right, mode| {
+        Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, mode, 6), (2, 1, 0)], None)
+    };
+    for (table, ce) in [(0, 0), (0xffff, 0x3000)] {
+        let mut m = machine(0xa977e8, 0x87a6db, 5);
+        m.seed(&[("CETBL", table), ("EST", 0x29), ("R5", 0x4048), ("RN5", 2)]);
+        m.seed_data(0x404a, 0x5dda);
+        m.seed_data(0x404b, 0xcbfe);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("R5"), m.data(0x404a), m.data(0x404b)), (ce | 0x29, 0x4048, 0x5dda, 0xcbfe));
+
+        let mut m = machine(0x1c2609, 0xe26360, 4);
+        m.seed(&[("CETBL", table), ("CECFG1", 0x1000), ("EST", 0x24), ("R4", 0x48), ("A0", 0xea433809a4)]);
+        m.seed_data(0x47, 0xffff);
+        m.seed_data(0x48, 0x8001);
+        m.seed_data(0x49, 0x1234);
+        m.seed_data(0xffff, 0xcafe);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        let (acc, est) = if table != 0 { (0xea800109a4, ce | 4) } else { (0xea433809a4, 0x24) };
+        assert_eq!((m.reg("A0"), m.reg("EST"), m.reg("R4")), (acc, est, 0x47));
+
+        let mut m = machine(0xa42532, 0xe761d6, 5);
+        m.seed(&[("CETBL", table), ("EST", 0x24), ("R4", 0x48), ("R5", 0x4048)]);
+        m.seed_data(0x4048, 0x71bb);
+        m.seed_data(0x4049, 0x03a3);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("R4"), m.reg("R5"), m.data(0x4048)), (ce | 4, 0x48, 0x407a, 0x71bb));
+
+        let mut m = machine(0x9177e8, 0x87b121, 5);
+        m.seed(&[("CETBL", table), ("A0", 0xea12347fff), ("A1", 0x6a56788000)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("A0"), m.reg("A1")), (ce | 0x35, 0xea12347fff, 0x6a56788000));
+
+        let mut m = machine(0x73861d, 0xba7539, 4);
+        m.seed(&[("CETBL", table), ("CECFG2", 0x1000), ("EST", 9), ("ECFG", 0x20)]);
+        m.seed_data(0x861d, 0x8bad);
+        m.seed_data(0x861e, 0x1234);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        let (word, est) = if table != 0 { (0x7452, ce | 0x11) } else { (0x8bad, 9) };
+        assert_eq!((m.data(0x861d), m.data(0x861e), m.reg("EST")), (word, 0x1234, est));
+    }
+
+    for (left, right, data, expected) in [
+        (0xa52501, 0xe761d6, (1, 0), 0x3008), // RHS samples the pointer before the AGU.
+        (0xa42501, 0xe361d6, (0, 0x8000), 0x3020), // OR sees the upper DATA word.
+    ] {
+        let mut m = machine(left, right, 5);
+        m.seed(&[("CETBL", 0xffff), ("R5", 0x4048)]);
+        m.seed_data(0x4048, data.0);
+        m.seed_data(0x4049, data.1);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("R5")), (expected, 0x4049));
     }
 }
 

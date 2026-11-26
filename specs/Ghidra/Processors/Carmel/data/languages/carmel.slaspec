@@ -554,6 +554,14 @@ define token wide (48)
     wide_logic_rmw_route = (0,17)
     wide_alias_logic_dst = (10,17)
     wide_alias_logic_lhs = (2,9)
+    wide_logic_dst_hi = (10,12)
+    wide_logic_lhs_ptr = (2,4)
+    wide_logic_lhs_modulo = (2,4)
+    wide_logic_lhs_bound = (2,4)
+    wide_logic_lhs_mode_shift = (2,4)
+    wide_logic_rhs_modulo = (40,42)
+    wide_logic_rhs_bound = (40,42)
+    wide_logic_rhs_mode_shift = (40,42)
     wide_logic_accumulate_op = (16,17)
     wide_logic_accumulate_family = (18,22)
     wide_logic_accumulate_dst = (9,15)
@@ -575,6 +583,8 @@ define token wide (48)
     short_alu_dst_bound = (9,11)
     short_alu_dst_mode_shift = (9,11)
     short_alu_src_ptr = (1,3)
+    short_alu_src_step = (1,3)
+    short_alu_rhs_step = (40,42)
     wide_shift_dst_disp = (24,31) signed
     wide_shift_count_disp = (32,39) signed
     wide_shift_opcode = (17,22)
@@ -762,11 +772,11 @@ attach variables [agu_3_rl] [RL4 RL6 RL6 _ RL6 RL6 RL6 _];
 attach values [agu_3_shift] [10 12 14 _ 12 14 14 _];
 attach variables [address_literal_dst] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [packed_dst_r] [R0 R1 R2 R3 R4 R5 R6 R7];
-attach variables [wide_move_base wide_move_load_dst] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [wide_move_base wide_move_load_dst wide_logic_lhs_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [packed_lhs_hi packed_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_acc packed_lhs_acc packed_rhs_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [packed_dst_lo packed_lhs_lo packed_rhs_lo wide_shift_low_dst] [A0L A1L A2L A3L A4L A5L _ _];
-attach variables [packed_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [packed_dst_hi wide_logic_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_guard packed_lhs_guard packed_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [indexed_load_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [indexed_load_lo] [A0L A1L A2L A3L A4L A5L _ _];
@@ -781,9 +791,10 @@ attach variables [short_alu_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [short_alu_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [short_alu_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [short_alu_dst_ptr short_alu_src_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
-attach variables [short_alu_dst_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
-attach variables [short_alu_dst_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
-attach values [short_alu_dst_mode_shift] [0 2 4 6 8 10 12 14];
+attach variables [short_alu_src_step short_alu_rhs_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [short_alu_dst_modulo wide_logic_lhs_modulo wide_logic_rhs_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [short_alu_dst_bound wide_logic_lhs_bound wide_logic_rhs_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [short_alu_dst_mode_shift wide_logic_lhs_mode_shift wide_logic_rhs_mode_shift] [0 2 4 6 8 10 12 14];
 attach variables [dual_preg_register] [_ _ _ _ _ _ _ _ _ _ A2H A3H _ _ _ _];
 attach variables [swap_reg_lo] [A0L A1L A2L A3L A4L A5L FF1 FF2];
 attach variables [swap_reg_full] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
@@ -4262,6 +4273,82 @@ is $(SHORT_ALU) & wide_alias_add_op=8 & $(SHORT_ALU_ACC_DST)
 @undef SHORT_ALU_LOW_SRC
 @undef SHORT_ALU_ACC_DST
 @undef SHORT_ALU
+
+# Open result ports do not cancel operand fetch. Arithmetic D3 also
+# disconnects status, whereas D8 retains the ALU's aligned word flags.
+@define WIDE_SUBRC1_OPEN "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & logic_ce_bank=0 & wide_alias_add_op=3 & wide_0_0=1"
+:SUBRC1 "discard","long *("^short_alu_src_ptr^"+"^short_alu_src_step^")",short_alu_rhs_step is $(WIDE_SUBRC1_OPEN)
+    & wide_alias_add_dst=0xd3 & wide_alias_add_lhs>=0x68 & wide_alias_add_lhs<=0x6f
+    & wide_40_45>=0x28 & wide_40_45<=0x2f & short_alu_src_ptr & short_alu_src_step & short_alu_rhs_step {
+    local address:2 = short_alu_src_ptr + short_alu_src_step;
+    local low:2;
+    local high:2;
+    wide_unary_data_read(address, 2:2, low, high);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:SUBRC1 "discard",packed_lhs_lo,packed_rhs_lo is $(WIDE_SUBRC1_OPEN) & wide_alias_add_dst=0xd8
+    & wide_alias_add_lhs>=0x90 & wide_alias_add_lhs<=0x95 & wide_40_45>=0x10 & wide_40_45<=0x15
+    & packed_lhs_lo & packed_rhs_lo {
+    local first:8 = sext(packed_lhs_lo) << 16;
+    local second:8 = sext(packed_rhs_lo) << 16;
+    local result:8;
+    short_alu_reverse(first, second, 3:2, 0x10000:8, 1:1, 0:1, result);
+}
+@undef WIDE_SUBRC1_OPEN
+
+:^wide_logic_rmw_operator wide_unary_gate wide_logic_dst_hi,"0","*"^wide_move_base^"--"
+is $(WIDE_LOGIC_CE) & unary_wide_ce_bank=0 & wide_alias_logic_lhs=0xd8 & wide_0_1=0
+    & wide_alias_logic_dst>=0x98 & wide_alias_logic_dst<=0x9d & wide_40_45>=0x18 & wide_40_45<=0x1f
+    & wide_unary_gate & wide_logic_dst_hi & wide_move_base & wide_logic_rhs_modulo & wide_logic_rhs_bound
+    & wide_logic_rhs_mode_shift {
+    local flags:2 = EST & 0xcfff;
+    if (wide_unary_gate == 0) goto <publish>;
+    local address:2 = wide_move_base;
+    local word:2 = *[data]:2 address;
+    modify_ptr(wide_move_base, 0:2, wide_logic_rhs_modulo, wide_logic_rhs_bound, wide_logic_rhs_mode_shift, 3);
+    if ((wide_unary_gate & 1) == 0) goto <publish>;
+    local result:2;
+    wide_logic_bitop(wide_logic_rmw_operator, 0:2, word, result);
+    wide_logic_dst_hi = result;
+    flags = (flags & 0xffc7) | (zext(result == 0) << 3);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:^wide_logic_rmw_operator "discard","long *"^wide_logic_lhs_ptr^"+="^wide_shift_dst_disp,wide_move_base
+is $(WIDE_ALIAS_ALU) & wide_20_22=6 & wide_logic_rmw_operator & wide_alias_logic_dst=0xd8 & wide_0_1=2
+    & wide_alias_logic_lhs>=0x70 & wide_alias_logic_lhs<=0x77 & wide_40_45>=0x20 & wide_40_45<=0x27
+    & wide_logic_lhs_ptr & wide_logic_lhs_modulo & wide_logic_lhs_bound & wide_logic_lhs_mode_shift
+    & wide_shift_dst_disp & wide_move_base {
+    local address:2 = wide_logic_lhs_ptr;
+    local rhs:2 = wide_move_base;
+    local low:2;
+    local high:2;
+    wide_unary_data_read(address, 2:2, low, high);
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    modify_ptr(wide_logic_lhs_ptr, delta, wide_logic_lhs_modulo, wide_logic_lhs_bound, wide_logic_lhs_mode_shift, 4);
+    local lhs:4 = zext(low) | (zext(high) << 16);
+    local result:4;
+    wide_logic_bitop(wide_logic_rmw_operator, lhs, zext(rhs), result);
+    local flags:2 = (zext(result == 0) << 3) | (zext(result >= 0x80000000) << 5);
+    publish_alu_ce((EST & 0xcfc7) | flags);
+}
+
+:XOR wide_unary_gate "*"^absolute_data_addr,"-1" is wide_right_mode=1 & wide_0_1=1 & unary_wide_ce_bank=1
+    & wide_left_mode=0 & carmel_issue=4 & wide_unary_gate & wide_logic_accumulate_family=0xe & wide_logic_accumulate_op=2
+    & wide_logic_accumulate_dst>=0x38 & wide_logic_accumulate_dst<=0x3f & wide_logic_accumulate_src=0x4e & absolute_data_addr {
+    local flags:2 = EST & 0xcfff;
+    if (wide_unary_gate == 0) goto <publish>;
+    local address:2 = absolute_data_addr;
+    local word:2 = *[data]:2 address;
+    if ((wide_unary_gate & 1) == 0) goto <publish>;
+    *[data]:2 address = ~word;
+    # The all-ones input spans 40 bits; the original DATA is zero-extended.
+    flags = (flags & 0xffc7) | 0x10;
+  <publish>
+    publish_alu_ce(flags);
+}
 
 
 macro wide_round_write_long(address, low, high, flags) {
