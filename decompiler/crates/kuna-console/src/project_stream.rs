@@ -84,10 +84,16 @@ pub fn asm_labels_from_entries(prog: &ConsoleProgram, entries: &[FunctionEntry])
     labels
 }
 
-/// A resumable linear disassembly of every CODE section.
+/// The two lines that open a `.asm`.
+pub fn asm_header_lines(prog: &ConsoleProgram, file_name: &str) -> String {
+    format!("; kuna decompile-project — {file_name}\n; arch: {}\n", prog.description())
+}
+
+/// A resumable linear disassembly of every CODE section, or of a narrowed
+/// export's selection ([`Self::over`]).
 ///
 /// [`Self::step`] walks at most a byte budget of code and writes whole lines to
-/// the sink; [`Self::is_done`] reports when every section has been swept.  The
+/// the sink; [`Self::is_done`] reports when every block has been swept.  The
 /// scratch state (an in-progress `db` run above all) is carried across steps, so
 /// the byte stream a bounded walk produces is the one an unbounded walk
 /// produces.
@@ -97,10 +103,13 @@ pub struct AsmSweep {
     /// (kuna #1288) Where a function's flow ends short of the next label, with
     /// the line that says so ([`flow_ends`]).
     ends: BTreeMap<u64, String>,
-    code_secs: Vec<(u64, u64)>,
-    section: usize,
+    /// The byte spans swept, ascending: the CODE sections, or the selection.
+    blocks: Vec<(u64, u64)>,
+    /// What each block's opening line calls it: `code section` or `code range`.
+    kind: &'static str,
+    block: usize,
     addr: u64,
-    in_section: bool,
+    in_block: bool,
     scratch: AssemblyScratch,
     pending: String,
     done: bool,
@@ -108,31 +117,49 @@ pub struct AsmSweep {
 
 impl AsmSweep {
     pub fn new(prog: &ConsoleProgram, file_name: &str, labels: Vec<AsmLabel>) -> Self {
+        let mut sections: Vec<(u64, u64)> = code_sections(prog)
+            .into_iter()
+            .map(|(vma, size)| (vma, vma.saturating_add(size)))
+            .collect();
+        sections.sort_unstable();
+        Self::sweeping(prog, file_name, labels, sections, "code section")
+    }
+
+    /// The sweep of a narrowed export: only `spans`, ascending disjoint byte
+    /// ranges inside the CODE sections ([`crate::kuna_asmscope::selection_spans`]),
+    /// each opened by a `; --- code range` line.
+    pub fn over(
+        prog: &ConsoleProgram,
+        file_name: &str,
+        labels: Vec<AsmLabel>,
+        spans: Vec<(u64, u64)>,
+    ) -> Self {
+        Self::sweeping(prog, file_name, labels, spans, "code range")
+    }
+
+    fn sweeping(
+        prog: &ConsoleProgram,
+        file_name: &str,
+        labels: Vec<AsmLabel>,
+        blocks: Vec<(u64, u64)>,
+        kind: &'static str,
+    ) -> Self {
         let arm = is_arm(prog);
         let ends = flow_ends(prog, &labels);
         let mut map: BTreeMap<u64, Vec<AsmLabel>> = BTreeMap::new();
         for label in labels {
             map.entry(normalize(arm, label.byte_address)).or_default().push(label);
         }
-        let mut code_secs: Vec<(u64, u64)> = prog
-            .sections()
-            .iter()
-            .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
-            .map(|&(vma, size, _)| (vma, size))
-            .collect();
-        code_secs.sort_unstable();
-        let done = code_secs.is_empty();
+        let done = blocks.is_empty();
         Self {
-            header: format!(
-                "; kuna decompile-project — {file_name}\n; arch: {}\n",
-                prog.description()
-            ),
+            header: asm_header_lines(prog, file_name),
             labels: map,
             ends,
-            code_secs,
-            section: 0,
+            blocks,
+            kind,
+            block: 0,
             addr: 0,
-            in_section: false,
+            in_block: false,
             scratch: AssemblyScratch::new(),
             pending: String::new(),
             done,
@@ -170,17 +197,17 @@ impl AsmSweep {
         }
         let mut remaining = byte_budget;
         self.pending.clear();
-        while self.section < self.code_secs.len() {
-            let (vma, size) = self.code_secs[self.section];
-            let end = vma.saturating_add(size);
-            if !self.in_section {
-                let display_vma = prog.output_code_offset(vma);
+        while self.block < self.blocks.len() {
+            let (start, end) = self.blocks[self.block];
+            if !self.in_block {
+                let display_start = prog.output_code_offset(start);
                 let display_end = prog.output_code_end_offset(end);
                 self.pending.push_str(&format!(
-                    "\n; --- code section 0x{display_vma:x}..0x{display_end:x} ---\n"
+                    "\n; --- {} 0x{display_start:x}..0x{display_end:x} ---\n",
+                    self.kind
                 ));
-                self.addr = vma;
-                self.in_section = true;
+                self.addr = start;
+                self.in_block = true;
             }
             while self.addr < end && remaining > 0 {
                 let consumed = sweep_one(
@@ -201,14 +228,14 @@ impl AsmSweep {
             }
             if self.addr >= end {
                 self.scratch.flush_db(&mut self.pending);
-                self.section += 1;
-                self.in_section = false;
+                self.block += 1;
+                self.in_block = false;
             }
             if remaining == 0 {
                 break;
             }
         }
-        self.done = self.section >= self.code_secs.len();
+        self.done = self.block >= self.blocks.len();
         out.write_all(self.pending.as_bytes())?;
         self.pending.clear();
         Ok(self.done)
@@ -293,7 +320,20 @@ pub fn render_variables_section(results: &[FuncResult]) -> String {
 /// [`crate::project::build_asm`] appends.
 pub fn render_data_tail(prog: &ConsoleProgram, dat_addrs: &BTreeSet<u64>) -> String {
     let mut out = String::new();
-    project::emit_data_tail(prog, &prog.sections(), dat_addrs, &mut out);
+    project::emit_data_tail(prog, &prog.sections(), dat_addrs, None, &mut out);
+    out
+}
+
+/// (kuna #1978) The data tail of a narrowed export, identical to the one
+/// [`crate::project::build_selection_asm`] appends when `names` is what
+/// [`crate::kuna_asmscope::referenced_names`] collected from its results.
+pub fn render_selection_data_tail(
+    prog: &ConsoleProgram,
+    dat_addrs: &BTreeSet<u64>,
+    names: &BTreeSet<String>,
+) -> String {
+    let mut out = String::new();
+    project::emit_data_tail(prog, &prog.sections(), dat_addrs, Some(names), &mut out);
     out
 }
 
@@ -323,13 +363,22 @@ fn flow_ends(prog: &ConsoleProgram, labels: &[AsmLabel]) -> BTreeMap<u64, String
     ends
 }
 
+/// Every CODE section as `(vma, size)`, in the loader's order.
+pub(crate) fn code_sections(prog: &ConsoleProgram) -> Vec<(u64, u64)> {
+    prog.sections()
+        .iter()
+        .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
+        .map(|&(vma, size, _)| (vma, size))
+        .collect()
+}
+
 /// On ARM-family specs a Thumb function's entry VMA carries the mode bit; the
 /// sweep walks even byte addresses, so labels are keyed on `vma & !1`.
-fn is_arm(prog: &ConsoleProgram) -> bool {
+pub(crate) fn is_arm(prog: &ConsoleProgram) -> bool {
     prog.description().starts_with("ARM")
 }
 
-fn normalize(arm: bool, vma: u64) -> u64 {
+pub(crate) fn normalize(arm: bool, vma: u64) -> u64 {
     if arm {
         vma & !1
     } else {

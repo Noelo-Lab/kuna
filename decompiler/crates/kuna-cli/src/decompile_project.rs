@@ -27,7 +27,8 @@
 //!   `; arg:` / `; stack:` comments mapping decompiled variables to stack
 //!   offsets, undecodable bytes as `db` lines, and a `; --- data ---` tail
 //!   listing the named globals plus every `dat_<hex>` address the `.c`
-//!   references, with raw bytes.
+//!   references, with raw bytes. A `--functions`/`--addr` export sweeps only
+//!   the selected functions' code (`kuna_console::kuna_asmscope`).
 //! * `README.md`  — binary metadata (size, arch, entry point, sections,
 //!   function counts) and the artifact/labeling conventions.
 //!
@@ -55,8 +56,9 @@ use std::path::{Path, PathBuf};
 
 use kuna_console::engine::ConsoleProgram;
 use kuna_console::project::{
-    build_asm, build_c, build_header, build_readme, collect_dat_addrs,
-    decompile_export_targets_watched, BatchOutcome, FuncResult,
+    build_asm, build_c, build_header, build_selection_asm, collect_dat_addrs,
+    decompile_export_targets_watched, render_readme, BatchOutcome, FuncResult, ReadmeCounts,
+    ReadmeFacts, ReadmeLayout,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
@@ -180,7 +182,8 @@ fn usage() {
          \x20 <name>.h    recompile prelude + type definitions + globals named by\n\
          \x20             address + prototypes\n\
          \x20 <name>.asm  labeled disassembly (function labels, stack-var comments,\n\
-         \x20             dat_<hex> data labels with raw bytes)\n\
+         \x20             dat_<hex> data labels with raw bytes); with --functions or\n\
+         \x20             --addr, of the selected functions' code only\n\
          \x20 README.md   binary metadata (size, arch, entry, sections, counts)\n\
          Unfiltered fast exports default to 10 seconds per function; other runs\n\
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
@@ -359,11 +362,18 @@ pub(crate) fn decompile_project(
     let header = build_header(&file_name, &prelude, &types, &results)?;
     let c_file = build_c(&file_name, &results);
     let dat_addrs = collect_dat_addrs(&results);
-    let asm = build_asm(&prog, &results, &dat_addrs, &file_name);
+    let asm = if whole {
+        build_asm(&prog, &results, &dat_addrs, &file_name)
+    } else {
+        build_selection_asm(&prog, &results, &dat_addrs, &file_name)
+    };
     // The CLI's `| Path |` row prints the canonicalized on-disk path (the wasm
     // front-end passes a virtual label instead), so output stays byte-identical.
-    let readme =
-        build_readme(&binary_path, &binary_path.display().to_string(), &file_name, &prog, &results);
+    let facts = ReadmeFacts {
+        selection: !whole,
+        ..ReadmeFacts::snapshot(&binary_path, &binary_path.display().to_string(), &file_name, &prog)
+    };
+    let readme = render_readme(&facts, Some(ReadmeCounts::of(&results)), ReadmeLayout::Standard);
 
     std::fs::create_dir_all(&out_dir)
         .map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
