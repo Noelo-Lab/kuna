@@ -43,11 +43,14 @@ b803000000eb21b805000000eb1ab807000000eb13b80b000000eb0cb80d000000eb05b8010000
 <bytechunk space="ram" offset="0x402000" readonly="true">
 27114000000000002e1140000000000035114000000000003c114000000000004311400000000000
 </bytechunk>
+<bytechunk space="ram" offset="0x402080" readonly="true">89f8660fafc6c3</bytechunk>
 </binaryimage>
 <script>
   <com>map function r0x401000 widen</com>
   <com>map function r0x401020 shift</com>
   <com>map function r0x401100 sel</com>
+  <com>map function r0x402080 mul_low</com>
+  <com>map prototype mul_low uint2 mul_low(uint2 a,uint2 b);</com>
   <com>lo fu widen</com>
   <com>decompile</com>
   <com>print C</com>
@@ -55,6 +58,9 @@ b803000000eb21b805000000eb1ab807000000eb13b80b000000eb0cb80d000000eb05b8010000
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu sel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul_low</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -65,4 +71,5 @@ b803000000eb21b805000000eb1ab807000000eb13b80b000000eb0cb80d000000eb05b8010000
 <stringmatch name="UNSIGNEDREAD #4: no arithmetic shift of the int" min="0" max="0">return \(\*a0 \^ 0x80\) - 0x80 >> 3;</stringmatch>
 <stringmatch name="UNSIGNEDREAD #5: the byte-sum selector is cast to its byte type" min="1" max="1">switch\(\(char\)\(a0 \+ '\\x01'\)\)</stringmatch>
 <stringmatch name="UNSIGNEDREAD #6: no int-wide selector" min="0" max="0">switch\(a0 \+</stringmatch>
+<stringmatch name="UNSIGNEDREAD #7: multiply in unsigned int before the low-word truncation" min="1" max="1">return \((uint2|unsigned short|ushort)\)\(\((uint4|unsigned int|uint)\)a \* b\);</stringmatch>
 </decompilertest>

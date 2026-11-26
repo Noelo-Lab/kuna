@@ -854,6 +854,20 @@ converts this one itself). Expressions narrower than `int` are left to the
 upstream integer-promotion checks (`checkIntPromotionForCompare`,
 `checkIntPromotionForExtension`). This is a correctness fix with no option.
 
+**Narrow unsigned products (kuna).** Two unsigned operands narrower
+than C `int` can both promote to signed `int`. If their product can
+exceed `INT_MAX`, `a * b` is undefined even when the machine only keeps
+the low word. `decompiler/crates/kuna-decomp/src/p9_emit/kuna_narrowmultiply.rs`
+checks the printed unsigned operand types and bounds their possible
+bits to their machine widths. The overflow check covers both the
+target's integer model and compilation with a 32-bit C `int`: an
+`unsigned short` from a 16-bit model can promote to signed `int` on
+another host. It converts one operand to an unsigned type at least
+as wide as either `int`, then casts the result back to its machine width.
+That keeps a later consumer from observing the discarded high bits. A
+compound assignment that needs this conversion uses the ordinary
+assignment form. The p-code and other output languages are unchanged.
+
 **A switch on an expression narrower than `int` (kuna).** A `BRANCHIND`
 selector of one or two bytes is computed at its own width, so a byte
 `a0 + 1` is 0x80 when `a0` is 0x7f, but C adds the promoted operands as
