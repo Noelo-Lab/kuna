@@ -3921,6 +3921,19 @@ Paired operations read their inputs before either lane writes DATA, and
 the long result uses the captured destination rather than the advanced
 pointer.
 
+In the covered dual compact arithmetic packets with `OP1`/`OP2`, both
+temporary DATA reads use the incoming addresses. The two AGUs still
+advance their pointers. With a secondary accumulator result, neither
+temporary drives either ALU; the secondary subtract uses the incoming
+carry. With a secondary DATA destination, the first left word also
+drives the left ALU. The secondary operation can update its status lane
+but does not store to the encoded destination. That route requires
+operand-fetch context (`carmel_of_route=2`) establishing the first
+address on the low bus at that issue, after any earlier pointer updates.
+Without that binding the DATA-destination form remains unlifted: a third
+high-bus read can stop at operand fetch after the AGU advances and
+before either lane writes back.
+
 Covered wide `LOAD` forms distinguish accumulator writeback from pointer
 and `PACFG` setup. An operand that initializes a pointer does not also
 overwrite the encoded bound register.
@@ -3972,6 +3985,13 @@ accumulator receives the sign-extended difference. The EST destination
 publishes status, not a copy of the result word. The lift does not infer
 the reset route from the CODE address; an unknown input route is unimplemented.
 
+The two-operand wide logic form uses a separate result multiplexer. An
+accumulator half takes the low word and still computes flags from the full
+result. A guard takes the low byte of the high word without publishing
+arithmetic flags. Two DATA selectors using the same pointer read the old
+address; the covered indexed form advances it only once and writes to the
+original cell.
+
 In the covered qualified wide logic forms, the undriven I/O operand is
 zero, not `USER_IO`. The CE1 word routes write `INTBASE` or saved `LC1`
 only when enabled. Saved loop address inputs participate at full 24-bit
@@ -3993,6 +4013,14 @@ new arithmetic flags. `ROL` puts the fetched operand's top bit in carry;
 `ROR` uses its low bit. `INC` and `NOT` do not replace arithmetic status when
 the result is disconnected. The fractional `ADDL`, `SUBH` and `SUBL` forms
 instead publish the status of adjusting the implicit all-ones accumulator.
+
+In the covered CE2 adjustments with a DATA destination, the old effective
+address supplies the left arithmetic input but the result does not write
+DATA. Address updates still run when the address override is set. When both
+operands displace a pointer, the low byte applies to the destination and the
+high byte to the source. `ADDH` and `SUBH` shift a signed word source into
+the high half but consume a signed long source without a shift. A connected
+accumulator receives the entire 40-bit result.
 
 For covered qualified compact `ADD` and `SUB` word read-modify-write forms,
 the left parallel lane computes flags but cannot write back to the first
@@ -4091,18 +4119,23 @@ An already-active source 1 or 2 is ignored, and source 3 is ignored when
 any trap is active. Source 1 vectors through `INTBASE` when no trap is
 active; accepted non-vectored entries skip the following issue.
 
-Lifted absolute peripheral moves address `io` and `ext` as separate 16-bit
-word spaces. A peripheral word and a `data` word at the same numeric
-address do not alias.
+Lifted absolute peripheral moves use separate `io` and `ext` spaces
+with 16-bit words. Neither aliases a `data` word at the same numeric address.
 The covered long-DATA I/O source does not drive a DATA value onto the bus.
 It advances `R0` by two, including when only address enable is set. Zero
 is written to the I/O word only when execution is enabled.
 
-The wide I/O load selectors displayed as `RL0` and `selector_f0` do not
-publish a register result. The lift retains their I/O read when the selected
-CE bank enables execution or bit 12 of its configuration enables operand
-fetch. The read cannot be treated as a no-op merely because its result is
-discarded; volatile I/O declarations preserve it in emitted C.
+The covered disconnected wide I/O and EXT load selectors have no register
+writeback. The lift retains the bus read and, for the covered qualified
+forms, controls it with the selected predicate or address-enable override.
+Volatile bus declarations preserve these reads in emitted C.
+
+An I/O word transfer is 16 bits, but its encoded word address is 22 bits;
+the high bits of an admitted port must not alias its low 16-bit counterpart.
+This address identifies a port, not a guarantee that a device backs it.
+Wide indexed I/O/DATA moves access the original DATA word and update its
+pointer once. The covered displaced and absolute EXT loads send the word to
+DATA; the EXT source's ninth address bit is independent of the DATA address.
 
 The mixed compact MAC and add packets keep each lane’s 40-bit arithmetic
 result separate from its physical write port. A narrow destination can

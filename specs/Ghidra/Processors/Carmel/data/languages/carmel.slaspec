@@ -6,7 +6,7 @@ define alignment=3;
 define space code type=ram_space wordsize=3 size=3 default;
 define space data type=ram_space wordsize=2 size=2;
 define space cliw type=ram_space wordsize=3 size=3;
-define space io type=ram_space wordsize=2 size=2;
+define space io type=ram_space wordsize=2 size=3;
 define space ext type=ram_space wordsize=2 size=2;
 define space register type=register_space size=4;
 
@@ -354,6 +354,7 @@ define token slot (24)
     slot_13_15 = (13,15)
     slot_11_13 = (11,13)
     slot_11_14 = (11,14)
+    dual_preg_register = (11,14)
     slot_9_13 = (9,13)
     slot_6_10 = (6,10)
     slot_4_8 = (4,8)
@@ -398,6 +399,12 @@ define token wide (48)
     wide_logic_rmw_route = (0,17)
     wide_alias_logic_dst = (10,17)
     wide_alias_logic_lhs = (2,9)
+    wide_logic_accumulate_op = (16,17)
+    wide_logic_accumulate_family = (18,22)
+    wide_logic_accumulate_dst = (9,15)
+    wide_logic_accumulate_src = (2,8)
+    wide_adjust_op = (10,12)
+    wide_adjust_long_dst = (8,8)
     wide_alias_add_op = (17,22)
     wide_alias_add_dst = (9,16)
     wide_alias_add_lhs = (1,8)
@@ -418,7 +425,7 @@ define token wide (48)
     wide_load_mode = (10,11)
     wide_load_literal_bits = (24,39) hex
     wide_load_ce_bank = (46,46)
-    io_word_address = (24,39) hex
+    io_word_address = (24,45) hex
     ext_read_word_0 = (40,45) hex
     ext_read_word_6 = (0,2) hex
     ext_write_word_address = (2,10) hex
@@ -563,6 +570,7 @@ attach values [agu_3_shift] [10 12 14 _ 12 14 14 _];
 attach variables [address_literal_dst] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [packed_dst_r] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [packed_lhs_hi packed_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [dual_preg_register] [_ _ _ _ _ _ _ _ _ _ A2H A3H _ _ _ _];
 attach variables [swap_reg_lo] [A0L A1L A2L A3L A4L A5L FF1 FF2];
 attach variables [swap_reg_full] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
 attach variables [swap_base] [R0 R1 R2 R3 R4 R5 R6 R7];
@@ -2614,6 +2622,202 @@ macro wide_alias_r0_word(word) {
     commit_logic_flags(zext(A1L == 0) << 3, 0);
 }
 
+# The two-operand logic family reads its destination before publishing the result.
+wide_logic_accumulate: "OR" is wide_logic_accumulate_op=0 { export 0:2; }
+wide_logic_accumulate: "AND" is wide_logic_accumulate_op=1 { export 1:2; }
+wide_logic_accumulate: "XOR" is wide_logic_accumulate_op=2 { export 2:2; }
+
+macro wide_logic_accumulate_flags(result) {
+    local flags:2 = (zext(result == 0) << 3) | (zext(result >= 0x8000000000) << 4)
+                  | (zext(result > 0x7fffffff && result < 0xff80000000) << 5);
+    commit_logic_flags(flags, 0);
+}
+
+@define WIDE_LOGIC_ACCUMULATE "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & logic_ce_bank=0 & wide_logic_accumulate_family=0xe & wide_0_1=0"
+:^wide_logic_accumulate "A0","A1" is $(WIDE_LOGIC_ACCUMULATE) & wide_logic_accumulate & wide_logic_accumulate_dst=0x48 & wide_logic_accumulate_src=0x49 {
+    local left:8;
+    local right:8;
+    compact_long_sample(A0L, A0H, GB0, left);
+    compact_long_sample(A1L, A1H, GB1, right);
+    local result:8;
+    wide_logic_bitop(wide_logic_accumulate, left, right, result);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    wide_logic_accumulate_flags(result);
+}
+:^wide_logic_accumulate "A0H","A1" is $(WIDE_LOGIC_ACCUMULATE) & wide_logic_accumulate & wide_logic_accumulate_dst=0x58 & wide_logic_accumulate_src=0x49 {
+    local right:8;
+    compact_long_sample(A1L, A1H, GB1, right);
+    local result:8;
+    wide_logic_bitop(wide_logic_accumulate, zext(A0H), right, result);
+    A0H = result:2;
+    wide_logic_accumulate_flags(result);
+}
+:^wide_logic_accumulate "GB0","A1" is $(WIDE_LOGIC_ACCUMULATE) & wide_logic_accumulate & wide_logic_accumulate_dst=0x40 & wide_logic_accumulate_src=0x49 {
+    local result:2;
+    wide_logic_bitop(wide_logic_accumulate, 0:2, A1H, result);
+    GB0 = result:1;
+}
+:^wide_logic_accumulate "*R0+=RN0","A0L" is $(WIDE_LOGIC_ACCUMULATE) & wide_logic_accumulate & wide_logic_accumulate_dst=8 & wide_logic_accumulate_src=0x50 {
+    local address:2 = R0;
+    local left:2 = *[data]:2 address;
+    local result:2;
+    wide_logic_bitop(wide_logic_accumulate, left, A0L, result);
+    modify_ptr(R0, RN0, RM0, RL0, 0, 1);
+    *[data]:2 address = result;
+    commit_logic_flags(zext(result == 0) << 3, 0);
+}
+:^wide_logic_accumulate "*R0+=RN0","*R0" is $(WIDE_LOGIC_ACCUMULATE) & wide_logic_accumulate & wide_logic_accumulate_dst=8 & wide_logic_accumulate_src=0 {
+    local address:2 = R0;
+    local word:2 = *[data]:2 address;
+    local result:2;
+    wide_logic_bitop(wide_logic_accumulate, word, word, result);
+    modify_ptr(R0, RN0, RM0, RL0, 0, 1);
+    *[data]:2 address = result;
+    commit_logic_flags(zext(result == 0) << 3, 0);
+}
+
+# Immediate address-unit transfers and fixed long strides.
+macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
+    local base:2 = pointer;
+    local mode:2 = (PACFG >> shift) & 3;
+    local candidate:4 = sext(base) + sext(delta);
+    if (mode < 2) goto <transfer_done>;
+
+    local size:4;
+    local lower:4;
+    if (mode == 3) goto <transfer_explicit>;
+    local mask:2 = modulo;
+    mask = mask | (mask >> 1);
+    mask = mask | (mask >> 2);
+    mask = mask | (mask >> 4);
+    mask = mask | (mask >> 8);
+    lower = sext(base & ~mask);
+    size = zext(modulo & 0xfff) + 1;
+    if (candidate s>= lower && candidate s< lower + size) goto <transfer_done>;
+    goto <transfer_wrap>;
+
+  <transfer_explicit>
+    candidate = zext(candidate:2);
+    lower = zext(bound);
+    size = zext(modulo) + 1;
+    local limit:4 = lower + size;
+    if (limit <= 0x10000 && lower <= candidate && candidate < limit) goto <transfer_done>;
+  <transfer_wrap>
+    if (delta s< 0) goto <transfer_reverse>;
+    candidate = candidate - size;
+    goto <transfer_done>;
+  <transfer_reverse>
+    candidate = candidate + size;
+  <transfer_done>
+    result = candidate:2;
+}
+
+macro wide_adjust_result(left, right, subtract, result) {
+    local mask:8 = 0xffffffffff;
+    local sign:8 = 0x8000000000;
+    local lhs:8 = left;
+    local rhs:8 = right & mask;
+    local raw:8 = lhs + rhs;
+    local carry_bit:1 = raw > mask;
+    local sign_difference:1 = ((lhs ^ rhs) & sign) != 0;
+    local subtracting:1 = subtract;
+    if (subtracting == 0) goto <status>;
+    raw = lhs - rhs;
+    carry_bit = lhs >= rhs;
+  <status>
+    result = raw & mask;
+    local overflow:1 = (sign_difference == subtracting) && (((lhs ^ result) & sign) != 0);
+    local flags:2 = zext(carry_bit) | (zext(overflow) * 6) | (zext(result == 0) << 3)
+                  | (zext(result >= sign) << 4)
+                  | (zext(result > 0x7fffffff && result < 0xff80000000) << 5);
+    EST = (EST & 0xffc4) | flags;
+}
+
+wide_adjust_high: "ADDH" is wide_adjust_op=5 { export 0:1; }
+wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
+
+@define WIDE_ADJUST_CE2 "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=1 & wide_13_22=0x210"
+:ADDH "CE2" "*R1:long","*R0+="^wide_shift_dst_disp is $(WIDE_ADJUST_CE2) & wide_adjust_op=5 & wide_2_9=0x41 & wide_40_45=0x30 & wide_0_1=0 & wide_shift_dst_disp {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <finish>;
+    local source:2 = R0;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    transfer_address_word(source, RM0, RL0, 0, delta, R0);
+    local word:2 = *[data]:2 source;
+    if (enabled == 0) goto <finish>;
+    local right:8 = (zext(word) << 16) | ((0 - zext(word >= 0x8000)) & 0xff00000000);
+    local result:8;
+    wide_adjust_result(zext(R1), right, 0:1, result);
+  <finish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:ADDL "CE2" "*R1+="^wide_shift_dst_disp^":long","*R0+="^wide_shift_count_disp is $(WIDE_ADJUST_CE2) & wide_adjust_op=4 & wide_2_9=0x71 & wide_40_45=0x30 & wide_0_1=0 & wide_shift_dst_disp & wide_shift_count_disp {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <finish>;
+    local destination:2 = R1;
+    local source:2 = R0;
+    local destination_delta:2 = sext(wide_shift_dst_disp:1);
+    local source_delta:2 = sext(wide_shift_count_disp:1);
+    transfer_address_word(destination, RM0, RL0, 2, destination_delta, R1);
+    transfer_address_word(source, RM0, RL0, 0, source_delta, R0);
+    local word:2 = *[data]:2 source;
+    if (enabled == 0) goto <finish>;
+    local result:8;
+    wide_adjust_result(zext(destination), zext(word), 0:1, result);
+  <finish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:^wide_adjust_high "CE2" "*R1:long","*R0:long" is $(WIDE_ADJUST_CE2) & wide_adjust_high & wide_2_9=0x41 & wide_40_45=0 & wide_0_1=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <finish>;
+    local low:2;
+    local high:2;
+    wide_unary_data_read(R0, 2:2, low, high);
+    if (enabled == 0) goto <finish>;
+    local word:4 = zext(low) | (zext(high) << 16);
+    local result:8;
+    wide_adjust_result(zext(R1), sext(word), wide_adjust_high, result);
+  <finish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:ADDH "CE2" "A0","*R0:long" is $(WIDE_ADJUST_CE2) & wide_adjust_op=5 & wide_2_9=0x88 & wide_40_45=0 & wide_0_1=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <finish>;
+    local low:2;
+    local high:2;
+    wide_unary_data_read(R0, 2:2, low, high);
+    if (enabled == 0) goto <finish>;
+    local word:4 = zext(low) | (zext(high) << 16);
+    local left:8;
+    compact_long_sample(A0L, A0H, GB0, left);
+    local result:8;
+    wide_adjust_result(left, sext(word), 0:1, result);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+  <finish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:SUBL "CE2" "*R1++",wide_load_literal is $(WIDE_ADJUST_CE2) & wide_adjust_op=0 & (wide_2_9=0x11 | wide_2_9=0x51) & wide_40_45=0xf & wide_0_1=2 & wide_adjust_long_dst & wide_load_literal {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <finish>;
+    local destination:2 = R1;
+    local stride:2 = wide_adjust_long_dst + 1;
+    modify_ptr_scaled(R1, RN1, RM0, RL0, 2, 2, stride);
+    if (enabled == 0) goto <finish>;
+    local result:8;
+    wide_adjust_result(zext(destination), zext(wide_load_literal), 1:1, result);
+  <finish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
 macro compact_rmw_r3(cfg, bank, address, enabled) {
     address = R3;
     local ce_bank:2 = zext(bank);
@@ -3345,6 +3549,81 @@ macro raw_mac_flags(flags, active, shift) {
     flags = (flags & ~(0x3b:2 << shift)) | (active << shift);
 }
 
+# The two temporary ports sample the left AGUs before either result is
+# published. The direct route also connects the first word to the left ALU.
+macro dual_preg_addresses(first, second) {
+    first = R1;
+    second = R2;
+    modify_ptr(R1, RN1, RM0, RL0, 2, 2);
+}
+
+macro dual_preg_fetch(first_address, second_address, first_word) {
+    first_word = *[data]:2 first_address;
+    local second_word:2 = *[data]:2 second_address;
+}
+
+dual_preg_left_op: "ADDABS" is slot_16_22=0x1d { export 0:2; }
+dual_preg_left_op: "SUB" is slot_16_22=0x01 { export 1:2; }
+dual_preg_left_op: "SUBR" is slot_16_22=0x05 { export 2:2; }
+@define DUAL_PREG_LEFT "carmel_issue=1 & slot_mode=0 & slot_15_15=1 & slot_11_14=9 & slot_6_10=17 & slot_1_5=2 & slot_0_0=0"
+
+:dual_preg_left_op "A1H","*R1++","*R2" "||" "SUBC" dual_preg_register,mac_preg_src_name,"*R3++" is ($(DUAL_PREG_LEFT) & dual_preg_left_op); (slot_mode=0 & slot_16_22=8 & slot_15_15=1 & (slot_11_14=10 | slot_11_14=11) & dual_preg_register & mac_preg_src_name & slot_1_5=19 & slot_0_0=0) {
+    local first_address:2;
+    local second_address:2;
+    dual_preg_addresses(first_address, second_address);
+    modify_ptr(R3, RN3, RM2, RL2, 6, 2);
+    local first_word:2;
+    dual_preg_fetch(first_address, second_address, first_word);
+    local carry_in:2 = (EST >> 6) & 1;
+    local left_flags:2 = 8 | zext(dual_preg_left_op != 0);
+    local right_flags:2 = carry_in * 9 | ((1 - carry_in) << 4);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, left_flags, 0);
+    raw_mac_flags(flags, right_flags, 6);
+    A1H = 0;
+    dual_preg_register = carry_in - 1;
+    publish_alu_ce(flags);
+}
+
+# The connected direct input adds a high-bus request when its address is
+# high. Lift only the established low-bus route, never an unbound variant.
+:dual_preg_left_op "A1H","*R1++","*R2" "||" "SUB CE2" "*R1",mac_preg_src_name,"*R2+=RN2" is ($(DUAL_PREG_LEFT) & carmel_of_route=2 & dual_preg_left_op); (slot_mode=0 & slot_16_22=0 & slot_15_15=0 & slot_11_14=1 & mac_preg_src_name & slot_1_5=10 & slot_0_0=1) {
+    local enabled:2;
+    compact_preg_ce(1:1, enabled);
+    local first_address:2;
+    local second_address:2;
+    dual_preg_addresses(first_address, second_address);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <fetch>;
+    modify_ptr(R2, RN2, RM2, RL2, 4, 1);
+  <fetch>
+    local first_word:2;
+    dual_preg_fetch(first_address, second_address, first_word);
+    local exact:8 = ((zext(first_word) ^ 0x8000) - 0x8000) << 16;
+    local adder:8 = 0;
+    if (dual_preg_left_op != 1) goto <not_sub>;
+    adder = 0x10000000000;
+    goto <finish>;
+  <not_sub>
+    if (dual_preg_left_op != 2) goto <absolute>;
+    adder = zext(first_word == 0) << 40;
+    exact = -exact;
+    goto <finish>;
+  <absolute>
+    if (exact s>= 0) goto <finish>;
+    exact = -exact;
+  <finish>
+    local result:8;
+    local left_flags:2;
+    raw_mac_finish(exact, adder, 1:1, 0:1, 0:1, result, left_flags);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, left_flags, 0);
+    if (enabled == 0) goto <publish>;
+    flags = (flags & 0xf13f) | 0x240;
+  <publish>
+    A1H = result(2);
+    publish_alu_ce(flags);
+}
+
 macro raw_mac_product(left, right, sign_left, sign_right, product) {
     local a:8 = zext(left);
     local b:8 = zext(right);
@@ -3680,42 +3959,6 @@ macro raw_mac_predicate(cfg, bank, enabled, addresses) {
     local flags:2 = EST & 0xcfff;
     raw_mac_flags(flags, active, 6);
     publish_alu_ce(flags);
-}
-
-# Immediate address-unit transfers and fixed long strides.
-macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
-    local base:2 = pointer;
-    local mode:2 = (PACFG >> shift) & 3;
-    local candidate:4 = sext(base) + sext(delta);
-    if (mode < 2) goto <transfer_done>;
-
-    local size:4;
-    local lower:4;
-    if (mode == 3) goto <transfer_explicit>;
-    local mask:2 = modulo;
-    mask = mask | (mask >> 1);
-    mask = mask | (mask >> 2);
-    mask = mask | (mask >> 4);
-    mask = mask | (mask >> 8);
-    lower = sext(base & ~mask);
-    size = zext(modulo & 0xfff) + 1;
-    if (candidate s>= lower && candidate s< lower + size) goto <transfer_done>;
-    goto <transfer_wrap>;
-
-  <transfer_explicit>
-    candidate = zext(candidate:2);
-    lower = zext(bound);
-    size = zext(modulo) + 1;
-    local limit:4 = lower + size;
-    if (limit <= 0x10000 && lower <= candidate && candidate < limit) goto <transfer_done>;
-  <transfer_wrap>
-    if (delta s< 0) goto <transfer_reverse>;
-    candidate = candidate - size;
-    goto <transfer_done>;
-  <transfer_reverse>
-    candidate = candidate + size;
-  <transfer_done>
-    result = candidate:2;
 }
 
 attach variables [minmax_dst_acc minmax_src_acc] [A0 A1 A2 A3 A4 A5 _ _];
@@ -4151,13 +4394,14 @@ peripheral_literal: peripheral_literal_bits is peripheral_literal_bits { export 
 :MOVE "A0",io_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_11=0x620 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { A0 = zext(io_word); }
 :MOVE "CE1" "A0",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_11=0x620 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; A0 = zext(io_word); <peripheral_done> }
 :MOVE "CE2" "A0",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_11=0x620 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; A0 = zext(io_word); <peripheral_done> }
-:MOVE "A0L",io_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_11=0x640 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { A0L = io_word; }
-:MOVE "CE1" "A0L",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_11=0x640 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; A0L = io_word; <peripheral_done> }
-:MOVE "CE2" "A0L",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_11=0x640 & wide_14_22=0x119 & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; A0L = io_word; <peripheral_done> }
+:MOVE "A0L",io_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_11=0x640 & wide_14_22=0x119 & io_word { A0L = io_word; }
+:MOVE "CE1" "A0L",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_11=0x640 & wide_14_22=0x119 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; A0L = io_word; <peripheral_done> }
+:MOVE "CE2" "A0L",io_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_11=0x640 & wide_14_22=0x119 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; A0L = io_word; <peripheral_done> }
 
 io_discard_dst: "RL0" is wide_0_11=0x6c0 { }
 io_discard_dst: "selector_f0" is wide_0_11=0x7c0 { }
-io_discard_source: "IO["^io_word_address^"]" is io_word_address { export *[const]:2 io_word_address; }
+io_discard_dst: "discard" is (wide_0_11=0x600 | wide_0_11=0x638 | wide_0_11=0x63c | wide_0_11=0x718 | wide_0_11=0x7fc) { }
+io_discard_source: "IO["^io_word_address^"]" is io_word_address { export *[const]:3 io_word_address; }
 
 macro io_read_discard(address, config, bank) {
     local enabled:2;
@@ -4167,10 +4411,26 @@ macro io_read_discard(address, config, bank) {
     <peripheral_done>
 }
 
-:MOVE "CE1" io_discard_dst,io_discard_source is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_14_22=0x119 & wide_40_45=0x0 & io_discard_dst & io_discard_source {
+:MOVE io_discard_dst,io_discard_source is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x119 & io_discard_dst & io_discard_source {
+    local ignored:2 = *[io]:2 io_discard_source;
+}
+:MOVE "*R0+=RN0",io_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_11=0x420 & wide_14_22=0x119 & io_word {
+    local address:2 = R0;
+    local word:2 = io_word;
+    modify_ptr(R0, RN0, RM0, RL0, 0, 1);
+    *[data]:2 address = word;
+}
+:MOVE io_word,"*R0+=RN0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x20 & wide_14_22=0x11a & io_word {
+    local address:2 = R0;
+    local word:2 = *[data]:2 address;
+    modify_ptr(R0, RN0, RM0, RL0, 0, 1);
+    io_word = word;
+}
+
+:MOVE "CE1" io_discard_dst,io_discard_source is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_14_22=0x119 & wide_40_45=0x0 & (wide_0_11=0x6c0 | wide_0_11=0x7c0) & io_discard_dst & io_discard_source {
     io_read_discard(io_discard_source, CECFG1, 0);
 }
-:MOVE "CE2" io_discard_dst,io_discard_source is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_14_22=0x119 & wide_40_45=0x0 & io_discard_dst & io_discard_source {
+:MOVE "CE2" io_discard_dst,io_discard_source is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_14_22=0x119 & wide_40_45=0x0 & (wide_0_11=0x6c0 | wide_0_11=0x7c0) & io_discard_dst & io_discard_source {
     io_read_discard(io_discard_source, CECFG2, 1);
 }
 
@@ -4201,12 +4461,32 @@ macro io_read_discard(address, config, bank) {
 :MOVE io_word,"selector_c6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x318 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { io_word = 0; }
 :MOVE "CE1" io_word,"selector_c6" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_9=0x318 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
 :MOVE "CE2" io_word,"selector_c6" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_9=0x318 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
-:MOVE io_word,"selector_f0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x3c0 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { io_word = 0; }
-:MOVE "CE1" io_word,"selector_f0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_9=0x3c0 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
-:MOVE "CE2" io_word,"selector_f0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_9=0x3c0 & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
+:MOVE io_word,"selector_f0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x3c0 & wide_14_22=0x11a & io_word { io_word = 0; }
+:MOVE "CE1" io_word,"selector_f0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_9=0x3c0 & wide_14_22=0x11a & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
+:MOVE "CE2" io_word,"selector_f0" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_9=0x3c0 & wide_14_22=0x11a & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
 :MOVE io_word,"selector_ff" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x3fc & wide_14_22=0x11a & wide_40_45=0x0 & io_word { io_word = 0; }
 :MOVE "CE1" io_word,"selector_ff" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_0_9=0x3fc & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
 :MOVE "CE2" io_word,"selector_ff" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_0_9=0x3fc & wide_14_22=0x11a & wide_40_45=0x0 & io_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; io_word = 0; <peripheral_done> }
+
+ext_discard_dst: "discard" is (wide_3_10=0x8f | wide_3_10=0xb0 | wide_3_10=0xb1 | wide_3_10=0xb2 | wide_3_10=0xb3) { }
+ext_discard_source: "EXT["^peripheral_address^"]" is ext_read_word_0 & ext_read_word_6 [ peripheral_address = ext_read_word_0 | (ext_read_word_6 << 6); ] { export *[const]:2 peripheral_address; }
+:MOVE ext_discard_dst,ext_discard_source is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x132 & ext_discard_dst & ext_discard_source {
+    local ignored:2 = *[ext]:2 ext_discard_source;
+}
+:MOVE "CE2" ext_discard_dst,ext_discard_source is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_14_22=0x132 & wide_3_10=0xb2 & ext_discard_dst & ext_discard_source {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <peripheral_done>;
+    local ignored:2 = *[ext]:2 ext_discard_source;
+  <peripheral_done>
+}
+:MOVE "*(R0+"^wide_shift_dst_disp^")",ext_read_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x132 & wide_3_10=0x20 & wide_shift_dst_disp & ext_read_word {
+    local address:2 = R0 + sext(wide_shift_dst_disp:1);
+    *[data]:2 address = ext_read_word;
+}
+:MOVE "*"^wide_load_literal,ext_read_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x132 & wide_3_10=0x3f & wide_load_literal & ext_read_word {
+    *[data]:2 wide_load_literal = ext_read_word;
+}
 :MOVE "A0L",ext_read_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_3_10=0x90 & wide_14_22=0x132 & ext_read_word { A0L = ext_read_word; }
 :MOVE "CE1" "A0L",ext_read_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=0 & wide_3_10=0x90 & wide_14_22=0x132 & ext_read_word { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <peripheral_done>; A0L = ext_read_word; <peripheral_done> }
 :MOVE "CE2" "A0L",ext_read_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & peripheral_ce_bank=1 & wide_3_10=0x90 & wide_14_22=0x132 & ext_read_word { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); if (enabled == 0) goto <peripheral_done>; A0L = ext_read_word; <peripheral_done> }
