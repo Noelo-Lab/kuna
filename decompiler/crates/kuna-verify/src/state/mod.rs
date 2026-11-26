@@ -128,6 +128,10 @@ pub struct Env<'p> {
     /// preserve, instead of the calling convention's: the rerun that tells
     /// whether kuna's preservation claim decides a run.
     pub stub_recovered: Cell<bool>,
+    /// A callee run for real that returns keeps the registers the convention
+    /// says it preserves, as it left them: the rerun that tells whether a
+    /// violation decides a run.
+    pub keep_clobbers: Cell<bool>,
     /// C5: input bytes a z3 model sets for this run, over the random state.
     pub concolic_inputs: RefCell<Option<crate::concolic::Inputs>>,
     /// C5: the machine records its path on this run.
@@ -273,6 +277,7 @@ impl<'p> Env<'p> {
             booleans: Vec::new(),
             kernel: Cell::new(true),
             stub_recovered: Cell::new(false),
+            keep_clobbers: Cell::new(false),
             concolic_inputs: RefCell::new(None),
             record_path: Cell::new(false),
             divide_by_zero_is_zero: ["ARM", "AARCH64"].iter().any(|a| prog.arch().archid.starts_with(a)),
@@ -300,6 +305,12 @@ impl<'p> Env<'p> {
         let last = addr.wrapping_add(size.saturating_sub(1));
         let i = self.readonly.partition_point(|r| r.0 <= addr);
         last >= addr && i > 0 && self.readonly[i - 1].1 >= last
+    }
+
+    /// A function entry the program knows, not code an arbitrary pointer
+    /// lands in.
+    pub fn is_entry(&self, addr: u64) -> bool {
+        self.entries().contains(&addr)
     }
 
     fn entries(&self) -> &BTreeSet<u64> {
@@ -945,6 +956,28 @@ impl<'e, 'p> State<'e, 'p> {
     /// Put back every register byte `before` held, except those in `keep`:
     /// a callee run for real leaves the registers the calling convention says
     /// it preserves as they were. Returns the offsets the callee had changed.
+    /// Put back the bytes of `regs` to what `before` held. Returns the
+    /// offsets the callee had changed.
+    pub fn restore_registers(&mut self, before: &State, regs: &[(u64, u32)]) -> Vec<u64> {
+        let mut changed = Vec::new();
+        for &(off, size) in regs {
+            for o in off..off + u64::from(size) {
+                let i = o as usize;
+                let (b, f) = (before.regs.get(i).copied().unwrap_or(0), before.flags.get(i).copied().unwrap_or(0));
+                self.grow(i + 1);
+                let present_now = self.flags[i] & PRESENT != 0;
+                if present_now && f & PRESENT != 0 && self.regs[i] != b {
+                    changed.push(o);
+                }
+                if present_now || f & PRESENT != 0 {
+                    self.regs[i] = b;
+                    self.flags[i] = f;
+                }
+            }
+        }
+        changed
+    }
+
     pub fn preserve_registers(&mut self, before: &State, keep: &[(u64, u32)]) -> Vec<u64> {
         let mut changed = Vec::new();
         let n = self.regs.len().max(before.regs.len());

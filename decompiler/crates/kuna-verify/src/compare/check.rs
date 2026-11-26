@@ -428,6 +428,23 @@ fn check_runs(
                 (mo, go)
             }
         };
+        let entry_callee = |at: u64| mo.calls.iter().any(|r| r.at == at && r.target.is_some_and(|t| env.is_entry(t)));
+        if let Some(&(at, o)) = mo
+            .convention
+            .iter()
+            .find(|(at, o)| entry_callee(*at) && calls.site(*at).preserved.iter().any(|&(p, s)| *o >= p && *o < p + u64::from(s)))
+        {
+            env.keep_clobbers.set(true);
+            let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+            env.keep_clobbers.set(false);
+            if let Some(d) = alt.map_or_else(|h| Some(Verdict::from_halt(&h).label()), |alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt)) {
+                let reg = Storage::new(&env.register, o & !(u64::from(env.sp.1) - 1), env.sp.1).name(prog);
+                unknown.get_or_insert(Halt::AbiViolation(format!(
+                    "the callee at {at:#x} changes {reg}, which the calling convention says it preserves; with the change kept, the machine's {d}"
+                )));
+                continue;
+            }
+        }
         let overlap = go.overlapping_copy;
         if let Some((nc, ne)) = overlap {
             go.calls.truncate(nc);

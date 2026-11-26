@@ -588,9 +588,18 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             Err(Halt::Budget) if !outer && self.steps > budget => Err(Halt::Budget),
             Ok(exit @ (Exit::Return | Exit::Leave | Exit::Unwind(_))) => {
                 let site = self.calls.site(at);
-                let mut keep = site.abi_killed.clone();
-                keep.push(self.env.sp);
-                for o in self.state.preserve_registers(&saved, &keep) {
+                let changed = if matches!(exit, Exit::Return) && self.env.keep_clobbers.get() {
+                    Vec::new()
+                } else if matches!(exit, Exit::Return) {
+                    let sp = self.env.sp;
+                    let regs: Vec<(u64, u32)> = site.preserved.iter().copied().filter(|&(o, s)| o + u64::from(s) <= sp.0 || o >= sp.0 + u64::from(sp.1)).collect();
+                    self.state.restore_registers(&saved, &regs)
+                } else {
+                    let mut keep = site.abi_killed.clone();
+                    keep.push(self.env.sp);
+                    self.state.preserve_registers(&saved, &keep)
+                };
+                for o in changed {
                     if !self.convention.contains(&(at, o)) {
                         self.convention.push((at, o));
                     }

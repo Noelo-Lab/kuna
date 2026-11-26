@@ -83,3 +83,11 @@ entry that no longer applies can be removed.
 - 2026-11-26 · Claude Opus 5.5 · PR #1830
   Took a system-call register the machine never touched as matching any value. It
   holds its starting value, which the machine side now records at the call.
+- 2026-11-26 · Claude Opus 5.5 · PR #1830
+  Put back, after a callee run for real, every register the callee's prototype does
+  not list as killed. The x86-64 cspec lists only RAX, RDX and XMM0, so RDI, RSI, RCX
+  and R8-R11 came back too, and kuna's C keeping a value in R11 across a call that
+  changes it agreed (`ghangr-rust-probestack` `probe_observes_r11`). Only the model's
+  `unaffected` registers are put back now. A first try that instead stopped putting
+  anything back moved verdicts for that same reason; read the cspec lists before
+  blaming the rerun.

@@ -62,6 +62,10 @@ pub struct Site {
     /// The calling convention's alone. A callee run for real keeps only the
     /// other registers, so a register kuna wrongly thinks preserved differs.
     pub abi_killed: Vec<(u64, u32)>,
+    /// The registers the calling convention's model says a callee preserves
+    /// (`unaffected`), not kuna's prototype: all a callee run for real gets
+    /// put back.
+    pub preserved: Vec<(u64, u32)>,
     /// Where each of kuna's arguments is passed, by input slot; `None` where
     /// it is not machine state.
     pub args: Vec<Option<Arg>>,
@@ -303,6 +307,23 @@ fn no_effect(env: &Env, insn: &crate::machine::Insn) -> bool {
 /// The registers a stub for `proto` kills: those its effect list says a call
 /// kills, the call's own overrides first (what kuna proved about the callee),
 /// and its output registers, unless the call is known to leave them alone.
+fn preserved(env: &Env, proto: &FuncProto) -> Vec<(u64, u32)> {
+    let reg = env.register.get_index();
+    let mut out: Vec<(u64, u32)> = proto
+        .model()
+        .effect_list()
+        .iter()
+        .filter(|e| e.get_type() == effect_type::UNAFFECTED)
+        .filter_map(|e| {
+            let a = e.get_address();
+            (a.get_space()?.get_index() == reg).then(|| (a.get_offset(), e.get_size() as u32))
+        })
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
 fn killed(env: &Env, proto: &FuncProto) -> Vec<(u64, u32)> {
     let reg = env.register.get_index();
     let model = proto.model();
@@ -388,6 +409,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                 noreturn: proto.is_no_return() || halts_after(fd, env, op.get_addr()) || falls_into_another(fd, env, op.get_addr().get_offset()),
                 laid_out_noreturn: falls_into_another(fd, env, op.get_addr().get_offset()),
                 abi_killed: killed(env, proto),
+                preserved: preserved(env, proto),
                 killed: killed(env, proto)
                     .into_iter()
                     .filter(|&(off, size)| {
@@ -417,6 +439,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         laid_out_noreturn: false,
         killed: killed(env, own),
         abi_killed: killed(env, own),
+        preserved: preserved(env, own),
         args: Vec::new(),
         locked: false,
         params: 0,

@@ -113,7 +113,7 @@ fn name((f, n): &(String, usize)) -> String {
 /// `UNKNOWN` reasons that stand for a difference the check found but traced
 /// to a guess: one appearing where a function agreed is a regression, since a
 /// guess elsewhere in a run must not let a real difference pass the gate.
-const DIFFERENCE_REASONS: [&str; 4] = ["prototype-suspect", "guessed-callee", "uninitialized-local", "assumed-domain"];
+const DIFFERENCE_REASONS: [&str; 5] = ["prototype-suspect", "guessed-callee", "uninitialized-local", "assumed-domain", "abi-violation"];
 
 fn found_difference(k: &str) -> bool {
     k.strip_prefix("UNKNOWN(").is_some_and(|r| DIFFERENCE_REASONS.iter().any(|d| r.starts_with(d)))

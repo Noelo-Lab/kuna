@@ -63,6 +63,14 @@ ins16  DIFFERS  (run 1 of 256)
 
   An in-image callee that, run for real, returns without going through a stub proves
   kuna wrong. A run that ends on kuna's word alone is not counted (`noreturn-unverified`).
+- **The calling convention, for a callee run for real.** After a callee that returns,
+  the machine puts back only the registers the convention's model lists as
+  `unaffected` (on x86-64: RBX, RBP, R12-R15), not every register kuna's prototype does
+  not list as killed: the x86-64 cspec names only RAX, RDX and XMM0 killed, so the
+  argument and scratch registers keep what the callee left, as on the hardware. When a
+  callee at a function entry changes an `unaffected` register, the run is repeated with
+  the change kept; if that changes what the run does, it is `UNKNOWN(abi-violation)`,
+  otherwise the change is a suspect line.
 - **How much it catches** is measured by planting faults in the IR (`mutation.md`): 76%
   of reached mutants on the test corpus, 74–75% on `ls` and `find`.
 
@@ -73,7 +81,7 @@ ins16  DIFFERS  (run 1 of 256)
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides, or ran past `--budget` ops on both sides, are not counted, and the report says how many. A run past the budget on one side only makes the function `UNKNOWN(budget)`: one side may loop where the other does not. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
 | `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call or overlapping copy leaves out only itself and what follows it in that run: the calls, system calls and memory before it are still compared, and a doubt about a callee's recovered prototype there is still `UNKNOWN`. |
-| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run, or a system call whose registers kuna passes with a gap (§9). `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `timeout`: no verdict within `--fn-seconds`. |
+| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run, or a system call whose registers kuna passes with a gap (§9). `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `abi-violation`: a callee run for real changed a register the calling convention says it preserves, and the run depends on that change (§2). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
 Exit status: 1 when a function differs, 3 when a file could not be checked, 2 for a usage
@@ -285,11 +293,6 @@ run yet.
   with extended values, which is right only when the inferred width is. Checking those
   with any value too gave false `UNKNOWN`s (MIPS O32 `negative`), so it waits for a
   rule that tells a width kuna inferred from one the ABI fixes.
-- **Registers a callee run for real changes against its prototype.** The machine puts
-  back the registers the callee's prototype says it preserves, and only notes a change
-  as a suspect. That prototype is kuna's, so a callee that changes one kuna thinks
-  preserved can agree. Keeping the change instead moved verdicts the check cannot yet
-  explain (`ls` `O0` `hash_insert`), so it waits.
 - **A return to another address.** At the top level, a `RETURN` to an address that is
   not the run's return address still counts as a return when the target is unmapped or
   kuna makes no branch there (`add rsp, 8; ret`). Refusing it moved verdicts that need

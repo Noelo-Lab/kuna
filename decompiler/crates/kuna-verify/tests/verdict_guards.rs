@@ -542,3 +542,33 @@ fn a_call_before_an_overlapping_copy_is_still_compared() {
     assert!(!stored.is_empty(), "{killed:?}");
     assert!(stored.iter().all(|(_, label)| label == "DIFFERS"), "{killed:?}");
 }
+
+/// `g`: `mov ebx, 5; call h; mov eax, ebx; ret`, where `h` is `mov ebx, 7;
+/// ret`. `h` changes RBX, which the convention says it preserves; kuna's C
+/// follows the convention and returns 5, the program returns 7. The machine
+/// puts RBX back as kuna assumes, so only the rerun that keeps the change
+/// tells the run apart from an agreement.
+#[test]
+fn a_callee_that_breaks_the_convention_is_not_an_agreement() {
+    let text = [0xbb, 5, 0, 0, 0, 0xe8, 6, 0, 0, 0, 0x89, 0xd8, 0xc3, 0x90, 0x90, 0x90, 0xbb, 7, 0, 0, 0, 0xc3];
+    let path = object("clobber", &text, &[("g", 0, 13), ("h", 16, 6)], &[]);
+    let r = &check(&path, &["g"], &Options::default())[0];
+    let label = r.verdict.label();
+    assert!(label.starts_with("UNKNOWN(abi-violation: the callee at 0x"), "{}", r.render());
+    assert!(label.contains("changes RBX"), "{}", r.render());
+}
+
+/// `g`: `mov r11d, 5; call h; mov eax, r11d; ret`, where `h` is `mov r11d, 7;
+/// ret`. The convention does not say a callee preserves R11 (the x86-64 cspec
+/// lists only RAX, RDX and XMM0 as killed, and the argument and scratch
+/// registers not at all), so the machine keeps the 7 `h` left. kuna's C keeps
+/// the 5 across the call. Putting R11 back on the machine side made that an
+/// agreement.
+#[test]
+fn a_register_the_convention_does_not_preserve_keeps_the_callee_s_value() {
+    let text = [0x41, 0xbb, 5, 0, 0, 0, 0xe8, 5, 0, 0, 0, 0x44, 0x89, 0xd8, 0xc3, 0x90, 0x41, 0xbb, 7, 0, 0, 0, 0xc3];
+    let path = object("r11", &text, &[("g", 0, 15), ("h", 16, 7)], &[]);
+    let r = &check(&path, &["g"], &Options::default())[0];
+    assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
+    assert!(r.lines.iter().any(|l| l.contains("machine  RAX = 0x0000000000000007")), "{}", r.render());
+}

@@ -37,6 +37,10 @@ pub enum Halt {
     /// The sides differ after the decompiled function read a local nothing
     /// wrote: C does not define the value.
     Undefined(String),
+    /// A callee run for real changed a register the calling convention says it
+    /// preserves, and the run's result depends on it: kuna's C, which follows
+    /// the convention, cannot say what the program does.
+    AbiViolation(String),
 }
 
 impl Halt {
@@ -50,6 +54,7 @@ impl Halt {
             Halt::Doubtful(s) => format!("UNKNOWN(prototype-suspect: {s})"),
             Halt::Undefined(s) => format!("UNKNOWN(uninitialized-local: {s})"),
             Halt::Guessed(s) => format!("UNKNOWN(guessed-callee: {s})"),
+            Halt::AbiViolation(s) => format!("UNKNOWN(abi-violation: {s})"),
         }
     }
 }
