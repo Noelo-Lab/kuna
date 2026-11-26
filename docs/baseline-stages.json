@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5544,
-    5544
+    5545,
+    5545
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2796,6 +2796,9 @@
     "data:SPARC-REGISTER-PAIR #3: the ldd still loads both halves, the high word into the index",
     "data:SPARC-REGISTER-PAIR #4: the fused 64-bit pair local never appears",
     "data:SPARC-REGISTER-PAIR #5: and neither do its CONCAT44 piece updates",
+    "data:SPARC-TRAP-RESUME #1: the trap is called once",
+    "data:SPARC-TRAP-RESUME #2: the declared resume is not called",
+    "data:SPARC-TRAP-RESUME #3: the resumed code's value is returned",
     "data:SPARC64 odd destination conversion reaches return",
     "data:SPE integer pair: declared arguments",
     "data:SPE integer pair: no undefined pieces",
@@ -3192,8 +3195,6 @@
     "data:WORD-INDEX #2: the typed pointer returns the cell address",
     "data:WORD-INDEX #3: an indirect load still reads the cell",
     "data:WORD-INDEX #4: a word index on a function entry still names the function",
-    "data:WORD-INDEX #5: a branch-selected stack register value stays numeric",
-    "data:WORD-INDEX #6: only the address-valued output names a cell address",
     "data:WRAPSPLIT #1: the wrapping read is its bytes from offset 0 over the 2 below it",
     "data:WRAPSPLIT #2: no overlapping inputs at the bottom of the stack space",
     "data:WRAPSPLIT #3: a ram qword at the top of the space",
