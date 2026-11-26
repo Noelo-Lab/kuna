@@ -380,15 +380,13 @@ impl KNewExprent {
                             }),
                         };
                         type_name = type_name.map(|t| kt_escaped_class_name::escape(&t));
-                    } else {
-                        if let Some(name) = new_type.value.as_deref().and_then(|value| {
-                            kt_constructors::implicit_receiver_name(
-                                value,
-                                &constructor.get_lst_parameters().to_vec(),
-                            )
-                        }) {
-                            type_name = Some(kt_escaped_class_name::escape(&name));
-                        }
+                    } else if let Some(name) = new_type.value.as_deref().and_then(|value| {
+                        kt_constructors::implicit_receiver_name(
+                            value,
+                            &constructor.get_lst_parameters().to_vec(),
+                        )
+                    }) {
+                        type_name = Some(kt_escaped_class_name::escape(&name));
                     }
                 }
 
