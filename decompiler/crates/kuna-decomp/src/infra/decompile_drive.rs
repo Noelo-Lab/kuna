@@ -2128,7 +2128,8 @@ fn decompile_func_full_with_objects_inner(
                        unguarded: bool,
                        condstmts_seed: &std::collections::BTreeSet<Address>,
                        elfmain: Option<&crate::kuna_elfmaindecl::Runtime>,
-                       latch_join: bool|
+                       latch_join: bool,
+                       chain_any: bool|
      -> KunaResult<Funcdata> {
         // Kept for the parked-prototype lookup below (the flow build consumes the
         // address).
@@ -2152,6 +2153,7 @@ fn decompile_func_full_with_objects_inner(
         }
         fd.set_condstmts_seed(condstmts_seed.clone());
         fd.kuna_latch_join_withdrawn = !latch_join;
+        fd.set_chainfold_withdrawn(!chain_any);
         // The prototype the function is decompiled *against*. Two sources, in
         // precedence order:
         //
@@ -2362,56 +2364,78 @@ fn decompile_func_full_with_objects_inner(
             }
         }
     };
-    // (kuna `elfmain`) A `main` whose finished declaration is not exactly what the
-    // runtime seed typed and named is decompiled again without the seed.
     let mut prefollowed = prefollowed;
-    let mut elfmain = elfmain_rt.as_ref();
+    // (kuna `condfold auto`) A function whose fold of a chain into an ordinary
+    // block still prints a goto is decompiled again without such folds; the copy
+    // with fewer gotos wins, the second on a tie.
+    let mut chain_any = true;
+    let mut relaxed: Option<(KunaResult<Funcdata>, int4)> = None;
     let result = loop {
-        // (kuna `dedupitetail latch`) A function whose joined loop latch prints
-        // gotos is decompiled again without the join; the copy with fewer gotos wins.
-        let mut joined: Option<(KunaResult<Funcdata>, int4)> = None;
+        // (kuna `elfmain`) A `main` whose finished declaration is not exactly what the
+        // runtime seed typed and named is decompiled again without the seed.
+        let mut elfmain = elfmain_rt.as_ref();
         let result = loop {
-            let latch_join = joined.is_none();
-            // (kuna `stackstoreguard`) A function whose final layout spoiled what the
-            // guard needs is analyzed again from scratch without it.
-            let mut seed = std::collections::BTreeSet::new();
-            let mut unguarded = false;
-            let mut result = match attempt(prefollowed.take(), false, &seed, elfmain, latch_join) {
-                Ok(fd) if fd.stack_store_guard_spoiled() => {
-                    unguarded = true;
-                    attempt(None, true, &seed, elfmain, latch_join)
-                }
-                other => other,
-            };
-            // (kuna `condstmts`) A function whose final structure folded a block over the
-            // cap is analyzed again with that block complex from the first structuring on.
-            for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
-                let Ok(fd) = &result else { break };
-                let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
-                seed = next;
-                match attempt(None, unguarded, &seed, elfmain, latch_join) {
-                    Ok(fd) => result = Ok(fd),
-                    Err(_) => break,
-                }
-            }
-            match joined.take() {
-                None => match result.as_ref().ok().and_then(crate::p8_structure::kuna_latchjoin::joined_gotos) {
-                    Some(with) if with > 0 => joined = Some((result, with)),
-                    _ => break result,
-                },
-                Some((first, with)) => {
-                    break match &result {
-                        Ok(plain) if crate::p8_structure::kuna_latchjoin::fewer_gotos(plain, with) => result,
-                        _ => first,
+            // (kuna `dedupitetail latch`) A function whose joined loop latch prints
+            // gotos is decompiled again without the join; the copy with fewer gotos wins.
+            let mut joined: Option<(KunaResult<Funcdata>, int4)> = None;
+            let result = loop {
+                let latch_join = joined.is_none();
+                // (kuna `stackstoreguard`) A function whose final layout spoiled what the
+                // guard needs is analyzed again from scratch without it.
+                let mut seed = std::collections::BTreeSet::new();
+                let mut unguarded = false;
+                let mut result = match attempt(prefollowed.take(), false, &seed, elfmain, latch_join, chain_any) {
+                    Ok(fd) if fd.stack_store_guard_spoiled() => {
+                        unguarded = true;
+                        attempt(None, true, &seed, elfmain, latch_join, chain_any)
+                    }
+                    other => other,
+                };
+                // (kuna `condstmts`) A function whose final structure folded a block over the
+                // cap is analyzed again with that block complex from the first structuring on.
+                for _ in 0..crate::p8_structure::kuna_condstmts::MAX_REATTEMPTS {
+                    let Ok(fd) = &result else { break };
+                    let Some(next) = crate::p8_structure::kuna_condstmts::next_seed(fd) else { break };
+                    seed = next;
+                    match attempt(None, unguarded, &seed, elfmain, latch_join, chain_any) {
+                        Ok(fd) => result = Ok(fd),
+                        Err(_) => break,
                     }
                 }
+                match joined.take() {
+                    None => match result.as_ref().ok().and_then(crate::p8_structure::kuna_latchjoin::joined_gotos) {
+                        Some(with) if with > 0 => joined = Some((result, with)),
+                        _ => break result,
+                    },
+                    Some((first, with)) => {
+                        break match &result {
+                            Ok(plain) if crate::p8_structure::kuna_latchjoin::fewer_gotos(plain, with) => result,
+                            _ => first,
+                        }
+                    }
+                }
+            };
+            if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
+                elfmain = None;
+                continue;
             }
+            break result;
         };
-        if elfmain.is_some() && !result.as_ref().is_ok_and(crate::kuna_elfmaindecl::settled) {
-            elfmain = None;
-            continue;
+        match relaxed.take() {
+            None => match result.as_ref().ok().and_then(crate::p8_structure::kuna_fatalchain::late_gotos) {
+                Some(with) => {
+                    relaxed = Some((result, with));
+                    chain_any = false;
+                }
+                None => break result,
+            },
+            Some((first, with)) => {
+                break match &result {
+                    Ok(plain) if crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(plain) <= with => result,
+                    _ => first,
+                }
+            }
         }
-        break result;
     };
     // (kuna decompile-all watchdog) Disarm the deadline once the drive is over so
     // no later, non-drive pipeline run (console sub-queries) consults a stale one;

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5514,
-    5514
+    5518,
+    5518
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -576,6 +576,10 @@
     "data:CANCELBYTEARITHMETIC #2: no fifteen-byte prefix copy",
     "data:CANCELBYTEARITHMETIC #3: no five-byte suffix copy",
     "data:CANCELBYTEARITHMETIC #4: every byte is preserved as one complete copy",
+    "data:CHAINFOLD #1: noreturn prints the -O2 store as a ladder",
+    "data:CHAINFOLD #2: auto prints the -O2 store's chain as one condition",
+    "data:CHAINFOLD #3: both keep store's call on the failure path",
+    "data:CHAINFOLD #4: the unoptimized -O0 send keeps its ladder under both values",
     "data:CHKSTKDARWIN #10: arm64e, the blraa x16,x17 form is removed too and vla_e keeps both arguments",
     "data:CHKSTKDARWIN #11: an ELF function that is merely named ___chkstk_darwin keeps its call and its result",
     "data:CHKSTKDARWIN #1: off, all three functions assign the probe's result; on, none calls it",

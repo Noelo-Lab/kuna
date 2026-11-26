@@ -377,6 +377,8 @@ fn short_circuit_plt_calls() -> Vec<u8> {
     words.iter().flat_map(|w| w.to_be_bytes()).collect()
 }
 
+/// `condfold noreturn`: the default `auto` folds the `on` chain too, because the
+/// store it keeps after each call does not print.
 #[test]
 fn elfv1_calls_keep_their_short_circuit_condition() {
     for (code, address) in [(short_circuit_local_calls(), "0x1040"), (short_circuit_plt_calls(), "0x1060")] {
@@ -385,7 +387,7 @@ fn elfv1_calls_keep_their_short_circuit_condition() {
         let [default, on, off] = [None, Some("on"), Some("off")].map(|option| {
             let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
             command.env("KUNA_SPECS", common::repo_root().join("specs"))
-                .args(["decompile", path.to_str().unwrap(), address, "--addr"]);
+                .args(["decompile", path.to_str().unwrap(), address, "--addr", "--option", "condfold", "noreturn"]);
             if let Some(value) = option { command.args(["--option", "callmechanisms", value]); }
             let out = command.output().unwrap();
             let text = String::from_utf8(out.stdout).unwrap();

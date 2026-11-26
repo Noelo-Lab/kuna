@@ -416,8 +416,9 @@ the sequencing argument above is independent of the call count, so the looser
 count cannot produce wrong C — it only admits a denser operand than angr would.
 Rule B, which charges every call op, is the tighter half of the union.
 
-Option `condfold`, default **noreturn**, four-valued: `noreturn` relaxes the
-gate for one shape only (below), and `on` and `wide` include it. `on` uses angr's statement
+Option `condfold`, default **auto**, five-valued: `noreturn` relaxes the gate
+for one shape only (below), `auto` adds a second shape in optimized functions,
+and `on` and `wide` include `auto`. `on` uses angr's statement
 threshold (width budget 5, and Rule A additionally 1 statement-root call) and
 `wide` raises the width budget to 9 for **both** rules; Rule A's call cap, Rule
 B's shape allowlist and scored caps, the cross-leaf caps and every soundness or
@@ -430,7 +431,7 @@ print as seven in kuna. Both levels apply to **both** engines (`blockaction.rs
 (CollapseStructure::rule_block_or)` and `region_structurer.rs
 (RegionStructurer::try_block_or)`, which are verbatim copies of each other);
 implementing only one would no-op on functions where the other converges. Under
-`off` and `noreturn` the precompute is skipped and every disjunct is dead.
+`off`, `noreturn` and `auto` the precompute is skipped and every disjunct is dead.
 
 Two effects are accepted rather than fixed. The option is **not a monotone goto
 reducer**: folding changes which edges the structurer can subsequently match,
@@ -491,11 +492,46 @@ p-code moves. This works at any depth, unlike `tailform`'s top-level no-return
 rule, which then sees the rewritten list.
 
 Measured on decbench (gcc O2 without inlining and O0, within one build,
-`off` against the default): 66 and 89 more functions match the source's
+`off` against `noreturn`): 66 and 89 more functions match the source's
 control flow exactly and none is lost. `off` prints the ladder. Witnesses:
 `tests/stages/kuna-fatalchain.xml` and
 `decompiler/crates/kuna-cli/tests/fatalchain_round_trip.rs`, which compiles
 the printed functions and runs them with each call failing in turn.
+
+**`condfold auto` — a chain into an ordinary block, in optimized code.** The
+same stale verdict ladders a chain whose tests all reach a block that returns,
+`if ((r = put(b, x)) != 0 || (r = put(b, y)) != 0) { note(r); return -1; }`,
+or the target of a `goto out`. Under `auto`, `kuna_fatalchain.rs (chains)`
+accepts any target block that only the chain enters, in a function that
+`p3_dataflow/kuna_unoptimized.rs (is_unoptimized)` does not flag; an
+unoptimized function keeps exactly the `noreturn` behaviour, because there
+the authors' nesting `if (p == 0 && n == 0) { p = malloc(1); if (p == 0) .. }`
+is common enough to make the fold a net loss. Every guard of the no-return
+case applies: the `condstmts` width cap, the comment check, the target entered
+only from the chain, and `ActionBlockStructure::structure_held`'s goto
+fallback. That fallback structures again only when a relaxed block actually
+folded (otherwise the two collapses made the same choices), and once a fold
+into an ordinary block has fallen back in a function of 64 or more blocks
+(`kuna_fatalchain.rs (GIVE_UP_BLOCKS)`), later structurings of the same
+analysis do not relax at all, so a large function re-structured many times
+pays for the comparison once. Such a fold is not reoriented, since its target
+can fall through.
+A later print-tree pass can still leave a goto in a tree that had none when it
+was structured (`taildup` does on expat's `startElementNS`), so
+`kuna_fatalchain.rs (late_gotos)` reports a function whose kept structuring
+folded a chain into an ordinary block and still prints a goto, and
+`infra/decompile_drive.rs` analyzes it again without such folds, keeping the
+copy with fewer gotos and the unfolded one on a tie. Measured against
+`noreturn` within one build: 73 more functions match at O2 (102 gained, 29
+lost; +51 and +22 on the two project halves), 14 more at O0 from functions the
+detector misses, and no function gains a goto. The losses are sources that
+nest the second test, mostly because they use its value afterwards, or keep
+separate guards before one constant return; excluding plain-return targets,
+chains whose every test calls, two-test chains, chains in loops, or chains
+whose later test defines a value used afterwards each costs more gains than
+losses on both halves. Witness: `tests/stages/kuna-chainfold.xml` (gcc -O2
+folds, gcc -O0 keeps the ladder) and the second test of
+`decompiler/crates/kuna-cli/tests/fatalchain_round_trip.rs`.
 
 **`condstmts` — a cap on what a folded operand prints before its test.** The
 opposite pressure: Ghidra's own non-complex budget can let a block fold whose

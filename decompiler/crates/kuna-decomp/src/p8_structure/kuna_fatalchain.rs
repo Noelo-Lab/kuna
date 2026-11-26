@@ -1,6 +1,6 @@
-//! (kuna `condfold noreturn`) A chain of tests that all branch to one call that
-//! does not return prints as one `if` over the `||` chain with the call as its
-//! body and the rest of the function after it:
+//! (kuna `condfold noreturn|auto`) A chain of tests that all branch to one call
+//! that does not return prints as one `if` over the `||` chain with the call as
+//! its body and the rest of the function after it:
 //!
 //! ```c
 //! if ((r = put(b, x)) != 0 || (r = put(b, y)) != 0) fatal(r, "compose");
@@ -12,11 +12,15 @@
 //! so `BlockBasic::isComplex` counts the call, a store and the branch and
 //! `ruleBlockOr` declines every later test: the chain prints as a ladder of
 //! nested `if`s with the call after all of them.  [`relax`] drops the later
-//! tests of such a chain from the complex set the structurer reads.  A test
-//! that then prints more statements before its comparison than the
-//! `condstmts` cap allows is caught by that option's final check, which
+//! tests of such a chain from the complex set the structurer reads.  Under
+//! `auto`, a function the unoptimized detector does not flag also relaxes a
+//! chain into any block only the chain enters (`if (a() || b()) { note(); return
+//! -1; }`).  A test that then prints more statements before its comparison than
+//! the `condstmts` cap allows is caught by that option's final check, which
 //! analyzes the function again with the test complex.  A structuring that
-//! relaxed and prints a goto is not kept.
+//! relaxed and prints a goto is not kept, and a function whose fold into an
+//! ordinary block still prints a goto after the later passes is decompiled
+//! again without such folds ([`late_gotos`]).
 //!
 //! After the tree is final, [`ActionFatalChain`] turns `if (chain) { R } f();`
 //! (where `R` does not fall through) into `if (!chain) f(); R`, at any depth.
@@ -35,8 +39,32 @@ use crate::context::BlockId;
 use crate::funcdata::Funcdata;
 use crate::p8_structure::kuna_tailform as tf;
 
+/// Which chains of tests fold across a complex later test.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChainFold {
+    /// None.
+    #[default]
+    Off,
+    /// Chains into a call that does not return.
+    NoReturn,
+    /// Those, and in a function the detector does not call unoptimized, a
+    /// chain into any block only it enters.
+    Auto,
+}
+
+/// A function of at least this many blocks whose fold into an ordinary block
+/// fell back for gotos stops relaxing for the rest of its analysis.
+pub const GIVE_UP_BLOCKS: int4 = 64;
+
 fn enabled(data: &Funcdata) -> bool {
-    data.get_arch().cond_fold_noreturn
+    data.get_arch().cond_fold_chain != ChainFold::Off
+}
+
+/// Whether a chain may fold into a block that is not a no-return call.
+fn any_target(data: &Funcdata) -> bool {
+    data.get_arch().cond_fold_chain == ChainFold::Auto
+        && !data.chainfold_withdrawn()
+        && !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(data)
 }
 
 /// Whether basic block `bb` ends in the halt flow plants after a call to a
@@ -67,15 +95,16 @@ fn noreturn_tail(data: &Funcdata, bb: BlockId) -> bool {
 }
 
 /// The chains `C1 -> C2 -> .. -> Ck` (k >= 2) of two-way blocks whose other
-/// out-edge each reaches the same no-return block `t`, where every later `Ci`
-/// is entered only from `C(i-1)` and `t` is entered only from the chain.
-fn chains(data: &Funcdata) -> Vec<(BlockId, Vec<BlockId>)> {
+/// out-edge each reaches the same block `t`, where every later `Ci` is entered
+/// only from `C(i-1)` and `t` is entered only from the chain; `t` ends in a
+/// call that does not return unless `any`.
+fn chains(data: &Funcdata, any: bool) -> Vec<(BlockId, Vec<BlockId>)> {
     let bg = data.bblocks_ref();
     let mut out = Vec::new();
     for i in 0..data.bblocks_get_size() {
         let t = data.bblocks_get_block(i);
         let tb = bg.block(t);
-        if tb.size_in() < 2 || tb.size_out() != 0 || !noreturn_tail(data, t) {
+        if tb.size_in() < 2 || (!any && (tb.size_out() != 0 || !noreturn_tail(data, t))) {
             continue;
         }
         let preds: Vec<BlockId> = (0..tb.size_in()).map(|k| tb.get_in(k)).collect();
@@ -136,7 +165,7 @@ fn fits(data: &Funcdata, bb: BlockId) -> bool {
 
 /// Whether a structuring of `data` now would relax a block.
 pub(crate) fn pending(data: &Funcdata) -> bool {
-    enabled(data) && !data.fatalchain_held() && !chains(data).is_empty()
+    enabled(data) && !data.fatalchain_held() && !chains(data, any_target(data)).is_empty()
 }
 
 /// Drop the later tests of every chain into a no-return call from `complex`,
@@ -148,7 +177,9 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
     }
     let high = data.is_high_on();
     let mut hits: Vec<Address> = Vec::new();
-    for (_, ch) in chains(data) {
+    let mut ordinary = false;
+    for (t, ch) in chains(data, any_target(data)) {
+        let before = hits.len();
         for &c in &ch[1..] {
             if !complex.contains(&c) {
                 continue;
@@ -165,10 +196,56 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
             complex.remove(&c);
             hits.push(a);
         }
+        ordinary |= hits.len() > before && !noreturn_tail(data, t);
     }
     for a in hits {
         data.add_fatalchain_relaxed(a);
     }
+    if ordinary {
+        data.set_chainfold_any(true);
+    }
+}
+
+/// Whether the structure folds a block relaxed since `before` into a condition.
+pub(crate) fn folded_any(data: &Funcdata, before: &BTreeSet<Address>) -> bool {
+    folded_leaves(data).into_iter().any(|bb| {
+        let a = start(data, bb);
+        !before.contains(&a) && data.fatalchain_relaxed().contains(&a)
+    })
+}
+
+/// The basic blocks printed as the right operand of a `&&` / `||`.
+fn folded_leaves(data: &Funcdata) -> Vec<BlockId> {
+    let g = data.sblocks_ref();
+    let mut out = Vec::new();
+    let mut stack = vec![data.sblocks_root()];
+    while let Some(b) = stack.pop() {
+        let blk = g.block(b);
+        if blk.get_type() == BlockType::Condition {
+            let mut ops = vec![blk.get_block(1)];
+            while let Some(o) = ops.pop() {
+                match g.block(o).get_type() {
+                    BlockType::Copy => out.extend(g.block(o).get_copy()),
+                    BlockType::Condition => ops.extend([g.block(o).get_block(0), g.block(o).get_block(1)]),
+                    _ => {}
+                }
+            }
+        }
+        for i in 0..blk.get_size() {
+            stack.push(blk.get_block(i));
+        }
+    }
+    out
+}
+
+/// The gotos a function prints whose kept structuring folded a chain into an
+/// ordinary block, or `None` when it prints none or folded no such chain.
+pub(crate) fn late_gotos(fd: &Funcdata) -> Option<int4> {
+    if !fd.chainfold_any() {
+        return None;
+    }
+    let n = crate::p2_lift::kuna_loweredswitchkeep::printed_gotos(fd);
+    (n > 0).then_some(n)
 }
 
 /// The basic blocks a condition prints.
@@ -207,7 +284,7 @@ fn is_container(data: &Funcdata, b: BlockId) -> bool {
 
 /// `[.., if (chain) { R }, f()]` -> `[.., if (!chain) f(), R]` for each chain.
 fn orient(data: &mut Funcdata) -> usize {
-    let chains = chains(data);
+    let chains = chains(data, false);
     if chains.is_empty() {
         return 0;
     }

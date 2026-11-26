@@ -522,10 +522,10 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "condfold" => {
-        let ((val, noreturn), msg) =
+        let ((val, chain), msg) =
             crate::p8_structure::kuna_condfold::OptionCondFold.apply(p1)?;
         self.cond_fold = val;
-        self.cond_fold_noreturn = noreturn;
+        self.cond_fold_chain = chain;
         Ok(msg)
     },
     "condstmts" => {
