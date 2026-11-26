@@ -3873,6 +3873,17 @@ byte-budget delay-slot path. The
 p-code emulator likewise converts an indirect transfer's CODE-word operand to
 a byte offset only in such a `code` space.
 
+Block repeat uses four numbered frames. A compact register count is sampled
+after the next issue; address-stage counts preserve their DATA read or address
+update, and publish the count and bounds at execute. Immediate bounds publish
+separately, before any dynamic execute publication at the same issue. The
+Carmel loader plans each phase at a physical issue; the lifted frame owns the
+pending values. Loop bounds and restart targets remain CODE word addresses.
+At a terminal issue only the active top frame can retire. An already-selected
+redirect belongs to that terminal issue; an adjacent terminal issue cannot
+consume it. A tail with a single established restart target uses a direct
+edge; a saved or ambiguous restart uses the active frame's address.
+
 For a compact conditional/unconditional direct transfer pair with selector
 zero or one, the fixed result picks one branch. It retires the lesser
 encoded delay, plus one issue for selector zero with right delay three.
@@ -3960,6 +3971,27 @@ selectors discard the result and retain arithmetic flags while the
 source DATA access postincrements. For `RMW2` with an accumulator half
 on the second input, that half receives the result; the first input's
 DATA cell is not written.
+
+Selected wide add/subtract word results take the high result word. A guard
+byte can feed the low arithmetic lane without reaching this word; zero
+status ignores that discarded low lane. The address-register result bank
+also changes source routing, including the `RL6`/`RL0` inputs to the `SP`
+result and the `FF1`/`X2` inputs to the `RM6` result. A long result retains
+both low words and sets loss of precision when the discarded guard is not
+a sign extension.
+
+The covered reversed long subtract captures the original `R1` destination
+before its displacement update. On the observed operand-fetch route, its
+input combines the encoded DATA word with the high word from DATA address
+zero. Its other input comes from DATA address `0xffff`. The covered
+absolute word subtract takes its first input from `R4` before postincrement
+and its second from DATA address `0xffff` on the same operand-fetch route. Both
+forms require established operand-fetch context, not a particular CODE
+address. The CE1 veto suppresses the long store and ALU flags but does not
+suppress the address update when the override is enabled. The disconnected
+`PSTATUS` result still runs its DATA address effect. The covered `MSU`
+latches its first input into `X1` and sends the high result word to
+`INTBASE` without driving arithmetic status.
 
 Covered wide address transfers add the low 16-bit displacement to a word
 source or the `R3` address unit. Saving a CODE address preserves its upper

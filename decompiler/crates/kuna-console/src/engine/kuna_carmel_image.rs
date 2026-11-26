@@ -7,6 +7,7 @@ use kuna_base::{address::Address, error::{KunaError, KunaResult}, space::AddrSpa
 use kuna_sleigh::globalcontext::ContextDatabase;
 use kuna_sleigh::loadimage::LoadImage;
 
+mod block_repeat;
 mod conditional_return;
 mod peer_redirect;
 
@@ -255,6 +256,7 @@ pub(super) fn frame(
 ) -> KunaResult<Framing> {
     let mut result = Framing::default();
     let mut candidates = Vec::new();
+    let mut loop_plans = block_repeat::Plans::default();
     for (start, end) in ranges {
         let mut addr = start.div_ceil(FETCH) * FETCH;
         let end = end.min(CODE_END) / FETCH * FETCH;
@@ -292,6 +294,7 @@ pub(super) fn frame(
             } else if following_size != 0 {
                 paint(&mut result.next_sizes, NEXT, addr, following_size);
             }
+            loop_plans.note_fetch(addr, left, &fetch);
             if let Some(redirect) = peer_redirect::Redirect::parse(&fetch) {
                 candidates.push((addr, Specialization::PeerRedirect(redirect)));
             } else if let Some(delay) = conditional_return::ReturnDelay::parse(&fetch) {
@@ -321,5 +324,6 @@ pub(super) fn frame(
             paint(&mut result.specializations, context, start, 1);
         }
     }
+    loop_plans.paint(&mut result);
     Ok(result)
 }
