@@ -4713,6 +4713,85 @@ fn carmel_wide_limit_source_lanes_execute_in_emitted_c() {
     }
 }
 
+#[test]
+fn carmel_compact_extrema_keep_compare_width_and_record_only_strict_improvements() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-extrema", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let specs = binary.with_extension("specs");
+    tracked_carmel_entry_specs(&specs, &[("R0", 0x100), ("PACFG", 0)], 0x1000, 0);
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let operands = [
+        ("A0L", "unsigned short"), ("A0H", "unsigned short"), ("GB0", "unsigned char"),
+        ("A1L", "unsigned short"), ("A1H", "unsigned short"), ("GB1", "unsigned char"),
+        ("BTR1", "unsigned short"), ("MINMAX", "unsigned short"),
+        ("EST", "unsigned short"), ("ECFG", "unsigned short"), ("CECFG1", "unsigned short"),
+        ("CECFG2", "unsigned short"), ("CETBL", "unsigned short"),
+    ];
+    let min = ([0xffff, 0xffff, 0x7f, 0, 0, 0x80], 0, 0, [0, 0x80, 0xcccc, 0x7777, 6, 0x100]);
+    let min_saturated = (min.0, 4, 0, [0, 0x80, 0xcccc, 0x7777, 2, 0x100]);
+    let max = ([0, 0, 0x80, 0xffff, 0xffff, 0x7f], 0, 0, [0xffff, 0x7f, 0xcccc, 0x7777, 0x16, 0x100]);
+    let equal = ([5, 0, 0, 5, 0, 0], 0, 0, [5, 0, 0x9998, 0x7777, 8, 0x100]);
+    let smaller = ([5, 0, 0, 3, 0, 0], 0, 0, [3, 0, 0x9999, 0x7777, 0x10, 0x100]);
+    let data_win = ([0xffff, 0x1234, 0xff, 0, 0, 0], 0, 1, [1, 0xff, 0xcccc, 0x100, 0, 0x101]);
+    let data_tie = ([0xffff, 0x1234, 0xff, 0, 0, 0], 0, 0xffff, [0xffff, 0xff, 0xcccc, 0x7777, 8, 0x101]);
+    let variants = [
+        ([0x22, 0x8f, 0x82], &[min, min_saturated][..], &[0, 1, 4][..]),
+        ([0x23, 0x8f, 0x82], &[max][..], &[0, 1, 4][..]),
+        ([0x22, 0x0f, 0x82], &[equal, smaller][..], &[0, 2, 4][..]),
+        ([0x23, 0xd8, 0x20], &[data_win, data_tie][..], &[0, 1, 3, 4, 5][..]),
+    ];
+    let outputs = ["A0L", "GB0", "BTR1", "MINMAX", "EST", "R0"];
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short old_word;\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    for (i, ([a, b, d], cases, projections)) in variants.into_iter().enumerate() {
+        fs::write(&binary, [[a, b, d, 0x2b, 0xec, 0], nop, nop, nop, nop, ret].as_flattened()).unwrap();
+        for &j in projections {
+            let reg = outputs[j];
+            let ty = if reg == "GB0" { "unsigned char" } else { "unsigned short" };
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} {ty}"),
+                "--assert", "data [data,0x100] volatile unsigned short old_word",
+            ]);
+            for (k, (field, c_type)) in operands.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {k} %{field} {c_type} in_{k}")]);
+            }
+            let out = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+            let fun = &json["functions"][0];
+            let body = fun["code"].as_str().unwrap();
+            assert!(fun["error"].is_null() && !body.contains("halt_"), "{fun}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let name = format!("extremum_{i}_{j}");
+            writeln!(c, "#define sub_1000 {name}\n{body}\n#undef sub_1000").unwrap();
+            for &(input, cfg, word, expected) in cases {
+                let args = input.map(|value: u16| format!("{value:#x}")).join(", ");
+                writeln!(calls,
+                    "old_word = {word}; if ({name}({args}, 0xcccc, 0x7777, 0, {cfg}, 0x1000, 0x1000, 0) != {} || old_word != {word}) return {};",
+                    expected[j], 1 + i * outputs.len() + j).unwrap();
+            }
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

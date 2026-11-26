@@ -6019,6 +6019,58 @@ macro minmax_signed_flags(left, right) {
     EST = (EST & 0xffe5) | flags;
 }
 
+compact_extremum_op: "MIN" is slot_7_22=0x451f { local kind:1 = 1; export kind; }
+compact_extremum_op: "MAX" is slot_7_22=0x471f { local kind:1 = 0; export kind; }
+compact_extremum_op: "MINBTR" is slot_7_22=0x441f { local kind:1 = 3; export kind; }
+compact_extremum_op: "MAXBTR" is slot_7_22=0x461f { local kind:1 = 2; export kind; }
+
+macro compact_acc_extremum(lo, hi, gb, other_lo, other_hi, other_gb, kind) {
+    local left:8 = sext(gb) * 0x100000000 + zext(hi) * 0x10000 + zext(lo);
+    local right:8 = sext(other_gb) * 0x100000000 + zext(other_hi) * 0x10000 + zext(other_lo);
+    local better:1 = ((kind & 1) != 0 && right s< left) || ((kind & 1) == 0 && left s< right);
+    if ((kind & 2) == 0) goto <result>;
+    BTR1 = (BTR1 + BTR1) | zext(better);
+  <result>
+    if (!better) goto <flags>;
+    lo = other_lo;
+    hi = other_hi;
+    gb = other_gb;
+  <flags>
+    minmax_signed_flags(left, right);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+@define COMPACT_ACC_EXTREMUM "compact_extremum_op & slot_0_0=0 & (slot_6_6=0 | slot_5_6=2) & (slot_3_3=0 | slot_2_3=2) & cmp_full_lhs_full & cmp_full_lhs_lo & cmp_full_lhs_hi & cmp_full_lhs_guard & cmp_full_rhs_full & cmp_full_rhs_lo & cmp_full_rhs_hi & cmp_full_rhs_guard"
+:compact_extremum_op cmp_full_lhs_full,cmp_full_rhs_full "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_ACC_EXTREMUM)); (slot_mode=0 & nop_right) {
+    compact_acc_extremum(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard,
+                         cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, compact_extremum_op);
+}
+:compact_extremum_op cmp_full_lhs_full,cmp_full_rhs_full is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(COMPACT_ACC_EXTREMUM) {
+    compact_acc_extremum(cmp_full_lhs_lo, cmp_full_lhs_hi, cmp_full_lhs_guard,
+                         cmp_full_rhs_lo, cmp_full_rhs_hi, cmp_full_rhs_guard, compact_extremum_op);
+}
+
+macro compact_maxm_a0l_r0() {
+    local address:2 = R0;
+    modify_ptr(R0, 0:2, RM0, RL0, 0, 2);
+    local word:2 = *[data]:2 address;
+    local left:8 = sext(A0L);
+    local right:8 = sext(word);
+    if (!(left s< right)) goto <status>;
+    A0L = word;
+    MINMAX = address;
+  <status>
+    minmax_signed_flags(left, right);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:MAXM "A0L","*R0++" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x23d820); (slot_mode=0 & nop_right) {
+    compact_maxm_a0l_r0();
+}
+:MAXM "A0L","*R0++" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_22=0x23d820 {
+    compact_maxm_a0l_r0();
+}
+
 @define WIDE_MINMAX "wide_right_mode=1 & minmax_predicate"
 @define WIDE_MINMAX_GUARD "minmax_dst_group=0 & wide_8_9<3 & minmax_dst_guard"
 @define WIDE_MINMAX_SPECIAL_WORD "minmax_dst_group>=2 & wide_8_9=3 & minmax_dst_word"

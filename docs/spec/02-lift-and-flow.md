@@ -4286,6 +4286,14 @@ Covered compact logical `RMW1` routes deliver the result to an accumulator
 half. Disconnected increment, address, and flag-word ports receive zero
 without publishing ALU flags. `RMW2` writes DATA instead of the register.
 
+Primary compact accumulator `MIN` and `MAX` compare signed 40-bit
+operands. The backtrace variants shift in one only when the other
+operand strictly replaces the destination; ties shift in zero.
+Comparison flags describe the wrapped difference of the original
+operands. The compact word `MAXM` compares the two signed words,
+preserves the other accumulator lanes, and records the old DATA
+address only on replacement, even though the pointer always advances.
+
 In the covered wide `MINM` and `MAXM` forms, a strict improvement updates
 `MINMAX` from the reference register or the captured DATA address, not the
 value stored there. A guard result takes the low byte of the selected
