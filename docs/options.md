@@ -14,6 +14,11 @@ Three tiers:
 
 | If the output shows... | Try |
 |---|---|
+| (unsigned int)(x - 0x30) <= 9 where the source tests c >= '0' && c <= '9' | [`rangetest`](#rangetest----merged--split--auto-default-auto) |
+| 10 <= (unsigned char)(v - 0x30U) where the source rejects c < '0' and c > '9' separately | [`rangetest`](#rangetest----merged--split--auto-default-auto) |
+| one unsigned comparison of a subtraction where the source compares the same variable twice | [`rangetest`](#rangetest----merged--split--auto-default-auto) |
+| range check printed as x - A < B | [`rangetest`](#rangetest----merged--split--auto-default-auto) |
+| need the merged range comparison the binary performs (sub/cmp/ja) instead of two comparisons | [`rangetest`](#rangetest----merged--split--auto-default-auto) |
 | a string or buffer loop prints v = *p; p = &p[1]; instead of v = *p++; | [`postinc`](#postinc----on--off-default-on) |
 | the signature says FILE * or struct_0 * and nothing says what the fields are | [`structdefs`](#structdefs----on--off-default-off) |
 | a field access like f->_flags with no layout anywhere in the output | [`structdefs`](#structdefs----on--off-default-off) |
@@ -972,6 +977,14 @@ Three tiers:
 ## Toggleable transforms
 
 The control surface: each of these can make output worse on the wrong source shape, so each stays flippable.
+
+### `rangetest` -- merged | split | auto, default `auto`
+
+- **Symptoms:** (unsigned int)(x - 0x30) <= 9 where the source tests c >= '0' && c <= '9'; 10 <= (unsigned char)(v - 0x30U) where the source rejects c < '0' and c > '9' separately; one unsigned comparison of a subtraction where the source compares the same variable twice; range check printed as x - A < B; need the merged range comparison the binary performs (sub/cmp/ja) instead of two comparisons.
+- **What it does:** Print an optimizer-merged unsigned range test `(unsigned int)(x - A) <= B` as the two comparisons it stands for, `A <= x && x <= A + B`, and its negation `B < (unsigned int)(x - A)` as `x < A || A + B < x`, where the two comparisons give the same truth value for every input in the types the C prints: the range does not wrap (`A` is not 0 and `A + B` is below 2^n for an n-bit test), and `x` prints in an unsigned n-bit type or `A + B` is below 2^(n-1); a same-size cast around `x` is looked through, as is a zero extension when `A + B` fits the narrower value and a sign extension when it fits its non-negative half. `x` must be a variable or a pure expression that prints in place, since it prints twice, and the bound check of a recovered switch keeps its one comparison. `auto` splits everywhere except in a loop's condition and in a stand-alone condition (an `if` test that is not an operand of && / ||) whose range holds at most 16 values; `split` splits every exact site; `merged` keeps the one comparison.
+- **When to flip:** AUTO by default: a compiler folds `c >= '0' && c <= '9'` and `n < 1 || n > 30` into one unsigned subtract-and-compare (gcc does at -O0 too), and the source wrote the two comparisons far more often than the subtraction. The merged form is the source's own for a run of `switch` case labels that share one body, for an ISDIGIT-style macro and for a loop test, so auto keeps it in loop conditions and in a stand-alone condition of at most 16 values; a returned or assigned test and an operand of && / || split whatever the range. Flip to merged to see the comparison the binary performs (for example to match it against the disassembly's `sub`/`cmp`/`ja`), or to split to split every exact site.
+- **Where / provenance:** P9/condition-form · kuna · presentation-default · rangetest
+- **Example:** `option rangetest merged`
 
 ### `postinc` -- on | off, default `on`
 
