@@ -4257,6 +4257,14 @@ new arithmetic flags. `ROL` puts the fetched operand's top bit in carry;
 the result is disconnected. The fractional `ADDL`, `SUBH` and `SUBL` forms
 instead publish the status of adjusting the implicit all-ones accumulator.
 
+For covered unqualified DATA rotates, operand fetch uses the incoming
+pointer. A postmodify reaches the address port even when a later result
+overwrites the same pointer. In the long-input, short-result `ROR` forms,
+the short writeback is zero and the arithmetic flags are not replaced.
+Same-width `ROR` rotates through carry and writes the connected result;
+the long `ROL` short result takes the rotated high word with the incoming
+carry also OR-ed into its least significant bit.
+
 In the covered CE2 adjustments with a DATA destination, the old effective
 address supplies the left arithmetic input but the result does not write
 DATA. Address updates still run when the address override is set. When both

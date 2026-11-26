@@ -2530,6 +2530,62 @@ macro wide_unary_subh_status(value) {
 :ROL "CE1" "discard","*R4++" is $(WIDE_UNARY_DATA) & wide_0_22=0x423bcc & wide_40_45=0x14 { wide_unary_r4_rotate(1:2, 0:1); }
 :ROL "CE1" "discard","*R4++:long" is $(WIDE_UNARY_DATA) & wide_0_22=0x423bcd & wide_40_45=0x14 { wide_unary_r4_rotate(2:2, 0:1); }
 :ROR "CE1" "discard","*R4++:long" is $(WIDE_UNARY_DATA) & wide_0_22=0x423fcd & wide_40_45=0x14 { wide_unary_r4_rotate(2:2, 1:1); }
+
+@define WIDE_ROTATE_DATA "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1"
+@define WIDE_ROR_DATA "$(WIDE_ROTATE_DATA) & wide_10_22=0x108f"
+
+macro wide_rotate_flags(is_zero, is_negative, carry_bit) {
+    local flags:2 = (EST & 0xcfc6) | carry_bit | (zext(is_zero) << 3) | (zext(is_negative) << 4);
+    publish_alu_ce(flags);
+}
+
+macro wide_ror_disconnected(address, destination) {
+    local low:2 = *[data]:2 address;
+    local next:2 = address + 1;
+    local high:2 = *[data]:2 next;
+    destination = 0;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:ROR "R2","*R1:long" is $(WIDE_ROR_DATA) & wide_2_9=0xa2 & wide_40_45=1 & wide_0_1=1 {
+    local address:2 = R1;
+    wide_ror_disconnected(address, R2);
+}
+:ROR "R1","*R1++:long" is $(WIDE_ROR_DATA) & wide_2_9=0xa1 & wide_40_45=0x11 & wide_0_1=1 {
+    local address:2 = R1;
+    modify_ptr_scaled(R1, RN1, RM0, RL0, 2, 2, 2:2);
+    wide_ror_disconnected(address, R1);
+}
+:ROR "R1","*R1++" is $(WIDE_ROR_DATA) & wide_2_9=0xa1 & wide_40_45=0x11 & wide_0_1=0 {
+    local address:2 = R1;
+    modify_ptr(R1, RN1, RM0, RL0, 2, 2);
+    local low:2 = *[data]:2 address;
+    local middle:2 = low >> 1;
+    local in_bit:2 = EST & 1;
+    R1 = middle | (in_bit * 0x8000);
+    wide_rotate_flags(middle == 0 && in_bit == 0, in_bit != 0, low & 1);
+}
+:ROR "A1","*R1:long" is $(WIDE_ROR_DATA) & wide_2_9=0x89 & wide_40_45=1 & wide_0_1=1 {
+    local address:2 = R1;
+    local low:2 = *[data]:2 address;
+    local next:2 = address + 1;
+    local high:2 = *[data]:2 next;
+    local in_bit:2 = EST & 1;
+    local middle:2 = low >> 1;
+    A1L = middle | ((high & 1) * 0x8000);
+    A1H = (high >> 1) | (in_bit * 0x8000);
+    GB1 = (in_bit != 0) * 0xff;
+    wide_rotate_flags(middle == 0 && high == 0 && in_bit == 0, in_bit != 0, low & 1);
+}
+:ROL "R2","*R1:long" is $(WIDE_ROTATE_DATA) & wide_10_22=0x108e & wide_2_9=0xa2 & wide_40_45=1 & wide_0_1=1 {
+    local address:2 = R1;
+    local low:2 = *[data]:2 address;
+    local next:2 = address + 1;
+    local high:2 = *[data]:2 next;
+    local in_bit:2 = EST & 1;
+    R2 = (high + high) | (low >> 15) | in_bit;
+    wide_rotate_flags(low == 0 && (high & 0x7fff) == 0 && in_bit == 0, (high & 0x4000) != 0, high >> 15);
+}
 :INC "CE1" "discard","*R2+RN2" is $(WIDE_UNARY_DATA) & wide_0_22=0x4237cc & wide_40_45=0x2a {
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0, enabled);
