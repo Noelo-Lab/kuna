@@ -2335,8 +2335,9 @@ mod tests {
         // and kuna-boolret(-thumb) / a function that only tests a short-circuit condition returns it
         // and kuna-elfv1-symbolextent / a descriptor symbol's size bounds the code behind it
         // and kuna-rangetest(-thumb) / a merged range test prints as its two comparisons, a switch bound check keeps it
+        // and kuna-jump-as-call-liveness / only a reachable fallback call keeps its warning
         // and kuna-mips-octeon-elf32-o64 / an Octeon ELF32 image declaring O64 or no ABI loads as Octeon O64
-        assert_eq!(count, 933, "corpus file count drifted");
+        assert_eq!(count, 934, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
