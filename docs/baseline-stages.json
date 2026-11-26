@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5561,
-    5561
+    5572,
+    5572
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4289,6 +4289,17 @@
     "data:isolate: the parameter keeps its value after it",
     "data:isolate: the parameter stays isolated through a later rename",
     "data:isolate: the second value is its own local after it",
+    "data:itaniumclasses #10: on: a class with no size gets only the name",
+    "data:itaniumclasses #11: on: a by-value return slot is not this",
+    "data:itaniumclasses #1: off: Shape::area takes an untyped object",
+    "data:itaniumclasses #2: off: its member is read by index",
+    "data:itaniumclasses #3: on: Shape::area takes a Shape *this",
+    "data:itaniumclasses #4: on: the member is a field of the sized class",
+    "data:itaniumclasses #5: on: Circle::area takes a Circle *this",
+    "data:itaniumclasses #6: on: Circle's own member is the field past its base's",
+    "data:itaniumclasses #7: on: the constructor stores the typed vptr object",
+    "data:itaniumclasses #8: on: a member read through XMM0 is a double field",
+    "data:itaniumclasses #9: on: a class with two sub-vtables keeps an untyped receiver",
     "data:itaniumctors #10: an inlining factory keeps its own name",
     "data:itaniumctors #11: a by-value factory is not a constructor",
     "data:itaniumctors #12: a placement-new helper is not a constructor",
