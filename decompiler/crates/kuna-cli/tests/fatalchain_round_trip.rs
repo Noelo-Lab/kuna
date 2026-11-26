@@ -149,7 +149,7 @@ fn a_chain_into_a_no_return_call_round_trips_through_the_printed_c() {
 
 const CHAIN_SOURCE: &str = include_str!("../../kuna-analysis/tests/fixtures/chainfold.c");
 
-const CHAIN_FUNCS: &[&str] = &["send", "store"];
+const CHAIN_FUNCS: &[&str] = &["send", "store", "commit"];
 
 const CHAIN_PRELUDE: &str = r#"#include <stdio.h>
 #include <stdlib.h>
@@ -175,6 +175,7 @@ int main(void) {
     fail_at = i / 2;
     RUN(F(int, send)(&buf, 3, 4), s_send(&buf, 3, 4));
     RUN((F(void, store)(&buf, 5), 0), (s_store(&buf, 5), 0));
+    RUN((F(void, commit)(&buf, 7), 0), (s_commit(&buf, 7), 0));
   }
   return bad != 0;
 }
@@ -185,7 +186,10 @@ int main(void) {
 const CHAIN_IMAGES: &[(&str, &[(&str, &str, &str)])] = &[
     (
         "chainfold_gcc_O2_x86_64",
-        &[("store", "  if (!v1) {\n    v1 = put(a0,(int)a1 * 2);", "  if ((!v1) && (v1 = put(a0,(int)a1 * 2), !v1)) {")],
+        &[
+            ("store", "  if (!v1) {\n    v1 = put(a0,(int)a1 * 2);", "  if ((!v1) && (v1 = put(a0,(int)a1 * 2), !v1)) {"),
+            ("commit", "  if (!v1) {\n    order = 1;", "  if ((!v1) && (order = 1, v1 = put(a0,(int)a1 + 3), !v1)) {"),
+        ],
     ),
     ("chainfold_gcc_O0_x86_64", &[("send", "      v1 = put(a0,a1 + a2);", "  if ((")]),
 ];
