@@ -14,6 +14,15 @@ Learn more about this approach in this [post](https://noelo.org/blog/kuna-releas
 
 🏆 Kuna has held the top position on [DecBench](https://decbench.com) against most modern decompilers for optimized C. Kuna is also one of the _fastest_ decompilers on the planet, decompiling a 19MB binary in under [3 minutes](https://github.com/Noelo-Lab/kuna/issues/510#issuecomment-5645307854). These wins are only possible thanks to our growing contributors and [sponsors](#acknowledgement) who keep Kuna improving. 
 
+<p align="center">
+  <a href="https://decbench.com">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="./integrations/web/assets/img/decbench-card-dark.svg">
+      <img src="./integrations/web/assets/img/decbench-card-light.svg" width="560" alt="kuna on the DecBench scoreboard: its Union score and rank on each dataset, with the source and date on the card.">
+    </picture>
+  </a>
+</p>
+
 **Questions? Join our Discord**:
 
 [![Discord](https://img.shields.io/discord/1542982153912975470?label=Discord&logo=discord&logoColor=white&color=5865F2&style=flat)](https://discord.gg/vAQ8BKUPXv)

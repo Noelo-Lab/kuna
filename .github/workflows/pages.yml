@@ -80,6 +80,9 @@ jobs:
       - name: Test the development evidence snapshot
         run: node integrations/web/test/dev-viz.mjs
 
+      - name: Test the landing page's light and dark themes
+        run: node integrations/web/test/site-theme.mjs
+
       - name: Test the /decompile study view modules
         run: |
           node integrations/web/test/decompile-render.mjs

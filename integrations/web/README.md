@@ -92,7 +92,7 @@ bundle with the decompiler at `/decompile/`, which is also what the tests serve.
 | `dev-viz/` | The development record. `generate.py` exports full git history plus tracked option, triage, feature, and baseline evidence to `data.json`, and reuses the observatory's atlas generator (`scripts/observatory/atlas.py`, `docs/observatory.md`) for per-phase source sizes and the default pass schedule, so it needs `cargo` on the path; `app.js` renders the interactive charts. The generated JSON is ignored in source and assembled into `dist/` by `build.sh`. |
 | `decompile/` | The decompiler: `index.html` + `decompile.css` (Noelo's palette as dark and light tokens, its own type and layout, no `site.css`) + `app.js` and DOM-free modules for the code and assembly panes (including the easy assembly spelling), the function list's groups, the hover card, the Explain panel, the edit session (`--assert` directives), bytes and patching, the stack frame, the Data tab (a global's data, decoded by type, and who uses it), instruction notes and help. `collab/` is *Working together*, loaded only when a session starts or an invite or reply link is opened: the controller and its dialogs, the group protocol, WebRTC and BroadcastChannel links, the shared registers, message checks and codes, pointers and pings. `docs/web-integration.md` §4.2 has the layout, the module table and *Working together*. |
 | `compare-samples.js` | Data for the compare section: `SAMPLES` (kuna's output per function) × `RIVALS` (the right-hand pane), with each sample's measured DecBench GED. Adding a comparison is a data edit; the header documents the schema. Every pane must be **verbatim** tool output — mine and vet new ones with `python3 -m scripts.decbench.showcase` (`docs/decbench-loop.md` → *Finding good kuna examples*). |
-| `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark, mark + wordmark lockup, each with a `-dark` version for dark backgrounds, and the favicon, derived from `assets/kuna.png`; the repository README uses the lockup too), `js/highlight-c.js` — the one C highlighter the landing page and the decompiler use — and `js/fnfilter.js`, the DOM-free matcher behind the /decompile function search. |
+| `assets/` | The shared design system: `css/site.css`, `fonts/` (Jost, Roboto Mono), `img/` (mark, mark + wordmark lockup and the DecBench card, each with a `-dark` version for dark backgrounds, and the favicon, derived from `assets/kuna.png`; the repository README uses the lockup too), `js/highlight-c.js` — the one C highlighter the landing page and the decompiler use — and `js/fnfilter.js`, the DOM-free matcher behind the /decompile function search. |
 | `CNAME` | The custom domain (`kuna.noelo.org`); `build.sh` copies it into `dist/`. Repo *Settings → Pages → Custom domain* must agree. |
 | `decompile-run/` | What `split-sites.sh` adds to the two sites: decompile.run's `README.md` and `CNAME`, and `redirect.html`, kuna.noelo.org's `/decompile/`. |
 | `kuna-web.js` | The glue: loads the wasm, preloads the small spec bundle, lazily fetches each binary's `.sla` on demand (driven by the engine's own resolution), and runs the decompiler under the WASI shim with the automatic size-based mode policy; `list`/`decompile` return the `decompile-all --json` shape, `project` the whole-binary export. |
@@ -157,6 +157,9 @@ node integrations/web/test/worker.mjs
 
 # Worker startup failure behavior — no build needed.
 node integrations/web/test/worker-errors.mjs
+
+# Landing-page light/dark themes in headless Chrome — no build needed.
+node integrations/web/test/site-theme.mjs
 
 # F. Sidebar filter query semantics — no build needed.
 node integrations/web/test/fnfilter.mjs

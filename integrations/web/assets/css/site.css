@@ -29,8 +29,10 @@
   --ink:#141110;            /* warm near-black */
   --ink-2:#3A3230;
   --muted:#6E6663;
+  --faint:#7A726F;          /* dimmer than --muted, still 4.5:1 on paper */
   --rule:#E4DDDB;
   --rule-2:#CEC5C2;
+  --control-border:#CEC5C2;
   --red:#B80D1E;            /* sampled from the mark */
 
   /* on an ink background */
@@ -68,8 +70,10 @@
     --ink:#EDE7E5;
     --ink-2:#C9C0BD;
     --muted:#A39894;
+    --faint:#8C827E;
     --rule:#2A2321;
     --rule-2:#3A3230;
+    --control-border:#716560;   /* 3:1 on paper, so a select's edge is visible */
     --red:#E8404E;
 
     --on-ink:#3A3230;
@@ -205,14 +209,14 @@ p{margin:0;}
 .selbox select{
   appearance:none;-webkit-appearance:none;
   font:400 .8125rem/1 var(--mono);color:var(--ink);
-  background:var(--paper);border:1px solid var(--rule-2);border-radius:0;
+  background:var(--paper);border:1px solid var(--control-border);border-radius:0;
   padding:10px 32px 10px 12px;min-width:min(300px,72vw);max-width:100%;
   cursor:pointer;transition:border-color .12s linear;
 }
 .selbox select:hover{border-color:var(--ink);}
 .cmpmeta{flex:1 1 100%;font-size:.75rem;line-height:1.7;color:var(--muted);max-width:78ch;}
 .cmpmeta b{font-weight:400;color:var(--ink-2);}
-.cmpmeta .dim{opacity:.7;}
+.cmpmeta .dim{color:var(--faint);}
 
 .panes{display:grid;grid-template-columns:1fr 1fr;gap:clamp(12px,1.4vw,18px);
   margin-top:20px;align-items:stretch;}
@@ -254,6 +258,8 @@ p{margin:0;}
 .goal h3{margin:12px 0 8px;font:700 .9375rem/1.45 var(--mono);letter-spacing:-.005em;}
 .goal p{font-size:.8125rem;line-height:1.75;color:var(--ink-2);}
 .goal code{background:var(--paper-2);border:1px solid var(--rule);padding:0 4px;}
+.bench{display:block;max-width:680px;margin-top:clamp(30px,4vw,44px);}
+.bench img{width:100%;}
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 .foot{flex:none;border-top:1px solid var(--rule);padding-block:22px;
