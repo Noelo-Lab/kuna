@@ -1712,9 +1712,9 @@ inference: RISC-V lists the 2-byte `csreg` space, so
 It also keeps the bits of a `double` slot from printing as `(double)table`, and
 an MSP430 enum return of 296 from printing as `(State)&FCTL1` instead of `BUSY`.
 
-An explicit global data declaration is authoritative at an exact address.
-Both `--assert 'data …'` surfaces — the in-process assertion plane and its
-`map address` console lowering — route through
+An explicit global data declaration is authoritative at an exact address in
+its address space. Both `--assert 'data …'` surfaces — the in-process assertion
+plane and its console lowering — route through
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
 (upsert_data_mapped)`. If analysis already planted non-function data there,
 the declaration retypes, resizes, and renames that mapping in place before
