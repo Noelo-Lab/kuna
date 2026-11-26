@@ -1361,9 +1361,8 @@ By default kuna's fixes write the JDK members and classes Kotlin maps by their K
 instead (`text.length`, `(f(x) as Number).toInt()`; fixes `kt_mapped_java_member` and
 `kt_mapped_java_type`, section 10.16).
 
-**Fidelity and front-end support (kuna).** The engine's Kotlin output is Vineflower's: the
-Kotlin plugin's own tests and core's Kotlin tests are corpus cases (`tests/jvm/kotlin.json`),
-compared with the released jar's text. `decompiler/nonnative/kuna-jvm/src/infra/kuna_spans.rs`
+**Front-end support (kuna).** The Kotlin plugin's own tests and core's Kotlin tests are
+corpus cases (sets *Kotlin ...* of `tests/jvm/cases.tsv`). `decompiler/nonnative/kuna-jvm/src/infra/kuna_spans.rs`
 spans are recorded by the Kotlin writer too: a property's getter and setter share the span
 of the property's declaration, a primary constructor's span is its `init` block (it has
 none when the body is empty; it is opened before the constructor is stringified, so a
