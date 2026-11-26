@@ -1,0 +1,48 @@
+<decompilertest>
+<!-- P8 structuring, option boolbranch (default return), Thumb. Two
+     hand-assembled functions in the layout gcc -O2 gives a short-circuit
+     result on Cortex-M, one return per path:
+
+       int is_empty(const char *s) { return s == 0 || *s == 0; }
+         0x10000: cbz r0,1f; ldrb r3,[r0]; cbnz r3,2f; movs r0,#1; bx lr;
+                  1: movs r0,#1; bx lr; 2: movs r0,#0; bx lr
+       int both_set(int a, const unsigned char *f) { return a != 0 && *f != 0; }
+         0x10020: cbz r0,1f; ldrb r3,[r1]; cbnz r3,2f; movs r0,#0; bx lr;
+                  1: movs r0,#0; bx lr; 2: movs r0,#1; bx lr
+
+     Structuring folds the two tests into one guard of the constant both
+     share. Under keep each prints that guard and a return of the other
+     constant; under return each returns the condition, both_set its
+     negation. -->
+<binaryimage arch="ARM:LE:32:v8:default">
+<bytechunk space="ram" offset="0x10000" readonly="true">18b103781bb901207047012070470020704700bf00bf00bf00bf00bf00bf00bf18b10b781bb9002070470020704701207047</bytechunk>
+</binaryimage>
+<script>
+<com>option truthycond on</com>
+<com>set context TMode 1 [ram,0x10000] [ram,0x1003f]</com>
+<com>map function r0x10000 is_empty</com>
+<com>map function r0x10020 both_set</com>
+<com>parse line extern int is_empty(char *s);</com>
+<com>parse line extern int both_set(int a, unsigned char *f);</com>
+<com>option boolbranch keep</com>
+<com>lo fu is_empty</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu both_set</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option boolbranch return</com>
+<com>lo fu is_empty</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu both_set</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="BOOLRET-THUMB #1: keep prints each folded guard" min="1" max="1">^  if \(\(!s\) \|\| \(!\*s\)\)$</stringmatch>
+<stringmatch name="BOOLRET-THUMB #2: keep prints the guard of the other constant" min="1" max="1">^  if \(\(!a\) \|\| \(!\*f\)\)$</stringmatch>
+<stringmatch name="BOOLRET-THUMB #3: keep returns both constants" min="2" max="2">^  return [01];$</stringmatch>
+<stringmatch name="BOOLRET-THUMB #4: return returns the condition" min="1" max="1">^  return \(\(!s\) \|\| \(!\*s\)\);$</stringmatch>
+<stringmatch name="BOOLRET-THUMB #5: return returns the negation of a guard that returns 0" min="1" max="1">^  return !\(\(!a\) \|\| \(!\*f\)\);$</stringmatch>
+</decompilertest>

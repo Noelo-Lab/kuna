@@ -1,0 +1,58 @@
+<decompilertest>
+<binaryimage arch="PowerPC:BE:64:default:default">
+<!--
+    kuna analysis (option aif): no gap-walk function starts inside the code of a
+    sized PowerPC64 ELFv1 symbol, whose value is a descriptor in .opd.
+
+    Twenty-five leaves open with std 4,-8(1); addis 5,3,1; addi 3,5,n.  The same
+    three instructions occur inside sample, which a symbol in .dynsym sizes at 28
+    bytes:
+        0xeb8  cmpdi 3,0 / beq 0xed0 / nop
+        0xec4  std 4,-8(1) / addis 5,3,1 / addi 3,5,7
+        0xed0  blr
+    The size was read as that of the bytes at the descriptor, so the gap walk
+    named sub_ec4 and sample ended there without its result.
+
+    These keep their starts: the routine behind sample that has no symbol (0xed4),
+    inner, a symbol inside outer (0xef0), and the routine behind the 8 bytes of
+    dotted (0xf24), whose symbol states its descriptor's 24 bytes as the dot-symbol
+    ABI does.  kuna-cli's elfv1_entries covers a call target inside a function.
+
+    Stage: P1 program prep (code/data partition), option aif (the drivers' default
+    on every architecture but x86-64).  Single pass per byte order.
+
+    Images: decompiler/crates/kuna-analysis/tests/fixtures/
+    elfv1_symbol_extent_be.so and elfv1_symbol_extent_le.so
+    (elfv1_symbol_extent.S).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">4e80002000000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfv1_symbol_extent_be.so</com>
+  <com>option listing on</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>lo fu sample</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/elfv1_symbol_extent_le.so</com>
+  <com>option listing on</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>lo fu sample</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="elfv1-symbolextent #1: sample is listed" min="2" max="2">0xeb8 sample</stringmatch>
+<stringmatch name="elfv1-symbolextent #2: no start inside sample" min="0" max="0">sub_ec4</stringmatch>
+<stringmatch name="elfv1-symbolextent #3: sample keeps its result" min="2" max="2">a0 \+= 0x10007;|return a0 \+ 0x10007;</stringmatch>
+<stringmatch name="elfv1-symbolextent #4: the routine behind sample is a start" min="2" max="2">0xed4 sub_ed4</stringmatch>
+<stringmatch name="elfv1-symbolextent #5: a symbol inside outer is a start" min="2" max="2">0xef0 inner</stringmatch>
+<stringmatch name="elfv1-symbolextent #6: a descriptor's own size bounds no code" min="2" max="2">0xf24 sub_f24</stringmatch>
+</decompilertest>

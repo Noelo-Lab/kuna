@@ -96,7 +96,7 @@ impl Shape {
 /// goto-`if`s and bare-goto switch arms that the print-time census
 /// ([`goto_rewrites`](crate::p8_structure::kuna_gotonext::goto_rewrites)) neither
 /// leaves out nor prints as `break;`, and the edges of multi-goto blocks.
-fn printed_gotos(data: &Funcdata) -> int4 {
+pub(crate) fn printed_gotos(data: &Funcdata) -> int4 {
     let graph = data.sblocks_ref();
     let Some(root) = graph.root else { return 0 };
     let rw = crate::p8_structure::kuna_gotonext::goto_rewrites(

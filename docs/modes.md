@@ -130,6 +130,17 @@ build failure. The options it enables:
   *lowering* mid-body false entries. All four are ARM-gated and the last three
   also need `listing`, which this preset supplies; off ARM they are measured
   no-ops (identical entry sets on 90 x86-64 twins and 12 i386 PE images).
+- **analysis tier, PPC32 PIC imports**: `ppc32picimports` at `abi`, set by
+  name because the option is multi-valued. It names PPC32 secure-PLT PIC import
+  stubs by proving `r30` at every call, which walks the whole image at load. On
+  Ubuntu's 18 distinct PPC32 libraries under 500 KiB it adds 0-12% to a
+  function listing (5.8% over all of them; `libgomp`, 450 KiB, costs most) and
+  3-9% to a single-function decompile. Larger images, where it costs up to
+  1.35x a listing and 2.9x a single-function decompile, fall in `reliable` and
+  `fast` and keep it off. It is inert on every other target. It acts while
+  the image loads: the CLI and the browser load with it, the console's `mode`
+  sets it for the next `load file` and leaves the open image's live mode as it
+  was, and the Ghidra preset layer skips it because Ghidra loads the image.
 
 `returndup` (DIV-54, at its shipped value `auto`), `pdb` (DIV-129), `cfstrings`, the presentation defaults
 (`partialaccess`, `voidtailreturn`, `importdata`, `calltargettype`, `libcnames`)
@@ -224,7 +235,7 @@ next call keeps its argument. Flip `--option argclobber off` to keep every
 argument the register model produced, phantom or not.
 
 Separately, these default-off options remain unevaluated for preset membership:
-`guardarm`, `loopcondhoist`, `paramcopyhoist`, `switchselector` and
+`guardarm`, `paramcopyhoist`, `switchselector` and
 `stackaddrargtrial`. Each needs the sweep and speed evidence that would
 justify a preset change. The stack-address option has focused tests and a local
 speed measurement, but no broad sweep. The `UNEVALUATED` list beside the

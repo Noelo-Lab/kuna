@@ -1996,7 +1996,7 @@ impl PrintC {
         self.emit.tag_op(self.lang().kw_while, SyntaxHighlight::KeywordColor, &MarkupRef::none());
         self.emit.spaces(1, 0);
         self.context.push_mod();
-        self.context.set_mod(modifiers::ONLY_BRANCH);
+        self.context.set_mod(modifiers::ONLY_BRANCH | modifiers::LOOP_CONDITION);
         self.loop_tests.active = self.loop_tests.subst.get(&blk).cloned().unwrap_or_default();
         self.loop_tests.active_respell = self.loop_tests.respell.get(&blk).copied();
         self.emit_block(fd, arch, body);

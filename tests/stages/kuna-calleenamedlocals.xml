@@ -277,7 +277,7 @@ c3c3c3
 consume\(object\);
 object-&gt;skip = 1;</stringmatch>
 <stringmatch name="calleenamedlocals #4: the inner loop loads each member into the member variable" min="3" max="3">object_00 = \*(v2|Var2);
-if \(!object_00\) goto</stringmatch>
+if \(!object_00\) (goto|break)</stringmatch>
 <stringmatch name="calleenamedlocals #5: the flag is cleared through the representative after the loop" min="3" max="3">representatives = &amp;representatives\[1\];
 object-&gt;skip = 0;</stringmatch>
 <stringmatch name="calleenamedlocals #6: a member never overwrites the representative" min="0" max="0">object = \*(v2|Var2);</stringmatch>

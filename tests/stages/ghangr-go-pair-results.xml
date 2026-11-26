@@ -6,11 +6,14 @@
 <script>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-pair-results/go1.22.5-pair</com>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>option godwarfsig off</com><com>read symbols</com>
   <com>option outlang go</com>
   <com>load function main.pair</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-pair-results/go1.22.5-pair</com>
+  <com>option returndup record</com>
   <com>option godwarfsig on</com><com>read symbols</com>
   <com>option outlang go</com>
   <com>load function main.pair</com><com>decompile</com><com>print C</com>
@@ -19,6 +22,7 @@
   <com>load function main.first</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-pair-results/go1.27.3-pair</com>
+  <com>option returndup record</com>
   <com>option godwarfsig on</com><com>read symbols</com>
   <com>option outlang go</com>
   <com>load function main.pair</com><com>decompile</com><com>print C</com>
@@ -27,11 +31,13 @@
   <com>load function main.highPair</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-int-error-results/contracts</com>
+  <com>option returndup record</com>
   <com>option godwarfsig off</com><com>read symbols</com>
   <com>option outlang c</com>
   <com>load function main.forward</com><com>decompile</com><com>print C</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-int-error-results/contracts</com>
+  <com>option returndup record</com>
   <com>option godwarfsig on</com><com>read symbols</com>
   <com>option outlang c</com>
   <com>load function main.check</com><com>decompile</com><com>print C</com>
@@ -41,6 +47,7 @@
   <com>echo Go result outputs end</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-pair-signedness/linux-amd64</com>
+  <com>option returndup record</com>
   <com>option godwarfsig on</com><com>read symbols</com>
   <com>option outlang go</com>
   <com>echo Go signedness pairs begin</com>
@@ -49,6 +56,7 @@
   <com>echo Go signedness pairs end</com>
   <com>clear architecture</com>
   <com>load file tests/fixtures/go-pair-signedness/linux-amd64</com>
+  <com>option returndup record</com>
   <com>option godwarfsig off</com><com>read symbols</com>
   <com>option outlang go</com>
   <com>load function main.Retype</com><com>decompile</com><com>print C</com>

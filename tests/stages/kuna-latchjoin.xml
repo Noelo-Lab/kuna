@@ -1,0 +1,89 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option dedupitetail` (default `latch`), P8 structuring: a loop latch
+    the compiler copied into each path through the body is joined back into one
+    latch (p8_structure/kuna_latchjoin.rs), so the loop prints once with an `if`
+    in it instead of as two loops, one directly inside the other.
+
+    gcc 11 -O2 (-fno-pic -fno-stack-protector -fcf-protection=none -fno-inline),
+    linked with -Ttext 0x100000:
+        struct node { struct node *next; short cls; };
+        void hit(struct node *p); int weigh(struct node *p);
+        int ready(void); void send(int v);
+        void visit(struct node *p, short cls)
+        { while (p) { if (p->cls == cls) hit(p); p = p->next; } }
+        int count(struct node *p, short cls)
+        { int n = 0;
+          while (p) { if (p->cls == cls) n += weigh(p); p = p->next; }
+          return n; }
+        void sendall(const int *a, int n)
+        { int i; for (i = 0; i LT n; i++) { while (!ready()) ; send(a[i]); } }
+    (LT stands for the operator an XML comment cannot spell.)
+
+    gcc gives visit and count two copies of `p = p->next; if (p) goto top;`,
+    one after the call and one on the path that skips it; in count the copy
+    after the call also holds the `n +=` gcc scheduled between the load and the
+    test.  sendall's busy-wait and its outer loop share a header, but the
+    busy-wait's latch is the header itself and the outer latch is different
+    code, so nothing is joined.
+
+    Pass 1 (default latch): visit (#1) and count (#2) are one `while (p)` loop
+    with the `if` inside and the step after it; sendall keeps its inner loop
+    (#3).  Pass 2 (option dedupitetail on, the old output): visit and count are
+    a `do` loop whose first statement is a `while` loop (#4), sendall as before
+    (#3).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4885ff743b5589f5534889fb4883ec08eb0e660f1f440000488b1b4885db741666396b0875f24889dfe8c2000000488b1b4885db75ea4883c4085b5dc30f1f00c366662e0f1f8400000000000f1f4000
+415455534885ff743f4889fb89f54531e4eb0d0f1f440000488b1b4885db741966396b0875f24889dfe882000000488b1b4101c44885db75e74489e05b5d415cc30f1f80000000004531e45b5d4489e0
+415cc366662e0f1f840000000000669085f67e34558d46ff53488d6c87044889fb4883ec080f1f00e84300000085c074f78b3b4883c304e8440000004839eb75e74883c4085b5dc3c30f1f8000000000
+c366662e0f1f8400000000000f1f400031c04885ff0f95c0c30f1f8000000000b801000000c3662e0f1f840000000000c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="visit"/>
+<symbol space="ram" offset="0x100050" name="count"/>
+<symbol space="ram" offset="0x1000b0" name="sendall"/>
+<symbol space="ram" offset="0x1000f0" name="hit"/>
+<symbol space="ram" offset="0x100100" name="weigh"/>
+<symbol space="ram" offset="0x100110" name="ready"/>
+<symbol space="ram" offset="0x100120" name="send"/>
+</binaryimage>
+<script>
+  <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sendall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option dedupitetail on</com>
+  <com>lo fu visit</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sendall</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LATCHJOIN #1: visit is one while loop with the if inside and the step after it (pass 1)" min="1" max="1">^  while \(a0\) \{
+^    if \(\*\(int2 \*\)&amp;a0\[1\] == a1\)
+^      hit\(a0\);
+^    a0 = \(int8 \*\)\*a0;
+^  \}</stringmatch>
+<stringmatch name="LATCHJOIN #2: count is one while loop; the sum stays in the if, the step after it (pass 1)" min="1" max="1">^  while \(a0\) \{
+^    if \(\*\(int2 \*\)&amp;a0\[1\] == a1\)
+^      v1 \+= weigh\(a0\);
+^    a0 = \(int8 \*\)\*a0;
+^  \}</stringmatch>
+<stringmatch name="LATCHJOIN #3: sendall keeps its busy-wait inside the outer loop (passes 1 and 2)" min="2" max="2">^    do \{
+^      while \(!ready\(\)\) \{
+^      \}
+^      v2 = \*a0;</stringmatch>
+<stringmatch name="LATCHJOIN #4: dedupitetail on prints visit and count as a while loop inside a do loop (pass 2)" min="2" max="2">^  do \{
+^    while \(\*\(int2 \*\)&amp;a0\[1\] == a1\) \{</stringmatch>
+</decompilertest>
