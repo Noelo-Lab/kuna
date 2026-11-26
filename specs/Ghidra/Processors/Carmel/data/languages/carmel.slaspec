@@ -1271,6 +1271,104 @@ macro publish_alu_ce(flags) {
     EST = flags | (first << 12) | (second << 13);
 }
 
+macro compact_extract_bits(word, count, offset, signed_result, result) {
+    local n:4 = zext(count & 31);
+    local start:4 = zext(offset & 31);
+    local mask:4 = 0x7fffffff >> (31 - n);
+    result = (sext(word) s>> start) & mask;
+    if (signed_result == 0 || n == 0) goto <flags>;
+    local sign:4 = (mask >> 1) + 1;
+    result = (result ^ sign) - sign;
+  <flags>
+    local bits:2 = (zext(result == 0) << 3) | (zext((result & 0x80000000) != 0) << 4);
+    EST = (EST & 0xffe7) | bits;
+}
+
+macro compact_extract_full(word, count, offset, low, high, guard) {
+    local result:4;
+    compact_extract_bits(word, count, offset, 0:1, result);
+    low = result:2;
+    high = result(2);
+    guard = 0;
+}
+
+macro compact_extract_signed_data(cfg, bank, write_result) {
+    local enabled:2;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    if (enabled == 0 && (cfg & 0x1000) == 0) goto <done>;
+    local address:2 = R0;
+    modify_ptr(R0, RN0, RM0, RL0, 0, 1);
+    if (enabled == 0 || write_result == 0) goto <done>;
+    local word:2 = *[data]:2 address;
+    local result:4;
+    compact_extract_bits(word, A1L, A1H, 1:1, result);
+    A0L = result:2;
+  <done>
+}
+
+compact_extract_active: "EXTRACTZ" "*R5,*R5+=RN5,FF2:FF1" is slot_0_22=0x372ade {
+    local address:2 = R5;
+    local word:2 = *[data]:2 address;
+    modify_ptr(R5, RN5, RM4, RL4, 10, 1);
+    local result:4;
+    compact_extract_bits(word, FF2, FF1, 0:1, result);
+    *[data]:2 address = result:2;
+}
+compact_extract_active: "EXTRACTZ" "X2,*R2+RN2,*R1+=RN1:long" is slot_0_22=0x365f52 {
+    local source:2 = R2 + RN2;
+    local descriptor:2 = R1;
+    local upper:2 = descriptor + 1;
+    local word:2 = *[data]:2 source;
+    local count:2 = *[data]:2 descriptor;
+    local offset:2 = *[data]:2 upper;
+    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+    local result:4;
+    compact_extract_bits(word, count, offset, 0:1, result);
+    X2 = result:2;
+}
+compact_extract_active: "EXTRACTZ CE1" "A0,A2H,A4" is slot_0_22=0x37c0a9 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <done>;
+    compact_extract_full(A2H, A4L, A4H, A0L, A0H, GB0);
+  <done>
+}
+compact_extract_active: "EXTRACTS CE1" "A0L,*R0+=RN0,A1" is slot_0_22=0x350083 {
+    compact_extract_signed_data(CECFG1, 0:2, 1:1);
+}
+compact_extract_active: "EXTRACTZ" "A1,A0H,FF1:FF2" is slot_0_22=0x37c18c {
+    compact_extract_full(A0H, FF1, FF2, A1L, A1H, GB1);
+}
+compact_extract_active: "EXTRACTZ" "A1,A0H,FF2:FF1" is slot_0_22=0x37c18e {
+    compact_extract_full(A0H, FF2, FF1, A1L, A1H, GB1);
+}
+
+compact_extract_passive: "EXTRACTZ" "*R5,*R5+=RN5,FF2:FF1" is slot_0_22=0x372ade {
+    modify_ptr(R5, RN5, RM4, RL4, 10, 1);
+}
+compact_extract_passive: "EXTRACTZ" "X2,*R2+RN2,*R1+=RN1:long" is slot_0_22=0x365f52 {
+    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+}
+compact_extract_passive: "EXTRACTZ CE2" "A0,A2H,A4" is slot_0_22=0x37c0a9 { }
+compact_extract_passive: "EXTRACTS CE2" "A0L,*R0+=RN0,A1" is slot_0_22=0x350083 {
+    compact_extract_signed_data(CECFG2, 1:2, 0:1);
+}
+compact_extract_passive: "EXTRACTZ" "A1,A0H,FF1:FF2" is slot_0_22=0x37c18c { }
+compact_extract_passive: "EXTRACTZ" "A1,A0H,FF2:FF1" is slot_0_22=0x37c18e { }
+
+:^compact_extract_active "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_extract_active); (slot_mode=0 & nop_right) {
+    build compact_extract_active;
+    publish_alu_ce(EST & 0xcfff);
+}
+:^nop_left "||" compact_extract_passive is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_extract_passive) {
+    build compact_extract_passive;
+    publish_alu_ce(EST & 0xcfff);
+}
+:^compact_extract_active is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_extract_active {
+    build compact_extract_active;
+    publish_alu_ce(EST & 0xcfff);
+}
+
 macro wide_logic_rmw_pstatus(word) {
     local depth:2 = (word & 3) * zext((word & 8) != 0);
     PSTATUS = (word & 0xfff8) | depth;

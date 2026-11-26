@@ -3940,6 +3940,13 @@ The DATA result writes the captured operand address, not the postmodified
 pointer. Its width and shift controls apply after the widened status is
 computed.
 
+Covered compact `EXTRACTS` and `EXTRACTZ` use the low five descriptor
+bits for width and the low five bits of its high word for offset. The
+two flag-word aliases exchange those roles. A parallel right issue
+still applies its address updates, but cannot write a result or arithmetic
+flags; a sequential right issue can. Read-modify-write stores use the
+captured operand address, not the postmodified pointer.
+
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source
 publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.

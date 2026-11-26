@@ -644,6 +644,73 @@ fn carmel_compact_rmw_result_and_flags_follow_the_physical_lane() {
 }
 
 #[test]
+fn carmel_compact_extract_separates_address_updates_and_result_ports() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-extract", "bin");
+    let nop = [0x2b, 0xec, 0];
+    let extract = [0x37, 0x2a, 0xde];
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short cell_4200, descriptor_count, descriptor_offset, source_word;\n");
+    for (name, reg, packet) in [
+        ("write_field", "EST", [extract, nop]),
+        ("update_address", "R5", [nop, extract]),
+        ("direct_flags", "A1L", [[0x37, 0xc1, 0x8c], nop]),
+        ("swapped_flags", "A1L", [[0x37, 0xc1, 0x8e], nop]),
+        ("long_descriptor", "X2", [[0x36, 0x5f, 0x52], nop]),
+    ] {
+        let code = [
+            [[0x80, 0x08, 0x06], [0xc6, 0x42, 0x88]], // MOVE R2, 0x0806
+            [[0xa2, 0xfa, 0x02], [0xc2, 0x7a, 0xaa]], // MOVE RN2, R2
+            [[0x80, 0x81, 0x00], [0xc6, 0x42, 0x88]], // MOVE R2, 0x8100
+            [[0x80, 0x41, 0x00], [0xc6, 0x42, 0x84]], // MOVE R1, 0x4100
+            [[0x80, 0x42, 0], [0xc6, 0x42, 0x94]], // MOVE R5, 0x4200
+            packet,
+            [[0x2b, 0xd8, 0], nop],
+        ];
+        fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            "--assert", "data [data,0x4200] volatile unsigned short cell_4200",
+            "--assert", "data [data,0x4100] volatile unsigned short descriptor_count",
+            "--assert", "data [data,0x4101] volatile unsigned short descriptor_offset",
+            "--assert", "data [data,0x8906] volatile unsigned short source_word",
+        ]);
+        for (i, input) in ["EST", "CETBL", "CECFG1", "CECFG2", "A0H", "FF1", "FF2", "RN5", "PACFG", "RM4", "RL4", "RN1", "RM0", "RL0"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        writeln!(emitted, "{}", function["code"].as_str().unwrap().replace("sub_0", name)).unwrap();
+    }
+    emitted.push_str(
+        "int main(void) {\n\
+         cell_4200 = 0x8bf1;\n\
+         if (update_address(0,0xffff,0,0,0,0x831,0x789,0x806,0,0,0,0,0,0) != 0x4a06 || cell_4200 != 0x8bf1) return 1;\n\
+         if (write_field(0,0xffff,0,0,0,0x831,0x789,0x806,0,0,0,0,0,0) != 0x3000 || cell_4200 != 0x1ff) return 2;\n\
+         if (direct_flags(0,0xffff,0,0,0x3456,6,8,0,0,0,0,0,0,0) != 0x34) return 3;\n\
+         if (swapped_flags(0,0xffff,0,0,0x3456,6,8,0,0,0,0,0,0,0) != 0xd1) return 4;\n\
+         descriptor_count = 4; descriptor_offset = 8; source_word = 0x0123;\n\
+         if (long_descriptor(0,0xffff,0,0,0,0,0,0,0,0,0,1,0,0) != 1) return 5;\n\
+         source_word = 0xf0dd;\n\
+         if (long_descriptor(0,0xffff,0,0,0,0,0,0,0,0,0,1,0,0) != 0) return 6;\n\
+         return 0;\n\
+         }\n",
+    );
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_wide_unary_fetch_updates_only_the_connected_status_and_address() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
