@@ -2336,8 +2336,9 @@ mod tests {
         // and kuna-elfv1-symbolextent / a descriptor symbol's size bounds the code behind it
         // and kuna-rangetest(-thumb) / a merged range test prints as its two comparisons, a switch bound check keeps it
         // and kuna-jump-as-call-liveness / only a reachable fallback call keeps its warning
+        // and kuna-scalar-stack-pointer / a locked integer SP projects its value; ordinary frames keep locals
         // and kuna-word-index-scalar / a word index matching a global stays numeric without pointer evidence
-        assert_eq!(count, 934, "corpus file count drifted");
+        assert_eq!(count, 935, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
