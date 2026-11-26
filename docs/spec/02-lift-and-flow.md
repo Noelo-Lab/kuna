@@ -4269,15 +4269,24 @@ The DATA result writes the captured operand address, not the postmodified
 pointer. Its width and shift controls apply after the widened status is
 computed.
 
-The lifted wide `ADD2` and `SUB2` short-result forms use the upper lane
-without a carry or borrow from the lower lane. CE2 gates the result; an
-`ADD2` result aliased to its first accumulator-half input leaves the other
-half and guard byte unchanged. `MIN2` compares signed lanes independently,
-shifting a strict left-wins bit into `BTR1` for the upper lane and `BTR2`
-for the lower lane. The covered `MIN2` RMW and `OP3` sinks publish the
-backtraces but do not write an accumulator or DATA result. Their displaced
-long source still reads both words at the original address and updates the
-pointer once. Packed computation preserves the arithmetic flags.
+Wide `ADD2` and `SUB2` operate on independent lanes: the lower lane wraps
+at 16 bits without carrying or borrowing into the upper 24-bit lane.
+Full arithmetic results retain the upper lane's guard byte; narrow
+result ports receive only the upper lane, truncated to the port width.
+The raw first unbound source reads `DATA[0xffff]`, while that selector
+in the second source takes the signed extra literal. A discard port has
+no register write. The lifted RMW routes use the selected input as the
+destination, including a guard-byte write and the `OP3` alias of input 2.
+Two word inputs to the covered short-result form feed the upper lane.
+
+Wide `MIN2` and `MAX2` compare their two signed 16-bit lanes independently,
+ignoring source guard bytes. Full results take their guard from the sign of
+the selected upper word. Strict left wins shift into `BTR1` for the upper
+lane and `BTR2` for the lower lane; ties shift zero. CE gates the result
+and trace writes in qualified forms. A disconnected extrema result port
+can still publish backtraces. The covered displaced long source reads
+both words at its captured address and updates the pointer once. Packed
+computation preserves the arithmetic flags.
 
 Covered compact `EXTRACTS` and `EXTRACTZ` use the low five descriptor
 bits for width and the low five bits of its high word for offset. The

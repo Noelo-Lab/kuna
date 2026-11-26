@@ -1002,6 +1002,86 @@ fn carmel_packed_short_results_and_extrema_sinks_preserve_independent_lanes() {
 }
 
 #[test]
+fn carmel_wide_packed_arithmetic_routes_independent_lanes_to_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-packed-arithmetic", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let registers = [
+        "A0L", "A0H", "GB0", "A1L", "A1H", "GB1", "A2L", "A2H", "GB2", "FF1", "FF2",
+        "BTR1", "BTR2", "EST", "CECFG1", "CECFG2", "CETBL",
+    ];
+    let seeds = [
+        [0xffff, 0x8001, 0xf0, 2, 0x7fff, 0x20, 0x1234, 0xff7f, 0x54, 0xabcd, 0x7fff, 0x8115, 0x005a, 0, 0, 0, 0],
+        [0, 3, 1, 0xffff, 3, 0xee, 0x1234, 0xff7f, 0x54, 0xabcd, 5, 0x8115, 0x005a, 0, 0, 0, 0],
+    ];
+    let rows: [([u8; 6], bool, &[(&str, u16, u16)]); 12] = [
+        // Each expected pair corresponds to one seed above, including carry, borrow and ties.
+        ([0x09, 0, 0, 0xc4, 0x4a, 0x91], false, &[("A2L", 1, 0xffff), ("A2H", 0, 6), ("GB2", 0x11, 0xef)]),
+        ([0x09, 0, 0, 0xc4, 0xca, 0x91], false, &[("A2L", 0xfffd, 1), ("A2H", 2, 0), ("GB2", 0xd0, 0x13)]),
+        ([0x09, 0, 0, 0xc4, 0xd2, 0x91], false, &[("A2L", 2, 0), ("A2H", 0xff7f, 0xff7f), ("GB2", 0x54, 0x54)]),
+        ([0x09, 0, 0, 0xc5, 0x4a, 0x91], false, &[("A2L", 2, 0), ("A2H", 0x7fff, 3), ("GB2", 0, 0), ("BTR1", 0x022a, 0x022a), ("BTR2", 0xb4, 0xb5)]),
+        ([0x09, 0, 0, 0xc5, 0xca, 0x91], false, &[("A2L", 0xffff, 0xffff), ("A2H", 0x8001, 3), ("GB2", 0xff, 0), ("BTR1", 0x022b, 0x022a), ("BTR2", 0xb5, 0xb4)]),
+        ([0x09, 0, 0, 0xc5, 0xc0, 0x91], false, &[("GB0", 0xf0, 1), ("BTR1", 0x022b, 0x022a), ("BTR2", 0xb5, 0xb4)]),
+        ([0x00, 0x92, 0x34, 0xc4, 0x4a, 0x9f], true, &[("A2L", 0xfff1, 0xf2), ("A2H", 0xffff, 0), ("GB2", 0xff, 0)]),
+        ([0x0f, 0x92, 0x34, 0xc4, 0x4a, 0x81], false, &[("A2L", 0x9324, 0x9235), ("GB2", 0xff, 0xff)]),
+        ([0x09, 0x89, 0xfc, 0xc4, 0xcf, 0x91], false, &[("A0L", 0xffff, 0), ("A1H", 0x7fff, 3), ("EST", 0x3000, 0x3000)]),
+        ([0x09, 0x89, 0xfc, 0xc4, 0xfe, 0x91], false, &[("FF1", 2, 0)]),
+        ([0x01, 0x89, 0xfc, 0xc4, 0xc6, 0x81], false, &[("GB0", 0, 0), ("A0H", 0x8001, 3)]),
+        ([0x08, 0x89, 0xfc, 0xc4, 0xc7, 0xaf], false, &[("A0L", 0x8000, 5), ("A0H", 0x7fff, 0xfffd), ("GB0", 0x0f, 0xfe)]),
+    ];
+    let c_type = |register: &str| if register.starts_with("GB") { "unsigned char" } else { "unsigned short" };
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short data_tail;\n",
+    );
+    let mut main = String::from("int main(void) {\n");
+    for (i, (packet, data, outputs)) in rows.into_iter().enumerate() {
+        fs::write(&binary, [packet, [0x2b, 0xd8, 0, 0x2b, 0xec, 0]].as_flattened()).unwrap();
+        for &(register, first, second) in outputs {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{register} {}", c_type(register)),
+            ]);
+            for (index, input) in registers.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {index} %{input} {} in_{index}", c_type(input))]);
+            }
+            if data {
+                kuna.args(["--assert", "data [data,0xffff] volatile unsigned short data_tail"]);
+            }
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let [function] = json["functions"].as_array().unwrap().as_slice() else { panic!("{json}"); };
+            let code = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !code.contains("halt_"), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let name = format!("packed_{i}_{register}");
+            writeln!(emitted, "#define sub_0 {name}\n{code}\n#undef sub_0").unwrap();
+            let port = registers.iter().position(|name| *name == register).unwrap();
+            for ((mut values, expected), word) in seeds.into_iter().zip([first, second]).zip([0xff01, 0x00f1]) {
+                for (gate, wanted) in [(0, values[port]), (0xffff, expected)] {
+                    *values.last_mut().unwrap() = gate;
+                    let args = values.map(|value| format!("{value:#x}")).join(",");
+                    writeln!(main, "data_tail = {word}; if ({name}({args}) != {wanted} || data_tail != {word}) return {};", i + 1).unwrap();
+                }
+            }
+        }
+    }
+    emitted.push_str(&main);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_signed_long_data_uses_the_connected_ports() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

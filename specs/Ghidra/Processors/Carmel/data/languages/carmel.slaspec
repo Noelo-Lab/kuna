@@ -497,11 +497,21 @@ define token wide (48)
     packed_dst = (8,14)
     packed_dst_group = (11,14)
     packed_dst_r = (8,10)
+    packed_dst_acc = (8,10)
+    packed_dst_lo = (8,10)
+    packed_dst_hi = (8,10)
+    packed_dst_guard = (8,10)
     packed_lhs_code = (1,7)
     packed_lhs_group = (4,7)
     packed_lhs_hi = (1,3)
+    packed_lhs_acc = (1,3)
+    packed_lhs_lo = (1,3)
+    packed_lhs_guard = (1,3)
     packed_rhs_group = (43,45)
     packed_rhs_hi = (40,42)
+    packed_rhs_acc = (40,42)
+    packed_rhs_lo = (40,42)
+    packed_rhs_guard = (40,42)
     packed_displacement = (24,31) signed
     wide_logic_rmw_op = (18,19)
     wide_logic_rmw_route = (0,17)
@@ -688,6 +698,10 @@ attach values [agu_3_shift] [10 12 14 _ 12 14 14 _];
 attach variables [address_literal_dst] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [packed_dst_r] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [packed_lhs_hi packed_rhs_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [packed_dst_acc packed_lhs_acc packed_rhs_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [packed_dst_lo packed_lhs_lo packed_rhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [packed_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [packed_dst_guard packed_lhs_guard packed_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [dual_preg_register] [_ _ _ _ _ _ _ _ _ _ A2H A3H _ _ _ _];
 attach variables [swap_reg_lo] [A0L A1L A2L A3L A4L A5L FF1 FF2];
 attach variables [swap_reg_full] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
@@ -6485,32 +6499,75 @@ macro wide_shift_ports(input, count_word, left_tap, right_bias, arithmetic, resu
 }
 
 @define PACKED_WIDE "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1"
+@define PACKED_WIDE_CE1 "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=0"
 @define PACKED_WIDE_CE2 "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=1"
 
 packed_short_dst: packed_dst_r is packed_dst_group=0xc & packed_dst_r { export packed_dst_r; }
 packed_short_dst: "FF1" is packed_dst=0x56 { export FF1; }
+packed_ce1_short_dst: "FF1" is packed_dst=0x7e { export FF1; }
+packed_ce1_short_dst: packed_dst_lo is packed_dst_group=0xa & packed_dst_lo { export packed_dst_lo; }
 packed_lhs_word: packed_lhs_hi is packed_lhs_group=0xb & packed_lhs_hi { export packed_lhs_hi; }
 packed_rhs_word: packed_rhs_hi is wide_0_0=1 & packed_rhs_group=3 & packed_rhs_hi { export packed_rhs_hi; }
 packed_rmw: "RMW1" is packed_dst=0x46 { }
 packed_rmw: "RMW2" is packed_dst=0x47 { }
+packed_input2_dst: "RMW2" is packed_dst=0x47 { }
+packed_input2_dst: "OP3" is packed_dst=0x4e { }
+packed_acc_dst: packed_dst_acc is packed_dst_group=9 & packed_dst_acc & packed_dst_lo { export packed_dst_lo; }
+packed_acc_lhs: packed_lhs_acc is packed_lhs_group=9 & packed_lhs_acc & packed_lhs_lo { export packed_lhs_lo; }
+packed_acc_rhs: packed_rhs_acc is wide_0_0=1 & packed_rhs_group=1 & packed_rhs_acc & packed_rhs_lo { export packed_rhs_lo; }
+packed_guard_lhs: packed_lhs_guard is packed_lhs_group=8 & packed_lhs_guard { export packed_lhs_guard; }
+packed_guard_rhs: packed_rhs_guard is wide_0_0=1 & packed_rhs_group=0 & packed_rhs_guard { export packed_rhs_guard; }
+packed_literal_rhs: bitfield_descriptor is wide_0_0=1 & wide_40_45=0xf & bitfield_descriptor { export *[const]:2 bitfield_descriptor; }
+
+macro packed_arithmetic_lane(dst, lhs, rhs, subtract) {
+    if (subtract != 0) goto <packed_subtract>;
+    dst = lhs + rhs;
+    goto <packed_done>;
+  <packed_subtract>
+    dst = lhs - rhs;
+  <packed_done>
+}
+
+macro packed_acc_arithmetic(dst_lo, dst_hi, dst_guard, lhs_lo, lhs_hi, lhs_guard, rhs_lo, rhs_hi, rhs_guard, subtract) {
+    local left:4 = (zext(lhs_guard) << 16) | zext(lhs_hi);
+    local right:4 = (zext(rhs_guard) << 16) | zext(rhs_hi);
+    local high:4;
+    packed_arithmetic_lane(high, left, right, subtract);
+    packed_arithmetic_lane(dst_lo, lhs_lo, rhs_lo, subtract);
+    dst_hi = high:2;
+    dst_guard = high(2);
+}
 
 macro packed_arithmetic_word_ce2(dst, lhs, rhs, subtract) {
     local enabled:2;
     unary_ce(CECFG2, EST, CETBL, 1, enabled);
     if (enabled == 0) goto <publish>;
     # Two short operands feed the high lane of a connected short result.
-    if (subtract != 0) goto <packed_subtract>;
-    dst = lhs + rhs;
-    goto <publish>;
-  <packed_subtract>
-    dst = lhs - rhs;
+    packed_arithmetic_lane(dst, lhs, rhs, subtract);
   <publish>
     publish_alu_ce(EST & 0xcfff);
 }
 
-macro packed_min_trace(high, low) {
+macro packed_trace(high, low) {
     BTR1 = (BTR1 << 1) | zext(high);
     BTR2 = (BTR2 << 1) | zext(low);
+}
+
+macro packed_extrema(dst_lo, dst_hi, dst_guard, lhs_lo, lhs_hi, rhs_lo, rhs_hi, minimum) {
+    local take_high:1 = (lhs_hi s< rhs_hi && minimum != 0) || (lhs_hi s> rhs_hi && minimum == 0);
+    local take_low:1 = (lhs_lo s< rhs_lo && minimum != 0) || (lhs_lo s> rhs_lo && minimum == 0);
+    local high:2 = rhs_hi;
+    local low:2 = rhs_lo;
+    if (!take_high) goto <packed_choose_low>;
+    high = lhs_hi;
+  <packed_choose_low>
+    if (!take_low) goto <packed_publish>;
+    low = lhs_lo;
+  <packed_publish>
+    packed_trace(take_high, take_low);
+    dst_lo = low;
+    dst_hi = high;
+    dst_guard = 0 - zext(high s< 0);
 }
 
 macro packed_r2_long(displacement, high, low) {
@@ -6535,7 +6592,7 @@ macro packed_r2_long(displacement, high, low) {
 
 :MIN2 packed_short_dst,packed_lhs_word,packed_rhs_word is $(PACKED_WIDE) & packed_opcode=0x8b & packed_dst_group=0xc & packed_short_dst & packed_lhs_word & packed_rhs_word {
     local take_left:1 = packed_lhs_word s< packed_rhs_word;
-    packed_min_trace(take_left, 0:1);
+    packed_trace(take_left, 0:1);
     packed_short_dst = packed_rhs_word;
     if (take_left == 0) goto <publish>;
     packed_short_dst = packed_lhs_word;
@@ -6546,7 +6603,7 @@ macro packed_r2_long(displacement, high, low) {
     # The sink does not realign the two short operands to the high lane.
     local left_high:2 = 0 - zext(packed_lhs_word s< 0);
     local right_high:2 = 0 - zext(packed_rhs_word s< 0);
-    packed_min_trace(left_high s< right_high, packed_lhs_word s< packed_rhs_word);
+    packed_trace(left_high s< right_high, packed_lhs_word s< packed_rhs_word);
     publish_alu_ce(EST & 0xcfff);
 }
 :MIN2 packed_rmw,"*R2+="^packed_displacement^":long",packed_rhs_word is $(PACKED_WIDE) & packed_opcode=0x8b & packed_rmw & packed_lhs_code=0x32 & packed_displacement & packed_rhs_word {
@@ -6554,7 +6611,7 @@ macro packed_r2_long(displacement, high, low) {
     local left_high:2;
     packed_r2_long(packed_displacement, left_high, left_low);
     local right_high:2 = 0 - zext(packed_rhs_word s< 0);
-    packed_min_trace(left_high s< right_high, left_low s< packed_rhs_word);
+    packed_trace(left_high s< right_high, left_low s< packed_rhs_word);
     publish_alu_ce(EST & 0xcfff);
 }
 :MIN2 "OP3",packed_lhs_word,"*R2+="^packed_displacement^":long" is $(PACKED_WIDE) & packed_opcode=0x8b & packed_dst=0x4e & packed_lhs_word & wide_0_0=0 & wide_40_45=0x32 & packed_displacement {
@@ -6562,7 +6619,102 @@ macro packed_r2_long(displacement, high, low) {
     local right_high:2;
     packed_r2_long(packed_displacement, right_high, right_low);
     local left_high:2 = 0 - zext(packed_lhs_word s< 0);
-    packed_min_trace(left_high s< right_high, packed_lhs_word s< right_low);
+    packed_trace(left_high s< right_high, packed_lhs_word s< right_low);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:"ADD2 CE1" packed_acc_dst,packed_acc_lhs,packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x88 & packed_acc_dst & packed_acc_lhs & packed_acc_rhs & packed_dst_hi & packed_dst_guard & packed_lhs_hi & packed_lhs_guard & packed_rhs_hi & packed_rhs_guard {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    packed_acc_arithmetic(packed_acc_dst, packed_dst_hi, packed_dst_guard, packed_acc_lhs, packed_lhs_hi, packed_lhs_guard, packed_acc_rhs, packed_rhs_hi, packed_rhs_guard, 0:1);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"SUB2 CE1" packed_acc_dst,packed_acc_lhs,packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x89 & packed_acc_dst & packed_acc_lhs & packed_acc_rhs & packed_dst_hi & packed_dst_guard & packed_lhs_hi & packed_lhs_guard & packed_rhs_hi & packed_rhs_guard {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    packed_acc_arithmetic(packed_acc_dst, packed_dst_hi, packed_dst_guard, packed_acc_lhs, packed_lhs_hi, packed_lhs_guard, packed_acc_rhs, packed_rhs_hi, packed_rhs_guard, 1:1);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"SUB2 CE1" packed_ce1_short_dst,packed_acc_lhs,packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x89 & packed_ce1_short_dst & packed_acc_lhs & packed_acc_rhs & packed_lhs_hi & packed_rhs_hi {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    packed_ce1_short_dst = packed_lhs_hi - packed_rhs_hi;
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"MAX2 CE1" packed_acc_dst,packed_acc_lhs,packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x8a & packed_acc_dst & packed_acc_lhs & packed_acc_rhs & packed_dst_hi & packed_dst_guard & packed_lhs_hi & packed_rhs_hi {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    packed_extrema(packed_acc_dst, packed_dst_hi, packed_dst_guard, packed_acc_lhs, packed_lhs_hi, packed_acc_rhs, packed_rhs_hi, 0:1);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"MIN2 CE1" packed_acc_dst,packed_acc_lhs,packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x8b & packed_acc_dst & packed_acc_lhs & packed_acc_rhs & packed_dst_hi & packed_dst_guard & packed_lhs_hi & packed_rhs_hi {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    packed_extrema(packed_acc_dst, packed_dst_hi, packed_dst_guard, packed_acc_lhs, packed_lhs_hi, packed_acc_rhs, packed_rhs_hi, 1:1);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"MIN2 CE1" "discard",packed_acc_lhs,packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x8b & packed_dst_group=8 & packed_dst_guard & packed_acc_lhs & packed_acc_rhs & packed_lhs_hi & packed_rhs_hi {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    packed_trace(packed_lhs_hi s< packed_rhs_hi, packed_acc_lhs s< packed_acc_rhs);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"ADD2 CE1" packed_acc_dst,"DATA[0xffff]",packed_guard_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x88 & packed_acc_dst & packed_dst_hi & packed_dst_guard & packed_lhs_code=0x4f & packed_guard_rhs {
+    local word:2 = *[data]:2 0xffff:2;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    local negative:1 = word s< 0;
+    packed_acc_dst = word + zext(packed_guard_rhs);
+    packed_dst_hi = 0 - zext(negative);
+    packed_dst_guard = 0 - zext(negative);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"ADD2 CE1" packed_acc_dst,packed_guard_lhs,packed_literal_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x88 & packed_acc_dst & packed_dst_hi & packed_dst_guard & packed_guard_lhs & packed_literal_rhs {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    local negative:1 = packed_literal_rhs s< 0;
+    packed_acc_dst = zext(packed_guard_lhs) + packed_literal_rhs;
+    packed_dst_hi = 0 - zext(negative);
+    packed_dst_guard = 0 - zext(negative);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"SUB2 CE1" "discard",packed_acc_lhs,packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x89 & packed_dst=0x4f & packed_acc_lhs & packed_acc_rhs {
+    publish_alu_ce(EST & 0xcfff);
+}
+:"SUB2 CE1" "RMW1",packed_guard_lhs,packed_guard_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x89 & packed_dst=0x46 & packed_guard_lhs & packed_guard_rhs {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    # Both byte sources are zero-extended; neither contributes to the upper lane.
+    packed_guard_lhs = 0;
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+:"SUB2 CE1" packed_input2_dst,"FF2",packed_acc_rhs is $(PACKED_WIDE_CE1) & packed_opcode=0x89 & packed_input2_dst & packed_lhs_code=0x57 & packed_acc_rhs & packed_rhs_hi & packed_rhs_guard {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <publish>;
+    local high:4 = (0 - zext(FF2 s< 0)) - ((zext(packed_rhs_guard) << 16) | zext(packed_rhs_hi));
+    packed_acc_rhs = FF2 - packed_acc_rhs;
+    packed_rhs_hi = high:2;
+    packed_rhs_guard = high(2);
+  <publish>
     publish_alu_ce(EST & 0xcfff);
 }
 
