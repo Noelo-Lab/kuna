@@ -300,8 +300,30 @@ impl LoopBody {
     /// Choose the exit block for \b this loop (C++ `LoopBody::findExit`,
     /// `blockaction.cc:182`).  A structured loop is allowed at most one exit
     /// block; pick it.  `looporder` is needed only to resolve `immed_container`.
-    pub fn find_exit(&mut self, body: &[BlockId], graph: &mut BlockGraph, looporder: &[LoopBody]) {
+    pub fn find_exit(
+        &mut self,
+        body: &[BlockId],
+        graph: &mut BlockGraph,
+        looporder: &[LoopBody],
+        cond: Option<BlockId>,
+    ) {
         let mut trialexit: Vec<BlockId> = Vec::new();
+
+        if let Some(c) = cond {
+            for i in 0..graph.block(c).size_out() {
+                if graph.block(c).is_goto_out(i) {
+                    continue;
+                }
+                let curbl = graph.block(c).get_out(i);
+                if !graph.block(curbl).is_mark() {
+                    if self.immed_container.is_none() {
+                        self.exitblock = Some(curbl);
+                        return;
+                    }
+                    trialexit.push(curbl);
+                }
+            }
+        }
 
         for j in 0..self.tails.len() {
             let tail = self.tails[j];
@@ -1457,9 +1479,13 @@ pub struct CollapseStructure<'a> {
     /// (kuna, `option guardarm`) break a two-eligible-arm `ruleBlockIfNoExit`
     /// tie by source layout instead of by out-index.
     guard_arm: bool,
-    /// (kuna, `option loopcondhoist`) defer a live loop head in the deferred
-    /// `ruleBlockIfNoExit` scan while a non-head candidate is available.
-    loop_cond_hoist: bool,
+    /// (kuna, `option loopcondhoist`) how this function's loop conditions are found.
+    loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
+    /// (kuna, `option loopcondhoist`) per loop with a known condition, its index
+    /// in `loopbody` and the leaf whose test is the condition.
+    loop_conds: Vec<(usize, BlockId)>,
+    /// (kuna, `option loopcondhoist`) the rule made a choice upstream would not.
+    rule_changed: bool,
 }
 
 impl<'a> CollapseStructure<'a> {
@@ -1486,15 +1512,103 @@ impl<'a> CollapseStructure<'a> {
             dbg_ifne: crate::p8_structure::kuna_ifnoexit::trace_enabled(),
             dbg_apply: 0,
             guard_arm: false,
-            loop_cond_hoist: false,
+            loop_cond: None,
+            loop_conds: Vec::new(),
+            rule_changed: false,
         }
     }
 
-    /// (kuna) Install the `guardarm` / `loopcondhoist` verdicts.  Builder
-    /// method; hand-built unit-test graphs keep the upstream-identical default.
-    pub fn with_ifnoexit_options(mut self, guard_arm: bool, loop_cond_hoist: bool) -> Self {
+    /// (kuna, `option loopcondhoist`) Install the loop-condition rule.
+    pub fn with_loop_cond(mut self, rule: Option<crate::p8_structure::kuna_loopcond::Rule>) -> Self {
+        self.loop_cond = rule;
+        self
+    }
+
+    /// (kuna, `option loopcondhoist`) The block of loop `idx` whose test is its
+    /// condition; the loop's body is marked.
+    fn loop_condition(&self, idx: usize) -> Option<BlockId> {
+        use crate::p8_structure::kuna_loopcond::{condition, Cond};
+        let rule = self.loop_cond?;
+        let lb = &self.loopbody[idx];
+        let head = lb.get_head()?;
+        let leaves = |bl: BlockId| {
+            let b = self.graph.block(bl);
+            let exits = (0..b.size_out()).any(|i| {
+                let t = b.get_out(i);
+                !b.is_goto_out(i) && !self.graph.block(t).is_mark() && !self.is_noreturn_exit(t)
+            });
+            (self.ifnoexit_arm_addr(bl), b.size_out() == 2 && !b.is_switch_out() && exits)
+        };
+        let latches: Vec<(Option<u64>, bool)> = lb.tails.iter().map(|&t| leaves(t)).collect();
+        match condition(rule, leaves(head), &latches)? {
+            Cond::Head => Some(head),
+            Cond::Latch(i) => Some(lb.tails[i]),
+        }
+    }
+
+    /// Could `ruleBlockIfNoExit` fold `bl` now?
+    fn ifnoexit_eligible(&self, bl: BlockId) -> bool {
+        let b = self.graph.block(bl);
+        b.size_out() == 2
+            && !b.is_switch_out()
+            && (0..2).all(|i| b.get_out(i) != bl && !b.is_goto_out(i))
+            && (self.ifnoexit_arm_eligible(bl, 0) || self.ifnoexit_arm_eligible(bl, 1))
+    }
+
+    /// Does the first block of `bl` end in a call that does not return?
+    fn is_noreturn_exit(&self, bl: BlockId) -> bool {
+        self.graph
+            .get_front_leaf(bl)
+            .and_then(|l| self.graph.block(l).get_copy())
+            .is_some_and(|bb| self.exitleaf_facts.is_noreturn_halt(bb))
+    }
+
+    /// The top-level component holding `bl`.
+    fn top_component(&self, bl: BlockId) -> Option<BlockId> {
+        let mut cur = bl;
+        while self.graph.block(cur).get_parent() != Some(self.graph_id) {
+            cur = self.graph.block(cur).get_parent()?;
+        }
+        Some(cur)
+    }
+
+    /// Has loop `idx` not yet collapsed into one loop block?
+    fn loop_live(&self, idx: usize) -> bool {
+        let lb = &self.loopbody[idx];
+        let Some(head) = lb.get_head().and_then(|h| self.top_component(h)) else {
+            return false;
+        };
+        lb.tails.iter().any(|&t| self.top_component(t) != Some(head))
+            || (0..self.graph.block(head).size_out()).any(|i| self.graph.block(head).get_out(i) == head)
+    }
+
+    /// (kuna, `option loopcondhoist`) The current nodes of the loop conditions, each
+    /// with whether its loop still holds a live loop.
+    fn loop_condition_nodes(&self) -> std::collections::BTreeMap<BlockId, bool> {
+        let mut out = std::collections::BTreeMap::new();
+        for &(idx, c) in self.loop_conds.iter() {
+            let Some(top) = self.top_component(c) else {
+                continue;
+            };
+            let inner = (0..self.loopbody.len()).any(|j| {
+                let mut up = self.loopbody[j].immed_container;
+                while let Some(u) = up {
+                    if u == idx {
+                        return self.loop_live(j);
+                    }
+                    up = self.loopbody[u].immed_container;
+                }
+                false
+            });
+            *out.entry(top).or_insert(false) |= inner;
+        }
+        out
+    }
+
+    /// (kuna) Install the `guardarm` verdict.  Builder method; hand-built
+    /// unit-test graphs keep the upstream-identical default.
+    pub fn with_guard_arm(mut self, guard_arm: bool) -> Self {
         self.guard_arm = guard_arm;
-        self.loop_cond_hoist = loop_cond_hoist;
         self
     }
 
@@ -1800,7 +1914,16 @@ impl<'a> CollapseStructure<'a> {
                 self.loopbody[idx].find_base(&mut body, self.graph);
                 // findExit needs immed_container resolved against the full loopbody.
                 let looporder_snapshot = self.loopbody.clone();
-                self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot);
+                let cond = self.loop_condition(idx);
+                if let Some(c) = cond {
+                    self.loop_conds.push((idx, c));
+                    let mut upstream = self.loopbody[idx].clone();
+                    upstream.find_exit(&body, self.graph, &looporder_snapshot, None);
+                    self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot, cond);
+                    self.rule_changed |= upstream.exitblock != self.loopbody[idx].exitblock;
+                } else {
+                    self.loopbody[idx].find_exit(&body, self.graph, &looporder_snapshot, None);
+                }
                 self.loopbody[idx].order_tails(self.graph);
                 let lb = self.loopbody[idx].clone();
                 lb.extend(&mut body, self.graph);
@@ -2553,28 +2676,6 @@ impl<'a> CollapseStructure<'a> {
         }
     }
 
-    /// (kuna, `option loopcondhoist`) Is `bl` the *current* collapsed-graph node
-    /// of a live loop head?  Mirrors `LoopBody::update`'s head resolution (walk
-    /// the recorded head up to the top-level component) without mutating.
-    fn ifnoexit_is_loop_head(&self, bl: BlockId) -> bool {
-        for lb in self.loopbody.iter() {
-            let mut head = match lb.get_head() {
-                Some(h) => h,
-                None => continue,
-            };
-            while self.graph.block(head).get_parent() != Some(self.graph_id) {
-                head = match self.graph.block(head).get_parent() {
-                    Some(p) => p,
-                    None => break,
-                };
-            }
-            if head == bl {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Attempt to apply BlockIf where the body does not exit (C++
     /// `CollapseStructure::ruleBlockIfNoExit`, `blockaction.cc:1481`).
     fn rule_block_if_no_exit(&mut self, bl: BlockId) -> bool {
@@ -3061,29 +3162,39 @@ impl<'a> CollapseStructure<'a> {
                     order.join(" ")
                 );
             }
-            // (kuna, `option loopcondhoist`) First-match in component order puts
-            // a loop head ahead of the blocks in its own body, and folding the
-            // head's terminal exit arm into a BlockIf drops the head to one
-            // out-edge, after which `rule_block_while_do` can never match it and
-            // the loop is emitted as `while(true) { if (!C) <leave>; BODY; }`.
-            // Give the non-heads a pass first: once a body block folds, the body
-            // collapses to a single back-edge clause and the head test hoists
-            // into the `while` header on its own.
-            if self.loop_cond_hoist {
+            // (kuna, `option loopcondhoist`) A loop's condition block comes ahead
+            // of its body in component order; folding its exit arm here drops it to
+            // one out-edge and the loop prints as `while (true)`.  The other blocks
+            // get a pass first, and a condition block whose loop still holds an
+            // unstructured loop waits for `select_goto`.
+            let conds = if self.loop_conds.is_empty() {
+                std::collections::BTreeMap::new()
+            } else {
+                self.loop_condition_nodes()
+            };
+            let mut skipped = false;
+            if !conds.is_empty() {
                 while index < self.size() {
                     let bl = self.block_at(index);
-                    if !self.ifnoexit_is_loop_head(bl) && self.rule_block_if_no_exit(bl) {
+                    if conds.contains_key(&bl) {
+                        skipped |= self.ifnoexit_eligible(bl);
+                    } else if self.rule_block_if_no_exit(bl) {
                         fullchange = true;
+                        self.rule_changed |= skipped;
                         break;
                     }
                     index += 1;
                 }
                 index = 0;
+                skipped = false;
             }
             while !fullchange && index < self.size() {
                 let bl = self.block_at(index);
-                if self.rule_block_if_no_exit(bl) {
+                if conds.get(&bl) == Some(&true) {
+                    skipped |= self.ifnoexit_eligible(bl);
+                } else if self.rule_block_if_no_exit(bl) {
                     fullchange = true;
+                    self.rule_changed |= skipped;
                     break;
                 }
                 if self.rule_case_fallthru(bl)? {
@@ -3093,6 +3204,7 @@ impl<'a> CollapseStructure<'a> {
                 index += 1;
             }
             if !fullchange {
+                self.rule_changed |= skipped;
                 break;
             }
         }
@@ -3751,6 +3863,44 @@ impl ActionBlockStructure {
     }
 }
 
+/// The per-function inputs `CollapseStructure` reads besides the graph.
+type CollapseInputs = (
+    crate::p8_structure::kuna_ifnoexit::ExitLeafFacts,
+    std::collections::BTreeSet<BlockId>,
+    crate::p8_structure::kuna_condfold::CondFoldSets,
+    std::collections::BTreeMap<BlockId, usize>,
+    std::collections::BTreeMap<(BlockId, BlockId), (int4, bool)>,
+);
+
+/// Run `CollapseStructure` once over the seeded `sblocks`, returning its result,
+/// change count, the deferred condition flips and whether the loop-condition
+/// rule changed a choice.
+fn collapse_once(
+    data: &mut Funcdata,
+    loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
+    inputs: CollapseInputs,
+    guard_arm: bool,
+    apply_index: u32,
+) -> (KunaResult<()>, int4, Vec<BlockId>, bool) {
+    let (exitleaf_facts, complex_blocks, condfold_sets, switch_blocks, switch_case_edges) = inputs;
+    let sroot = data.sblocks_root();
+    if data.get_arch().loop_continue {
+        crate::p8_structure::kuna_loopcontinue::refine_latches(data.sblocks_mut(), sroot);
+    }
+    let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
+        .with_exitleaf_facts(exitleaf_facts, apply_index)
+        .with_guard_arm(guard_arm)
+        .with_loop_cond(loop_cond)
+        .with_complex_blocks(complex_blocks)
+        .with_condfold_sets(condfold_sets)
+        .with_switch_blocks(switch_blocks)
+        .with_switch_case_edges(switch_case_edges);
+    let res = collapse.collapse_all();
+    let cc = collapse.get_change_count();
+    let flips = collapse.take_pending_flips();
+    (res, cc, flips, collapse.rule_changed)
+}
+
 impl Action for ActionBlockStructure {
     fn base(&self) -> &ActionBase {
         &self.base
@@ -3814,9 +3964,26 @@ impl ActionBlockStructure {
         // knot or the hang-guard), re-seed `sblocks` and fall through to the
         // unchanged `CollapseStructure` path.  OFF (default) skips this entirely and
         // output is byte-identical.
+        let loop_cond = crate::p8_structure::kuna_loopcond::rule_for(data);
         if data.get_arch().region_structure {
-            match crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline) {
-                Ok((true, flips)) => {
+            let mut rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
+            if matches!(rs, Ok((true, _, true))) {
+                let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
+                if with > 0 {
+                    // Kept only against the structurer's own choice: where that one
+                    // fails, so does this, and CollapseStructure decides.
+                    data.reseed_sblocks_copy();
+                    rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, None);
+                    if matches!(rs, Ok((true, _, _)))
+                        && crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root()) >= with
+                    {
+                        data.reseed_sblocks_copy();
+                        rs = crate::p8_structure::region_structurer::run_region_structurer(data, ctx.deadline, loop_cond);
+                    }
+                }
+            }
+            match rs {
+                Ok((true, flips, _)) => {
                     // Realize the deferred data-flow half of the loop-condition
                     // `negateCondition`s the region structurer recorded (the same
                     // CBRANCH `boolean_flip`/`fallthru_true` toggle the
@@ -3829,7 +3996,7 @@ impl ActionBlockStructure {
                     self.base_mut().count += 1;
                     return 0;
                 }
-                Ok((false, _)) | Err(_) => {
+                Ok((false, _, _)) | Err(_) => {
                     if ctx.deadline_expired() {
                         return 0;
                     }
@@ -3859,8 +4026,7 @@ impl ActionBlockStructure {
         let mut exitleaf_facts = crate::p8_structure::kuna_ifnoexit::ExitLeafFacts::default();
         let dbg_ifne = crate::p8_structure::kuna_ifnoexit::trace_enabled();
         let guard_arm = data.get_arch().guard_arm.applies(crate::kuna_unoptimized::is_unoptimized(data));
-        let loop_cond_hoist = data.get_arch().loop_cond_hoist;
-        let want_addr = dbg_ifne || guard_arm;
+        let want_addr = dbg_ifne || guard_arm || loop_cond.is_some();
         let nbb = data.bblocks_get_size();
         for i in 0..nbb {
             let bb = data.bblocks_get_block(i);
@@ -3926,26 +4092,37 @@ impl ActionBlockStructure {
                 apply_index
             );
         }
-        let sroot = data.sblocks_root();
-        if data.get_arch().loop_continue {
-            crate::p8_structure::kuna_loopcontinue::refine_latches(data.sblocks_mut(), sroot);
+        // (kuna, `option loopcondhoist`) A structuring by the loop conditions that
+        // prints more gotos than the upstream exit choice is not kept.
+        let retry = loop_cond.map(|_| {
+            (exitleaf_facts.clone(), complex_blocks.clone(), condfold_sets.clone(), switch_blocks.clone(), switch_case_edges.clone())
+        });
+        let (mut collapse_res, mut cc, mut flips, changed) = collapse_once(
+            data,
+            loop_cond,
+            (exitleaf_facts, complex_blocks, condfold_sets, switch_blocks, switch_case_edges),
+            guard_arm,
+            apply_index,
+        );
+        if let Some(inputs) = retry {
+            let with = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
+            if collapse_res.is_ok() && with > 0 && changed {
+                data.reseed_sblocks_copy();
+                let plain = collapse_once(data, None, inputs.clone(), guard_arm, apply_index);
+                let without = crate::p8_structure::kuna_loopcond::printed_gotos(data.sblocks_ref(), data.sblocks_root());
+                if plain.0.is_ok() && without < with {
+                    (collapse_res, cc, flips, _) = plain;
+                } else {
+                    data.reseed_sblocks_copy();
+                    (collapse_res, cc, flips, _) = collapse_once(data, loop_cond, inputs, guard_arm, apply_index);
+                }
+            }
         }
-        let mut collapse = CollapseStructure::new(data.sblocks_mut(), sroot)
-            .with_exitleaf_facts(exitleaf_facts, apply_index)
-            .with_ifnoexit_options(guard_arm, loop_cond_hoist)
-            .with_complex_blocks(complex_blocks)
-            .with_condfold_sets(condfold_sets)
-            .with_switch_blocks(switch_blocks)
-            .with_switch_case_edges(switch_case_edges);
-        let collapse_res = collapse.collapse_all();
-        let cc = collapse.get_change_count();
         // Realize the deferred data-flow half of BlockBasic::negateCondition: each
         // recorded bblocks block has its trailing CBRANCH `boolean_flip`/
         // `fallthru_true` toggled (XOR-reduced — even flips cancel).  This must run
         // whether or not `collapse_all` Err'd, because the flips that were already
         // recorded reflect topology changes the collapse committed before aborting.
-        let flips = collapse.take_pending_flips();
-        drop(collapse); // release the sblocks borrow before touching the obank
         for bb in flips {
             data.block_basic_negate_lastop(bb);
         }

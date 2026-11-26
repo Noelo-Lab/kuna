@@ -97,6 +97,8 @@ f41fbff8b010001a81c7e00893e8001b
 <symbol space="ram" offset="0x50184" name="mix3_O0"/>
 </binaryimage>
 <script>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>option bejoin on</com>
   <com>lo fu neg_one</com>
   <com>decompile</com>

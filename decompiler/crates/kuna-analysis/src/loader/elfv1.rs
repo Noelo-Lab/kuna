@@ -9,6 +9,9 @@ pub struct Descriptor {
     pub toc: Option<u64>,
 }
 
+/// A descriptor's entry, TOC and environment words.
+pub const DESCRIPTOR_SIZE: u64 = 24;
+
 #[derive(Clone, Debug, Default)]
 pub struct Descriptors(pub Vec<Descriptor>);
 

@@ -2352,7 +2352,7 @@ impl Rule for RuleDivOpt {
     }
 
     fn apply_op(&mut self, op: OpId, data: &mut Funcdata) -> int4 {
-        if Self::recover_div3_double(op, data) {
+        if Self::recover_div3_double(op, data) || super::kuna_sdivpow2::recover(op, data) {
             return 1;
         }
         let (mut in_vn0, n, y, mut xsize, ext_opc) = match Self::find_form(data, op) {

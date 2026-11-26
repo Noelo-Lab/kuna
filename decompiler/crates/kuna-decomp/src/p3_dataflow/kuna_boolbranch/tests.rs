@@ -208,8 +208,10 @@ fn branch_on_nan_is_recognized_through_a_negation() {
 }
 
 #[test]
-fn parses_fold_and_keep() {
-    assert!(parse_bool_branch("keep").unwrap().0);
-    assert!(!parse_bool_branch("fold").unwrap().0);
+fn parses_fold_keep_and_return() {
+    let flags = |v: &str| parse_bool_branch(v).map(|(keep, ret, _)| (keep, ret)).unwrap();
+    assert_eq!(flags("return"), (true, true));
+    assert_eq!(flags("keep"), (true, false));
+    assert_eq!(flags("fold"), (false, false));
     assert!(parse_bool_branch("on").is_err());
 }

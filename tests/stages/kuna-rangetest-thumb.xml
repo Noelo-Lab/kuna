@@ -1,0 +1,53 @@
+<decompilertest>
+<!-- P9 emission, option rangetest (default auto), Thumb. clang 14
+     -target thumbv7m-none-eabi -O2 -c of
+
+       int handle(const unsigned char **pp, int y) {
+         const unsigned char *p = *pp;
+         *pp = p + 1;
+         switch (*p) {
+         case 'X': case 'x': return f1(y);
+         case 'd': case 'i': return f2(y);
+         case 'u': return f3(y);
+         case 'o': return f4(y);
+         default: return 0;
+         }
+       }
+
+     clang checks the switch value against the 33 values 'X'..'x' with
+     `sub.w r2, r0, #0x58; cmp r2, #0x20; bhi` before its `tbb` table, and
+     the check prints before the recovered switch as an if. It is the bound
+     check of a switch, so it keeps its one comparison under every value (a build without the
+     switch check printed `if (v1 < 0x58 || 0x78 < v1)` under auto and split). -->
+<binaryimage arch="ARM:LE:32:v8:default">
+<bytechunk space="ram" offset="0x10000" readonly="true">80b56f460268531c03601078a0f15802202a4ff0000088bf80bddfe802f0111f1f1f1f1f1f1f1f1f1f1f161f1f1f1f161f1f1f1f1f1b1f1f1f1f1f201f1f1100084600f011f8012080bd084600f014f8022080bd084600f022f8042080bd084600f013f8032080bd40f20001c0f200010a6810440860704740f20001c0f200010a6802eb40000860704740f20001c0f200010a6800eb400010440860704740f20001c0f200010a6802eb800008607047</bytechunk>
+</binaryimage>
+<script>
+<com>set context TMode 1 [ram,0x10000] [ram,0x100af]</com>
+<com>map function r0x10000 handle</com>
+<com>map function r0x10068 f1</com>
+<com>map function r0x10078 f2</com>
+<com>map function r0x1008a f3</com>
+<com>map function r0x1009e f4</com>
+<com>parse line extern int handle(unsigned char **pp, int y);</com>
+<com>parse line extern int f1(int y);</com>
+<com>parse line extern int f2(int y);</com>
+<com>parse line extern int f3(int y);</com>
+<com>parse line extern int f4(int y);</com>
+<com>lo fu handle</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option rangetest split</com>
+<com>lo fu handle</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option rangetest merged</com>
+<com>lo fu handle</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="RANGETEST-THUMB #1: the bound check of a tbb switch keeps its one comparison under every value" min="3" max="3">^  if \(\(uint4\)v1 - 0x58 &gt; 0x20\)$</stringmatch>
+<stringmatch name="RANGETEST-THUMB #2: the switch it guards is recovered under every value" min="3" max="3">^  switch\(v1\) \{$</stringmatch>
+<stringmatch name="RANGETEST-THUMB #3: no value prints the check as two comparisons" min="0" max="0">0x58 &lt;= v1|v1 &lt; 0x58</stringmatch>
+</decompilertest>

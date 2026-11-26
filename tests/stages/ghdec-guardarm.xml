@@ -45,6 +45,7 @@
 <symbol space="ram" offset="0x1020" name="abort"/>
 </binaryimage>
 <script>
+  <com>option truthycond on</com>
   <com>option tailform off</com>
   <com>lo fu victim</com>
   <com>decompile</com>

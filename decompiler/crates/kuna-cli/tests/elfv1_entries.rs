@@ -398,3 +398,27 @@ fn elfv1_calls_keep_their_short_circuit_condition() {
         assert!(!on.contains(") && ("), "a store after each call splits the condition at {address}\n{on}");
     }
 }
+
+/// The gap walk names no start inside `sample`, which a dynamic symbol sizes through
+/// its descriptor. It keeps the routine behind it (0xed4), a symbol (0xef0) and a call
+/// target (0xf0c) inside other functions, and the routine behind `dotted` (0xf24).
+#[test]
+fn a_gap_walk_start_is_outside_the_code_a_descriptor_symbol_sizes() {
+    for name in ["elfv1_symbol_extent_be.so", "elfv1_symbol_extent_le.so"] {
+        let image = common::fixture(name);
+        let (out, err, rc) = common::run_kuna(&["functions", &image, "--json"]);
+        assert_eq!(rc, 0, "{err}");
+        let listed: serde_json::Value = serde_json::from_str(&out).unwrap();
+        let sizes: std::collections::BTreeMap<u64, u64> = listed["functions"].as_array().unwrap().iter()
+            .map(|f| (f["address"].as_u64().unwrap(), f["size"].as_u64().unwrap())).collect();
+        assert_eq!(sizes.len(), 34, "{name}: {out}");
+        assert_eq!(sizes.get(&0xeb8), Some(&28), "{name}");
+        assert!(!sizes.contains_key(&0xec4), "{name}");
+        for kept in [0xed4, 0xef0, 0xf0c, 0xf24] {
+            assert!(sizes.contains_key(&kept), "{name}: {kept:#x}");
+        }
+        let (out, err, rc) = common::run_kuna(&["decompile", &image, "sample"]);
+        assert_eq!(rc, 0, "{err}");
+        assert!(out.contains("0x10007") && out.contains("return a0"), "{name}: {out}");
+    }
+}

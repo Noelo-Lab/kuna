@@ -217,6 +217,9 @@ pub fn run(argv: &[String]) -> i32 {
     }
 }
 
+/// The mode a query without `--mode` loads under; [`query`] says why it is not `auto`.
+pub(crate) const DEFAULT_MODE: &str = "reliable";
+
 /// Load, index, resolve, and render — the whole command in one pass.
 fn query(args: &XrefArgs) -> Result<String, String> {
     // A reference query is not a decompile, so `--mode` is NOT resolved through
@@ -228,7 +231,7 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     // already has). On a 466 KB obfuscated i386 image they were 1.08 s and 0.58 s
     // of a 3.2 s answer that is byte-identical without them. `--mode aggressive`
     // still asks for the full bundle explicitly.
-    let mode = Some(args.mode.as_deref().unwrap_or("reliable"));
+    let mode = Some(args.mode.as_deref().unwrap_or(DEFAULT_MODE));
     let options = mode_options_for_binary(mode, &args.binary, args.options.clone())?;
     // The query driver bundle: `xrefs` enumerates entries and walks them itself,
     // so it takes no Listing-tier injection at all — the discovery seeds the

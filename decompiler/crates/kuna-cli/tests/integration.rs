@@ -167,6 +167,8 @@ mod caller_stack_cli;
 
 #[path = "castnarrow_round_trip.rs"]
 mod castnarrow_round_trip;
+#[path = "sdivpow2_round_trip.rs"]
+mod sdivpow2_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
 #[path = "repstring_round_trip.rs"]
@@ -333,6 +335,15 @@ mod libgcc_divdi3;
 
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
+
+#[path = "retshape_round_trip.rs"]
+mod retshape_round_trip;
+
+#[path = "boolret_round_trip.rs"]
+mod boolret_round_trip;
+
+#[path = "rangetest_round_trip.rs"]
+mod rangetest_round_trip;
 
 #[path = "tailform_round_trip.rs"]
 mod tailform_round_trip;
@@ -835,6 +846,8 @@ mod ppc32_pic_calls;
 
 #[path = "ppc32_pic_abi.rs"]
 mod ppc32_pic_abi;
+#[path = "ppc32_pic_note.rs"]
+mod ppc32_pic_note;
 
 #[path = "compact_json.rs"]
 mod compact_json;
