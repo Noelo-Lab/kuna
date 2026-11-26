@@ -202,6 +202,38 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
     }
 }
 
+/// Whether the structure folds a block relaxed since `before` into a condition.
+pub(crate) fn folded_any(data: &Funcdata, before: &BTreeSet<Address>) -> bool {
+    folded_leaves(data).into_iter().any(|bb| {
+        let a = start(data, bb);
+        !before.contains(&a) && data.fatalchain_relaxed().contains(&a)
+    })
+}
+
+/// The basic blocks printed as the right operand of a `&&` / `||`.
+fn folded_leaves(data: &Funcdata) -> Vec<BlockId> {
+    let g = data.sblocks_ref();
+    let mut out = Vec::new();
+    let mut stack = vec![data.sblocks_root()];
+    while let Some(b) = stack.pop() {
+        let blk = g.block(b);
+        if blk.get_type() == BlockType::Condition {
+            let mut ops = vec![blk.get_block(1)];
+            while let Some(o) = ops.pop() {
+                match g.block(o).get_type() {
+                    BlockType::Copy => out.extend(g.block(o).get_copy()),
+                    BlockType::Condition => ops.extend([g.block(o).get_block(0), g.block(o).get_block(1)]),
+                    _ => {}
+                }
+            }
+        }
+        for i in 0..blk.get_size() {
+            stack.push(blk.get_block(i));
+        }
+    }
+    out
+}
+
 /// The gotos a function prints whose kept structuring folded a chain into an
 /// ordinary block, or `None` when it prints none or folded no such chain.
 pub(crate) fn late_gotos(fd: &Funcdata) -> Option<int4> {

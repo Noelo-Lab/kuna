@@ -3955,8 +3955,15 @@ impl ActionBlockStructure {
         let relaxed = data.fatalchain_relaxed().clone();
         let any = data.chainfold_any();
         let res = self.structure_once(data, ctx);
-        if data.fatalchain_relaxed().len() == relaxed.len() || ctx.deadline_expired() || o0j::gotos(data) == 0 {
+        if data.fatalchain_relaxed().len() == relaxed.len()
+            || ctx.deadline_expired()
+            || o0j::gotos(data) == 0
+            || !crate::p8_structure::kuna_fatalchain::folded_any(data, &relaxed)
+        {
             return res;
+        }
+        if data.chainfold_any() {
+            data.set_chainfold_given_up();
         }
         data.sblocks_clear();
         o0j::restore_orientation(data, &saved);

@@ -321,6 +321,9 @@ pub struct Funcdata {
     /// (kuna `condfold auto`) Set by the drive: fold no chain into an ordinary
     /// block.  Survives `clear()`.
     kuna_chainfold_withdrawn: bool,
+    /// (kuna `condfold auto`) A structuring that folded into an ordinary block
+    /// printed a goto: later structurings of this analysis do not relax.
+    kuna_chainfold_given_up: bool,
     /// (kuna `earlyrestart`) Set when heritage bumped a space's dead-code delay
     /// in this pass: the analysis is about to be thrown away and redone.
     kuna_restart_now: bool,
@@ -884,6 +887,7 @@ impl Funcdata {
             kuna_fatalchain_hold: false,
             kuna_chainfold_any: false,
             kuna_chainfold_withdrawn: false,
+            kuna_chainfold_given_up: false,
             kuna_restart_now: false,
             dead_wave_log: None,
             dead_cascade_now: false,
@@ -2835,9 +2839,14 @@ impl Funcdata {
         self.kuna_chainfold_withdrawn = withdrawn;
     }
 
+    /// (kuna `condfold auto`) Stop relaxing for the rest of this analysis.
+    pub fn set_chainfold_given_up(&mut self) {
+        self.kuna_chainfold_given_up = true;
+    }
+
     /// (kuna `condfold noreturn`) Whether structuring must not relax.
     pub fn fatalchain_held(&self) -> bool {
-        self.kuna_fatalchain_hold
+        self.kuna_fatalchain_hold || self.kuna_chainfold_given_up
     }
 
     /// (kuna `condfold noreturn`) Hold or release the relaxation.
