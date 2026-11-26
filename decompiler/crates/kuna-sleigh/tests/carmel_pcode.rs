@@ -909,6 +909,47 @@ fn paired_pop_updates_distinct_halves_and_both_flag_lanes() {
 }
 
 #[test]
+fn wide_guard_bit_ports() {
+    let a1 = 0xa4000621a4;
+    let a5 = 0xa4000a21a4;
+    for (left, right, mode, table, ce2, expected_a1, expected_a5, est) in [
+        (0x850345, 0xcd3604, 5, 0xffff, 0, 0x20000621a4, a5, 0x3000),
+        (0x8566e2, 0xcd0a14, 5, 0xffff, 0, a1, 0x20000a21a4, 0x3000),
+        (0x8566e2, 0xcd0616, 5, 0xffff, 0, a1, 0x00000a21a4, 0x3000),
+        (0x8566e2, 0xcd0216, 5, 0xffff, 0, a1, a5, 0x3008),
+        (0x4166e2, 0xcd0204, 4, 0x00ff, 0x1000, a1, a5, 0x1000),
+        (0x4166e2, 0xcd0204, 4, 0xff00, 0, a1, a5, 0x2008),
+        (0x4166e2, 0xcd0604, 4, 0x00ff, 0x1000, a1, a5, 0x1000),
+        (0x4166e2, 0xcd0604, 4, 0xff00, 0, 0x02000621a4, a5, 0x2000),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, mode, 6), (2, 1, 0)], None);
+        m.seed(&[("A1", a1), ("A5", a5), ("A2", 0x6612345678), ("CETBL", table), ("CECFG2", ce2)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(
+            (m.reg("A1"), m.reg("A5"), m.reg("A2"), m.reg("EST")),
+            (expected_a1, expected_a5, 0x6612345678, est),
+            "{left:06x}{right:06x}",
+        );
+    }
+
+    let mut m = Machine::new(
+        0, &[(0x8166e2, 0xcd0204), (NOP, NOP), (NOP, NOP)], &[(0, 5, 6), (2, 1, 6), (4, 1, 0)], None,
+    );
+    m.seed(&[("A1", a1), ("CETBL", 0xaaaa), ("CECFG1", 8), ("CECFG2", 8)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A1"), m.reg("EST")), (a1, 8));
+    assert_eq!(m.step(), 12);
+    assert_eq!(m.reg("EST"), 0x3008);
+
+    for right in [0xcd0218, 0xcd061c] {
+        let mut m = Machine::new(0, &[(0x8566e2, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        assert!(matches!(m.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })), "{right:06x}");
+    }
+}
+
+#[test]
 fn wide_logic_flags_include_the_guard_even_when_the_word_result_is_zero() {
     let mut m = Machine::new(0, &[(0xc9c1a7, 0xea8222), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
     m.seed(&[("A0", 0xcc00000000), ("A1", 0), ("R0", 64), ("EST", 0x3000)]);

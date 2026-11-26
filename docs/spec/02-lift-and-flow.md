@@ -4497,6 +4497,16 @@ no register write. The lifted RMW routes use the selected input as the
 destination, including a guard-byte write and the `OP3` alias of input 2.
 Two word inputs to the covered short-result form feed the upper lane.
 
+Wide `SETBIT`, `CLEARBIT`, and `CHANGEBIT` to the six accumulator guard
+ports operate on zero, not the old guard byte. They replace only that byte
+and preserve arithmetic flags. `TESTBIT` reads the actual guard byte and
+updates only Z among arithmetic flags; it writes no accumulator lane.
+The split eight-bit index is never reduced modulo eight: an out-of-range
+index supplies a zero mask. CE1 or CE2 can veto either result, even when
+the corresponding address-enable bit is set. Both CE feedback bits sample
+incoming `EST`, before the new Z becomes visible. The two unallocated guard
+selectors do not lift.
+
 Wide `MIN2` and `MAX2` compare their two signed 16-bit lanes independently,
 ignoring source guard bytes. Full results take their guard from the sign of
 the selected upper word. Strict left wins shift into `BTR1` for the upper

@@ -633,6 +633,9 @@ define token wide (48)
     wide_shift_source_tail = (0,8)
     wide_shift_immediate = (24,30) signed
 
+    wide_guard_bit_op = (10,11)
+    wide_guard_bit_port = (2,4)
+
     wide_0_10 = (0,10)
     wide_13_22 = (13,22)
     logic_ce_bank = (46,46)
@@ -914,6 +917,7 @@ attach variables [shift_0_dst] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [shift_0_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [shift_0_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [shift_0_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [wide_guard_bit_port] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [shift_0_src] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [shift_literal_dst shift_word_dst] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [shift_literal_src] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
@@ -4167,6 +4171,43 @@ wide_unary_gate: "CE2" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank
     local gate:2 = enabled | ((CECFG2 >> 11) & 2);
     export gate;
 }
+wide_guard_bit_index: "#"^index is wide_40_45 & wide_0_1 [ index = wide_40_45 | (wide_0_1 << 6); ] {
+    export *[const]:1 index;
+}
+
+@define WIDE_GUARD_BIT "wide_right_mode=1 & wide_14_22=0x134 & wide_2_9>=0x80 & wide_2_9<=0x85 & wide_unary_gate & wide_guard_bit_port & wide_guard_bit_index"
+
+macro wide_guard_bit_write(gate, guard, value) {
+    if ((gate & 1) == 0) goto <feedback>;
+    guard = value;
+  <feedback>
+    publish_ce_feedback(EST & 0xcfff, EST);
+}
+
+:TESTBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=0 {
+    local flags:2 = EST & 0xcfff;
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local mask:1 = 1:1 << wide_guard_bit_index;
+    flags = (flags & 0xfff7) | (zext((wide_guard_bit_port & mask) == 0) << 3);
+  <feedback>
+    publish_ce_feedback(flags, EST);
+}
+
+# The mutation input mux sees zero, even though its guard write port is connected.
+:SETBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=1 {
+    wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 1:1 << wide_guard_bit_index);
+}
+
+:CHANGEBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=2 {
+    wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 1:1 << wide_guard_bit_index);
+}
+
+:CLEARBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=3 {
+    wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 0:1);
+}
+
+@undef WIDE_GUARD_BIT
+
 # Family 50's short port is not the full register selector with its high bit
 # restored: 0x7e samples signed FF1 alone; 0x7d and 0x7f are open on select operators.
 short_alu_word: short_alu_rhs_addr is wide_40_45>=0x30 & wide_40_45<=0x37 & short_alu_rhs_addr {
