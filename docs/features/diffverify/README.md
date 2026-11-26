@@ -63,6 +63,10 @@ ins16  DIFFERS  (run 1 of 256)
 
   An in-image callee that, run for real, returns without going through a stub proves
   kuna wrong. A run that ends on kuna's word alone is not counted (`noreturn-unverified`).
+- **Where a function returns.** In a run that made no call, a `RETURN` at the top level
+  to anything but the return address the run started with is not a return: the run is
+  `UNKNOWN(unsupported-op)`. That is a function that moved its own stack or return
+  address (`add rsp, 8; ret`). In a run with calls the same return still counts (§9).
 - **The calling convention, for a callee run for real.** After a callee that returns,
   the machine puts back only the registers the convention's model lists as
   `unaffected` (on x86-64: RBX, RBP, R12-R15), not every register kuna's prototype does
@@ -293,11 +297,22 @@ run yet.
   with extended values, which is right only when the inferred width is. Checking those
   with any value too gave false `UNKNOWN`s (MIPS O32 `negative`), so it waits for a
   rule that tells a width kuna inferred from one the ABI fixes.
-- **A return to another address.** At the top level, a `RETURN` to an address that is
-  not the run's return address still counts as a return when the target is unmapped or
-  kuna makes no branch there (`add rsp, 8; ret`). Refusing it moved verdicts that need
-  triage first: returns whose target is the instruction itself (interrupt returns), and
-  ones that read `0xffff` or `0x8000` off the stack.
+- **A wrong return address after calls.** Once a run has made a call, a top-level
+  return to another address still counts as a return, because a stub's stack effect
+  can be what moved the stack pointer (the Go functions of `kuna-gobounds`, whose
+  return value is still compared correctly). Refusing it there turned 31 agreements of
+  the corpus into `UNKNOWN`, among them a fragment that jumps to a return address it
+  never restored (`jal`, then `jr ra`), runs that a made-up function pointer threw off,
+  SEH helpers following a random `fs:[0]` chain, and exit system calls the run goes past.
+  Each of those needs its own fix in the harness first.
+- **A function pointer the harness made up.** A pointer argument is an input like any
+  other, so an indirect call through one can land in the middle of some function in the
+  image, and the machine runs that code as the callee. The run then usually ends in a
+  return to another address, which is `UNKNOWN` (§2), so nothing false is claimed, but
+  the function is not checked (`ls` `cmp_extension`, `hash_do_for_each`). Running only a
+  known function entry fixes those, but it also stubs real pointers the image stores
+  (the x86-32 `kuna-stackcookie` functions) and calls through an unrelocated import slot
+  (`kuna-chkstkdarwin`); telling the two kinds of pointer apart comes first.
 - **The caller's stack.** Memory compared at exit is everything outside the stack
   region. Above the return address lie the incoming stack arguments, which the callee
   owns and kuna may fold into variables, and then the caller's frame; a write there is

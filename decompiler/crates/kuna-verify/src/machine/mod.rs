@@ -838,7 +838,10 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                     return m.tail_call(addr, target, true);
                 }
                 if !calls.branches.contains(&addr) || !env.code_mapped(target) {
-                    return Ok(Exit::Return);
+                    if env.ret_addr.is_none_or(|r| r == target) || !m.records.is_empty() {
+                        return Ok(Exit::Return);
+                    }
+                    return Err(Halt::Unsupported(format!("return at {addr:#x} to {target:#x}, not to the return address, where kuna returns")));
                 }
                 addr = target;
                 insn = lift(env, addr)?;

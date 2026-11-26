@@ -572,3 +572,15 @@ fn a_register_the_convention_does_not_preserve_keeps_the_callee_s_value() {
     assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
     assert!(r.lines.iter().any(|l| l.contains("machine  RAX = 0x0000000000000007")), "{}", r.render());
 }
+
+/// `skip`: `add rsp, 8; ret` returns past the harness's return address, to
+/// whatever the stack holds above it. That is not the return kuna's C makes.
+#[test]
+fn a_return_to_another_address_is_not_a_return() {
+    let text = [0x48, 0x83, 0xc4, 0x08, 0xc3];
+    let path = object("skip", &text, &[("skip", 0, text.len() as u64)], &[]);
+    let r = &check(&path, &["skip"], &Options::default())[0];
+    let label = r.verdict.label();
+    assert!(label.starts_with("UNKNOWN(unsupported-op: return at 0x"), "{}", r.render());
+    assert!(label.contains("not to the return address"), "{}", r.render());
+}

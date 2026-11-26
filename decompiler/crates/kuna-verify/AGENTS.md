@@ -91,3 +91,12 @@ entry that no longer applies can be removed.
   `unaffected` registers are put back now. A first try that instead stopped putting
   anything back moved verdicts for that same reason; read the cspec lists before
   blaming the rerun.
+
+- 2026-11-26 · Claude Opus 5.5 · PR #1830
+  Took a top-level `RETURN` to an address other than the run's return address as a
+  return when the target was unmapped or kuna made no branch there. A function that
+  returns past its return address then agreed. Such a return is `UNKNOWN` now, but only
+  in a run that made no call: with calls, a stub's stack effect can move the stack
+  pointer (Go, `kuna-gobounds`), and refusing those broke pinned verdicts. Do not "fix"
+  the runs this leaves by stubbing every indirect call to a non-entry: that also stubs
+  real pointers the image holds and import slots (README §9).
