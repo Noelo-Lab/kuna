@@ -36,6 +36,9 @@
   <!-- loopcondhoist (default on) makes lookup's head test its loop condition and
        keeps the fatal test inside the loop; kept off so the tail if is checked. -->
   <com>option loopcondhoist off</com>
+  <!-- condfold (default noreturn) prints pick's merged chain with the fatal call
+       as its body in both passes; kept off so tailform's rule is checked. -->
+  <com>option condfold off</com>
   <com>option tailform off</com>
   <com>load function scaled</com>
   <com>decompile</com>

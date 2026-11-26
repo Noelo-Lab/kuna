@@ -305,12 +305,13 @@
 0298                  ifelseflatten
 0299                  crossjumprevert
 0300                  dedupitetail
-0301                  retshape
-0302                  tailform
-0303                  boolret
-0304                  iteregion
-0305                  iteboolean
-0306                  paramcopyhoist
-0307                  lowerswitchkeep
-0308        !         prototypewarnings
-0309                  stop
+0301                  fatalchain
+0302                  retshape
+0303                  tailform
+0304                  boolret
+0305                  iteregion
+0306                  iteboolean
+0307                  paramcopyhoist
+0308                  lowerswitchkeep
+0309        !         prototypewarnings
+0310                  stop

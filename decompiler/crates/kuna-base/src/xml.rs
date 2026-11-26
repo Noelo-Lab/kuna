@@ -2335,8 +2335,9 @@ mod tests {
         // and kuna-boolret(-thumb) / a function that only tests a short-circuit condition returns it
         // and kuna-elfv1-symbolextent / a descriptor symbol's size bounds the code behind it
         // and kuna-rangetest(-thumb) / a merged range test prints as its two comparisons, a switch bound check keeps it
+        // and kuna-fatalchain / a chain of tests into one no-return call is one if
         // and kuna-comparedarg / arguments compared with each other before the call stay its arguments
-        assert_eq!(count, 931, "corpus file count drifted");
+        assert_eq!(count, 932, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
