@@ -376,6 +376,12 @@ define token slot (24)
     parallel_logic_src = (6,10)
     parallel_word_dst = (10,13)
     parallel_word_src = (5,9)
+    x_alu_half_dst = (10,13)
+    x_alu_half_src = (5,9)
+    x_alu_acc = (10,12)
+    x_alu_acc_lo = (10,12)
+    x_alu_acc_hi = (10,12)
+    x_alu_acc_gb = (10,12)
     slot_1_4 = (1,4)
     shift_count = (1,7) signed
     shift_count_encoding = (1,7)
@@ -699,6 +705,12 @@ attach variables [div_btr1_src_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [div_btr1_src_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [logical_left] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
 attach variables [logical_right] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
+attach variables [x_alu_half_dst] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [x_alu_half_src] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [x_alu_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [x_alu_acc_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [x_alu_acc_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [x_alu_acc_gb] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [wide_lc_r] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [wide_lc_rn] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [compact_mul_left] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
@@ -3692,6 +3704,89 @@ macro compact_rmw_register(cfg, bank, target, connected) {
     publish_alu_ce(EST & 0xcfff);
   <done>
 }
+
+# Selector 14 uses the physical ALU's latch; selector 15 explicitly uses X2.
+x_alu_primary_rhs: "X1" is slot_1_4=14 { export X1; }
+x_alu_primary_rhs: "X2" is slot_1_4=15 { export X2; }
+x_alu_secondary_rhs: "X2" is (slot_1_4=14 | slot_1_4=15) { export X2; }
+x_alu_secondary_lhs: "X2" is (slot_6_9=14 | slot_6_9=15) { export X2; }
+
+macro compact_x_sum(lhs, rhs, sum, flags) {
+    sum = sext(lhs) + sext(rhs);
+    local lhs_negative:1 = lhs >= 0x8000;
+    local rhs_negative:1 = rhs >= 0x8000;
+    local negative:1 = sum s< 0;
+    # Carry from sign-extended inputs requires two negatives, or a
+    # negative plus a nonnegative whose sum reaches zero.
+    local carry_out:1 = (lhs_negative && rhs_negative) || (!negative && (lhs_negative || rhs_negative));
+    flags = zext(carry_out) | (zext(sum == 0) << 3) | (zext(negative) << 4);
+}
+
+macro compact_x_add_half(target, lhs, rhs, cfg, bank) {
+    local enabled:2;
+    local status:2 = EST & 0xcfff;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+    if (enabled == 0) goto <feedback>;
+    local sum:4;
+    local flags:2;
+    compact_x_sum(lhs, rhs, sum, flags);
+    target = sum:2;
+    # A half sees the signed sum above bit 16: E and sticky L describe
+    # the discarded extension, not the sign bit of the truncated word.
+    if (sum s>= -0x8000 && sum s<= 0x7fff) goto <publish>;
+    flags = flags | 0x20;
+    if ((ECFG & 4) == 0) goto <unlimited>;
+    target = 0x7fff + zext(sum s< 0);
+    flags = flags | 4;
+    goto <publish>;
+  <unlimited>
+    if ((ECFG & 0x28) == 8) goto <publish>;
+    flags = flags | 4;
+  <publish>
+    local shift:4 = zext(bank) * 6;
+    status = (status & ~(0x3b << shift)) | (flags << shift);
+  <feedback>
+    publish_alu_ce(status);
+}
+
+macro compact_x_add_acc(lo, hi, guard, lhs, rhs) {
+    local enabled:2;
+    local status:2 = EST & 0xcfff;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0) goto <feedback>;
+    local sum:4;
+    local flags:2;
+    compact_x_sum(lhs, rhs, sum, flags);
+    lo = sum:2;
+    hi = 0 - zext(sum s< 0);
+    guard = hi:1;
+    status = (status & ~(0x3b << 6)) | (flags << 6);
+  <feedback>
+    publish_alu_ce(status);
+}
+
+macro compact_x_or_acc(lo, hi, guard, lhs, rhs) {
+    local enabled:2;
+    local status:2 = EST & 0xcfff;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    if (enabled == 0) goto <feedback>;
+    local word:2 = lhs | rhs;
+    lo = word;
+    hi = 0;
+    guard = 0;
+    status = (status & ~(0x38 << 6)) | (zext(word == 0) << 9);
+  <feedback>
+    publish_alu_ce(status);
+}
+
+@define X_ALU_ADD_HALF "slot_14_22=0x48 & slot_0_0=1 & slot_10_12<6 & x_alu_half_dst & parallel_word_src>=16 & slot_5_7<6 & x_alu_half_src"
+@define X_ALU_ACC "slot_mode=0 & slot_0_0=1 & slot_10_12<6 & x_alu_acc & x_alu_acc_lo & x_alu_acc_hi & x_alu_acc_gb & x_alu_secondary_lhs & slot_1_5<30 & logical_right"
+
+:ADD "CE1" x_alu_half_dst,x_alu_half_src,x_alu_primary_rhs is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(X_ALU_ADD_HALF) & x_alu_primary_rhs { compact_x_add_half(x_alu_half_dst, x_alu_half_src, x_alu_primary_rhs, CECFG1, 0:2); }
+:ADD "CE1" x_alu_half_dst,x_alu_half_src,x_alu_primary_rhs "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(X_ALU_ADD_HALF) & x_alu_primary_rhs); (slot_mode=0 & nop_right) { compact_x_add_half(x_alu_half_dst, x_alu_half_src, x_alu_primary_rhs, CECFG1, 0:2); }
+:^nop_left "||" "ADD" "CE2" x_alu_half_dst,x_alu_half_src,x_alu_secondary_rhs is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(X_ALU_ADD_HALF) & x_alu_secondary_rhs) { compact_x_add_half(x_alu_half_dst, x_alu_half_src, x_alu_secondary_rhs, CECFG2, 1:2); }
+:^nop_left "||" "ADD" "CE2" x_alu_acc,x_alu_secondary_lhs,logical_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_13_22=0x94 & $(X_ALU_ACC)) { compact_x_add_acc(x_alu_acc_lo, x_alu_acc_hi, x_alu_acc_gb, x_alu_secondary_lhs, logical_right); }
+:^nop_left "||" "OR" "CE2" x_alu_acc,x_alu_secondary_lhs,logical_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_13_22=0x354 & $(X_ALU_ACC)) { compact_x_or_acc(x_alu_acc_lo, x_alu_acc_hi, x_alu_acc_gb, x_alu_secondary_lhs, logical_right); }
 
 # The logical RMW1 result bus reaches accumulator halves, but the
 # address/increment and FF word ports receive zero without ALU status.

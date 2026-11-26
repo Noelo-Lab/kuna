@@ -3907,6 +3907,17 @@ result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
 `CLRBTR` clears only its physical backtrace port; a veto preserves it.
 
+The covered CE-qualified compact register `ADD` and `OR` forms decode
+the X source selector separately from the physical ALU. Selector 14
+reads `X1` on the primary ALU, including a sequential right issue, and
+`X2` on the secondary ALU of a parallel packet. Selector 15 explicitly
+reads `X2`. For the covered half-result `ADD`, the signed word sum
+drives the selected accumulator half and the physical lane's flags;
+the other half and guard are not written. Whole-accumulator `ADD` sign
+extends the inputs, while `OR` combines their unsigned bit patterns.
+A CE veto preserves the result storage and arithmetic/logic flags
+without suppressing normal CE feedback.
+
 Compact `NEG` and `ABS` with the connected `FF12` input can write indirect
 DATA through `R0` with an inactive right lane. `FF2:FF1` enters the
 40-bit adder zero-extended. Flags describe the unshifted arithmetic

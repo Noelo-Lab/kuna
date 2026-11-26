@@ -3628,6 +3628,99 @@ fn carmel_trap_flushes_the_next_issue_or_follows_its_vector_and_stacks_the_resum
     }
 }
 
+#[test]
+fn carmel_compact_alu_x_selector_follows_the_physical_lane() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-alu-x", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let specs = binary.with_extension("specs");
+    let languages = Path::new("Ghidra/Processors/Carmel/data/languages");
+    let installed = std::env::var_os("KUNA_SPECS")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| common::repo_root().join("specs"))
+        .join(languages);
+    let fixture = specs.join(languages);
+    fs::create_dir_all(&fixture).unwrap();
+    for file in ["carmel.ldefs", "carmel.cspec", "carmel.pspec", "carmel.sla"] {
+        fs::copy(installed.join(file), fixture.join(file)).unwrap();
+    }
+    let target = "Carmel:BE:24:default:default";
+    let nop = [0x2b, 0xec, 0];
+    let add = [0x12, 0x03, 0x1d];
+    let vectors = [
+        ([add, nop], [0x567b, 0x5678, 0x12, 0x3000]),
+        ([nop, add], [0x567d, 0x5678, 0x12, 0x3000]),
+        ([[0xab, 0xec, 0], add], [0x567b, 0x5678, 0x12, 0x3000]),
+        ([[0x12, 0x03, 0x1f], nop], [0x567d, 0x5678, 0x12, 0x3000]),
+        ([nop, [0x12, 0x83, 0x93]], [0xaaaf, 0xffff, 0xff, 0x3400]),
+        ([nop, [0x6a, 0x83, 0x93]], [0xaaaf, 0, 0, 0x3000]),
+    ];
+    let registers = ["A0L", "A0H", "GB0", "EST", "X1", "X2", "RN1"];
+    let inputs = [0x1234, 0x5678, 0x12, 0, 3, 5, 0xaaaa];
+    let negative = [0x8888, 0x8002, 0xab, 0, 0x3fda, 0x894a, 2];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (route, (packet, enabled)) in vectors.into_iter().enumerate() {
+        let body = [packet, [nop, nop], [nop, nop], [nop, nop], [nop, nop], [[0x2b, 0xd8, 0], nop]];
+        fs::write(&binary, body.as_flattened().as_flattened()).unwrap();
+        for (i, reg) in registers.into_iter().enumerate() {
+            let typ = if reg == "GB0" { "unsigned char" } else { "unsigned short" };
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", target, "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} {typ}"),
+            ]);
+            for (j, input) in registers.into_iter().chain(["CECFG1", "CECFG2", "CETBL", "ECFG"]).enumerate() {
+                let input_type = if input == "GB0" { "unsigned char" } else { "unsigned short" };
+                kuna.args(["--assert", &format!("param {j} %{input} {input_type} in_{j}")]);
+            }
+            let out = common::process::required_output(&mut kuna);
+            let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+            let [fun] = report["functions"].as_array().unwrap().as_slice() else { panic!("{report}"); };
+            let text = fun["code"].as_str().unwrap();
+            assert!(fun["error"].is_null() && !text.contains("halt_"), "{fun}");
+            assert!(report["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{report}");
+            let name = format!("x_route_{route}_{i}");
+            writeln!(c, "#define sub_0 {name}\n{text}\n#undef sub_0").unwrap();
+            let mut tests = vec![
+                (inputs, 0, 0, inputs[i]),
+                (inputs, 0xffff, 0, enabled.get(i).copied().unwrap_or(inputs[i])),
+            ];
+            match route {
+                0 => tests.push((inputs, 0xff00, 0, if reg == "EST" { 0x2000 } else { inputs[i] })),
+                1 => tests.extend([
+                    (inputs, 0xff, 0, if reg == "EST" { 0x1000 } else { inputs[i] }),
+                    (negative, 0xffff, 0, [0x094c, 0x8002, 0xab, 0x3d40, 0x3fda, 0x894a, 2][i]),
+                    (negative, 0xffff, 4, [0x8000, 0x8002, 0xab, 0x3d40, 0x3fda, 0x894a, 2][i]),
+                    (negative, 0xffff, 8, [0x094c, 0x8002, 0xab, 0x3c40, 0x3fda, 0x894a, 2][i]),
+                ]),
+                2 => tests.push((inputs, 0xff, 0, if reg == "EST" { 0x1000 } else {
+                    enabled.get(i).copied().unwrap_or(inputs[i])
+                })),
+                _ => {}
+            }
+            for (sample, (before, truth, ecfg, expected)) in tests.into_iter().enumerate() {
+                let args = before.map(|v| format!("{v:#x}")).join(", ");
+                writeln!(calls,
+                    "if ({name}({args}, 0x1000, 0x1000, {truth:#x}, {ecfg:#x}) != {expected:#x}) return {};",
+                    1 + route * 42 + i * 6 + sample,
+                ).unwrap();
+            }
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
