@@ -4367,7 +4367,7 @@ truncating the fall-through here"
         }
         self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
         self.setup_callind_specs(op)?;
-        // The no-return / thunk fc bookkeeping (fc->setBadJumpTable / setNoReturn /
+        // The no-return / thunk fc bookkeeping (fc->setNoReturn /
         // setInternal) is the W4 FuncCallSpecs surface -- STUB(W4); the op-code
         // change to CALLIND is the load-bearing CFG effect.
         // Create an artificial return after the call.

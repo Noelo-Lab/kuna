@@ -662,9 +662,11 @@ warnstyle banner` restores upstream Ghidra's full
 `tests/stages/kuna-cnorm-warnstyle.xml`.
 
 The indirect-jump fallback warning belongs to the call operation that
-replaced the jump. If analysis proves the path unreachable and removes
-that call, no warning is emitted for it, even when other operations from
-the same instruction survive.
+replaced the jump. `decompile_drive.rs (drain_pipeline_comments)` publishes
+it after simplification, ahead of the pipeline's own comments, for each
+bad-jump-table call that is still live. If analysis proves the path
+unreachable and removes that call, no warning is emitted for it, even when
+other operations from the same instruction survive.
 
 ## 9.1 Casts
 
