@@ -1,0 +1,24 @@
+<decompilertest>
+<binaryimage arch="sparc:BE:32:default:default">
+  <bytechunk space="ram" offset="0x10000" readonly="true">81c3e00801000000</bytechunk>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/kuna-sparc32-call-gap</com>
+  <com>option listing on</com>
+  <com>option funcstart_patterns off</com>
+  <com>option aif off</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/kuna-sparc32-call-gap</com>
+  <com>option listing on</com>
+  <com>option funcstart_patterns off</com>
+  <com>option aif on</com>
+  <com>read symbols</com>
+  <com>functions</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPARC call gap: the hidden caller's frame is recovered by AIF" min="1" max="1">0x10140 sub_10140</stringmatch>
+<stringmatch name="SPARC call gap: the previous call does not consume the next frame" min="1" max="1">0x10150 sub_10150</stringmatch>
+</decompilertest>

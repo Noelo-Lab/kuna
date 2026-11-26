@@ -9489,6 +9489,13 @@ be unclaimed in the same executable gap, and the body must pass the usual
 subroutine walk with call or branch corroboration. The ordinary fingerprint
 and bracket rules still apply to other candidates.
 
+When an instruction models both a call and a return, the plain AIF gap
+walk treats the return as a body boundary if the instruction has no
+fall-through and every branch exit is reached only after the call.
+Resumption through these branches stays available to the regular
+recursive walk; it does not justify claiming the next gap in a speculative
+body. A branch that can bypass the call continues to validate in AIF.
+
 (kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
 (default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
 ARM code keeps its constants in pools right after the code that loads them, so a

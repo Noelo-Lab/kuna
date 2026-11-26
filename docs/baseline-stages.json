@@ -2929,6 +2929,8 @@
     "data:SIGNEDREAD #6: the unsigned compare keeps its unsigned operand",
     "data:SIGNEDREAD-A64 #1: the word index sign-extends sig - 1",
     "data:SIGNEDREAD-A64 #2: no zero extension of sig - 1",
+    "data:SPARC call gap: the hidden caller's frame is recovered by AIF",
+    "data:SPARC call gap: the previous call does not consume the next frame",
     "data:SPARC call roles: actual callee is discovered",
     "data:SPARC call roles: caller entry is retained",
     "data:SPARC call roles: local continuation is not an entry",
