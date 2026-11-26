@@ -1660,6 +1660,8 @@ pub struct PrintC {
     cast_implied: crate::kuna_castimplied::ImpliedCasts,
     /// (kuna `castimplied`) The op being printed as the statement `lhs = <op>;`.
     stmt_op: Option<OpId>,
+    /// The narrow product whose result conversion the enclosing cast already prints.
+    narrow_product_cast: Option<OpId>,
     /// (kuna `globalref`) This function's constant-address globals: the facts
     /// the decision reads and the globals its C names. See
     /// [`crate::kuna_globalref`].
@@ -1727,6 +1729,7 @@ impl PrintC {
             sign_plan: crate::kuna_typeround::SignPlan::default(),
             cast_implied: crate::kuna_castimplied::ImpliedCasts::default(),
             stmt_op: None,
+            narrow_product_cast: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
             unit_calls: crate::kuna_unitcalls::Calls::default(),
@@ -6967,13 +6970,14 @@ impl PrintC {
             }
             if tok.print1 == "*" {
                 if let Some(plan) = self.narrow_multiply_plan(fd, arch, op) {
-                    self.push_cast_open(&plan.result, op);
+                    let result = (self.narrow_product_cast != Some(op)).then_some(&plan.result);
+                    if let Some(ty) = result { self.push_cast_open(ty, op); }
                     self.push_op(tok, Some(op_key(op)));
                     self.push_cast_open(&plan.unsigned, op);
                     self.push_vn_ir(fd, arch, plan.lhs, op);
                     self.push_cast_close(&plan.unsigned);
                     self.push_vn_ir(fd, arch, plan.rhs, op);
-                    self.push_cast_close(&plan.result);
+                    if let Some(ty) = result { self.push_cast_close(ty); }
                     return;
                 }
             }
@@ -8023,7 +8027,11 @@ impl PrintC {
             self.push_cast_open(ct, op);
         }
         if let Some(vn) = fd.obank().get(op).and_then(|o| o.get_in(0)) {
+            let covered = cast_ty.as_ref().filter(|_| self.out_lang == crate::kuna_lang::OutLang::C)
+                .and_then(|ct| crate::p9_emit::kuna_narrowmultiply::truncating_cast(fd, vn, ct));
+            let outer = std::mem::replace(&mut self.narrow_product_cast, covered);
             self.push_vn_ir(fd, arch, vn, op);
+            self.narrow_product_cast = outer;
         }
         if let Some(ct) = &cast_ty {
             self.push_cast_close(ct);

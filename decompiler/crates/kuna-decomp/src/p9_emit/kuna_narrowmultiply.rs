@@ -28,10 +28,10 @@ pub(super) fn plan(
     let size = out.get_size();
     let types = arch.types();
     let int_width = types.get_size_of_int();
-    if !matches!(int_width, 2 | 4 | 8) || !matches!(size, 1 | 2 | 4) {
+    if !matches!(int_width, 2 | 4 | 8) || !matches!(size, 1 | 2) {
         return None;
     }
-    let signed_width = [int_width, 4].into_iter().filter(|&width| size < width).min()?;
+    let signed_width = [int_width.min(4), 4].into_iter().filter(|&width| size < width).min()?;
     let mask = (1u64 << (size * 8)) - 1;
     let (lhs, rhs) = (op.get_in(0)?, op.get_in(1)?);
     let (left, right) = (data.vbank().get(lhs)?, data.vbank().get(rhs)?);
@@ -59,4 +59,19 @@ pub(super) fn plan(
         unsigned: types.get_base(int_width.max(4), type_metatype::TYPE_UINT).ok()?,
         result: types.get_base(size, result).ok()?,
     })
+}
+
+/// The product `vn` when a C cast to `ty` printed around it already truncates it to its machine width.
+pub(super) fn truncating_cast(data: &Funcdata, vn: VarnodeId, ty: &Datatype) -> Option<OpId> {
+    let v = data.vbank().get(vn)?;
+    if !v.is_implied()
+        || v.has_implied_field()
+        || ty.get_size() != v.get_size()
+        || ty.is_enum_type()
+        || !matches!(ty.get_metatype(), type_metatype::TYPE_INT | type_metatype::TYPE_UINT)
+    {
+        return None;
+    }
+    let def = v.get_def()?;
+    (data.obank().get(def)?.code() == OpCode::CPUI_INT_MULT).then_some(def)
 }
