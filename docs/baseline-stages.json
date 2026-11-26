@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5570,
-    5570
+    5578,
+    5578
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1493,6 +1493,14 @@
     "data:HALTLOOPGUARD #5: the wfi loop is kept",
     "data:HALTLOOPGUARD #6: the toggle of a register the loop reads only to write back is kept",
     "data:HALTLOOPGUARD #7: a store of the irreducible loop is kept",
+    "data:HOMESPILL-WIN64 #1: caller keeps its four spilled parameters, also once callee is declared",
+    "data:HOMESPILL-WIN64 #2: caller never prints without parameters",
+    "data:HOMESPILL-WIN64 #3: undeclared, callee is passed the reloaded a3 fifth",
+    "data:HOMESPILL-WIN64 #4: declared, callee takes exactly its four arguments",
+    "data:HOMESPILL-WIN64 #5: two spilled parameters nothing reads back",
+    "data:HOMESPILL-WIN64 #6: mixed keeps two parameters, the edx it reads second",
+    "data:HOMESPILL-WIN64 #7: rbx, r8 in rcx's slot and a computed r9 are no parameters",
+    "data:HOMESPILL-WIN64 #8: a spill whose slot the function reuses is no parameter",
     "data:Hash guards retain the ordinary work call",
     "data:ILTENTRY #1: every stub of the table is an entry",
     "data:ILTENTRY #2: every body behind the table is an entry",
