@@ -4253,6 +4253,24 @@ register writes a word sum without selecting the arithmetic flag mux.
 Unrecognized compact selectors remain unlifted rather than being
 interpreted as inactive slots.
 
+In the compact `OR` with three indirect DATA operands, the two source
+bank bits are independent; the destination uses the opposite bank from
+the second source. The left and right packet forms use the same address
+selection and update their respective ALU status banks. The covered
+compact `EXTRACTZ` reads the descriptor width and offset from consecutive
+words. The descriptor bank selects the opposite short result bank:
+the result is stored at old `R3` or `R7`, and only that pointer advances
+by its own indexed stride.
+
+The covered wide `OR` consumes signed DATA displacements in encoded
+operand order, beginning with the destination if it has a displacement:
+the first operand of this kind receives the low byte, the second receives
+the high byte, and a third receives zero. A displaced read uses base plus
+displacement without updating the pointer. A displacement postmodify uses
+the incoming base for DATA and separately publishes the pointer update.
+Both reads use pre-update inputs even when a read shares the destination
+pointer. Two source postmodifies of the same pointer are not lifted.
+
 In the covered dual compact arithmetic packets with `OP1`/`OP2`, both
 temporary DATA reads use the incoming addresses. The two AGUs still
 advance their pointers. With a secondary accumulator result, neither

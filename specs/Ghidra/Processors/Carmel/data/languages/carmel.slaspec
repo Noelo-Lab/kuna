@@ -414,6 +414,21 @@ define token slot (24)
     compact_msu_right = (1,3)
     parallel_logic_dst = (11,14)
     parallel_logic_src = (6,10)
+    packed_dm_dst_lo = (9,10)
+    packed_dm_dst_hi = (9,10)
+    packed_dm_lhs_lo = (5,6)
+    packed_dm_lhs_hi = (5,6)
+    packed_dm_rhs_lo = (1,2)
+    packed_dm_rhs_hi = (1,2)
+    packed_dm_bank_lhs = (13,13)
+    packed_dm_bank_rhs = (12,12)
+    packed_dm_lhs_mode = (7,8)
+    packed_extract_dst = (9,12)
+    packed_extract_src = (5,8)
+    packed_extract_src_selector = (5,8)
+    packed_extract_desc = (1,3)
+    packed_extract_bank = (3,3)
+    packed_extract_desc_mode = (4,4)
     parallel_word_dst = (10,13)
     parallel_word_src = (5,9)
     x_alu_half_dst = (10,13)
@@ -640,6 +655,16 @@ define token wide (48)
     wide_logic_accumulate_family = (18,22)
     wide_logic_accumulate_dst = (9,15)
     wide_logic_accumulate_src = (2,8)
+    wide_disp_dst_ptr = (10,12)
+    wide_disp_dst_modulo = (10,12)
+    wide_disp_dst_bound = (10,12)
+    wide_disp_dst_shift = (10,12)
+    wide_disp_dst_acc = (10,12)
+    wide_disp_dst_lo = (10,12)
+    wide_disp_dst_guard = (10,12)
+    wide_disp_rhs_lo = (40,42)
+    wide_disp_rhs_ptr_index = (40,42)
+    wide_disp_lhs_ptr_index = (2,4)
     wide_adjust_op = (10,12)
     wide_adjust_long_dst = (8,8)
     wide_alias_add_op = (17,22)
@@ -945,6 +970,16 @@ attach variables [short_alu_src_step short_alu_rhs_step] [RN0 RN1 RN2 RN3 RN4 RN
 attach variables [short_alu_dst_modulo wide_logic_lhs_modulo wide_logic_rhs_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
 attach variables [short_alu_dst_bound wide_logic_lhs_bound wide_logic_rhs_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
 attach values [short_alu_dst_mode_shift wide_logic_lhs_mode_shift wide_logic_rhs_mode_shift] [0 2 4 6 8 10 12 14];
+attach variables [packed_dm_dst_lo packed_dm_lhs_lo packed_dm_rhs_lo] [R0 R1 R2 R3];
+attach variables [packed_dm_dst_hi packed_dm_lhs_hi packed_dm_rhs_hi] [R4 R5 R6 R7];
+attach variables [packed_extract_src] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
+attach variables [packed_extract_desc wide_disp_dst_ptr wide_disp_rhs_lo] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [wide_disp_dst_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [wide_disp_dst_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [wide_disp_dst_shift] [0 2 4 6 8 10 12 14];
+attach variables [wide_disp_dst_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [wide_disp_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [wide_disp_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [dual_preg_register] [_ _ _ _ _ _ _ _ _ _ A2H A3H _ _ _ _];
 attach variables [swap_reg_lo] [A0L A1L A2L A3L A4L A5L FF1 FF2];
 attach variables [swap_reg_full wide_smove_reg_src wide_smove_reg_dst] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
@@ -1792,6 +1827,33 @@ macro divide_trace(lo, hi, guard, div_lo, div_hi, div_guard, btr) {
 # Logic uses the unsigned input bits; status describes the full ALU result.
 macro commit_logic_flags(flags, shift) {
     EST = (EST & ~(0x38 << shift)) | (flags << shift);
+}
+
+# The destination selects the opposite bank from source two; each source has its own bank bit.
+packed_dm_dst: "*"^packed_dm_dst_lo is packed_dm_bank_rhs=1 & packed_dm_dst_lo { export packed_dm_dst_lo; }
+packed_dm_dst: "*"^packed_dm_dst_hi is packed_dm_bank_rhs=0 & packed_dm_dst_hi { export packed_dm_dst_hi; }
+packed_dm_lhs: "*"^packed_dm_lhs_lo is packed_dm_bank_lhs=0 & packed_dm_lhs_lo { export packed_dm_lhs_lo; }
+packed_dm_lhs: "*"^packed_dm_lhs_hi is packed_dm_bank_lhs=1 & packed_dm_lhs_hi { export packed_dm_lhs_hi; }
+packed_dm_rhs: "*"^packed_dm_rhs_lo is packed_dm_bank_rhs=0 & packed_dm_rhs_lo { export packed_dm_rhs_lo; }
+packed_dm_rhs: "*"^packed_dm_rhs_hi is packed_dm_bank_rhs=1 & packed_dm_rhs_hi { export packed_dm_rhs_hi; }
+
+@define PACKED_DM_OR "slot_14_22=0x1a5 & packed_dm_dst & packed_dm_lhs & packed_dm_rhs & slot_11_11=0 & packed_dm_lhs_mode=0 & slot_3_4=0 & slot_0_0=0"
+macro packed_dm_or(dst, lhs, rhs, shift) {
+    local address:2 = dst;
+    local left:2 = *[data]:2 lhs;
+    local right:2 = *[data]:2 rhs;
+    local result:2 = left | right;
+    *[data]:2 address = result;
+    commit_logic_flags(zext(result == 0) << 3, shift);
+}
+
+:OR packed_dm_dst,packed_dm_lhs,packed_dm_rhs "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(PACKED_DM_OR)); (slot_mode=0 & nop_right) {
+    packed_dm_or(packed_dm_dst, packed_dm_lhs, packed_dm_rhs, 0);
+}
+:^nop_left "||" "OR" packed_dm_dst,packed_dm_lhs,packed_dm_rhs is
+    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(PACKED_DM_OR)) {
+    packed_dm_or(packed_dm_dst, packed_dm_lhs, packed_dm_rhs, 6);
 }
 
 :"AND" "A0",logical_left,logical_right is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_10_22=0x18a0 & (slot_9_9=0 | slot_8_9=2 | slot_7_9=6) & (slot_5_5=0 | slot_4_5=2 | slot_3_5=6 | slot_2_5=14) & logical_left & logical_right { local value:2 = logical_left & logical_right; A0L = value; A0H = 0; GB0 = 0; local flags:2 = zext(value == 0) << 3; commit_logic_flags(flags, 0); }
@@ -2778,6 +2840,29 @@ compact_extract_passive: "EXTRACTZ" "A1,A0H,FF2:FF1" is slot_0_22=0x37c18e { }
 :^compact_extract_active is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_extract_active {
     build compact_extract_active;
     publish_alu_ce(EST & 0xcfff);
+}
+
+# The long descriptor selects the opposite short-result bank.
+macro packed_extract_store(pointer, increment, modulus, limit, mode_shift, word, descriptor) {
+    local address:2 = pointer;
+    local desc_hi:2 = descriptor + 1;
+    local count:2 = *[data]:2 descriptor;
+    local offset:2 = *[data]:2 desc_hi;
+    modify_ptr(pointer, increment, modulus, limit, mode_shift, 1);
+    local result:4;
+    compact_extract_bits(word, count, offset, 0:1, result);
+    *[data]:2 address = result:2;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+@define PACKED_DM_EXTRACT "slot_13_22=0x1b5 & slot_0_0=0 & packed_extract_dst=7 & packed_extract_desc_mode=0 & packed_extract_src_selector<=5 & packed_extract_src & packed_extract_desc"
+:EXTRACTZ "*R3+=RN3",packed_extract_src,"*"^packed_extract_desc^":long" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(PACKED_DM_EXTRACT) & packed_extract_bank=1); (slot_mode=0 & nop_right) {
+    packed_extract_store(R3, RN3, RM2, RL2, 6, packed_extract_src, packed_extract_desc);
+}
+:EXTRACTZ "*R7+=RN7",packed_extract_src,"*"^packed_extract_desc^":long" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(PACKED_DM_EXTRACT) & packed_extract_bank=0); (slot_mode=0 & nop_right) {
+    packed_extract_store(R7, RN7, RM6, RL6, 14, packed_extract_src, packed_extract_desc);
 }
 
 macro wide_logic_rmw_pstatus(word) {
@@ -4237,6 +4322,83 @@ macro wide_logic_accumulate_flags(result) {
     modify_ptr(R0, RN0, RM0, RL0, 0, 1);
     *[data]:2 address = result;
     commit_logic_flags(zext(result == 0) << 3, 0);
+}
+
+# The displacement queue is shared by the result and both operand AGUs.
+# It supplies low, high, then zero; postmodify addresses retain their incoming base.
+@define WIDE_OR_DISP "$(WIDE_ALIAS_ALU) & wide_20_22=6 & wide_logic_rmw_op=0"
+@define WIDE_OR_DISP_ACC "wide_alias_logic_dst>=0x88 & wide_alias_logic_dst<=0x8d & wide_disp_dst_acc & wide_disp_dst_lo & wide_logic_dst_hi & wide_disp_dst_guard"
+@define WIDE_OR_DISP_DST "wide_alias_logic_dst>=0x30 & wide_alias_logic_dst<=0x37 & wide_disp_dst_ptr & wide_disp_dst_modulo & wide_disp_dst_bound & wide_disp_dst_shift"
+@define WIDE_OR_DISP_LHS "wide_alias_logic_lhs>=0x20 & wide_alias_logic_lhs<=0x27 & wide_logic_lhs_ptr"
+@define WIDE_OR_DISP_RHS "wide_0_1=0 & wide_40_45>=0x20 & wide_40_45<=0x27 & wide_disp_rhs_lo"
+@define WIDE_OR_DISP_DISTINCT "((wide_disp_lhs_ptr_index=0 & wide_disp_rhs_ptr_index!=0) | (wide_disp_lhs_ptr_index=1 & wide_disp_rhs_ptr_index!=1) | (wide_disp_lhs_ptr_index=2 & wide_disp_rhs_ptr_index!=2) | (wide_disp_lhs_ptr_index=3 & wide_disp_rhs_ptr_index!=3) | (wide_disp_lhs_ptr_index=4 & wide_disp_rhs_ptr_index!=4) | (wide_disp_lhs_ptr_index=5 & wide_disp_rhs_ptr_index!=5) | (wide_disp_lhs_ptr_index=6 & wide_disp_rhs_ptr_index!=6) | (wide_disp_lhs_ptr_index=7 & wide_disp_rhs_ptr_index!=7))"
+
+macro wide_or_disp_read(first, second, result) {
+    local left:2 = *[data]:2 first;
+    local right:2 = *[data]:2 second;
+    result = left | right;
+}
+
+macro wide_or_disp_acc(lo, hi, guard, result) {
+    lo = result;
+    hi = 0;
+    guard = 0;
+    commit_logic_flags(zext(result == 0) << 3, 0);
+}
+
+:OR wide_disp_dst_acc,"*"^wide_logic_lhs_ptr^"+"^wide_shift_dst_disp,"*"^wide_disp_rhs_lo^"+"^wide_shift_count_disp is
+    $(WIDE_OR_DISP) & $(WIDE_OR_DISP_ACC) & $(WIDE_OR_DISP_LHS) & $(WIDE_OR_DISP_RHS)
+    & wide_shift_dst_disp & wide_shift_count_disp {
+    local first:2 = wide_logic_lhs_ptr + sext(wide_shift_dst_disp:1);
+    local second:2 = wide_disp_rhs_lo + sext(wide_shift_count_disp:1);
+    local result:2;
+    wide_or_disp_read(first, second, result);
+    wide_or_disp_acc(wide_disp_dst_lo, wide_logic_dst_hi, wide_disp_dst_guard, result);
+}
+
+:OR "*"^wide_disp_dst_ptr^"+="^wide_shift_dst_disp,"*"^wide_logic_lhs_ptr^"+"^wide_shift_count_disp,"*"^wide_disp_rhs_lo^"+0" is
+    $(WIDE_OR_DISP) & $(WIDE_OR_DISP_DST) & $(WIDE_OR_DISP_LHS) & $(WIDE_OR_DISP_RHS)
+    & wide_shift_dst_disp & wide_shift_count_disp {
+    local destination:2 = wide_disp_dst_ptr;
+    local first:2 = wide_logic_lhs_ptr + sext(wide_shift_count_disp:1);
+    local second:2 = wide_disp_rhs_lo;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    modify_ptr(wide_disp_dst_ptr, delta, wide_disp_dst_modulo, wide_disp_dst_bound, wide_disp_dst_shift, 4);
+    local result:2;
+    wide_or_disp_read(first, second, result);
+    *[data]:2 destination = result;
+    commit_logic_flags(zext(result == 0) << 3, 0);
+}
+
+:OR "*"^wide_disp_dst_ptr^"+="^wide_shift_dst_disp,"*"^wide_logic_lhs_ptr^"+"^wide_shift_count_disp,"A0L" is
+    $(WIDE_OR_DISP) & $(WIDE_OR_DISP_DST) & $(WIDE_OR_DISP_LHS) & wide_0_1=2 & wide_40_45=0x10
+    & wide_shift_dst_disp & wide_shift_count_disp {
+    local destination:2 = wide_disp_dst_ptr;
+    local first:2 = wide_logic_lhs_ptr + sext(wide_shift_count_disp:1);
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    modify_ptr(wide_disp_dst_ptr, delta, wide_disp_dst_modulo, wide_disp_dst_bound, wide_disp_dst_shift, 4);
+    local left:2 = *[data]:2 first;
+    local result:2 = left | A0L;
+    *[data]:2 destination = result;
+    commit_logic_flags(zext(result == 0) << 3, 0);
+}
+
+# A shared postmodify register on both source ports is an address conflict.
+:OR wide_disp_dst_acc,"*"^wide_logic_lhs_ptr^"+="^wide_shift_dst_disp,"*"^wide_disp_rhs_lo^"+="^wide_shift_count_disp is
+    $(WIDE_OR_DISP) & $(WIDE_OR_DISP_ACC) & wide_alias_logic_lhs>=0x30 & wide_alias_logic_lhs<=0x37
+    & wide_0_1=0 & wide_40_45>=0x30 & wide_40_45<=0x37 & $(WIDE_OR_DISP_DISTINCT)
+    & wide_logic_lhs_ptr & wide_logic_lhs_modulo & wide_logic_lhs_bound & wide_logic_lhs_mode_shift
+    & wide_disp_rhs_lo & wide_logic_rhs_modulo & wide_logic_rhs_bound & wide_logic_rhs_mode_shift
+    & wide_shift_dst_disp & wide_shift_count_disp {
+    local first:2 = wide_logic_lhs_ptr;
+    local second:2 = wide_disp_rhs_lo;
+    local first_delta:2 = sext(wide_shift_dst_disp:1);
+    local second_delta:2 = sext(wide_shift_count_disp:1);
+    modify_ptr(wide_logic_lhs_ptr, first_delta, wide_logic_lhs_modulo, wide_logic_lhs_bound, wide_logic_lhs_mode_shift, 4);
+    modify_ptr(wide_disp_rhs_lo, second_delta, wide_logic_rhs_modulo, wide_logic_rhs_bound, wide_logic_rhs_mode_shift, 4);
+    local result:2;
+    wide_or_disp_read(first, second, result);
+    wide_or_disp_acc(wide_disp_dst_lo, wide_logic_dst_hi, wide_disp_dst_guard, result);
 }
 
 # Immediate address-unit transfers and fixed long strides.

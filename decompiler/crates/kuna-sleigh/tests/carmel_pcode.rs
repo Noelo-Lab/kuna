@@ -2709,3 +2709,71 @@ fn wide_lshift_control_aliases() {
     assert_eq!(m.step(), 6);
     assert_eq!(m.reg("EST"), 0x3009);
 }
+
+#[test]
+fn packed_banks_displacements_compact() {
+    for (left, right, seed, stored, flags) in [
+        (0x696624, NOP, 0, 0x24, 0x400),
+        (NOP, 0x695624, 0, 0x42, 0x10),
+        (0x697622, NOP, 0, 0x20, 0x400),
+        (NOP, 0x697622, 0, 0x20, 0x10),
+        (0x697622, NOP, 1, 0, 0x408),
+        (NOP, 0x697622, 1, 0, 0x210),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R1", 0x20), ("R2", 0x30), ("R3", 0x40), ("R5", 0x50), ("R6", 0x60),
+                 ("R7", 0x70), ("EST", 0x410)]);
+        for (address, word) in [(0x20, 2), (0x30, 4), (0x40, 8), (0x50, 0x20), (0x60, 0x40), (0x70, 0x80)] {
+            m.seed_data(address, if seed == 0 { word } else { 0 });
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        let dst = if left == 0x696624 { 0x70 } else { 0x40 };
+        assert_eq!((m.data(dst), m.reg("EST")), (stored, flags));
+        assert_eq!((m.reg("R3"), m.reg("R7")), (0x40, 0x70));
+    }
+
+    for (op, ptr, desc, r3, r7) in [
+        (0x36ae0e, 0x40, 0x70, 0x44, 0x70),
+        (0x36ae06, 0x70, 0x40, 0x40, 0x78),
+    ] {
+        let mut m = Machine::new(0, &[(op, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R3", 0x40), ("R7", 0x70), ("RN3", 4), ("RN7", 8), ("A0", 0x880055)]);
+        m.seed_data(ptr, 0x1234);
+        m.seed_data(desc, 12);
+        m.seed_data(desc + 1, 1);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.data(ptr), m.data(desc), m.data(desc + 1)), (0x2a, 12, 1));
+        assert_eq!((m.reg("R3"), m.reg("R7"), m.reg("A0"), m.reg("EST")), (r3, r7, 0x880055, 0));
+    }
+}
+
+#[test]
+fn packed_banks_displacements_wide() {
+    for (left, right, a0, ptrs, word0, word1) in [
+        (0xa20701, 0xe22084, 0x410, (0x100, 0x200, 0x300), 1, 2),
+        (0x900701, 0xe0c48a, 0x0a0, (0x100, 0x201, 0x300), 1, 0x4a0),
+        (0xa20701, 0xe0c084, 0x0a0, (0x101, 0x200, 0x300), 0x84, 2),
+        (0xb20701, 0xe220c4, 6, (0x100, 0x201, 0x307), 1, 2),
+        (0xa27f80, 0xe22084, 0x8040, (0x100, 0x200, 0x300), 1, 2),
+        (0xb27f80, 0xe220c4, 6, (0x100, 0x180, 0x37f), 1, 2),
+        (0xa20701, 0xe0c484, 0x0a0, (0x100, 0x201, 0x300), 1, 0x84),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0xa0), ("R0", 0x100), ("R1", 0x200), ("R2", 0x300), ("EST", 0x410)]);
+        for (address, word) in [
+            (0x100, 1), (0x180, 0x8000), (0x200, 2), (0x201, 0x10), (0x207, 0x80),
+            (0x300, 4), (0x301, 0x200), (0x307, 0x400), (0x37f, 0x40),
+        ] {
+            m.seed_data(address, word);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), (m.reg("R0"), m.reg("R1"), m.reg("R2")), m.reg("EST")), (a0, ptrs, 0x400));
+        assert_eq!((m.data(0x100), m.data(0x200), m.data(0x300)), (word0, word1, 4));
+    }
+
+    let mut m = Machine::new(0, &[(0xb20701, 0xe220c8), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    assert!(matches!(m.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })));
+}
