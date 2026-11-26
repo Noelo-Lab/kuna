@@ -197,36 +197,6 @@ opt	verify-anonymous-classes	1
 opt	include-classpath	0
 opt	ternary-in-if	1
 opt	force-jsr-inline	1
-set	JAD Naming	jad-naming
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	jvm_plugins	1
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	variable-renaming	jad
-set	Tiny Naming	tiny-naming
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	jvm_plugins	1
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	variable-renaming	tiny
 set	Plugin Defaults	plugin-defaults
 opt	jvm_plugins	1
 set	Kotlin Core Default	kotlin-core-default
@@ -1346,16 +1316,8 @@ case	ternary-constant-simplification/pkg/TestAssignmentTernaryConstantSimplifica
 kuna	8225055d31930e25
 case	ternary-constant-simplification/pkg/TestReturnTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestReturnTernaryConstantSimplification
 kuna	4c118e72f071b2e9
-case	jad-naming/TestJadLvtCollision	JAD Naming	classes/plugins/variable-renaming/custom/TestJadLvtCollision
-kuna	2bd0a2858284dcf5
-case	jad-naming/pkg/TestJADLocalClasses	JAD Naming	classes/plugins/variable-renaming/java8/pkg/TestJADLocalClasses
-kuna	44896e58761901b7
-case	jad-naming/pkg/TestJADNaming	JAD Naming	classes/plugins/variable-renaming/java8/pkg/TestJADNaming
-kuna	5325912d4f0db671
 case	plugin-defaults/TestIdeaNotNull	Plugin Defaults	classes/custom/TestIdeaNotNull
 kuna	3e749b4c51b4b14f
-case	tiny-naming/pkg/TestTinyNaming	Tiny Naming	classes/plugins/variable-renaming/java8/pkg/TestTinyNaming
-kuna	380c56bac908f7e2
 case	with-idea-not-null/TestIdeaNotNull	With Idea Not Null	classes/custom/TestIdeaNotNull
 kuna	4b82def0117798ab
 case	kotlin-core-default/pkg/TestIllegalVarName	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestIllegalVarName

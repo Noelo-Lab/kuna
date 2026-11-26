@@ -3,7 +3,7 @@
 `kuna-jvm` (`decompiler/nonnative/kuna-jvm`) decompiles JVM class files, jars and
 directories of classes to Java, and the classes the Kotlin compiler emitted to Kotlin. It
 is a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 with the
-three plugins Vineflower bundles (Kotlin, variable renaming, IDEA not-null). On the same
+Kotlin and IDEA not-null plugins Vineflower bundles. On the same
 class files and options it prints the text Vineflower prints, byte for byte, except where
 kuna fixes a Vineflower defect: a method Vineflower fails on, or code it prints wrong
 (*Kuna-only fixes*, below). The fixes are always on; `--option jvm_vineflower_compat on`
@@ -217,12 +217,13 @@ objects by creation in the arena; see the fidelity contract below.
   - **The watchdog:** Vineflower kills a method's thread at `max-time-per-method`; kuna
     polls a cooperative per-method deadline (below).
 - **The bundled plugins.** Vineflower's release jar bundles three plugins, which
-  `java -jar vineflower.jar` loads; all three are ported, one module per Java file, and
-  kuna carries them in the same registration order (`src/infra/kuna_plugins.rs`):
+  `java -jar vineflower.jar` loads; Kotlin and IDEA not-null are ported, one module per
+  Java file, and kuna carries them in the same registration order
+  (`src/infra/kuna_plugins.rs`); variable renaming is not (below):
 
 | Plugin (`plugins/` in Vineflower's repository) | Java files | Ported to | What it does |
 |---|---:|---|---|
-| `variable-renaming` | 5 | `src/plugins/` (5 modules) | renames locals (and parameters) JAD-style or tiny-style on request |
+| `variable-renaming` | 5 | not ported | renames locals (and parameters) JAD-style or tiny-style on request |
 | `kotlin` | 51 | `src/kotlin/` (50 modules; the marker interface `KExprent` is a flag on the expression) | detects Kotlin classes and decompiles and writes them as Kotlin |
 | `idea-not-null` | 3 | `src/plugins/` (3 modules) | removes the null checks IntelliJ's compiler adds for `@NotNull` |
 
@@ -231,7 +232,7 @@ objects by creation in the arena; see the fidelity contract below.
   runs on; kuna ports the parts it reads as `src/kotlin/kt_proto.rs` and
   `src/kotlin/kt_flags.rs`. Plugins are not discovered on a class path: the bundle always
   loads, as with `java -jar`, and each plugin acts only through its options
-  (`jvm_kt_enable`, `jvm_variable_renaming`, `jvm_resugar_idea_notnull`); the corpus runner
+  (`jvm_kt_enable`, `jvm_resugar_idea_notnull`); the corpus runner
   alone runs the bare Java pipeline of Vineflower's test fixture (`jvm_plugins=0`).
 - **Not ported:** a user renamer class and Vineflower's `include-classpath` need a JVM and
   are refused (`options.toml`, `[[driver_owned]]`); third-party plugin jars cannot be
@@ -847,34 +848,10 @@ public void test1(@NotNull String s) {
 }
 ```
 
-**Variable renaming.** Off unless asked for: `--option jvm_variable_renaming jad` names
-locals after their type the way JAD did (`i`, `j`, `s`, `flag`, `file1`), `tiny` the way
-tiny-remapper does, and `jvm_rename_parameters on` renames parameters too. It overrides
-the LocalVariableTable's names, so it is for obfuscated or debug-info-free code:
-
-```
-$ kuna decompile tests/fixtures/jvm/app.jar com.ex.util.Helper.loop --option jvm_variable_renaming jad
-public static int loop(int n) {
-   int i = 0;
-
-   while (n > 0) {
-      if (n % 3 == 0) {
-         i += n;
-      } else {
-         i--;
-      }
-
-      n--;
-   }
-
-   return i;
-}
-```
-
-`tiny` with `jvm_rename_parameters on` fails every method that has a LocalVariableTable
-(`NullPointerException: type`), as Vineflower's provider does. Vineflower's deprecated
-`jad-style-variable-naming` and `jad-style-parameter-naming` flags are not options:
-`jvm_variable_renaming jad` and `jvm_rename_parameters` cover them.
+**Variable renaming.** Vineflower's VariableRenaming plugin (`variable-renaming jad|tiny`,
+`rename-parameters`) is not ported: it replaced the LocalVariableTable's names with names
+made up from the types. Names come from the table, or, with `jvm_use_lvt_names off` or
+without one, are Vineflower's numbered `var0`, `var1`.
 
 ## How failures are reported
 

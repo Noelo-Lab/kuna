@@ -538,8 +538,8 @@ fn is_digest(digest: &Option<String>) -> bool {
 #[test]
 fn vendored_corpus_is_complete() {
     let cases = vendored();
-    assert_eq!(cases.len(), 893);
-    assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 603);
+    assert_eq!(cases.len(), 889);
+    assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 599);
     assert_eq!(cases.iter().filter(|c| c.set_slug == "kuna-fixes").count(), 290);
     for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes") {
         assert!(
@@ -588,8 +588,6 @@ fn vendored_corpus_is_complete() {
         let plugin_set = matches!(
             case.set_slug.as_str(),
             "with-idea-not-null"
-                | "jad-naming"
-                | "tiny-naming"
                 | "plugin-defaults"
                 | "kotlin-entire-classpath"
                 | "kotlin-multifile-facade"

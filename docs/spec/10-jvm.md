@@ -87,24 +87,12 @@ bundles, in its registration order, in
 `jvm_plugins` (on unless set; the corpus runner turns it off for Vineflower's test fixture,
 which loads none) decides whether they load. It is not a catalog option: a plugin's effect
 is gated by its own options, so off gives what `jvm_kt_enable off` and
-`jvm_resugar_idea_notnull off` give with no renamer. Each plugin's options join the option
+`jvm_resugar_idea_notnull off` give. Each plugin's options join the option
 map with the plugin's defaults when the plugins initialize, and an option a caller set
-keeps its value. Two are ported, in
-`decompiler/nonnative/kuna-jvm/src/plugins`. **VariableRenaming** registers no pass; it
-supplies the variable naming factory, which every method's local names pass through when
-`VarDefinitionHelper` settles them and every parameter name passes through when it is
-written. `jvm_variable_renaming` picks a renamer by name: `jad` names a variable after its
-type (`i`, `j`, `k`, `l`, `i1`... for `int` and `long`, `flag`, `s`, `file1`, the lowercased
-class name, `a` + the element type for arrays), counting each name per method; `tiny` gives
-primitives one letter and steps through `a`..`z`, `ba`... on a clash, and an object the
-class name with a lowercase first letter (plural for arrays), numbered on a clash, with `_`
-after a keyword. A lambda body's method, an anonymous class's methods and a local class's
-methods take over the enclosing method's naming state (`jad`'s counters, `tiny`'s used
-names) once the enclosing method has been renamed. With no renamer named, or an unknown
-name, there is none, and the names stay as Vineflower's own pipeline gives them.
-`jvm_rename_parameters` renames parameters too; with a LocalVariableTable, a parameter's
-entry carries no type at that point, so `tiny`, which needs one, fails the method as
-Vineflower's provider does. **IdeaNotNull** registers one
+keeps its value. Of the two Java plugins, IdeaNotNull is ported, in
+`decompiler/nonnative/kuna-jvm/src/plugins`; VariableRenaming (JAD-style and tiny-style
+renamers of locals) is not, and every name stays as Vineflower's own pipeline gives it.
+**IdeaNotNull** registers one
 `MainLoop` pass that, while `jvm_resugar_idea_notnull` is on (the default), removes the
 null checks IntelliJ IDEA's compiler instruments: an `if (p == null) $$$reportNull$$$0(n);`
 heading the method body for a parameter whose invisible parameter annotations carry

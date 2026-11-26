@@ -2232,23 +2232,17 @@ impl KotlinWriter {
                         };
 
                         if (flags & (ACC_ABSTRACT | ACC_NATIVE)) != 0 {
-                            let new_parameter_name = method_struct
-                                .get_variable_namer()
-                                .rename_abstract_parameter(parameter_name.as_deref(), index)
+                            parameter_name
+                                .as_ref()
                                 .expect("NullPointerException: renameAbstractParameter");
-                            parameter_name = if parameter_name.as_deref()
-                                != Some(new_parameter_name.as_str())
-                            {
-                                Some(new_parameter_name)
-                            } else {
+                            parameter_name =
                                 DecompilerContext::get_struct_context().rename_abstract_parameter(
                                     &method_struct.get_class_qualified_name(),
                                     &mt.get_name(),
                                     &mt.get_descriptor(),
                                     index - if (flags & ACC_STATIC) == 0 { 1 } else { 0 },
                                     parameter_name.as_deref(),
-                                )
-                            };
+                                );
                         }
 
                         let parameter_name = parameter_name

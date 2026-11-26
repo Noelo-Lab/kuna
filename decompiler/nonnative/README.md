@@ -9,7 +9,7 @@ source language rather than over p-code.
 
 | Crate | Input | Output | Origin |
 |---|---|---|---|
-| `kuna-jvm` | JVM class files, jars, directories of classes | Java; Kotlin for classes compiled from Kotlin | Rust port of Vineflower 1.12.0 and its bundled Kotlin, variable-renaming and IDEA not-null plugins (Apache-2.0) |
+| `kuna-jvm` | JVM class files, jars, directories of classes | Java; Kotlin for classes compiled from Kotlin | Rust port of Vineflower 1.12.0 and its bundled Kotlin and IDEA not-null plugins (Apache-2.0) |
 | `kuna-managed` | - | - | kuna: the contract between the CLI and a managed engine (no dependencies) |
 
 What the engines do share with the native side is the front door: the `kuna` CLI, its option

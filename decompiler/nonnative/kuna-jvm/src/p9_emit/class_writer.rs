@@ -524,12 +524,9 @@ impl ClassWriter {
                                 if !first_parameter {
                                     buffer.append(", ");
                                 }
-                                let type_ = &md_content.params[i];
-
                                 let mw =
                                     method_wrapper.expect("NullPointerException: methodWrapper");
-                                let (varproc, method_struct) =
-                                    mw.with(|d| (d.varproc, d.method_struct));
+                                let varproc = mw.with(|d| d.varproc);
                                 let clashing_name =
                                     varproc.get_clashing_name(VarVersionPair::new(index, 0));
                                 let mut parameter_name =
@@ -540,14 +537,7 @@ impl ClassWriter {
                                 if clashing_name.is_some() {
                                     parameter_name = clashing_name;
                                 }
-                                let parameter_name = method_struct
-                                    .get_variable_namer()
-                                    .rename_parameter(
-                                        mt.get_access_flags(),
-                                        type_,
-                                        parameter_name.as_deref(),
-                                        index,
-                                    )
+                                let parameter_name = parameter_name
                                     .expect("NullPointerException: parameter name");
                                 buffer.append_variable_descriptor(
                                     &parameter_name,
@@ -1528,19 +1518,10 @@ impl ClassWriter {
                     buffer.append(" ");
 
                     let mw = method_wrapper.expect("NullPointerException: methodWrapper");
-                    let (varproc, method_struct) = mw.with(|d| (d.varproc, d.method_struct));
+                    let varproc = mw.with(|d| d.varproc);
                     let parameter_name = varproc
                         .get_var_name(VarVersionPair::new(index, 0))
                         .unwrap_or_else(|| format!("param{index}"));
-                    let parameter_name = method_struct
-                        .get_variable_namer()
-                        .rename_parameter(
-                            mt.get_access_flags(),
-                            type_,
-                            Some(&parameter_name),
-                            index,
-                        )
-                        .expect("NullPointerException: parameter name");
                     buffer.append_variable_descriptor(
                         &parameter_name,
                         true,
@@ -2258,25 +2239,17 @@ impl ClassWriter {
                     table_name.or(name)
                 };
 
-                let mut new_parameter_name = method_struct.get_variable_namer().rename_parameter(
-                    flags,
-                    &parameter_type,
-                    parameter_name.as_deref(),
-                    index,
-                );
-                if (flags & (ACC_ABSTRACT | ACC_NATIVE)) != 0
-                    && new_parameter_name == parameter_name
-                {
-                    new_parameter_name = DecompilerContext::get_struct_context()
-                        .rename_abstract_parameter(
-                            &method_struct.get_class_qualified_name(),
-                            &mt.get_name(),
-                            &mt.get_descriptor(),
-                            index - if (flags & ACC_STATIC) == 0 { 1 } else { 0 },
-                            parameter_name.as_deref(),
-                        );
-                }
-                let parameter_name = new_parameter_name;
+                let parameter_name = if (flags & (ACC_ABSTRACT | ACC_NATIVE)) != 0 {
+                    DecompilerContext::get_struct_context().rename_abstract_parameter(
+                        &method_struct.get_class_qualified_name(),
+                        &mt.get_name(),
+                        &mt.get_descriptor(),
+                        index - if (flags & ACC_STATIC) == 0 { 1 } else { 0 },
+                        parameter_name.as_deref(),
+                    )
+                } else {
+                    parameter_name
+                };
 
                 let value = match &parameter_name {
                     None => format!("param{index}"),

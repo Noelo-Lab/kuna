@@ -19,32 +19,6 @@
    ]
   },
   {
-   "name": "JAD Naming",
-   "slug": "jad-naming",
-   "fixture": true,
-   "source": "plugins/variable-renaming/src/test/java/org/vineflower/variablerenaming/VariableRenamingTest.java",
-   "option_pairs": [
-    ["jvm_plugins", "1"],
-    ["bytecode-source-mapping", "1"],
-    ["__dump_original_lines__", "1"],
-    ["dump-exception-on-error", "0"],
-    ["variable-renaming", "jad"]
-   ]
-  },
-  {
-   "name": "Tiny Naming",
-   "slug": "tiny-naming",
-   "fixture": true,
-   "source": "plugins/variable-renaming/src/test/java/org/vineflower/variablerenaming/VariableRenamingTest.java",
-   "option_pairs": [
-    ["jvm_plugins", "1"],
-    ["bytecode-source-mapping", "1"],
-    ["__dump_original_lines__", "1"],
-    ["dump-exception-on-error", "0"],
-    ["variable-renaming", "tiny"]
-   ]
-  },
-  {
    "name": "Plugin Defaults",
    "slug": "plugin-defaults",
    "fixture": false,
@@ -61,42 +35,6 @@
    "class_files": ["custom/TestIdeaNotNull.class"],
    "decompiled_file": "TestIdeaNotNull.java",
    "reference": "plugins/idea-not-null/testData/results/TestIdeaNotNull.dec"
-  },
-  {
-   "id": "jad-naming/TestJadLvtCollision",
-   "set": "JAD Naming",
-   "class_files": ["plugins/variable-renaming/custom/TestJadLvtCollision.class"],
-   "decompiled_file": "TestJadLvtCollision.java",
-   "reference": "plugins/variable-renaming/testData/results/TestJadLvtCollision.dec"
-  },
-  {
-   "id": "jad-naming/pkg/TestJADLocalClasses",
-   "set": "JAD Naming",
-   "class_files": [
-    "plugins/variable-renaming/java8/pkg/TestJADLocalClasses.class",
-    "plugins/variable-renaming/java8/pkg/TestJADLocalClasses$1Test.class"
-   ],
-   "decompiled_file": "TestJADLocalClasses.java",
-   "reference": "plugins/variable-renaming/testData/results/pkg/TestJADLocalClasses.dec"
-  },
-  {
-   "id": "jad-naming/pkg/TestJADNaming",
-   "set": "JAD Naming",
-   "class_files": ["plugins/variable-renaming/java8/pkg/TestJADNaming.class"],
-   "decompiled_file": "TestJADNaming.java",
-   "reference": "plugins/variable-renaming/testData/results/pkg/TestJADNaming.dec"
-  },
-  {
-   "id": "tiny-naming/pkg/TestTinyNaming",
-   "set": "Tiny Naming",
-   "class_files": [
-    "plugins/variable-renaming/java8/pkg/TestTinyNaming.class",
-    "plugins/variable-renaming/java8/pkg/TestTinyNaming$PascalCase.class",
-    "plugins/variable-renaming/java8/pkg/TestTinyNaming$camelCase.class",
-    "plugins/variable-renaming/java8/pkg/TestTinyNaming$clas.class"
-   ],
-   "decompiled_file": "TestTinyNaming.java",
-   "reference": "plugins/variable-renaming/testData/results/pkg/TestTinyNaming.dec"
   },
   {
    "id": "plugin-defaults/TestIdeaNotNull",

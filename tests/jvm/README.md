@@ -85,7 +85,7 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 
 ## Counts
 
-- Vendored: **893 runs** in all, each of which must match: the 603 Vineflower-oracle cases (the
+- Vendored: **889 runs** in all, each of which must match: the 599 Vineflower-oracle cases (the
   Java cases here, the plugin and Kotlin cases below) against kuna's text (their `kuna` digests), and
   the 290 kuna-fixes cases (below).
 - Java cases: **526** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2), 845 class files (874 KiB); 989 KiB in all
@@ -95,10 +95,8 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
   13 registered tests are not runnable from it (Groovy and Scala sources it never compiles, and the
   Kotlin ones, which the Kotlin cases below cover), and 4 set `dump-text-tokens=1` (set *Text Tokens*), an option kuna-jvm does not have, and are not run: `text-tokens/pkg/TestTextTokens`, `text-tokens/pkg/TestTextTokens2`, `text-tokens/pkg/TestTextTokens3`, `text-tokens/pkg/TestTypeAnnotationsTokens`.
 - The runner installs the test's `fabric:javadoc` provider (`FixtureJavadocProvider`) for `javadoc/pkg/TestJavadoc`, `markdown-javadoc/pkg/TestMarkdownJavadoc`.
-- Plugin cases (`plugins.json`): **6** (With Idea Not Null 1, JAD Naming 3, Tiny Naming 1, Plugin Defaults 1). The fixture sets replay the tests of
-  Vineflower's bundled plugins (`plugins/idea-not-null`, `plugins/variable-renaming`: the plugin's
-  `testData/classes/custom` binaries and its `testData/src/java8` compiled with javac 1.8 like the corpus's
-  `java8` set) on the fixture's base map; *Plugin Defaults* is `java -jar` with no options. Each set turns
+- Plugin cases (`plugins.json`): **2** (With Idea Not Null 1, Plugin Defaults 1). The fixture set replays the test of
+  Vineflower's bundled plugin `plugins/idea-not-null` on the fixture's base map; *Plugin Defaults* is `java -jar` with no options. Each set turns
   `jvm_plugins` on; the pinned text is the release jar's with its bundled plugins loaded
   (`vf-decompile --plugins`), which `plugin_oracle.py` accepts only when it matches upstream's `.dec` (for
   *Plugin Defaults*, the oracle corpus's `expected-defaults`) under the fixture's comparison. Rebuild them with

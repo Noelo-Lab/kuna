@@ -769,10 +769,6 @@ impl ClassesProcessor {
             d.class_struct
         });
         class_struct.release_resources();
-        let methods = class_struct.get_methods().to_vec();
-        for m in methods {
-            m.clear_variable_namer();
-        }
     }
 
     pub fn get_map_root_classes(self) -> Shared<JHashMap<String, ClassNode>> {

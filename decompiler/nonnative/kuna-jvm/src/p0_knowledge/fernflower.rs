@@ -30,7 +30,6 @@ use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
-use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
 use crate::kuna_partition::RootSelection;
 use crate::kuna_plugins;
@@ -177,12 +176,6 @@ impl Fernflower {
         logger.write_message(&format!("Loaded {plugin_count} plugins"), Severity::Info);
 
         plugins.initialize();
-
-        let renamer = plugins
-            .get_variable_renamer()
-            .unwrap_or_else(|| Rc::new(IdentityRenamerFactory));
-
-        context.with_mut(|d| d.renamer_factory = Some(renamer));
 
         logger.write_message(
             &format!(

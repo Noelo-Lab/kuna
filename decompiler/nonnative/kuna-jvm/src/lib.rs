@@ -5,8 +5,8 @@
 //! through `kuna-decomp`: JVM bytecode is typed, stack-based and carries its own
 //! class, exception and generic metadata, so it is decompiled over a Java-level
 //! IR. The engine is a Rust port of Vineflower 1.12.0 (Apache-2.0) and the three
-//! plugins its release bundles: Kotlin (`kotlin/`), variable renaming and IDEA
-//! not-null (`plugins/`). Each file cites the Java class it ports.
+//! plugins its release bundles: Kotlin (`kotlin/`) and IDEA not-null
+//! (`plugins/`). Each file cites the Java class it ports.
 //!
 //! Source folders follow kuna's phase taxonomy; the real pass order is the
 //! schedule in `infra/method_processor.rs`. Module names are flat
@@ -79,8 +79,7 @@ pub use kotlin::{
 pub use p0_knowledge::{
     class_wrapper_node, context_source, context_unit, converter_helper, counter_container,
     decompiler_context, fernflower, i_decompiled_data, i_fernflower_logger,
-    i_fernflower_preferences, i_identifier_renamer, i_variable_name_provider,
-    i_variable_naming_factory, identifier_converter, identity_renamer_factory, jdk_runtime,
+    i_fernflower_preferences, i_identifier_renamer, identifier_converter, jdk_runtime,
     kuna_input, kuna_inventory, kuna_options, pool_interceptor, struct_context,
 };
 pub use p1_classfile::{
@@ -141,8 +140,7 @@ pub use p9_emit::{
     variable_text_token,
 };
 pub use plugins::{
-    idea_not_null_options, idea_not_null_pass, idea_not_null_plugin, jad_name_provider, renamers,
-    tiny_name_provider, variable_renaming_options, variable_renaming_plugin,
+    idea_not_null_options, idea_not_null_pass, idea_not_null_plugin,
 };
 pub use substrate::{
     annotation_exprent, array_exprent, array_helper, assert_exprent, assignment_exprent,

@@ -139,7 +139,6 @@ fn options_overlay_defaults_by_long_and_short_name() {
         IFernflowerPreferences::DECOMPILE_INNER
     ));
     assert!(DecompilerContext::get_pool_interceptor().is_none());
-    let _ = DecompilerContext::get_naming_factory();
     assert!(logger.messages().is_empty());
     drop(fernflower);
 }

@@ -103,11 +103,6 @@ Three tiers:
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
 | else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
 | deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
-| locals named var1 var2 var3 with no hint of their type | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
-| obfuscated or meaningless local names from a forged LocalVariableTable | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
-| names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
-| locals renamed but parameters still named var1 or paramN | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
-| parameter names do not follow the renamer's scheme | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
 | if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
@@ -408,24 +403,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer, if_helper · vineflower · vineflower-option
 - **Also spelled:** `prettify-ifs`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off`
-
-### `jvm_variable_renaming` -- jad | tiny | <name>, default ``
-
-- **Symptoms:** locals named var1 var2 var3 with no hint of their type; obfuscated or meaningless local names from a forged LocalVariableTable; names differ from a Vineflower run with --variable-renaming=jad or tiny.
-- **What it does:** Rename locals with a renamer of the VariableRenaming plugin: jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names.
-- **When to flip:** Set jad or tiny on obfuscated or debug-info-free code whose var1, var2 or forged names say nothing about the variables, or to match a Vineflower run that used the same renamer.
-- **Where / provenance:** plugins/variable_renaming_plugin, renamers, jad_name_provider, tiny_name_provider · vineflower · vineflower-option
-- **Also spelled:** `variable-renaming`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming jad`
-
-### `jvm_rename_parameters` -- on | off, default `off`
-
-- **Symptoms:** locals renamed but parameters still named var1 or paramN; parameter names do not follow the renamer's scheme.
-- **What it does:** With a jvm_variable_renaming renamer, rename method and lambda parameters too, not only locals.
-- **When to flip:** Turn on with jvm_variable_renaming when the parameter names are as meaningless as the locals (obfuscated code, no MethodParameters or LocalVariableTable).
-- **Where / provenance:** plugins/jad_name_provider, tiny_name_provider · vineflower · vineflower-option
-- **Also spelled:** `rename-parameters`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming tiny --option jvm_rename_parameters on`
 
 ### `jvm_resugar_idea_notnull` -- on | off, default `on`
 

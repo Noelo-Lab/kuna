@@ -16,7 +16,6 @@ use crate::classes_processor::{ClassNode, ClassesProcessor};
 use crate::counter_container::CounterContainer;
 use crate::i_fernflower_logger::IFernflowerLogger;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::i_variable_naming_factory::IVariableNamingFactory;
 use crate::import_collector::ImportCollector;
 use crate::method_wrapper::MethodWrapper;
 use crate::pool_interceptor::PoolInterceptor;
@@ -43,7 +42,6 @@ pub struct DecompilerContextData {
     pub struct_context: StructContext,
     pub class_processor: ClassesProcessor,
     pub pool_interceptor: Option<PoolInterceptor>,
-    pub renamer_factory: Option<Rc<dyn IVariableNamingFactory>>,
     /// The `IFabricJavadocProvider.PROPERTY_NAME` property, an object string properties cannot hold.
     pub javadoc_provider: Option<Rc<dyn IFabricJavadocProvider>>,
     import_collector: Option<ImportCollector>,
@@ -75,7 +73,6 @@ impl DecompilerContext {
             struct_context,
             class_processor,
             pool_interceptor: interceptor,
-            renamer_factory: None,
             javadoc_provider: None,
             import_collector: None,
             var_processor: None,
@@ -198,10 +195,6 @@ impl DecompilerContext {
 
     pub fn get_pool_interceptor() -> Option<PoolInterceptor> {
         Self::current(|d| d.pool_interceptor)
-    }
-
-    pub fn get_naming_factory() -> Rc<dyn IVariableNamingFactory> {
-        Self::current(|d| d.renamer_factory.clone()).expect("getNamingFactory()")
     }
 
     /// Java: getProperty(IFabricJavadocProvider.PROPERTY_NAME)

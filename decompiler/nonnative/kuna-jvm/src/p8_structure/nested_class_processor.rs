@@ -802,15 +802,6 @@ impl NestedClassProcessor {
                 )
             });
 
-            if let Some(enclosing_method) = enclosing_method {
-                let namer = method_struct.get_variable_namer();
-                namer.add_parent_context(
-                    enclosing_method
-                        .with(|d| d.method_struct)
-                        .get_variable_namer(),
-                );
-            }
-
             let mut map_params_to_new_vars: JHashMap<i32, VarVersionPair> = JHashMap::new();
             if let Some(synth_parameters) = synth_parameters {
                 let mut var_index: i32 = 1;

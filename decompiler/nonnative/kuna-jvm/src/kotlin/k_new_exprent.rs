@@ -193,8 +193,7 @@ impl KNewExprent {
                         }
 
                         let type_ = &real_desc.params[i as usize];
-                        let (varproc, method_struct) =
-                            wrapper_or_npe().with(|d| (d.varproc, d.method_struct));
+                        let varproc = wrapper_or_npe().with(|d| d.varproc);
                         let clashing_name =
                             varproc.get_clashing_name(VarVersionPair::new(index, 0));
                         let mut parameter_name =
@@ -205,15 +204,8 @@ impl KNewExprent {
                             parameter_name = Some(format!("param{index}"));
                         }
 
-                        let parameter_name = method_struct
-                            .get_variable_namer()
-                            .rename_parameter(
-                                method_struct.get_access_flags(),
-                                type_,
-                                parameter_name.as_deref(),
-                                index,
-                            )
-                            .unwrap_or_else(|| npe("parameter name"));
+                        let parameter_name =
+                            parameter_name.unwrap_or_else(|| npe("parameter name"));
                         let printed = kt_unescaped_name::lambda_parameter(&parameter_name);
                         buf.append_variable_descriptor(
                             &printed,
