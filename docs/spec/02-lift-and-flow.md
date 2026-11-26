@@ -1168,6 +1168,13 @@ an indirect GOT jump; jump-table recovery fails on it and the function renders
 a `(*dat_...)(...)` computed call with a `"Treating indirect jump as call"`
 warning. Two datatests (Long double #1/#2) opt out per-test.
 
+An unconditional direct branch immediately after `CALL` or `CALLIND` in the
+same instruction's p-code is followed as the call's explicit resume edge,
+even if its destination is also a known function entry. Neither tail-call
+rule claims that edge. A conditional branch after a call still makes a
+separate flow decision, and a jump in a different instruction can still be a
+tail call.
+
 **Bounded conditional tails.** With an explicit extent, a machine-address
 `CPUI_CBRANCH` to another known function's entry outside that extent is the
 conditional form of the same direct tail. Both `on` and `direct` recover it
