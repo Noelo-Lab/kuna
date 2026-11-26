@@ -1060,6 +1060,29 @@ fn check_call_input(data: &Funcdata, op: OpId, slot: int4) -> bool {
     data.get_arch().infer_pointers()
 }
 
+/// Whether a constant in a word-addressed `spc` has neither an address use in
+/// `spc` nor an exact function entry (accepted on the function-entry escape's
+/// two readings).
+fn lacks_word_address_use(
+    data: &Funcdata,
+    spc: &Rc<AddrSpace>,
+    vn: VarnodeId,
+    op: OpId,
+    opc: OpCode,
+    numeric: &HashSet<uintb>,
+    op_addr: &Address,
+) -> bool {
+    let Some(constant) = data.vbank().get(vn) else {
+        return false;
+    };
+    let (offset, size) = (constant.get_offset(), constant.get_size());
+    search_for_space_attribute(data, vn, op).is_none_or(|access| access.get_index() != spc.get_index())
+        && !(crate::kuna_inferfuncentry::entry_escape_applies(opc, numeric.contains(&offset))
+            && kuna_const_is_function_entry(data, spc, offset, size, op_addr))
+}
+
+/// Whether `op` COPYs into the unlocked stack-base register. That register's
+/// inferred pointer type is not by itself an address use.
 fn copies_to_inferred_stack_base(data: &Funcdata, op: OpId) -> bool {
     let Some(copy) = data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_COPY) else {
         return false;
@@ -1098,12 +1121,10 @@ fn is_pointer(
     let rampoint;
     let constant = data.vbank().get(vn)?;
     if constant.get_type_read_facing(op).get_metatype() == type_metatype::TYPE_PTR {
-        // Stack-base storage acquires a pointer type even if its value is only
-        // copied out as a word index. That type does not establish a DATA use.
         if spc.get_word_size() != 1
             && !constant.is_type_lock()
             && copies_to_inferred_stack_base(data, op)
-            && search_for_space_attribute(data, vn, op).is_none_or(|access| access.get_index() != spc.get_index())
+            && lacks_word_address_use(data, spc, vn, op, OpCode::CPUI_COPY, numeric, &op_addr)
         {
             return None;
         }
@@ -1197,12 +1218,7 @@ fn is_pointer(
         if !declared_ok {
             return None;
         }
-        if spc.get_word_size() != 1
-            && search_for_space_attribute(data, vn, op)
-                .is_none_or(|access| access.get_index() != spc.get_index())
-            && !(crate::kuna_inferfuncentry::entry_escape_applies(opc, numeric.contains(&vn_offset))
-                && kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr))
-        {
+        if spc.get_word_size() != 1 && lacks_word_address_use(data, spc, vn, op, opc, numeric, &op_addr) {
             return None;
         }
         rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;
