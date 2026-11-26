@@ -1,0 +1,8 @@
+# Checked out with LF on every platform, whatever core.autocrlf says: the test
+# harness, the Ghidra oracle dumps and the include_str! goldens compare bytes,
+# and a CRLF checkout makes them fail on Windows.
+decompiler/** text=auto eol=lf
+scripts/** text=auto eol=lf
+specs/** text=auto eol=lf
+tests/** text=auto eol=lf
+tools/** text=auto eol=lf
