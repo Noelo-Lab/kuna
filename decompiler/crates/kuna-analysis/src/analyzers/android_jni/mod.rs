@@ -279,23 +279,28 @@ fn exported(addr: u64, name: &str) -> Option<NativeMethod> {
 fn read_table(
     image: &Image,
     site: trace::Registration,
+    trace: &trace::Sites,
     width: u32,
     budget: &mut usize,
 ) -> Option<Vec<(u64, Binding)>> {
-    let class = image.string(site.class)?;
+    let string = |va| {
+        let s = image.string(va)?;
+        (!trace.modified(va, s.len() as u64 + 1)).then_some(s)
+    };
+    let class = string(site.class)?;
     if !valid_class(&class) || site.count == 0 || site.count > 65535 {
         return None;
     }
     let stride = u64::from(width) * 3;
     let size = site.count.checked_mul(stride)?;
-    if size > image.data(site.table)?.len() as u64 {
+    if size > image.data(site.table)?.len() as u64 || trace.modified(site.table, size) {
         return None;
     }
     let mut rows = Vec::new();
     for i in 0..site.count {
         let row = site.table.checked_add(i * stride)?;
-        let name = image.string(image.pointer(row, width)?)?;
-        let desc = image.string(image.pointer(row.checked_add(width.into())?, width)?)?;
+        let name = string(image.pointer(row, width)?)?;
+        let desc = string(image.pointer(row.checked_add(width.into())?, width)?)?;
         let addr = image.entry(image.pointer(row.checked_add(2 * u64::from(width))?, width)?)?;
         if !valid_name(&name) || signature(&desc).is_none() {
             return None;
@@ -348,8 +353,9 @@ pub fn registrations(
             continue;
         };
         if name == "JNI_OnLoad" {
-            for site in trace::sites(&image, arch, sym.address(), sym.size()) {
-                if let Some(rows) = read_table(&image, site, width, &mut budget) {
+            let trace = trace::sites(&image, arch, sym.address(), sym.size());
+            for &site in &trace.found {
+                if let Some(rows) = read_table(&image, site, &trace, width, &mut budget) {
                     for (addr, binding) in rows {
                         bindings.entry(addr).or_default().insert(binding);
                     }

@@ -3370,7 +3370,11 @@ JNI_OnLoad, a bounded instruction walk follows the environment through
 GetEnv or AttachCurrentThread and the class through FindClass. At a proven
 RegisterNatives call it resolves the constant table and count, checks the
 relocated name and descriptor and the executable implementation address, and
-binds each unambiguous Java method at that address. The entries are available
+binds each unambiguous Java method at that address. The walk stays inside
+JNI_OnLoad, so a registration made by a helper it calls is not recovered. A
+table, or a class, name or descriptor string, that the walk stores into or
+whose address it passes to code it does not model is not read from the image,
+because its contents may differ at run time. The entries are available
 to function enumeration and to single-function decompilation in a fresh
 process. A managed reference in the descriptor establishes the ordinary JNI
 ABI. A descriptor consisting entirely of primitives can also describe an

@@ -203,15 +203,39 @@ impl Abi {
     }
 }
 
+/// The registrations found, and the image memory the walk may have changed.
+#[derive(Default)]
+pub(super) struct Sites {
+    pub found: Vec<Registration>,
+    written: Vec<(u64, u64)>,
+    escaped: BTreeSet<u64>,
+}
+
+impl Sites {
+    /// Did the walk store into `[start, start + len)`, or pass an address inside it to unknown code?
+    pub fn modified(&self, start: u64, len: u64) -> bool {
+        let end = start.saturating_add(len);
+        self.written.iter().any(|&(a, b)| a < end && start < b)
+            || self.escaped.range(start..end).next().is_some()
+    }
+}
+
 struct Walk<'a, 'd> {
     image: &'a Image<'d>,
     arch: &'a Architecture,
     abi: Abi,
     code_space: i32,
     found: BTreeSet<Registration>,
+    sites: Sites,
 }
 
 impl Walk<'_, '_> {
+    fn wrote(&mut self, Slot(place, at, width): Slot) {
+        if place == Place::Data {
+            self.sites.written.push((at, at.saturating_add(u64::from(width))));
+        }
+    }
+
     fn load(&self, st: &State, address: Value, width: u32) -> Option<Value> {
         if width == self.abi.width {
             match address {
@@ -368,7 +392,11 @@ impl Walk<'_, '_> {
                 }
             }
             (Some(Value::Function { .. }), _) => {}
-            _ => st.0.retain(|slot, _| matches!(slot.0, Place::Register(_))),
+            _ => {
+                let args = [a0, a1, a2, a3].into_iter().flatten();
+                self.sites.escaped.extend(args.filter_map(Value::constant));
+                st.0.retain(|slot, _| matches!(slot.0, Place::Register(_)));
+            }
         }
         self.abi.after_call(st, self.arch);
         st.write(self.abi.result, result);
@@ -394,6 +422,7 @@ impl Walk<'_, '_> {
                     return;
                 };
                 let value = self.value(st, &op.ins[2]);
+                self.wrote(dst);
                 st.write(dst, value);
             }
             _ => {
@@ -407,6 +436,7 @@ impl Walk<'_, '_> {
                     register(out).unwrap()
                 };
                 let value = self.compute(st, op, out.size);
+                self.wrote(dest);
                 st.write(dest, value);
             }
         }
@@ -420,16 +450,16 @@ pub(super) fn sites(
     arch: &Architecture,
     start: u64,
     size: u64,
-) -> Vec<Registration> {
+) -> Sites {
     let Some(abi) = Abi::new(image, arch) else {
-        return vec![];
+        return Sites::default();
     };
     let Some(code) = arch.manage().get_default_code_space() else {
-        return vec![];
+        return Sites::default();
     };
     let translate = arch.translate();
     let Some(_scope) = translate.decode_context_scope() else {
-        return vec![];
+        return Sites::default();
     };
     let Some(mapped) = translate
         .loader_rc()
@@ -437,11 +467,11 @@ pub(super) fn sites(
         .ok()
         .and_then(|l| l.shared_bytes())
     else {
-        return vec![];
+        return Sites::default();
     };
     if image.file.architecture() == object::Architecture::Arm {
         let Ok(var) = arch.with_context_db_mut(|db| db.get_variable(b"TMode")) else {
-            return vec![];
+            return Sites::default();
         };
         let word = var.get_word() as usize;
         let bits = var.get_mask() << var.get_shift();
@@ -449,14 +479,14 @@ pub(super) fn sites(
         let (prev_mask, prev_value) = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, prev_mask | bits, (prev_value & !bits) | value);
         if _scope.protect_variable(b"TMode").is_err() {
-            return vec![];
+            return Sites::default();
         }
     }
     let start = image.pc(start);
     let mut st = State::default();
     st.write(abi.sp, Some(Value::Stack(0)));
     let Some(vm) = abi.argument(&st, 0) else {
-        return vec![];
+        return Sites::default();
     };
     st.write(vm, Some(Value::Vm));
     let mut walk = Walk {
@@ -465,6 +495,7 @@ pub(super) fn sites(
         abi,
         code_space: code.get_index(),
         found: BTreeSet::new(),
+        sites: Sites::default(),
     };
     let end = start.saturating_add(if size == 0 { 8192 } else { size.min(32768) });
     let mut queue = VecDeque::from([(start, st)]);
@@ -535,7 +566,9 @@ pub(super) fn sites(
             queue.push_back((pc + len as u64, st));
         }
     }
-    walk.found.into_iter().collect()
+    let mut sites = walk.sites;
+    sites.found = walk.found.into_iter().collect();
+    sites
 }
 
 fn discard_temporaries(st: &mut State, arch: &Architecture) {
@@ -551,6 +584,45 @@ fn discard_temporaries(st: &mut State, arch: &Architecture) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_table_or_string_the_walk_may_have_changed_is_not_read() {
+        let bytes = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/android-jni/aarch64-linux-android.so"
+        ));
+        let file = object::File::parse(&bytes[..]).unwrap();
+        let image = Image {
+            file: &file,
+            bytes,
+            pointers: std::cell::OnceCell::new(),
+        };
+        let site = Registration {
+            class: 0x5c0,
+            table: 0x8938,
+            count: 2,
+        };
+        let rows = |sites: &Sites| {
+            super::super::read_table(&image, site, sites, 8, &mut (1 << 20)).map(|r| r.len())
+        };
+        assert_eq!(rows(&Sites::default()), Some(2));
+        let stored = Sites {
+            written: vec![(0x8938 + 16, 0x8938 + 24)],
+            ..Sites::default()
+        };
+        assert_eq!(rows(&stored), None);
+        let escaped = Sites {
+            escaped: BTreeSet::from([0x5c4]),
+            ..Sites::default()
+        };
+        assert_eq!(rows(&escaped), None);
+        let elsewhere = Sites {
+            written: vec![(0x8930, 0x8938)],
+            escaped: BTreeSet::from([0x5d3]),
+            ..Sites::default()
+        };
+        assert_eq!(rows(&elsewhere), Some(2));
+    }
 
     #[test]
     fn another_get_env_interface_replaces_an_existing_jni_environment() {
