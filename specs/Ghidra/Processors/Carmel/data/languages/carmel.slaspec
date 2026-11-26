@@ -670,7 +670,7 @@ define token wide (48)
     wide_shift_source_tail = (0,8)
     wide_shift_immediate = (24,30) signed
 
-    wide_guard_bit_op = (10,11)
+    wide_bit_op = (10,11)
     wide_guard_bit_port = (2,4)
 
     wide_0_10 = (0,10)
@@ -4479,11 +4479,12 @@ wide_unary_gate: "CE2" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank
     local gate:2 = enabled | ((CECFG2 >> 11) & 2);
     export gate;
 }
-wide_guard_bit_index: "#"^index is wide_40_45 & wide_0_1 [ index = wide_40_45 | (wide_0_1 << 6); ] {
+wide_bit_index: "#"^index is wide_40_45 & wide_0_1 [ index = wide_40_45 | (wide_0_1 << 6); ] {
     export *[const]:1 index;
 }
 
-@define WIDE_GUARD_BIT "wide_right_mode=1 & wide_14_22=0x134 & wide_2_9>=0x80 & wide_2_9<=0x85 & wide_unary_gate & wide_guard_bit_port & wide_guard_bit_index"
+@define WIDE_BIT "wide_right_mode=1 & wide_14_22=0x134 & wide_unary_gate & wide_bit_index"
+@define WIDE_GUARD_BIT "$(WIDE_BIT) & wide_2_9>=0x80 & wide_2_9<=0x85 & wide_guard_bit_port"
 
 macro wide_guard_bit_write(gate, guard, value) {
     if ((gate & 1) == 0) goto <feedback>;
@@ -4492,29 +4493,137 @@ macro wide_guard_bit_write(gate, guard, value) {
     publish_ce_feedback(EST & 0xcfff, EST);
 }
 
-:TESTBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=0 {
+:TESTBIT wide_unary_gate wide_guard_bit_port,wide_bit_index is $(WIDE_GUARD_BIT) & wide_bit_op=0 {
     local flags:2 = EST & 0xcfff;
     if ((wide_unary_gate & 1) == 0) goto <feedback>;
-    local mask:1 = 1:1 << wide_guard_bit_index;
+    local mask:1 = 1:1 << wide_bit_index;
     flags = (flags & 0xfff7) | (zext((wide_guard_bit_port & mask) == 0) << 3);
   <feedback>
     publish_ce_feedback(flags, EST);
 }
 
 # The mutation input mux sees zero, even though its guard write port is connected.
-:SETBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=1 {
-    wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 1:1 << wide_guard_bit_index);
+:SETBIT wide_unary_gate wide_guard_bit_port,wide_bit_index is $(WIDE_GUARD_BIT) & wide_bit_op=1 {
+    wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 1:1 << wide_bit_index);
 }
 
-:CHANGEBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=2 {
-    wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 1:1 << wide_guard_bit_index);
+:CHANGEBIT wide_unary_gate wide_guard_bit_port,wide_bit_index is $(WIDE_GUARD_BIT) & wide_bit_op=2 {
+    wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 1:1 << wide_bit_index);
 }
 
-:CLEARBIT wide_unary_gate wide_guard_bit_port,wide_guard_bit_index is $(WIDE_GUARD_BIT) & wide_guard_bit_op=3 {
+:CLEARBIT wide_unary_gate wide_guard_bit_port,wide_bit_index is $(WIDE_GUARD_BIT) & wide_bit_op=3 {
     wide_guard_bit_write(wide_unary_gate, wide_guard_bit_port, 0:1);
 }
 
 @undef WIDE_GUARD_BIT
+
+wide_bit_mutation: "SETBIT" is wide_bit_op=1 { export 1:1; }
+wide_bit_mutation: "CHANGEBIT" is wide_bit_op=2 { export 2:1; }
+wide_bit_mutation: "CLEARBIT" is wide_bit_op=3 { export 3:1; }
+
+macro wide_bit_mask(index, mask) {
+    # The bit unit spans 40 bits. Bound the host shift without wrapping the architectural index.
+    mask = (1:8 << (index & 63)) * zext(index < 40);
+}
+
+macro wide_bit_modify(operation, value, mask, result) {
+    result = value | mask;
+    if (operation == 1) goto <done>;
+    result = value ^ mask;
+    if (operation == 2) goto <done>;
+    result = value & ~mask;
+  <done>
+}
+
+:TESTBIT wide_unary_gate "RN1",wide_bit_index is $(WIDE_BIT) & wide_2_9=0xa9 & wide_bit_op=0 {
+    local flags:2 = EST & 0xcfff;
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local mask:8;
+    wide_bit_mask(wide_bit_index, mask);
+    local value:8 = sext(RN1);
+    flags = (flags & 0xfff7) | (zext((value & mask) == 0) << 3);
+  <feedback>
+    publish_ce_feedback(flags, EST);
+}
+
+:^wide_bit_mutation wide_unary_gate "RN1",wide_bit_index is $(WIDE_BIT) & wide_2_9=0xa9 & wide_bit_mutation {
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local mask:8;
+    local result:2;
+    wide_bit_mask(wide_bit_index, mask);
+    wide_bit_modify(wide_bit_mutation, RN1, mask:2, result);
+    RN1 = result;
+  <feedback>
+    publish_ce_feedback(EST & 0xcfff, EST);
+}
+
+:TESTBIT wide_unary_gate "A0",wide_bit_index is $(WIDE_BIT) & wide_2_9=0x88 & wide_bit_op=0 {
+    local flags:2 = EST & 0xcfff;
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local mask:8;
+    local value:8;
+    wide_bit_mask(wide_bit_index, mask);
+    compact_long_sample(A0L, A0H, GB0, value);
+    flags = (flags & 0xfff7) | (zext((value & mask) == 0) << 3);
+  <feedback>
+    publish_ce_feedback(flags, EST);
+}
+
+:^wide_bit_mutation wide_unary_gate "A0",wide_bit_index is $(WIDE_BIT) & wide_2_9=0x88 & wide_bit_mutation {
+    local flags:2 = EST & 0xcfff;
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local mask:8;
+    local value:8;
+    local result:8;
+    wide_bit_mask(wide_bit_index, mask);
+    compact_long_sample(A0L, A0H, GB0, value);
+    wide_bit_modify(wide_bit_mutation, value, mask, result);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    flags = (flags & 0xfff7) | (zext(result == 0) << 3);
+  <feedback>
+    publish_ce_feedback(flags, EST);
+}
+
+:TESTBIT wide_unary_gate "long *R0",wide_bit_index is $(WIDE_BIT) & wide_2_9=0x40 & wide_bit_op=0 {
+    local flags:2 = EST & 0xcfff;
+    if (wide_unary_gate == 0) goto <feedback>;
+    local address:2 = R0;
+    local next:2 = address + 1;
+    local low:2 = *[data]:2 address;
+    local high:2 = *[data]:2 next;
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local mask:8;
+    wide_bit_mask(wide_bit_index, mask);
+    local value:4 = (zext(high) << 16) | zext(low);
+    local tested:8 = sext(value);
+    flags = (flags & 0xfff7) | (zext((tested & mask) == 0) << 3);
+  <feedback>
+    publish_ce_feedback(flags, EST);
+}
+
+:^wide_bit_mutation wide_unary_gate "long *R0",wide_bit_index is $(WIDE_BIT) & wide_2_9=0x40 & wide_bit_mutation {
+    local flags:2 = EST & 0xcfff;
+    if (wide_unary_gate == 0) goto <feedback>;
+    local address:2 = R0;
+    local next:2 = address + 1;
+    local low:2 = *[data]:2 address;
+    local high:2 = *[data]:2 next;
+    if ((wide_unary_gate & 1) == 0) goto <feedback>;
+    local mask:8;
+    local result:8;
+    wide_bit_mask(wide_bit_index, mask);
+    local value:8 = (zext(high) << 16) | zext(low);
+    wide_bit_modify(wide_bit_mutation, value, mask, result);
+    *[data]:2 address = result:2;
+    *[data]:2 next = result(2);
+    flags = (flags & 0xfff7) | (zext(result == 0) << 3);
+  <feedback>
+    publish_ce_feedback(flags, EST);
+}
+
+@undef WIDE_BIT
 
 # Family 50's short port is not the full register selector with its high bit
 # restored: 0x7e samples signed FF1 alone; 0x7d and 0x7f are open on select operators.

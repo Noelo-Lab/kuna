@@ -4606,6 +4606,20 @@ the corresponding address-enable bit is set. Both CE feedback bits sample
 incoming `EST`, before the new Z becomes visible. The two unallocated guard
 selectors do not lift.
 
+Covered wide `TESTBIT`, `SETBIT`, `CHANGEBIT`, and `CLEARBIT` forms
+use the full eight-bit immediate. The bit unit is 40 bits wide: an index
+of 40 or higher selects no bit. `TESTBIT` sign-extends the `RN1` word or
+the long indirect `R0` value before testing. A long DATA operand uses
+the lower 16 bits at the original pointer and the upper 16 bits at the
+next word; there is no pointer update. Its mutations use zero-extended
+DATA, set the zero flag from the 40-bit result, and store only the low 32
+bits, so indices 32–39 can affect the flag but cannot wrap into a DATA
+write. `A0` mutations also set the zero flag from the full result; `RN1`
+mutations only write the low word and leave the zero flag alone.
+Predicated forms sample incoming CE state, and a veto suppresses the
+architectural write and zero-flag update. The separate guard byte path
+retains its own rules.
+
 Wide `MIN2` and `MAX2` compare their two signed 16-bit lanes independently,
 ignoring source guard bytes. Full results take their guard from the sign of
 the selected upper word. Strict left wins shift into `BTR1` for the upper

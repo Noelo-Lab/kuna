@@ -1166,6 +1166,92 @@ fn wide_guard_bit_ports() {
 }
 
 #[test]
+fn wide_bit_index_uses_the_entire_immediate_and_target_width() {
+    for (index, port, operation, a0, rn1, zero) in [
+        (39, 0x88, 2, 0x8020002001, 1, false),
+        (40, 0x88, 1, 0x0020002001, 1, false),
+        (64, 0x88, 2, 0x0020002001, 1, false),
+        (15, 0xa9, 2, 0x0020002001, 0x8001, false),
+        (16, 0xa9, 2, 0x0020002001, 1, false),
+        (255, 0xa9, 2, 0x0020002001, 1, false),
+        (128, 0xa9, 0, 0x0020002001, 1, true),
+    ] {
+        let left = 0x807f38 | (index & 63) << 16;
+        let right = 0xcd0000 | operation << 10 | port << 2 | index >> 6;
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0x0020002001), ("RN1", 1), ("CETBL", 0xffff)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("RN1"), m.reg("EST")), (a0, rn1, 0x3000 | u64::from(zero) << 3),
+                   "{left:06x}{right:06x}");
+    }
+}
+
+#[test]
+fn wide_bit_index_does_not_wrap_the_long_data_bit() {
+    for (index, high) in [(16, 1), (31, 0x8000), (32, 0), (64, 0), (255, 0)] {
+        let left = 0x807f38 | (index & 63) << 16;
+        let right = 0xcd1900 | index >> 6;
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0xffff), ("CETBL", 0xffff)]);
+        m.seed_data(0xffff, 0x403);
+        m.seed_data(1, 0xabcd);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("R0"), m.data(0xffff), m.data(0), m.data(1)),
+                   (0x3000, 0xffff, 0x403, high, 0xabcd), "bit {index}");
+    }
+}
+
+#[test]
+fn wide_bit_index_separates_alu_flags_and_data_writeback_width() {
+    for (index, est) in [(32, 0x3000), (39, 0x3000), (40, 0x3008), (255, 0x3008)] {
+        let left = 0x807f38 | (index & 63) << 16;
+        let right = 0xcd1900 | index >> 6;
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x40), ("CETBL", 0xffff)]);
+        m.seed_data(0x42, 0xabcd);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.data(0x40), m.data(0x41), m.data(0x42)),
+                   (est, 0, 0, 0xabcd), "bit {index}");
+    }
+}
+
+#[test]
+fn wide_bit_index_tests_sign_extended_inputs() {
+    for (right, index, est) in [
+        (0xcd12a4, 16, 0x3000), (0xcd12a4, 39, 0x3000), (0xcd12a4, 40, 0x3008),
+        (0xcd1100, 32, 0x3000), (0xcd1100, 39, 0x3000), (0xcd1100, 40, 0x3008),
+    ] {
+        let left = 0x807f38 | index << 16;
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("RN1", 0x8001), ("R0", 0x40), ("CETBL", 0xffff)]);
+        m.seed_data(0x40, 1);
+        m.seed_data(0x41, 0x8000);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("RN1"), m.data(0x40), m.data(0x41)),
+                   (est, 0x8001, 1, 0x8000), "{right:06x}: bit {index}");
+    }
+}
+
+#[test]
+fn wide_bit_index_qualifiers_sample_incoming_feedback() {
+    for (left, tested_est) in [(0x287f38, 0x1008), (0x687f38, 0x1000)] {
+        let mut m = Machine::new(
+            0, &[(left, 0xcd12a4), (NOP, NOP), (NOP, NOP)], &[(0, 4, 6), (2, 1, 6), (4, 1, 0)], None,
+        );
+        m.seed(&[("RN1", 1), ("CETBL", 0xaa55), ("CECFG1", 8), ("CECFG2", 8)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("RN1"), m.reg("EST")), (1, tested_est));
+        assert_eq!(m.step(), 12);
+        assert_eq!(m.reg("EST"), if tested_est & 8 == 0 { 0x1000 } else { 0x2008 });
+    }
+}
+
+#[test]
 fn wide_logic_flags_include_the_guard_even_when_the_word_result_is_zero() {
     let mut m = Machine::new(0, &[(0xc9c1a7, 0xea8222), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
     m.seed(&[("A0", 0xcc00000000), ("A1", 0), ("R0", 64), ("EST", 0x3000)]);
