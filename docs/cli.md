@@ -616,7 +616,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `format [<func>::]<addr> hex\|dec\|oct\|bin\|char [<value>]` | the form the constant read by the instruction at `<addr>` is printed in |
 | `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
-| `data <addr> <C typedeclaration>` | a named, typed global at an address |
+| `data <addr\|[space,addr]> <C typedeclaration>` | a named, typed global, optionally in a named processor space |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
 | `jumptable <site> <target> [<target> ...]` | every taken destination of a computed branch, in hexadecimal code addresses |
@@ -641,6 +641,14 @@ including a `typedef` you asserted earlier in the same run.
 A `data` declaration replaces inferred strings that overlap its byte range,
 including one that runs past either end. Interior named data and previous
 explicit declarations retain their mappings.
+
+The bare address retains the default mapping. To select another processor space,
+use `[space,addr]` as one token with the exact, case-sensitive space name. The
+hexadecimal address is in that space's addressable units: `[mem,0x181]` on AVR
+means byte `0x181` in `mem`, while `[code,0x181]` means word `0x181` (byte `0x302`)
+in `code`. An unknown space or out-of-range address is reported as a rejected
+assertion, and an unknown space's message lists the target's processor spaces;
+`--assert-strict` exits nonzero.
 
 **`name`/`type` reach the register locals, not just the stack ones.** A local
 kuna prints with a storage comment — `unsigned long v6; // rax` — has no symbol
