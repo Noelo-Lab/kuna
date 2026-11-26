@@ -1732,8 +1732,9 @@ into line positions and local ranges (parameters, `this` included, start at addr
 into an op with its register uses in JVM push order and its def, each with a category
 mask (int-like, float, long, double, reference): an invoke absorbs the `move-result` that
 follows it, `fill-array-data` reads and redefines its array (so `new int[]{...}` keeps the
-array on the stack), and a `new-instance` whose constructor call follows in the same block
-with nothing touching the register between becomes one op defining the constructed object.
+array on the stack), and a `new-instance` whose register every path from it carries, within
+a few blocks and without another read or write, to one `<init>` call on it becomes one op at
+that call defining the constructed object (`new T(...)`, arguments computed before it).
 Blocks start at branch targets, after branches, returns and throws, at try boundaries and
 at handlers; a block in a try range has its handlers as exception successors, and
 reachability follows normal edges and the handlers of blocks with a throwing instruction.
@@ -1769,8 +1770,11 @@ pending stack, and an op folds pending values into its operands only when they f
 of that stack in the operand order the JVM evaluates (`aput`, `iput` and `sput` push their
 operands in a different order than Dalvik lists them); every other pending value is flushed
 first, in Dalvik order, as a store, so no side effect, load or exception moves past another.
-A statement flushes everything pending before it is written. A join whose phi receives a
-constant on every incoming edge (a materialised boolean, `c ? 5 : 7`; d8 often hoists one
+A statement flushes everything pending before it is written. A copy of a parameter (`move`, as d8 writes
+for methods with many registers, `this` included) whose parameter register nothing writes is
+not stored: each use reads the parameter's own local, so `super(...)` is called on `this`
+and parameters keep their names. A join whose phi receives a
+constant (or a copy of one) on every incoming edge (a materialised boolean, `c ? 5 : 7`; d8 often hoists one
 constant above the branch) gets the constant pushed on each edge instead: a predecessor that
 jumps or falls into the join pushes its constant last, and a conditional or switch edge
 lands on a stub that pushes it, the stubs laid out right before the join as javac's arms are.

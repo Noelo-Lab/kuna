@@ -152,10 +152,12 @@ pub struct Method<'d, 'a> {
     pub ref_type: BTreeMap<u32, Vec<u8>>,
     /// The declaring class's descriptor, for `this` in the local table.
     pub this_desc: Vec<u8>,
-    /// `(block, register, predecessor)` to the constant def arriving on that edge.
+    /// `(block, register, predecessor)` to the constant or `move` def arriving on that edge.
     pub edge_const: BTreeMap<(u32, u32, u32), u32>,
     /// Registers live into some exception handler (a bit per register).
     pub handler_live: Vec<u64>,
+    /// Per parameter: no instruction writes its register.
+    pub clean_param: Vec<bool>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -240,12 +242,25 @@ impl<'d, 'a> Method<'d, 'a> {
             this_desc: Vec::new(),
             edge_const: BTreeMap::new(),
             handler_live: Vec::new(),
+            clean_param: Vec::new(),
         };
         m.build_ops()?;
         m.build_blocks()?;
         m.fuse_constructors()?;
         m.number_values()?;
         m.infer_types()?;
+        m.clean_param = m
+            .params
+            .iter()
+            .map(|&(r, c)| {
+                !m.ops.iter().any(|o| {
+                    o.def.as_ref().is_some_and(|d| {
+                        let (lo, hi) = (d.reg, d.reg + size(d.mask) as u32);
+                        lo < r + size(c) as u32 && r < hi
+                    })
+                })
+            })
+            .collect();
         Ok(m)
     }
 
@@ -484,39 +499,71 @@ impl<'d, 'a> Method<'d, 'a> {
         })
     }
 
-    /// Pairs each `new-instance` with the `<init>` call on the same register
-    /// later in the same block, when nothing between reads or writes that
-    /// register; the pair becomes one op defining it.
+    /// Pairs each `new-instance` with the `<init>` call on its register that
+    /// every path from it reaches first, within a few blocks and without
+    /// another read or write of the register or a loop back; the pair
+    /// becomes one op defining the register at the call.
     fn fuse_constructors(&mut self) -> Result<()> {
         let touches = |r: u32, m: Mask, reg: u32| r == reg || (is_wide(m) && r + 1 == reg);
         for k in 0..self.ops.len() {
-            if self.ops[k].insn.op != 0x22 {
+            if self.ops[k].insn.op != 0x22 || !self.blocks[self.ops[k].block as usize].reachable {
                 continue;
             }
-            let (reg, ty, block) = (self.ops[k].insn.a, self.ops[k].insn.idx, self.ops[k].block);
-            for j in k + 1..self.ops.len() {
-                let o = &self.ops[j];
-                if o.block != block {
+            let (reg, ty, home) = (self.ops[k].insn.a, self.ops[k].insn.idx, self.ops[k].block);
+            let mut init: Option<usize> = None;
+            let mut seen = std::collections::BTreeSet::new();
+            let mut work = vec![k + 1];
+            let mut ok = true;
+            while let Some(start) = work.pop() {
+                if start >= self.ops.len() || seen.len() > 64 {
+                    ok = false;
                     break;
                 }
-                let is_init = matches!(o.insn.op, 0x70 | 0x76)
-                    && o.uses.first().is_some_and(|u| u.reg == reg)
-                    && self.dex.method(o.insn.idx)?.class == ty
-                    && self.dex.string(self.dex.method(o.insn.idx)?.name)? == b"<init>";
-                if is_init && !o.uses[1..].iter().any(|u| touches(u.reg, u.mask, reg)) {
-                    self.ops[k].kind = Kind::Absorbed;
-                    self.ops[k].def = None;
-                    let o = &mut self.ops[j];
-                    o.kind = Kind::NewObject { ty };
-                    o.uses.remove(0);
-                    o.def = Some(Def { reg, mask: L, id: 0 });
+                let b = self.ops[start].block as usize;
+                let mut reached = false;
+                for j in start..self.blocks[b].end {
+                    let o = &self.ops[j];
+                    let is_init = matches!(o.insn.op, 0x70 | 0x76)
+                        && o.uses.first().is_some_and(|u| u.reg == reg)
+                        && self.dex.method(o.insn.idx)?.class == ty
+                        && self.dex.string(self.dex.method(o.insn.idx)?.name)? == b"<init>";
+                    if is_init && !o.uses[1..].iter().any(|u| touches(u.reg, u.mask, reg)) {
+                        ok &= init.is_none_or(|i| i == j);
+                        init = Some(j);
+                        reached = true;
+                        break;
+                    }
+                    if o.uses.iter().any(|u| touches(u.reg, u.mask, reg))
+                        || o.def.as_ref().is_some_and(|d| touches(d.reg, d.mask, reg))
+                    {
+                        ok = false;
+                        break;
+                    }
+                }
+                if !ok {
                     break;
                 }
-                if o.uses.iter().any(|u| touches(u.reg, u.mask, reg))
-                    || o.def.as_ref().is_some_and(|d| touches(d.reg, d.mask, reg))
-                {
+                if reached {
+                    continue;
+                }
+                let succs = &self.blocks[b].succs;
+                if succs.is_empty() || succs.contains(&home) {
+                    ok = false;
                     break;
                 }
+                for &s in succs {
+                    if seen.insert(s) {
+                        work.push(self.blocks[s as usize].start);
+                    }
+                }
+            }
+            if let (true, Some(j)) = (ok, init) {
+                self.ops[k].kind = Kind::Absorbed;
+                self.ops[k].def = None;
+                let o = &mut self.ops[j];
+                o.kind = Kind::NewObject { ty };
+                o.uses.remove(0);
+                o.def = Some(Def { reg, mask: L, id: 0 });
             }
         }
         Ok(())
@@ -890,6 +937,42 @@ impl<'d, 'a> Method<'d, 'a> {
         !phi
     }
 
+    /// The constant op a value holds: its def, or the def a `move` copies.
+    pub fn const_op(&self, v: u32) -> Option<usize> {
+        let k = *self.def_op.get(v as usize)?;
+        let o = self.ops.get(k)?;
+        match o.insn.op {
+            0x12..=0x1c => Some(k),
+            0x01..=0x09 if o.kind == Kind::Plain => {
+                let src = *self.def_op.get(o.uses[0].val as usize)?;
+                self.ops.get(src).filter(|s| matches!(s.insn.op, 0x12..=0x1c)).map(|_| src)
+            }
+            _ => None,
+        }
+    }
+
+    /// The parameter a value copies when it is a `move` of a parameter (or
+    /// of such a copy) whose JVM local nothing else writes: each use of the
+    /// copy can then read the parameter's own local.
+    pub fn param_copy(&self, v: u32) -> Option<usize> {
+        let mut v = v;
+        for _ in 0..4 {
+            let k = *self.def_op.get(v as usize)?;
+            if (v as usize) < self.params.len() && k == usize::MAX {
+                return self.clean_param[v as usize].then_some(v as usize);
+            }
+            let o = self.ops.get(k)?;
+            if !matches!(o.insn.op, 0x01..=0x09) || o.kind != Kind::Plain || self.named_def(k) {
+                return None;
+            }
+            if self.web_uses.get(&self.root(v)).is_none_or(|w| w.1) {
+                return None;
+            }
+            v = o.uses[0].val;
+        }
+        None
+    }
+
     /// Whether debug info names the register an op defines right after it.
     pub fn named_def(&self, k: usize) -> bool {
         let o = &self.ops[k];
@@ -1133,7 +1216,7 @@ impl Flow {
                 continue;
             }
             let k = m.def_op[inc as usize];
-            if k < m.ops.len() && matches!(m.ops[k].insn.op, 0x12..=0x1c) {
+            if m.ops.get(k).is_some_and(|o| matches!(o.insn.op, 0x01..=0x09 | 0x12..=0x1c)) {
                 m.edge_const.insert((s, r as u32, from), inc);
             } else {
                 m.edge_const.remove(&(s, r as u32, from));

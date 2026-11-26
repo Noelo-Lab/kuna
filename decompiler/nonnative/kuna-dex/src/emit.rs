@@ -179,9 +179,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 continue;
             }
             let web = &members[&root];
-            let consts = web.iter().all(|&v| {
-                v == phi || m.def_op.get(v as usize).is_some_and(|&k| k < m.ops.len() && matches!(m.ops[k].insn.op, 0x12..=0x1c))
-            });
+            let consts = web.iter().all(|&v| v == phi || m.const_op(v).is_some());
             if !consts {
                 continue;
             }
@@ -197,7 +195,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             let mut edges = Vec::new();
             for &p in &preds[ju] {
                 match m.edge_const.get(&(j, r, p)) {
-                    Some(&v) if p != j && m.root(v) == root => edges.push((p, m.def_op[v as usize])),
+                    Some(&v) if p != j && m.root(v) == root => edges.push((p, m.const_op(v).expect("constant"))),
                     _ => break,
                 }
             }
@@ -342,7 +340,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             return Ok(());
         }
         if let Some(d) = &o.def {
-            if m.inline_const(d.id) {
+            if m.inline_const(d.id) || m.param_copy(d.id).is_some() {
                 return Ok(());
             }
         }
@@ -537,6 +535,12 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         }
         if m.inline_const(v) {
             return self.push_const(m.def_op[v as usize], c);
+        }
+        if let Some(p) = m.param_copy(v) {
+            let (reg, pc) = m.params[p];
+            let s = self.slot(reg, pc)?;
+            self.asm.local(op::ILOAD, kind(pc), s, size(pc));
+            return Ok(());
         }
         let d = m.def_op[v as usize];
         if d < m.ops.len() && self.deferred[d] {
