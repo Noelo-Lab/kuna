@@ -1,11 +1,13 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="auto">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kuna — an agent-first decompiler</title>
 <meta name="description" content="Kuna is a self-refining decompiler built to be used by agents: loosely based on Ghidra's decompiler, written in Rust, and runnable from the CLI, inside Ghidra, or entirely in the browser.">
-<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141110" media="(prefers-color-scheme: dark)">
 <link rel="icon" type="image/png" href="./assets/img/favicon.png">
 <link rel="stylesheet" href="./assets/css/site.css">
 </head>
@@ -15,7 +17,10 @@
 <header class="top">
   <div class="wrap">
     <a class="brand" href="./">
-      <img src="./assets/img/kuna-mark.svg" alt="">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="./assets/img/kuna-mark-dark.svg">
+        <img src="./assets/img/kuna-mark.svg" alt="">
+      </picture>
       <span class="wordmark">Kuna</span>
       <span class="at">an agent&#8209;first decompiler</span>
     </a>
@@ -64,8 +69,11 @@
       </div>
 
       <div>
-        <img class="mark" src="./assets/img/kuna-mark.svg"
-             alt="The kuna mark: an eel coiled around a target.">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="./assets/img/kuna-lockup-dark.svg">
+          <img class="mark" src="./assets/img/kuna-lockup-light.svg" width="1160" height="454"
+               alt="kuna: an eel coiled around a target, beside the kuna wordmark.">
+        </picture>
         <ul class="facts">
           <li><b>built on</b> Rust &middot; SLEIGH</li>
           <li><b>runs in</b> CLI &middot; the browser (wasm) &middot; Ghidra GUI (extension)</li>

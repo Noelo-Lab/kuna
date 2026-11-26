@@ -6,7 +6,8 @@
    two typefaces, its flat 1px rules. The layout is kuna's own — a tool page,
    not a lab page: one display line, then everything in monospace.
 
-   Light, flat, monospace. Black, white, and the red out of the mark.
+   Flat, monospace. Black, white, and the red out of the mark; the landing
+   page also has a dark theme, picked by the reader's system setting.
    ========================================================================= */
 
 /* ── Fonts ──────────────────────────────────────────────────────────────── */
@@ -53,6 +54,38 @@
 
   --pad:clamp(20px,5vw,48px);
   --gutter:clamp(24px,4.5vw,56px);
+}
+
+/* Dark tokens follow the reader's system theme on pages that opt in with
+   <html data-theme="auto">; the palette is /decompile's dark one. dev-viz
+   keeps the light page because its charts carry fixed light colors. */
+@media (prefers-color-scheme:dark){
+  :root[data-theme=auto]{
+    color-scheme:dark;
+
+    --paper:#141110;
+    --paper-2:#1B1716;
+    --ink:#EDE7E5;
+    --ink-2:#C9C0BD;
+    --muted:#A39894;
+    --rule:#2A2321;
+    --rule-2:#3A3230;
+    --red:#E8404E;
+
+    --on-ink:#3A3230;
+    --on-ink-red:#B80D1E;
+
+    --tok-com:#A39894;
+    --tok-str:#A9CC82;
+    --tok-chr:#7FC4A0;
+    --tok-num:#E6AE5C;
+    --tok-kw:#F26D77;
+    --tok-type:#6CC3C3;
+    --tok-fn:#F6F1EF;
+    --tok-glob:#A39894;
+    --stub:#C7B1EA;
+    --ok:#8CC58E;
+  }
 }
 
 /* ── Base ───────────────────────────────────────────────────────────────── */
@@ -143,7 +176,7 @@ p{margin:0;}
 .cmd .p{color:var(--red);}
 .cmd .c{color:var(--muted);}
 
-.mark{width:min(150px,60%);margin:2px 0 0;}
+.mark{width:100%;margin:2px 0 0;}
 .facts{list-style:none;margin:20px 0 0;padding:16px 0 0;border-top:1px solid var(--rule);
   display:flex;flex-direction:column;gap:8px;font-size:.75rem;line-height:1.6;}
 .facts li{color:var(--ink-2);}
@@ -322,7 +355,7 @@ body.app main{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;}
      to shrink under it — the column (and the page) then overflow instead of
      .cmd scrolling inside its own overflow-x:auto box. */
   .hero{grid-template-columns:minmax(0,1fr);gap:36px;}
-  .mark{width:132px;}
+  .mark{width:min(240px,70%);}
   .facts{max-width:46ch;}
   .goals{grid-template-columns:1fr;gap:28px;}
   .panes{grid-template-columns:1fr;}

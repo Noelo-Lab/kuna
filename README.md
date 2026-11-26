@@ -1,7 +1,10 @@
 # Kuna
 
 <p align="center">
-   <img src="./assets/kuna_transparent.png" style="width: 30%;" alt="Kuna Logo"/>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./integrations/web/assets/img/kuna-lockup-dark.svg">
+    <img src="./integrations/web/assets/img/kuna-lockup-light.svg" width="360" alt="kuna">
+  </picture>
 </p>
 
 An agent-first decompiler designed to be refined by other agents.
