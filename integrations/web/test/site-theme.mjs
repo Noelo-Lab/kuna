@@ -1,11 +1,12 @@
 // site-theme.mjs — the landing page's light and dark themes in headless Chrome,
 // served straight from the source tree (no build needed): every <picture> loads
 // its -dark.svg under prefers-color-scheme: dark and its light file otherwise,
-// a theme change swaps them without a reload, every swapped image is served,
+// a theme change swaps them without a reload, every image is served and decodes,
 // the page never scrolls sideways from 320 to 1920 px in either theme, and
 // /dev-viz/ stays light when the system is dark (it does not opt in).
 //
-// Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
+// Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22),
+// except under CI (the CI variable is set), where either is a failure.
 //
 // Usage:  node integrations/web/test/site-theme.mjs
 import assert from 'node:assert/strict';
@@ -16,8 +17,9 @@ import { serveStatic } from './worker-harness.mjs';
 
 const chromePath = findChrome();
 if (!chromePath || typeof WebSocket !== 'function') {
-  console.log(`SITE THEME SKIPPED — ${chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)'}`);
-  process.exit(0);
+  const why = chromePath ? 'this Node has no global WebSocket (need 22+)' : 'no Chrome found (set CHROME=...)';
+  console.log(`SITE THEME ${process.env.CI ? 'FAIL' : 'SKIPPED'} — ${why}`);
+  process.exit(process.env.CI ? 1 : 0);
 }
 
 const site = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,6 +29,7 @@ const guard = setTimeout(() => { console.error('SITE THEME FAIL — timed out');
 
 const PAPER = { light: 'rgb(255, 255, 255)', dark: 'rgb(20, 17, 16)' };
 const pictures = `[...document.querySelectorAll('picture img')].map((img) => img.currentSrc)`;
+const decoded = `[...document.querySelectorAll('picture img')].every((img) => img.complete && img.naturalWidth > 0)`;
 
 try {
   const page = await openPage(chrome.port);
@@ -39,10 +42,12 @@ try {
   await page.waitFor(`${pictures}.length >= 2 && ${pictures}.every(Boolean)`, { what: 'pictures load' });
   const light = await page.evaluate(pictures);
   assert.ok(light.every((src) => !src.endsWith('-dark.svg')), `light theme loaded a dark image: ${light}`);
+  await page.waitFor(decoded, { what: 'the light images decode' });
   assert.equal(await paper(), PAPER.light);
 
   await scheme('dark');
   await page.waitFor(`${pictures}.every((src) => src.endsWith('-dark.svg'))`, { what: 'pictures swap to -dark.svg without a reload' });
+  await page.waitFor(decoded, { what: 'the dark images decode' });
   assert.equal(await paper(), PAPER.dark);
   const dark = await page.evaluate(pictures);
 

@@ -1418,7 +1418,8 @@ skips it as too costly):
    tree with no build: each `<picture>` loads its `-dark.svg` only under a dark system
    theme and swaps without a reload when the theme changes, every swapped image is served,
    no width from 320 to 1920 px scrolls sideways in either theme, and `/dev-viz/` stays
-   light. Unlike the five above it runs in CI, in the Pages workflow.
+   light. Unlike the five above it runs in CI, in the Tests workflow on every pull request,
+   where a missing Chrome fails it instead of skipping it.
    The filter's DOM half was verified the same way during development (raw CDP): 16
    checks on `sample.elf` — row hiding is `display:none` and not the `.fn` flex rule,
    header and stub-divider counts, the invalid-regex report, `/`-to-focus, `Escape`,
