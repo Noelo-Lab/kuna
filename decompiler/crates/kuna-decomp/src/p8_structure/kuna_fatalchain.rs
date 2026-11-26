@@ -35,7 +35,7 @@ use crate::context::BlockId;
 use crate::funcdata::Funcdata;
 use crate::p8_structure::kuna_tailform as tf;
 
-pub(crate) fn enabled(data: &Funcdata) -> bool {
+fn enabled(data: &Funcdata) -> bool {
     data.get_arch().cond_fold_noreturn
 }
 
@@ -43,7 +43,7 @@ pub(crate) fn enabled(data: &Funcdata) -> bool {
 /// subroutine that does not return, and that call carries the warning the
 /// printer shows as `// no-return` (a flow cut at the next function's entry
 /// carries another one).
-pub(crate) fn noreturn_tail(data: &Funcdata, bb: BlockId) -> bool {
+fn noreturn_tail(data: &Funcdata, bb: BlockId) -> bool {
     use crate::op::pcodeop_flags as f;
     let Some(op) = data.bb_op_tail(bb).and_then(|t| data.obank().get(t)) else {
         return false;
@@ -69,7 +69,7 @@ pub(crate) fn noreturn_tail(data: &Funcdata, bb: BlockId) -> bool {
 /// The chains `C1 -> C2 -> .. -> Ck` (k >= 2) of two-way blocks whose other
 /// out-edge each reaches the same no-return block `t`, where every later `Ci`
 /// is entered only from `C(i-1)` and `t` is entered only from the chain.
-pub(crate) fn chains(data: &Funcdata) -> Vec<(BlockId, Vec<BlockId>)> {
+fn chains(data: &Funcdata) -> Vec<(BlockId, Vec<BlockId>)> {
     let bg = data.bblocks_ref();
     let mut out = Vec::new();
     for i in 0..data.bblocks_get_size() {
@@ -154,10 +154,12 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
                 continue;
             }
             let a = start(data, c);
-            if data.condstmts_seed().contains(&a) || (high && !fits(data, c)) {
-                continue;
-            }
-            if !high && crate::p8_structure::kuna_condfold::block_carries_comment(data, &data.bb_ops(c)) {
+            let ok = if high {
+                fits(data, c)
+            } else {
+                !crate::p8_structure::kuna_condfold::block_carries_comment(data, &data.bb_ops(c))
+            };
+            if !ok || data.condstmts_seed().contains(&a) {
                 continue;
             }
             complex.remove(&c);
