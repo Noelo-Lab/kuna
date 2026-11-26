@@ -1768,10 +1768,14 @@ included) overlaps it, some Varnode starting there is defined or read by an op
 other than an `INDIRECT` (so the body prints it), every variable holding such
 a Varnode takes its name from the slot (its name representative is stored
 there, so the naming walk binds it to the new symbol rather than to a register
-it was merged with), and no Varnode straddles its first byte. The symbol is an
-`undefined<N>` as wide as the widest Varnode starting there, so the reference
-and the accesses bind to one name, `&v2` and `*v2`, and `variables` reports the
-slot. The decision waits for the final
+it was merged with), and no Varnode straddles its first byte. The symbol is as
+wide as the widest Varnode starting there and takes the type of the one
+variable stored there when that type has the same width (otherwise it is an
+`undefined<N>`), so the reference and the accesses bind to one name, `&v2` and
+`*v2`, and `variables` reports the slot. A variadic prototype maps nothing: its
+unclaimed slots are the variadic arguments, and `va_start` takes the address of
+the first one as the start of the overflow area (printed from the CFA on System V
+x86-64), not of a scratch local. The decision waits for the final
 prototype because during `mainloop` the parameter list is not yet known, and
 mapping the slot then would claim a stack parameter's storage as a local. A
 reference to the start of an object whose accesses all lie past its first byte

@@ -93,9 +93,14 @@ fn slot_object(fd: &Funcdata, addr: &Address) -> Option<(i32, Vec<HighVariableId
 }
 
 /// Map each unclaimed address-taken parameter-area slot the body reads or writes as a
-/// local of the width those accesses use, when every variable printing it is named
-/// from the slot. Run after the prototype is final and its parameter symbols are linked.
+/// local of the width and type those accesses use, when every variable printing it is
+/// named from the slot. A variadic function's unclaimed slots are its variadic
+/// arguments, not scratch, and stay unmapped. Run after the prototype is final and its
+/// parameter symbols are linked.
 pub(crate) fn map(fd: &mut Funcdata) {
+    if fd.get_func_proto().is_dotdotdot() {
+        return;
+    }
     let Some(space) = fd.get_scope_local().map(|lm| Rc::clone(lm.get_space_id())) else {
         return;
     };
@@ -119,6 +124,7 @@ pub(crate) fn map(fd: &mut Funcdata) {
         let Some((width, highs)) = slot_object(fd, &addr) else {
             continue;
         };
+        let highs_len = highs.len();
         if !fd.get_func_proto().get_param_range().in_range(&addr, width) {
             continue;
         }
@@ -128,15 +134,21 @@ pub(crate) fn map(fd: &mut Funcdata) {
         if !lm.in_scope(&addr, width) || lm.database().find_overlap(lm.scope_id(), &addr, width).is_some() {
             continue;
         }
-        let named_here = highs.into_iter().all(|high| {
-            fd.high_name_representative(high)
-                .and_then(|rep| fd.vbank().get(rep))
-                .is_some_and(|rep| rep.get_addr() == &addr)
-        });
-        if !named_here {
+        let mut reps = Vec::with_capacity(highs.len());
+        for high in highs {
+            match fd.high_name_representative(high).and_then(|rep| fd.vbank().get(rep)) {
+                Some(rep) if rep.get_addr() == &addr => reps.push(Rc::clone(rep.get_type())),
+                _ => break,
+            }
+        }
+        if reps.len() != highs_len {
             continue;
         }
-        let Ok(ct) = types.get_base(width, crate::dtype::type_metatype::TYPE_UNKNOWN) else {
+        let declared = match reps.as_slice() {
+            [only] if only.get_size() == width => types.concretize(Rc::clone(only)).ok(),
+            _ => None,
+        };
+        let Some(ct) = declared.or_else(|| types.get_base(width, crate::dtype::type_metatype::TYPE_UNKNOWN).ok()) else {
             continue;
         };
         if let Some(lm) = fd.get_scope_local_mut() {
