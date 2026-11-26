@@ -3494,6 +3494,98 @@ macro wide_routed_arithmetic(left, right, adjust, subtract, word_result, data_re
     *[data]:2 address = result(2);
 }
 
+# The extended source selector supplies a DATA route, not the extra word.
+round_extended: "DATA" is wide_0_1=3 & wide_40_45>=0x20 {}
+round_high_address: "A0L" is carmel_of_route=2 { export A0L; }
+round_high_address: "0" is carmel_of_route=3 { export 0:2; }
+
+round_gate: "" is carmel_issue=5 & wide_left_mode=1 { export 3:2; }
+round_gate: "CE1" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank=0 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local gate:2 = enabled | ((CECFG1 >> 11) & 2);
+    export gate;
+}
+round_gate: "CE2" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    local gate:2 = enabled | ((CECFG2 >> 11) & 2);
+    export gate;
+}
+
+macro wide_round_write_long(address, low, high, flags) {
+    local scale:4 = zext((ECFG >> 5) & 1);
+    local bits:4 = zext(high);
+    local upper:4 = bits >> scale;
+    local midpoint:1 = low == 0x8000;
+    local above:1 = low > 0x8000;
+    if (scale == 0) goto <apply_round>;
+    local extra_bit:1 = (high & 1) != 0;
+    midpoint = extra_bit && low == 0;
+    above = extra_bit && low != 0;
+  <apply_round>
+    local increment:1 = above || (midpoint && ((ECFG & 2) == 0 || (upper & 1) != 0));
+    upper = upper + zext(increment);
+    # A signed 32-bit input can extend positively, but cannot overflow the 40-bit adder.
+    local sign:4 = 0x8000 >> scale;
+    local carry_out:1 = upper == sign * 2;
+    local negative:1 = high >= 0x8000 && !carry_out;
+    local extend:1 = high < 0x8000 && upper == sign;
+    flags = zext(carry_out) | (zext(upper == 0 || carry_out) << 3) |
+            (zext(negative) << 4) | (zext(extend) * 0x24);
+    if (!extend || ((ECFG & 4) == 0 && (ECFG & 0x28) != 8)) goto <store>;
+    upper = sign - 1;
+  <store>
+    local word:4 = (upper & (sign * 2 - 1)) | (zext(negative) * scale << 15);
+    local second:2 = address + 1;
+    *[data]:2 address = 0;
+    *[data]:2 second = word:2;
+}
+
+@define WIDE_ROUND_DATA "wide_right_mode=1 & wide_10_22=0x10b6 & round_gate"
+:ROUND round_gate "long *R1+=RN1",round_extended^":"^round_high_address is $(WIDE_ROUND_DATA) & wide_2_9=0x49 & round_extended & round_high_address {
+    local gate:2 = round_gate;
+    local flags:2 = EST & 0x3f;
+    if (gate == 0) goto <done>;
+    local address:2 = R1;
+    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+    if ((gate & 1) == 0) goto <done>;
+    local low:2 = *[data]:2 0xffff:2;
+    local high:2 = *[data]:2 round_high_address;
+    wide_round_write_long(address, low, high, flags);
+  <done>
+    publish_alu_ce((EST & 0xcfc0) | flags);
+}
+
+:ROUND round_gate "long *R1+=RN1","long *R1" is $(WIDE_ROUND_DATA) & wide_2_9=0x49 & wide_40_45=1 & wide_0_1=1 {
+    local gate:2 = round_gate;
+    local flags:2 = EST & 0x3f;
+    if (gate == 0) goto <done>;
+    local address:2 = R1;
+    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+    if ((gate & 1) == 0) goto <done>;
+    local low:2;
+    local high:2;
+    wide_unary_data_read(address, 2:2, low, high);
+    wide_round_write_long(address, low, high, flags);
+  <done>
+    publish_alu_ce((EST & 0xcfc0) | flags);
+}
+
+:ROUND round_gate "*R1+=RN1",round_extended is $(WIDE_ROUND_DATA) & wide_2_9=9 & round_extended {
+    local gate:2 = round_gate;
+    local flags:2 = EST & 0x3f;
+    if (gate == 0) goto <done>;
+    local address:2 = R1;
+    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+    if ((gate & 1) == 0) goto <done>;
+    local word:2 = *[data]:2 0xffff:2;
+    *[data]:2 address = word;
+    flags = (zext(word == 0) << 3) | (zext(word >= 0x8000) << 4);
+  <done>
+    publish_alu_ce((EST & 0xcfc0) | flags);
+}
+
 # These implicit DATA operands need established OF context, not a CODE-address guess.
 :SUBRC1 "CE1" "long *R1+="^wide_shift_dst_disp,"*R3+RN3",alias_of_word is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & logic_ce_bank=0 & wide_alias_add_op=3 & wide_alias_add_dst=0x71 & wide_alias_add_lhs=0xf5 & wide_40_45=0x2b & wide_0_0=0 & wide_shift_dst_disp & carmel_of_route=2 & alias_of_word {
     local enabled:2;

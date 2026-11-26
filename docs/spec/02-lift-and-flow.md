@@ -4055,6 +4055,25 @@ suppress the address update when the override is enabled. The disconnected
 latches its first input into `X1` and sends the high result word to
 `INTBASE` without driving arithmetic status.
 
+Covered wide `ROUND` forms capture the original `R1` DATA address before
+the indexed `RN1` update. An explicit long `*R1` source samples that word
+and its wrapping successor before either is written. The extended selector
+instead takes its low input from `DATA[0xffff]`. For a long result, its high
+input needs an established operand-fetch context: the reset route uses
+`DATA[A0L]`, and the observed subsequent route uses `DATA[0]`. Neither is
+the encoded extra word, and an unknown high route remains unimplemented.
+The short result uses only the implicit low input and leaves the second
+destination word unchanged.
+
+The long operation rounds ties upward or to even according to `ECFG.R`.
+`SR1` moves the rounding boundary one bit higher before scaling the long
+result; automatic limiting or unscaled saturation clamps a positive
+extension before the store, while arithmetic status describes the
+pre-limit result. The two DATA words are stored at the captured address
+and its wrapping successor. Unqualified forms execute independently of the
+CE table and still publish CE feedback. A qualifier vetoes the store and
+arithmetic flag update, but its AGU override still permits the `R1` update.
+
 Covered wide accumulating multiply forms distinguish guard and control
 writeback. The guard adds its unsigned byte at bit 16, or at bit zero
 for the shifted-addend variant, and takes bits 16–23 of the sum. It

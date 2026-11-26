@@ -3997,6 +3997,116 @@ fn carmel_pstatus_mac_refreshes_the_active_nested_frame_in_emitted_c() {
     }
 }
 
+#[test]
+fn carmel_wide_round_captures_split_data_and_gates_writeback() {
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    const ENTRY: u32 = 0x1000;
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let binary = common::scratch_file("carmel-wide-round", "bin");
+    let cold = [0xae, 0, 0, 0xc2, 0xd9, 0x27];
+    let qualified = [0x2e, 0x80, 0xa1, 0xc2, 0xd9, 0x27];
+    fs::write(&binary, [cold, RET].as_flattened()).unwrap();
+    let (stdout, stderr, status) = common::run_kuna(&[
+        "raw-pcode", binary.to_str().unwrap(), "0x1000", "--addr", "--raw-image",
+        "--target", TARGET, "--base", "0x1000", "--count", "1", "--json",
+    ]);
+    let unknown: Value = serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{stdout}\n{stderr}"));
+    assert_eq!(status, 1, "{unknown}");
+    assert_eq!(unknown["error"]["address"], ENTRY, "{unknown}");
+    assert!(unknown["instructions"].as_array().unwrap().is_empty(), "{unknown}");
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        fs::remove_file(binary).unwrap();
+        return;
+    }
+
+    let specs = binary.with_extension("specs");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let cells = [0u16, 0xffff, 0x7000, 0x80a1, 0x4040, 0x4041, 0x4042, 0x4043];
+    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for addr in cells {
+        writeln!(emitted, "volatile unsigned short cell_{addr:04x};").unwrap();
+    }
+    for (name, packet, warm, route, r1) in [
+        ("cold", cold, false, 2, 0x4040),
+        ("warm", [0xae, 0x80, 0xa1, 0xc2, 0xd9, 0x27], true, 3, 0x4040),
+        ("short", [0xae, 0x80, 0xa1, 0xc2, 0xd8, 0x27], false, 0, 0x4040),
+        ("wrap", [0x81, 0x80, 0xa1, 0xc2, 0xd9, 0x25], false, 0, 0xffff),
+        ("ce1", qualified, false, 2, 0x4040),
+        ("ce2", [0x6e, 0x80, 0xa1, 0xc2, 0xd9, 0x27], false, 2, 0x4040),
+    ] {
+        tracked_carmel_entry_specs(&specs, &[("R1", r1), ("A0L", 0x7000)], ENTRY + 2 * u32::from(warm), route);
+        let mut body = Vec::new();
+        if warm {
+            body.extend_from_slice(&NOP);
+        }
+        body.extend([packet, NOP, NOP, NOP, NOP, RET].into_iter().flatten());
+        fs::write(&binary, body).unwrap();
+        for (register, suffix) in [("EST", "est"), ("R1", "r1")] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).env("KUNA_SPECS", &specs).args([
+                "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{register} unsigned short"),
+            ]);
+            for (i, register) in ["RN1", "RM0", "RL0", "PACFG", "ECFG", "EST", "CECFG1", "CECFG2", "CETBL"]
+                .into_iter().enumerate()
+            {
+                kuna.args(["--assert", &format!("param {i} %{register} unsigned short in_{i}")]);
+            }
+            for addr in cells {
+                kuna.args(["--assert", &format!("data [data,{addr:#x}] volatile unsigned short cell_{addr:04x}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let [function] = json["functions"].as_array().unwrap().as_slice() else { panic!("{json}"); };
+            assert!(function["error"].is_null(), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|entry| entry["status"] == "applied"), "{json}");
+            let code = function["code"].as_str().unwrap();
+            assert!(!code.contains("halt_"), "{function}");
+            writeln!(emitted, "{}", code.replace("sub_1000", &format!("{name}_{suffix}"))).unwrap();
+        }
+    }
+    emitted.push_str("int main(void) {\n");
+    // Each pair of calls starts with fresh DATA, including the aliased wrap destination.
+    for (i, (name, cfg, table, ecfg, low, high, zero, est, r1, writes)) in [
+        ("cold", 0, 0, 0, 0x8123, 0x83ef, 0x2495, 0x10, 0x4043, &[(0x4040, 0), (0x4041, 0x83f0)][..]),
+        ("cold", 0, 0, 0, 0x8000, 0xffff, 0x2495, 9, 0x4043, &[(0x4040, 0), (0x4041, 0)]),
+        ("cold", 0, 0, 0x20, 0x8000, 0xfffe, 0x2495, 0x10, 0x4043, &[(0x4040, 0), (0x4041, 0xffff)]),
+        ("cold", 0, 0, 0, 0x8000, 0, 0x2495, 0, 0x4043, &[(0x4040, 0), (0x4041, 1)]),
+        ("cold", 0, 0, 2, 0x8000, 0, 0x2495, 8, 0x4043, &[(0x4040, 0), (0x4041, 0)]),
+        ("cold", 0, 0, 8, 0x8000, 0x7fff, 0x2495, 0x24, 0x4043, &[(0x4040, 0), (0x4041, 0x7fff)]),
+        ("cold", 0, 0, 0x24, 0x8123, 0x7fff, 0x2495, 0x24, 0x4043, &[(0x4040, 0), (0x4041, 0x3fff)]),
+        ("warm", 0, 0, 0, 0x8123, 0x83ef, 0x2495, 0, 0x4043, &[(0x4040, 0), (0x4041, 0x2496)]),
+        ("short", 0, 0, 0x24, 0x8123, 0x83ef, 0x2495, 0x10, 0x4043, &[(0x4040, 0x8123)]),
+        ("wrap", 0, 0, 0, 0x8123, 0x83ef, 0x1357, 0, 2, &[(0xffff, 0), (0, 0x1358)]),
+        ("ce1", 0, 0, 0, 0x8123, 0x83ef, 0x2495, 0, 0x4040, &[]),
+        ("ce1", 0x1000, 0, 0, 0x8123, 0x83ef, 0x2495, 0, 0x4043, &[]),
+        ("ce1", 0, 1, 0, 0x8123, 0x83ef, 0x2495, 0x1010, 0x4043, &[(0x4040, 0), (0x4041, 0x83f0)]),
+        ("ce2", 0, 0x100, 0, 0x8123, 0x83ef, 0x2495, 0x2010, 0x4043, &[(0x4040, 0), (0x4041, 0x83f0)]),
+    ].into_iter().enumerate() {
+        let before = [zero, low, high, 0xfedc, 0x5725, 0x9a7b, 0x81e7, 0x55aa];
+        for (j, (suffix, result)) in [("est", est), ("r1", r1)].into_iter().enumerate() {
+            for (addr, value) in cells.into_iter().zip(before) {
+                writeln!(emitted, "cell_{addr:04x} = {value:#x};").unwrap();
+            }
+            write!(emitted, "if ({name}_{suffix}(3,0,0,0,{ecfg:#x},0,{cfg:#x},{cfg:#x},{table:#x}) != {result:#x}").unwrap();
+            for (addr, value) in cells.into_iter().zip(before) {
+                let after = writes.iter().find(|(cell, _)| *cell == addr).map_or(value, |(_, v)| *v);
+                write!(emitted, " || cell_{addr:04x} != {after:#x}").unwrap();
+            }
+            writeln!(emitted, ") return {};", 1 + i * 2 + j).unwrap();
+        }
+    }
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
