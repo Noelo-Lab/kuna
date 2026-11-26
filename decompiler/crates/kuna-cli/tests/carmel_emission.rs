@@ -3821,6 +3821,112 @@ fn carmel_wide_control_alu_routes_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_wide_short_sources_keep_carry_data_width_and_veto_separate() {
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    let binary = common::scratch_file("carmel-wide-short-address", "bin");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    for packet in [
+        [0x3d, 0x91, 0x26, 0x80, 0x21, 0x23],
+        [0x3f, 0x91, 0x26, 0x80, 0x21, 0x23],
+        [0x3f, 0x91, 0x26, 0x90, 0x84, 0xcb],
+        [0x30, 0x91, 0x26, 0x87, 0x11, 0x7f],
+    ] {
+        fs::write(&binary, [packet, ret].as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), "0x1000", "--raw-image", "--target", TARGET,
+            "--base", "0x1000", "--count", "1", "--json",
+        ]);
+        let out: Value = serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{stdout}\n{stderr}"));
+        assert_eq!(status, 1, "{out}");
+        assert!(out["instructions"].as_array().unwrap().is_empty(), "{out}");
+    }
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        fs::remove_file(binary).unwrap();
+        return;
+    }
+    let specs = binary.with_extension("specs");
+    tracked_carmel_entry_specs(&specs, &[("R0", 0x40), ("R2", 0x8040), ("R5", 0x4048)], 0x1000, 0);
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short old, next, low, high, in_low, in_high;\n",
+    );
+    let mut calls = String::from("int main(void) {\nin_low = 0xacf1; in_high = 0xde23;\n");
+    let carry = [0x0d, 0, 0, 0x91, 0x17, 0x19];
+    let carry2 = [0x2b, 0xec, 0, 0x12, 0x0e, 0x9f];
+    let word = [0x3f, 0, 0, 0x86, 0x21, 0x23];
+    let ff = [0x3e, 0, 0x26, 0x86, 0x84, 0xcb];
+    for (index, (packet, prefix, reg, check)) in [
+        (word, Some(carry), "R0", "ret == 0x41 && old == 0x6946 && next == 0x2345"),
+        (word, None, "EST", "ret == 0x3000 && old == 0x6945 && next == 0x2345"),
+        (word, None, "R0", "ret == 0x41 && old == 0xabcd && next == 0x2345"),
+        (word, None, "R0", "ret == 0x40 && old == 0xabcd && next == 0x2345"),
+        (ff, None, "EST", "ret == 0x3001 && low == 0xda73 && high == 0x21db"),
+        (ff, None, "EST", "ret == 0x3001 && low == 0xed39 && high == 0x10ed"),
+        ([0x3e, 0, 0x26, 0x86, 0x04, 0xcb], None, "EST", "ret == 0x3001 && low == 0x21db && high == 0xdf23"),
+        ([0x30, 0, 0, 0x87, 0x11, 0x23], None, "A0L", "ret == 0x7b79"),
+        ([0x3f, 0, 0, 0x8f, 0x11, 0x23], Some(carry), "A0L", "ret == 0x6945"),
+        ([0x3f, 0, 0, 0x8f, 0x11, 0x23], Some(carry2), "A0L", "ret == 0x6946"),
+        ([0x3f, 0, 0, 0x87, 0x11, 0x23], Some(carry2), "A0L", "ret == 0x6945"),
+        ([0x3f, 0, 0, 0x8f, 0x11, 0x23], Some(carry2), "EST", "ret == 0x3240"),
+        ([0x7f, 0, 0, 0x86, 0x21, 0x23], None, "R0", "ret == 0x41 && old == 0xabcd && next == 0x2345"),
+    ].into_iter().enumerate() {
+        let mut image = prefix.into_iter().collect::<Vec<_>>();
+        image.extend_from_slice(&[packet, nop, nop, nop, ret]);
+        fs::write(&binary, image.as_flattened()).unwrap();
+        let mut args = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        args.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000", "--json",
+            "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            "--assert", "data [data,0x40] volatile unsigned short old",
+            "--assert", "data [data,0x41] volatile unsigned short next",
+            "--assert", "data [data,0x8040] volatile unsigned short low",
+            "--assert", "data [data,0x8041] volatile unsigned short high",
+            "--assert", "data [data,0x406e] volatile unsigned short in_low",
+            "--assert", "data [data,0x406f] volatile unsigned short in_high",
+        ]);
+        let mut inputs = vec![
+            ("EST", 0), ("ECFG", if index == 5 { 32 } else { 0 }),
+            ("CECFG1", if matches!(index, 3 | 12) { 0 } else { 0x1000 }), ("CECFG2", 0x1000),
+            ("CETBL", if index == 12 { 0x00ff } else if matches!(index, 2 | 3) { 0 } else { 0xffff }),
+            ("A1L", 0x96ba), ("FF1", 0x8765), ("FF2", if index == 5 { 0x1234 } else { 0x5432 }),
+            ("PACFG", 0), ("RM0", 0), ("RL0", 0x1234), ("A0L", 0x8721),
+        ];
+        if prefix == Some(carry) {
+            inputs.extend_from_slice(&[("A4L", 0xffff), ("A4H", 0xffff), ("GB4", 0xff),
+                                       ("A5L", 1), ("A5H", 0), ("GB5", 0)]);
+        } else if prefix == Some(carry2) {
+            inputs.extend_from_slice(&[("A4L", 0xffff), ("X2", 1)]);
+        }
+        for (i, (input, _)) in inputs.iter().enumerate() {
+            let ty = if input.starts_with("GB") { "unsigned char" } else { "unsigned short" };
+            args.args(["--assert", &format!("param {i} %{input} {ty} p_{}", input.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut args);
+        let out: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &out["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let emitted = function["code"].as_str().unwrap();
+        assert!(!emitted.contains("halt_"), "{function}");
+        writeln!(c, "{}", emitted.replace("sub_1000", &format!("route_{index}"))).unwrap();
+        let values = inputs.iter().map(|(_, value)| value.to_string()).collect::<Vec<_>>().join(",");
+        writeln!(calls, "{{ old = 0xabcd; next = 0x2345; low = 0xa321; high = 0xdf23; \
+                  unsigned ret = route_{index}({values}); if (!({check})) return {}; }}", index + 1).unwrap();
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_trap_flushes_the_next_issue_or_follows_its_vector_and_stacks_the_resume() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

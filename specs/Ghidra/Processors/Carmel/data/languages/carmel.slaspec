@@ -527,6 +527,16 @@ define token wide (48)
     wide_alias_add_dst = (9,16)
     wide_alias_add_lhs = (1,8)
     wide_40_45 = (40,45)
+    short_alu_rhs_addr = (40,42)
+    short_alu_dst_acc = (9,11)
+    short_alu_dst_lo = (9,11)
+    short_alu_dst_hi = (9,11)
+    short_alu_dst_guard = (9,11)
+    short_alu_dst_ptr = (9,11)
+    short_alu_dst_modulo = (9,11)
+    short_alu_dst_bound = (9,11)
+    short_alu_dst_mode_shift = (9,11)
+    short_alu_src_ptr = (1,3)
     wide_shift_dst_disp = (24,31) signed
     wide_shift_count_disp = (32,39) signed
 
@@ -702,6 +712,15 @@ attach variables [packed_dst_acc packed_lhs_acc packed_rhs_acc] [A0 A1 A2 A3 A4 
 attach variables [packed_dst_lo packed_lhs_lo packed_rhs_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [packed_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [packed_dst_guard packed_lhs_guard packed_rhs_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [short_alu_rhs_addr] [RL0 RL2 RM0 RM2 RL4 RL6 RM4 RM6];
+attach variables [short_alu_dst_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [short_alu_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [short_alu_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [short_alu_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [short_alu_dst_ptr short_alu_src_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [short_alu_dst_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [short_alu_dst_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [short_alu_dst_mode_shift] [0 2 4 6 8 10 12 14];
 attach variables [dual_preg_register] [_ _ _ _ _ _ _ _ _ _ A2H A3H _ _ _ _];
 attach variables [swap_reg_lo] [A0L A1L A2L A3L A4L A5L FF1 FF2];
 attach variables [swap_reg_full] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
@@ -3807,6 +3826,173 @@ wide_unary_gate: "CE2" is carmel_issue=4 & wide_left_mode=0 & unary_wide_ce_bank
     local gate:2 = enabled | ((CECFG2 >> 11) & 2);
     export gate;
 }
+# Family 50's short port is not the full register selector with its high bit
+# restored: 0x7e samples signed FF1 alone; 0x7d and 0x7f are open on select operators.
+short_alu_word: short_alu_rhs_addr is wide_40_45>=0x30 & wide_40_45<=0x37 & short_alu_rhs_addr {
+    export short_alu_rhs_addr;
+}
+short_alu_word: "FF1" is wide_40_45=0x3e { export FF1; }
+short_alu_reverse_word: short_alu_word is short_alu_word { export short_alu_word; }
+short_alu_reverse_word: "0" is (wide_40_45=0x3d | wide_40_45=0x3f) { export 0:2; }
+
+short_alu_reverse_op: "SUBR" is wide_alias_add_op=1 { export 1:2; }
+short_alu_reverse_op: "SUBRC1" is wide_alias_add_op=3 { export 3:2; }
+short_alu_reverse_op: "SUBRC2" is wide_alias_add_op=7 { export 7:2; }
+short_alu_reverse_op: "ADDABS" is wide_alias_add_op=11 { export 11:2; }
+
+@define SHORT_ALU "wide_right_mode=1 & wide_0_0=1 & wide_unary_gate"
+@define SHORT_ALU_ACC_DST "wide_alias_add_dst>=0x88 & wide_alias_add_dst<=0x8d & short_alu_dst_acc & short_alu_dst_lo & short_alu_dst_hi & short_alu_dst_guard"
+@define SHORT_ALU_LOW_SRC "wide_alias_add_lhs>=0x90 & wide_alias_add_lhs<=0x95 & packed_lhs_lo"
+@define SHORT_ALU_LONG_SRC "wide_alias_add_lhs>=0x60 & wide_alias_add_lhs<=0x67 & short_alu_src_ptr & wide_shift_dst_disp"
+@define SHORT_ALU_LONG_DST "wide_alias_add_dst>=0x40 & wide_alias_add_dst<=0x47 & short_alu_dst_ptr"
+
+macro short_alu_reverse(first, second, op, unit, word_result, data_result, result) {
+    local operation:2 = op;
+    local subtract:1 = operation != 11;
+    local left:8 = second;
+    local right:8 = first;
+    local adjust:8 = 0;
+    if (operation == 1) goto <compute>;
+    if (operation == 11) goto <absolute>;
+    local carry_mask:2 = 1;
+    if (operation == 3) goto <read_carry>;
+    carry_mask = 0x40;
+  <read_carry>
+    adjust = zext((EST & carry_mask) == 0) * unit;
+    goto <compute>;
+  <absolute>
+    if (right s>= 0) goto <compute>;
+    right = 0 - right;
+  <compute>
+    wide_routed_arithmetic(left, right, adjust, subtract, word_result, data_result, result);
+}
+
+macro short_alu_long_source(base, displacement, value) {
+    local address:2 = base + displacement;
+    local low:2;
+    local high:2;
+    wide_unary_data_read(address, 2:2, low, high);
+    value = sext(high) * 0x10000 + zext(low);
+}
+
+macro short_alu_store_long(address, result) {
+    local scaled:8 = result >> ((ECFG >> 5) & 1);
+    *[data]:2 address = scaled:2;
+    local upper:2 = address + 1;
+    *[data]:2 upper = scaled(2);
+}
+
+:short_alu_reverse_op wide_unary_gate short_alu_dst_acc,packed_lhs_lo,short_alu_reverse_word
+is $(SHORT_ALU) & $(SHORT_ALU_ACC_DST) & $(SHORT_ALU_LOW_SRC) & short_alu_reverse_op & short_alu_reverse_word {
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    local first:8 = sext(packed_lhs_lo);
+    local second:8 = sext(short_alu_reverse_word);
+    local result:8;
+    short_alu_reverse(first, second, short_alu_reverse_op, 1:8, 0:1, 0:1, result);
+    short_alu_dst_lo = result:2;
+    short_alu_dst_hi = result(2);
+    short_alu_dst_guard = result(4);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+:short_alu_reverse_op wide_unary_gate "*"^short_alu_dst_ptr^"++",packed_lhs_lo,short_alu_reverse_word
+is $(SHORT_ALU) & wide_alias_add_dst>=0x10 & wide_alias_add_dst<=0x17 & $(SHORT_ALU_LOW_SRC)
+   & short_alu_reverse_op & short_alu_reverse_word & short_alu_dst_ptr & short_alu_dst_modulo
+   & short_alu_dst_bound & short_alu_dst_mode_shift {
+    local address:2 = short_alu_dst_ptr;
+    if (wide_unary_gate == 0) goto <veto>;
+    modify_ptr(short_alu_dst_ptr, 0:2, short_alu_dst_modulo, short_alu_dst_bound, short_alu_dst_mode_shift, 2);
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    local first:8 = sext(packed_lhs_lo) * 0x10000;
+    local second:8 = sext(short_alu_reverse_word) * 0x10000;
+    local result:8;
+    short_alu_reverse(first, second, short_alu_reverse_op, 0x10000:8, 1:1, 1:1, result);
+    local scaled:8 = result >> ((ECFG >> 5) & 1);
+    *[data]:2 address = scaled(2);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+:short_alu_reverse_op wide_unary_gate "long *"^short_alu_dst_ptr,"long *"^short_alu_src_ptr^"+"^wide_shift_dst_disp,short_alu_reverse_word
+is $(SHORT_ALU) & $(SHORT_ALU_LONG_DST) & $(SHORT_ALU_LONG_SRC) & short_alu_reverse_op & short_alu_reverse_word {
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    local first:8;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    short_alu_long_source(short_alu_src_ptr, delta, first);
+    local second:8 = sext(short_alu_reverse_word);
+    local result:8;
+    short_alu_reverse(first, second, short_alu_reverse_op, 1:8, 0:1, 1:1, result);
+    short_alu_store_long(short_alu_dst_ptr, result);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+:short_alu_reverse_op wide_unary_gate "*"^short_alu_dst_ptr,"long *"^short_alu_src_ptr^"+"^wide_shift_dst_disp,short_alu_reverse_word
+is $(SHORT_ALU) & wide_alias_add_dst<=7 & short_alu_dst_ptr & $(SHORT_ALU_LONG_SRC) & short_alu_reverse_op & short_alu_reverse_word {
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    local first:8;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    short_alu_long_source(short_alu_src_ptr, delta, first);
+    local second:8 = sext(short_alu_reverse_word);
+    local result:8;
+    short_alu_reverse(first, second, short_alu_reverse_op, 1:8, 1:1, 1:1, result);
+    local scaled:8 = result >> ((ECFG >> 5) & 1);
+    *[data]:2 short_alu_dst_ptr = scaled(2);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+:ADD wide_unary_gate "long *"^short_alu_dst_ptr,"long *"^short_alu_src_ptr^"+"^wide_shift_dst_disp,short_alu_word
+is $(SHORT_ALU) & wide_alias_add_op=8 & $(SHORT_ALU_LONG_DST) & $(SHORT_ALU_LONG_SRC) & short_alu_word {
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    local first:8;
+    local delta:2 = sext(wide_shift_dst_disp:1);
+    short_alu_long_source(short_alu_src_ptr, delta, first);
+    local second:8 = sext(short_alu_word);
+    local result:8;
+    wide_routed_arithmetic(first, second, 0:1, 0:1, 0:1, 1:1, result);
+    short_alu_store_long(short_alu_dst_ptr, result);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+# A connected accumulator ADD publishes carry to the primary bank for later issues.
+:ADD wide_unary_gate short_alu_dst_acc,packed_lhs_acc,packed_rhs_acc
+is $(SHORT_ALU) & wide_alias_add_op=8 & $(SHORT_ALU_ACC_DST)
+   & wide_alias_add_lhs>=0x88 & wide_alias_add_lhs<=0x8d & packed_lhs_acc & packed_lhs_lo & packed_lhs_hi & packed_lhs_guard
+   & wide_40_45>=8 & wide_40_45<=13 & packed_rhs_acc & packed_rhs_lo & packed_rhs_hi & packed_rhs_guard {
+    if ((wide_unary_gate & 1) == 0) goto <veto>;
+    local first:8;
+    local second:8;
+    compact_long_sample(packed_lhs_lo, packed_lhs_hi, packed_lhs_guard, first);
+    compact_long_sample(packed_rhs_lo, packed_rhs_hi, packed_rhs_guard, second);
+    local result:8;
+    wide_routed_arithmetic(first, second, 0:1, 0:1, 0:1, 0:1, result);
+    short_alu_dst_lo = result:2;
+    short_alu_dst_hi = result(2);
+    short_alu_dst_guard = result(4);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+@undef SHORT_ALU_LONG_DST
+@undef SHORT_ALU_LONG_SRC
+@undef SHORT_ALU_LOW_SRC
+@undef SHORT_ALU_ACC_DST
+@undef SHORT_ALU
+
 
 macro wide_round_write_long(address, low, high, flags) {
     local scale:4 = zext((ECFG >> 5) & 1);

@@ -3949,6 +3949,20 @@ extends the inputs, while `OR` combines their unsigned bit patterns.
 A CE veto preserves the result storage and arithmetic/logic flags
 without suppressing normal CE feedback.
 
+The covered wide reversed subtract and add-absolute forms bind the
+short right source independently of the full left selector. Short
+selectors `0x7d` and `0x7f` supply zero on these operators, but are not
+ordinary `ADD` sources. Selector `0x7e` samples signed `FF1`, not the
+`FF2:FF1` pair. Reversed subtract swaps the inputs before applying the
+borrow from the selected incoming carry bank. Add-absolute takes the
+magnitude of the encoded left input. ALU flags describe the unscaled
+40-bit result, with a word destination ignoring the discarded low bits
+for the zero test. DATA writeback applies `ECFG.SR1`; a word writes the
+high half, while a long writes the low word first and wraps the next
+DATA address. The postincrement form writes the old pointer's address.
+A false predicate suppresses DATA writes and arithmetic flags, but the
+pointer still advances when the selected CE address enable is set.
+
 The compact rotate forms with indexed DATA still run their address
 generators on the secondary ALU of a parallel packet. A permitted
 postmodify updates the source pointer and any encoded destination
