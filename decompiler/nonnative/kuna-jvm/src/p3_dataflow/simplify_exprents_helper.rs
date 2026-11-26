@@ -21,7 +21,6 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
 use crate::interpreter_util::InterpreterUtil;
@@ -252,9 +251,7 @@ impl SimplifyExprentsHelper {
                 continue;
             }
 
-            if DecompilerContext::get_option(IFernflowerPreferences::REMOVE_GET_CLASS_NEW)
-                && Self::is_qualified_new_get_class(current, next)
-            {
+            if Self::is_qualified_new_get_class(current, next) {
                 list.remove_at(index);
                 res = true;
                 continue;

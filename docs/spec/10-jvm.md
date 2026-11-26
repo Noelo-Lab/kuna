@@ -429,7 +429,7 @@ alternates two views of the variables:
   become `++`/`--`; `new` followed by the constructor call becomes one constructor
   expression; the two-branch assignment of a ternary becomes `?:`; the javac null check
   `outer.getClass()` before a qualified `outer.new Inner()` is dropped
-  (`jvm_remove_getclass`); the pre-Java-5 `class$` idiom is folded into a class literal
+ ; the pre-Java-5 `class$` idiom is folded into a class literal
   (finished at class level by section 10.11).
 - **SSAU** (`decompiler/nonnative/kuna-jvm/src/p3_dataflow/ssau_constructor_sparse_ex.rs`):
   versions also change at every use, which yields a graph of definitions and uses. On

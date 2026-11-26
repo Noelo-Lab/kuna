@@ -15,7 +15,6 @@ impl IFernflowerPreferences {
     pub const DECOMPILE_INNER: &str = "decompile-inner";
     pub const DECOMPILE_GENERIC_SIGNATURES: &str = "decompile-generics";
     pub const DECOMPILE_PREVIEW: &str = "decompile-preview";
-    pub const REMOVE_GET_CLASS_NEW: &str = "remove-getclass";
     pub const LITERALS_AS_IS: &str = "keep-literals";
     pub const BOOLEAN_TRUE_ONE: &str = "boolean-as-int";
     pub const ASCII_STRING_CHARACTERS: &str = "ascii-strings";
@@ -92,7 +91,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::REMOVE_SYNTHETIC, "1".to_string()),
             (IFernflowerPreferences::DECOMPILE_INNER, "1".to_string()),
             (IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, "1".to_string()),
-            (IFernflowerPreferences::REMOVE_GET_CLASS_NEW, "1".to_string()),
             (IFernflowerPreferences::LITERALS_AS_IS, "0".to_string()),
             (IFernflowerPreferences::BOOLEAN_TRUE_ONE, "1".to_string()),
             (IFernflowerPreferences::ASCII_STRING_CHARACTERS, "0".to_string()),
@@ -193,7 +191,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "DECOMPILE_INNER", key: IFernflowerPreferences::DECOMPILE_INNER, short_name: Some("din"), name: Some("Decompile Inner Classes"), description: Some("Process inner classes and add them to the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILE_GENERIC_SIGNATURES", key: IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, short_name: Some("dgs"), name: Some("Decompile Generics"), description: Some("Decompile generics in classes, methods, fields, and variables."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILE_PREVIEW", key: IFernflowerPreferences::DECOMPILE_PREVIEW, short_name: Some("dpr"), name: Some("Decompile Preview Features"), description: Some("Decompile features marked as preview or incubating in the latest Java versions."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "REMOVE_GET_CLASS_NEW", key: IFernflowerPreferences::REMOVE_GET_CLASS_NEW, short_name: Some("rgn"), name: Some("Remove reference getClass()"), description: Some("Remove synthetic getClass() calls created by code such as 'obj.new Inner()'."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "LITERALS_AS_IS", key: IFernflowerPreferences::LITERALS_AS_IS, short_name: Some("lit"), name: Some("Keep Literals As Is"), description: Some("Keep NaN, infinities, and pi values as is without resugaring them."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "BOOLEAN_TRUE_ONE", key: IFernflowerPreferences::BOOLEAN_TRUE_ONE, short_name: Some("bto"), name: Some("Represent boolean as 0/1"), description: Some("Represent integers 0 and 1 as booleans."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "ASCII_STRING_CHARACTERS", key: IFernflowerPreferences::ASCII_STRING_CHARACTERS, short_name: Some("asc"), name: Some("ASCII String Characters"), description: Some("Encode non-ASCII characters in string and character literals as Unicode escapes."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

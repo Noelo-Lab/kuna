@@ -42,8 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| stray outer.getClass(); before outer.new Inner() | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
-| Objects.requireNonNull-like check before an inner class instantiation | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
 | access$000(this) calls left in the output | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
 | this$0 or val$name fields printed in inner classes | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
 | class$ helper calls remain in old class files | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
@@ -158,15 +156,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_remove_getclass` -- on | off, default `on`
-
-- **Symptoms:** stray outer.getClass(); before outer.new Inner(); Objects.requireNonNull-like check before an inner class instantiation.
-- **What it does:** Drop the outer.getClass() null check javac inserts before a qualified inner-class creation (outer.new Inner()).
-- **When to flip:** Turn off to keep the synthetic getClass() call, e.g. when the null check itself matters to the analysis.
-- **Where / provenance:** p3_dataflow/simplify_exprents_helper · vineflower · vineflower-option
-- **Also spelled:** `remove-getclass`, `rgn`
-- **Example:** `kuna decompile app.jar com.ex.Outer --option jvm_remove_getclass off`
 
 ### `jvm_synthetic_not_set` -- on | off, default `off`
 
