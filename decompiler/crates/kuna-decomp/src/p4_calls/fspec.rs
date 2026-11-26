@@ -7027,7 +7027,7 @@ pub struct FuncCallSpecs {
     /// (kuna) The extrapop the direct callee's own returns state. See
     /// [`crate::p4_calls::kuna_calleepurge`].
     callee_purge: Option<int4>,
-    callee_returns_pop: Option<int4>,
+    callee_return_immediate: Option<int4>,
     /// (kuna `calleeargs`) The stack-argument bytes the direct callee reads. See
     /// [`crate::p4_calls::kuna_calleestackargs`].
     callee_stack_arg_bytes: Option<crate::p4_calls::kuna_calleepurge::StackArgs>,
@@ -7081,7 +7081,7 @@ impl FuncCallSpecs {
             callee_reg_model: None,
             callee_arg_registers: 0,
             callee_purge: None,
-            callee_returns_pop: None,
+            callee_return_immediate: None,
             callee_stack_arg_bytes: None,
             callee_moves_stack: false,
             callee_stack_window: None,
@@ -7122,7 +7122,7 @@ impl FuncCallSpecs {
         res.callee_reg_model = self.callee_reg_model.clone();
         res.callee_arg_registers = self.callee_arg_registers;
         res.callee_purge = self.callee_purge;
-        res.callee_returns_pop = self.callee_returns_pop;
+        res.callee_return_immediate = self.callee_return_immediate;
         res.callee_stack_arg_bytes = self.callee_stack_arg_bytes;
         res.callee_moves_stack = self.callee_moves_stack;
         res.callee_stack_window = self.callee_stack_window;
@@ -7516,14 +7516,16 @@ impl FuncCallSpecs {
     }
 
     /// The extrapop every return the direct callee reaches takes (`ret 0xc`),
-    /// when the walk of its code followed every path, if read.
-    pub fn callee_returns_pop(&self) -> Option<int4> {
-        self.callee_returns_pop
+    /// when the walk of its code followed every path, if read: the
+    /// [`crate::p4_calls::kuna_calleepurge::PopEvidence::ReturnImmediate`]
+    /// evidence.
+    pub fn callee_return_immediate(&self) -> Option<int4> {
+        self.callee_return_immediate
     }
 
     /// Record the extrapop every reached return of the direct callee takes.
-    pub fn set_callee_returns_pop(&mut self, extrapop: Option<int4>) {
-        self.callee_returns_pop = extrapop;
+    pub fn set_callee_return_immediate(&mut self, extrapop: Option<int4>) {
+        self.callee_return_immediate = extrapop;
     }
 
     /// The stack-argument bytes the direct callee reads, if measured.

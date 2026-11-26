@@ -583,11 +583,8 @@ impl Action for ActionDefaultParams {
                     match (callee_pieces, default_fp.clone(), arch.types()) {
                         (Some(pieces), Some(dfp), Some(types)) => {
                             let mut fp = crate::fspec::FuncProto::new();
-                            let proven = if callee_model.is_none() {
-                                crate::p4_calls::kuna_calleeprotostack::unnamed_declaration_pop(data, i)
-                            } else {
-                                data.get_call_specs(i).callee_purge()
-                            };
+                            let named = callee_model.is_some();
+                            let evidence = crate::p4_calls::kuna_calleepurge::PopEvidence::of_call(data.get_call_specs(i));
                             // The host-declared model wins over defaultfp when
                             // present (Phase 3); a declaration that names none
                             // follows the image's float convention.
@@ -614,7 +611,8 @@ impl Action for ActionDefaultParams {
                                 Ok(()) => {
                                     crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                                         &mut fp,
-                                        proven,
+                                        evidence,
+                                        named,
                                     );
                                     let op = data.get_call_specs(i).get_op();
                                     (!own_slot || crate::p4_calls::kuna_slotargs::backed(data, op, &fp))
@@ -683,10 +681,11 @@ impl Action for ActionDefaultParams {
                     }
                 }
             } else if arch.callee_proto_model(data.get_call_specs(i).get_entry_address()).is_some() {
-                let proven = data.get_call_specs(i).callee_purge();
+                let evidence = crate::p4_calls::kuna_calleepurge::PopEvidence::of_call(data.get_call_specs(i));
                 crate::p4_calls::kuna_calleeprotostack::resolve_declared_extra_pop(
                     data.get_call_specs_mut(i).proto_mut(),
-                    proven,
+                    evidence,
+                    true,
                 );
             }
             if let Err(error) = crate::kuna_callmechanisms::apply_return(data, i) {

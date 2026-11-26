@@ -4888,17 +4888,26 @@ stores into a local struct. The `ret` of such a callee proves a pop of 4, and th
 call takes it. A callee that itself calls an import (`call puts`, through its
 `jmp [IAT]` thunk) cannot be read that far: the import's pop is unknown, so a
 callee built without a frame pointer reaches its `ret` with the stack pointer
-known only as a range, and nothing is proven. For a declaration that names no
-convention, the call then takes the pop every return the walk reaches adds
-(`ret` is 4, `ret 0xc` is 16), when the walk followed every path, reached no
-`int3` and fell through into no other function
-(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
-(unnamed_declaration_pop)`, read off
-`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs (callee_return_pop)`
-at flow). A declaration that names its convention, `__stdcall` included, takes
-only the proven pop, never that one. A callee whose returns disagree, or whose
-walk ran into an indirect jump, still takes the declaration's pop, and a model
-that states its own extrapop is left alone as before.
+known only as a range, and nothing is proven.
+
+The pop is therefore taken by the strength of what states it
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleepurge.rs (PopEvidence)`),
+strongest first. *Proven*: the walk found the stack pointer exactly at its entry
+value at every return. *Return immediate*: every return the walk reaches adds the
+same amount (`ret` is 4, `ret 0xc` is 16), the walk followed every path, reached
+no `int3` and fell through into no other function, and the stack pointer at each
+return is imprecise only through calls the walk could not read. If the
+imprecision is the callee's own doing (`sub esp,eax`, a stack pointer loaded from
+memory, a return reached at a known offset other than entry), the callee is a
+stack mover and states nothing. *Declared*: what the parameter list implies.
+A proven pop is taken for every declaration. A return immediate is taken only for
+a declaration that names no convention, whose default-model layout says nothing
+about cleanup; one that names its convention, `__stdcall` included, keeps its
+declared pop (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleeprotostack.rs
+(resolve_declared_extra_pop)`). A callee whose returns disagree, or whose walk
+ran into an indirect jump (a return through a popped return address included),
+keeps the declaration's pop, and a model that states its own extrapop is left
+alone as before.
 
 The same park is read a second time, at de-indirection. `ActionDefaultParams`
 runs once at the head of the function, when a `call dword ptr [IAT slot]` is
