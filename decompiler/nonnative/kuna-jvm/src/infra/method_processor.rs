@@ -6,7 +6,7 @@
 //! [`MethodProcessor::code_to_java`] directly, as Vineflower itself does when
 //! the limit is 0 or in unit-test mode.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the Java schedule
+//! kuna (`kuna_javac_layout`): the Java schedule
 //! names its method to the layout decisions, which apply only there.
 
 use std::cell::Cell;

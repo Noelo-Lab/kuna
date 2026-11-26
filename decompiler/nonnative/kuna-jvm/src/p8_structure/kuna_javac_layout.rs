@@ -1,5 +1,4 @@
-//! The kuna option `jvm_javac_layout` (`kuna_options::JAVAC_LAYOUT`): ifs and
-//! exits of classes javac compiled, written as Java, are structured the way
+//! kuna's javac layout: ifs and exits of classes javac compiled, written as Java, are structured the way
 //! javac laid out the bytecode.
 //!
 //! javac writes an if's then-branch right after the condition's last jump and
@@ -12,7 +11,7 @@
 //! `ExitHelper.removeRedundantReturns` then drops) and `if (c) continue; rest`
 //! into `if (!c) { rest }`, and keeps the condition of the block it saw first
 //! even when that is the jump's target; `buildIff` merges any if-else of two
-//! returns into one return of a ternary. With the option on, [`reorder`]
+//! returns into one return of a ternary. Instead, [`reorder`]
 //! decides from the bytecode offsets which branch javac placed first,
 //! [`reorder_last`] puts back a `continue` or `break` once loops are built,
 //! `collapseElse` and `ifElseChainDenesting` leave what javac placed first
@@ -42,7 +41,6 @@ use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
 use crate::invocation_exprent::InvocationType;
 use crate::p6_variables::kuna_source_locals;
-use crate::kuna_options::{self, JAVAC_LAYOUT};
 use crate::rt::BitSet;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
@@ -107,10 +105,9 @@ pub fn enter(mt: StructMethod, cl: StructClass) -> MethodScope {
     MethodScope(METHOD.with(|m| std::mem::replace(&mut *m.borrow_mut(), method)))
 }
 
-/// Whether the option is in effect: it is on, and a method javac compiled
-/// is being structured as Java.
+/// Whether a method javac compiled is being structured as Java.
 pub fn active() -> bool {
-    METHOD.with(|m| m.borrow().is_some()) && kuna_options::form_enabled(JAVAC_LAYOUT)
+    METHOD.with(|m| m.borrow().is_some())
 }
 
 /// Whether javac reached `next`, a successor of `block`, by a `goto` over
@@ -773,7 +770,7 @@ fn copied_exit_start(body: Statement) -> Option<i32> {
 /// statement that follows the if (or after the if's own break) its body:
 /// that body runs where the if-edge went, which is right only for the
 /// `switch` on strings the step was written for. Vineflower's own layout
-/// never leaves such an if outside a switch; the option's can (a test of
+/// never leaves such an if outside a switch; javac's can (a test of
 /// `a || b` kept as an if of its own would return the value of the code
 /// after it).
 pub fn keeps_if_edge(ifstat: IfStatement) -> bool {

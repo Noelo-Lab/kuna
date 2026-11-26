@@ -1,4 +1,4 @@
-//! The kuna option `jvm_source_locals` (`kuna_source_locals`), its declaration
+//! kuna (`kuna_source_locals`), its declaration
 //! scopes: Vineflower declares a variable in the innermost statement that holds
 //! all its uses (`VarDefinitionHelper.setVarDefinitions`), so a local the
 //! source declared before a loop, an if, a `try` or a `synchronized` block and

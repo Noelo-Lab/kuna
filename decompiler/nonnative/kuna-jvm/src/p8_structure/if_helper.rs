@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `reorderIf` takes
+//! kuna (`kuna_javac_layout`): `reorderIf` takes
 //! javac's branch order from the bytecode offsets and splits an if-else
 //! whose then-branch javac ended with a `continue` or `break`; the collapses
 //! leave two tests that jump on their own apart.
@@ -404,7 +404,7 @@ impl IfHelper {
         false
     }
 
-    /// kuna option `jvm_javac_layout`: whether javac wrote `first` as an if
+    /// kuna (`kuna_javac_layout`): whether javac wrote `first` as an if
     /// of its own, not a test of the compound condition the collapse builds.
     fn separate_tests(first: IfStatement) -> bool {
         kuna_javac_layout::active() && kuna_javac_layout::separate_test(first)

@@ -5,7 +5,7 @@
 //! here that calls the overriding view in path form and falls back to the
 //! base body (`*_base`).
 //!
-//! kuna option `jvm_source_locals` (`kuna_source_locals`): `sortIndexed`
+//! kuna (`kuna_source_locals`): `sortIndexed`
 //! orders a run of declarations by the variables' original slots.
 
 use std::cell::RefCell;

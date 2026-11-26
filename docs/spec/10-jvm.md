@@ -33,9 +33,9 @@ fixes of Vineflower's defects applies (section 10.16). The port therefore keeps
 Vineflower's pass order, its iteration orders (including the iteration order of Java's
 hash collections, which reaches the output), its id counters (which reach the output as
 `var10000` and `label7`) and its failure behaviour. Where this chapter describes a
-heuristic that looks arbitrary, it is Vineflower's, kept for that reason. kuna's options of
-form choose the source's form of equivalent code over Vineflower's (`jvm_source_locals` and
-`jvm_source_patterns`, section 10.10).
+heuristic that looks arbitrary, it is Vineflower's, kept for that reason. kuna's source forms
+choose the source's form of equivalent code over Vineflower's (source locals and source
+patterns, section 10.10).
 
 ## 10.1 The phase folders and the schedule
 
@@ -500,7 +500,7 @@ and most changes restart the loop from the top, so the order below is a priority
    (IfPatternMatchProcessor::match_instanceof)` turns `instanceof` followed by a cast into
    an `instanceof` pattern, record patterns included. (kuna) Only from javac's compiled
    pattern (fix `pattern_binding_shape`, section 10.16), and not where the line table shows
-   the cast as a statement (`jvm_source_patterns`, section 10.10).
+   the cast as a statement (source patterns, section 10.10).
 7. When the method has switches:
    `decompiler/nonnative/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs`
    rebuilds pattern switches from `SwitchBootstraps.typeSwitch` dispatch (also gated by
@@ -562,7 +562,7 @@ switch simplification once more (`FinalSimplifySwitches`) and, with `jvm_prettif
 the removal of an `else` after a branch that always returns or throws
 (`IfHelper::prettify_ifs`).
 
-**javac's block layout (kuna).** With `jvm_javac_layout` (on by default), the `if` and exit structuring of a method javac compiled (its
+**javac's block layout (kuna).** The `if` and exit structuring of a method javac compiled (its
 class carries no `kotlin.Metadata` and names no `.kt` source file, the one test of
 `decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs (kotlinc_class)` that the
 options reading javac's code shapes and the fix `switch_case_order` share) follows the order javac
@@ -757,7 +757,7 @@ merged into one where the merge cannot change what a read sees; and local types 
 are experimental, stricter merge checks: the second computes, with an extra SSA pass,
 which assignments each read can see, and refuses any merge that would change it.
 
-**Source locals (kuna).** With `jvm_source_locals` (on by default),
+**Source locals (kuna).**
 `decompiler/nonnative/kuna-jvm/src/p6_variables/kuna_source_locals.rs`
 keeps the local variables the class file records for the source. javac writes one
 `LocalVariableTable` entry per local of the source and none for the temporaries it adds
@@ -828,7 +828,7 @@ assignment, javac's `x = a++`, has no store), and `inline_ppi_and_mmi` and
 when all of the increment's code comes before the next statement's and the table puts the two on
 different lines (`own_statement`). Classes kotlinc compiled are left alone.
 
-**Source patterns (kuna).** With `jvm_source_patterns` (on by default),
+**Source patterns (kuna).**
 `IfPatternMatchProcessor::check_branch` makes no pattern from an
 `instanceof` and the cast stored after it when the class file's `LineNumberTable` shows the cast
 as a statement of its own
@@ -1133,9 +1133,7 @@ the crate's build script. Keys the front end sets itself (thread count, time lim
 selection, logging, line separator, line mapping, class-path keys a JVM would serve), and
 the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
 there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins` (no row) and the form options such as
-`jvm_javac_layout` (section 10.9, stored in the context and copied to the per-class
-contexts) off the property list before the rest becomes Vineflower's option map (section
+their own names; `Fernflower::new` takes `jvm_plugins` (no row) off the property list before the rest becomes Vineflower's option map (section
 10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
 switch: `resolve` refuses it as an unknown option, and given to the engine directly it
 stays in Vineflower's option map like any key Vineflower does not read.

@@ -1,4 +1,4 @@
-//! The kuna option `jvm_source_locals` (`kuna_source_locals`), for increments:
+//! kuna (`kuna_source_locals`), for increments:
 //! an `x++`, `x--` or `x = x ± 1` the source wrote as a statement of its own
 //! stays one, instead of being folded into the statement before it
 //! (`SimplifyExprentsHelper.isIPPorIMM`: `a[i] = i; i++;` -> `a[i] = i++;`) or
@@ -23,7 +23,7 @@ use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::var_exprent::VarExprent;
 
 fn active() -> bool {
-    kuna_source_locals::enabled() && !kuna_source_locals::compiled_by_kotlinc()
+    !kuna_source_locals::compiled_by_kotlinc()
 }
 
 /// Whether `store`, an assignment followed by `increment` of its value, is a

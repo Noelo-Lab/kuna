@@ -1,10 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SimplifyExprentsHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `buildIff` merges two
+//! kuna (`kuna_javac_layout`): `buildIff` merges two
 //! returns into a ternary only when they are one bytecode instruction.
-//! kuna option `jvm_source_locals` (`kuna_source_increments`): `isIPPorIMM` and
+//! kuna (`kuna_source_increments`): `isIPPorIMM` and
 //! `inlinePPIandMMI` keep an increment the source wrote as a statement.
-//! kuna option `jvm_source_locals` (`kuna_source_locals`): `isAssignmentReturn`,
+//! kuna (`kuna_source_locals`): `isAssignmentReturn`,
 //! `isArrayInitializer` and `addArrayInitializer` leave a local of the source
 //! (one the LocalVariableTable names) as the source wrote it.
 
@@ -474,7 +474,7 @@ impl SimplifyExprentsHelper {
     }
 
     /// Whether `store` writes an element of `arr_var`, a local of the source
-    /// (`jvm_source_locals`).
+    /// (`kuna_source_locals`).
     fn stores_source_local(store: Exprent, arr_var: VarExprent) -> bool {
         array_store(store, arr_var).is_some_and(|(aas, _)| {
             aas.get_left()

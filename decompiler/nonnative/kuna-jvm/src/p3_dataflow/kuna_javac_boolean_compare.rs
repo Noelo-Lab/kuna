@@ -1,4 +1,4 @@
-//! The kuna option `jvm_javac_layout` (`kuna_javac_layout`), for comparisons
+//! kuna (`kuna_javac_layout`), for comparisons
 //! with a boolean literal: `SecondaryFunctionsHelper` keeps the comparison
 //! where javac's bytecode shows the source had one.
 //!
@@ -8,7 +8,7 @@
 //! with `if_icmpne`), a comparison with `true` (`iconst_1`, `if_icmp..`), or a
 //! condition compared with `false` (`(a || b) == false` first computes the
 //! condition's value, 0 or 1, then tests it). Vineflower folds all of them
-//! into `x`, `!x` or a negated condition. With the option on, a comparison of
+//! into `x`, `!x` or a negated condition. Here a comparison of
 //! two booleans whose constant is on the left, or is `true`, or whose other
 //! operand is a condition, stays a comparison.
 

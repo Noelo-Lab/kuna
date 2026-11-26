@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SecondaryFunctionsHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_boolean_compare`): a comparison
+//! kuna (`kuna_javac_boolean_compare`): a comparison
 //! with a boolean literal that javac's bytecode shows is not folded.
 
 use crate::assignment_exprent::AssignmentExprent;

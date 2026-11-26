@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/PPandMMHelper.java`.
 //!
-//! kuna option `jvm_source_locals` (`kuna_source_increments`): `inlinePPIandMMIIf`
+//! kuna (`kuna_source_increments`): `inlinePPIandMMIIf`
 //! keeps an increment the source wrote as a statement before the `if`.
 
 use std::collections::VecDeque;

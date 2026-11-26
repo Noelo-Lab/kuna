@@ -7,7 +7,7 @@
 //! clash-renaming maps key statements by `Option<Statement>` (a root's parent)
 //! and hold `Option<String>` names (an unnamed parameter).
 //!
-//! kuna option `jvm_source_locals` (`kuna_source_locals`): `setVarDefinitions`
+//! kuna (`kuna_source_locals`): `setVarDefinitions`
 //! moves declarations without an initializer to where javac gives their
 //! variables the class file's slots, hoisting them out of the blocks
 //! Vineflower narrowed them into (`kuna_source_scopes`); `mergeVars` does not

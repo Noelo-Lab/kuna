@@ -1,5 +1,5 @@
-//! The kuna option `jvm_source_locals` (`kuna_options::SOURCE_LOCALS`): keep
-//! the locals the class file records for the source.
+//! kuna's source locals: keep the locals the class file records for the
+//! source.
 //!
 //! javac writes one LocalVariableTable entry per local of the source and none
 //! for the temporaries it adds itself (a `finally`'s or `synchronized` block's
@@ -9,8 +9,8 @@
 //! (`SimplifyExprentsHelper.isAssignmentReturn`, `isArrayInitializer`,
 //! `MergeHelper.matchForEach`, `IfPatternMatchProcessor` into an `instanceof`
 //! pattern's subject) and declares each variable at its first use
-//! (`VarDefinitionHelper`), which loses a named local and reorders slots. With
-//! the option on, [`is_source_local`] keeps a variable the table names
+//! (`VarDefinitionHelper`), which loses a named local and reorders slots. Instead,
+//! [`is_source_local`] keeps a variable the table names
 //! (and [`is_pattern_subject_local`] one an `instanceof` pattern tests), and
 //! [`order_declarations`] moves (or splits off) declarations so that javac
 //! numbers the slots as the class file does.
@@ -19,7 +19,6 @@ use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::kt_metadata::KotlinMetadataAnnotation;
-use crate::kuna_options::{self, SOURCE_LOCALS};
 use crate::method_descriptor::MethodDescriptor;
 use crate::p6_variables::kuna_source_scopes::{self, declared, position, remove, splittable};
 use crate::fixes::var_merge;
@@ -30,11 +29,6 @@ use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::var_exprent::VarExprent;
 use crate::var_processor::VarProcessor;
 use crate::var_version_pair::VarVersionPair;
-
-/// Whether `jvm_source_locals` is on for the engine on this thread.
-pub fn enabled() -> bool {
-    kuna_options::form_enabled(SOURCE_LOCALS)
-}
 
 /// Whether `var`, a variable the method's code stores, is a local of the
 /// source at the first instruction of `read` (or right after the store when
@@ -64,7 +58,7 @@ pub fn named_by_table(var: VarExprent, read: Option<VarExprent>) -> Option<bool>
 /// stores a value it returns only around a `finally` or a monitor exit, which
 /// sit in between; kotlinc also stores array literals it builds).
 pub fn is_source_local(store: VarExprent, read: VarExprent) -> bool {
-    if store.is_stack() || !enabled() {
+    if store.is_stack() {
         return false;
     }
     named_by_table(store, Some(read)).unwrap_or_else(|| {
@@ -84,7 +78,7 @@ pub fn is_pattern_subject_local(
     read: VarExprent,
     binding: Option<VarExprent>,
 ) -> bool {
-    if store.is_stack() || !enabled() {
+    if store.is_stack() {
         return false;
     }
     named_by_table(store, Some(read)).unwrap_or_else(|| {
@@ -103,7 +97,7 @@ fn original_slot(var: VarExprent) -> i32 {
 /// would merge, are two locals of the source: the LocalVariableTable names
 /// them differently (`properties` and, in a later block, `subFields`).
 pub fn named_apart(root: Statement, from: VarVersionPair, to: VarVersionPair) -> bool {
-    if !enabled() || compiled_by_kotlinc() {
+    if compiled_by_kotlinc() {
         return false;
     }
     let (mut from_lvt, mut to_lvt) = (None, None);
@@ -121,7 +115,7 @@ pub fn named_apart(root: Statement, from: VarVersionPair, to: VarVersionPair) ->
 /// LocalVariableTable: javac's own for-each variables are not; without a
 /// table the two cannot be told apart.
 pub fn is_named_loop_local(var: VarExprent) -> bool {
-    enabled() && !var.is_stack() && named_by_table(var, None).unwrap_or(false)
+    !var.is_stack() && named_by_table(var, None).unwrap_or(false)
 }
 
 fn first_offset(var: VarExprent) -> Option<i32> {
@@ -173,7 +167,7 @@ struct Gathered {
 /// numbers them as the class file does. Classes kotlinc compiled are left
 /// alone (it numbers its own temporaries among the locals).
 pub fn order_declarations(root: Statement, varproc: VarProcessor) {
-    if !enabled() || compiled_by_kotlinc() {
+    if compiled_by_kotlinc() {
         return;
     }
     let mt = varproc.get_method();
@@ -204,7 +198,7 @@ pub(crate) fn compiled_by_kotlinc() -> bool {
 
 /// Whether kotlinc compiled `cl`: it carries `kotlin.Metadata` or names a
 /// `.kt` source file (kotlinc's `$WhenMappings` and similar classes carry no
-/// metadata). The form options that read javac's code shapes skip such a class.
+/// metadata). The rules that read javac's code shapes skip such a class.
 pub(crate) fn kotlinc_class(cl: StructClass) -> bool {
     KotlinMetadataAnnotation::find(cl).is_some()
         || cl
@@ -345,7 +339,7 @@ fn order_block(mut block: Vec<Declaration>) {
 /// `Exprent.sortIndexed` prints it: by original slot (then index) while
 /// declarations are ordered for javac, else as Vineflower does, by index.
 pub fn sort_declarations(defs: &mut [VarExprent]) {
-    if !enabled() || compiled_by_kotlinc() {
+    if compiled_by_kotlinc() {
         defs.sort_by(|o1, o2| o1.get_index().wrapping_sub(o2.get_index()).cmp(&0));
         return;
     }

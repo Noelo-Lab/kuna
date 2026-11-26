@@ -253,9 +253,8 @@ objects by creation in the arena; see the fidelity contract below.
   imports its body needs), code Vineflower prints wrong is printed as the program has it,
   and the note under a failure comment that remains asks for reports to kuna's tracker.
   Nothing else may differ; that is the evidence each fix ships with (*Fixing a Vineflower
-  bug*, below). kuna's options that compat mode also turns off, the options of form and
-  `jvm_javac_layout` (on by default; *Options of form* and *javac's block layout*, below),
-  change the default text further. `docs/jvm-benchmark.md` measures both modes against
+  bug*, below). kuna's source forms and javac's block layout (*Source forms* and *javac's block
+  layout*, below) change the default text further. `docs/jvm-benchmark.md` measures both modes against
   Vineflower on five large projects.
 
 **The test oracle is Vineflower's text.** Every Vineflower-oracle case of the vendored
@@ -596,20 +595,17 @@ branch, which compat mode takes. A unit test that must isolate one fix runs with
 `Case`'s `fixes`); users cannot. Spec section 10.16 has the gate and the mechanisms groups
 of fixes share; `tests/jvm/kuna-fixes/README.md` lists each fix's case.
 
-### Options of form
+### Source forms
 
 Some departures from Vineflower's text are not corrections but choices between two
 equivalent forms of the same code: Vineflower's, and the one the class file shows the source
-had. They are options (`change_kind = "kuna-form"` rows of `options.toml`), not fixes:
-`Fernflower::new` takes each off the property list into the decompilation context (its
-value, else its row's default; `kuna_options::form_enabled` answers from it) and forces it
-off under `jvm_vineflower_compat on`, so compat output stays Vineflower's; a case of one in
-`tests/jvm/kuna-fixes/` is labelled with the option's name.
+had. kuna always prints the source's; a case of one in `tests/jvm/kuna-fixes/` is labelled
+with the module that decides it.
 
-| Option (default) | Vineflower 1.12.0 | With the option |
+| Module | Vineflower 1.12.0 | kuna |
 |---|---|---|
-| `jvm_source_locals` (on) | folds a local the LocalVariableTable names into its one use (`result = 31 * result + x; return result;` as `return 31 * result + x;`), declares each variable at its first use, so javac renumbers the slots, splits a reassigned local into `x` and `var3`, and folds an increment into the next expression (`a[i] = i; i++;` as `a[i] = i++;`) | the locals stay as the source wrote them, declared (in Java output) where javac gives every local the class file's slot and in the scope the slots prove the source declared them in (spec section 10.10) |
-| `jvm_source_patterns` (on) | makes `if (x instanceof T) { T v = (T) x; ..}` the pattern `x instanceof T v` (javac compiles both alike for a local `x`) | in a class javac compiled, the test and the cast stay where the LineNumberTable gives the cast a line of its own after the test's (spec section 10.10) |
+| `kuna_source_locals` | folds a local the LocalVariableTable names into its one use (`result = 31 * result + x; return result;` as `return 31 * result + x;`), declares each variable at its first use, so javac renumbers the slots, splits a reassigned local into `x` and `var3`, and folds an increment into the next expression (`a[i] = i; i++;` as `a[i] = i++;`) | the locals stay as the source wrote them, declared (in Java output) where javac gives every local the class file's slot and in the scope the slots prove the source declared them in (spec section 10.10) |
+| `kuna_source_patterns` | makes `if (x instanceof T) { T v = (T) x; ..}` the pattern `x instanceof T v` (javac compiles both alike for a local `x`) | in a class javac compiled, the test and the cast stay where the LineNumberTable gives the cast a line of its own after the test's (spec section 10.10) |
 
 Their effect on the benchmark is in `docs/jvm-benchmark.md`.
 
@@ -1011,8 +1007,7 @@ copy that matches the committed files byte for byte.
 
 ## javac's block layout
 
-`jvm_javac_layout` (on by default, off under `jvm_vineflower_compat`) is a judgement call,
-so an option: on classes javac compiled (no `kotlin.Metadata`, no `.kt` source file) it structures ifs, exits and
+`kuna_javac_layout`: on classes javac compiled (no `kotlin.Metadata`, no `.kt` source file) it structures ifs, exits and
 loops the way javac laid the bytecode out, where Vineflower prints an equivalent but
 different form:
 
@@ -1076,8 +1071,8 @@ same rule as the native engine's (`docs/agents.md`).
 **Default-on needs corpus evidence.** The corpus gate compares against Vineflower's text,
 so a kuna improvement that changes any compat-mode text stays off by default; it may
 default on only when `make test-jvm` still matches every compat-mode run with it on and it
-passes the speed budget (the native engine's rule). Fixes, and the options compat mode turns
-off with them (the options of form, `jvm_javac_layout`), leave every compat-mode text alone
+passes the speed budget (the native engine's rule). Fixes, kuna's source forms and javac's
+block layout leave every compat-mode text alone
 and change only default-mode ones: the kuna-fixes cases' expected text and the
 Vineflower-oracle cases' digests, both re-recorded after review. A fix's evidence is its
 two-pass case and the whole-output diffs of step 6 of the recipe; such an option defaults on
