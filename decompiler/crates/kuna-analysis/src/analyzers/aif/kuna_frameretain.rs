@@ -139,7 +139,7 @@ fn contradicted(listing: &Listing, entry: u64) -> bool {
             && listing.instruction_at(r.from).is_some_and(|insn| {
                 insn.fall_through == Some(entry)
                     || insn.flow.kind == FlowKind::ComputedJump
-                    || (insn.flows.contains(&entry) && insn.flow.kind != FlowKind::UnconditionalBranch)
+                    || (insn.branches().contains(&entry) && insn.flow.kind != FlowKind::UnconditionalBranch)
             })
     })
 }
@@ -149,10 +149,10 @@ fn contradicted(listing: &Listing, entry: u64) -> bool {
 /// entry, so no function starts there; literal-pool words before a frame decode so.
 fn predicated(decoder: &mut GapDecoder, listing: &Listing, entry: u64) -> bool {
     if let Some(insn) = listing.instruction_at(entry) {
-        return !insn.flow.is_call && insn.fall_through.is_some_and(|next| insn.flows.contains(&next));
+        return insn.fall_through.is_some_and(|next| insn.branches().contains(&next));
     }
     decoder.probe(entry).is_some_and(|insn| {
-        !insn.is_call && insn.fall_through.is_some_and(|next| insn.flows.contains(&next))
+        insn.fall_through.is_some_and(|next| insn.branches().contains(&next))
     })
 }
 
@@ -179,9 +179,7 @@ fn joins_interior(
         }
         let Some(insn) = decoder.probe(at) else { continue };
         work.extend(insn.fall_through);
-        if !insn.is_call {
-            work.extend(insn.flows.iter().copied());
-        }
+        work.extend(insn.branches().iter().copied());
     }
     false
 }

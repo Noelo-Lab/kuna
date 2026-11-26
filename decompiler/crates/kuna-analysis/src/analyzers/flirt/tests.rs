@@ -63,6 +63,7 @@ fn a_return_behind_a_landing_pad_is_a_bare_return() {
     let insn = |addr: u64, len: u32, kind: FlowKind| Insn {
         addr,
         len,
+        call_count: 0,
         fall_through: (kind == FlowKind::Fallthrough).then_some(addr + u64::from(len)),
         flow: FlowType {
             kind,

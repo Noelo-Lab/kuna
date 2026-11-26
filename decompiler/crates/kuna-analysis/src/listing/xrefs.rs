@@ -1367,8 +1367,9 @@ fn descend(
                 };
                 c.fall_through = None;
                 c.flows.clear();
+                c.call_count = 0;
             }
-            let proven_call = if c.flow.is_call && c.flows.is_empty() {
+            let proven_call = if c.flow.is_call && c.calls().is_empty() {
                 got_calls.as_ref().zip(data_space.as_ref())
                     .and_then(|(calls, data)| calls.target(cap.ops(), data))
             } else {
@@ -1378,7 +1379,8 @@ fn descend(
                 !super::kuna_gotcall::has_stated_callee(arch, &code_space, vma)
             });
             if let Some((_, target)) = proven_call {
-                c.flows.push(target);
+                c.flows.insert(0, target);
+                c.call_count = 1;
             }
             let skip = a32_tables.as_ref().and_then(|_| c.predicated_skip(vma, len));
             let mut condition = condskip.then(|| c.condition_skip(&raw, vma, len)).flatten();
@@ -1387,9 +1389,7 @@ fn descend(
             }
             if let Some(flow) = st.flow.as_mut() {
                 flow.insns.push((vma, len, c.fall_through.is_some()));
-                if !c.flow.is_call {
-                    flow.jumps.extend(c.flows.iter().map(|&to| (vma, to)));
-                }
+                flow.jumps.extend(c.branches().iter().map(|&to| (vma, to)));
             }
             let formed = pcform.as_ref().map_or_else(Formed::default, |p| p.formed(vma, len));
             let mut drefs = if mapped.is_empty() {
@@ -1409,7 +1409,7 @@ fn descend(
                     vma,
                     ops: cap.ops(),
                     fall: c.fall_through,
-                    branches: if c.flow.is_call { &[] } else { &c.flows },
+                    branches: c.branches(),
                     calls: c.flow.is_call,
                     formed,
                 });
@@ -1423,7 +1423,7 @@ fn descend(
                     len,
                     fall: c.fall_through,
                     ops: cap.ops(),
-                    branches: if c.flow.is_call { &[] } else { &c.flows },
+                    branches: c.branches(),
                 };
                 picpool.step(img, insn, || insn_queue.iter().map(|&(at, _)| at).collect())
             });
@@ -1458,17 +1458,18 @@ fn descend(
                 st.indirect_call_sites.insert(vma);
             }
 
-            for &target in &c.flows {
-                let kind = if c.flow.is_call { XrefKind::Call } else { XrefKind::Jump };
+            for (index, &target) in c.flows.iter().enumerate() {
+                let is_call = index < c.call_count;
+                let kind = if is_call { XrefKind::Call } else { XrefKind::Jump };
                 let outside_walk = sections_are_runtime && !in_range(&exec_set, target);
-                if condition == Some(target) {
+                if !is_call && condition == Some(target) {
                     condition = None;
                     if c.fall_through.is_none() {
                         st.skips.push((vma, target, entry, mode));
                     }
-                } else if condskip || Some(target) != skip {
+                } else if is_call || condskip || Some(target) != skip {
                     st.file(vma, target, kind, &text);
-                    if outside_walk && c.flow.is_call && focus.contains(&target)
+                    if outside_walk && is_call && focus.contains(&target)
                         && raw.iter().any(|op| {
                             op.opcode == OpCode::CPUI_CALL && absolute_branch_target(op) == Some(target)
                         })
@@ -1481,7 +1482,7 @@ fn descend(
                 if outside_walk {
                     stopped.insert(target);
                 }
-                if c.flow.is_call {
+                if is_call {
                     let target_mode = walk_context.as_ref()
                         .and_then(|context| context.successor(target, mode, &commits));
                     if let Some(context) = &mut walk_context { context.called(target, target_mode); }
@@ -1826,7 +1827,8 @@ fn render_frame_flow(listing: &mut super::Listing, state: &State) {
     for call in state.refs.iter().filter(|r| r.kind == XrefKind::Call) {
         let insn = listing.insns.get_mut(&call.from).unwrap();
         insn.flow.is_call = true;
-        insn.flows.push(call.to);
+        insn.flows.insert(insn.call_count as usize, call.to);
+        insn.call_count += 1;
     }
 }
 
@@ -1876,6 +1878,7 @@ fn partition_listing(
             super::Insn {
                 addr,
                 len,
+                call_count: 0,
                 fall_through: None,
                 flow: super::FlowType::default(),
                 flows: Vec::new(),

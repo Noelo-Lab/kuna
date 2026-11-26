@@ -3529,17 +3529,15 @@ fn suppress_pdb_interior_entries(
         )
         .ok()?;
         let classified = kuna_analysis::listing::classify::classify(&insn.ops, vma, insn.len);
-        let (calls, jumps) = if classified.flow.is_call {
-            (classified.flows, Vec::new())
-        } else {
-            (Vec::new(), classified.flows)
-        };
+        let fall_through = classified.fall_through;
+        let is_call = classified.flow.is_call;
+        let (calls, jumps) = classified.into_calls_and_branches();
         Some(kuna_analysis::pdb::kuna_pdbinterior::InsnFlow {
             len: insn.len,
-            fall_through: classified.fall_through,
+            fall_through,
             jumps,
             calls,
-            is_call: classified.flow.is_call,
+            is_call,
         })
     };
     kuna_analysis::pdb::kuna_pdbinterior::suppress_owned_interior_entries(

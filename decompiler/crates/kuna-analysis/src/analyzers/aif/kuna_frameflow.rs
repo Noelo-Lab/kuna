@@ -22,9 +22,8 @@ pub(crate) fn entered(listing: &Listing, roots: &BTreeSet<u64>) -> BTreeSet<u64>
         .filter(|&root| {
             listing.instruction_before(root).is_some_and(|insn| {
                 insn.addr.saturating_add(u64::from(insn.len)) == root
-                    && !insn.flow.is_call
-                    && (insn.fall_through == Some(root)
-                        || (insn.flows.contains(&root) && insn.flow.kind != FlowKind::UnconditionalBranch))
+                    && ((!insn.flow.is_call && insn.fall_through == Some(root))
+                        || (insn.branches().contains(&root) && insn.flow.kind != FlowKind::UnconditionalBranch))
                     && reached(listing, insn.addr)
             })
         })

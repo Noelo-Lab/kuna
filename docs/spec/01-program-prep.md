@@ -8334,6 +8334,16 @@ than pushing them onto a worklist itself, so a driver that routes successors
 somewhere else still runs the identical decode-and-claim policy. Indirect targets are recorded
 with their computed/indirect predicates but contribute no static successor.
 
+Call and branch targets retain their own roles from p-code classification
+through the cached and stored Listing records. An instruction can call a
+callee and then branch to a local continuation, as SPARC calls with a delay
+slot do. The walk and raw function scan offer only the direct call target as
+a function entry; the continuation stays in the caller's instruction walk.
+A branch target cannot corroborate a callee or its no-return metadata.
+AIF gap validation follows that continuation only when a branch can bypass
+the call; when every branch exit comes after the call, the plain gap walk
+ends the body there (§1.6).
+
 (kuna) Assembly capture retains operand bodies as per-instruction `String`s,
 but mnemonic spellings repeat heavily across a Listing. The walker interns each
 captured mnemonic into an immutable `Mnemonic` handle backed by shared text,
@@ -9424,9 +9434,28 @@ acceptance and fingerprint stay the `save` candidate's, and only the plain gap w
 applies it. Over 117 Debian SPARC32 images it moves 12 entries in 11 images back
 eight bytes, each onto a true start, and changes no count; GCC 14 stripped
 `-m32` images scored against their unstripped twins move 29 entries, all onto the
-symbol address. Two prefixes are not recognised: a frame size whose low ten bits
-are zero, which GCC builds with a lone `sethi`, and SPARC64's `sethi; xor`, since
-the pass runs only where `%g1` is four bytes.
+symbol address. A frame size whose low ten bits are zero, which GCC
+builds with a lone `sethi`, is not recognised by this SPARC32 rule.
+
+(kuna) On SPARC64, the plain gap walk can instead accept an untrained
+`sethi; xor; save` entry
+(`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_sparcprologue.rs (v9_entry)`,
+always on with `aif`, inert on every other target). The first two instructions must build a
+16-byte-aligned negative frame size outside the immediate range in one
+temporary; `save` must add it to `sp` and write `sp`. The three words must
+be unclaimed in the same executable gap, and the body must pass the usual
+subroutine walk with call or branch corroboration. The ordinary fingerprint
+and bracket rules still apply to other candidates. Over 157 Debian sid
+SPARC64 images scored against their debug symbols, the 11 new entries that
+open with this sequence are all true starts.
+
+(kuna) When an instruction models both a call and a return, the plain AIF gap
+walk (`decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_callresume.rs`)
+treats the return as a body boundary if the instruction has no
+fall-through and every branch exit is reached only after the call.
+Resumption through these branches stays available to the regular
+recursive walk; it does not justify claiming the next gap in a speculative
+body. A branch that can bypass the call continues to validate in AIF.
 
 (kuna, GH-299) No gap entry starts on a literal-pool word: `aifpoolslide`
 (default-on; `decompiler/crates/kuna-analysis/src/analyzers/aif/kuna_aifpoolslide.rs`).
@@ -11691,8 +11720,11 @@ from the Known-flagged functions, then sweep the call graph to a fixpoint with
 no-return only when its last *real* instruction — trailing NOP padding skipped,
 closing exactly the blind spot above — is a CALL or tail JMP to a terminal-set
 member, AND no RETURN exists in the body, AND no computed jump exists, AND every
-static branch target stays inside the reachable body or is itself terminal. Each
-conclusion joins the terminal set and re-enqueues callers, so a wrapper-of-a-wrapper
+static branch target stays inside the reachable body or is itself terminal. A
+conditional last instruction (a `jcc`, a predicated call), or one that both calls
+and branches (a SPARC call and its continuation), does not qualify: only direct
+call targets are callees, and the rule cannot tell whether a branch edge bypasses
+the call. Each conclusion joins the terminal set and re-enqueues callers, so a wrapper-of-a-wrapper
 converges (sweeps bounded by candidate count + 2). This catches the canonical miss:
 a cold wrapper like coreutils' `xalloc_die` — single-digit call sites, under the ≥3
 threshold; `call abort` followed by padding, invisible to the evidence predicate —
@@ -11770,8 +11802,11 @@ Two rules fold into the same fixpoint, both Ghidra-derived:
   terminal callee as ending its path, and concludes no-return iff no RETURN is
   reachable and at least one path ends at such a transfer. Every uncertainty — a
   reachable RETURN, an unresolved indirect jump, an escape to a possibly-returning
-  neighbour, a call with no modelled fall-through — answers "returns". (ida) The
-  one recorded over-conclusion and its fix: a GCC `-O2` hot/cold-split check
+  neighbour, a call with no modelled fall-through — answers "returns". Only a plain
+  call (no branch, no predicate) to terminal callees ends a path; a jump follows
+  each static target, any of which may end at a terminal entry, and an instruction
+  that also models a return, as a SPARC call does, counts as a reachable RETURN.
+  (ida) The one recorded over-conclusion and its fix: a GCC `-O2` hot/cold-split check
   (`jcc <.cold>` where the cold fragment is `call abort`) was short-circuited like
   an unconditional transfer, skipping the returning fall-through arm and marking
   the whole `quotearg_*` family no-return; a conditional jump now walks both arms,

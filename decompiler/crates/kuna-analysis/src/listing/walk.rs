@@ -302,6 +302,7 @@ where
         };
         c.fall_through = None;
         c.flows.clear();
+        c.call_count = 0;
     }
 
     let fall_through = vma.wrapping_add(u64::from(decoded.len));
@@ -330,6 +331,7 @@ where
     insns.record(InsnLite {
         addr: vma,
         len: decoded.len,
+        call_count: u32::try_from(c.call_count).expect("too many direct calls in an instruction"),
         fall_through: c.fall_through,
         flow: c.flow,
         flows: c.flows.clone(),
@@ -344,31 +346,18 @@ where
     }
 
     // Successor edges.
-    for &t in &c.flows {
-        if c.flow.is_call {
-            // CALL/CALLIND direct target -> a NEW function entry, but only
-            // where the instruction worklist would agree to decode
-            // (`unmappedentry`) and where the target is not the callee's own
-            // PPC64 ELFv2 local entry (`ppclocalentry` -- a point inside a
-            // function whose global entry is already a seed, so the bytes
-            // here are walked either way). The reference is filed whatever
-            // the claim decides (where there is a reference model at all);
-            // only the function claim is withheld.
-            if !ctx.local_entries.contains_key(&t)
-                && super::kuna_unmappedentry::admits_call_entry(
-                    ctx.exec_ranges,
-                    t,
-                )
-            {
-                funcs.claim(t);
-                out.func(t);
-            }
-            refs.file(vma, t, RefKind::Call);
-        } else {
-            // Branch target -> same-function successor.
-            out.insn(t);
-            refs.file(vma, t, RefKind::Code);
+    for &t in c.calls() {
+        if !ctx.local_entries.contains_key(&t)
+            && super::kuna_unmappedentry::admits_call_entry(ctx.exec_ranges, t)
+        {
+            funcs.claim(t);
+            out.func(t);
         }
+        refs.file(vma, t, RefKind::Call);
+    }
+    for &t in c.branches() {
+        out.insn(t);
+        refs.file(vma, t, RefKind::Code);
     }
     if let Some(fall) = c.fall_through {
         out.insn(fall);
@@ -674,13 +663,11 @@ fn walk_serial(
                     else { Vec::new() };
                 if let Some(selection) = &selection { selection.accept(insn.len); }
                 if let Some(frames) = &mut frames { frames.record(entry, vma, insn.len, mode); }
-                if insn.flow.is_call {
-                    for &target in &insn.flows {
-                        let target_mode = walk_context.as_ref()
-                            .and_then(|context| context.successor(target, mode, &commits));
-                        if let Some(context) = &mut walk_context { context.called(target, target_mode); }
-                        if let Some(frames) = &mut frames { frames.called(target, target_mode); }
-                    }
+                for &target in insn.calls() {
+                    let target_mode = walk_context.as_ref()
+                        .and_then(|context| context.successor(target, mode, &commits));
+                    if let Some(context) = &mut walk_context { context.called(target, target_mode); }
+                    if let Some(frames) = &mut frames { frames.called(target, target_mode); }
                 }
                 for next in work.insns.drain(..) {
                     let next_mode = walk_context.as_ref()
@@ -757,20 +744,20 @@ fn walk_items(
         step(ctx, vma, &mut store, sinks.funcs, sinks.refs, sinks.callbacks, &mut work);
         match (store.last, mode) {
             (Some(last), Some(mode)) => {
-                let commits = if last.target.is_some() {
+                let commits = if last.has_targets {
                     ctx.last_context_commits()
                 } else {
                     Vec::new()
                 };
                 modes.decoded(vma, last.len, mode);
                 let comes_back = last.flow.is_call || last.flow.kind == FlowKind::CallOther;
-                let callee = last.target.filter(|_| last.flow.is_call);
+                let callee = last.callee;
                 if let Some(target) = callee {
                     modes.called(target, modes.successor(target, mode, &commits));
                 }
                 for next in work.insns.drain(..) {
                     let next_mode = modes.successor(next, mode, &commits);
-                    if comes_back {
+                    if comes_back && last.fall_through == Some(next) {
                         modes.hold(next, next_mode, callee);
                     } else {
                         pending.push((next, Some(next_mode)));
@@ -789,7 +776,9 @@ fn walk_items(
 struct Filed {
     len: u32,
     flow: super::model::FlowType,
-    target: Option<u64>,
+    fall_through: Option<u64>,
+    has_targets: bool,
+    callee: Option<u64>,
 }
 
 /// An [`InsnSink`] that keeps [`Filed`] for the last record it files.
@@ -808,7 +797,11 @@ impl InsnSink for LastRecord<'_> {
     }
 
     fn record(&mut self, insn: InsnLite) {
-        self.last = Some(Filed { len: insn.len, flow: insn.flow, target: insn.flows.first().copied() });
+        self.last = Some(Filed {
+            len: insn.len, flow: insn.flow, fall_through: insn.fall_through,
+            has_targets: !insn.flows.is_empty(),
+            callee: insn.flows[..insn.call_count as usize].first().copied(),
+        });
         self.store.record(insn);
     }
 }

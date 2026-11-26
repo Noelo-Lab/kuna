@@ -89,6 +89,7 @@ mod tests {
         Insn {
             addr,
             len,
+            call_count: 0,
             fall_through: Some(addr + len as u64),
             flow: Default::default(),
             flows: vec![],

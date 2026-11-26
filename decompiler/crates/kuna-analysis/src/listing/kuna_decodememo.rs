@@ -54,6 +54,7 @@ struct Memo {
     operands: u8,
     len: u8,
     nflows: u8,
+    call_count: u8,
 }
 
 /// One certified decode, borrowed from the memo.
@@ -62,6 +63,7 @@ pub(crate) struct Recalled<'a> {
     pub(crate) flow: FlowType,
     pub(crate) fall_through: Option<u64>,
     pub(crate) flows: &'a [u64],
+    pub(crate) call_count: usize,
     pub(crate) mnemonic: &'a str,
     pub(crate) operands: &'a str,
     pub(crate) reusable: &'a Rc<ReusableDecode>,
@@ -156,6 +158,7 @@ impl DecodeMemo {
             flow,
             fall_through: falls.then(|| vma.wrapping_add(u64::from(memo.len))),
             flows: &flows[targets..targets + usize::from(memo.nflows)],
+            call_count: usize::from(memo.call_count),
             mnemonic: &text[first..ops],
             operands: &text[ops..ops + usize::from(memo.operands)],
             reusable,
@@ -174,6 +177,7 @@ impl DecodeMemo {
         flow: FlowType,
         fall_through: Option<u64>,
         flows: &[u64],
+        call_count: usize,
         mnemonic: &str,
         operands: &str,
     ) -> Option<Rc<ReusableDecode>> {
@@ -201,6 +205,7 @@ impl DecodeMemo {
             operands: operands8,
             len: len8,
             nflows,
+            call_count: u8::try_from(call_count).ok()?,
         };
         text.push_str(mnemonic);
         text.push_str(operands);
@@ -253,7 +258,9 @@ pub(super) fn decode(
             operands: m.operands.to_string(),
             stored_scalar_values: Vec::new(),
         };
-        (decoded, Classified { flow: m.flow, flows: m.flows.to_vec(), fall_through: m.fall_through })
+        (decoded, Classified {
+            flow: m.flow, flows: m.flows.to_vec(), call_count: m.call_count, fall_through: m.fall_through,
+        })
     });
     if recalled.is_some() {
         memo.reused.set(true);
@@ -266,7 +273,8 @@ pub(super) fn decode(
             .filter(|d| d.len != 0)?;
     let c = classify(&decoded.ops, vma, decoded.len);
     if let Some(context) = key {
-        memo.keep(vma, &context, decoded.len, c.flow, c.fall_through, &c.flows, &decoded.mnemonic, &decoded.operands);
+        memo.keep(vma, &context, decoded.len, c.flow, c.fall_through, &c.flows,
+                  c.call_count, &decoded.mnemonic, &decoded.operands);
     }
     Some((decoded, c))
 }

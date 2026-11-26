@@ -287,6 +287,7 @@ mod tests {
         Insn {
             addr,
             len,
+            call_count: if kind == FlowKind::Call { flows.len() as u32 } else { 0 },
             fall_through: falls.then_some(addr + u64::from(len)),
             flow: FlowType {
                 kind,

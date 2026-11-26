@@ -158,8 +158,7 @@ fn joins_enclosing_interior(
     };
     body.iter().any(|&at| {
         let insn = decoder.recorded(at);
-        let jumps = if insn.is_call { &[][..] } else { &insn.flows[..] };
-        insn.fall_through.iter().chain(jumps).any(|&target| {
+        insn.fall_through.iter().chain(insn.branches()).any(|&target| {
             !body.contains(&target)
                 && listing.is_instruction_start(target)
                 && listing.function_at(target).is_none()
