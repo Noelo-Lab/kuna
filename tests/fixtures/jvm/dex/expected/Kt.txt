@@ -1,0 +1,14 @@
+Point(x=4, y=6)
+true
+42
+HEYHEYXXX
+null
+small
+big
+s:3
+other
+56
+2
+304762
+5
+k=1, j=2

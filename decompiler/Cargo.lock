@@ -330,6 +330,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-dex"
+version = "0.1.0"
+
+[[package]]
 name = "kuna-ghidra"
 version = "0.1.0"
 dependencies = [
