@@ -2972,7 +2972,8 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         fs::copy(installed.join(file), fixture.join(file)).unwrap();
     }
     let mut entry = String::from("<context_data><tracked_set space=\"code\">\n");
-    for (name, value) in [("PSTATUS", 0x10), ("LOOP_REDIRECT", 0), ("LOOP_REDIRECT_AT", 0), ("LOOP_TARGET", 0)] {
+    for (name, value) in [("PSTATUS", 0x10), ("LOOP_FRAME", 0), ("LOOP_REDIRECT", 0),
+                          ("LOOP_REDIRECT_AT", 0), ("LOOP_TARGET", 0)] {
         writeln!(entry, "<set name=\"{name}\" val=\"{value:#x}\"/>").unwrap();
     }
     for bank in 1..=4 {
@@ -3008,15 +3009,17 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         (&nested[..], "0", &[][..], "LC1", &[("", 0)][..]),
         (&nested[..], "0", &[][..], "LC2", &[("", 0)][..]),
         (&nested[..], "0", &[][..], "PSTATUS", &[("", 0x10)][..]),
+        (&nested[..], "0", &[][..], "LOOP_FRAME", &[("", 0)][..]),
         (&coincident[..], "0x1000", &[][..], "LSA1L", &[("", 0x1004)][..]),
         (&coincident[..], "0x1000", &[][..], "LSA2L", &[("", 0x1004)][..]),
         (&coincident[..], "0x1000", &[][..], "LSAL", &[("", 0x1004)][..]),
     ].into_iter().enumerate() {
         fs::write(&binary, code.as_flattened()).unwrap();
         let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        let register_type = if reg == "LOOP_FRAME" { "unsigned char" } else { "unsigned short" };
         kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
             base, "--raw-image", "--target", TARGET, "--base", base, "--addr", "--json", "--assert-strict",
-            "--assert", &format!("return %{reg} unsigned short"),
+            "--assert", &format!("return %{reg} {register_type}"),
         ]);
         for (i, input) in params.iter().enumerate() {
             kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);
@@ -3710,6 +3713,199 @@ fn carmel_compact_alu_x_selector_follows_the_physical_lane() {
                 ).unwrap();
             }
         }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    fs::remove_dir_all(specs).unwrap();
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_wide_mac_loop_ports_and_ce1_address_results_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    let binary = common::scratch_file("carmel-wide-mac-loop-ports", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    type Regs = &'static [(&'static str, u32)];
+    type Tracked = &'static [(&'static str, u16)];
+    type Row = ([u8; 6], Tracked, (u16, u16), Regs, Regs, u16, u16, u16);
+    let r0: Tracked = &[("R0", 0x40)];
+    let r4: Tracked = &[("R4", 0x48)];
+    let mac_word = (0x40, 0xa258);
+    let add_word = (0x48, 0x5df9);
+    let mac_lsa = [0x90, 0xef, 0xa7, 0xa3, 0xd2, 0xc6];
+    let mac_lea = [0x90, 0xef, 0xa7, 0xa9, 0xd3, 0xc6];
+    let mac_lc = [0x90, 0xef, 0xa7, 0xa0, 0xd4, 0xc6];
+    let mac_status = [0xaa, 0xa6, 0xbb, 0xaa, 0xd5, 0xc8];
+    let mac_ff2 = [0x90, 0xef, 0xa7, 0xa0, 0x97, 0xc6];
+    let mac_rn7 = [0xb5, 0xc3, 0xe8, 0xaf, 0xaf, 0x71];
+    let add_lsa = [0x34, 0xef, 0xec, 0x91, 0x49, 0xa4];
+    let add_lea = [0x34, 0xef, 0xec, 0x91, 0x49, 0xa6];
+    let add_lc = [0x34, 0xef, 0xec, 0x91, 0x49, 0xa8];
+    let add_status = [0x34, 0xef, 0xec, 0x91, 0x49, 0xaa];
+    let add_user = [0x34, 0xef, 0xec, 0x91, 0x49, 0xae];
+    let vectors: &[Row] = &[
+        (mac_lsa, r0, mac_word, &[("R3", 0xc040), ("LSA1W", 0x561234)],
+         &[("LSA1W", 0x56b9aa), ("X1", 0xc040), ("R0", 0x41)], 0, 0xffff, 0x3000),
+        (mac_lea, r0, mac_word, &[("R3", 0xc040), ("LEA1W", 0x787654)],
+         &[("LEA1W", 0x78d80b), ("X1", 0xc040), ("R0", 0x41)], 0, 0xffff, 0x3000),
+        (mac_lc, r0, mac_word, &[("R3", 0xc040), ("LC1", 0x600), ("LC", 0)],
+         &[("LC1", 0x1d53), ("LC", 0), ("X1", 0xc040), ("R0", 0x41)], 0, 0xffff, 0x3000),
+        (mac_status, &[("R2", 0x8040), ("RN2", 3), ("LOOP_FRAME", 0)], (0x8043, 0x8be1),
+         &[("PSTATUS", 0x10), ("R4", 0x48), ("LC1", 0), ("LSA1W", 0), ("LEA1W", 0)],
+         &[("PSTATUS", 0xffeb), ("X1", 0x48)], 0, 0xffff, 0x3000),
+        ([0x90, 0xef, 0xa7, 0xa3, 0xd6, 0xc6], r0, mac_word, &[("R3", 0xc040), ("INTBASE", 2)],
+         &[("INTBASE", 0xb9aa), ("X1", 0xc040), ("R0", 0x41)], 0, 0xffff, 0x3000),
+        ([0x90, 0xef, 0xa7, 0xa3, 0xd7, 0xc6], r0, mac_word, &[("R3", 0xc040), ("USER_IO", 5)],
+         &[("USER_IO", 0xb9aa), ("X1", 0xc040), ("R0", 0x41)], 0, 0xffff, 0x3000),
+        ([0xa0, 0xef, 0xb7, 0xa9, 0xb3, 0x0f], &[("R7", 0xc048)], (0xc048, 0xa25e),
+         &[("RM2", 0), ("R0", 0x40)], &[("RM2", 0xffe8), ("X1", 0xa25e)], 0, 0xffff, 0x3000),
+        (mac_rn7, &[], (0xc3e8, 0), &[("RN7", 4), ("RL6", 0)], &[("RN7", 4), ("X1", 0)], 0, 0xffff, 0x3000),
+        (mac_ff2, r0, mac_word, &[("R3", 0xc040), ("FF2", 0xf678)],
+         &[("FF2", 0x0dcb), ("X1", 0xc040), ("R0", 0x41)], 0, 0xffff, 0x3000),
+        (add_lsa, r4, add_word, &[("LSA1W", 0)], &[("R4", 0)], 0, 0xffff, 0x3008),
+        (add_lea, r4, add_word, &[("LEA1W", 0)], &[("R4", 0)], 0, 0xffff, 0x3008),
+        (add_status, r4, add_word, &[("PSTATUS", 0x10)], &[("R4", 0)], 0, 0xffff, 0x3008),
+        (add_user, r4, add_word, &[("USER_IO", 5)], &[("R4", 0)], 0, 0xffff, 0x3008),
+        (add_lc, r4, add_word, &[("LC1", 0)], &[("R4", 0x5df9)], 0, 0xffff, 0x3000),
+        (mac_lsa, &[("R0", 0x42)], (0x42, 0xffff), &[("R3", 1), ("LSA1W", 0xfe6789)],
+         &[("LSA1W", 0xfe0000), ("X1", 1), ("R0", 0x43)], 0, 0xffff, 0x3000),
+        (mac_lea, &[("R0", 0x42)], (0x42, 0x8001), &[("R3", 0x7634), ("LEA1W", 0xad89ab)],
+         &[("LEA1W", 0xad76e2)], 7, 0xffff, 0x3000),
+        (mac_lc, &[("R0", 0x42)], (0x42, 0x8000), &[("R3", 1), ("LC1", 1)],
+         &[("LC1", 1)], 2, 0xffff, 0x3000),
+        (mac_rn7, &[], (0xc3e8, 0x8071), &[("RN7", 0x837b), ("RL6", 0x6a79)],
+         &[("RN7", 0x18a4), ("X1", 0x8071)], 7, 0xffff, 0x3000),
+        (mac_status, &[("R2", 0x8041), ("RN2", 4), ("LOOP_FRAME", 0)], (0x8045, 0x8123),
+         &[("PSTATUS", 0x90), ("R4", 0x4a), ("LC1", 0x3344), ("LSA1W", 0xfe6789), ("LEA1W", 0xad89ab)],
+         &[("PSTATUS", 0x40), ("LC", 0x3344), ("LSAH", 0xfe), ("LSAL", 0x6789),
+           ("LEAH", 0xad), ("LEAL", 0x89ab), ("X1", 0x4a)], 7, 0xffff, 0x3000),
+        (add_lsa, &[("R4", 0x4a)], (0x4a, 0x8003), &[("LSA1W", 0xfe6789)],
+         &[("R4", 0xfd)], 7, 0xffff, 0x3001),
+        (add_lsa, &[("R4", 0x4a)], (0x4a, 0x8003), &[("LSA1W", 0xfe6789)],
+         &[("R4", 0x36)], 7, 0, 0),
+        (add_status, &[("R4", 0x4a)], (0x4a, 0xffff), &[("PSTATUS", 2)],
+         &[("R4", 0)], 0, 0xffff, 0x3009),
+        (add_user, &[("R4", 0x4a)], (0x4a, 0x8003), &[("USER_IO", 0x8123)],
+         &[("R4", 0xffff)], 7, 0xffff, 0x3011),
+        (add_lc, &[("R4", 0x4a)], (0x4a, 0x8003), &[("LC", 0x2222), ("LC1", 0x3344)],
+         &[("R4", 0xb347)], 7, 0xffff, 0x3010),
+    ];
+    let c_type = |reg: &str| match reg {
+        "LSA1W" | "LEA1W" => "unsigned long",
+        "LSAH" | "LEAH" => "unsigned char",
+        _ => "unsigned short",
+    };
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n#include <stdio.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    let mut entry_specs = std::collections::BTreeMap::new();
+    for (row, &(packet, tracked, (address, word), extra, outputs, ecfg, table, flags)) in vectors.iter().enumerate() {
+        fs::write(&binary, [packet, nop, nop, nop, nop, nop, ret].as_flattened()).unwrap();
+        let specs = entry_specs.entry(tracked).or_insert_with(|| {
+            let root = binary.with_extension(format!("specs-{row}"));
+            tracked_carmel_entry_specs(&root, tracked, 0x1000, 0);
+            root
+        });
+        let mut inputs = vec![("EST", 0), ("ECFG", u32::from(ecfg)), ("CECFG1", 0x1000),
+                              ("CECFG2", 0x1000), ("CETBL", u32::from(table)),
+                              ("PACFG", 0), ("RM0", 0), ("RL0", 0), ("RM4", 0), ("RL4", 0), ("X1", 0xba98)];
+        inputs.extend_from_slice(extra);
+        let args = inputs.iter().map(|(_, value)| value.to_string()).collect::<Vec<_>>().join(",");
+        let cell = format!("mac_word_{row}");
+        writeln!(c, "volatile unsigned short {cell};").unwrap();
+        for (reg, expected) in std::iter::once(("EST", u32::from(flags))).chain(outputs.iter().copied()) {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &*specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} {}", c_type(reg)),
+                "--assert", &format!("data [data,{address:#x}] volatile unsigned short {cell}"),
+            ]);
+            for (i, (reg, _)) in inputs.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{reg} {} in_{}", c_type(reg), reg.to_ascii_lowercase())]);
+            }
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let function = &json["functions"][0];
+            let text = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let name = format!("mac_loop_{row}_{}", reg.to_ascii_lowercase());
+            writeln!(c, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+            writeln!(calls, "{cell} = {word};\nif ({name}({args}) != {expected} || {cell} != {word}) \
+                             {{ fputs(\"{name}\\n\", stderr); return 1; }}").unwrap();
+        }
+    }
+    for specs in entry_specs.into_values() {
+        fs::remove_dir_all(specs).unwrap();
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
+fn carmel_pstatus_mac_refreshes_the_active_nested_frame_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const TARGET: &str = "Carmel:BE:24:default:default";
+    let binary = common::scratch_file("carmel-pstatus-mac-nesting", "bin");
+    let specs = binary.with_extension("specs");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut image = [nop; 34];
+    image[0] = [0x2a, 0x03, 0xc0, 0x2b, 0xec, 0];
+    image[5] = [0x2a, 0x07, 0x80, 0x2b, 0xec, 0];
+    image[10] = [0xaa, 0xa6, 0xbb, 0xaa, 0xd5, 0xc8];
+    image[16] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    fs::write(&binary, image.as_flattened()).unwrap();
+    tracked_carmel_entry_specs(&specs, &[
+        ("PSTATUS", 0x10), ("LOOP_FRAME", 0), ("R2", 0x8040), ("RN2", 3),
+        ("R4", 0x48), ("EST", 0), ("ECFG", 0), ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff),
+        ("LOOP_PENDING1", 0), ("LOOP_PENDING2", 0), ("LOOP_PENDING3", 0), ("LOOP_PENDING4", 0),
+        ("LC3", 0), ("LC4", 0), ("LSA3W", 0), ("LEA3W", 0), ("LSA4W", 0), ("LEA4W", 0),
+    ], 0x1000, 0);
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short mac_data;\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    for (i, (reg, expected)) in [("PSTATUS", 0xfff9), ("LC", 7), ("LSAL", 0x100c), ("LEAL", 0x102a),
+                                ("LC1", 3), ("LC2", 7), ("X1", 0x48)].into_iter().enumerate() {
+        let result = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+            .env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", TARGET, "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "data [data,0x8043] volatile unsigned short mac_data",
+            ]));
+        let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+        let function = &json["functions"][0];
+        let text = function["code"].as_str().unwrap();
+        assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+        assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+        writeln!(c, "#define sub_1000 mac_loop_{reg}\n{text}\n#undef sub_1000").unwrap();
+        writeln!(calls, "mac_data = 0x8be1; if (mac_loop_{reg}() != {expected} || mac_data != 0x8be1) return {};", i + 1)
+            .unwrap();
     }
     c.push_str(&calls);
     c.push_str("return 0;\n}\n");

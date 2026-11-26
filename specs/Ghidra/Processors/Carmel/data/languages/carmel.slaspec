@@ -166,6 +166,7 @@ define register offset=0x27e size=2 [ LEA4L ];
 define register offset=0x280 size=4 [ LOOP_REDIRECT_AT ];
 define register offset=0x284 size=4 [ LOOP_TAIL_TARGET ];
 define register offset=0x288 size=1 [ LOOP_TAIL_REDIRECT ];
+define register offset=0x289 size=1 [ LOOP_FRAME ];
 define register offset=0x290 size=2 [ LOOP_COUNT1 LOOP_COUNT2 LOOP_COUNT3 LOOP_COUNT4 ];
 define register offset=0x298 size=1 [ LOOP_PENDING1 LOOP_PENDING2 LOOP_PENDING3 LOOP_PENDING4 ];
 define register offset=0x29c size=4 [ LOOP_TARGET ];
@@ -922,7 +923,7 @@ macro publish_loop_address(due, value, pending, address, high, low, bit, depth, 
   <done>
 }
 
-macro activate_loop_bank(due, first, last, pending, count, start, end, counter, depth, level) {
+macro activate_loop_bank(due, first, last, pending, count, start, end, counter, depth, level, frame) {
     local at:4 = inst_start;
     if (depth < level) goto <done>;
     if ((pending & 4) == 0 || at != due) goto <done>;
@@ -932,6 +933,7 @@ macro activate_loop_bank(due, first, last, pending, count, start, end, counter, 
     publish_loop_word(first, LSAH, LSAL);
     publish_loop_word(last, LEAH, LEAL);
     LC = count;
+    LOOP_FRAME = frame;
     pending = pending & 0xfb;
   <done>
 }
@@ -966,10 +968,10 @@ loop_publish_end: is hw_loop_end_publish=1 {
 loop_activate: is hw_loop_activate=0 { }
 loop_activate: is hw_loop_activate=1 {
     local depth:2 = PSTATUS & 0x000f;
-    activate_loop_bank(LOOP_LAST_AT1, LOOP_FIRST_WORD1, LOOP_LAST_WORD1, LOOP_PENDING1, LOOP_COUNT1, LSA1W, LEA1W, LC1, depth, 9:2);
-    activate_loop_bank(LOOP_LAST_AT2, LOOP_FIRST_WORD2, LOOP_LAST_WORD2, LOOP_PENDING2, LOOP_COUNT2, LSA2W, LEA2W, LC2, depth, 10:2);
-    activate_loop_bank(LOOP_LAST_AT3, LOOP_FIRST_WORD3, LOOP_LAST_WORD3, LOOP_PENDING3, LOOP_COUNT3, LSA3W, LEA3W, LC3, depth, 11:2);
-    activate_loop_bank(LOOP_LAST_AT4, LOOP_FIRST_WORD4, LOOP_LAST_WORD4, LOOP_PENDING4, LOOP_COUNT4, LSA4W, LEA4W, LC4, depth, 12:2);
+    activate_loop_bank(LOOP_LAST_AT1, LOOP_FIRST_WORD1, LOOP_LAST_WORD1, LOOP_PENDING1, LOOP_COUNT1, LSA1W, LEA1W, LC1, depth, 9:2, 1:1);
+    activate_loop_bank(LOOP_LAST_AT2, LOOP_FIRST_WORD2, LOOP_LAST_WORD2, LOOP_PENDING2, LOOP_COUNT2, LSA2W, LEA2W, LC2, depth, 10:2, 2:1);
+    activate_loop_bank(LOOP_LAST_AT3, LOOP_FIRST_WORD3, LOOP_LAST_WORD3, LOOP_PENDING3, LOOP_COUNT3, LSA3W, LEA3W, LC3, depth, 11:2, 3:1);
+    activate_loop_bank(LOOP_LAST_AT4, LOOP_FIRST_WORD4, LOOP_LAST_WORD4, LOOP_PENDING4, LOOP_COUNT4, LSA4W, LEA4W, LC4, depth, 12:2, 4:1);
 }
 
 loop_capture: is hw_loop_capture_rn0=0 { }
@@ -983,7 +985,7 @@ loop_capture: is hw_loop_capture_rn0=1 {
 
 # A prepared decision belongs to one physical terminal issue. Retire only
 # the frame that was on top at selection, including when ends coincide.
-macro retire_loop_bank(word, pending, counter, start, end_hi, end_lo, depth, top, next) {
+macro retire_loop_bank(word, pending, counter, start, end_hi, end_lo, depth, top, next, previous_frame) {
     if (depth != top) goto <done>;
     local expected_hi:1 = word(2);
     local expected_lo:2 = word:2;
@@ -996,6 +998,7 @@ macro retire_loop_bank(word, pending, counter, start, end_hi, end_lo, depth, top
     goto <done>;
   <pop>
     PSTATUS = (PSTATUS & 0xfff0) | next;
+    LOOP_FRAME = previous_frame;
   <done>
 }
 
@@ -1004,10 +1007,10 @@ macro prepare_loop_redirect(word) {
     LOOP_REDIRECT = 1;
     LOOP_TARGET = 0;
     local depth:2 = PSTATUS & 0x000f;
-    retire_loop_bank(word, LOOP_PENDING1, LC1, LSA1W, LEA1H, LEA1L, depth, 9:2, 0:2);
-    retire_loop_bank(word, LOOP_PENDING2, LC2, LSA2W, LEA2H, LEA2L, depth, 10:2, 9:2);
-    retire_loop_bank(word, LOOP_PENDING3, LC3, LSA3W, LEA3H, LEA3L, depth, 11:2, 10:2);
-    retire_loop_bank(word, LOOP_PENDING4, LC4, LSA4W, LEA4H, LEA4L, depth, 12:2, 11:2);
+    retire_loop_bank(word, LOOP_PENDING1, LC1, LSA1W, LEA1H, LEA1L, depth, 9:2, 0:2, 0:1);
+    retire_loop_bank(word, LOOP_PENDING2, LC2, LSA2W, LEA2H, LEA2L, depth, 10:2, 9:2, 1:1);
+    retire_loop_bank(word, LOOP_PENDING3, LC3, LSA3W, LEA3H, LEA3L, depth, 11:2, 10:2, 2:1);
+    retire_loop_bank(word, LOOP_PENDING4, LC4, LSA4W, LEA4H, LEA4L, depth, 12:2, 11:2, 3:1);
 }
 
 macro select_current_tail(word) {
@@ -1056,8 +1059,8 @@ loop_finish: is hw_loop_tail=1 & hw_loop_indirect=1 {
     build instruction;
 }
 
-macro install_loop_bank(value, flags, pending, count, counter,
-                        first_word, last_word, first_at, last_at, staged_first, staged_last, start_due, end_due) {
+macro install_loop_bank(value, flags, pending, count, counter, first_word, last_word,
+                        first_at, last_at, staged_first, staged_last, start_due, end_due, frame) {
     pending = flags;
     count = value;
     staged_first = first_word;
@@ -1067,6 +1070,7 @@ macro install_loop_bank(value, flags, pending, count, counter,
     if ((flags & 4) != 0) goto <done>;
     counter = value;
     LC = value;
+    LOOP_FRAME = frame;
   <done>
 }
 
@@ -1078,25 +1082,25 @@ macro arm_block_loop(value, flags, first_word, last_word, first_at, last_at) {
     if (prior != 0) goto <done>;
     install_loop_bank(value, flags, LOOP_PENDING1, LOOP_COUNT1, LC1,
                       first_word, last_word, first_at, last_at,
-                      LOOP_FIRST_WORD1, LOOP_LAST_WORD1, LOOP_FIRST_AT1, LOOP_LAST_AT1);
+                      LOOP_FIRST_WORD1, LOOP_LAST_WORD1, LOOP_FIRST_AT1, LOOP_LAST_AT1, 1:1);
     PSTATUS = (PSTATUS & 0xfff0) | 9;
     goto <done>;
   <bank2>
     install_loop_bank(value, flags, LOOP_PENDING2, LOOP_COUNT2, LC2,
                       first_word, last_word, first_at, last_at,
-                      LOOP_FIRST_WORD2, LOOP_LAST_WORD2, LOOP_FIRST_AT2, LOOP_LAST_AT2);
+                      LOOP_FIRST_WORD2, LOOP_LAST_WORD2, LOOP_FIRST_AT2, LOOP_LAST_AT2, 2:1);
     PSTATUS = (PSTATUS & 0xfff0) | 10;
     goto <done>;
   <bank3>
     install_loop_bank(value, flags, LOOP_PENDING3, LOOP_COUNT3, LC3,
                       first_word, last_word, first_at, last_at,
-                      LOOP_FIRST_WORD3, LOOP_LAST_WORD3, LOOP_FIRST_AT3, LOOP_LAST_AT3);
+                      LOOP_FIRST_WORD3, LOOP_LAST_WORD3, LOOP_FIRST_AT3, LOOP_LAST_AT3, 3:1);
     PSTATUS = (PSTATUS & 0xfff0) | 11;
     goto <done>;
   <bank4>
     install_loop_bank(value, flags, LOOP_PENDING4, LOOP_COUNT4, LC4,
                       first_word, last_word, first_at, last_at,
-                      LOOP_FIRST_WORD4, LOOP_LAST_WORD4, LOOP_FIRST_AT4, LOOP_LAST_AT4);
+                      LOOP_FIRST_WORD4, LOOP_LAST_WORD4, LOOP_FIRST_AT4, LOOP_LAST_AT4, 4:1);
     PSTATUS = (PSTATUS & 0xfff0) | 12;
   <done>
 }
@@ -4855,6 +4859,159 @@ macro wide_msu_word(old, left, right, store, result) {
 macro raw_mac_predicate(cfg, bank, enabled, addresses) {
     unary_ce(cfg, EST, CETBL, bank, enabled);
     addresses = enabled | ((cfg >> 12) & 1);
+}
+
+# These MAC ports use the high word without ALU limiting or arithmetic flags.
+macro mac_r3_post_r0(left, right) {
+    left = R3;
+    local address:2 = R0;
+    modify_ptr(R0, 1:2, RM0, RL0, 0, 2);
+    right = *[data]:2 address;
+    X1 = left;
+}
+
+macro mac_high_control(base, left, right, subtract, signed_left, signed_right, bias, word) {
+    local product:8;
+    raw_mac_product(left, right, signed_left, signed_right, product);
+    local bits:8 = base + product + bias;
+    if (subtract == 0) goto <publish>;
+    bits = base - product;
+  <publish>
+    word = bits(2);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro mac_r3_post_r0_control(base, signed_left, signed_right, bias, word) {
+    local left:2;
+    local right:2;
+    mac_r3_post_r0(left, right);
+    mac_high_control(base, left, right, 0:1, signed_left, signed_right, bias, word);
+}
+
+@define WIDE_MAC_CONTROL "$(WIDE_ROUTED_ALU) & wide_mac_prefix=0"
+@define WIDE_MAC_R3_R0 "$(WIDE_MAC_CONTROL) & wide_40_45=0x10"
+:MACHUS "LSA1","R3","*R0++" is $(WIDE_MAC_R3_R0) & wide_0_22=0x23d2c6 {
+    local base:8 = zext(LSA1W >> 16 & 0xff);
+    local word:2;
+    mac_r3_post_r0_control(base, 0:1, 1:1, 0:8, word);
+    LSA1W = (LSA1W & 0xffff0000) | zext(word);
+}
+:MACSU "LEA1","R3","*R0++" is $(WIDE_MAC_R3_R0) & wide_0_22=0x29d3c6 {
+    local base:8 = zext(LEA1W & 0xffffff);
+    local word:2;
+    mac_r3_post_r0_control(base, 1:1, 0:1, 0:8, word);
+    LEA1W = (LEA1W & 0xffff0000) | zext(word);
+}
+:MACR "LC","R3","*R0++" is $(WIDE_MAC_R3_R0) & wide_0_22=0x20d4c6 {
+    local base:8;
+    raw_mac_word(LC1, base);
+    mac_r3_post_r0_control(base, 1:1, 1:1, 0x8000:8, LC1);
+}
+macro refresh_live_loop(counter, start, end) {
+    LC = counter;
+    publish_loop_word(start, LSAH, LSAL);
+    publish_loop_word(end, LEAH, LEAL);
+}
+
+macro refresh_selected_loop() {
+    if (LOOP_FRAME == 2) goto <bank2>;
+    if (LOOP_FRAME == 3) goto <bank3>;
+    if (LOOP_FRAME == 4) goto <bank4>;
+    refresh_live_loop(LC1, LSA1W, LEA1W);
+    goto <done>;
+  <bank2>
+    refresh_live_loop(LC2, LSA2W, LEA2W);
+    goto <done>;
+  <bank3>
+    refresh_live_loop(LC3, LSA3W, LEA3W);
+    goto <done>;
+  <bank4>
+    refresh_live_loop(LC4, LSA4W, LEA4W);
+  <done>
+}
+
+:MACUS "PSTATUS","R4","*R2+RN2" is $(WIDE_MAC_CONTROL) & wide_0_22=0x2ad5c8 & wide_40_45=0x2a {
+    local left:2 = R4;
+    local address:2 = R2 + RN2;
+    local right:2 = *[data]:2 address;
+    local base:8;
+    raw_mac_word(PSTATUS, base);
+    local word:2;
+    X1 = left;
+    mac_high_control(base, left, right, 0:1, 0:1, 1:1, 0:8, word);
+    wide_logic_rmw_pstatus(word);
+    refresh_selected_loop();
+}
+:MACHUS "INTBASE","R3","*R0++" is $(WIDE_MAC_R3_R0) & wide_0_22=0x23d6c6 {
+    local base:8 = sext(INTBASE);
+    mac_r3_post_r0_control(base, 0:1, 1:1, 0:8, INTBASE);
+}
+:MACHUS "USER_IO","R3","*R0++" is $(WIDE_MAC_R3_R0) & wide_0_22=0x23d7c6 {
+    local base:8 = sext(USER_IO);
+    mac_r3_post_r0_control(base, 0:1, 1:1, 0:8, USER_IO);
+}
+:MACSU "RM2","*R7","R0" is $(WIDE_MAC_CONTROL) & wide_0_22=0x29b30f & wide_40_45=0x20 {
+    local left:2 = *[data]:2 R7;
+    local base:8;
+    raw_mac_word(RM2, base);
+    X1 = left;
+    mac_high_control(base, left, R0, 0:1, 1:1, 0:1, 0:8, RM2);
+}
+:MSUUU "RN7","*"^absolute_data_addr,"RL6" is $(WIDE_MAC_CONTROL) & wide_0_22=0x2faf71 & wide_40_45=0x35 & absolute_data_addr {
+    local address:2 = absolute_data_addr;
+    local left:2 = *[data]:2 address;
+    local base:8;
+    raw_mac_word(RN7, base);
+    X1 = left;
+    mac_high_control(base, left, RL6, 1:1, 0:1, 0:1, 0:8, RN7);
+}
+:MACR "FF2","R3","*R0++" is $(WIDE_MAC_R3_R0) & wide_0_22=0x2097c6 {
+    local base:8;
+    raw_mac_word(FF2, base);
+    mac_r3_post_r0_control(base, 1:1, 1:1, 0x8000:8, FF2);
+}
+
+macro wide_add_r4_post(left, shift, displacement) {
+    local enabled:2;
+    local addresses:2;
+    raw_mac_predicate(CECFG1, 0, enabled, addresses);
+    if (addresses == 0) goto <veto>;
+    local address:2 = R4;
+    local delta:2 = sext(displacement);
+    modify_ptr(R4, delta, RM4, RL4, 8, 4);
+    local word:2 = *[data]:2 address;
+    if (enabled == 0) goto <veto>;
+    local right:8 = ((zext(word) ^ 0x8000) - 0x8000) << shift;
+    local result:8;
+    wide_routed_arithmetic(left, right, 0:2, 0:1, 1:1, 0:1, result);
+    R4 = result(2);
+    goto <done>;
+  <veto>
+    publish_alu_ce(EST & 0xcfff);
+  <done>
+}
+
+@define WIDE_ADD_R4_POST "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & logic_ce_bank=0 & wide_alias_add_op=8 & wide_alias_add_dst=0xa4 & wide_40_45=0x34 & wide_0_0=0 & wide_shift_dst_disp"
+:ADD "CE1" "R4","LSA1","*R4+="^wide_shift_dst_disp is $(WIDE_ADD_R4_POST) & wide_alias_add_lhs=0xd2 {
+    local left:8 = zext(LSA1W & 0xffffff);
+    wide_add_r4_post(left, 0:4, wide_shift_dst_disp:1);
+}
+:ADD "CE1" "R4","LEA1","*R4+="^wide_shift_dst_disp is $(WIDE_ADD_R4_POST) & wide_alias_add_lhs=0xd3 {
+    local left:8 = zext(LEA1W & 0xffffff);
+    wide_add_r4_post(left, 0:4, wide_shift_dst_disp:1);
+}
+:ADD "CE1" "R4","LC","*R4+="^wide_shift_dst_disp is $(WIDE_ADD_R4_POST) & wide_alias_add_lhs=0xd4 {
+    local left:8;
+    raw_mac_word(LC1, left);
+    wide_add_r4_post(left, 16:4, wide_shift_dst_disp:1);
+}
+:ADD "CE1" "R4","PSTATUS","*R4+="^wide_shift_dst_disp is $(WIDE_ADD_R4_POST) & wide_alias_add_lhs=0xd5 {
+    local left:8 = sext(PSTATUS);
+    wide_add_r4_post(left, 0:4, wide_shift_dst_disp:1);
+}
+:ADD "CE1" "R4","USER_IO","*R4+="^wide_shift_dst_disp is $(WIDE_ADD_R4_POST) & wide_alias_add_lhs=0xd7 {
+    local left:8 = sext(USER_IO);
+    wide_add_r4_post(left, 0:4, wide_shift_dst_disp:1);
 }
 
 @define RAW_MAC_SEQ "((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))"

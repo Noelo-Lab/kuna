@@ -4083,6 +4083,29 @@ The `io_space` selector can drive word flags without accessing IO. The
 covered MSU `LC` selector updates the saved `LC1`, not the active counter.
 An MSU word DATA result tests for zero without its discarded low bits.
 
+Covered wide accumulating multiplier control routes also take the high
+result word without driving arithmetic flags or applying ALU limiting.
+Rounded control results break half ties upward, regardless of the ALU
+rounding mode. A saved-bound result replaces only the low word: `MACHUS`
+uses the old `LSA1` upper byte as its addend, while `MACSU` adds the
+whole unsigned 24-bit `LEA1`. The counter result updates `LC1`, not `LC`.
+The `PSTATUS` result clears depth bit two and clears both remaining
+depth bits when repeat is inactive. It refreshes the live counter and
+bounds from the selected loop frame, or bank one when no frame has
+been activated. Loop activation and retirement change that selection;
+the arithmetic `PSTATUS` write does not select a bank using its new
+depth. These result routes do not suppress the independent first-input
+`X1` latch or the postincrement of a DATA source.
+
+In the covered CE1 `ADD` to `R4`, the DATA input uses the incoming `R4`.
+The address unit then applies its displacement, and permitted ALU
+writeback replaces that update with the high result word. A veto can
+leave the address update in place without writing the arithmetic
+result or flags. The `LSA1` and `LEA1` inputs retain all 24 bits;
+`PSTATUS` and `USER_IO` are signed words in the low arithmetic lane,
+so a zero high word does not imply a disconnected input. The `LC`
+selector reads `LC1` and aligns both inputs to the high word.
+
 Covered wide address transfers add the low 16-bit displacement to a word
 source or the `R3` address unit. Saving a CODE address preserves its upper
 byte. The open input supplies all ones; the open result discards the sum.
