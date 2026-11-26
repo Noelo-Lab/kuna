@@ -319,3 +319,50 @@ fn normalized_cliw_alias_retains_the_high_index_in_assembly() {
         Err(KunaError::Unimpl { .. }),
     ));
 }
+
+#[test]
+fn cliw_terminal_selectors_publish_updates_without_loading_data() {
+    let bank = |selector: u64, template: &str, readonly| {
+        let issue = 0x838142de5840u64 | (selector << 34);
+        format!(r#"<bytechunk space="code" offset="0" readonly="true">{issue:012x}</bytechunk>
+            <bytechunk space="cliw" offset="0xf18" readonly="{readonly}">{template}</bytechunk>"#)
+    };
+    let mac = "8097e0fffff03fffff7ffff8";
+    for (selector, terminal) in [
+        (8, Some("R0")), (14, Some("R2")), (24, None), (25, Some("SP")), (26, Some("SP")),
+        (27, None), (28, None), (29, None), (30, None), (31, None),
+    ] {
+        let program = xml(&bank(selector, mac, true)).unwrap();
+        let (len, ops) = program.raw_pcode_at(0).unwrap();
+        assert_eq!(len, 6);
+        assert!(ops.iter().any(|op| op.opcode == "INT_MULT"));
+        assert!(!ops.iter().any(|op| matches!(op.opcode, "LOAD" | "STORE" | "CALLOTHER")));
+        let register = |name: &str| program.arch().get_register_varnode(name.as_bytes()).unwrap();
+        let mut expected: Vec<_> = ["R3", "R4", "A0L", "A0H", "GB0", "EST"].into_iter()
+            .chain(terminal).map(|name| {
+                let reg = register(name);
+                (reg.offset, reg.size)
+            }).collect();
+        let mut written: Vec<_> = ops.iter().filter_map(|op| op.output.as_ref())
+            .filter(|op| op.space == "register").map(|op| (op.offset, op.size)).collect();
+        expected.sort_unstable();
+        written.sort_unstable();
+        assert_eq!(written, expected, "MA4 {selector}");
+        for name in ["RN3", "A1L", "A2L", "CETBL"] {
+            let reg = register(name);
+            assert!(ops.iter().flat_map(|op| &op.inputs).any(|input| {
+                input.space == "register" && input.offset == reg.offset && input.size == reg.size
+            }), "MA4 {selector} lost {name}");
+        }
+        if let 25 | 26 = selector {
+            let delta = if selector == 25 { 2 } else { 1 };
+            let sp = register("SP");
+            assert!(ops.iter().any(|op| op.opcode == "INT_ADD"
+                && op.output.as_ref().is_some_and(|out| out.space == "register" && out.offset == sp.offset)
+                && op.inputs.iter().any(|input| input.space == "const" && input.offset == delta)));
+        }
+    }
+    for image in [bank(25, mac, false), bank(25, "0097e0fffff03fffff7ffff8", true)] {
+        assert!(matches!(xml(&image).unwrap().raw_pcode_at(0), Err(KunaError::Unimpl { .. })), "{image}");
+    }
+}

@@ -4232,6 +4232,16 @@ reference. Located TASKING images and XML can supply such a bank. Raw CODE
 and writable, partial, or ambiguous banks retain the encoded index in
 disassembly and produce `unimpl`.
 
+The marked CLIW register-product form with unqualified MA1 and MA2,
+MA2 `R4++`, and MA3 `R3+=RN3` retains both address updates alongside
+the signed MAC1 result and its status and condition feedback. MA4
+selector 8 updates `R0++`; 14 updates `R2--`; 25 and 26 advance `SP`
+by two and one DATA words respectively. Selectors 24 and 27–31 have
+no terminal writeback. `CETBL` contributes to condition feedback but
+does not gate the MAC or these updates. The MAC samples register halves,
+not MA4 or any other DATA port. The address updates do not introduce a
+p-code DATA load or store.
+
 **(kuna) SPARC struct return — `option sparcstructret`, default on, SPARC-gated,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
 (kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI

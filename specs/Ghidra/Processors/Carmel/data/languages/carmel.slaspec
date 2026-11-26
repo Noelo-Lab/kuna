@@ -552,6 +552,9 @@ define token wide (48)
     wide_3_7 = (3,7)
     wide_10_14 = (10,14)
     wide_34_46 = (34,46)
+    cliw_address_bank = (16,19)
+    cliw_terminal_ma4 = (34,38)
+    cliw_terminal_ma3_condition = (39,46)
     swap_reg_lo = (40,42)
     swap_reg_full = (40,43)
     swap_reg_short_group = (43,45)
@@ -5966,7 +5969,7 @@ macro moveu_flags(value) { EST = (EST & 0xffc4) | (zext(value == 0) << 3); }
 :MOVU "discard","LC1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23b & wide_13_22=0x21c & wide_40_45=0x14 { local source:4 = zext(LC1); moveu_flags(source); }
 
 # MAC1 signed-register product. Inactive ALUs do not own EST.
-macro signed_product(lo, hi, guard, left, right) {
+macro signed_product_result(lo, hi, guard, left, right, flags) {
     # Sign-extend into a native C integer width before multiplication.
     # Doubling by multiplication avoids C's undefined left shift of a negative result.
     local a:8 = sext(left);
@@ -5975,7 +5978,7 @@ macro signed_product(lo, hi, guard, left, right) {
     local product:8 = a * b * scale;
     local extend:1 = (product s> 0x7fffffff);
     local limit:1 = extend && ((ECFG & 4) != 0);
-    local flags:2 = (zext(limit) << 2) | (zext(product == 0) << 3) |
+    flags = (zext(limit) << 2) | (zext(product == 0) << 3) |
                     (zext(product s< 0) << 4) | (zext(extend) << 5);
     # A signed 16x16 result has no magnitude beyond the low 32 bits.
     # Keep the native guard without requiring a nonstandard C integer width.
@@ -5983,13 +5986,35 @@ macro signed_product(lo, hi, guard, left, right) {
     lo = result:2;
     hi = result(2);
     guard = -zext(product s< 0);
+}
+macro signed_product(lo, hi, guard, left, right) {
+    local flags:2;
+    signed_product_result(lo, hi, guard, left, right, flags);
     EST = (EST & 0xffc4) | flags;
 }
 
 template_index: encoded is index_low_0 & index_high_0 [ encoded = index_low_0 | (index_high_0 << 10); ] { }
 :CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & wide_20_22=0x5 & template_index unimpl
 :CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_49_51=0x0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0x0 & tpl_73_95=0x3fffff { }
-:CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_49_51=0x0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0x0 & tpl_91_95=0x10 & tpl_78_82=0x1f & (tpl_87_90=0 | tpl_87_90=1 | tpl_87_90=2 | tpl_87_90=3 | tpl_87_90=4 | tpl_87_90=5 | tpl_87_90=6 | tpl_87_90=7) & mac_left & (tpl_83_86=0 | tpl_83_86=1 | tpl_83_86=2 | tpl_83_86=3 | tpl_83_86=4 | tpl_83_86=5 | tpl_83_86=6 | tpl_83_86=7) & mac_right & (tpl_73_77=16 | tpl_73_77=17 | tpl_73_77=18 | tpl_73_77=19 | tpl_73_77=20 | tpl_73_77=21) & mac_lo & mac_hi & mac_guard { signed_product(mac_lo, mac_hi, mac_guard, mac_left, mac_right); }
+@define CLIW_SIGNED_MAC1 "tpl_52_63=0xfff & tpl_64_72=0xff & tpl_49_51=0x0 & tpl_24_31=0xff & tpl_32_46=0x3fff & tpl_3_23=0xfffff & tpl_0_2=0x0 & tpl_91_95=0x10 & tpl_78_82=0x1f & (tpl_87_90=0 | tpl_87_90=1 | tpl_87_90=2 | tpl_87_90=3 | tpl_87_90=4 | tpl_87_90=5 | tpl_87_90=6 | tpl_87_90=7) & mac_left & (tpl_83_86=0 | tpl_83_86=1 | tpl_83_86=2 | tpl_83_86=3 | tpl_83_86=4 | tpl_83_86=5 | tpl_83_86=6 | tpl_83_86=7) & mac_right & (tpl_73_77=16 | tpl_73_77=17 | tpl_73_77=18 | tpl_73_77=19 | tpl_73_77=20 | tpl_73_77=21) & mac_lo & mac_hi & mac_guard"
+:CLIW template_index is (((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1) & template_index & carmel_cliw_known=1 & wide_0_0=0x0 & wide_3_7=0x18 & wide_10_14=0x18 & wide_20_22=0x5 & wide_34_46=0x318 & wide_8_9<2 & wide_1_2<2 & $(CLIW_SIGNED_MAC1) { signed_product(mac_lo, mac_hi, mac_guard, mac_left, mac_right); }
+
+cliw_ma4_update: is cliw_terminal_ma4=8 { modify_ptr(R0, RN0, RM0, RL0, 0, 2); }
+cliw_ma4_update: is cliw_terminal_ma4=14 { modify_ptr(R2, RN2, RM2, RL2, 4, 3); }
+cliw_ma4_update: is cliw_terminal_ma4=25 { SP = SP + 2; }
+cliw_ma4_update: is cliw_terminal_ma4=26 { SP = SP + 1; }
+cliw_ma4_update: is cliw_terminal_ma4=24 | cliw_terminal_ma4=27 | cliw_terminal_ma4=28 | cliw_terminal_ma4=29 | cliw_terminal_ma4=30 | cliw_terminal_ma4=31 { }
+
+# MA2 and MA3 update independently of MAC1's register sources and MA4.
+:CLIW template_index is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & template_index & carmel_cliw_known=1 & wide_20_22=5 & cliw_address_bank=14 & wide_10_14=22 & wide_8_9=0 & wide_3_7=8 & wide_1_2=0 & wide_0_0=0 & cliw_terminal_ma3_condition=7 & cliw_ma4_update & $(CLIW_SIGNED_MAC1) {
+    modify_ptr(R4, RN4, RM4, RL4, 8, 2);
+    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
+    build cliw_ma4_update;
+    local flags:2;
+    signed_product_result(mac_lo, mac_hi, mac_guard, mac_left, mac_right, flags);
+    publish_alu_ce((EST & 0xcfc4) | flags);
+}
+@undef CLIW_SIGNED_MAC1
 
 # CLIW: sample one physical ALU lane, compute, then publish its result and EST bits.
 macro cliw_alu_sample(lo, hi, guard, bits) {
