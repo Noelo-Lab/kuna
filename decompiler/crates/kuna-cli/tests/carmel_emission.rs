@@ -1727,6 +1727,86 @@ fn carmel_wide_stored_extrema_keep_the_data_and_literal_ports_distinct() {
 }
 
 #[test]
+fn carmel_wide_adjust_immediates_align_the_literal_and_keep_40_bit_status() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-wide-fractional-immediate", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    let inputs = [
+        ("A0L", "unsigned short"), ("A0H", "unsigned short"), ("GB0", "unsigned char"),
+        ("EST", "unsigned short"), ("ECFG", "unsigned short"),
+        ("CECFG1", "unsigned short"), ("CECFG2", "unsigned short"), ("CETBL", "unsigned short"),
+    ];
+    let cases = [
+        ((0xffffu16, 0x12), &[(0u64, 0, 0xffff, 0)][..]),
+        ((0xffff, 0x16), &[(0, 0, 0xffffff0000, 0x10)][..]),
+        ((0xffff, 0x02), &[(0, 0, 0xffffff0001, 0x10)][..]),
+        ((0xffff, 0x06), &[(0, 0, 0x10000, 0)][..]),
+        ((1, 0x12), &[
+            (0x7fffffff, 0, 0x80000000, 0x20),
+            (0x7fffffffff, 0, 0x8000000000, 0x36),
+            (0x7fffffffff, 4, 0x8000000000, 0x32),
+            (0x7fffffffff, 8, 0x8000000000, 0x32),
+        ][..]),
+        ((1, 0x06), &[
+            (0x8000000000, 0, 0x7fffff0000, 0x27),
+            (0x8000000000, 4, 0x7fffff0000, 0x23),
+        ][..]),
+    ];
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    for (index, ((literal, opcode), rows)) in cases.into_iter().enumerate() {
+        let [hi, lo] = literal.to_be_bytes();
+        fs::write(&binary, [[0x8f, hi, lo, 0xc2, opcode, 0x22], nop, nop, ret].as_flattened()).unwrap();
+        for (reg, c_type, shift, mask) in [
+            ("A0L", "unsigned short", 0, 0xffffu64),
+            ("A0H", "unsigned short", 16, 0xffff),
+            ("GB0", "unsigned char", 32, 0xff),
+            ("EST", "unsigned short", 0, 0xffff),
+        ] {
+            let name = format!("adjust_{index}_{}", reg.to_ascii_lowercase());
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict", "--assert", &format!("return %{reg} {c_type}"),
+            ]);
+            for (i, (input, ty)) in inputs.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} {ty} in_{}", input.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let c = function["code"].as_str().unwrap();
+            assert!(!c.contains("halt_"), "{function}");
+            writeln!(emitted, "{}", c.replace("sub_0", &name)).unwrap();
+            for &(seed, cfg, result, status) in rows {
+                let low = seed & 0xffff;
+                let high = seed >> 16 & 0xffff;
+                let guard = seed >> 32;
+                let expected = if reg == "EST" { status } else { (result >> shift) & mask };
+                writeln!(calls, "if ({name}({low:#x},{high:#x},{guard:#x},0,{cfg},4096,4096,0) != {expected:#x}) return {};",
+                         index + 1).unwrap();
+            }
+        }
+    }
+    emitted.push_str(&calls);
+    emitted.push_str("return 0;\n}\n");
+    fs::write(&source, &emitted).unwrap();
+    run_emitted_c(&source, &executable, &emitted);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_wide_alu_aliases_keep_result_and_flag_ports_distinct() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

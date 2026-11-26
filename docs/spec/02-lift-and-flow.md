@@ -4167,6 +4167,12 @@ high byte to the source. `ADDH` and `SUBH` shift a signed word source into
 the high half but consume a signed long source without a shift. A connected
 accumulator receives the entire 40-bit result.
 
+Wide immediate `ADDL` and `SUBL` use an unsigned literal in the low word.
+`ADDH` and `SUBH` sign-extend the literal and shift it into the high word.
+They adjust the full 40-bit accumulator, computing carry and overflow
+across that width. Nonzero limiting-mode bits suppress the sticky overflow
+update without saturating the accumulator or suppressing the overflow flag.
+
 For covered qualified compact `ADD` and `SUB` word read-modify-write forms,
 the left parallel lane computes flags but cannot write back to the first
 accumulator half; the right lane and sequential issues can. Address and

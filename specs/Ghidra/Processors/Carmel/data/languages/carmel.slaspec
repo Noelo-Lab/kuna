@@ -3308,7 +3308,7 @@ macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
     result = candidate:2;
 }
 
-macro wide_adjust_result(left, right, subtract, result) {
+macro wide_adjust_result(left, right, subtract, sticky_enabled, result) {
     local mask:8 = 0xffffffffff;
     local sign:8 = 0x8000000000;
     local lhs:8 = left;
@@ -3323,7 +3323,8 @@ macro wide_adjust_result(left, right, subtract, result) {
   <status>
     result = raw & mask;
     local overflow:1 = (sign_difference == subtracting) && (((lhs ^ result) & sign) != 0);
-    local flags:2 = zext(carry_bit) | (zext(overflow) * 6) | (zext(result == 0) << 3)
+    local flags:2 = zext(carry_bit) | (zext(overflow) << 1)
+                  | (zext(overflow && sticky_enabled) << 2) | (zext(result == 0) << 3)
                   | (zext(result >= sign) << 4)
                   | (zext(result > 0x7fffffff && result < 0xff80000000) << 5);
     EST = (EST & 0xffc4) | flags;
@@ -3344,7 +3345,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     if (enabled == 0) goto <finish>;
     local right:8 = (zext(word) << 16) | ((0 - zext(word >= 0x8000)) & 0xff00000000);
     local result:8;
-    wide_adjust_result(zext(R1), right, 0:1, result);
+    wide_adjust_result(zext(R1), right, 0:1, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -3361,7 +3362,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     local word:2 = *[data]:2 source;
     if (enabled == 0) goto <finish>;
     local result:8;
-    wide_adjust_result(zext(destination), zext(word), 0:1, result);
+    wide_adjust_result(zext(destination), zext(word), 0:1, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -3375,7 +3376,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     if (enabled == 0) goto <finish>;
     local word:4 = zext(low) | (zext(high) << 16);
     local result:8;
-    wide_adjust_result(zext(R1), sext(word), wide_adjust_high, result);
+    wide_adjust_result(zext(R1), sext(word), wide_adjust_high, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
@@ -3391,7 +3392,7 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     local left:8;
     compact_long_sample(A0L, A0H, GB0, left);
     local result:8;
-    wide_adjust_result(left, sext(word), 0:1, result);
+    wide_adjust_result(left, sext(word), 0:1, 1:1, result);
     A0L = result:2;
     A0H = result(2);
     GB0 = result(4);
@@ -3407,12 +3408,43 @@ wide_adjust_high: "SUBH" is wide_adjust_op=1 { export 1:1; }
     modify_ptr_scaled(R1, RN1, RM0, RL0, 2, 2, stride);
     if (enabled == 0) goto <finish>;
     local result:8;
-    wide_adjust_result(zext(destination), zext(wide_load_literal), 1:1, result);
+    wide_adjust_result(zext(destination), zext(wide_load_literal), 1:1, 1:1, result);
   <finish>
     publish_alu_ce(EST & 0xcfff);
 }
 
 @define WIDE_ROUTED_ALU "wide_left_mode=1 & wide_right_mode=1 & carmel_issue=5"
+
+macro wide_adjust_immediate_a0(operand, subtract) {
+    local original:8;
+    compact_long_sample(A0L, A0H, GB0, original);
+    local result:8;
+    local sticky_enabled:1 = (ECFG & 0xc) == 0;
+    wide_adjust_result(original, operand, subtract, sticky_enabled, result);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+@define WIDE_ADJUST_IMMEDIATE "$(WIDE_ROUTED_ALU) & wide_40_45=0xf & wide_load_literal_bits"
+:ADDL "A0",wide_load_literal_bits is $(WIDE_ADJUST_IMMEDIATE) & wide_0_22=0x421222 {
+    local operand:8 = zext(wide_load_literal_bits:2);
+    wide_adjust_immediate_a0(operand, 0:1);
+}
+:ADDH "A0",wide_load_literal_bits is $(WIDE_ADJUST_IMMEDIATE) & wide_0_22=0x421622 {
+    local operand:8 = sext(wide_load_literal_bits:2) * 0x10000;
+    wide_adjust_immediate_a0(operand, 0:1);
+}
+:SUBL "A0",wide_load_literal_bits is $(WIDE_ADJUST_IMMEDIATE) & wide_0_22=0x420222 {
+    local operand:8 = zext(wide_load_literal_bits:2);
+    wide_adjust_immediate_a0(operand, 1:1);
+}
+:SUBH "A0",wide_load_literal_bits is $(WIDE_ADJUST_IMMEDIATE) & wide_0_22=0x420622 {
+    local operand:8 = sext(wide_load_literal_bits:2) * 0x10000;
+    wide_adjust_immediate_a0(operand, 1:1);
+}
+@undef WIDE_ADJUST_IMMEDIATE
 
 # Inputs have already been widened or aligned by their physical ports.
 macro wide_routed_arithmetic(left, right, adjust, subtract, word_result, data_result, result) {
