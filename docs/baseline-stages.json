@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5501,
-    5501
+    5503,
+    5503
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2549,9 +2549,11 @@
     "data:REVISITREFINE #6: the high bytes of the second global are stored",
     "data:REXPREFIX #1: rep stos after an ignored REX.W stores dwords through a wrapping edi",
     "data:REXPREFIX #1b: a 32-bit-address rep stos is no builtin_memset32",
+    "data:REXPREFIX #1c: the rep stos loop steps a pointer to dwords",
     "data:REXPREFIX #2: a 66 after an ignored REX.W stores words",
     "data:REXPREFIX #3: the last REX.W before the opcode still moves quadwords, through a wrapping esi and edi",
     "data:REXPREFIX #3b: a 32-bit-address rep movs is no builtin_memcpy",
+    "data:REXPREFIX #3c: the rep movs loop steps pointers to quadwords",
     "data:REXPREFIX #4: a load through edi after an ignored REX.W",
     "data:REXPREFIX #5: no bad-instruction halt",
     "data:REXPREFIX #6: repz cmpsb after an ignored REX.W compares bytes through a wrapping esi and edi",
