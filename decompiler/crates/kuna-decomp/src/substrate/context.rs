@@ -1274,6 +1274,9 @@ pub struct ArchContext {
     /// (kuna) `loweredswitch auto` — unoptimized functions decide by the compiled tests.
     pub lowered_switch_compiled: bool,
     pub cond_fold: int4,
+    /// (kuna `condfold noreturn`) Fold a chain of tests that all branch to one
+    /// call that does not return.  See [`crate::p8_structure::kuna_fatalchain`].
+    pub cond_fold_noreturn: bool,
     /// (kuna) `condstmts`: most statements a folded condition operand may print
     /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
@@ -1819,6 +1822,7 @@ impl ArchContext {
             lowered_switch_tree: false, // loweredswitch tree|all
             lowered_switch_compiled: false, // loweredswitch auto
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
+            cond_fold_noreturn: false,   // condfold noreturn
             cond_stmts: -1,              // condstmts (-1 = off)
             goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off, // gotoreduce
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)

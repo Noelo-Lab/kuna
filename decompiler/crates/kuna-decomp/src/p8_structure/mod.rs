@@ -34,6 +34,7 @@ pub mod kuna_orchain;
 pub mod kuna_rettriangle;
 pub mod kuna_outline;
 pub mod kuna_earlyreturn;
+pub mod kuna_fatalchain;
 pub mod kuna_returndup;
 pub mod kuna_returndupcalls;
 pub mod kuna_retsplitglobal;

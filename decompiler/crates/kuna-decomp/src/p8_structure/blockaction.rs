@@ -3921,19 +3921,19 @@ impl Action for ActionBlockStructure {
         use crate::p8_structure::kuna_o0jumps as o0j;
         let saved = data.kuna_o0jumps.is_some().then(|| o0j::orientation(data));
         o0j::set_gate(true);
-        let res = self.structure_once(data, ctx);
+        let res = self.structure_held(data, ctx);
         if let Some(saved) = saved {
             let gated = if o0j::refused() && !ctx.deadline_expired() { o0j::gotos(data) } else { 0 };
             if gated > 0 {
                 data.sblocks_clear();
                 o0j::restore_orientation(data, &saved);
                 o0j::set_gate(false);
-                self.structure_once(data, ctx);
+                self.structure_held(data, ctx);
                 if o0j::gotos(data) >= gated {
                     data.sblocks_clear();
                     o0j::restore_orientation(data, &saved);
                     o0j::set_gate(true);
-                    self.structure_once(data, ctx);
+                    self.structure_held(data, ctx);
                 }
             }
         }
@@ -3943,10 +3943,42 @@ impl Action for ActionBlockStructure {
 }
 
 impl ActionBlockStructure {
+    /// (kuna `condfold noreturn`) A structuring that relaxed a chain into a
+    /// no-return call and printed more gotos than one that did not is replaced.
+    fn structure_held(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
+        use crate::p8_structure::kuna_o0jumps as o0j;
+        if data.sblocks_get_size() != 0 || !crate::p8_structure::kuna_fatalchain::pending(data) {
+            return self.structure_once(data, ctx);
+        }
+        let saved = o0j::orientation(data);
+        let relaxed = data.fatalchain_relaxed().clone();
+        let res = self.structure_once(data, ctx);
+        if data.fatalchain_relaxed().len() == relaxed.len() || ctx.deadline_expired() {
+            return res;
+        }
+        let with = o0j::gotos(data);
+        if with == 0 {
+            return res;
+        }
+        data.sblocks_clear();
+        o0j::restore_orientation(data, &saved);
+        data.set_fatalchain_relaxed(relaxed);
+        data.set_fatalchain_hold(true);
+        let held = self.structure_once(data, ctx);
+        data.set_fatalchain_hold(false);
+        if o0j::gotos(data) < with {
+            return held;
+        }
+        data.sblocks_clear();
+        o0j::restore_orientation(data, &saved);
+        self.structure_once(data, ctx)
+    }
+
     fn structure_once(&mut self, data: &mut Funcdata, ctx: &mut ActionContext) -> ApplyResult {
         // C++ blockaction.cc:2170.
         if data.sblocks_get_size() != 0 {
             crate::p8_structure::kuna_condstmts::record_hits(data);
+            crate::p8_structure::kuna_fatalchain::record_hits(data);
             return 0; // Already structured
         }
         data.install_switch_defaults();
@@ -4069,6 +4101,7 @@ impl ActionBlockStructure {
                 switch_case_edges.entry((sbb, target)).or_insert((j, isdef));
             }
         }
+        crate::p8_structure::kuna_fatalchain::relax(data, &mut complex_blocks);
         // (kuna, `option condfold`) the condfold-admissible subset of the *complex*
         // blocks under either admission rule: a bounded, branch-free, comment-free
         // printed-statement prefix in front of the trailing CBRANCH (Rule A), or the
