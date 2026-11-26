@@ -4792,6 +4792,88 @@ fn carmel_compact_extrema_keep_compare_width_and_record_only_strict_improvements
     }
 }
 
+#[test]
+fn carmel_compact_load_routes_address_config_and_pointer_writeback() {
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let left = [0x2c, 0, 0xad, 0x2b, 0xec, 0];
+    let right = [0x2b, 0xec, 0, 0x2c, 0, 0xad];
+    let rows = [
+        (left, 0x1000, 0x1000, 0, [0x5559, 0xb99a, 0x8048, 0x7122, 0]),
+        ([0xab, 0xec, 0, 0x2c, 0, 0xad], 0x1000, 0, 0, [0x5559, 0xb99a, 0x8048, 0x7122, 0]),
+        (right, 0, 0x1000, 0, [0x5559, 0xb99a, 0x8048, 0x7122, 0]),
+        (left, 0, 0x1000, 0, [0x5555, 0x4048, 0x8048, 0x7122, 0]),
+        ([0x2c, 0, 0xab, 0x2c, 1, 0x2d], 0, 0x1000, 0, [0x5565, 0x4048, 0xb99a, 0x7122, 0]),
+        (left, 0, 0x1000, 1, [0x5559, 0xb99a, 0x8048, 0x7122, 0x1000]),
+        (right, 0x1000, 0, 0x0100, [0x5559, 0xb99a, 0x8048, 0x7122, 0x2000]),
+        ([0x2c, 3, 0xec, 0x2b, 0xec, 0], 0, 0, 0, [0x9555, 0x4048, 0x8048, 0x4f23, 0]),
+        ([0x2c, 0, 0xab, 0x2c, 1, 0x2d], 0x1000, 0x1000, 0, [0x5565, 0, 0, 0, 0]),
+    ];
+    let binary = common::scratch_file("carmel-compact-load", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let live = [("PACFG", 0x5555), ("R1", 0x4048), ("R2", 0x8048), ("R7", 0x7122),
+                ("A5L", 0xb99a), ("A5H", 0x4f23), ("EST", 0)];
+    let values = live.iter().map(|(_, val)| val.to_string()).collect::<Vec<_>>().join(",");
+    let mut c = String::from(
+        "#include <stdint.h>\n#include <stdbool.h>\n#include <stdlib.h>\n\
+         static unsigned short expected_conflict;\n\
+         _Noreturn static void carmel_address_config_conflict(unsigned short pacfg) {\n\
+             exit(expected_conflict && pacfg == expected_conflict ? 0 : 71);\n\
+         }\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    for (i, (fetch, ce1, ce2, table, expected)) in rows.into_iter().enumerate() {
+        let body = [fetch, NOP, NOP, NOP, NOP, RET];
+        let contention = i + 1 == rows.len();
+        let outputs = ["PACFG", "R1", "R2", "R7", "EST"];
+        let count = if contention { 1 } else { outputs.len() };
+        fs::write(&binary, body.as_flattened().repeat(count)).unwrap();
+        let specs = binary.with_extension(format!("specs-{i}"));
+        tracked_carmel_entry_specs(&specs, &[("CECFG1", ce1), ("CECFG2", ce2), ("CETBL", table)], 0x1000, 0);
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile-all").arg(&binary).args([
+            "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000",
+            "--json", "--jobs", "1", "--assert-strict",
+        ]);
+        let mut names = Vec::with_capacity(count);
+        for (j, reg) in outputs.into_iter().take(count).enumerate() {
+            let addr = 0x1000 + j * body.as_flattened().len() / 3;
+            let name = format!("sub_{addr:x}");
+            kuna.args(["--addr", &format!("{addr:#x}"), "--assert", &format!("return {name}::%{reg} unsigned short")]);
+            for (k, (input, _)) in live.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {name}::{k} %{input} unsigned short in_{k}")]);
+            }
+            names.push(name);
+        }
+        let result = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+        let functions = json["functions"].as_array().unwrap();
+        assert_eq!(functions.len(), count, "{json}");
+        assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+        for (j, ((function, name), want)) in functions.iter().zip(names).zip(expected).enumerate() {
+            assert_eq!(function["name"], name, "{function}");
+            let text = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+            let unique = format!("load_{i}_{j}");
+            writeln!(c, "#define {name} {unique}\n{text}\n#undef {name}").unwrap();
+            if contention {
+                writeln!(calls, "expected_conflict = {want:#x}; {unique}({values}); return 72;").unwrap();
+            } else {
+                writeln!(calls, "if ({unique}({values}) != {want:#x}) return {};", i * outputs.len() + j + 1).unwrap();
+            }
+        }
+        fs::remove_dir_all(&specs).unwrap();
+    }
+    calls.push_str("}\n");
+    c.push_str(&calls);
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

@@ -4048,6 +4048,13 @@ Covered wide `LOAD` forms distinguish accumulator writeback from pointer
 and `PACFG` setup. An operand that initializes a pointer does not also
 overwrite the encoded bound register.
 
+Compact register `LOAD` programs the two-bit `PACFG` lane in decode and
+writes the corresponding pointer in execute. Both ports use address-stage
+qualification, independently of accumulator writeback. Sequential slots
+use CE1; parallel slots use their respective CE bank. If both parallel
+loads qualify, the right lane's configuration reaches the single decode
+port before contention stops the packet, and neither pointer changes.
+
 Wide logical operations on address-register words write the saved counter
 `LC1`, not the active counter `LC`. The flag-only long DATA form still
 postincrements its address register by two words and computes status from

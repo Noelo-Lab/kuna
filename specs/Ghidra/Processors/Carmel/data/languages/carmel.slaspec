@@ -341,6 +341,16 @@ define token slot (24)
     agu_3_rm = (9,11)
     agu_3_rl = (9,11)
     agu_3_shift = (9,11)
+    load_left_destination = (7,9)
+    load_left_shift = (7,9)
+    load_left_source = (3,6)
+    load_left_mode = (1,2)
+    load_left_qualified = (0,0)
+    load_right_destination = (7,9)
+    load_right_shift = (7,9)
+    load_right_source = (3,6)
+    load_right_mode = (1,2)
+    load_right_qualified = (0,0)
     div_step_dst = (5,7)
     div_step_dst_lo = (5,7)
     div_step_dst_hi = (5,7)
@@ -705,6 +715,9 @@ attach variables [div_btr1_src_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [div_btr1_src_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [div_btr1_src_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [logical_left] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
+attach variables [load_left_destination load_right_destination] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach values [load_left_shift load_right_shift] [0 2 4 6 8 10 12 14];
+attach variables [load_left_source load_right_source] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [logical_right] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7 A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H _ _];
 attach variables [x_alu_half_dst] [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
 attach variables [x_alu_half_src] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
@@ -1914,6 +1927,75 @@ macro publish_alu_ce(flags) {
     unary_ce(CECFG1, feedback, CETBL, 0, first);
     unary_ce(CECFG2, feedback, CETBL, 1, second);
     EST = flags | (first << 12) | (second << 13);
+}
+
+@define COMPACT_LOAD_WORD "slot_12_22=0x2c0 & slot_10_11=0"
+
+compact_load_first: "LOAD" load_left_destination,load_left_source,load_left_mode is $(COMPACT_LOAD_WORD) & load_left_qualified=0 & load_left_destination & load_left_source & load_left_mode { }
+compact_load_first: "LOAD" "CE1" load_left_destination,load_left_source,load_left_mode is $(COMPACT_LOAD_WORD) & load_left_qualified=1 & load_left_destination & load_left_source & load_left_mode { }
+compact_load_second: "LOAD" load_right_destination,load_right_source,load_right_mode is $(COMPACT_LOAD_WORD) & load_right_qualified=0 & load_right_destination & load_right_source & load_right_mode { }
+compact_load_second: "LOAD" "CE2" load_right_destination,load_right_source,load_right_mode is $(COMPACT_LOAD_WORD) & load_right_qualified=1 & load_right_destination & load_right_source & load_right_mode { }
+
+macro compact_load_enabled(qualified, cfg, bank, enabled) {
+    enabled = 1;
+    local is_qualified:1 = qualified;
+    if (is_qualified == 0 || (cfg & 0x1000) != 0) goto <ready>;
+    unary_ce(cfg, EST, CETBL, bank, enabled);
+  <ready>
+}
+
+macro compact_load_pacfg(shift, mode) {
+    local lane:4 = shift;
+    local value:2 = mode;
+    PACFG = (PACFG & ~(3 << lane)) | (value << lane);
+}
+
+macro compact_load_word(destination, shift, source, mode, qualified, cfg, bank) {
+    local enabled:2;
+    compact_load_enabled(qualified, cfg, bank, enabled);
+    if (enabled == 0) goto <done>;
+    compact_load_pacfg(shift, mode);
+    destination = source;
+  <done>
+    local flags:2 = EST & 0xcfff;
+    publish_alu_ce(flags);
+}
+
+:^compact_load_first is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_load_first & load_left_shift & load_left_qualified & load_left_destination & load_left_source & load_left_mode {
+    compact_load_word(load_left_destination, load_left_shift, load_left_source, load_left_mode, load_left_qualified, CECFG1, 0:2);
+}
+:^compact_load_first "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_load_first & load_left_shift & load_left_qualified & load_left_destination & load_left_source & load_left_mode); (slot_mode=0 & nop_right) {
+    compact_load_word(load_left_destination, load_left_shift, load_left_source, load_left_mode, load_left_qualified, CECFG1, 0:2);
+}
+:^nop_left "||" compact_load_second is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_load_second & load_right_shift & load_right_qualified & load_right_destination & load_right_source & load_right_mode) {
+    compact_load_word(load_right_destination, load_right_shift, load_right_source, load_right_mode, load_right_qualified, CECFG2, 1:2);
+}
+
+# The right lane wins the single decode port before a dual write stops, so
+# neither execution-stage pointer update belongs to the contention path.
+define pcodeop carmel_address_config_conflict;
+:^compact_load_first "||" compact_load_second is (carmel_issue=1 & slot_mode=0 & compact_load_first & load_left_shift & load_left_qualified & load_left_destination & load_left_source & load_left_mode); (slot_mode=0 & compact_load_second & load_right_shift & load_right_qualified & load_right_destination & load_right_source & load_right_mode) {
+    local left_enabled:2;
+    local right_enabled:2;
+    compact_load_enabled(load_left_qualified, CECFG1, 0:2, left_enabled);
+    compact_load_enabled(load_right_qualified, CECFG2, 1:2, right_enabled);
+    if (right_enabled == 0) goto <left_only>;
+    compact_load_pacfg(load_right_shift, load_right_mode);
+    if (left_enabled != 0) goto <conflict>;
+    load_right_destination = load_right_source;
+    goto <done>;
+  <left_only>
+    if (left_enabled == 0) goto <done>;
+    compact_load_pacfg(load_left_shift, load_left_mode);
+    load_left_destination = load_left_source;
+  <done>
+    local flags:2 = EST & 0xcfff;
+    publish_alu_ce(flags);
+    goto <end>;
+  <conflict>
+    carmel_address_config_conflict(PACFG);
+    goto <conflict>;
+  <end>
 }
 
 @define WIDE_LIM8_CE2 "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & unary_wide_ce_bank=1 & wide_10_22=0x10ec & wide_0_1=2"
