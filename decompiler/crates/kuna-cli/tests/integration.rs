@@ -924,6 +924,8 @@ mod high_address_branches;
 
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
+#[path = "octeon_elf32.rs"]
+mod octeon_elf32;
 
 #[path = "qualified_call.rs"]
 mod qualified_call;
