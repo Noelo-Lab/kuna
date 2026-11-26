@@ -63,8 +63,8 @@ chapter is anchored to the code that implements it.
 
 - Option catalog (the on/off control surface): `docs/options.md` (generated);
   the JVM engine's is `docs/options-jvm.md`.
-- The JVM engine's provenance, fidelity contract, testing and upstream sync:
-  `docs/jvm.md`.
+- The JVM engine's use, limits, testing and provenance: `docs/jvm.md`; its regression
+  corpus: `tests/jvm/README.md`.
 - Intentional default divergences from upstream + measurements: `docs/history.md`.
 - The phase model at a glance: `docs/phases.md`.
 - Project history (the C++→Rust port, ADRs, retired campaigns): `docs/history.md`.

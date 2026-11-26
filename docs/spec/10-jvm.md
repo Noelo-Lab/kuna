@@ -16,8 +16,8 @@ what native recovery has to infer: the class structure, member signatures, gener
 signatures, exception tables, nesting attributes and bootstrap methods for lambdas. The
 engine therefore works over a Java-level IR of its own (statements and expressions, in
 `decompiler/nonnative/kuna-jvm/src/substrate`) instead of over p-code. Why it is a
-separate engine, how it is tested and how it is maintained is `docs/jvm.md`; this chapter
-is what it computes.
+separate engine and how it is used is `docs/jvm.md`, its regression corpus is
+`tests/jvm/README.md`; this chapter is what it computes.
 
 **Lineage.** The engine is a line-by-line Rust port of Vineflower 1.12.0, itself a fork
 of JetBrains' Fernflower. In this chapter, untagged prose describes the Vineflower port
@@ -27,15 +27,53 @@ Rust file that implements it. Option names are the `jvm_*` rows of
 `decompiler/nonnative/kuna-jvm/options.toml`; their defaults, tiers, symptoms and flip
 guidance are in the generated catalog ([docs/options-jvm.md](../options-jvm.md)).
 
-**The fidelity contract** shapes everything below: on the same class files and options,
-the engine prints the text Vineflower prints, byte for byte, except where one of kuna's
-fixes of Vineflower's defects applies (section 10.16). The port therefore keeps
-Vineflower's pass order, its iteration orders (including the iteration order of Java's
-hash collections, which reaches the output), its id counters (which reach the output as
-`var10000` and `label7`) and its failure behaviour. Where this chapter describes a
-heuristic that looks arbitrary, it is Vineflower's, kept for that reason. kuna's options of
-form choose the source's form of equivalent code over Vineflower's (`jvm_source_locals` and
+**Order reaches the output.** The port keeps Vineflower's pass order, its iteration orders
+(including the iteration order of Java's hash collections, which reaches the output), its id
+counters (which reach the output as `var10000` and `label7`) and its failure behaviour, apart
+from kuna's fixes of Vineflower's defects (section 10.16). Where this chapter describes a
+heuristic that looks arbitrary, it is Vineflower's, kept for that reason. kuna's options of form choose the source's form of equivalent code over Vineflower's (`jvm_source_locals` and
 `jvm_source_patterns`, section 10.10).
+
+**Code conventions.** Every ported file starts with `//! Port of \`org/jetbrains/java/decompiler/.../X.java\`.`
+(`org/vineflower/...` for the plugins), and the port follows the original line by line,
+so a change upstream can be found and applied in the same place:
+
+- **One Java top-level class, one module**, named after the class in snake case
+  (`IfHelper` is `if_helper`, `SSAUConstructorSparseEx` is `ssau_constructor_sparse_ex`;
+  acronyms split oddly: `IFernflowerPreferences` is `i_fernflower_preferences`,
+  `PPandMMHelper` is `p_pand_mm_helper`). Every ported module is re-exported flat from the
+  crate root (`kuna_jvm::if_helper`), so code never names a phase folder; a fix is named by
+  its family (`crate::fixes::switches`, `crate::fixes::generic_casts::receiver_type_arguments`). Types keep their Java names,
+  nested Java types live in their outer class's module, and methods are the Java names in
+  snake case with prefixes kept (`getParent` is `get_parent`). A class of static methods
+  is a unit struct, so a call reads like the Java (`IfHelper::merge_all_ifs(root)`).
+  Overloads carry a suffix and a `/// Java: name(ParamTypes)` line.
+- **Three shapes of class.** Anything with identity or shared mutable state is an *arena
+  object*: a `Copy` handle whose `==` is Java's reference `==`, with Java subclasses as
+  typed views over one `kind` enum (`x.is_if()`, `x.as_if()`, `x.try_as_if()`) and virtual
+  methods as dispatchers on the base type. Immutable values that Java compares both by
+  identity and by `equals` (`VarType`, `MethodDescriptor`, constants) are `Rc`-backed,
+  with explicit `equals` and `ptr_eq` and no `PartialEq`, so every comparison says which
+  one it means. Small records and Java enums are plain Rust values.
+- **Java semantics, not Rust defaults.** A nullable reference is an `Option`; integers
+  keep Java's widths and use wrapping arithmetic wherever Java can overflow; strings that
+  may be non-ASCII are indexed in UTF-16 units; numbers and characters are formatted and
+  classified through `rt/`; `HashMap`/`HashSet` are always the kernel's JDK-order
+  collections (the workspace's Clippy configuration bans the `std` ones); a Java `throw`
+  is `jthrow!` and a `catch` is `rt::try_catch`.
+- **Counter discipline.** Ids come from counters and reach the output (`var10000`,
+  `label7`), so an object is allocated exactly where the Java constructor runs, never as
+  an extra temporary.
+- **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
+  `kuna_options`, `kuna_driver`, `kuna_engine`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
+  `kuna_corpus`, `kuna_reclaim`), in `src/fixes/`, in the modules that replace JVM
+  facilities (`context_source`, `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the
+  Kotlin plugin's seams (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported
+  files are kept to the seams those modules need (span marks in the writer, a deadline
+  poll in the cancellation manager, partial runs in `fernflower.rs`) and to the sites of
+  kuna's fixes (section 10.16), noted in the file headers.
+- **Comments are minimal**, as everywhere in kuna: Java comments and Javadoc are not
+  transcribed.
 
 ## 10.1 The phase folders and the schedule
 
@@ -1361,9 +1399,8 @@ By default kuna's fixes write the JDK members and classes Kotlin maps by their K
 instead (`text.length`, `(f(x) as Number).toInt()`; fixes `kt_mapped_java_member` and
 `kt_mapped_java_type`, section 10.16).
 
-**Fidelity and front-end support (kuna).** The engine's Kotlin output is Vineflower's: the
-Kotlin plugin's own tests and core's Kotlin tests are corpus cases (`tests/jvm/kotlin.json`),
-compared with the released jar's text. `decompiler/nonnative/kuna-jvm/src/infra/kuna_spans.rs`
+**Front-end support (kuna).** The Kotlin plugin's own tests and core's Kotlin tests are
+corpus cases (sets *Kotlin ...* of `tests/jvm/cases.tsv`). `decompiler/nonnative/kuna-jvm/src/infra/kuna_spans.rs`
 spans are recorded by the Kotlin writer too: a property's getter and setter share the span
 of the property's declaration, a primary constructor's span is its `init` block (it has
 none when the body is empty; it is opened before the constructor is stringified, so a
@@ -1380,10 +1417,8 @@ initial stack-variable loop.
 Vineflower 1.12.0 throws on some methods, and the port, which keeps its failure behaviour,
 throws there too and writes the method as `// $VF: Couldn't be decompiled` (section 10.12).
 A *fix* is a deliberate departure from the Java at the place of such a defect, or of code
-Vineflower prints wrong. The table in `docs/jvm.md` (*Kuna-only fixes*) describes each fix,
-by its id, in one row: the defect and what kuna does instead. This section describes the
-gate every fix goes through, the invariants the fixes keep, and the mechanisms groups of
-them share. A fix longer than a few lines lives in its family's module,
+Vineflower prints wrong. This section describes the invariants the fixes keep and the
+mechanisms groups of them share. A fix longer than a few lines lives in its family's module,
 `decompiler/nonnative/kuna-jvm/src/fixes/<family>.rs`, or, in a family with a folder, in
 `decompiler/nonnative/kuna-jvm/src/fixes/<family>/<id>.rs`.
 
@@ -1392,8 +1427,9 @@ gate: its code takes the place of the Java's at its site, and the engine has one
 `Fernflower::new` (`decompiler/nonnative/kuna-jvm/src/p0_knowledge/fernflower.rs`) sets the
 `error-message` default to kuna's note (`report_to_kuna`). The regression corpus's runner
 (`decompiler/nonnative/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) runs every case
-with the defaults: its Vineflower-oracle cases against a digest of the text kuna printed when
-last reviewed, and each fix's case (`tests/jvm/kuna-fixes/`) against kuna's reviewed text.
+with the defaults: the cases from Vineflower's own test suite against a digest of the text kuna
+printed when last reviewed, and kuna's cases (`tests/jvm/kuna-fixes/`) against kuna's
+reviewed text.
 
 **Invariants.**
 
@@ -1409,8 +1445,8 @@ last reviewed, and each fix's case (`tests/jvm/kuna-fixes/`) against kuna's revi
   they act only on a class written as Kotlin (a class with Kotlin metadata, the Kotlin
   plugin on).
 - A rewrite keeps what the code does. A control-flow rewrite (a handler copy, a split node)
-  is exact, and a fix's evidence includes recompiling its case's default text to the
-  original's instructions (`docs/jvm.md`, *Fixing a Vineflower bug*).
+  is exact, and a fix's evidence includes recompiling its case's text to the original's
+  instructions.
 
 **Exception ranges, handler copies and `finally`.** When a protected range has several
 entries (kotlinc's `try` around a suspension point, whose resume label jumps into the

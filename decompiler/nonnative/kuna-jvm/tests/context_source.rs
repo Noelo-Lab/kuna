@@ -1,5 +1,5 @@
-//! The jar, directory and single-file context sources against Vineflower's own
-//! (golden/*.txt, recorded by VfDump.java through `StructContext.addSpace`).
+//! The jar, directory and single-file context sources against the units they register
+//! (`data/f6/golden/*.txt`, recorded from Vineflower 1.12.0's `StructContext.addSpace`).
 
 use std::path::Path;
 use std::rc::Rc;

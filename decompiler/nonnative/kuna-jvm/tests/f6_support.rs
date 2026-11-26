@@ -61,16 +61,6 @@ pub fn jdk_home() -> Option<PathBuf> {
         .filter(|h| h.join("lib/modules").is_file())
 }
 
-/// The Vineflower 1.12.0 jar: `VINEFLOWER_JAR`, else the oracle workspace's
-/// (`KUNA_JVM_ORACLE`, `tools/oracle/README.md`); `None` (tests skip) when absent.
-pub fn vineflower_jar() -> Option<PathBuf> {
-    let explicit = std::env::var_os("VINEFLOWER_JAR").map(PathBuf::from);
-    let default = std::env::var_os("KUNA_JVM_ORACLE")
-        .map(|o| PathBuf::from(o).join("oracle/vineflower-1.12.0.jar"));
-    explicit.into_iter().chain(default).find(|p| p.is_file())
-}
-
-/// `StructContext.addSpace(File)`'s choice of source for a path.
 pub fn source_for(path: &Path) -> Rc<dyn IContextSource> {
     let name = path.to_string_lossy();
     if path.is_dir() {
@@ -89,7 +79,7 @@ fn caught_class(caught: &kuna_jvm::rt::Caught) -> String {
         .map_or_else(|| "RustPanic".to_string(), |e| e.class.to_string())
 }
 
-/// What `VfDump` prints: sources are registered like `StructContext.addSpace`
+/// The listing of `data/f6/golden/*.txt`: sources are registered like `StructContext.addSpace`
 /// (each unit, then its child contexts depth-first), then every unit's entries.
 pub fn dump_units(roots: Vec<Rc<dyn IContextSource>>) -> Vec<String> {
     fn register(

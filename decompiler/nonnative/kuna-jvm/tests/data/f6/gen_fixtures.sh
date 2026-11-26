@@ -1,6 +1,5 @@
 #!/bin/sh
 # Regenerates the F6 fixtures in this directory (needs JDK 21 javac/jar/jmod and python3).
-# Afterwards run gen_golden.sh to refresh the Vineflower goldens.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 work=$(mktemp -d)

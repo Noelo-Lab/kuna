@@ -175,3 +175,29 @@ fn flagged_vf_comments_are_method_warnings() {
     let test = unit.methods.iter().find(|m| m.name == "test").unwrap();
     assert!(test.warnings.is_empty());
 }
+
+/// `tests/fixtures/jvm/failures/classes` (kuna-cli's fixture, broken by construction): lambdas
+/// that fail inside methods and a field initializer, and a method that fails itself.
+#[test]
+fn failures_written_inside_a_method_are_recorded_against_it() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../tests/fixtures/jvm/failures/classes");
+    let set = kuna_input::load(&dir, &LoadOptions::default()).unwrap();
+    let units = decompile(&set, &options(&[]));
+    let unit = units.iter().find(|u| u.qualified_name == "com/ex/fail/Nested").unwrap();
+    let method = |name: &str| unit.methods.iter().find(|m| m.name == name).unwrap();
+    let bodies = |name: &str| method(name).nested.iter().map(|f| f.body.clone()).collect::<Vec<_>>();
+    assert!(method("escape").error.is_none());
+    assert_eq!(bodies("escape"), ["com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;"]);
+    assert_eq!(bodies("both").len(), 2);
+    let later = method("later");
+    assert!(later.error.is_some() && later.nested.is_empty());
+    assert!(bodies("plain").is_empty());
+    let root = unit.classes.iter().find(|c| c.name == unit.qualified_name).unwrap();
+    assert!(root.error.is_none());
+    assert_eq!(root.nested.len(), 1, "the field initializer's lambda");
+    assert!(root.nested[0].body.starts_with("com.ex.fail.Nested.lambda$static$"), "{:?}", root.nested[0]);
+    for failure in unit.methods.iter().flat_map(|m| &m.nested) {
+        assert!(failure.error.contains("ClassCastException"), "{failure:?}");
+    }
+}

@@ -1,21 +1,17 @@
-//! The JDK runtime loader against Vineflower's `jrt:` view and the JDK's own
-//! `jimage`/`jmod` tools. Tests that need a local JDK skip when there is none.
+//! The JDK runtime loader against the JDK's own `jimage`/`jmod` tools. Tests that need a local JDK skip when there is none.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::time::Instant;
 
 use kuna_jvm::context_source::{java_absolute_path, IContextSource};
 use kuna_jvm::i_fernflower_logger::Severity;
 use kuna_jvm::jdk_runtime::{JImage, JavaRuntimeContextSource, JdkRuntime};
-use kuna_jvm::rt::try_catch;
-use kuna_jvm::struct_context::StructContext;
 use kuna_jvm::zip_reader::ZipReader;
 
 use crate::common;
 
-use crate::f6_support::{data, dump_units, jdk_home, run, skip, tmp_dir, tool, vineflower_jar};
+use crate::f6_support::{data, jdk_home, run, skip, tmp_dir, tool};
 
 fn home_id(home: &Path) -> String {
     home.to_string_lossy().replace('/', "_")
@@ -42,127 +38,6 @@ fn locate_maps_include_runtime_values() {
     eprintln!("include-runtime=current -> {}", home.display());
 }
 
-/// What `VfDump runtime <home>` prints (Vineflower's own `include-runtime=<home>`
-/// struct context), compiling the oracle into `tmp_dir(out)`.
-fn vfdump_runtime(test: &str, out: &str, home: &Path) -> Option<Vec<String>> {
-    let Some(vf) = vineflower_jar() else {
-        skip(test, "no vineflower jar");
-        return None;
-    };
-    let runner = JdkRuntime::locate("current");
-    let (Some(javac), Some(java)) = (
-        tool(runner.as_deref(), "javac"),
-        tool(runner.as_deref(), "java"),
-    ) else {
-        skip(test, "no javac/java");
-        return None;
-    };
-    let out = tmp_dir(out);
-    let compiled = run(
-        &javac,
-        &[
-            "-cp",
-            &vf.to_string_lossy(),
-            "-d",
-            &out.to_string_lossy(),
-            &data("VfDump.java").to_string_lossy(),
-        ],
-    );
-    assert!(
-        compiled.status.success(),
-        "{}",
-        String::from_utf8_lossy(&compiled.stderr)
-    );
-    let classpath = format!("{}:{}", vf.display(), out.display());
-    let dumped = run(
-        &java,
-        &[
-            "-cp",
-            &classpath,
-            "org.jetbrains.java.decompiler.struct.VfDump",
-            "runtime",
-            &home.to_string_lossy(),
-        ],
-    );
-    assert!(
-        dumped.status.success(),
-        "{}",
-        String::from_utf8_lossy(&dumped.stderr)
-    );
-    Some(
-        String::from_utf8(dumped.stdout)
-            .unwrap()
-            .lines()
-            .map(str::to_string)
-            .collect(),
-    )
-}
-
-fn assert_same_dump(mine: &[String], theirs: &[String]) {
-    if let Some(i) = mine.iter().zip(theirs).position(|(a, b)| a != b) {
-        let around = |v: &[String]| v[i.saturating_sub(3)..(i + 3).min(v.len())].join("\n");
-        panic!(
-            "first difference at line {i}:\nmine:\n{}\nvineflower:\n{}",
-            around(mine),
-            around(theirs)
-        );
-    }
-    assert_eq!(mine.len(), theirs.len());
-}
-
-#[test]
-fn runtime_matches_vineflower_jrt_view() {
-    let Some(home) = jdk_home() else {
-        return skip("runtime_matches_vineflower_jrt_view", "no JDK");
-    };
-    let Some(theirs) = vfdump_runtime("runtime_matches_vineflower_jrt_view", "vfdump", &home)
-    else {
-        return;
-    };
-    let mine = dump_units(vec![Rc::new(root(&home))]);
-    let units = mine.iter().filter(|l| l.starts_with("UNIT ")).count();
-    let classes = mine.iter().filter(|l| l.starts_with("C ")).count();
-    assert_same_dump(&mine, &theirs);
-    eprintln!(
-        "{}: {units} units, {classes} classes, {} lines identical to Vineflower's jrt view",
-        home.display(),
-        mine.len()
-    );
-}
-
-/// `VfDump`'s listing of a real struct context's units.
-fn dump_struct_context(struct_context: StructContext) -> Vec<String> {
-    let mut out = Vec::new();
-    for unit in struct_context.get_units() {
-        let source = unit.with(|d| d.source.clone());
-        out.push(format!("UNIT {}", source.get_name()));
-        let entries = match try_catch(|| source.get_entries()) {
-            Ok(entries) => entries,
-            Err(caught) => {
-                out.push(format!(
-                    "THROW {}",
-                    caught
-                        .exception
-                        .map_or("RustPanic".into(), |e| e.class.to_string())
-                ));
-                continue;
-            }
-        };
-        out.push(format!("R {} {}", unit.is_root(), source.is_lazy()));
-        for e in entries.classes() {
-            out.push(format!("C {} {}", e.multirelease(), e.base_path()));
-        }
-        for d in entries.directories() {
-            out.push(format!("D {d}"));
-        }
-        for e in entries.others() {
-            out.push(format!("O {} {}", e.multirelease(), e.base_path()));
-        }
-        out.push(format!("K {}", entries.child_contexts().len()));
-    }
-    out
-}
-
 #[test]
 fn add_runtime_registers_the_jdk_in_the_struct_context() {
     let test = "add_runtime_registers_the_jdk_in_the_struct_context";
@@ -184,7 +59,7 @@ fn add_runtime_registers_the_jdk_in_the_struct_context() {
     let Some(home) = jdk_home() else {
         return skip(test, "no JDK");
     };
-    let mine = {
+    {
         let guard = common::install_default_context();
         let sc = guard.struct_context();
         let started = Instant::now();
@@ -215,22 +90,12 @@ fn add_runtime_registers_the_jdk_in_the_struct_context() {
             home.display(),
             units.len()
         );
-        dump_struct_context(sc)
-    };
+    }
     if JdkRuntime::locate("current").is_some() {
         let guard = common::install_default_context();
         assert!(JdkRuntime::add_runtime(guard.struct_context(), "current"));
         assert!(guard.struct_context().has_class("java/lang/String"));
     }
-    let Some(theirs) = vfdump_runtime(test, "vfdump-context", &home) else {
-        return;
-    };
-    assert_same_dump(&mine, &theirs);
-    eprintln!(
-        "{test}: {} lines identical to Vineflower's include-runtime={}",
-        mine.len(),
-        home.display()
-    );
 }
 
 fn jimage_list(jimage: &Path, image: &Path, module: &str) -> BTreeSet<String> {

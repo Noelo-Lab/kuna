@@ -55,8 +55,8 @@ collections (named in the document's `omitted`), keeping it near the size of the
 
 ## Java and Kotlin: class files, jars and directories
 
-Kuna decompiles JVM bytecode with a separate engine (a port of Vineflower and its
-plugins): to Java, and a class compiled from Kotlin to Kotlin. Pass a `.class`, a jar
+Kuna decompiles JVM bytecode with a separate engine (it began as a port of Vineflower
+and its plugins): to Java, and a class compiled from Kotlin to Kotlin. Pass a `.class`, a jar
 (also war, ear, zip) or a directory wherever a binary goes:
 
 ```bash

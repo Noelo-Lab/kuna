@@ -59,7 +59,7 @@ layers are bound to the JVM to different degrees:
 | Middle: statements, expressions, SSA, variables, structuring | `substrate`, `p3_dataflow`, `p6_variables`, `p7_regions`, `p8_structure` | 55.9K | its role is language-neutral; its code is not yet (below) |
 | Java semantics | `p4_calls`, `p5_types` | 4.3K | lambdas, generics |
 | Writers | `p9_emit` (Java), `kotlin` | 5.4K, 17.1K | one per output language |
-| Fixes | `fixes` | 29.1K | Vineflower's Java and Kotlin output |
+| Fixes | `fixes` | 29.1K | the Java and Kotlin output |
 
 A second **output** language is already a plug-in on the middle: Kotlin is one. A second
 **input** bytecode is not. The middle names the JVM directly in about 1,150 places: 740 uses
@@ -67,5 +67,5 @@ of `VarType` (types as JVM descriptors) in 43 of its 128 files, 226 of the class
 (`StructClass`, `StructMethod`, the constant pool) in 36, and 183 of opcodes and access
 flags in 30. Routing those three through a neutral type and member model is what sharing
 the middle with, say, a CIL front end costs. It is mechanical and it is checked by the
-compat corpus, and it should be done with that front end in hand rather than before it,
+corpus, and it should be done with that front end in hand rather than before it,
 so the model is shaped by two users instead of guessed from one.

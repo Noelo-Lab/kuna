@@ -547,12 +547,6 @@ fn kuna_fixes_have_no_switch() {
     assert!(ok(&fixed).contains("return this.types.map(factory::create);"), "{}", stdout(&fixed));
     assert!(!stderr(&fixed).contains("warning:"), "{}", stderr(&fixed));
 
-    for name in ["jvm_vineflower_compat", "jvm_fix_lambda_wildcard_return", "jvm_fix_report_to_kuna"] {
-        let unknown = kuna(&["decompile", &class, method, "--option", name, "off"]);
-        assert_eq!(unknown.status.code(), Some(2), "{}", stderr(&unknown));
-        assert!(stderr(&unknown).contains(&format!("unknown JVM option {name}")), "{}", stderr(&unknown));
-    }
-
     let failed = |extra: &[&str]| {
         let mut args = vec!["decompile-all", class.as_str(), "--json"];
         args.extend(extra);
@@ -821,3 +815,100 @@ fn a_flagged_vf_comment_is_a_warning_not_a_failure() {
     assert_eq!(plain["functions"][0]["warnings"], serde_json::json!([]));
 }
 
+
+/// `tests/fixtures/jvm/failures/classes`: class files broken by construction (its `README.md`).
+fn failures_dir() -> String {
+    fixtures().join("failures/classes").display().to_string()
+}
+
+const CAST: &str = "ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer";
+
+#[test]
+fn a_failure_inside_a_lambda_fails_the_enclosing_method() {
+    let dir = failures_dir();
+    let escape = jvm(&["decompile", &dir, "com.ex.fail.Nested.escape"]);
+    assert_eq!(escape.status.code(), Some(1), "its only selected method failed: {}", stderr(&escape));
+    assert!(stdout(&escape).contains("// $VF: Couldn't be decompiled"), "{}", stdout(&escape));
+    assert_eq!(
+        warnings(&escape),
+        [format!(
+            "warning: com.ex.fail.Nested.escape(I)Ljava/lang/Runnable;: in \
+             com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;: {CAST}"
+        )]
+    );
+    let later = jvm(&["decompile", &dir, "com.ex.fail.Nested.later"]);
+    assert_eq!(later.status.code(), Some(1));
+    assert_eq!(
+        warnings(&later),
+        [format!("warning: com.ex.fail.Nested.later(Ljava/lang/StringBuilder;)Ljava/lang/Runnable;: {CAST}")]
+    );
+
+    let class = jvm(&["decompile", &dir, "com.ex.fail.Nested"]);
+    assert_eq!(class.status.code(), Some(0), "a class target exits 0 when the class was written");
+    let told = warnings(&class);
+    assert_eq!(told.len(), 5, "each failed body once: {told:#?}");
+    assert!(told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0")));
+
+    let doc = json(&jvm(&["decompile-all", &dir, "--json"]));
+    let record = |name: &str| {
+        doc["functions"].as_array().unwrap().iter().find(|f| f["name"] == name).cloned().unwrap()
+    };
+    let escape = record("com.ex.fail.Nested.escape");
+    assert!(escape["error"].as_str().unwrap().starts_with("in com.ex.fail.Nested.lambda$escape$1("), "{escape}");
+    assert_eq!(escape["nested_errors"].as_array().unwrap().len(), 1);
+    assert_eq!(record("com.ex.fail.Nested.both")["nested_errors"].as_array().unwrap().len(), 2);
+    let later = record("com.ex.fail.Nested.later");
+    assert_eq!(later["error"], serde_json::json!(CAST));
+    assert!(later["nested_errors"].as_array().unwrap().is_empty());
+    assert!(record("com.ex.fail.Nested.plain")["error"].is_null());
+    let class = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == "com.ex.fail.Nested").unwrap();
+    assert_eq!(class["status"], "decompiled");
+    assert!(class["error"].is_null());
+    assert_eq!(class["nested_errors"].as_array().unwrap().len(), 1, "the field initializer's lambda: {class}");
+
+    let out = scratch_dir("jvm-nested-failures");
+    let summary = ok(&jvm(&["decompile-project", &dir, "-o", &out.display().to_string()]));
+    assert!(
+        summary.ends_with("; classes: 2 ok, 1 failed; methods: 2 ok, 3 failed; outside methods: 1 failed\n"),
+        "{summary}"
+    );
+}
+
+#[test]
+fn a_class_that_fails_whole_is_failed_not_hidden() {
+    let dir = failures_dir();
+    let reason = format!("Class com/ex/fail/Whole couldn't be fully decompiled: {CAST}");
+    let class = jvm(&["decompile", &dir, "com.ex.fail.Whole"]);
+    assert_eq!(class.status.code(), Some(1));
+    assert!(stdout(&class).contains("$VF: Unable to decompile class"), "{}", stdout(&class));
+    assert!(stderr(&class).contains(&format!("error: could not decompile com.ex.fail.Whole: {reason}")), "{}", stderr(&class));
+    let method = jvm(&["decompile", &dir, "com.ex.fail.Whole.size"]);
+    assert_eq!(method.status.code(), Some(1));
+    assert!(stderr(&method).contains(&reason), "{}", stderr(&method));
+    assert!(!stderr(&method).contains("no declaration of its own"), "{}", stderr(&method));
+
+    let all = jvm(&["decompile-all", &dir, "--json"]);
+    assert!(stderr(&all).contains(&format!("warning: could not decompile com.ex.fail.Whole: {reason}")));
+    let doc = json(&all);
+    let status = |name: &str| {
+        let c = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == name).cloned().unwrap();
+        (c["status"].as_str().unwrap().to_string(), c["error"].clone())
+    };
+    assert_eq!(status("com.ex.fail.Whole"), ("failed".into(), serde_json::json!(reason)));
+    assert_eq!(status("com.ex.fail.Mark"), ("decompiled".into(), Value::Null));
+
+    let whole = fixtures().join("failures/classes/com/ex/fail/Whole.class").display().to_string();
+    let only = jvm(&["decompile-all", &whole, "--json"]);
+    assert_eq!(only.status.code(), Some(1), "no class decompiled");
+    let doc: Value = serde_json::from_str(&stdout(&only)).unwrap();
+    assert_eq!(doc["error"], serde_json::json!(format!("no class of {whole} could be decompiled")));
+}
+
+#[test]
+fn an_anonymous_class_inside_a_failed_body_is_hidden() {
+    let doc = json(&jvm(&["decompile-all", &failures_dir(), "--functions", "com.ex.fail.Nested$2", "--json"]));
+    let class = &doc["classes"][0];
+    assert_eq!(class["status"], "hidden");
+    assert!(class["error"].is_null() && class["code"].is_null());
+    assert!(class["note"].as_str().unwrap().contains("is not in the decompiled source"), "{class}");
+}

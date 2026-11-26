@@ -3,41 +3,42 @@ package com.ex.fail;
 import java.util.function.IntFunction;
 
 public class Nested {
-    static final IntFunction<Object> QUOTE = c -> new StringBuilder().append(switch (c) {
-        case '"' -> "\\\"";
-        default -> (char) c;
-    });
+    static final IntFunction<Runnable> QUOTE = x -> new Runnable() {
+        @Mark('\u7a7a')
+        int mark;
 
-    static String escape(CharSequence input) {
-        StringBuilder b = new StringBuilder();
-        input.chars().forEach(c -> b.append(switch (c) {
-            case '"' -> "\\\"";
-            default -> (char) c;
-        }));
-        return b.toString();
-    }
+        public void run() {
+        }
+    };
 
-    static String both(CharSequence a, CharSequence z) {
-        StringBuilder b = new StringBuilder();
-        a.chars().forEach(c -> b.append(switch (c) {
-            case '"' -> "\\\"";
-            default -> (char) c;
-        }));
-        z.chars().forEach(c -> b.append(switch (c) {
-            case '\\' -> "\\\\";
-            default -> (char) c;
-        }));
-        return b.toString();
-    }
-
-    static Runnable later(StringBuilder b, int c) {
-        return new Runnable() {
-            @Override
+    static Runnable escape(int c) {
+        IntFunction<Runnable> make = x -> new Runnable() {
+            @Mark('\u7a7a')
             public void run() {
-                b.append(switch (c) {
-                    case '"' -> "\\\"";
-                    default -> (char) c;
-                });
+            }
+        };
+        return make.apply(c);
+    }
+
+    static Runnable both(int c) {
+        IntFunction<Runnable> one = x -> new Runnable() {
+            @Mark('\u7a7a')
+            public void run() {
+            }
+        };
+        IntFunction<Runnable> two = x -> new Runnable() {
+            @Mark('\u7a7a')
+            public void run() {
+            }
+        };
+        return c > 0 ? one.apply(c) : two.apply(c);
+    }
+
+    static Runnable later(StringBuilder b) {
+        return new Runnable() {
+            @Mark('\u7a7a')
+            public void run() {
+                b.append('"');
             }
         };
     }

@@ -180,22 +180,21 @@ kuna test --datatests --datatests-dir tests/stages \
 kuna test --jvm                                        # the JVM engine's corpus (= make test-jvm)
 ```
 
-`--jvm` runs the JVM engine's differential corpus (`tests/jvm/cases.tsv`, `docs/jvm.md`)
+`--jvm` runs the JVM engine's regression corpus (`tests/jvm/cases.tsv`, `tests/jvm/README.md`)
 in process: each case decompiles its class files with its pinned options and must print
-its expected text, pinned by a digest or an expected file: the Vineflower-oracle cases by a
-digest of kuna's text, the kuna-fixes cases by kuna's reviewed text. It has no baseline: every case must match, and
+its pinned text, by a digest of kuna's text or by an expected file of kuna's reviewed text.
+It has no baseline: every case must match, and
 `--baseline`/`--save-baseline` are refused (exit `2`). Its `--json` results use `jvm:`
 keys, and it needs neither the SLEIGH specs nor a JDK. `--name N` keeps the cases whose id
 contains `N`, `--jobs N|auto` sets how many run at once (default: the core count, at most
-16), `--manifest FILE` runs another manifest (such as the external one `tests/jvm/regen.py
---full-manifest` writes), `--out DIR` (new or empty) writes each run's compared text as
+16), `--manifest FILE` runs another manifest, `--out DIR` (new or empty) writes each run's compared text as
 `DIR/<id>.java` or `.kt`, and `--save-digests` re-records in the manifest the `kuna`
 digest of each run it made, once a change of kuna's text is reviewed. A digest
-mismatch prints both digests; `tests/jvm/README.md`, "When a case does not match", puts
-Vineflower's text beside kuna's. The datatest flags (`--all`, `--unittests`,
+mismatch prints both digests; `tests/jvm/README.md`, "Running a case and investigating a
+red one", has the commands. The datatest flags (`--all`, `--unittests`,
 `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`) are refused next to it, and
 `--jobs`, `--manifest`, `--out` and `--save-digests` without it (exit `2`). The summary line reads
-`jvm: 893/893 cases matched (0 mismatch, 0 error, 0 unsupported) in 5.2 s`. `--all`
+`jvm: 893/893 cases matched (0 mismatch, 0 error) in 5.2 s`. `--all`
 stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,
@@ -4839,9 +4838,8 @@ kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class written 
 
 A class file, a jar (or war, ear, zip) or a directory of classes is decompiled to **Java**,
 and a class compiled from Kotlin to **Kotlin**, by kuna's non-native JVM engine,
-`kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins with kuna's fixes of
-Vineflower's defects, which `--option jvm_vineflower_compat on` turns off for Vineflower's
-exact text (`docs/jvm.md`; the algorithm is `docs/spec/10-jvm.md`). The input is recognized before any native code runs, so none of the native machinery (SLEIGH
+`kuna-jvm`, which began as a Rust port of Vineflower 1.12.0 and its bundled plugins
+(`docs/jvm.md`; the algorithm is `docs/spec/10-jvm.md`). The input is recognized before any native code runs, so none of the native machinery (SLEIGH
 specs, `decomp_dbg`, the loader, the native option tables) is involved, and a native
 binary pays one `stat` and one eight-byte read for the check. The commands keep their
 native names, flags and output shapes where they make sense for Java and Kotlin, and say so where
@@ -5100,42 +5098,34 @@ failed inside it), and `decompile` prints one `warning:` line per failed body, u
 own record when that is selected, else under the selected method that holds it:
 
 ```
-$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested.later --option jvm_vineflower_compat on ; echo $?
-static Runnable later(final StringBuilder b, final int c) {
-   return new Runnable() {
-      @Override
-      public void run() {
-         // $VF: Couldn't be decompiled
-...
-warning: com.ex.fail.Nested.later(Ljava/lang/StringBuilder;I)Ljava/lang/Runnable;: in com.ex.fail.Nested$1.run()V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
+$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested.escape ; echo $?
+warning: com.ex.fail.Nested.escape(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
+static Runnable escape(int c) {
+   IntFunction<Runnable> make = x -> // $VF: Couldn't be decompiled;
+   return make.apply(c);
+}
 1
-$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested --option jvm_vineflower_compat on >/dev/null
-warning: com.ex.fail.Nested.escape(Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$escape$1(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
-warning: com.ex.fail.Nested.both(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$both$2(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
-warning: com.ex.fail.Nested.both(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;: in com.ex.fail.Nested.lambda$both$3(Ljava/lang/StringBuilder;I)V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \\
-warning: com.ex.fail.Nested$1.run()V: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
-warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0(I)Ljava/lang/Object;: RuntimeException: invalid constant type: Ljava/io/Serializable; with value \"
-$ kuna decompile-project tests/fixtures/jvm/failures/classes -o out --option jvm_vineflower_compat on
-wrote out: 1 .java files (5641 bytes); classes: 1 ok, 0 failed; methods: 1 ok, 4 failed; outside methods: 1 failed
+$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested >/dev/null
+warning: com.ex.fail.Nested.escape(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
+warning: com.ex.fail.Nested.both(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$both$2(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
+warning: com.ex.fail.Nested.both(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$both$3(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
+warning: com.ex.fail.Nested.later(Ljava/lang/StringBuilder;)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
+warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
 ```
 
-(`tests/fixtures/jvm/failures/` holds classes that fail in Vineflower's way, hence
-`jvm_vineflower_compat on`, which keeps them failing after a kuna fix for the defect.)
-
-A class the Kotlin writer gives up on is failed on every surface (`InlKt$sortNames$$inlined$byLength$1`,
-an anonymous object copied out of an inline function, is a unit of its own):
+(`tests/fixtures/jvm/failures/` holds class files broken by construction: its `README.md`
+says how.) A class the engine gives up on is failed on every surface:
 
 ```
-$ kuna decompile tests/fixtures/jvm/failures/kotlin/classes com.ex.ktfail.Lens.getLens --option jvm_vineflower_compat on
-error: could not decompile com.ex.ktfail.Lens: Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents
-$ kuna decompile-all tests/fixtures/jvm/failures/kotlin/classes --json --option jvm_vineflower_compat on 2>/dev/null | jq -c '.classes[] | {name, status, error}'
-{"name":"com.ex.ktfail.InlKt$sortNames$$inlined$byLength$1","status":"decompiled","error":null}
-{"name":"com.ex.ktfail.InlKt","status":"decompiled","error":null}
-{"name":"com.ex.ktfail.Lens","status":"failed","error":"Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents"}
-{"name":"com.ex.ktfail.Plain","status":"decompiled","error":null}
-$ kuna decompile-project tests/fixtures/jvm/failures/kotlin/classes -o out --option jvm_vineflower_compat on
-warning: could not decompile com.ex.ktfail.Lens: Class com/ex/ktfail/Lens couldn't be fully decompiled: NullPointerException: exprents
-wrote out: 4 .kt files (2271 bytes); classes: 3 ok, 1 failed; methods: 5 ok, 1 failed
+$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Whole.size
+error: could not decompile com.ex.fail.Whole: Class com/ex/fail/Whole couldn't be fully decompiled: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
+$ kuna decompile-all tests/fixtures/jvm/failures/classes --json 2>/dev/null | jq -c '.classes[] | {name, status, error}'
+{"name":"com.ex.fail.Mark","status":"decompiled","error":null}
+{"name":"com.ex.fail.Nested","status":"decompiled","error":null}
+{"name":"com.ex.fail.Whole","status":"failed","error":"Class com/ex/fail/Whole couldn't be fully decompiled: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer"}
+$ kuna decompile-project tests/fixtures/jvm/failures/classes -o out
+warning: could not decompile com.ex.fail.Whole: Class com/ex/fail/Whole couldn't be fully decompiled: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
+wrote out: 3 .java files (1743 bytes); classes: 2 ok, 1 failed; methods: 2 ok, 3 failed; outside methods: 1 failed
 ```
 
 **Warnings.** Some `$VF:` comments the engine writes above a method mark text that is
@@ -5243,7 +5233,7 @@ it needs to drive it.
 | `agents` | `docs/agents.md` | the repo rulebook and the doc map |
 | `phases` | `docs/phases.md` | the P0–P9 model, for reasoning about *which* decision to flip |
 | `modes` | `docs/modes.md` | the `--mode` presets and the size thresholds `auto` selects on |
-| `jvm` | `docs/jvm.md` | the JVM engine: what it is, its fidelity contract, Kotlin output and the bundled plugins, the JDK it reads, its limits |
+| `jvm` | `docs/jvm.md` | the JVM engine: its inputs, the JDK it reads, the options worth knowing, Kotlin output, failures, its limits |
 | `options-jvm` | `docs/options-jvm.md` | the generated `jvm_*` option catalog |
 
 `docs/options.md` is generated (`kuna catalog --markdown > docs/options.md`) and dominates
