@@ -332,6 +332,7 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
     let execs = executable_sections(file);
     let funcsyms = existing_function_addrs_for_file(file);
     let bodies = sized_function_bodies(file);
+    let named = elfv1_named_starts(file);
 
     // Sweep every executable section with the full pattern set.
     let mut cand: Vec<u64> = Vec::new();
@@ -347,7 +348,8 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
         if !in_executable_section(&execs, vma) {
             continue;
         }
-        if funcsyms.binary_search(&vma).is_ok() || inside_body(&bodies, vma) {
+        let guess_inside = inside_body(&bodies, vma) && named.binary_search(&vma).is_err();
+        if funcsyms.binary_search(&vma).is_ok() || guess_inside {
             continue;
         }
         out.push(vma);
@@ -361,21 +363,34 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
 /// `(start, furthest end of any extent starting at or before it)` sorted by
 /// start. A prologue shape inside one (a shrink-wrapped prologue after an early
 /// `jr ra`, a loop head) is that function's own code. A PowerPC64 ELFv1 symbol
-/// names a descriptor and states the size of the code behind it, unless it states
-/// the descriptor's own, as the dot-symbol ABI does.
+/// names a descriptor and states the size of the code behind it. Where a sized
+/// symbol at that code states its own, as the `.name` symbols of the dot-symbol
+/// ABI do, the descriptor symbol's size is the descriptor's and is left out, and
+/// so is a descriptor symbol whose code word is not known.
 pub(crate) fn sized_function_bodies(file: &object::File) -> Vec<(u64, u64)> {
     let descriptors = crate::loader::elfv1::Descriptors::read(file);
-    let mut out: Vec<(u64, u64)> = file
-        .symbols()
-        .chain(file.dynamic_symbols())
-        .filter(|sym| sym.kind() == SymbolKind::Text && !sym.is_undefined() && sym.size() != 0)
+    let opd = file.section_by_name(".opd").map(|s| s.index());
+    let sized = || {
+        file.symbols()
+            .chain(file.dynamic_symbols())
+            .filter(|sym| sym.kind() == SymbolKind::Text && !sym.is_undefined() && sym.size() != 0)
+    };
+    let in_opd = |sym: &object::Symbol| opd.is_some() && sym.section_index() == opd;
+    let coded: std::collections::BTreeSet<u64> =
+        sized().filter(|sym| !in_opd(sym)).map(|sym| thumb_masked(file, sym.address())).collect();
+    let mut out: Vec<(u64, u64)> = sized()
         .filter_map(|sym| {
             let symbol = thumb_masked(file, sym.address());
             let start = descriptors.code_address(symbol);
-            let own_size = start != symbol && sym.size() == crate::loader::elfv1::DESCRIPTOR_SIZE;
-            (!own_size).then(|| (start, start.saturating_add(sym.size())))
+            let descriptor = in_opd(&sym);
+            let skip = descriptor && (start == symbol || coded.contains(&start));
+            (!skip).then(|| (start, start.saturating_add(sym.size())))
         })
         .collect();
+    debug_assert!(
+        file.section_by_name(".opd").is_none_or(|s| !out.iter().any(|&(at, _)| (s.address()..s.address() + s.size()).contains(&at))),
+        "a function body starts at a descriptor"
+    );
     out.sort_unstable();
     let mut reach = 0;
     for body in &mut out {
@@ -389,6 +404,32 @@ pub(crate) fn sized_function_bodies(file: &object::File) -> Vec<(u64, u64)> {
 /// ([`macho_entry::macho_entry_candidates`]), sorted and deduplicated.
 pub(crate) fn macho_function_starts(file: &object::File, bytes: &[u8]) -> Vec<u64> {
     let mut out = macho_entry::macho_entry_candidates(file, bytes);
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// The starts that something other than a guess names in a PowerPC64 ELFv1 image, sorted:
+/// the code word of a descriptor at any aligned `.opd` word, and the target of a `bl` in
+/// executable code. The walk is not seeded with an exported body there, so a call or
+/// descriptor that names one of these may be seen by nothing but the guesses that
+/// [`inside_body`] drops, and they are kept.
+pub(crate) fn elfv1_named_starts(file: &object::File) -> Vec<u64> {
+    let mut out = crate::loader::elfv1::Descriptors::code_words(file);
+    if out.is_empty() {
+        return out;
+    }
+    let le = file.is_little_endian();
+    for (addr, _, data) in executable_sections(file) {
+        for (n, word) in data.chunks_exact(4).enumerate() {
+            let word = u32::from_be_bytes(word.try_into().unwrap());
+            let word = if le { word.swap_bytes() } else { word };
+            if word & 0xfc00_0003 == 0x4800_0001 {
+                let offset = ((word & 0x03ff_fffc) << 6) as i32 >> 6;
+                out.push((addr + 4 * n as u64).wrapping_add(offset as i64 as u64));
+            }
+        }
+    }
     out.sort_unstable();
     out.dedup();
     out
@@ -2560,20 +2601,71 @@ mod tests {
     }
 
     /// An ELFv1 symbol's size is that of the code its descriptor names: `sample` is
-    /// 0x1c bytes at 0xeb8, and the routine after it at 0xed4 has no symbol. `dotted`
-    /// states its descriptor's 0x18 bytes, which say nothing of its 8 bytes of code.
+    /// 0x1c bytes at 0x1068 and `exact24` 0x18 at 0x10e4. `dotted` states its
+    /// descriptor's 0x18 bytes and `.dotted` its 8 bytes of code at 0x10cc, so the routine
+    /// at 0x10d4 is outside. A descriptor with no symbol names 0x1144 inside `local`, and
+    /// the uncalled `caller` calls 0x1128 inside `reached`; both are named starts.
     #[test]
     fn a_descriptor_symbol_sizes_the_code_behind_it() {
         for name in ["elfv1_symbol_extent_be.so", "elfv1_symbol_extent_le.so"] {
             let bytes = fixture(name);
             let file = object::File::parse(bytes.as_slice()).expect("parse");
             let bodies = sized_function_bodies(&file);
-            assert!(inside_body(&bodies, 0xebc) && inside_body(&bodies, 0xec4) && inside_body(&bodies, 0xed0), "{name}");
-            assert!(!inside_body(&bodies, 0xeb8) && !inside_body(&bodies, 0xed4), "{name}: outside sample");
-            assert!(!inside_body(&bodies, 0xf20) && !inside_body(&bodies, 0xf24), "{name}: dotted");
+            for inside in [0x106c, 0x1074, 0x1080, 0x10e8, 0x10ec, 0x10f8, 0x10d0, 0x1128, 0x1144] {
+                assert!(inside_body(&bodies, inside), "{name}: {inside:#x}");
+            }
+            for outside in [0x1068, 0x1084, 0x10cc, 0x10d4, 0x10e4, 0x10fc] {
+                assert!(!inside_body(&bodies, outside), "{name}: {outside:#x}");
+            }
             let opd = file.section_by_name(".opd").expect(".opd");
             let descriptors = opd.address()..opd.address() + opd.size();
             assert!(!bodies.iter().any(|(start, _)| descriptors.contains(start)), "{name}: no descriptor is a body");
+            let named = elfv1_named_starts(&file);
+            for start in [0x1128, 0x1144, 0x10bc, 0x1068] {
+                assert!(named.binary_search(&start).is_ok(), "{name}: {start:#x}");
+            }
+            for guess in [0x1074, 0x10ec, 0x1084, 0x10d4] {
+                assert!(named.binary_search(&guess).is_err(), "{name}: {guess:#x}");
+            }
+        }
+    }
+
+    /// A descriptor whose code word does not validate sizes nothing: with the relative
+    /// relocation of `sample`'s entry word pointed outside the image, its 28 bytes would
+    /// otherwise be measured from the descriptor itself.
+    #[test]
+    fn an_unvalidated_descriptor_sizes_no_code() {
+        for name in ["elfv1_symbol_extent_be.so", "elfv1_symbol_extent_le.so"] {
+            let mut bytes = fixture(name);
+            let (le, rela, sample) = {
+                let file = object::File::parse(bytes.as_slice()).expect("parse");
+                let rela = file.section_by_name(".rela.dyn").expect(".rela.dyn").file_range().expect("in file");
+                let sample = file.dynamic_symbols().find(|s| s.name() == Ok("sample")).expect("sample").address();
+                (file.is_little_endian(), rela, sample)
+            };
+            let word = |b: &[u8]| {
+                let w: [u8; 8] = b.try_into().unwrap();
+                if le { u64::from_le_bytes(w) } else { u64::from_be_bytes(w) }
+            };
+            let records = rela.0 as usize..(rela.0 + rela.1) as usize;
+            let at = records.step_by(24).find(|&at| word(&bytes[at..at + 8]) == sample).expect("sample's relocation");
+            let outside: u64 = 0x7fff_0000;
+            bytes[at + 16..at + 24].copy_from_slice(&if le { outside.to_le_bytes() } else { outside.to_be_bytes() });
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            let bodies = sized_function_bodies(&file);
+            assert!(!bodies.iter().any(|&(start, _)| start == sample), "{name}");
+            assert!(!inside_body(&bodies, 0x1074) && inside_body(&bodies, 0x10ec), "{name}");
+        }
+    }
+
+    /// Off ELFv1 there are no named starts to keep, and no descriptor maps a symbol.
+    #[test]
+    fn only_elfv1_names_starts_inside_bodies() {
+        for name in ["funcstart_shrinkwrap_el.o", "funcstart_shrinkwrap_eb.o", "elfv1_initfini_be"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            let named = elfv1_named_starts(&file);
+            assert!(name.starts_with("elfv1") || named.is_empty(), "{name}: {named:x?}");
         }
     }
 
