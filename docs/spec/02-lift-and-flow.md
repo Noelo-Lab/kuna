@@ -3905,6 +3905,24 @@ Wide logical operations on address-register words write the saved counter
 postincrements its address register by two words and computes status from
 the complete 40-bit result without writing an operand.
 
+Covered unqualified wide `ADD` and `XOR` select their operand banks from
+the result route. The accumulator ADD route reads signed address and
+flag words, saved loop bounds, full accumulators, or constant minus one.
+The implicit source depends on the operand-fetch route, not the encoded
+extra word. A disconnected route supplies zero; the reset route reads
+DATA word `0xffff`; the routed zero address reads DATA word zero. The
+whole-accumulator ADD sign-extends the word. The long DATA ADD uses one
+unsigned word on the reset route and the same word on both input lanes
+on the routed zero address. It stores low then high at consecutive
+wrapping word addresses. An unknown route is not guessed from CODE
+placement. A long input
+to a narrow `XOR` result still determines zero and extension from the
+full logical value before the low word is written. The covered guard
+selectors discard the result and retain arithmetic flags while the
+source DATA access postincrements. For `RMW2` with an accumulator half
+on the second input, that half receives the result; the first input's
+DATA cell is not written.
+
 Covered wide address transfers add the low 16-bit displacement to a word
 source or the `R3` address unit. Saving a CODE address preserves its upper
 byte. The open input supplies all ones; the open result discards the sum.
@@ -4063,6 +4081,17 @@ all-ones open port cannot. The paired `POP` reads its top word at old
 `SP+1`: the direct `RN4` port accepts it before writeback predication,
 while the `A3L` port and its word flags require
 execution enable.
+
+In the covered unqualified paired `POP` forms, the second DATA selector
+controls the store width, regardless of the first selector's width. The
+address units run on either known route. On the reset route the
+fallback store reads `DATA[RL6]`, applies the `ECFG` fractional shift,
+and writes its low word at `0xffff`. A long result stores sign extension
+at `DATA[A0L]`. The disconnected route suppresses those writes. With
+an `X1` or `X2` first selector, the second selector also loads that latch
+from its original DATA address. The covered extended second register
+selectors instead route the old `SP+1` word to `RN4` or to the 12-bit
+`RM2` port. The two-long DATA combinations do not lift.
 
 Only a covered immutable CLIW record in a normalized bank can specialize a
 reference. Located TASKING images and XML can supply such a bank. Raw CODE

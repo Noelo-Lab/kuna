@@ -145,6 +145,7 @@ define context contextreg
     carmel_counted_delay = (10,10) noflow
     carmel_conditional_return_safe = (12,12) noflow
     carmel_split_delay = (13,13) noflow
+    carmel_of_route = (22,23) noflow
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
     carmel_cliw_31_0 = (96,127) noflow
@@ -372,6 +373,11 @@ define token wide (48)
     packed_displacement = (24,31) signed
     wide_logic_rmw_op = (18,19)
     wide_logic_rmw_route = (0,17)
+    wide_alias_logic_dst = (10,17)
+    wide_alias_logic_lhs = (2,9)
+    wide_alias_add_op = (17,22)
+    wide_alias_add_dst = (9,16)
+    wide_alias_add_lhs = (1,8)
     wide_40_45 = (40,45)
     wide_shift_dst_disp = (24,31) signed
     wide_shift_count_disp = (32,39) signed
@@ -2352,6 +2358,158 @@ macro compact_long_finish(bits, carry_out, overflow, data_result, mixed, result,
   <finish>
 }
 
+# The unqualified binary ALU routes input selectors through the chosen result bank.
+@define WIDE_ALIAS_ALU "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & logic_ce_bank=0"
+@define WIDE_ALIAS_ADD "$(WIDE_ALIAS_ALU) & wide_alias_add_op=8"
+@define WIDE_ALIAS_XOR "$(WIDE_ALIAS_ALU) & wide_20_22=6 & wide_logic_rmw_op=2"
+
+alias_add_acc_input: "-1" is (wide_alias_add_lhs=0x8e | wide_alias_add_lhs=0xe6 | wide_alias_add_lhs=0xf6) {
+    export 0xffffffffff:8;
+}
+alias_add_acc_input: "FF1" is wide_alias_add_lhs=0xbe {
+    local bits:8 = sext(FF1) & 0xffffffffff;
+    export bits;
+}
+alias_add_acc_input: "LSA1" is wide_alias_add_lhs=0xd2 {
+    local bits:8 = (zext(LSA1H) << 16) | zext(LSA1L);
+    export bits;
+}
+alias_add_acc_input: "LEA1" is wide_alias_add_lhs=0xd3 {
+    local bits:8 = (zext(LEA1H) << 16) | zext(LEA1L);
+    export bits;
+}
+alias_add_acc_input: "A0" is (wide_alias_add_lhs=0xe0 | wide_alias_add_lhs=0xf0) {
+    local bits:8;
+    compact_long_sample(A0L, A0H, GB0, bits);
+    export bits;
+}
+alias_add_acc_input: "A5" is (wide_alias_add_lhs=0xe5 | wide_alias_add_lhs=0xf5) {
+    local bits:8;
+    compact_long_sample(A5L, A5H, GB5, bits);
+    export bits;
+}
+
+macro wide_alias_add(left, right, word, result) {
+    local raw:8 = left + right;
+    local bits:8 = raw & 0xffffffffff;
+    local carry_out:1 = raw >= 0x10000000000;
+    local overflow:1 = ((left ^ right) < 0x8000000000) && ((left ^ bits) >= 0x8000000000);
+    local flags:2;
+    compact_long_finish(bits, carry_out, overflow, 0:1, 0:1, result, flags);
+    local narrow_loss:1 = word != 0 && (flags & 0x20) != 0 && (ECFG & 4) == 0 && (ECFG & 0x28) != 8;
+    EST = (EST & 0xffc4) | flags | (zext(narrow_loss) << 2);
+}
+
+:ADD "A1",alias_add_acc_input,"R0" is $(WIDE_ALIAS_ADD) & wide_alias_add_dst=0x89 & alias_add_acc_input & wide_40_45=0x20 & wide_0_0=1 {
+    local rhs:8 = sext(R0) & 0xffffffffff;
+    local result:8;
+    wide_alias_add(alias_add_acc_input, rhs, 0:1, result);
+    A1L = result:2;
+    A1H = result(2);
+    GB1 = result(4);
+}
+
+# The raw selector does not encode the operand-fetch route.
+alias_of_word: "OF" is carmel_of_route=1 { export 0:2; }
+alias_of_word: "*0xffff" is carmel_of_route=2 {
+    local word:2 = *[data]:2 0xffff:2;
+    export word;
+}
+alias_of_word: "*0x0" is carmel_of_route=3 {
+    local word:2 = *[data]:2 0:2;
+    export word;
+}
+alias_of_long: "OF" is carmel_of_route=1 { export 0:4; }
+alias_of_long: "*0xffff" is carmel_of_route=2 {
+    local word:2 = *[data]:2 0xffff:2;
+    local value:4 = zext(word);
+    export value;
+}
+alias_of_long: "*0x0" is carmel_of_route=3 {
+    local word:2 = *[data]:2 0:2;
+    local value:4 = zext(word) | (zext(word) << 16);
+    export value;
+}
+
+:ADD "A0",alias_of_word,"A3L" is $(WIDE_ALIAS_ADD) & wide_alias_add_dst=0x88 & wide_alias_add_lhs=0xe7 & wide_40_45=0x13 & wide_0_0=1 & alias_of_word {
+    local lhs:8 = sext(alias_of_word) & 0xffffffffff;
+    local rhs:8 = sext(A3L) & 0xffffffffff;
+    local result:8;
+    wide_alias_add(lhs, rhs, 0:1, result);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+}
+
+:ADD "long *R0",alias_of_long,"A3L" is $(WIDE_ALIAS_ADD) & wide_alias_add_dst=0x40 & wide_alias_add_lhs=0xe6 & wide_40_45=0x13 & wide_0_0=1 & alias_of_long {
+    local lhs:8 = zext(alias_of_long);
+    local rhs:8 = sext(A3L) & 0xffffffffff;
+    local result:8;
+    wide_alias_add(lhs, rhs, 0:1, result);
+    local upper:2 = R0 + 1;
+    *[data]:2 R0 = result:2;
+    *[data]:2 upper = result(2);
+}
+
+macro wide_alias_r0_word(word) {
+    local address:2 = R0;
+    word = *[data]:2 address;
+    modify_ptr(R0, RN0, RM0, RL0, 0, 2);
+}
+
+:ADD "GB4","*R0++","A1L" is $(WIDE_ALIAS_ADD) & wide_alias_add_dst=0x84 & wide_alias_add_lhs=0x10 & wide_40_45=0x11 & wide_0_0=1 {
+    local word:2;
+    wide_alias_r0_word(word);
+}
+
+:ADD "RMW2","*R0++","A1L" is $(WIDE_ALIAS_ADD) & wide_alias_add_dst=0x87 & wide_alias_add_lhs=0x10 & wide_40_45=0x11 & wide_0_0=1 {
+    local word:2;
+    wide_alias_r0_word(word);
+    local lhs:8 = (sext(word) << 16) & 0xffffffffff;
+    local rhs:8 = (sext(A1L) << 16) & 0xffffffffff;
+    local result:8;
+    wide_alias_add(lhs, rhs, 1:1, result);
+    A1L = result(2);
+}
+
+:XOR "X1","A2L","long *R4--" is $(WIDE_ALIAS_XOR) & wide_alias_logic_dst=0x9e & wide_alias_logic_lhs=0x92 & wide_40_45=0x1c & wide_0_1=1 {
+    local low:2;
+    local high:2;
+    wide_unary_data_read(R4, 2:2, low, high);
+    modify_ptr_scaled(R4, RN4, RM4, RL4, 8, 3, 2:2);
+    local result:4 = (zext(high) << 16) | zext(low ^ A2L);
+    X1 = result:2;
+    local flags:2 = (zext(result == 0) << 3) | (zext(high >= 0x8000) << 5);
+    commit_logic_flags(flags, 0);
+}
+
+:XOR "A0",alias_of_word,"A3L" is $(WIDE_ALIAS_XOR) & wide_alias_logic_dst=0x88 & wide_alias_logic_lhs=0xe7 & wide_40_45=0x13 & wide_0_1=2 & alias_of_word {
+    local word:2 = alias_of_word;
+    A0L = word ^ A3L;
+    A0H = 0;
+    GB0 = 0;
+    commit_logic_flags(zext(A0L == 0) << 3, 0);
+}
+
+:XOR "*R0",alias_of_word,"A3L" is $(WIDE_ALIAS_XOR) & wide_alias_logic_dst=0 & wide_alias_logic_lhs=0xee & wide_40_45=0x13 & wide_0_1=2 & alias_of_word {
+    local word:2 = alias_of_word;
+    local result:2 = word ^ A3L;
+    *[data]:2 R0 = result;
+    commit_logic_flags(zext(result == 0) << 3, 0);
+}
+
+:XOR "GB4","*R0++","A1L" is $(WIDE_ALIAS_XOR) & wide_alias_logic_dst=0x84 & wide_alias_logic_lhs=0x10 & wide_40_45=0x11 & wide_0_1=2 {
+    local word:2;
+    wide_alias_r0_word(word);
+}
+
+:XOR "RMW2","*R0++","A1L" is $(WIDE_ALIAS_XOR) & wide_alias_logic_dst=0x8e & wide_alias_logic_lhs=0x10 & wide_40_45=0x11 & wide_0_1=2 {
+    local word:2;
+    wide_alias_r0_word(word);
+    A1L = word ^ A1L;
+    commit_logic_flags(zext(A1L == 0) << 3, 0);
+}
+
 macro compact_rmw_r3(cfg, bank, address, enabled) {
     address = R3;
     local ce_bank:2 = zext(bank);
@@ -3376,6 +3534,61 @@ macro paired_push_registers(at_sp, below_sp, connected) {
     flags = (flags & 0xffc4) | (zext(word == 0) << 3) | (zext(word s< 0) << 4);
   <publish>
     publish_alu_ce(flags);
+}
+
+@define STACK_POP_MARKED "$(STACK_PAIR) & carmel_issue=5 & wide_left_mode=1 & stack_pair_push=0"
+
+stack_pop_r7: "*R7++RN7" is stack_pair_second=0x0f { export 0:2; }
+stack_pop_r7: "*R7++RN7:long" is stack_pair_second=0x4f { export 1:2; }
+stack_pop_r3: "*R3++0" is stack_pair_second=0x33 { export 0:2; }
+stack_pop_r3: "*R3++0:long" is stack_pair_second=0x73 { export 1:2; }
+stack_pop_x: "X1" is stack_pair_first=0x9e { export X1; }
+stack_pop_x: "X2" is stack_pair_first=0x9f { export X2; }
+
+stack_pop_of: is carmel_of_route=1 { export 0:1; }
+stack_pop_of: is carmel_of_route=2 { export 1:1; }
+
+macro paired_pop_fallback(long_result, active) {
+    if (!active) goto <done>;
+    local word:2 = *[data]:2 RL6;
+    local shifted:2 = word s>> ((ECFG >> 5) & 1);
+    *[data]:2 0xffff:2 = shifted;
+    if (long_result == 0) goto <done>;
+    *[data]:2 A0L = 0 - (shifted >> 15);
+  <done>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:POP "*R3+0",stack_pop_r7 is $(STACK_POP_MARKED) & stack_pair_first=0x23 & stack_pop_r7 & stack_pop_of {
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    SP = SP + 2;
+    paired_pop_fallback(stack_pop_r7, stack_pop_of);
+}
+:POP "*R3+0:long","*R7++RN7" is $(STACK_POP_MARKED) & stack_pair_first=0x63 & stack_pair_second=0x0f & stack_pop_of {
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    SP = SP + 2;
+    paired_pop_fallback(0:2, stack_pop_of);
+}
+:POP stack_pop_x,stack_pop_r3 is $(STACK_POP_MARKED) & stack_pop_x & stack_pop_r3 & stack_pop_of {
+    local address:2 = R3;
+    local updated:2;
+    wide_load_next(address, (PACFG >> 6) & 3, RM2, RL2, 0, updated);
+    R3 = updated;
+    SP = SP + 2;
+    stack_pop_x = *[data]:2 address;
+    paired_pop_fallback(stack_pop_r3, stack_pop_of);
+}
+:POP "R3","RN4" is $(STACK_POP_MARKED) & stack_pair_first=0xa3 & stack_pair_second=0xfc {
+    local word:2;
+    paired_pop_top(word);
+    RN4 = word;
+    publish_alu_ce(EST & 0xcfff);
+}
+:POP "RL4","RM2" is $(STACK_POP_MARKED) & stack_pair_first=0xb4 & stack_pair_second=0xe3 {
+    local word:2;
+    paired_pop_top(word);
+    RM2 = word & 0x0fff;
+    publish_alu_ce(EST & 0xcfff);
 }
 
 :PUSH "CE2" "R3","A3L" is $(STACK_PAIR_CE2) & stack_pair_push=1 & stack_pair_first=0xa3 & stack_pair_second=0x93 {
