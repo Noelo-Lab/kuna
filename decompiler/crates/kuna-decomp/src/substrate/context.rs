@@ -956,9 +956,14 @@ pub struct ArchContext {
     /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_elemptr`](crate::p5_types::kuna_elemptr).
     pub elem_ptr: bool,
-    /// (kuna `elemptr`) The sections a program's data objects live in, sorted and
-    /// inclusive; the `globalref` ranges, copied from the Architecture.
+    /// (kuna `elemptr`, `ptrfromuse`) The sections a program's data objects live
+    /// in, sorted and inclusive; the `globalref` ranges, copied from the
+    /// Architecture.
     pub elem_ptr_ranges: std::rc::Rc<Vec<(u64, u64)>>,
+    /// (kuna `ptrfromuse`) The image has a section table, so an empty
+    /// [`Self::elem_ptr_ranges`] means it holds no data objects.  Copied from
+    /// [`Architecture::section_table`](crate::architecture::Architecture).
+    pub section_table: bool,
     /// (kuna `libctypes`) The named libc aggregate tables are on.  Copied from
     /// [`Architecture::analysis_libctypes`](crate::architecture::Architecture);
     /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
@@ -1511,10 +1516,10 @@ pub struct ArchContext {
     /// every hand-built fixture and every XML `<binaryimage>` load, which is why
     /// the datatest parity oracle cannot see this field.
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
-    /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
-    /// executable, non-writable, file-backed regions — the instruction stream, and
-    /// so the literal pools embedded in it. A read entirely inside one is foldable
-    /// with [`Self::readonlypropagate`] off.
+    /// (kuna `litpoolconst`, `ptrfromuse`) `[start, stop]` (inclusive) offsets of
+    /// the image's executable, non-writable, file-backed regions — the
+    /// instruction stream, and so the literal pools embedded in it. A read
+    /// entirely inside one is foldable with [`Self::readonlypropagate`] off.
     /// Sorted ascending, disjoint, and EMPTY for every hand-built fixture and every
     /// XML `<binaryimage>` load, which is why the datatest parity oracle cannot see
     /// this field.
@@ -1739,6 +1744,7 @@ impl ArchContext {
             analysis_valuewitness: true, // (kuna) option valuewitness
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
+            section_table: false, // (kuna) ptrfromuse
             libctypes: false, // (kuna) option libctypes, copied from Architecture
             recover_lowered_switch: false, // loweredswitch
             nul_terminator: false,
