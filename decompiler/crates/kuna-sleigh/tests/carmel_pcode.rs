@@ -2119,6 +2119,63 @@ fn wide_extrema_minmax_reg_and_guard_results_use_reference_width() {
 }
 
 #[test]
+fn compact_minmu_records_the_incoming_address_without_reading_data() {
+    for (op, table, ce, mode, pointer, mask, initial, next, half, record, est) in [
+        (0x24d96a, 0xffff, 0, 0, 0x403f, 0x003f, 0xaaaa, 0x403f, 0x1111, 0x403f, 0x3000),
+        (0x24d97a, 0xffff, 0, 1, 0x403f, 0x003f, 0xaaaa, 0x4038, 0x1111, 0x403f, 0x3000),
+        (0x24d97a, 0xffff, 0, 2, 0x4020, 0x003f, 0xaaaa, 0x3fe4, 0x1111, 0x4020, 0x3000),
+        (0x24d97a, 0xffff, 0, 3, 0x503f, 0x103f, 0xaaaa, 0x4003, 0x1111, 0x503f, 0x3000),
+        (0x24d97a, 0xffff, 0, 0, 0x403f, 0x003f, 0x1111, 0x4043, 0x1111, 0x1234, 0x3009),
+        (0x24d97b, 0,      0, 2, 0x403f, 0x003f, 0xaaaa, 0x403f, 0xaaaa, 0x1234, 0),
+        (0x24d97b, 0, 0x1000, 2, 0x403f, 0x003f, 0xaaaa, 0x4003, 0xaaaa, 0x1234, 0),
+    ] {
+        let mut m = Machine::new(0, &[(op, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("A4", 0x807777af94), ("A4H", initial), ("A3H", 0x1111), ("R5", pointer),
+                 ("RN5", 4), ("PACFG", mode << 10), ("RL4", 0x4000), ("RM4", mask),
+                 ("MINMAX", 0x1234), ("CECFG1", ce), ("CETBL", table)]);
+        m.seed_data(pointer, 0xfedc);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R5"), m.reg("A4"), m.reg("MINMAX"), m.reg("EST"), m.data(pointer)),
+                   (next, 0x800000af94 | (half << 16), record, est, 0xfedc));
+    }
+    let mut m = Machine::new(0, &[(0x24d53c | SEQUENTIAL, NOP)], &[(0, 2, 3), (1, 3, 0)], None);
+    m.seed(&[("A2H", 0x8001), ("A1H", 0x1111), ("R6", 0x52), ("RN6", 0xfffc)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 3);
+    assert_eq!((m.reg("R6"), m.reg("A2H"), m.reg("MINMAX")), (0x4e, 0x1111, 0x52));
+}
+
+#[test]
+fn wide_minmax_pacfg_reference_separates_data_literal_and_all_ones_ports() {
+    for (left, right, table, input, word, a0l, record, est) in [
+        (0x9abe5e, 0xcaf743, 0xffff, 0x4321, 0x4321, 0x09a4, 0x9876, 0x3000),
+        (0x9abe5e, 0xcad743, 0xffff, 0x4321, 0x4321, 0x09a4, 0x1357, 0x3000),
+        (0x9abe5e, 0xcad73b, 0xffff, 0x4321, 0x4321, 0x09a4, 0x9876, 0x3009),
+        (0x9a9234, 0xcaf7c3, 0xffff, 0x4321, 0x4321, 0x09a4, 0x9876, 0x3000),
+        (0x9a9234, 0xcaf7bf, 0xffff, 0x4321, 0x9234, 0x09a4, 0x1357, 0x3001),
+        (0x9abe5e, 0xcaf7bf, 0xffff, 0xfedc, 0xfedc, 0x09a4, 0x9876, 0x3000),
+        (0x9abe5e, 0xcac7bf, 0xffff, 0xfedc, 0xfedc, 0x09a4, 0x9876, 0x3008),
+        (0x9a9234, 0xcae83f, 0xffff, 0x7f01, 0x7f01, 0x7f01, 0x1357, 0x3000),
+        (0x9abe5e, 0xcaf83f, 0xffff, 0x4321, 0x4321, 0xbe5e, 0x1357, 0x3001),
+        (0x1a9234, 0xcaf7bf,      0, 0x4321, 0x4321, 0x09a4, 0x9876, 0),
+        (0x5a9234, 0xcaf7bf, 0xff00, 0x4321, 0x9234, 0x09a4, 0x1357, 0x2001),
+    ] {
+        let mode = if left & SEQUENTIAL == 0 { 4 } else { 5 };
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, mode, 6), (2, 1, 0)], None);
+        m.seed(&[("A0", 0x6f000009a4), ("PACFG", 0x1357), ("MINMAX", 0x9876), ("CETBL", table)]);
+        m.seed_data(0xffff, input);
+        m.seed_data(0, 0x2222);
+        m.seed_data((left & 0xffff) as u64, 0x7777);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("MINMAX"), m.reg("EST"), m.data(0xffff), m.data(0)),
+                   (0x6f00000000 | a0l, record, est, word, 0x2222), "{left:06x}{right:06x}");
+        assert_eq!(m.data((left & 0xffff) as u64), 0x7777);
+    }
+}
+
+#[test]
 fn wide_extrema_control_result_does_not_feed_its_own_ce() {
     let mut m = Machine::new(0, &[(0xee5ed6, 0xc83c3d), (NOP, NOP), (NOP, NOP)],
                              &[(0, 5, 6), (2, 1, 6), (4, 1, 0)], None);

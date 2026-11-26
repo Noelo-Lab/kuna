@@ -514,6 +514,14 @@ define token slot (24)
     repeat_count = (0,9)
     slot_5_9 = (5,9)
     slot_4_6 = (4,6)
+    compact_minmu_dst = (9,12)
+    compact_minmu_src = (5,8)
+    compact_minmu_post = (4,4)
+    compact_minmu_base = (1,3)
+    compact_minmu_step = (1,3)
+    compact_minmu_mod = (1,3)
+    compact_minmu_bound = (1,3)
+    compact_minmu_shift = (1,3)
     slot_7_10 = (7,10)
     pair_op_11 = (11,22)
     pair_shift_source = (5,9)
@@ -769,6 +777,8 @@ define token wide (48)
     swap_peer_modify = (43,44)
     wide_12_22 = (12,22)
     minmax_ce_bank = (46,46)
+    minmax_short_dst = (7,11)
+    minmax_short_src = (2,6)
     minmax_store_lhs_hi = (0,3)
     minmax_store_dst = (4,11) hex
     minmax_store_dst_bank = (9,11)
@@ -7831,6 +7841,14 @@ macro wide_add_r4_post(left, shift, displacement) {
     publish_alu_ce(flags);
 }
 
+attach variables [compact_minmu_dst compact_minmu_src]
+    [A0L A1L A2L A3L A4L A5L _ _ A0H A1H A2H A3H A4H A5H _ _];
+attach variables [compact_minmu_base] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [compact_minmu_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
+attach variables [compact_minmu_mod] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
+attach variables [compact_minmu_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
+attach values [compact_minmu_shift] [0 2 4 6 8 10 12 14];
+
 attach variables [minmax_dst_acc minmax_src_acc] [A0 A1 A2 A3 A4 A5 _ _];
 attach variables [minmax_dst_lo minmax_src_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [minmax_dst_hi minmax_src_hi] [A0H A1H A2H A3H A4H A5H _ _];
@@ -7995,6 +8013,49 @@ macro compact_maxm_a0l_r0() {
     compact_maxm_a0l_r0();
 }
 
+compact_minmu_gate: is slot_0_0=0 { export 3:2; }
+compact_minmu_gate: "CE1" is slot_0_0=1 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local stages:2 = enabled | ((enabled | ((CECFG1 >> 12) & 1)) << 1);
+    export stages;
+}
+
+compact_minmu_ref: "*"^compact_minmu_base is compact_minmu_post=0 & compact_minmu_base {
+    export compact_minmu_base;
+}
+compact_minmu_ref: "*"^compact_minmu_base^"+="^compact_minmu_step is compact_minmu_post=1
+    & compact_minmu_base & compact_minmu_step & compact_minmu_mod & compact_minmu_bound & compact_minmu_shift {
+    local address:2 = compact_minmu_base;
+    modify_ptr_scaled_window(compact_minmu_base, compact_minmu_step, compact_minmu_mod, compact_minmu_bound,
+                             compact_minmu_shift, 1:2, 1:2, 0xffff:2);
+    export address;
+}
+
+compact_minmu: "MINMU" compact_minmu_gate compact_minmu_dst,compact_minmu_src,compact_minmu_ref is slot_13_22=0x126
+    & (slot_9_12<6 | (slot_9_12>=8 & slot_9_12<14)) & (slot_5_8<6 | (slot_5_8>=8 & slot_5_8<14))
+    & compact_minmu_dst & compact_minmu_src & compact_minmu_ref & compact_minmu_gate {
+    if ((compact_minmu_gate & 2) == 0) goto <feedback>;
+    build compact_minmu_ref;
+    if ((compact_minmu_gate & 1) == 0) goto <feedback>;
+    local left:2 = compact_minmu_dst;
+    local right:2 = compact_minmu_src;
+    if (left <= right) goto <flags>;
+    compact_minmu_dst = right;
+    MINMAX = compact_minmu_ref;
+  <flags>
+    minmax_unsigned_flags(left, right);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:^compact_minmu "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_minmu); (slot_mode=0 & nop_right) {
+    build compact_minmu;
+}
+:^compact_minmu is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_minmu {
+    build compact_minmu;
+}
+
 @define WIDE_MINMAX "wide_right_mode=1 & minmax_predicate"
 @define WIDE_MINMAX_GUARD "minmax_dst_group=0 & wide_8_9<3 & minmax_dst_guard"
 @define WIDE_MINMAX_SPECIAL_WORD "minmax_dst_group>=2 & wide_8_9=3 & minmax_dst_word"
@@ -8094,6 +8155,104 @@ macro minmax_compare_flags(left, right, unsigned_compare) {
     minmax_unsigned_flags(left, right);
   <compared>
 }
+
+minmax_short_op: "MINM" is wide_12_22=0x4ac { export 0:1; }
+minmax_short_op: "MINMU" is wide_12_22=0x4ad { export 1:1; }
+minmax_short_op: "MAXM" is wide_12_22=0x4ae { export 2:1; }
+minmax_short_op: "MAXMU" is wide_12_22=0x4af { export 3:1; }
+
+minmax_short_word: minmax_src_word is $(WIDE_MINMAX_SOURCE_WORD) & minmax_src_acc_index<6 {
+    export minmax_src_word;
+}
+minmax_short_word: "#"^absolute_data_addr is minmax_short_src=0xf & (wide_12_22=0x4ad | wide_12_22=0x4af)
+    & absolute_data_addr {
+    export *[const]:2 absolute_data_addr;
+}
+minmax_short_word: "*0xffff" is minmax_short_src=0xf & (wide_12_22=0x4ac | wide_12_22=0x4ae) {
+    local word:2 = *[data]:2 0xffff:2;
+    export word;
+}
+macro minmax_short_ones(kind, value) {
+    value = -1;
+    if ((kind & 1) == 0) goto <all_ones>;
+    value = 0xffffffffff;
+  <all_ones>
+}
+
+minmax_short_sink_rhs: minmax_short_word is minmax_short_word & minmax_short_op {
+    local value:8;
+    minmax_extend(minmax_short_word, minmax_short_op & 1, value);
+    export value;
+}
+minmax_short_sink_rhs: "#0xffffffffff" is minmax_short_src=0xe & minmax_short_op {
+    local value:8;
+    minmax_short_ones(minmax_short_op, value);
+    export value;
+}
+
+macro minmax_short_compare(left, right, kind, selected, better) {
+    minmax_select(left, right, kind & 2, selected, better);
+    if (!better) goto <recorded>;
+    MINMAX = PACFG;
+  <recorded>
+    minmax_compare_flags(left, right, kind & 1);
+}
+
+@define WIDE_MINMAX_PACFG "$(WIDE_MINMAX) & minmax_short_op & minmax_ref_type=3 & wide_40_45=0x1a"
+:minmax_short_op minmax_predicate "<discard>",minmax_short_sink_rhs,"PACFG" is $(WIDE_MINMAX_PACFG)
+    & minmax_short_dst=0xe & minmax_short_sink_rhs {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    build minmax_short_sink_rhs;
+    local left:8;
+    minmax_short_ones(minmax_short_op, left);
+    local selected:8;
+    local better:1;
+    minmax_short_compare(left, minmax_short_sink_rhs, minmax_short_op, selected, better);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_short_op minmax_predicate minmax_dst_word,minmax_short_word,"PACFG" is $(WIDE_MINMAX_PACFG)
+    & minmax_short_dst>=0x10 & minmax_short_dst<0x16 & minmax_dst_word & minmax_short_word {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    build minmax_short_word;
+    local left:8;
+    local right:8;
+    minmax_extend(minmax_dst_word, minmax_short_op & 1, left);
+    minmax_extend(minmax_short_word, minmax_short_op & 1, right);
+    local selected:8;
+    local better:1;
+    minmax_short_compare(left, right, minmax_short_op, selected, better);
+    if (!better) goto <feedback>;
+    minmax_dst_word = selected:2;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_short_op minmax_predicate "*0xffff",minmax_short_word,"PACFG" is $(WIDE_MINMAX_PACFG)
+    & minmax_short_dst=0xf & (minmax_short_src!=0xf | wide_12_22=0x4ad | wide_12_22=0x4af) & minmax_short_word {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    build minmax_short_word;
+    local word:2 = *[data]:2 0xffff:2;
+    local left:8;
+    local right:8;
+    minmax_extend(word, minmax_short_op & 1, left);
+    minmax_extend(minmax_short_word, minmax_short_op & 1, right);
+    local selected:8;
+    local better:1;
+    minmax_short_compare(left, right, minmax_short_op, selected, better);
+    *[data]:2 0xffff:2 = selected:2;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:minmax_short_op minmax_predicate "*0xffff","*0xffff","PACFG" is $(WIDE_MINMAX_PACFG)
+    & minmax_short_dst=0xf & minmax_short_src=0xf & (wide_12_22=0x4ac | wide_12_22=0x4ae) {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local word:2 = *[data]:2 0xffff:2;
+    *[data]:2 0xffff:2 = word;
+    EST = (EST & 0xffe5) | 8;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+@undef WIDE_MINMAX_PACFG
 
 minmax_pair_op: "MINBTR1" is minmax_pair_variant=0 { export 0:1; }
 minmax_pair_op: "MINUBTR1" is minmax_pair_variant=1 { export 1:1; }

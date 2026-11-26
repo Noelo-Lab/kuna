@@ -4599,6 +4599,14 @@ operands. The compact word `MAXM` compares the two signed words,
 preserves the other accumulator lanes, and records the old DATA
 address only on replacement, even though the pointer always advances.
 
+Compact word `MINMU` can instead take its record from an address
+register without reading DATA. It samples that register before the
+optional indexed update, and writes the sample to `MINMAX` only when
+the unsigned source strictly improves the destination. The indexed
+form uses bit reversal or the selected modulo window, including the
+full-width explicit bound. On a qualified issue the address stage may
+run without the comparison and its writeback.
+
 In the covered wide `MINM` and `MAXM` forms, a strict improvement updates
 `MINMAX` from the reference register or the captured DATA address, not the
 value stored there. A guard result takes the low byte of the selected
@@ -4608,6 +4616,14 @@ flag-word and `X1` result ports in these forms preserve comparison flags;
 accumulator result ports publish signed or unsigned comparison flags.
 An enabled reference address stage still postmodifies the pointer when the
 comparison keeps the old value or a qualified result is vetoed.
+
+The wide word form with a `PACFG` reference records the register value,
+not the encoded payload or a DATA address. Its implicit destination
+word is at `DATA[0xffff]`. The corresponding source selector reads
+that same DATA word for signed comparisons but takes the encoded
+literal for unsigned ones. The distinct all-ones selector represents
+a 40-bit comparison operand, even when its destination drops data
+writeback; the comparison can still update flags and `MINMAX`.
 
 The covered stored `MAX`, `MAXU`, and `MINBTR2` forms sample the unbound
 word selector at `DATA[0xffff]`, not the encoded literal and not the
