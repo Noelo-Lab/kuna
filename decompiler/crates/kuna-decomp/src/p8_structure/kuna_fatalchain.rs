@@ -35,8 +35,28 @@ use crate::context::BlockId;
 use crate::funcdata::Funcdata;
 use crate::p8_structure::kuna_tailform as tf;
 
+/// Which chains of tests fold across a complex later test.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChainFold {
+    /// None.
+    #[default]
+    Off,
+    /// Chains into a call that does not return.
+    NoReturn,
+    /// Those, and in a function the detector does not call unoptimized, a
+    /// chain into any block only it enters.
+    Auto,
+}
+
 fn enabled(data: &Funcdata) -> bool {
-    data.get_arch().cond_fold_noreturn
+    data.get_arch().cond_fold_chain != ChainFold::Off
+}
+
+/// Whether a chain may fold into a block that is not a no-return call.
+fn any_target(data: &Funcdata) -> bool {
+    data.get_arch().cond_fold_chain == ChainFold::Auto
+        && !crate::p3_dataflow::kuna_unoptimized::is_unoptimized(data)
+        && (std::env::var_os("KUNA_CF_FP").is_none() || !crate::p3_dataflow::kuna_unoptimized::frame_pointer(data))
 }
 
 /// Whether basic block `bb` ends in the halt flow plants after a call to a
@@ -67,15 +87,16 @@ fn noreturn_tail(data: &Funcdata, bb: BlockId) -> bool {
 }
 
 /// The chains `C1 -> C2 -> .. -> Ck` (k >= 2) of two-way blocks whose other
-/// out-edge each reaches the same no-return block `t`, where every later `Ci`
-/// is entered only from `C(i-1)` and `t` is entered only from the chain.
-fn chains(data: &Funcdata) -> Vec<(BlockId, Vec<BlockId>)> {
+/// out-edge each reaches the same block `t`, where every later `Ci` is entered
+/// only from `C(i-1)` and `t` is entered only from the chain; `t` ends in a
+/// call that does not return unless `any`.
+fn chains(data: &Funcdata, any: bool) -> Vec<(BlockId, Vec<BlockId>)> {
     let bg = data.bblocks_ref();
     let mut out = Vec::new();
     for i in 0..data.bblocks_get_size() {
         let t = data.bblocks_get_block(i);
         let tb = bg.block(t);
-        if tb.size_in() < 2 || tb.size_out() != 0 || !noreturn_tail(data, t) {
+        if tb.size_in() < 2 || (!any && (tb.size_out() != 0 || !noreturn_tail(data, t))) {
             continue;
         }
         let preds: Vec<BlockId> = (0..tb.size_in()).map(|k| tb.get_in(k)).collect();
@@ -136,7 +157,7 @@ fn fits(data: &Funcdata, bb: BlockId) -> bool {
 
 /// Whether a structuring of `data` now would relax a block.
 pub(crate) fn pending(data: &Funcdata) -> bool {
-    enabled(data) && !data.fatalchain_held() && !chains(data).is_empty()
+    enabled(data) && !data.fatalchain_held() && !chains(data, any_target(data)).is_empty()
 }
 
 /// Drop the later tests of every chain into a no-return call from `complex`,
@@ -148,7 +169,7 @@ pub(crate) fn relax(data: &mut Funcdata, complex: &mut BTreeSet<BlockId>) {
     }
     let high = data.is_high_on();
     let mut hits: Vec<Address> = Vec::new();
-    for (_, ch) in chains(data) {
+    for (_, ch) in chains(data, any_target(data)) {
         for &c in &ch[1..] {
             if !complex.contains(&c) {
                 continue;
@@ -207,7 +228,7 @@ fn is_container(data: &Funcdata, b: BlockId) -> bool {
 
 /// `[.., if (chain) { R }, f()]` -> `[.., if (!chain) f(), R]` for each chain.
 fn orient(data: &mut Funcdata) -> usize {
-    let chains = chains(data);
+    let chains = chains(data, false);
     if chains.is_empty() {
         return 0;
     }

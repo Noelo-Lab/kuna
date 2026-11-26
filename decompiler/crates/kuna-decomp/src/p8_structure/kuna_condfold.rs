@@ -272,6 +272,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_base::error::KunaResult;
+
+use crate::p8_structure::kuna_fatalchain::ChainFold;
 use kuna_base::marshal::ElementId;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
@@ -875,25 +877,32 @@ impl OptionCondFold {
     /// The option name.
     pub const NAME: &'static str = "condfold";
 
-    /// Parse `off`/`noreturn`/`on`/`wide` into the shared printed-width budget
-    /// (0 = no complex sibling admitted), whether a chain of tests into one
-    /// no-return call folds ([`crate::p8_structure::kuna_fatalchain`]; every value
-    /// but `off`), and a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<((int4, bool), String)> {
+    /// Parse `off`/`noreturn`/`auto`/`on`/`wide` into the shared printed-width
+    /// budget (0 = no complex sibling admitted), which chains of tests into one
+    /// shared block fold ([`crate::p8_structure::kuna_fatalchain`]), and a
+    /// confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<((int4, ChainFold), String)> {
         match p1 {
             "off" => Ok((
-                (0, false),
+                (0, ChainFold::Off),
                 "Short-circuit fold across a complex sibling turned off".to_string(),
             )),
             "noreturn" => Ok((
-                (0, true),
+                (0, ChainFold::NoReturn),
                 "Short-circuit fold across a complex sibling only for a chain of tests \
                  into one call that does not return"
                     .to_string(),
             )),
+            "auto" => Ok((
+                (0, ChainFold::Auto),
+                "Short-circuit fold across a complex sibling for a chain of tests into \
+                 one call that does not return, and in an optimized function into any \
+                 block the chain alone enters"
+                    .to_string(),
+            )),
             // Empty parameter reads as `on`, matching `options::on_or_off`.
             "on" | "" => Ok((
-                (MAX_PREFIX_STMTS_ANGR, true),
+                (MAX_PREFIX_STMTS_ANGR, ChainFold::Auto),
                 format!(
                     "Short-circuit fold across a complex sibling turned on \
                      (angr parity: operand prints <={MAX_PREFIX_STMTS_ANGR} comma \
@@ -903,7 +912,7 @@ impl OptionCondFold {
                 ),
             )),
             "wide" => Ok((
-                (MAX_PREFIX_STMTS_WIDE, true),
+                (MAX_PREFIX_STMTS_WIDE, ChainFold::Auto),
                 format!(
                     "Short-circuit fold across a complex sibling turned on, wide \
                      (operand prints <={MAX_PREFIX_STMTS_WIDE} comma elements, plus \
@@ -912,7 +921,7 @@ impl OptionCondFold {
                 ),
             )),
             _ => Err(kuna_base::error::KunaError::parse(
-                "Must specify one of off, noreturn, on, wide",
+                "Must specify one of off, noreturn, auto, on, wide",
             )),
         }
     }
@@ -983,25 +992,28 @@ mod tests {
     fn option_parses_off_on_and_wide_into_the_width_budget() {
         let ((v, nr), msg) = OptionCondFold.apply("on").expect("on parses");
         assert_eq!(v, MAX_PREFIX_STMTS_ANGR);
-        assert!(nr);
+        assert_eq!(nr, ChainFold::Auto);
         assert!(msg.contains("on"));
         // An empty parameter reads as `on`, matching `options::on_or_off`.
         assert_eq!(
             OptionCondFold.apply("").expect("empty parses").0,
-            (MAX_PREFIX_STMTS_ANGR, true)
+            (MAX_PREFIX_STMTS_ANGR, ChainFold::Auto)
         );
         let ((v, nr), msg) = OptionCondFold.apply("wide").expect("wide parses");
         assert_eq!(v, MAX_PREFIX_STMTS_WIDE);
-        assert!(nr);
+        assert_eq!(nr, ChainFold::Auto);
         assert!(msg.contains("wide"));
         // `noreturn` admits no complex sibling by budget, only the no-return chain.
         let ((v, nr), msg) = OptionCondFold.apply("noreturn").expect("noreturn parses");
-        assert_eq!((v, nr), (0, true));
+        assert_eq!((v, nr), (0, ChainFold::NoReturn));
         assert!(msg.contains("not return"));
+        let ((v, nr), msg) = OptionCondFold.apply("auto").expect("auto parses");
+        assert_eq!((v, nr), (0, ChainFold::Auto));
+        assert!(msg.contains("optimized"));
         // `off` is the sentinel 0 cap: `compute_condfold_sets` short-circuits on it
         // and every gate disjunct stays dead.
         let ((v, nr), msg) = OptionCondFold.apply("off").expect("off parses");
-        assert_eq!((v, nr), (0, false));
+        assert_eq!((v, nr), (0, ChainFold::Off));
         assert!(msg.contains("off"));
         assert!(OptionCondFold.apply("maybe").is_err());
         assert!(OptionCondFold.apply("7").is_err());
