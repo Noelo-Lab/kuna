@@ -789,6 +789,10 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_chkstkdarwin`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub chkstk_darwin: bool,
+    /// (kuna) The stack alignment the target's ABI keeps where the prototype
+    /// model's stack slots misstate it, 0 to take the slots; read by
+    /// [`crate::p3_dataflow::kuna_framealign`].
+    pub stack_abi_align: u64,
     /// (kuna) `option typevote`; read by [`crate::p5_types::kuna_typevote`].
     pub type_vote: bool,
     /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
@@ -1674,6 +1678,7 @@ impl ArchContext {
             go_morestack: 1,
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
             chkstk_darwin: false,
+            stack_abi_align: 0,
             type_vote: false,
             // (kuna) `option gobool` default auto; copied the same way.
             go_bool: 1,

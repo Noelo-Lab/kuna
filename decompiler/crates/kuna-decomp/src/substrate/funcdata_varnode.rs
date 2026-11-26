@@ -155,7 +155,8 @@ impl Funcdata {
     ///
     /// A DFS over the def-use graph seeds each leaf Varnode's `nzm`
     /// (constant -> its value; type-locked bool -> 1; otherwise the full
-    /// size-mask, with the low byte cleared for a spacebase) and computes each op
+    /// size-mask, with a spacebase input's low bits cleared to the alignment the
+    /// target guarantees at entry) and computes each op
     /// output's `nzm` from [`get_nz_mask_local`](crate::op::get_nz_mask_local) in
     /// post-order.  A second fixed-point pass re-propagates through `MULTIEQUAL`
     /// loop edges (which the DFS clipped) until the masks settle.
@@ -230,12 +231,10 @@ impl Funcdata {
                         off
                     } else if is_type_lock && meta_bool {
                         1
+                    } else if is_sb {
+                        calc_mask(sz) & !(crate::kuna_framealign::entry_alignment(self, sz) - 1)
                     } else {
-                        let mut m = calc_mask(sz);
-                        if is_sb {
-                            m &= !0xffu64; // Treat spacebase input as aligned.
-                        }
-                        m
+                        calc_mask(sz)
                     };
                     self.vbank_mut().get_mut(vn).expect("calc_nz_mask: stale in").set_nz_mask(nz);
                 } else if let Some(def) = def {

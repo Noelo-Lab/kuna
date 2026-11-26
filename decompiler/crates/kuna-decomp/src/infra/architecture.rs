@@ -3692,6 +3692,7 @@ impl Architecture {
         ctx.go_morestack = self.go_morestack;
         ctx.rust_probestack = self.rust_probestack;
         ctx.chkstk_darwin = self.chkstk_darwin && self.image_apple && crate::kuna_chkstkdarwin::applies_to(&self.archid);
+        ctx.stack_abi_align = crate::kuna_framealign::abi_stack_align(&self.archid);
         ctx.type_vote = self.type_vote;
         ctx.go_bool = self.go_bool;
         ctx.go_write_barrier = self.go_write_barrier;

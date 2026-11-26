@@ -1969,6 +1969,45 @@ function hands back (`mov eax,edi; rol ax,8; ret` keeps edi's high word), and a
 copied pair, such as a big-endian `r3:r4` a function keeps across another
 call, is concatenated while its output is still being recovered.
 
+`RuleAndMask` and `RuleHighOrderAnd` drop an `INT_AND` whose mask clears
+only bits its input already has clear, and fold `(V + c) & mask` into
+`V + (c & mask)` when `V` is aligned; the OR rules fold `(V + c) | k` into an
+add the same way. Upstream gave the stack pointer at entry a non-zero mask
+with its low byte clear, so any stack address rounded to 256 bytes or less
+folded into a frame offset. The stack pointer at entry is instead aligned to
+what the target guarantees
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_framealign.rs
+(entry_alignment)`): the widest stack-slot alignment of the default
+prototype model's inputs (8 on x86-64, 4 on i386, ARM and SuperH, 1 on AVR
+and on targets with no stack slots, such as the 6502 and 6809), except where
+the ABI keeps another alignment than its slots say at every entry
+(`abi_stack_align`): 8 on AArch64, MIPS, PowerPC, RISC-V, SPARC and
+LoongArch, 2 on the word-aligned 68000. ARM stays at 4: AAPCS promises 8 only
+at public interfaces, not to a static function or an arbitrary entry. It is never more than 8 or twice the pointer width. That is what a
+compiler relies on when it addresses the second word of an 8-byte frame slot
+as `(fp - 0x20) | 4`, as clang does on SPARC. The
+256-byte reading is kept only for a realigned frame, where the AND writes the
+stack pointer itself, directly or through a `COPY` (`and rsp,-0x40` in a
+prologue, `and esp,-0x10` in an i386 `main`): everything after it is
+addressed from the realigned pointer, so the frame's offsets still name the
+same objects (`kuna_framealign.rs (and_operand_nz_mask)`). Any other rounding
+past the entry alignment keeps its mask. A buffer rounded up inside the frame
+while the stack pointer stays unaligned, as U-Boot's `ALLOC_CACHE_ALIGN_BUFFER`
+does with `(sp + 0x3f) & ~0x3f`, used to print as `&Stack0 - n`, which is the
+machine's address only when the entry stack pointer is a multiple of 64. It
+now prints the rounding:
+`(uint8)&((char *)__builtin_dwarf_cfa() + 0x1f)[-n] & 0xffffffffffffffc0`.
+The realigned reading keeps every load and store consistent, since the frame
+below the realigned pointer and the one above the entry pointer never
+overlap, but it gives a false constant to arithmetic that mixes the two
+bases: `push rbp; mov rbp,rsp; and rsp,-32; sub rsp,32; mov rax,rbp; sub
+rax,rsp` printed `return 0x38;`, where the machine gives 0x28 or 0x38 by the
+entry stack pointer. So the reading is refused (`mixes_bases`) when an add, a
+subtract, a comparison or a phi takes one operand computed from the realigned
+pointer and another computed from the entry pointer without it; that function
+keeps the mask. Saving the entry pointer to the realigned frame and restoring
+it at exit, as i386 `main` does with `ecx`, mixes nothing.
+
 `RuleMultiCollapse` keeps its operand traversal, marked-output list and
 temporary rewrite operands in local inline scratch. Wide or deeply nested
 phis can spill to owned buffers without changing visit order. Both success and

@@ -48,6 +48,7 @@ pub mod kuna_calloverlap;
 pub(crate) mod kuna_multiregargs;
 pub mod kuna_indexaliasguard;
 pub mod kuna_stackeffects;
+pub(crate) mod kuna_framealign;
 pub mod kuna_calleememory;
 mod kuna_calleeflags;
 pub(crate) mod kuna_calleehomes;
