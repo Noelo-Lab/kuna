@@ -228,6 +228,12 @@ define token slot (24)
     cmpu_rhs = (1,4)
     slot_7_22 = (7,22)
     slot_6_6 = (6,6)
+    mac_preg_form = (12,15)
+    mac_preg_acc = (9,11)
+    mac_preg_index = (6,8)
+    mac_preg_dst = (11,15)
+    mac_preg_src = (6,10)
+    mac_preg_data = (1,5)
     slot_5_6 = (5,6)
     cmp_full_lhs_full = (4,6)
     cmp_full_lhs_lo = (4,6)
@@ -456,6 +462,36 @@ define token wide (48)
     swap_peer_bound = (40,42)
     swap_peer_pacfg_shift = (40,42)
     swap_peer_modify = (43,44)
+    wide_12_22 = (12,22)
+    minmax_ce_bank = (46,46)
+    minmax_dst_group = (10,11)
+    minmax_dst_acc = (7,9)
+    minmax_dst_lo = (7,9)
+    minmax_dst_hi = (7,9)
+    minmax_dst_guard = (7,9)
+    minmax_dst_word = (7,10)
+    minmax_src_group = (5,6)
+    minmax_src_word = (2,5)
+    minmax_src_acc = (2,4)
+    minmax_src_acc_index = (2,4)
+    minmax_src_lo = (2,4)
+    minmax_src_hi = (2,4)
+    minmax_src_guard = (2,4)
+    minmax_ref_mode = (43,45)
+    minmax_ref_bank = (42,42)
+    minmax_ref_type = (0,1)
+    minmax_ref_index = (40,41)
+    minmax_ref_base_lo = (40,41)
+    minmax_ref_base_hi = (40,41)
+    minmax_ref_mod_lo = (40,41)
+    minmax_ref_mod_hi = (40,41)
+    minmax_ref_bound_lo = (40,41)
+    minmax_ref_bound_hi = (40,41)
+    minmax_ref_shift_lo = (40,41)
+    minmax_ref_shift_hi = (40,41)
+    minmax_ref_guard_lo = (40,41)
+    minmax_ref_guard_hi = (40,41)
+    minmax_ref_disp = (24,31) signed
 ;
 
 attach variables [inc_source] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
@@ -2483,6 +2519,97 @@ macro compact_logic_rmw_word(target, cfg, bank, address, op, to_data) {
     compact_logic_rmw_word(R2, CECFG2, 1:2, address, 0:2, 1:1);
 }
 
+# The left DATA ports feed PReg, not the multiplier or X1. Only the
+# existing accumulator reaches the MAC result; the secondary ALU sees zero.
+macro compact_mac_preg_addresses(first_address, second_address) {
+    second_address = R3;
+    first_address = second_address + RN3;
+    modify_ptr(R3, RN3, RM2, RL2, 6, 2);
+}
+
+macro compact_mac_preg_status(first_address, second_address, enabled, clear_right, set_right) {
+    local preg_first:2 = *[data]:2 first_address;
+    local preg_second:2 = *[data]:2 second_address;
+    local sign_word:1 = A1H >= 0x8000;
+    local extended:1 = GB1 != (0 - sign_word);
+    local flags:2 = (EST & 0xcfc4) | (zext((A1L | A1H) == 0 && GB1 == 0) << 3)
+                  | (zext(GB1 >= 0x80) << 4) | (zext(extended) << 5);
+    if (enabled == 0) goto <publish>;
+    flags = (flags & ~clear_right) | set_right;
+  <publish>
+    publish_alu_ce(flags);
+}
+
+macro compact_preg_ce(qualified, enabled) {
+    enabled = 1;
+    if (qualified == 0) goto <done>;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+  <done>
+}
+
+macro compact_mac_preg_xor(qualified, postincrement) {
+    local enabled:2;
+    compact_preg_ce(qualified, enabled);
+    local first_address:2;
+    local second_address:2;
+    compact_mac_preg_addresses(first_address, second_address);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <fetch>;
+    modify_ptr(R6, RN6, RM6, RL6, 12, 1);
+    if (postincrement == 0) goto <fetch>;
+    modify_ptr(R7, RN7, RM6, RL6, 14, 2);
+  <fetch>
+    compact_mac_preg_status(first_address, second_address, enabled, 0xe00:2, 0x200:2);
+}
+
+macro compact_mac_preg_sub(qualified) {
+    local enabled:2;
+    compact_preg_ce(qualified, enabled);
+    local first_address:2;
+    local second_address:2;
+    compact_mac_preg_addresses(first_address, second_address);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <fetch>;
+    modify_ptr(R2, RN2, RM2, RL2, 4, 1);
+  <fetch>
+    compact_mac_preg_status(first_address, second_address, enabled, 0xec0:2, 0x240:2);
+}
+
+@define MAC_PREG_LEFT "slot_16_22=0x5b & mac_preg_form=0xa & mac_preg_acc=1 & mac_preg_index=3 & mac_preg_data=19 & slot_0_0=0"
+@define MAC_PREG_XOR "slot_16_22=0x6c & mac_preg_dst=14"
+@define MAC_PREG_SUB "slot_16_22=0 & mac_preg_dst=1 & mac_preg_src=31 & mac_preg_data=10"
+mac_preg_src_name: "OP1" is mac_preg_src=30 { }
+mac_preg_src_name: "OP2" is mac_preg_src=31 { }
+
+:MACUU "A1","*R3+RN3","*R3++" "||" "XOR CE2" "*R6+=RN6",mac_preg_src_name,"*R7" is (carmel_issue=1 & slot_mode=0 & $(MAC_PREG_LEFT)); (slot_mode=0 & $(MAC_PREG_XOR) & mac_preg_src_name & mac_preg_data=7 & slot_0_0=1) {
+    compact_mac_preg_xor(1:1, 0:1);
+}
+:MACUU "A1","*R3+RN3","*R3++" "||" "XOR CE2" "*R6+=RN6","OP2","*R7++" is (carmel_issue=1 & slot_mode=0 & $(MAC_PREG_LEFT)); (slot_mode=0 & $(MAC_PREG_XOR) & mac_preg_src=31 & mac_preg_data=23 & slot_0_0=1) {
+    compact_mac_preg_xor(1:1, 1:1);
+}
+:MACUU "A1","*R3+RN3","*R3++" "||" "XOR" "*R6+=RN6","OP2","*R0" is (carmel_issue=1 & slot_mode=0 & $(MAC_PREG_LEFT)); (slot_mode=0 & $(MAC_PREG_XOR) & mac_preg_src=31 & mac_preg_data=0 & slot_0_0=0) {
+    compact_mac_preg_xor(0:1, 0:1);
+}
+:MACUU "A1","*R3+RN3","*R3++" "||" "SUB CE2" "*R1","OP2","*R2+=RN2" is (carmel_issue=1 & slot_mode=0 & $(MAC_PREG_LEFT)); (slot_mode=0 & $(MAC_PREG_SUB) & slot_0_0=1) {
+    compact_mac_preg_sub(1:1);
+}
+:MACUU "A1","*R3+RN3","*R3++" "||" "SUB" "*R1","OP2","*R2+=RN2" is (carmel_issue=1 & slot_mode=0 & $(MAC_PREG_LEFT)); (slot_mode=0 & $(MAC_PREG_SUB) & slot_0_0=0) {
+    compact_mac_preg_sub(0:1);
+}
+
+:^nop_left "||" "XOR CE2" "*R6+=RN6","OP2","*R7" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(MAC_PREG_XOR) & mac_preg_src=31 & mac_preg_data=7 & slot_0_0=1) {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    local flags:2 = EST & 0xcfff;
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <publish>;
+    local destination:2 = R6;
+    modify_ptr(R6, RN6, RM6, RL6, 12, 1);
+    local word:2 = *[data]:2 R7;
+    if (enabled == 0) goto <publish>;
+    *[data]:2 destination = word;
+    flags = (flags & 0xf1ff) | (zext(word == 0) << 9);
+  <publish>
+    publish_alu_ce(flags);
+}
+
 macro compact_long_postmodify(pointer) {
     # The explicit window of this port uses all 16 RM bits, unlike the
     # implicit window. The other modes share the ordinary compact AGU.
@@ -2549,6 +2676,176 @@ macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
     candidate = candidate + size;
   <transfer_done>
     result = candidate:2;
+}
+
+attach variables [minmax_dst_acc minmax_src_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [minmax_dst_lo minmax_src_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [minmax_dst_hi minmax_src_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [minmax_dst_guard minmax_src_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
+attach variables [minmax_dst_word minmax_src_word] [A0L A1L A2L A3L A4L A5L FF1 FF2 A0H A1H A2H A3H A4H A5H X1 X2];
+attach variables [minmax_ref_base_lo] [R0 R1 R2 R3];
+attach variables [minmax_ref_base_hi] [R4 R5 R6 R7];
+attach variables [minmax_ref_mod_lo] [RM0 RM0 RM2 RM2];
+attach variables [minmax_ref_mod_hi] [RM4 RM4 RM6 RM6];
+attach variables [minmax_ref_bound_lo] [RL0 RL0 RL2 RL2];
+attach variables [minmax_ref_bound_hi] [RL4 RL4 RL6 RL6];
+attach values [minmax_ref_shift_lo] [0 2 4 6];
+attach values [minmax_ref_shift_hi] [8 10 12 14];
+attach variables [minmax_ref_guard_lo] [GB0 GB1 GB2 GB3];
+attach variables [minmax_ref_guard_hi] [GB4 GB5 _ _];
+
+minmax_predicate: is carmel_issue=5 & wide_left_mode=1 { export 3:2; }
+minmax_predicate: "CE1" is carmel_issue=4 & wide_left_mode=0 & minmax_ce_bank=0 {
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local stages:2 = enabled | ((enabled | ((CECFG1 >> 12) & 1)) << 1);
+    export stages;
+}
+minmax_predicate: "CE2" is carmel_issue=4 & wide_left_mode=0 & minmax_ce_bank=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1, enabled);
+    local stages:2 = enabled | ((enabled | ((CECFG2 >> 12) & 1)) << 1);
+    export stages;
+}
+
+# A DATA reference drives MINMAX from its effective address, not from the
+# addressed value. Its postmodify belongs to address generation.
+minmax_disp_addr: "*"^minmax_ref_base_lo^"+"^minmax_ref_disp is minmax_ref_type=0 & minmax_ref_mode=4 & minmax_ref_bank=0 & minmax_ref_base_lo & minmax_ref_disp {
+    local address:2 = minmax_ref_base_lo + minmax_ref_disp;
+    export address;
+}
+minmax_disp_addr: "*"^minmax_ref_base_hi^"+"^minmax_ref_disp is minmax_ref_type=0 & minmax_ref_mode=4 & minmax_ref_bank=1 & minmax_ref_base_hi & minmax_ref_disp {
+    local address:2 = minmax_ref_base_hi + minmax_ref_disp;
+    export address;
+}
+minmax_abs_addr: "*"^absolute_data_addr is minmax_ref_mode=7 & minmax_ref_type<2 & absolute_data_addr {
+    export *[const]:2 absolute_data_addr;
+}
+minmax_guard_ref: minmax_ref_guard_lo is minmax_ref_type=2 & minmax_ref_mode=0 & minmax_ref_bank=0 & minmax_ref_guard_lo { export minmax_ref_guard_lo; }
+minmax_guard_ref: minmax_ref_guard_hi is minmax_ref_type=2 & minmax_ref_mode=0 & minmax_ref_bank=1 & minmax_ref_index<2 & minmax_ref_guard_hi { export minmax_ref_guard_hi; }
+
+macro minmax_ref_update(base, modulo, bound, shift, delta, address) {
+    address = base;
+    local next:2;
+    local step:2 = delta;
+    transfer_address_word(base, modulo, bound, shift, step, next);
+    base = next;
+}
+minmax_postdisp_addr: "*"^minmax_ref_base_lo^"+="^minmax_ref_disp is minmax_ref_type=1 & minmax_ref_mode=6 & minmax_ref_bank=0 & minmax_ref_base_lo & minmax_ref_mod_lo & minmax_ref_bound_lo & minmax_ref_shift_lo & minmax_ref_disp {
+    local address:2;
+    minmax_ref_update(minmax_ref_base_lo, minmax_ref_mod_lo, minmax_ref_bound_lo, minmax_ref_shift_lo, minmax_ref_disp, address);
+    export address;
+}
+minmax_postdisp_addr: "*"^minmax_ref_base_hi^"+="^minmax_ref_disp is minmax_ref_type=1 & minmax_ref_mode=6 & minmax_ref_bank=1 & minmax_ref_base_hi & minmax_ref_mod_hi & minmax_ref_bound_hi & minmax_ref_shift_hi & minmax_ref_disp {
+    local address:2;
+    minmax_ref_update(minmax_ref_base_hi, minmax_ref_mod_hi, minmax_ref_bound_hi, minmax_ref_shift_hi, minmax_ref_disp, address);
+    export address;
+}
+minmax_postinc_addr: "*"^minmax_ref_base_lo^"++:long" is minmax_ref_type=1 & minmax_ref_mode=2 & minmax_ref_bank=0 & minmax_ref_base_lo & minmax_ref_mod_lo & minmax_ref_bound_lo & minmax_ref_shift_lo {
+    local address:2;
+    minmax_ref_update(minmax_ref_base_lo, minmax_ref_mod_lo, minmax_ref_bound_lo, minmax_ref_shift_lo, 2:2, address);
+    export address;
+}
+minmax_postinc_addr: "*"^minmax_ref_base_hi^"++:long" is minmax_ref_type=1 & minmax_ref_mode=2 & minmax_ref_bank=1 & minmax_ref_base_hi & minmax_ref_mod_hi & minmax_ref_bound_hi & minmax_ref_shift_hi {
+    local address:2;
+    minmax_ref_update(minmax_ref_base_hi, minmax_ref_mod_hi, minmax_ref_bound_hi, minmax_ref_shift_hi, 2:2, address);
+    export address;
+}
+
+macro minmax_upper_result(dst, left, right, better, address) {
+    local selected:8 = left;
+    if (!better) goto <select_upper>;
+    selected = right;
+    MINMAX = address;
+  <select_upper>
+    dst = selected(2);
+}
+macro minmax_unsigned_flags(left, right) {
+    EST = (EST & 0xfff6) | zext(left <= right) | (zext(left == right) << 3);
+}
+macro minmax_signed_flags(left, right) {
+    local delta:8 = right - left;
+    local overflow:1 = delta s> 0x7fffffffff || delta s< -0x8000000000;
+    local sticky:1 = overflow && ((ECFG & 0xc) == 0);
+    local flags:2 = (zext(overflow) << 1) | (zext(sticky) << 2) |
+                    (zext((delta & 0xffffffffff) == 0) << 3) | (zext((delta & 0x8000000000) != 0) << 4);
+    EST = (EST & 0xffe5) | flags;
+}
+
+@define WIDE_MINMAX "wide_right_mode=1 & minmax_predicate"
+@define WIDE_MINMAX_GUARD "minmax_dst_group=0 & wide_8_9<3 & minmax_dst_guard"
+@define WIDE_MINMAX_SPECIAL_WORD "minmax_dst_group>=2 & wide_8_9=3 & minmax_dst_word"
+@define WIDE_MINMAX_SOURCE_WORD "minmax_src_group>=2 & minmax_src_word"
+@define WIDE_MINMAX_SOURCE_ACC "minmax_src_group=1 & minmax_src_acc_index<6 & minmax_src_acc & minmax_src_lo & minmax_src_hi & minmax_src_guard"
+
+:MAXMU minmax_predicate minmax_dst_guard,minmax_src_word,minmax_disp_addr is $(WIDE_MINMAX) & wide_12_22=0x4af & $(WIDE_MINMAX_GUARD) & $(WIDE_MINMAX_SOURCE_WORD) & minmax_disp_addr {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = zext(minmax_dst_guard);
+    local right:8 = zext(minmax_src_word);
+    minmax_upper_result(minmax_dst_guard, left, right, left < right, minmax_disp_addr);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAXM minmax_predicate minmax_dst_guard,minmax_src_word,minmax_abs_addr is $(WIDE_MINMAX) & wide_12_22=0x4ae & $(WIDE_MINMAX_GUARD) & $(WIDE_MINMAX_SOURCE_WORD) & minmax_ref_type=0 & minmax_abs_addr {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = zext(minmax_dst_guard);
+    local right:8 = sext(minmax_src_word);
+    minmax_upper_result(minmax_dst_guard, left, right, left s< right, minmax_abs_addr);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAXMU minmax_predicate minmax_dst_word,minmax_src_word,minmax_guard_ref is $(WIDE_MINMAX) & wide_12_22=0x4af & $(WIDE_MINMAX_SPECIAL_WORD) & $(WIDE_MINMAX_SOURCE_WORD) & minmax_guard_ref {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = zext(minmax_dst_word);
+    local right:8 = zext(minmax_src_word);
+    local address:2 = zext(minmax_guard_ref);
+    minmax_upper_result(minmax_dst_word, left, right, left < right, address);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MINMU minmax_predicate minmax_dst_word,minmax_src_word,minmax_abs_addr is $(WIDE_MINMAX) & wide_12_22=0x4ad & minmax_dst_group=2 & wide_8_9<3 & minmax_dst_word & $(WIDE_MINMAX_SOURCE_WORD) & minmax_ref_type=1 & minmax_abs_addr {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = zext(minmax_dst_word);
+    local right:8 = zext(minmax_src_word);
+    minmax_upper_result(minmax_dst_word, left, right, left > right, minmax_abs_addr);
+    minmax_unsigned_flags(left, right);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAXMU minmax_predicate minmax_dst_acc,minmax_src_word,minmax_postdisp_addr is $(WIDE_MINMAX) & wide_12_22=0x4af & minmax_dst_group=1 & wide_8_9<3 & minmax_dst_acc & minmax_dst_lo & minmax_dst_hi & minmax_dst_guard & $(WIDE_MINMAX_SOURCE_WORD) & minmax_postdisp_addr {
+    if ((minmax_predicate & 2) == 0) goto <feedback>;
+    build minmax_postdisp_addr;
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = zext(minmax_dst_guard) * 0x100000000 + zext(minmax_dst_hi) * 0x10000 + zext(minmax_dst_lo);
+    local right:8 = zext(minmax_src_word);
+    if (left >= right) goto <compare_flags>;
+    minmax_dst_lo = minmax_src_word;
+    minmax_dst_hi = 0;
+    minmax_dst_guard = 0;
+    MINMAX = minmax_postdisp_addr;
+  <compare_flags>
+    minmax_unsigned_flags(left, right);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAXM minmax_predicate minmax_dst_word,minmax_src_acc,minmax_disp_addr is $(WIDE_MINMAX) & wide_12_22=0x4ae & minmax_dst_group=2 & wide_8_9<3 & minmax_dst_word & $(WIDE_MINMAX_SOURCE_ACC) & minmax_disp_addr {
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = sext(minmax_dst_word);
+    local right:8 = sext(minmax_src_guard) * 0x100000000 + zext(minmax_src_hi) * 0x10000 + zext(minmax_src_lo);
+    minmax_upper_result(minmax_dst_word, left, right, left s< right, minmax_disp_addr);
+    minmax_signed_flags(left, right);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+}
+:MAXMU minmax_predicate minmax_dst_word,minmax_src_word,minmax_postinc_addr is $(WIDE_MINMAX) & wide_12_22=0x4af & minmax_dst_group=3 & wide_8_9=3 & minmax_dst_word & $(WIDE_MINMAX_SOURCE_WORD) & minmax_postinc_addr {
+    if ((minmax_predicate & 2) == 0) goto <feedback>;
+    build minmax_postinc_addr;
+    if ((minmax_predicate & 1) == 0) goto <feedback>;
+    local left:8 = zext(minmax_dst_word);
+    local right:8 = zext(minmax_src_word);
+    minmax_upper_result(minmax_dst_word, left, right, left < right, minmax_postinc_addr);
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
 }
 
 # The word port is the upper half of the low 32-bit lane, not the low

@@ -3886,6 +3886,16 @@ result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
 `CLRBTR` clears only its physical backtrace port; a veto preserves it.
 
+In the covered compact two-DATA MAC and secondary `OP1`/`OP2` packets, the
+left reads feed temporary ports rather than the multiplier or `X1`.
+The unchanged accumulator drives the first status lane. The secondary
+operation sees zero inputs and updates only its status lane, although its
+encoded DATA address updates still run when CE2 or its address override
+allows them. With the covered inactive left slot, the secondary XOR
+instead reads DATA and writes the word to the original destination
+address when CE2 permits. Other peer and operand routes can exhaust the
+physical read ports and are not inferred from these forms.
+
 Covered wide `LOAD` forms distinguish accumulator writeback from pointer
 and `PACFG` setup. An operand that initializes a pointer does not also
 overwrite the encoded bound register.
@@ -3960,6 +3970,16 @@ captured operand address, not the postmodified pointer.
 Covered compact logical `RMW1` routes deliver the result to an accumulator
 half. Disconnected increment, address, and flag-word ports receive zero
 without publishing ALU flags. `RMW2` writes DATA instead of the register.
+
+In the covered wide `MINM` and `MAXM` forms, a strict improvement updates
+`MINMAX` from the reference register or the captured DATA address, not the
+value stored there. A guard result takes the low byte of the selected
+upper word. An accumulator source or a non-word reference can select the
+upper word even when the comparison ties or keeps the old operand. Guard,
+flag-word and `X1` result ports in these forms preserve comparison flags;
+accumulator result ports publish signed or unsigned comparison flags.
+An enabled reference address stage still postmodifies the pointer when the
+comparison keeps the old value or a qualified result is vetoed.
 
 For covered wide shift routes, the word result uses the upper half of
 the low 32-bit lane. The word and long carry taps differ, and the guard
