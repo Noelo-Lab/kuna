@@ -1071,6 +1071,10 @@ pub struct ArchContext {
     /// argument (`varargsharedfloat`).  Read by
     /// [`crate::p4_calls::kuna_varargsharedfloat::feeds_earlier_argument`].
     pub vararg_shared_float: bool,
+    /// (kuna) keep a value compared with another argument of the same call to
+    /// a body-less callee (`comparedarg`). Read by
+    /// [`crate::p4_calls::kuna_comparedarg::compares_other_argument`].
+    pub compared_arg: bool,
 
     /// (kuna) completion level for the two upstream partial-range call-overlap
     /// guards (`calloverlap`): off (what kuna shipped before the option), auto
@@ -1779,6 +1783,7 @@ impl ArchContext {
             narrow_ret: true,
             narrow_signed: false,
             vararg_shared_float: false,  // varargsharedfloat (default-off)
+            compared_arg: true,          // comparedarg (default-on)
             call_overlap: crate::kuna_calloverlap::LEVEL_AUTO, // calloverlap (default auto)
             spill_arg_trial: 0,          // spillargtrial (0 = upstream: every STORE rejects)
             index_alias_guard: 2,        // indexaliasguard (global; Architecture::reset_defaults sets the shipped default)

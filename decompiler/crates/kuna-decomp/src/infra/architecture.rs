@@ -918,6 +918,10 @@ pub struct Architecture {
     /// earlier argument of the same call (option `varargsharedfloat`).  See
     /// [`crate::p4_calls::kuna_varargsharedfloat`].
     pub vararg_shared_float: bool,
+    /// (kuna) Keep a value a caller compares with another argument of the
+    /// same call to a body-less callee (option `comparedarg`). See
+    /// [`crate::p4_calls::kuna_comparedarg`].
+    pub compared_arg: bool,
 
     /// (kuna) Completion level for the two upstream partial-range call-overlap
     /// guards `Heritage::guardCallOverlappingInput` and
@@ -2609,6 +2613,7 @@ impl Architecture {
             narrow_ret: true,
             narrow_signed: false,
             vararg_shared_float: false,
+            compared_arg: true, // (kuna) option comparedarg; reset_defaults sets the shipped default
             call_overlap: crate::kuna_calloverlap::LEVEL_OFF, // (kuna) option calloverlap; reset_defaults sets the shipped default
             spill_arg_trial: 0,
             index_alias_guard: 0, // (kuna) option indexaliasguard; reset_defaults sets the shipped default
@@ -2955,6 +2960,7 @@ impl Architecture {
         self.narrow_signed = false; // (kuna) option regsigned default-off: rebuilding a sign-extended register-local web at its low 1, 2 or 4 bytes moves decbench type_match by +0 to +4 perfect functions and adds casts elsewhere
         self.narrow_locals = true; // (kuna) option regnarrow default-on: a register-local web whose values the nonzero-bit analysis proves fit a low 1, 2 or 4 bytes, entered only through zero extensions, masks, constants and copies, is rebuilt at that width
         self.narrow_ret = true; // (kuna) option narrowret default-on: a call to a callee that returns a narrow value zero-extended reads that value
+        self.compared_arg = true; // (kuna) option comparedarg default-on: 0/675 datatest assertions moved; only a direct, non-variadic call to an import, trampoline or code-less address is read
         self.vararg_shared_float = false; // (kuna) default-off: the register-choice reading holds only for -O0 code (post-RA scheduling defeats it at -O1+)
         self.call_overlap = crate::kuna_calloverlap::LEVEL_AUTO;
         self.spill_arg_trial = 0; // (kuna) spillargtrial default-OFF opt-in (diverges from upstream onlyOpUse; the failure mode is a spurious trailing argument, which no gate can see)
@@ -3799,6 +3805,7 @@ impl Architecture {
         ctx.narrow_ret = self.narrow_ret; // narrowret
         ctx.narrow_signed = self.narrow_signed; // regsigned
         ctx.vararg_shared_float = self.vararg_shared_float; // varargsharedfloat
+        ctx.compared_arg = self.compared_arg; // comparedarg
         ctx.call_overlap = self.call_overlap; // calloverlap
         ctx.spill_arg_trial = self.spill_arg_trial; // spillargtrial
         ctx.index_alias_guard = self.index_alias_guard; // indexaliasguard

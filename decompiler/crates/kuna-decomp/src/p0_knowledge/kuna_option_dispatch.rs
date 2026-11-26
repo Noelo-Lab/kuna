@@ -448,6 +448,7 @@ kuna_options! { self, p1;
         Ok(msg)
     },
     "varargsharedfloat" => on_off!(vararg_shared_float, "variadic doubles that also feed an earlier argument"),
+    "comparedarg" => on_off!(compared_arg, "arguments compared with another argument of the same call"),
     "calloverlap" => {
         let (val, msg) =
             crate::p3_dataflow::kuna_calloverlap::OptionCallOverlap.apply(p1)?;

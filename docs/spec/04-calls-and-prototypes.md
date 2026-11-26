@@ -2364,6 +2364,63 @@ classified:
   co-executes with the call, so relaxing that shape is the fabrication the
   family's own design notes warn against.
 
+  (kuna) The compared-argument test
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_comparedarg.rs (compares_other_argument)`,
+  option `comparedarg`, default on) takes one dominating-compare shape out of
+  that rejection: the value is compared with **another argument of the same
+  call**. A caller that skips the call when two values are equal loads them
+  into the argument registers and compares them there: clang -O2's
+  `if (s->sec == ref->sec) return 0; return elapsed(s->sec, ref->sec) ...` is
+  `mov (%rdi),%rdi; mov (%rsi),%rsi; cmp %rsi,%rdi; jne; call elapsed@plt`, and
+  find's `pred_newer` calls `difftime` the same way. Both trials reached the
+  `CBRANCH` and the call printed `elapsed()`; with an import kuna has no
+  prototype for, no body and no sibling could restore the list. The walk skips
+  an equality or ordering test, a borrow test, or a `cmp`'s subtraction into a
+  temporary whose other operand is a Varnode the call reads at another input
+  slot (directly, or through the copy the compare instruction makes of it),
+  and does not follow its result. The comparison reads nothing the call does
+  not read. Two registers being compared is register-allocation evidence, not
+  proof that both are arguments, so the relaxation is an option, and
+  `comparedarg off` keeps the upstream rejection (`elapsed()`).
+
+  The call must be direct and non-variadic, to a callee with no body the
+  entry walk can read (`bodiless_callee`): a trampoline whose every path
+  leaves through an indirect jump (an import's PLT entry, `jmp *slot(%rip)`),
+  or an address whose first instruction does not decode or that lies outside
+  a processor space (`CalleeEntryDead::is_codeless`). A local function is not
+  one: not when the call reaches it through a PLT stub bound to it
+  (`pltlocal`), not when the walk of its body gave up on its instruction, cut
+  or write budget, and not when no probe was taken. A callee with a body is
+  `calleearitybody`'s and `passthrough`'s to speak for; a table-driven
+  indirect call right after a search loop (`while (*p != type) p++; p->fn()`)
+  would otherwise take the loop's last compared pair, as U-Boot's `fs_*`
+  dispatchers did; and a format, not the registers, says what `printf` takes.
+
+  Three more conditions keep leftovers out. Both values must be computed by
+  the function on the way to the call, not its inputs and not joins of
+  several paths (`computed_here`). Every general-purpose argument register up
+  to the later of the pair, the ones between the two included, must hold such
+  a value as well (`filled_through`), so the pair continues a list the caller
+  filled from the first register; a pair in `rdi` and `rdx` with `rsi`
+  unwritten is not taken, since hole filling would hand the call `rsi`'s
+  stale value. A Thumb `-O0` loop `for (i = 0; i < n; i++) acc += f(i);`
+  reloads `i` and `n` into `r2` and `r3` for its test and calls `f` with them
+  still there. `r1` holds nothing the loop wrote, so those two are not taken
+  (fixture `kuna-armwalkmode.xml` #5). And the compare's block must not lie on
+  a cycle that avoids the call's block (`loops_without`): a search loop
+  before a direct import call, `for (p = h; p->id != key; p = p->next);
+  f(p->id);`, compares `p->id` with `key` in two argument registers on every
+  pass and calls with both still there; a cycle that can repeat the compare
+  without the call says the pair is loop control. A comparison with a
+  constant (`test %rcx,%rcx; jz; call`) keeps the upstream rejection.
+
+  The known false positive is a one-argument import called right after a
+  compare of its argument register with the next one that the caller also
+  loaded: `mov (%rdi),%rdi; mov (%rsi),%rsi; cmp %rsi,%rdi; je skip; call
+  f@plt` prints `f(a,b)`, and nothing in the caller tells it from a
+  two-argument `f`. A stated prototype is not affected. The option's catalog
+  row names that mode and says to turn the option off for it.
+
   (kuna) The mutually-exclusive call/return test
   (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_exclusivecallret.rs (applies, skips_use)`,
   always on) applies the same mutual-exclusion argument to a call and a return. GCC

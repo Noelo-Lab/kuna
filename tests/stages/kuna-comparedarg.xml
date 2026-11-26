@@ -1,0 +1,99 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call drops the arguments its caller compares with each other first.
+
+        double elapsed(long a, long b);           /* no body, no prototype */
+        int newer(const struct stamp *s, const struct stamp *ref)
+        {
+            if (s->sec == ref->sec &amp;&amp; s->nsec == ref->nsec)
+                return 0;
+            return elapsed(s->sec, ref->sec) + (s->nsec - ref->nsec) / 1e9 > 0.0;
+        }
+        long differ(const struct stamp *s, const struct stamp *ref)
+        { if (s->sec == ref->sec) return 0; return other(s->sec, ref->sec) + 1; }
+
+    clang 22 -O2 (-fno-builtin -fno-stack-protector -fcf-protection=none,
+    linked -nostdlib -static -Ttext=0x401000; elapsed and other are
+    PLT-shaped stubs, `jmp *slot(%rip)`, as an import is).  Each caller loads both values
+    into rdi and rsi, compares them there (`cmp %rsi,%rdi; jne`) and calls.
+    onlyOpUse rejected both trials because the compare feeds a branch, and
+    kuna printed `elapsed()` and `other() + 1`.  find's `pred_newer` calls
+    `difftime` the same way.
+
+    Two hand-written functions (llvm-mc, linked at 0x4010a0) check the
+    guards.  search is a search loop before a direct import call,
+    `for (p = h; p->id != *key; p = p->next); f(p->id);`, which compares
+    p->id in rdi with the key in rsi on every pass: the compare sits on a
+    cycle that avoids the call, so the key is not f's argument.  gap loads
+    rdi and rdx and compares them, with rsi still the caller's pointer: the
+    register between the pair holds no value the function computed, so the
+    pair is not taken and hole filling does not hand g a stale rsi.
+
+        search: push %rbx; mov %rdi,%rbx; mov (%rsi),%rsi
+             1: mov (%rbx),%rdi; cmp %rsi,%rdi; je 2f
+                mov 8(%rbx),%rbx; jmp 1b
+             2: call f; pop %rbx; ret
+        gap:    push %rax; mov (%rdi),%rdi; mov (%rsi),%rdx
+                cmp %rdx,%rdi; je 3f; call g; pop %rcx; ret
+             3: xor %eax,%eax; pop %rcx; ret
+
+    Stage: P4 active input-trial scoring (kuna_comparedarg.rs, option
+    comparedarg, default on).  At a direct call to a callee with no body to
+    read, a compare of the value with another argument of the same call is
+    no competing use; a compare with anything else still is.  The second
+    pass turns the option off and newer prints the bug again: `elapsed()`.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+415653504889f34989fe488b3f488b364839f7750c498b4e0831c0483b4b0874
+2be85a000000498b4608482b4308f2480f2ac8f20f5e0d5d100000f20f58c866
+0f57c031c0660f2ec80f97c04883c4085b415ec36666662e0f1f840000000000
+488b3f488b364839f7750331c0c350e81c00000048ffc04883c408c3cccccccc
+ff251a200000662e0f1f840000000000ff2512200000
+</bytechunk>
+<bytechunk space="ram" offset="0x4010a0" readonly="true">
+534889fb488b36488b3b4839f77406488b5b08ebf2e8260000005bc3cccccccc
+50488b3f488b164839d77407e81f00000059c331c059c3cccccccccccccccccc
+ff25ca1f0000ccccccccccccccccccccff25c21f0000
+</bytechunk>
+<bytechunk space="ram" offset="0x402098" readonly="true">
+0000000065cdcd41
+</bytechunk>
+<bytechunk space="ram" offset="0x4030a0">
+0000000000000000000000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="newer"/>
+<symbol space="ram" offset="0x401060" name="differ"/>
+<symbol space="ram" offset="0x401080" name="elapsed"/>
+<symbol space="ram" offset="0x401090" name="other"/>
+<symbol space="ram" offset="0x4010a0" name="search"/>
+<symbol space="ram" offset="0x4010c0" name="gap"/>
+<symbol space="ram" offset="0x4010e0" name="f"/>
+<symbol space="ram" offset="0x4010f0" name="g"/>
+</binaryimage>
+<script>
+  <com>lo fu newer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu differ</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu search</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu gap</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option comparedarg off</com>
+  <com>lo fu newer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="comparedarg #1: only the option-off pass loses the arguments it compared" min="1" max="1">(elapsed|other)\(\)</stringmatch>
+<stringmatch name="comparedarg #2: newer passes both seconds fields to elapsed" min="1" max="1">elapsed\(a0-&gt;[a-z_0-9]+,a1-&gt;[a-z_0-9]+\)</stringmatch>
+<stringmatch name="comparedarg #3: differ passes both seconds fields to other" min="1" max="1">other\([^,()]+,[^,()]+\) \+ 1</stringmatch>
+<stringmatch name="comparedarg #4: search does not pass the loop's key to f" min="0" max="0">[^a-z_0-9]f\([^(),]+,</stringmatch>
+<stringmatch name="comparedarg #5: gap's call takes no stale middle register" min="0" max="0">[^a-z_0-9]g\([^()]*,[^()]*,</stringmatch>
+<stringmatch name="comparedarg #6: comparedarg off prints the upstream elapsed()" min="1" max="1">elapsed\(\)</stringmatch>
+</decompilertest>

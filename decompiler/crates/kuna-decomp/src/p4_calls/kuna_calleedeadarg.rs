@@ -254,6 +254,9 @@ pub struct CalleeEntryDead {
     trap_cuts: Vec<ByteSet>,
     /// Did the walk cover every path with nothing abandoned?
     complete: bool,
+    /// Is there no code at the entry: it lies outside a processor space, or
+    /// its first instruction does not decode? Read by [`Self::is_codeless`].
+    codeless: bool,
 }
 
 impl CalleeEntryDead {
@@ -486,6 +489,12 @@ impl CalleeEntryDead {
         self.complete
     }
 
+    /// Is there no code at the entry to read? Read by
+    /// [`crate::p4_calls::kuna_comparedarg`].
+    pub fn is_codeless(&self) -> bool {
+        self.codeless
+    }
+
     /// [`Self::proves_dead`] without leaning on a conditionally executed write:
     /// every path writes the range by instructions that always run.
     pub fn proves_dead_firmly(&self, addr: &Address, size: int4) -> bool {
@@ -687,6 +696,7 @@ impl CalleeEntryDead {
             stored_top_bytes: ByteSet::new(),
             undecodable: false,
             complete,
+            codeless: false,
         }
     }
 
@@ -1346,6 +1356,7 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
     };
     if entry_space.get_type() != spacetype::IPTR_PROCESSOR || reg_idx < 0 {
         res.complete = false;
+        res.codeless = entry_space.get_type() != spacetype::IPTR_PROCESSOR;
         return res;
     }
     let start = vec![Frame { at: entry.clone(), written: ByteSet::new(), pushed: Pushed::default() }];
@@ -1427,6 +1438,7 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
             // Undecodable: the path ends where the walk cannot see.
             _ => {
                 res.undecodable = true;
+                res.codeless |= budget == MAX_PROBE_INSTRUCTIONS - 1 && res.cuts.is_empty();
                 frame.pushed.flush(res);
                 res.opaque_cuts.push(frame.written.clone());
                 res.cuts.push(frame.written);

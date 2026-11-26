@@ -2285,6 +2285,11 @@ impl Funcdata {
                 if crate::p4_calls::kuna_zeroidiomuse::op_discards_operand(self, op) {
                     continue;
                 }
+                // (kuna) A compare with another argument of the same call.  See
+                // [`crate::p4_calls::kuna_comparedarg`].
+                if crate::p4_calls::kuna_comparedarg::compares_other_argument(self, opmatch, op, vn) {
+                    continue;
+                }
                 // (kuna) `voidret` — a forced return value may also be stored
                 // and branched on.  See [`crate::p4_calls::kuna_voidret::returned_use`].
                 if forced_return && crate::p4_calls::kuna_voidret::returned_use(self, op, vn) {
