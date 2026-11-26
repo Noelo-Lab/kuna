@@ -484,10 +484,7 @@ red-ticked section labels instead of a lab-page rail. The landing page opts into
 theme that follows the reader's system setting (`<html data-theme="auto">`; the dark tokens
 reuse `/decompile/`'s palette, and the mark and the hero's mark-plus-wordmark lockup swap to
 their `-dark.svg` versions through `<picture>`); `/dev-viz/` stays light, since its charts
-use fixed light colours. Under the goals, a DecBench card shows kuna's Union score and rank
-on each dataset of the public scoreboard, with the scoreboard's date; `python3 -m
-scripts.decbench.card` regenerates both versions from `decbench.com/data/aggregates.json`,
-so its numbers are never typed by hand. `/decompile/` has its own stylesheet
+use fixed light colours. `/decompile/` has its own stylesheet
 on the same palette, dark by default (§4.2); `assets/js/highlight-c.js` is the single C
 highlighter shared by the compare panes and the decompiler. The landing
 page is otherwise inert — no wasm, no network — and `compare-samples.js` is pure data, so

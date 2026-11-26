@@ -258,8 +258,6 @@ p{margin:0;}
 .goal h3{margin:12px 0 8px;font:700 .9375rem/1.45 var(--mono);letter-spacing:-.005em;}
 .goal p{font-size:.8125rem;line-height:1.75;color:var(--ink-2);}
 .goal code{background:var(--paper-2);border:1px solid var(--rule);padding:0 4px;}
-.bench{display:block;max-width:680px;margin-top:clamp(30px,4vw,44px);}
-.bench img{width:100%;}
 
 /* ── Footer ─────────────────────────────────────────────────────────────── */
 .foot{flex:none;border-top:1px solid var(--rule);padding-block:22px;

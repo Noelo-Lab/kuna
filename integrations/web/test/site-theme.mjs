@@ -2,9 +2,8 @@
 // served straight from the source tree (no build needed): every <picture> loads
 // its -dark.svg under prefers-color-scheme: dark and its light file otherwise,
 // a theme change swaps them without a reload, every swapped image is served,
-// the DecBench card has a narrow version on a phone, the page never scrolls
-// sideways from 320 to 1920 px in either theme, and /dev-viz/ stays light when
-// the system is dark (it does not opt in).
+// the page never scrolls sideways from 320 to 1920 px in either theme, and
+// /dev-viz/ stays light when the system is dark (it does not opt in).
 //
 // Skips (exit 0) when there is no Chrome or no global WebSocket (Node < 22).
 //
@@ -37,7 +36,7 @@ try {
   await page.viewport(1280);
   await scheme('light');
   await page.navigate(`${server.base}/`);
-  await page.waitFor(`${pictures}.length >= 3 && ${pictures}.every(Boolean)`, { what: 'pictures load' });
+  await page.waitFor(`${pictures}.length >= 2 && ${pictures}.every(Boolean)`, { what: 'pictures load' });
   const light = await page.evaluate(pictures);
   assert.ok(light.every((src) => !src.endsWith('-dark.svg')), `light theme loaded a dark image: ${light}`);
   assert.equal(await paper(), PAPER.light);
@@ -47,13 +46,7 @@ try {
   assert.equal(await paper(), PAPER.dark);
   const dark = await page.evaluate(pictures);
 
-  await page.viewport(390);
-  await page.waitFor(`document.querySelector('.bench img').currentSrc.endsWith('decbench-card-narrow-dark.svg')`,
-    { what: 'the DecBench card swaps to its narrow version on a phone' });
-  const narrow = await page.evaluate(pictures);
-  await page.viewport(1280);
-
-  for (const src of new Set([...light, ...dark, ...narrow])) {
+  for (const src of new Set([...light, ...dark])) {
     const status = await page.evaluate(`fetch(${JSON.stringify(src)}).then((r) => r.status)`);
     assert.equal(status, 200, `${src} is not served`);
   }
