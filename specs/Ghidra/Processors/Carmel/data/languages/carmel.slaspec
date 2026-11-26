@@ -10975,6 +10975,25 @@ macro compact_pop_words(first, second) {
     first = *[data]:2 SP;
 }
 
+:LSHIFT "CE1" "FF1","RN5","0x11" "||" "POP" "CE2" "RL2","R5" is
+    (carmel_issue=1 & slot_raw=0x3966a3); slot_raw=0x303123 {
+    local left:2;
+    local right:2;
+    unary_ce(CECFG1, EST, CETBL, 0, left);
+    unary_ce(CECFG2, EST, CETBL, 1, right);
+    if (right == 0 && (CECFG2 & 0x1000) == 0) goto <alu>;
+    local high:2;
+    local low:2;
+    compact_pop_words(high, low);
+    R5 = low;
+    RL2 = high;
+  <alu>
+    if (left == 0) goto <publish>;
+    compact_word_logical(FF1, RN5, 17:4);
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
 @define COMPACT_PUSH_PAIR "slot_9_22=0x181a & slot_0_0=0"
 @define COMPACT_POP_PAIR "slot_9_22=0x1818 & slot_0_0=0"
 @define COMPACT_STACK_FF12 "slot_1_3=6 & slot_0_0=0"

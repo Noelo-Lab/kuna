@@ -3202,3 +3202,27 @@ fn wide_single_stack_uses_address_enable_and_publishes_both_latches() {
         assert_eq!((m.data(0x802f), m.data(0x8031)), (0x1234, 0x8abc));
     }
 }
+
+#[test]
+fn compact_shift_and_pop_use_independent_predicates() {
+    let mut m = Machine::new(0, &[(0x3966a3, 0x303123), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    for (table, ce2, incoming, rn5, sp, expected) in [
+        (0x0000, 0,      0x0000,  1, 0x8030, (0x0000, 0x8030, 0xbeef, 0x5252, 0x2323)),
+        (0x0001, 0,      0x1009,  1, 0x8030, (0x1020, 0x8030,      0, 0x5252, 0x2323)),
+        (0x0001, 0x1000, 0x1024, 64, 0xffff, (0x1034,      1,      0, 0x84bd, 0x9365)),
+        (0x0100, 0,      0x2024, 64, 0x8030, (0x2024, 0x8032, 0xbeef, 0x84bd, 0x9365)),
+        (0x0101, 0,      0x3009,  0, 0xfffe, (0x3008,      0,      0, 0x84bd, 0x9365)),
+    ] {
+        m.seed(&[("CECFG1", 0), ("CECFG2", ce2), ("CETBL", table), ("SP", sp),
+                 ("EST", incoming), ("RN5", rn5), ("FF1", 0xbeef), ("FF2", 0xface),
+                 ("R5", 0x5252), ("RL2", 0x2323)]);
+        let top = (sp + 1) & 0xffff;
+        let next = (sp + 2) & 0xffff;
+        m.seed_data(top, 0x84bd);
+        m.seed_data(next, 0x9365);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("EST"), m.reg("SP"), m.reg("FF1"), m.reg("R5"), m.reg("RL2")), expected);
+        assert_eq!((m.reg("FF2"), m.data(top), m.data(next)), (0xface, 0x84bd, 0x9365));
+    }
+}

@@ -5101,6 +5101,13 @@ or AEN admits the address phase, even when CE vetoes
 the fallback DATA store. The qualified paired ALU routes keep this
 address phase separate from the accumulator, latch, and flag writeback.
 
+In the compact `LSHIFT CE1 ... || POP CE2 RL2,R5` form with an immediate
+count of seventeen, the shift publishes the high result word to `FF1`
+and takes its flags from the 40-bit result. Address enable alone can let
+the parallel `POP` advance `SP` and load `R5` and `RL2` from old `SP+1`
+and `SP+2`, respectively. The shift and the stack access qualify
+separately; both CE latches update after the packet.
+
 The covered single wide postincrement `POP` advances `SP` and `R7` by
 one DATA word or two for a long operand. The fixed stride does not use
 `RN7`; the `R7` update still uses its configured address window. In the
