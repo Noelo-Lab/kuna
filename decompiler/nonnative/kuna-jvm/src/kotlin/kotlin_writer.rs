@@ -2635,7 +2635,6 @@ impl KotlinWriter {
         if !init
             || throws_exceptions
             || param_count > 0
-            || !DecompilerContext::get_option(IFernflowerPreferences::HIDE_DEFAULT_CONSTRUCTOR)
         {
             return false;
         }

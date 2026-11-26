@@ -13,7 +13,6 @@ impl IFernflowerPreferences {
     pub const REMOVE_BRIDGE: &str = "remove-bridge";
     pub const REMOVE_SYNTHETIC: &str = "remove-synthetic";
     pub const DECOMPILE_INNER: &str = "decompile-inner";
-    pub const HIDE_DEFAULT_CONSTRUCTOR: &str = "hide-default-constructor";
     pub const DECOMPILE_GENERIC_SIGNATURES: &str = "decompile-generics";
     pub const INCORPORATE_RETURNS: &str = "incorporate-returns";
     pub const ENSURE_SYNCHRONIZED_MONITOR: &str = "ensure-synchronized-monitors";
@@ -96,7 +95,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::REMOVE_BRIDGE, "1".to_string()),
             (IFernflowerPreferences::REMOVE_SYNTHETIC, "1".to_string()),
             (IFernflowerPreferences::DECOMPILE_INNER, "1".to_string()),
-            (IFernflowerPreferences::HIDE_DEFAULT_CONSTRUCTOR, "1".to_string()),
             (IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, "1".to_string()),
             (IFernflowerPreferences::INCORPORATE_RETURNS, "1".to_string()),
             (IFernflowerPreferences::ENSURE_SYNCHRONIZED_MONITOR, "1".to_string()),
@@ -201,7 +199,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "REMOVE_BRIDGE", key: IFernflowerPreferences::REMOVE_BRIDGE, short_name: Some("rbr"), name: Some("Remove Bridge Methods"), description: Some("Removes any methods that are marked as bridge from the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "REMOVE_SYNTHETIC", key: IFernflowerPreferences::REMOVE_SYNTHETIC, short_name: Some("rsy"), name: Some("Remove Synthetic Methods And Fields"), description: Some("Removes any methods and fields that are marked as synthetic from the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILE_INNER", key: IFernflowerPreferences::DECOMPILE_INNER, short_name: Some("din"), name: Some("Decompile Inner Classes"), description: Some("Process inner classes and add them to the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "HIDE_DEFAULT_CONSTRUCTOR", key: IFernflowerPreferences::HIDE_DEFAULT_CONSTRUCTOR, short_name: Some("hdc"), name: Some("Hide Default Constructor"), description: Some("Hide constructors with no parameters and no code."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILE_GENERIC_SIGNATURES", key: IFernflowerPreferences::DECOMPILE_GENERIC_SIGNATURES, short_name: Some("dgs"), name: Some("Decompile Generics"), description: Some("Decompile generics in classes, methods, fields, and variables."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "INCORPORATE_RETURNS", key: IFernflowerPreferences::INCORPORATE_RETURNS, short_name: Some("ner"), name: Some("Incorporate returns in try-catch blocks"), description: Some("Integrate returns better in try-catch blocks instead of storing them in a temporary variable."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "ENSURE_SYNCHRONIZED_MONITOR", key: IFernflowerPreferences::ENSURE_SYNCHRONIZED_MONITOR, short_name: Some("esm"), name: Some("Ensure synchronized ranges are complete"), description: Some("If a synchronized block has a monitorenter without any corresponding monitorexit, try to deduce where one should be to ensure the synchronized is correctly decompiled."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

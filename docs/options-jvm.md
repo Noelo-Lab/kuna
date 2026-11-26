@@ -42,8 +42,6 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| public Foo() {} constructor missing from the output | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
-| class seems to have no constructor | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
 | var = x; inside try followed by return var after the catch | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
 | return inside try reads differently from the bytecode | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
 | synchronized block covers more code than expected | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
@@ -170,15 +168,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
-
-### `jvm_hide_default_constructor` -- on | off, default `on`
-
-- **Symptoms:** public Foo() {} constructor missing from the output; class seems to have no constructor.
-- **What it does:** Leave out a class's only constructor when it takes no parameters, throws nothing, has an empty body and the class's own access (the one javac adds).
-- **When to flip:** Turn off to list every constructor the class file declares, e.g. when counting entry points.
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `hide-default-constructor`, `hdc`
-- **Example:** `kuna decompile app.jar com.ex.Util --option jvm_hide_default_constructor off`
 
 ### `jvm_incorporate_returns` -- on | off, default `on`
 

@@ -920,7 +920,7 @@ requires. A `package-info` class and a
 `implements` and `permits`, and for a record its components; then the enum constants,
 the other fields with their initializers, the methods and the nested classes. Members are
 left out by policy: synthetic members (`jvm_remove_synthetic`), bridge methods
-(`jvm_remove_bridge`), a lone default constructor (`jvm_hide_default_constructor`), and
+(`jvm_remove_bridge`), a lone default constructor, and
 whatever the class-level rewrites hid. `jvm_override_annotation` adds `@Override` where an
 instance method of a Java 5+ class file overrides or implements a method of a supertype
 the engine can see;

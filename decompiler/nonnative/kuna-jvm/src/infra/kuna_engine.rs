@@ -248,8 +248,7 @@ impl Engine for Jvm {
             ),
             Target::Members { name, .. } if name == "<init>" => format!(
                 "{owner}.<init> is not in the decompiled source of {owner} (the engine leaves out default \
-                 constructors, and always an anonymous class's; --option jvm_hide_default_constructor off \
-                 prints the default ones)"
+                 constructors, and always an anonymous class's)"
             ),
             Target::Members { name, .. } => format!(
                 "{owner}.{name} is not in the decompiled source of {owner} (the engine folds synthetic and bridge \
