@@ -1,11 +1,12 @@
 {
   "data_footer": [
-    5555,
-    5555
+    5558,
+    5558
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
     "data:64-bit unsigned merge retains signed conversion",
+    "data:A byte table indexed from a character just below its section stays an integer",
     "data:A declared Go pointer pair keeps the low nonzero constant distinct",
     "data:A declared Go pointer pair retains the payload on the live path",
     "data:A declared Go pointer pair retains the table from input on both live paths",
@@ -222,8 +223,10 @@
     "data:Address-split local #3: the saved pointer still reaches the object",
     "data:An Itanium function can itself have an uppercase hash-shaped identifier",
     "data:An MSVC name is unchanged by legacy hash matching",
+    "data:An absolute address past 1 MiB outside every section is no field offset",
     "data:An exported function shaped like a stub keeps its own name",
     "data:An image with no data sections reads the field through the parameter",
+    "data:An index into the extern table of a relocatable object stays an integer",
     "data:An ordinary Itanium name is unchanged by Rust hash matching",
     "data:An uppercase name also survives an accepted LLVM suffix",
     "data:Another function's entry is no case",
