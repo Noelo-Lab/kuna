@@ -4031,6 +4031,17 @@ moves the rounding boundary and shifts the stored pair on the long
 DATA port only. A qualified long DATA result captures the old pointer
 and performs the address update and operand latch when AEN allows
 them, even if the execution predicate suppresses the result and flags.
+The short absolute DATA product writes the high word; its EQ test
+examines the entire product above the low word, including the guard
+bits. A long absolute DATA product tests the full product for zero,
+as does the accumulator result. Both DATA ports apply `SR1` after
+testing zero; the long port writes the shifted low word first.
+`RN5,*R4--` route samples DATA at the old pointer and decrements `R4`;
+`RN5`, not the DATA operand, drives the early `X1` latch. The `A1H`
+result changes only that half. A connected `FF1` first input loads
+`X1`, whereas accumulator halves and the literal square bypass it.
+An unqualified signed `MOVE` from `X1` to `A3` sign-extends the
+published word into the whole accumulator.
 
 The supported CE-qualified wide `DIVIDE` forms distinguish a short absolute
 DATA operand from a literal and from a long absolute DATA operand. Long

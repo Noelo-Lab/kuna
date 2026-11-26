@@ -7126,6 +7126,140 @@ macro wide_mpy_result(first, second, kind, narrow, store, shift, product, result
     publish_alu_ce(flags);
 }
 
+# Keep the additional physical input routes separate from the older bit-0-set mux.
+wide_mpy_routed_inputs: "RN5,*R4--" is wide_acc_mac_op=0x30 & wide_0_0=0
+    & wide_acc_mac_first=0x6d & wide_40_45=0x1c {
+    local address:2 = R4;
+    modify_ptr(R4, 0:2, RM4, RL4, 8, 3);
+    local first:2 = RN5;
+    local second:2 = *[data]:2 address;
+    X1 = first;
+    local inputs:4 = (zext(first) << 16) | zext(second);
+    export inputs;
+}
+wide_mpy_routed_inputs: "A1L,A2L" is wide_acc_mac_op=0x33 & wide_0_0=1
+    & wide_acc_mac_first=0x51 & wide_40_45=0x12 & wide_acc_mac_dst=0x3a {
+    local inputs:4 = (zext(A1L) << 16) | zext(A2L);
+    export inputs;
+}
+wide_mpy_routed_inputs: "*0xffff,RM0" is wide_acc_mac_op=0x30 & wide_0_0=1
+    & wide_acc_mac_first=0x4f & wide_40_45=0x32 & (wide_acc_mac_dst=0x99 | wide_acc_mac_dst=0xe0) {
+    local address:2 = 0xffff;
+    local first:2 = *[data]:2 address;
+    X1 = first;
+    local inputs:4 = (zext(first) << 16) | zext(RM0);
+    export inputs;
+}
+wide_mpy_routed_inputs: "FF1,RM0" is wide_acc_mac_op=0x30 & wide_0_0=1
+    & wide_acc_mac_first=0x56 & wide_40_45=0x32 & wide_acc_mac_dst=0x88 {
+    X1 = FF1;
+    local inputs:4 = (zext(FF1) << 16) | zext(RM0);
+    export inputs;
+}
+wide_mpy_routed_inputs: "A0L,RM0" is wide_acc_mac_op=0x30 & wide_0_0=1
+    & wide_acc_mac_first=0x50 & wide_40_45=0x32 & wide_acc_mac_dst=0x88 {
+    local inputs:4 = (zext(A0L) << 16) | zext(RM0);
+    export inputs;
+}
+wide_mpy_routed_inputs: "A2L,#"^wide_acc_mac_absolute is wide_acc_mac_op=0x30 & wide_0_0=1
+    & wide_acc_mac_first=0x52 & wide_40_45=0x0f & wide_acc_mac_dst=0x88 & wide_acc_mac_absolute {
+    local literal:2 = wide_acc_mac_absolute;
+    local inputs:4 = (zext(A2L) << 16) | zext(literal);
+    export inputs;
+}
+wide_mpy_routed_inputs: "square #"^wide_acc_mac_absolute is wide_acc_mac_op=0x30 & wide_0_0=1
+    & wide_acc_mac_first=0x46 & wide_40_45=0x0f & wide_acc_mac_dst=0x88 & wide_acc_mac_absolute {
+    local literal:2 = wide_acc_mac_absolute;
+    local inputs:4 = zext(literal) * 0x10001;
+    export inputs;
+}
+
+wide_mpy_routed_word: "FF1" is wide_acc_mac_dst=0x96 { export FF1; }
+wide_mpy_routed_word: "A1H" is wide_acc_mac_dst=0x99 & wide_0_0=1 { export A1H; }
+
+@define WIDE_MPY_ROUTED "wide_right_mode=1 & wide_mpy_kind & wide_mpy_enable & wide_mpy_routed_inputs"
+
+macro wide_mpy_routed_product(inputs, kind, narrow, store, product, result, flags) {
+    local first:2 = inputs(2);
+    local second:2 = inputs:2;
+    wide_mpy_result(first, second, kind, narrow, store, 0:4, product, result, flags);
+}
+
+:^wide_mpy_kind^wide_mpy_enable "discard",wide_mpy_routed_inputs is
+    $(WIDE_MPY_ROUTED) & wide_acc_mac_dst=0xe0 {
+    build wide_mpy_enable;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_routed_inputs;
+  <publish>
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:^wide_mpy_kind^wide_mpy_enable wide_mpy_routed_word,wide_mpy_routed_inputs is
+    $(WIDE_MPY_ROUTED) & wide_mpy_routed_word {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_routed_inputs;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local product:8;
+    local result:8;
+    wide_mpy_routed_product(wide_mpy_routed_inputs, wide_mpy_kind, 1:1, 0:1, product, result, flags);
+    wide_mpy_routed_word = result(2);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+:^wide_mpy_kind^wide_mpy_enable "A0",wide_mpy_routed_inputs is
+    $(WIDE_MPY_ROUTED) & wide_acc_mac_dst=0x88 &
+    ((wide_0_0=0 & wide_acc_mac_first=0x6d & wide_40_45=0x1c) |
+     (wide_0_0=1 & wide_40_45=0x32 & (wide_acc_mac_first=0x50 | wide_acc_mac_first=0x56)) |
+     (wide_0_0=1 & wide_40_45=0x0f & (wide_acc_mac_first=0x46 | wide_acc_mac_first=0x52))) {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_routed_inputs;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local product:8;
+    local result:8;
+    wide_mpy_routed_product(wide_mpy_routed_inputs, wide_mpy_kind, 0:1, 0:1, product, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+  <publish>
+    publish_alu_ce(flags);
+}
+
+wide_mpy_absolute: "*"^wide_acc_mac_absolute is wide_acc_mac_dst=0x3a & wide_acc_mac_absolute {
+    export 0:1;
+}
+wide_mpy_absolute: "long *"^wide_acc_mac_absolute is wide_acc_mac_dst=0x7a & wide_acc_mac_absolute {
+    export 1:1;
+}
+
+:^wide_mpy_kind^wide_mpy_enable wide_mpy_absolute,wide_mpy_routed_inputs is
+    $(WIDE_MPY_ROUTED) & wide_mpy_absolute & wide_acc_mac_absolute {
+    build wide_mpy_enable;
+    local flags:2 = EST & 0xcfff;
+    if (wide_mpy_enable == 0) goto <publish>;
+    build wide_mpy_routed_inputs;
+    if ((wide_mpy_enable & 1) == 0) goto <publish>;
+    local result:8;
+    local product:8;
+    local narrow:1 = 1 - wide_mpy_absolute;
+    wide_mpy_routed_product(wide_mpy_routed_inputs, wide_mpy_kind, narrow, 1:1, product, result, flags);
+    local address:2 = wide_acc_mac_absolute;
+    local shift:4 = zext((ECFG >> 5) & 1);
+    result = (result >> shift) | (result & 0x8000000000);
+    if (narrow != 0) goto <word>;
+    compact_pair_fft(product, result, (wide_mpy_kind & 3) == 3, flags);
+    compact_pair_long_store(address, result);
+    goto <publish>;
+  <word>
+    *[data]:2 address = result(2);
+  <publish>
+    publish_alu_ce(flags);
+}
+
 # The guard and control ports use the upper word of the same scaled product,
 # but align their addends differently. Neither port drives arithmetic flags.
 macro wide_mac_guard_result(guard, product, alignment) {
@@ -11110,6 +11244,17 @@ wide_smove_latch_source: "*"^wide_move_base^"--" is wide_smove_src_mode=3
     wide_smove_reg_dst = *[data]:2 address;
   <publish>
     publish_ce_feedback(EST & 0xcfff, EST);
+}
+
+:MOVE "A3","X1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_10_22=0x10d8 & wide_2_9=0x8b & wide_0_1=2 & wide_40_45=0x1e {
+    local source:2 = X1;
+    local signed_high:2 = 0 - zext(source s< 0);
+    A3L = source;
+    A3H = signed_high;
+    GB3 = signed_high:1;
+    local flags:2 = (EST & 0xcfc4) | (zext(source == 0) << 3) | (zext(source s< 0) << 4);
+    publish_alu_ce(flags);
 }
 
 # EQ1 returns: sample the incoming EST and pop only on the taken path.

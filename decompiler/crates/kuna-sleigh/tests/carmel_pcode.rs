@@ -1594,6 +1594,90 @@ fn wide_rounded_product_uses_same_result_and_literal_ports_as_multiply() {
 }
 
 #[test]
+fn wide_multiply_result_ports_drive_the_following_eq_branch() {
+    for (port, input, low, high, zero, a0, ff1) in [
+        (0x3a, 7, 0, 0xbbbb, true, 0x12340007, 0x55aa),
+        (0x3a, 0x4000, 1, 0xbbbb, false, 0x12340007, 0x55aa),
+        (0x3a, 0xffff, 0xffff, 0xbbbb, false, 0x12340007, 0x55aa),
+        (0x7a, 7, 35, 0, false, 0x12340007, 0x55aa),
+        (0x88, 7, 0xaaaa, 0xbbbb, false, 35, 0x55aa),
+        (0x96, 7, 0xaaaa, 0xbbbb, true, 0x12340007, 0),
+    ] {
+        let mut m = Machine::new(0, &[
+            (0x9c6651, 0xb000da | (port << 8)), (0x281c10, NOP),
+            (INC_A2, NOP), (0x21ace6, NOP), (NOP, NOP),
+        ], &[(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 0)], None);
+        m.seed(&[("CETBL", 0xffff), ("A0", 0x12340007), ("FF1", 0x55aa), ("R4", 0x4040),
+                 ("RN5", 5), ("X1", 0x1111), ("X2", 0x2222)]);
+        m.seed_data(0x4040, input);
+        m.seed_data(0x6651, 0xaaaa);
+        m.seed_data(0x6652, 0xbbbb);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R4"), m.reg("X1"), m.reg("X2")), (0x403f, 5, 0x2222));
+        assert_eq!((m.data(0x6651), m.data(0x6652), m.reg("A0"), m.reg("FF1")), (low, high, a0, ff1));
+        assert_eq!(m.step(), if zero { 18 } else { 12 });
+        if !zero { assert_eq!(m.step(), 18); }
+        assert_eq!(m.step(), 24);
+        assert_eq!((m.reg("A2"), m.reg("A3")), (u64::from(!zero), 1));
+    }
+    for (port, input, low, high, flags) in [
+        (0x3a, 0x4000, 0, 0xbbbb, 0x3000),
+        (0x3a, 0xffff, 0xffff, 0xbbbb, 0x3010),
+        (0x7a, 7, 17, 0, 0x3000),
+        (0x7a, 0xffff, 0xfffd, 0xffff, 0x3010),
+    ] {
+        let mut m = wide_product_machine(0x9c6651b000da | (port << 8));
+        m.seed(&[("ECFG", 0x20), ("CETBL", 0xffff), ("R4", 0x4040), ("RN5", 5)]);
+        m.seed_data(0x4040, input);
+        m.seed_data(0x6651, 0xaaaa);
+        m.seed_data(0x6652, 0xbbbb);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.data(0x6651), m.data(0x6652), m.reg("EST")), (low, high, flags));
+    }
+    for (a1, flags) in [(0xb505, 0x3024), (0, 0x3008)] {
+        let mut m = wide_product_machine(0x926651b33aa3);
+        m.seed(&[("A1", a1), ("A2", 0xb505), ("X1", 0x1111), ("ECFG", 1), ("CETBL", 0xffff)]);
+        m.seed_data(0x6651, 0xaaaa);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.data(0x6651), m.reg("EST"), m.reg("X1")), (0, flags, 0x1111));
+    }
+}
+
+#[test]
+fn wide_multiply_latch_is_visible_to_the_following_signed_move() {
+    for (left, right, table, cfg, word, a0, a1, x1) in [
+        (0x32bf6c, 0xb0999f, 0xffff, 0x1000, 0, 0x10007, 3, 0),
+        (0x32bf6c, 0xb0999f, 0xffff, 0x1000, 0x4000, 0x10007, 0x10003, 0x4000),
+        (0x32bf6c, 0xb0999f, 0, 0x1000, 0x4000, 0x10007, 0x23450003, 0x4000),
+        (0x32bf6c, 0xb0999f, 0, 0, 0x4000, 0x10007, 0x23450003, 17),
+        (0xb2bf6c, 0xb0e09f, 0xffff, 0x1000, 0x4000, 0x10007, 0x23450003, 0x4000),
+        (0xb2bf6c, 0xb088ad, 0xffff, 0x1000, 0x4000, 55, 0x23450003, 11),
+        (0xb2bf6c, 0xb088a1, 0xffff, 0x1000, 0x4000, 35, 0x23450003, 17),
+        (0x8fbf6c, 0xb088a5, 0xffff, 0x1000, 0x4000, 0xfffffe3bf4, 0x23450003, 17),
+        (0x8fbf6c, 0xb0888d, 0xffff, 0x1000, 0x4000, 0x104a5590, 0x23450003, 17),
+    ] {
+        let mode = if left & SEQUENTIAL != 0 { 5 } else { 4 };
+        let mut m = Machine::new(0, &[
+            (left, right), (NOP, NOP), (NOP, NOP), (NOP, NOP), (NOP, NOP),
+            (0x9e0000, 0xc3622e), (NOP, NOP),
+        ], &[(0, mode, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 5, 6), (12, 1, 0)], None);
+        m.seed(&[("CECFG1", cfg), ("CETBL", table), ("A0", 0x10007), ("A1", 0x23450003),
+                 ("A2", 7), ("A3", 9), ("FF1", 11), ("RM0", 5), ("X1", 17), ("X2", 19)]);
+        m.seed_data(0xffff, word);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("A1"), m.reg("A3"), m.reg("X1")), (a0, a1, 9, x1));
+        for pc in [12, 18, 24, 30, 36] {
+            assert_eq!(m.step(), pc);
+        }
+        assert_eq!((m.reg("A3"), m.reg("X1"), m.reg("X2")), (x1, x1, 19));
+    }
+}
+
+#[test]
 fn compact_return_retires_only_its_counted_issues_and_pops_the_link() {
     let issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 1, 0)];
     for delay in [2, 3] {
