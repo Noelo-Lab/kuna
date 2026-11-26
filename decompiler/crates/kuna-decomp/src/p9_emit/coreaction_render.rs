@@ -1176,6 +1176,8 @@ fn is_pointer(
         if spc.get_word_size() != 1
             && search_for_space_attribute(data, vn, op)
                 .is_none_or(|access| access.get_index() != spc.get_index())
+            && !(crate::kuna_inferfuncentry::entry_escape_applies(opc, numeric.contains(&vn_offset))
+                && kuna_const_is_function_entry(data, spc, vn_offset, vn_size, &op_addr))
         {
             return None;
         }

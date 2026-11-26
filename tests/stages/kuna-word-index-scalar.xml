@@ -5,15 +5,19 @@
 <bytechunk space="ram" offset="0x1010" readonly="true">02b865a700af</bytechunk>
 <!-- MVII #0x65a7,R4; MVI@ R4,R0; JR R5. -->
 <bytechunk space="ram" offset="0x1020" readonly="true">02bc65a702a000af</bytechunk>
+<!-- MVII #0x1040,R0; JR R5. The word address of helper's entry. -->
+<bytechunk space="ram" offset="0x1030" readonly="true">02b8104000af</bytechunk>
 <symbol space="ram" offset="0x1000" name="scalar_index"/>
 <symbol space="ram" offset="0x1010" name="cell_pointer"/>
 <symbol space="ram" offset="0x1020" name="load_cell"/>
+<symbol space="ram" offset="0x1030" name="entry_ref"/>
 </binaryimage>
 <script>
   <com>map address 0x65a7 uint2 cell</com>
   <com>map return scalar_index::%R0 uint2</com>
   <com>map return cell_pointer::%R0 uint2 *</com>
   <com>map return load_cell::%R0 uint2</com>
+  <com>map function r0x1040 helper</com>
   <com>lo fu scalar_index</com>
   <com>decompile</com>
   <com>print C</com>
@@ -23,9 +27,13 @@
   <com>lo fu load_cell</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu entry_ref</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="WORD-INDEX #1: a returned word index stays numeric" min="1" max="1">^  return 0x65a7;$</stringmatch>
 <stringmatch name="WORD-INDEX #2: the typed pointer returns the cell address" min="1" max="1">^  return &amp;cell;$</stringmatch>
 <stringmatch name="WORD-INDEX #3: an indirect load still reads the cell" min="1" max="1">^  return cell;$</stringmatch>
+<stringmatch name="WORD-INDEX #4: a word index on a function entry still names the function" min="1" max="1">^  return helper;$</stringmatch>
 </decompilertest>
