@@ -762,7 +762,7 @@ pub fn trace_admit_fold(engine: &str, rule: &str, bl: BlockId, orblock: BlockId)
 /// **Known limitation** (see the module docs): this reads the buffer as it stands
 /// *at structuring time*.  An advisory produced by a later pass is not covered and
 /// can still be lost.
-fn block_carries_comment(data: &Funcdata, ops: &[OpId]) -> bool {
+pub(crate) fn block_carries_comment(data: &Funcdata, ops: &[OpId]) -> bool {
     let pending = data.pending_comments_ref();
     if pending.is_empty() {
         return false;
@@ -875,17 +875,25 @@ impl OptionCondFold {
     /// The option name.
     pub const NAME: &'static str = "condfold";
 
-    /// Parse `off`/`on`/`wide` into the shared printed-width budget (0 = the whole
-    /// option off) + a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(int4, String)> {
+    /// Parse `off`/`noreturn`/`on`/`wide` into the shared printed-width budget
+    /// (0 = no complex sibling admitted), whether a chain of tests into one
+    /// no-return call folds ([`crate::p8_structure::kuna_fatalchain`]; every value
+    /// but `off`), and a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<((int4, bool), String)> {
         match p1 {
             "off" => Ok((
-                0,
+                (0, false),
                 "Short-circuit fold across a complex sibling turned off".to_string(),
+            )),
+            "noreturn" => Ok((
+                (0, true),
+                "Short-circuit fold across a complex sibling only for a chain of tests \
+                 into one call that does not return"
+                    .to_string(),
             )),
             // Empty parameter reads as `on`, matching `options::on_or_off`.
             "on" | "" => Ok((
-                MAX_PREFIX_STMTS_ANGR,
+                (MAX_PREFIX_STMTS_ANGR, true),
                 format!(
                     "Short-circuit fold across a complex sibling turned on \
                      (angr parity: operand prints <={MAX_PREFIX_STMTS_ANGR} comma \
@@ -895,7 +903,7 @@ impl OptionCondFold {
                 ),
             )),
             "wide" => Ok((
-                MAX_PREFIX_STMTS_WIDE,
+                (MAX_PREFIX_STMTS_WIDE, true),
                 format!(
                     "Short-circuit fold across a complex sibling turned on, wide \
                      (operand prints <={MAX_PREFIX_STMTS_WIDE} comma elements, plus \
@@ -904,7 +912,7 @@ impl OptionCondFold {
                 ),
             )),
             _ => Err(kuna_base::error::KunaError::parse(
-                "Must specify one of off, on, wide",
+                "Must specify one of off, noreturn, on, wide",
             )),
         }
     }
@@ -938,9 +946,9 @@ mod tests {
         //   1. the scored cap is NOT a width cap and is far below the width budget;
         //   2. the budget an operator sets is the width one.
         assert!(MAX_SHAPE_STMTS < MAX_PREFIX_STMTS_ANGR);
-        assert_eq!(OptionCondFold.apply("on").expect("on").0, MAX_PREFIX_STMTS_ANGR);
+        assert_eq!(OptionCondFold.apply("on").expect("on").0 .0, MAX_PREFIX_STMTS_ANGR);
         assert_eq!(
-            OptionCondFold.apply("wide").expect("wide").0,
+            OptionCondFold.apply("wide").expect("wide").0 .0,
             MAX_PREFIX_STMTS_WIDE
         );
     }
@@ -973,21 +981,27 @@ mod tests {
 
     #[test]
     fn option_parses_off_on_and_wide_into_the_width_budget() {
-        let (v, msg) = OptionCondFold.apply("on").expect("on parses");
+        let ((v, nr), msg) = OptionCondFold.apply("on").expect("on parses");
         assert_eq!(v, MAX_PREFIX_STMTS_ANGR);
+        assert!(nr);
         assert!(msg.contains("on"));
         // An empty parameter reads as `on`, matching `options::on_or_off`.
         assert_eq!(
             OptionCondFold.apply("").expect("empty parses").0,
-            MAX_PREFIX_STMTS_ANGR
+            (MAX_PREFIX_STMTS_ANGR, true)
         );
-        let (v, msg) = OptionCondFold.apply("wide").expect("wide parses");
+        let ((v, nr), msg) = OptionCondFold.apply("wide").expect("wide parses");
         assert_eq!(v, MAX_PREFIX_STMTS_WIDE);
+        assert!(nr);
         assert!(msg.contains("wide"));
+        // `noreturn` admits no complex sibling by budget, only the no-return chain.
+        let ((v, nr), msg) = OptionCondFold.apply("noreturn").expect("noreturn parses");
+        assert_eq!((v, nr), (0, true));
+        assert!(msg.contains("not return"));
         // `off` is the sentinel 0 cap: `compute_condfold_sets` short-circuits on it
         // and every gate disjunct stays dead.
-        let (v, msg) = OptionCondFold.apply("off").expect("off parses");
-        assert_eq!(v, 0);
+        let ((v, nr), msg) = OptionCondFold.apply("off").expect("off parses");
+        assert_eq!((v, nr), (0, false));
         assert!(msg.contains("off"));
         assert!(OptionCondFold.apply("maybe").is_err());
         assert!(OptionCondFold.apply("7").is_err());

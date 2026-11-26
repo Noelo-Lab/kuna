@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5503,
-    5503
+    5514,
+    5514
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -859,6 +859,17 @@
     "data:FASTFAILNORETURN #1: the parameter is returned directly once the interrupt ends the flow",
     "data:FASTFAILNORETURN #2: the stack pointer never becomes a tracked variable",
     "data:FASTFAILNORETURN #3: the parameter's own stack slot never degenerates into an offset off a tracked stack pointer",
+    "data:FATALCHAIN #10: the default prints compose's -O0 chain as one condition",
+    "data:FATALCHAIN #11: the default prints compose's rest after the chain",
+    "data:FATALCHAIN #1: off prints reply as a ladder that returns innermost",
+    "data:FATALCHAIN #2: the default prints reply's chain as one condition",
+    "data:FATALCHAIN #3: the default makes the no-return call the body",
+    "data:FATALCHAIN #4: off nests twice's second chain inside the first",
+    "data:FATALCHAIN #5: the default prints twice's first chain as one if",
+    "data:FATALCHAIN #6: the default prints twice's second chain as one if",
+    "data:FATALCHAIN #7: the default prints the rest of twice after the chains",
+    "data:FATALCHAIN #8: wide's test with four calls in front keeps its ladder",
+    "data:FATALCHAIN #9: off nests compose's rest inside the -O0 ladder",
     "data:FATSTR #1: the bounded literal renders under always and never under off",
     "data:FATSTR #2: the raw rodata address renders under off and folds under always",
     "data:FATSTR #3: the call survives both passes",

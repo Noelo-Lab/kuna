@@ -873,6 +873,9 @@ pub fn universal_sched(
             act!(crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
             // (kuna) tailform: choose the wrapped or guard form of each function-tail
             // `if` by the size of its conditional tail (print-tree edit only).
+            // (kuna `condfold noreturn`) `if (chain) { R } f();` with `f` not
+            // returning prints as `if (!chain) f(); R`, at any depth.
+            act!(crate::p8_structure::kuna_fatalchain::ActionFatalChain::boxed("blockrecovery")),
             act!(crate::p8_structure::kuna_retshape::ActionRetShape::boxed("blockrecovery")),
             act!(crate::p8_structure::kuna_tailform::ActionTailForm::boxed("blockrecovery")),
             act!(crate::p8_structure::kuna_boolret::ActionBoolRet::boxed("blockrecovery")),
