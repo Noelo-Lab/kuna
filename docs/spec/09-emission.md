@@ -521,21 +521,41 @@ reaches a `BRANCHIND` within ten data-flow steps
 (`kuna_rangetest.rs (feeds_switch)`). ARM `tbb`/`tbh` dispatch prints such
 a check before its `switch`.
 
+The split prints its own `&&` or `||` where the comparison printed, so the
+operator stack parenthesizes it against an enclosing operator. One place has
+no enclosing operator to do that: the first clause of a printed `&&`/`||`
+chain, `printc.rs (PrintC::emit_block_condition)`, prints its branch with an
+empty stack, and its condition gets no parenthesis of its own when the chain
+is itself the second clause of another chain, where `COMMA_SEPARATE` is set.
+`emit_block_condition` names the chain's operator in `range_chain_head` while
+its first clause prints, and `kuna_rangetest.rs (PrintC::emit_range_split)`
+wraps a split in parentheses there when that operator binds tighter than the
+split's own, so `(x < A || C < x) && (y != 5)` keeps its grouping.
+
 `auto` splits everywhere except in two places, which the decbench corpus
-measured as the merged form's own. One is a loop's condition, where the
-printer has set `LOOP_CONDITION`. The other is the stand-alone condition of
-an `if` in a function the unoptimized-code detector
-(`crate::p3_dataflow::kuna_unoptimized`) calls unoptimized: gcc -O0 does
-not fold two comparisons, so a merged test there is a `switch` case list or
-the source's own subtraction. `op_push_ir` records the print modifiers an
-unsigned comparison is reached with in `range_entry`, before its dispatch
-scopes them off; a comparison with `CONDITION_CONTEXT` and without
-`CHAIN_OPERAND` is a stand-alone condition. A returned or assigned test and
-an operand of `&&`/`||` split in every function. `split` splits every exact
-site and `merged` keeps the one comparison. The values are exercised by
-`tests/stages/kuna-rangetest.xml`, and `kuna-cli/tests/rangetest_round_trip.rs`
-compiles the printed C under gcc and clang at -O0 and -O2 and compares each
-function with its source at the boundary values.
+measured as the merged form's own (`kuna_rangetest.rs (PrintC::range_split_site)`).
+One is a loop's condition, where the printer has set `LOOP_CONDITION`. The
+other is a stand-alone condition, an `if` test that is not an operand of
+`&&`/`||`, whose range holds at most 16 values: a short run of values is more
+often a `switch` whose consecutive case labels share one body, or an
+`ISDIGIT`-style macro, than two comparisons the source wrote. `op_push_ir`
+records the print modifiers an unsigned comparison is reached with in
+`range_entry`, before its dispatch scopes them off; a comparison with
+`CONDITION_CONTEXT` and without `CHAIN_OPERAND` is a stand-alone condition. A
+returned or assigned test and an operand of `&&`/`||` split whatever their
+size. There is no separate rule for unoptimized code: gcc folds two
+comparisons at -O0 as well, and the case lists that print merged there are
+short. The 17-value threshold was chosen on one half of the decbench projects
+and checked on the other. Against `merged`, `auto` makes 50 more optimized
+functions (O2, no inlining) match the source's control flow exactly (54
+gained, 4 lost; +36 on the tuning half, +14 on the held-out half) and 12 more
+unoptimized ones (16 gained, 4 lost; +7 and +5), with no function lost or
+added. `split` splits every exact site and `merged` keeps the one
+comparison. The values are exercised by `tests/stages/kuna-rangetest.xml`
+and `tests/stages/kuna-rangetest-thumb.xml`, and
+`kuna-cli/tests/rangetest_round_trip.rs` compiles the printed C under gcc and
+clang at -O0 and -O2 and compares each function with its source at the
+boundary values.
 
 **Brace form (P9/`brace-form`, `option braceelide`).** A single-statement if
 body renders braceless with the statement indented on the next line (kuna

@@ -3024,7 +3024,7 @@ impl Architecture {
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
         self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Wide; // (kuna) option armshiftguard default `wide`: only the counts of a lowered double-word shift keep the guard; `needed` adds every count not proven below 32, `always` every guard
-        self.range_test = crate::p9_emit::kuna_rangetest::RangeTestMode::Auto; // (kuna) option rangetest default `auto`: split outside loop conditions and outside the stand-alone if conditions of unoptimized functions; `merged` restores the one comparison
+        self.range_test = crate::p9_emit::kuna_rangetest::RangeTestMode::Auto; // (kuna) option rangetest default `auto`: split except in loop conditions and in stand-alone conditions of at most 16 values; `merged` restores the one comparison
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
