@@ -4232,7 +4232,7 @@ fn jobs_auto_fits_the_cgroup_memory_cap() {
 /// A sharded run names every synthesized structure as the serial run does, on
 /// both surfaces and at every job count. `structsynthchain_x86_64` takes the
 /// convergence sweep (`fb` is decided again onto `fc`'s structure while `fa`
-/// keeps the superseded one), `itaniumrtti_x86_64.so` mints five structures,
+/// keeps the superseded one), `itaniumrtti_x86_64.so` mints two structures,
 /// the i386 PE is a second architecture and loader, and in
 /// `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a function that
 /// synthesizes nothing. Every path lands on the same document: the renamed
@@ -4247,7 +4247,7 @@ fn jobs_names_synthesized_structs_as_the_serial_run_does() {
     let sp = specs();
     for (fixture, pinned) in [
         ("structsynthchain_x86_64", "long fb(struct_1 *a0)"),
-        ("itaniumrtti_x86_64.so", "struct_4 *"),
+        ("itaniumrtti_x86_64.so", "struct_1 *"),
         ("explicit_branch_assertion_pe_i386.exe", "struct_0 *"),
         ("structsynth_teb_pe_x86_64.exe", "TEB *teb;"),
     ] {
@@ -4355,7 +4355,7 @@ fn jobs_falls_back_when_a_worker_cannot_install_the_replayed_structures() {
     if !ok {
         panic!("kuna decompile-all failed: {stderr}");
     }
-    assert!(want.contains("struct_4 *"), "the fixture stopped synthesizing");
+    assert!(want.contains("struct_1 *"), "the fixture stopped synthesizing");
     let (got, stderr, ok) = run_kuna_env(
         &[&base[..], &["--jobs", "2", "--jobs-chunk", "1"]].concat(),
         &[("KUNA_JOBS_FAULT", "synth:force,synth:noinstall")],

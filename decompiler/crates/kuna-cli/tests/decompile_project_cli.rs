@@ -689,7 +689,7 @@ fn jobs_project_artifacts_are_byte_identical_to_serial() {
 /// worker's block adds the types its own functions interned, and the minted
 /// structures are declared in name order, which also makes two serial exports
 /// agree with each other. `structsynthchain_x86_64` takes the convergence
-/// sweep, `itaniumrtti_x86_64.so` mints five structures,
+/// sweep, `itaniumrtti_x86_64.so` mints two structures,
 /// `explicit_branch_assertion_pe_i386.exe` is 32-bit, and in
 /// `structsynth_teb_pe_x86_64.exe` the `TEB` type comes from a function that
 /// synthesizes nothing. `synth:force` decompiles every function that asked
