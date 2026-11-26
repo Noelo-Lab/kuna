@@ -2337,7 +2337,8 @@ mod tests {
         // and kuna-rangetest(-thumb) / a merged range test prints as its two comparisons, a switch bound check keeps it
         // and kuna-jump-as-call-liveness / only a reachable fallback call keeps its warning
         // and kuna-scalar-stack-pointer / a locked integer SP projects its value; ordinary frames keep locals
-        assert_eq!(count, 934, "corpus file count drifted");
+        // and kuna-mips-octeon-elf32-o64 / an Octeon ELF32 image declaring O64 or no ABI loads as Octeon O64
+        assert_eq!(count, 935, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
