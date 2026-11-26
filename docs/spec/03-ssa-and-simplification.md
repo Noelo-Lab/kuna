@@ -3762,7 +3762,22 @@ one instruction address, `H` is entered from one block outside and from `B`,
 and `B` is entered only from `H`. `H` must hold only its branch, the zero test
 of the count (`n == 0` taking the exit or `n != 0` taking the body) and phis.
 No other target lifts an instruction to this shape, so the action is inert
-there.
+there. Every pointer the loop steps (the destination, and the source or both
+compared operands) must be as wide as an address of the default data space or
+as a pointer of the compiler spec. An x86-64 instruction with an address-size
+override (`67 f3 ab`) steps EDI and ESI, which wrap within 4 GiB: with `EDI =
+0xfffffffc` and `ECX = 2`, `rep stosd` stores its second dword at `0x0` and
+leaves `RDI = 4`. No `memcpy`, `memset` or `memcmp` can wrap, so such a loop
+is left alone and prints with its 32-bit pointer arithmetic, as it does with
+the option off; that includes gcc `-mx32` code read under an x86-64 target,
+whose compiler specs have 8-byte pointers. On i386 the pointers are 32 bits
+wide, as wide as the address space, and under `x86:LE:64:compat32` (32-bit
+code on the 64-bit model, whose compiler specs have 4-byte pointers) they are
+the program's own pointers, which wrap only where its address space does, so
+both still match. 16-bit code is unchanged: a `DI`/`SI` instruction stores
+through `segment(ES,DI)`, which is not a stepped pointer, so it never matched,
+and one with an address-size override steps EDI and ESI, as wide as an address
+of `x86-16.sla`.
 
 *Copies and fills.* `B` leaves only to `H`, and `H`'s phis are the count, the
 destination and, for a copy, the source. `B` must step the count down by one
@@ -3838,9 +3853,13 @@ returned, compares used for equality, for order and with a run-time length, a
 compare with no flags set up before it, and a compare whose final pointer is
 returned, which keeps its loop; the x86-64 file adds a gcc 15 `-O2` fill of a
 global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
+`tests/stages/kuna-rex-before-prefix.xml` pins a `rep stosd`, a `rep movsq`
+and a `repz cmpsb` with 32-bit addresses as loops, and a `rep stosw` through
+RDI as `builtin_memset16`.
 `kuna-cli/tests/repstring_round_trip.rs`
 compiles the printed x86-64 functions beside the source and checks they compute
-the same values.
+the same values, and checks that a `rep stosd` and a `rep movsd` under
+`x86:LE:64:compat32` still print as builtins.
 
 **constspaceload** (repipe `arm-neon-zero-initialization`) —
 `decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_constspaceload.rs
