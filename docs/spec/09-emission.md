@@ -4532,6 +4532,11 @@ most three INT_ADD, COPY, INDIRECT or MULTIEQUAL steps
 the address operand of a LOAD or STORE in that space, or reach a value whose
 pointer type names it. A CP1600 function declared to return `uint2` that
 returns 0x65a7 therefore prints `return 0x65a7;`, not `return (uint2)&cell;`.
+The inferred type of an architectural stack-base register does not by
+itself establish a use as an address. A copy into that register still
+requires address-use evidence when the constant and destination have no
+explicit type lock. A branch-selected word index saved in the stack
+register and then returned as an integer keeps both numeric alternatives.
 Pointer-typed uses still resolve as addresses: the same function declared to
 return `uint2 *` prints `return &cell;`, and so does a constant passed to a
 declared pointer parameter, stored into a pointer-typed global or compared with

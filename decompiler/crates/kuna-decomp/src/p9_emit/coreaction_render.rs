@@ -1060,6 +1060,22 @@ fn check_call_input(data: &Funcdata, op: OpId, slot: int4) -> bool {
     data.get_arch().infer_pointers()
 }
 
+fn copies_to_inferred_stack_base(data: &Funcdata, op: OpId) -> bool {
+    let Some(copy) = data.obank().get(op).filter(|o| o.code() == OpCode::CPUI_COPY) else {
+        return false;
+    };
+    let Some(out) = copy.get_out().and_then(|id| data.vbank().get(id)) else {
+        return false;
+    };
+    let Some(base) = data.get_arch().manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok()) else {
+        return false;
+    };
+    !out.is_type_lock()
+        && out.get_size() as u32 == base.size
+        && out.get_offset() == base.offset
+        && out.get_addr().get_space().zip(base.space.as_ref()).is_some_and(|(a, b)| a.get_index() == b.get_index())
+}
+
 /// C++ `ActionConstantPtr::isPointer` (coreaction.cc:1085): determine if the given
 /// constant Varnode might be a pointer; if so return the global Symbol it points
 /// to and the resolved Address (the C++ `rampoint`).  `full_encoding` receives the
@@ -1080,9 +1096,17 @@ fn is_pointer(
 
     let mut needexacthit;
     let rampoint;
-    // Are we explicitly marked as a pointer?
-    let read_facing_meta = data.vbank().get(vn)?.get_type_read_facing(op).get_metatype();
-    if read_facing_meta == type_metatype::TYPE_PTR {
+    let constant = data.vbank().get(vn)?;
+    if constant.get_type_read_facing(op).get_metatype() == type_metatype::TYPE_PTR {
+        // Stack-base storage acquires a pointer type even if its value is only
+        // copied out as a word index. That type does not establish a DATA use.
+        if spc.get_word_size() != 1
+            && !constant.is_type_lock()
+            && copies_to_inferred_stack_base(data, op)
+            && search_for_space_attribute(data, vn, op).is_none_or(|access| access.get_index() != spc.get_index())
+        {
+            return None;
+        }
         rampoint = glb.resolve_constant(spc, vn_offset, vn_size, &op_addr, full_encoding).ok()?;
         needexacthit = false;
     } else {
