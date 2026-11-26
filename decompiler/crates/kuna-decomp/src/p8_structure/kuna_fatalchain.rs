@@ -52,6 +52,10 @@ pub enum ChainFold {
     Auto,
 }
 
+/// A function of at least this many blocks whose fold into an ordinary block
+/// fell back for gotos stops relaxing for the rest of its analysis.
+pub const GIVE_UP_BLOCKS: int4 = 64;
+
 fn enabled(data: &Funcdata) -> bool {
     data.get_arch().cond_fold_chain != ChainFold::Off
 }

@@ -509,7 +509,12 @@ the authors' nesting `if (p == 0 && n == 0) { p = malloc(1); if (p == 0) .. }`
 is common enough to make the fold a net loss. Every guard of the no-return
 case applies: the `condstmts` width cap, the comment check, the target entered
 only from the chain, and `ActionBlockStructure::structure_held`'s goto
-fallback. Such a fold is not reoriented, since its target can fall through.
+fallback. That fallback structures again only when a relaxed block actually
+folded (otherwise the two collapses made the same choices), and once a fold
+into an ordinary block has fallen back, later structurings of the same
+analysis do not relax at all, so a large function re-structured many times
+pays for the comparison once. Such a fold is not reoriented, since its target
+can fall through.
 A later print-tree pass can still leave a goto in a tree that had none when it
 was structured (`taildup` does on expat's `startElementNS`), so
 `kuna_fatalchain.rs (late_gotos)` reports a function whose kept structuring

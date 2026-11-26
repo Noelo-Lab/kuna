@@ -3962,7 +3962,7 @@ impl ActionBlockStructure {
         {
             return res;
         }
-        if data.chainfold_any() {
+        if data.chainfold_any() && data.bblocks_get_size() >= crate::p8_structure::kuna_fatalchain::GIVE_UP_BLOCKS {
             data.set_chainfold_given_up();
         }
         data.sblocks_clear();
