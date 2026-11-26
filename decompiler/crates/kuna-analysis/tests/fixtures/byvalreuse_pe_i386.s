@@ -25,10 +25,9 @@
 #                     before the block for take: once take's pop is stated,
 #                     every call has one, so note's proven pop is stated too.
 #   unsettled:        an earlier __stdcall guess (ret 4, but it calls through a
-#                     pointer, so the walk cannot settle it) before the block
-#                     for take: stating take's pop would leave guess's pop to
-#                     the solver, whose guess (it pops nothing) moves the
-#                     block, so it stays a loop.
+#                     pointer, so the walk cannot place its stack pointer)
+#                     before the block for take: guess's own ret 4 states its
+#                     pop, so no pop is left to the solver's guess.
 #
 # Build (clang 17 + lld-link 17, e.g. in the swift:6.0-jammy Docker image;
 # clang 14 does not reproduce the bytes):

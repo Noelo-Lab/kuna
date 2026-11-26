@@ -20,6 +20,13 @@
 //! proven extrapop, read the same way a bounded number of levels down; any
 //! other call leaves it unknown, so the callee's returns must restore it from a
 //! frame pointer the callee itself set. Every reachable return has to agree.
+//! When such a call leaves the stack pointer unplaced at a return, the
+//! return's own constant still states the pop (`ret 4` after `call [p]; add
+//! esp,4` pops 8), since a callee returns to its caller only from its return
+//! address: every reached return must pop the same, the walk must have
+//! followed every path, and no path may have run into a software interrupt or
+//! fallen through into another known function, where a return read past a call
+//! that does not return could be another function's.
 //!
 //! The CRT helpers that move their caller's stack (`_chkstk`/`_alloca_probe`,
 //! `__SEH_prolog4`/`__SEH_epilog4`, `__EH_prolog3`/`__EH_epilog3`) return with
@@ -75,6 +82,42 @@ const BP: usize = 5;
 const CALLER_SAVED: [usize; 3] = [0, 1, 2];
 const CALLEE_SAVED: [usize; 4] = [3, 5, 6, 7];
 
+/// What a direct callee's extrapop rests on, strongest first.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PopEvidence {
+    /// Every return the walk reaches finds the stack pointer exactly at its
+    /// entry value ([`callee_extra_pop`]).
+    Proven(int4),
+    /// Every return the walk reaches takes the same immediate, the walk
+    /// followed every path, and the stack pointer there is imprecise only
+    /// through calls it could not read, never through the callee's own code
+    /// ([`callee_return_pop`]).
+    ReturnImmediate(int4),
+    /// What a declared parameter list implies under a model that leaves the
+    /// extrapop unknown (`FuncProto::resolve_extra_pop`).
+    Declared(int4),
+    Unknown,
+}
+
+impl PopEvidence {
+    /// The extrapop the evidence states, if any.
+    pub fn extra_pop(self) -> Option<int4> {
+        match self {
+            PopEvidence::Proven(ep) | PopEvidence::ReturnImmediate(ep) | PopEvidence::Declared(ep) => Some(ep),
+            PopEvidence::Unknown => None,
+        }
+    }
+
+    /// The evidence the callee's own code gives for call spec `fc`.
+    pub fn of_call(fc: &crate::fspec::FuncCallSpecs) -> PopEvidence {
+        match (fc.callee_purge(), fc.callee_return_immediate()) {
+            (Some(ep), _) => PopEvidence::Proven(ep),
+            (None, Some(ep)) => PopEvidence::ReturnImmediate(ep),
+            (None, None) => PopEvidence::Unknown,
+        }
+    }
+}
+
 /// The extrapop (`4 + purge`) of the direct call target `entry`, when the
 /// language is x86-32 under a default model that leaves extrapop unknown and
 /// the callee's own returns prove it.
@@ -89,12 +132,48 @@ pub fn callee_extra_pop(arch: &Architecture, entry: &Address) -> Option<int4> {
 }
 
 /// Does every call in `data` have a pop its prototype states or its callee's
-/// returns prove?
+/// returns prove or state? One only the returns' constants state counts where
+/// no call [`shares_cleanup`].
 pub fn every_pop_settled(data: &crate::funcdata::Funcdata) -> bool {
+    let mut stated = false;
+    let all = (0..data.num_calls()).all(|i| {
+        let fc = data.get_call_specs(i);
+        if fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.callee_purge().is_some() {
+            return true;
+        }
+        stated = true;
+        fc.callee_return_immediate().is_some()
+    });
+    all && !(stated && shares_cleanup(data))
+}
+
+/// Does every call in `data` have a pop its prototype states or its callee's
+/// returns prove, not only state by their constants?
+pub fn every_pop_proven(data: &crate::funcdata::Funcdata) -> bool {
     (0..data.num_calls()).all(|i| {
         let fc = data.get_call_specs(i);
         fc.get_extra_pop() != EXTRAPOP_UNKNOWN || fc.callee_purge().is_some()
     })
+}
+
+/// Does a direct call in `data` pop arguments above its return address and
+/// leave its caller more to remove right after it? Delphi passes a nested
+/// routine its parent's frame (`push ebp; push x; call f; pop ecx` to a `ret
+/// 4`), GCC before 4.7 a hidden return pointer the callee pops (`ret 4`,
+/// `add esp,4`). With every pop exact the solve gives such a call only the
+/// slots its callee pops, so a pop the returns' constants state does not
+/// settle the function.
+pub fn shares_cleanup(data: &crate::funcdata::Funcdata) -> bool {
+    data.call_specs().iter().any(|fc| fc.caller_cleanup() > 0)
+}
+
+/// The stack bytes the caller removes right after the direct call at
+/// `call_at`, on x86-32 under a default model that leaves extrapop unknown.
+pub fn call_cleanup(arch: &Architecture, call_at: &Address) -> u32 {
+    if !applies(arch) || call_at.is_invalid() {
+        return 0;
+    }
+    caller_cleanup(arch, call_at)
 }
 
 /// (`calleeargs`) The stack bytes the callee of the direct call at `call_at`
@@ -288,7 +367,7 @@ pub struct Summary {
     /// The most any reached return adds to the stack pointer, whether or not
     /// the stack pointer was back at its entry value there.
     pub ret_pops: Option<int4>,
-    /// (`calleeargs`) What every reached return adds to the stack pointer, when
+    /// What every reached return adds to the stack pointer, when
     /// they agree and no path may have left the callee's own code: the walk
     /// followed every path, reached no software interrupt (`int3` padding
     /// after a call that does not return) and fell through into no other known
@@ -1077,7 +1156,7 @@ fn walk(arch: &Architecture, entry: &Address, depth: u8) -> Option<(Summary, u8)
         }
         if s.falls_through {
             let next = at.wrapping_add(*len);
-            if track && !strayed && !seen.contains_key(&next) {
+            if !strayed && !seen.contains_key(&next) {
                 strayed = next != entry.get_offset() && is_entry(arch, &space, next);
             }
             work.push((next, s.state));

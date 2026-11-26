@@ -1785,7 +1785,19 @@ that machinery.
   or import call, a callee the walk cannot settle) leaves the stack pointer
   bounded but unplaced, so the callee's returns are then proven only by
   restoring it from a frame pointer the callee set itself (`mov esp,ebp`,
-  `leave`). The CRT helpers that move their caller's stack
+  `leave`). Where none restores it, the `RET`'s own constant still states
+  the extrapop: the *return immediate* evidence of
+  `kuna_calleepurge.rs (PopEvidence)`, recorded on the call spec at flow apart
+  from a *proven* pop and weaker than it. A callee returns to its caller only once the stack pointer is
+  back at the return address, so `push [esp+4]; call [p]; add esp,4; ret 4`
+  pops 8 whatever `p` does. That reading needs every reached return to add the
+  same constant, every path followed, and no path that ran into a software
+  interrupt (`int3` padding after a call that does not return) or fell through
+  into another known function, where the return it reads could be the next
+  function's. Without it, the solver's guess for such a `__stdcall` callee
+  ("pops only the return address") leaves every later stack offset in the
+  caller four bytes per argument low, so a parameter read after the call reads
+  the slot below it. The CRT helpers that move their caller's stack
   (`_chkstk`/`_alloca_probe`, `__SEH_prolog4`/`__SEH_epilog4`,
   `__EH_prolog3`/`__EH_epilog3`) return with the stack pointer moved by their
   own arithmetic (`sub esp,eax`, `xchg esp,eax`) or loaded from the caller's
@@ -1811,8 +1823,9 @@ that machinery.
   `clear architecture`. Decoded instructions are shared between walks in a
   bounded cache, which a flush keeps.
 
-  A proven extrapop is applied only in a function where every call then has
-  one, stated by its prototype or proven by its callee
+  A proven extrapop, or one the returns' constants state, is applied only in
+  a function where every call then has one, stated by its prototype or proven
+  or stated by its callee's returns
   (`kuna_calleepurge.rs (every_pop_settled)`), so the solver is left nothing
   to guess. The solver's guesses for the calls it cannot read are coherent with
   each other rather than with the truth: an import's guess counts the pushes in
@@ -1825,7 +1838,17 @@ that machinery.
   solver's "pops only the return address" for every `__stdcall` and
   `__thiscall` callee, which shifts each later stack offset by the arguments
   the callee popped, so later calls lose stack arguments and locals whose
-  address is taken alias outgoing-argument slots.
+  address is taken alias outgoing-argument slots. A pop only the returns'
+  constants state does not settle a function in which some direct call's
+  callee pops above its return address and the caller then removes more
+  right after the call (`kuna_calleepurge.rs (shares_cleanup)`, from the
+  cleanup `FuncCallSpecs` records at flow time). Delphi passes a nested
+  routine its parent's frame that way (`push ebp; push x; call f; pop ecx` to
+  a `ret 4`), and GCC before 4.7 a hidden return pointer (`ret 4`, then `add
+  esp,4`). With every pop exact the solve gives such a call only the slots
+  its callee pops, and the slot the caller removes is dropped from its
+  arguments, so such a function keeps the solver's answer unless its pops are
+  all stated or proven.
 
   (kuna) A pop a call through a pointer takes from its declaration (an import
   slot's library declaration, §4.1, `kuna_slotargs`), under a model that leaves
@@ -1844,8 +1867,12 @@ that machinery.
   `INT_ADD` after the solve (`write_unplaced`): a frame sized at run time, or a
   stack pointer an exception handler loads from its frame. A direct call's
   declared pop (a DWARF or demangled declaration of the image's own function)
-  keeps the `INT_ADD`, and so does every pop in a function with nothing to
-  guess.
+  keeps the `INT_ADD`, and so does every pop in a function whose pops are
+  all stated or proven (`kuna_calleepurge.rs (every_pop_proven)`). A function
+  that is settled only because some callee's returns' constants state its pop
+  still defers: its pops are written exactly, but the declared import's stays
+  the solver's equation, since the early `INT_ADD` breaks the local-alias
+  boundary there just as it does next to a guess.
 
   The two forms are solved alike only where nothing in the solve reads the
   form (`kuna_declaredpop.rs (allowed)`), so a function keeps every `INT_ADD`

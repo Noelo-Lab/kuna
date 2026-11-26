@@ -446,28 +446,31 @@ fn returns_pop(fd: &Funcdata, rep: &RepMove, moves: &[RepMove]) -> Option<(kuna_
     (u64::from(pop) >= rep.bytes).then(|| (i, pop as i32 + 4))
 }
 
-/// Does every call have a pop its prototype states, its returns prove, or
-/// `stated` gives it?
+/// Does every call have a pop its prototype states, its returns prove or
+/// state, or `stated` gives it?
 fn settles(fd: &Funcdata, stated: &[(kuna_base::types::int4, i32)]) -> bool {
+    let shared = crate::p4_calls::kuna_calleepurge::shares_cleanup(fd);
     (0..fd.num_calls()).all(|i| {
         let fc = fd.get_call_specs(i);
         stated.iter().any(|&(j, _)| j == i)
             || fc.get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN
             || fc.callee_purge().is_some()
+            || (!shared && fc.callee_return_immediate().is_some())
     })
 }
 
 /// Once the pops stated for argument blocks leave every call with a pop its
-/// prototype states or its returns prove, state the proven ones too: they were
+/// prototype states or its returns prove or state, state those too: they were
 /// held back only while some call's pop was a guess, and the solver's guess
 /// for an internal callee (it pops nothing) would move every slot after it.
 fn settle_proven_pops(fd: &mut Funcdata) {
+    let shared = crate::p4_calls::kuna_calleepurge::shares_cleanup(fd);
     for i in 0..fd.num_calls() {
         let fc = fd.get_call_specs(i);
         if fc.get_extra_pop() != crate::fspec::EXTRAPOP_UNKNOWN {
             continue;
         }
-        if let Some(ep) = fc.callee_purge() {
+        if let Some(ep) = if shared { fc.callee_purge() } else { crate::p4_calls::kuna_calleepurge::PopEvidence::of_call(fc).extra_pop() } {
             fd.get_call_specs_mut(i).proto_mut().set_extra_pop(ep);
         }
     }
@@ -483,7 +486,7 @@ fn reused_call(fd: &Funcdata, rep: &RepMove) -> Option<kuna_base::types::int4> {
     let (base, _) = rep.base.as_ref()?;
     let (i, offset) = after_call(fd, *base)?;
     let fc = fd.get_call_specs(i);
-    let unstated = fc.get_extra_pop() == crate::fspec::EXTRAPOP_UNKNOWN && fc.callee_purge().is_none_or(|p| p == 4);
+    let unstated = fc.get_extra_pop() == crate::fspec::EXTRAPOP_UNKNOWN && crate::p4_calls::kuna_calleepurge::PopEvidence::of_call(fc).extra_pop().is_none_or(|p| p == 4);
     (unstated && offset < 0 && -offset < rep.bytes as i64).then_some(i)
 }
 

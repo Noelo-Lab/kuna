@@ -1413,10 +1413,12 @@ argument (`ret 4`) can be guessed to pop nothing, which moves every slot after
 it, so the block is read from the wrong slot and a local whose address the
 block's call takes (an out parameter MSVC keeps in a dead parameter slot) is
 named wrongly and folds to the constant stored before the call. An earlier
-call whose pop nothing proves (a `__stdcall` callee that calls through a
-pointer) would keep the solver's guess, the block would be read through the
-return address and the caller's parameters shifted by a slot, so then the
-block stays a loop, as it does without the returns' pop. Under a model whose pop is
+`__stdcall` callee that calls through a pointer has its pop stated by its
+returns' constants (chapter 04), and counts as settled. An earlier call whose
+pop nothing proves or states (a call through a pointer, an import) would keep
+the solver's guess, the block would be read through the return address and
+the caller's parameters shifted by a slot, so then the block stays a loop, as
+it does without the returns' pop. Under a model whose pop is
 stated (gcc's cdecl), a release of the whole block by the caller before the
 next call or branch counts too, when nothing reads the block between the copy
 and that release. A record copied into a local at the bottom of the frame

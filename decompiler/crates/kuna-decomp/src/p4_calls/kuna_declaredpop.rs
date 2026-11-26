@@ -63,8 +63,9 @@ fn candidate(data: &Funcdata, i: int4) -> bool {
         && data.obank().get(fc.get_op()).is_some_and(|op| op.code() == OpCode::CPUI_CALLIND)
 }
 
-/// Whether the function leaves a pop to guess (`settled` is
-/// [`crate::p4_calls::kuna_calleepurge::every_pop_settled`]), every pop it
+/// Whether the function leaves a pop to guess or settles one only by its
+/// callee's return constants (`settled` is
+/// [`crate::p4_calls::kuna_calleepurge::every_pop_proven`]), every pop it
 /// leaves is a direct call's into the image's own code, and every pop a
 /// direct call's prototype states is the one its callee's returns prove. A
 /// call through a pointer the function leaves to guess may resolve to an

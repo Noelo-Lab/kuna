@@ -37,6 +37,20 @@
     only imprecision comes from that call, is not taken for a stack-moving
     helper, so framed and outer state their `ret 4` and start's later call
     reads start's own argument.
+
+    retpop_pe_i386.exe (clean-room, source and recipe in retpop_pe_i386.s):
+    guess (0x401070) is __stdcall (`ret 4`) and calls sink through a pointer,
+    removing that argument itself, so the walk cannot place the stack pointer
+    at its return; the return's own constant states its pop. only (0x401030)
+    calls guess(r) and returns k, twice (0x401050) calls guess twice and
+    returns k. Before: guess was guessed to pop nothing, only returned r and
+    twice returned the slot below its return address.
+
+    vcall_pe_i386.exe start (0x401140) calls gccsret (0x4010d0), a GCC
+    before 4.7 member that pops its hidden return pointer (`ret 4`) while the
+    caller removes `this` (`add esp,4`), next to callees whose pops only their
+    returns' constants state. Those do not settle start: with every pop exact
+    the solve dropped `this`.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -73,6 +87,21 @@ c3
   <com>load function start</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/retpop_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401030</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401050</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/vcall_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401140</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="CALLEEPURGE #1: the first thunked __stdcall call keeps all five arguments" min="1" max="1">v1 = \(float4\)\(float10\)sub_401190\(a0,a1,a2,a3,a4\);</stringmatch>
@@ -85,4 +114,7 @@ c3
 <stringmatch name="CALLEEPURGE #8: freea keeps the buffer the alloca helper made room for" min="1" max="1">sub_4010f0\([^()]+\);</stringmatch>
 <stringmatch name="CALLEEPURGE #9: the call inside the SEH-framed function keeps both arguments" min="1" max="1">= sub_4011a0\(v[0-9]+,v[0-9]+\);</stringmatch>
 <stringmatch name="CALLEEPURGE #10: a caller of a stack-moving helper keeps its proven pop at every depth" min="1" max="1">sub_4010d0\(a0\);</stringmatch>
+<stringmatch name="CALLEEPURGE #11: a __stdcall callee that calls through a pointer takes its pushed argument" min="3" max="3">^  sub_401070\((a0|v[0-9]+)\);</stringmatch>
+<stringmatch name="CALLEEPURGE #12: the parameter read after such a call is the caller's second one, at the depth the callee's ret 4 leaves" min="2" max="2">^  return a1;</stringmatch>
+<stringmatch name="CALLEEPURGE #13: a call whose caller removes a slot its callee does not pop keeps it when other pops are only stated by returns" min="1" max="1">^  sub_4010d0\(0x40301c,0x403018\);</stringmatch>
 </decompilertest>

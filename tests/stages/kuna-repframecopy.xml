@@ -56,9 +56,11 @@
     before the block for take: once take's pop is stated every call has one,
     so note's is stated too and the block is read from settle's parameter
     (#20); unsettled (0x4012c0) calls the __stdcall guess first (ret 4, but
-    it calls through a pointer, so the walk cannot settle it): stating take's
-    pop would leave guess's pop to the solver, whose guess moves the block,
-    so it stays a loop (#21).
+    it calls through a pointer, so the walk cannot place its stack pointer):
+    guess's own `ret 4` states its pop, so no call's pop is left to the
+    solver, and take reads r's eight dwords and the caller adds k (#21). It
+    was a loop that copied from the return address, since the solver guessed
+    guess popped nothing.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">
 c3
@@ -149,7 +151,7 @@ c3
 <stringmatch name="REPFRAMECOPY #5: a by-value parameter is passed on whole" min="1" max="1">sub_401000\(a0,a1,a2,a3,a4,a5,a6,a7,7\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #6: a global table passed by value" min="1" max="1">sub_401130\(dat_402000,dat_402004,dat_402008,dat_40200c,dat_402010,dat_402014,dat_402018,dat_40201c\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #7: the entry's other calls keep their pushed arguments" min="1" max="1">sub_401070\(0x402000,2,0\);</stringmatch>
-<stringmatch name="REPFRAMECOPY #8: the thirteen frame moves left alone (big_pass, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct, cleanup, local, nested, stray, unsettled, quit without noreturn_known) stay loops, and only those" min="13" max="13">while \(v[0-9]+\) \{</stringmatch>
+<stringmatch name="REPFRAMECOPY #8: the twelve frame moves left alone (big_pass, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct, cleanup, local, nested, stray, quit without noreturn_known) stay loops, and only those" min="12" max="12">while \(v[0-9]+\) \{</stringmatch>
 <stringmatch name="REPFRAMECOPY #8b: copy_global, which reaches no frame slot, is a memcpy (repstring)" min="1" max="1">^  builtin_memcpy\(a0,&amp;dat_402000,0x10\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #9: the indexed fill stays a loop" min="1" max="1">while \(v[0-9]+ &lt; 8\)</stringmatch>
 <stringmatch name="REPFRAMECOPY #10: an overlapping move at the stack pointer shifts the slots down" min="1" max="1">sub_401000\(1,2,3,4,5,6,7,8,8\);</stringmatch>
@@ -163,5 +165,5 @@ c3
 <stringmatch name="REPFRAMECOPY #18: a ret the walk reaches past a call that does not return is not the callee's pop" min="1" max="1">sub_401200\([^)]*\) \+ a1;</stringmatch>
 <stringmatch name="REPFRAMECOPY #19: a pop proven by a no-return name holds only while noreturn_known is on" min="1" max="1">sub_401260\(\*a0,a0\[1\],a0\[2\],a0\[3\],a0\[4\],a0\[5\],a0\[6\],a0\[7\]\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #20: once a stated pop settles every call, an earlier call's proven pop is stated too" min="1" max="1">sub_401040\(\*a0,a0\[1\],a0\[2\],a0\[3\],a0\[4\],a0\[5\],a0\[6\],a0\[7\]\);</stringmatch>
-<stringmatch name="REPFRAMECOPY #21: a block whose stated pop would leave an earlier call's pop a guess is not expanded through the misplaced frame" min="0" max="0">sub_401040\(v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\) \+ a0;</stringmatch>
+<stringmatch name="REPFRAMECOPY #21: an earlier call whose ret 4 states its pop leaves the block where the copy put it, and the caller adds its own k" min="1" max="1">^  return sub_401040\(v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+,v[0-9]+\) \+ a1;</stringmatch>
 </decompilertest>

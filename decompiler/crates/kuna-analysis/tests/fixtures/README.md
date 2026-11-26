@@ -2909,6 +2909,17 @@ block for `take`. Source and recipe in `byvalreuse_pe_i386.s`: clang 17 and lld-
 `swift:6.0-jammy` Docker image ships both) reproduce it byte for byte; Ubuntu's clang 14
 does not. Used by `tests/stages/kuna-repframecopy.xml` (#14-#21).
 
+### `retpop_pe_i386.exe` — a `__stdcall` callee whose `ret 4` is its only pop evidence
+
+`retpop_pe_i386.exe` (2,560 bytes, PE32/i386, SHA-256
+`7670db6ad064bf35ce9ec9055432934ca104ae738f0a83f28907ef3311dff64d`) is clean-room:
+`guess`@`0x401070` is `__stdcall` (`ret 4`) and calls `sink` through a pointer, removing
+that argument itself (`add esp,4`), so the purge walk cannot place the stack pointer at
+its return. `only`@`0x401030` calls `guess(r)` and returns its second parameter;
+`twice`@`0x401050` calls `guess` twice and returns its second parameter. Source and
+recipe in `retpop_pe_i386.s` (Homebrew clang 22 and lld-link). Used by
+`tests/stages/kuna-calleepurge.xml` (#11-#12).
+
 ### `vcmp_carry_a32.o` — ARM conditions on the carry after `vcmp`
 
 `vcmp_carry_a32.o` (620 bytes, ELF32 little-endian ARM relocatable, SHA-256
