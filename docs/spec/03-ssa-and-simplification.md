@@ -3762,7 +3762,14 @@ one instruction address, `H` is entered from one block outside and from `B`,
 and `B` is entered only from `H`. `H` must hold only its branch, the zero test
 of the count (`n == 0` taking the exit or `n != 0` taking the body) and phis.
 No other target lifts an instruction to this shape, so the action is inert
-there.
+there. Every pointer the loop steps (the destination, and the source or both
+compared operands) must be as wide as an address of the default data space.
+An x86-64 instruction with an address-size override (`67 f3 ab`) steps EDI and
+ESI, which wrap within 4 GiB: with `EDI = 0xffffffff` and `ECX = 0x20`, `rep
+stosd` stores from `0x3` upward. No `memcpy`, `memset` or `memcmp` can wrap,
+so such a loop is left alone and prints with its 32-bit pointer arithmetic.
+On i386 the pointers are 32 bits wide, as wide as the address space, so they
+still match.
 
 *Copies and fills.* `B` leaves only to `H`, and `H`'s phis are the count, the
 destination and, for a copy, the source. `B` must step the count down by one
@@ -3838,6 +3845,9 @@ returned, compares used for equality, for order and with a run-time length, a
 compare with no flags set up before it, and a compare whose final pointer is
 returned, which keeps its loop; the x86-64 file adds a gcc 15 `-O2` fill of a
 global `map address` names, which prints `builtin_memset(gfill,0,0x80)`.
+`tests/stages/kuna-rex-before-prefix.xml` pins a `rep stosd` and a `rep movsq`
+with 32-bit addresses as loops, and a `rep stosw` through RDI as
+`builtin_memset16`.
 `kuna-cli/tests/repstring_round_trip.rs`
 compiles the printed x86-64 functions beside the source and checks they compute
 the same values.
