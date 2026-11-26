@@ -4073,6 +4073,112 @@ macro parallel_logic_status(result, shift) {
     commit_logic_flags(flags, shift);
 }
 
+# Compact rotates drive both address ports, but only the primary ALU
+# connects the operand-fetch, result and arithmetic-status ports.
+macro compact_rotate_agu(cfg, bank, update_result, address, enabled) {
+    address = R3;
+    local access:1;
+    parallel_logic_access(cfg, bank, enabled, access);
+    if (!access) goto <done>;
+    modify_ptr(R3, RN3, RM2, RL2, 6, 1);
+    if (update_result == 0) goto <done>;
+    modify_ptr(R4, RN4, RM4, RL4, 8, 1);
+  <done>
+}
+
+macro compact_rol_data(flags) {
+    local address:2;
+    local enabled:2;
+    compact_rotate_agu(CECFG1, 0:2, 0:1, address, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <done>;
+    local word:2 = *[data]:2 address;
+    if (enabled == 0) goto <done>;
+    local result:2 = (word + word) | (EST & 1);
+    *[data]:2 R4 = result;
+    flags = (flags & 0xffc6) | (word >> 15) |
+            (zext(result == 0) << 3) | (zext(result >= 0x8000) << 4);
+  <done>
+}
+
+macro compact_or_r7_indexed(shift, flags) {
+    local address:2 = R7 + RN7;
+    local word:2 = *[data]:2 address;
+    local result:2 = word | A2L;
+    A1L = result;
+    A1H = 0;
+    GB1 = 0;
+    flags = (flags & ~(0x38 << shift)) | (zext(result == 0) << (shift + 3));
+}
+
+macro compact_xor_a4h_r7(flags) {
+    local enabled:2;
+    local access:1;
+    parallel_logic_access(CECFG1, 0:2, enabled, access);
+    if (!access) goto <done>;
+    local address:2 = R7;
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    local word:2 = *[data]:2 address;
+    if (enabled == 0) goto <done>;
+    local result:2 = A4L ^ word;
+    A4H = result;
+    flags = (flags & 0xffc7) | (zext(result == 0) << 3);
+  <done>
+}
+
+compact_rotate_right: "ROL CE2" "*R4","*R3+=RN3" is slot_0_22=0x21c117 {
+    local address:2;
+    local enabled:2;
+    compact_rotate_agu(CECFG2, 1:2, 0:1, address, enabled);
+}
+compact_rotate_right: "ROL CE2" "*R5","*R3+=RN3" is slot_0_22=0x21c157 {
+    local address:2;
+    local enabled:2;
+    compact_rotate_agu(CECFG2, 1:2, 0:1, address, enabled);
+}
+compact_rotate_right: "ROL CE2" "*R4+=RN4","*R3+=RN3" is slot_0_22=0x21c317 {
+    local address:2;
+    local enabled:2;
+    compact_rotate_agu(CECFG2, 1:2, 1:1, address, enabled);
+}
+compact_rotate_right: "ROR CE2" "*R4","*R3+=RN3" is slot_0_22=0x21e117 {
+    local address:2;
+    local enabled:2;
+    compact_rotate_agu(CECFG2, 1:2, 0:1, address, enabled);
+}
+
+:^nop_left "||" compact_rotate_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_rotate_right) {
+    build compact_rotate_right;
+    publish_alu_ce(EST & 0xcfff);
+}
+:OR "A1","*R7+RN7","A2L" "||" compact_rotate_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x6aa3e4); (slot_mode=0 & compact_rotate_right) {
+    local flags:2 = EST & 0xcfff;
+    build compact_rotate_right;
+    compact_or_r7_indexed(0:2, flags);
+    publish_alu_ce(flags);
+}
+:XOR "CE1" "A4H","A4L","*R7+=RN7" "||" compact_rotate_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x6ce51f); (slot_mode=0 & compact_rotate_right) {
+    local flags:2 = EST & 0xcfff;
+    build compact_rotate_right;
+    compact_xor_a4h_r7(flags);
+    publish_alu_ce(flags);
+}
+:ROL "CE1" "*R4","*R3+=RN3" "||" "OR" "A1","*R7+RN7","A2L" is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x21c117); (slot_mode=0 & slot_0_22=0x6aa3e4) {
+    local flags:2 = EST & 0xcfff;
+    compact_or_r7_indexed(6:2, flags);
+    compact_rol_data(flags);
+    publish_alu_ce(flags);
+}
+:ROL "CE1" "*R4","*R3+=RN3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x21c117); (slot_mode=0 & nop_right) {
+    local flags:2 = EST & 0xcfff;
+    compact_rol_data(flags);
+    publish_alu_ce(flags);
+}
+:ROL "CE1" "*R4","*R3+=RN3" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_22=0x21c117 {
+    local flags:2 = EST & 0xcfff;
+    compact_rol_data(flags);
+    publish_alu_ce(flags);
+}
+
 # WB results are already visible when register contention stops the issue.
 # Neither status publication nor the next issue belongs to the stop path.
 define pcodeop carmel_register_write_conflict;

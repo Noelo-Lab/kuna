@@ -3927,6 +3927,14 @@ extends the inputs, while `OR` combines their unsigned bit patterns.
 A CE veto preserves the result storage and arithmetic/logic flags
 without suppressing normal CE feedback.
 
+The compact rotate forms with indexed DATA still run their address
+generators on the secondary ALU of a parallel packet. A permitted
+postmodify updates the source pointer and any encoded destination
+pointer, but the secondary rotate reserves no DATA read or write port
+and does not replace its arithmetic flags. The primary word rotate
+reads the old source address, shifts through the primary carry, and
+writes the indirect DATA result only when its CE predicate allows it.
+
 Compact `NEG` and `ABS` with the connected `FF12` input can write indirect
 DATA through `R0` with an inactive right lane. `FF2:FF1` enters the
 40-bit adder zero-extended. Flags describe the unshifted arithmetic

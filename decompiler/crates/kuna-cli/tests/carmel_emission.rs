@@ -4201,6 +4201,97 @@ fn carmel_wide_round_captures_split_data_and_gates_writeback() {
     }
 }
 
+#[test]
+fn carmel_compact_secondary_rotate_only_updates_its_address_generators() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-compact-rotate-agu", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let or = [0x6a, 0xa3, 0xe4];
+    let xor = [0x6c, 0xe5, 0x1f];
+    let rol = [0x21, 0xc1, 0x17];
+    let sequential_rol = [[0xa1, 0xc1, 0x17], [0x2b, 0xec, 0]];
+    let add_carry = [0x12, 0x03, 0x1d, 0x2b, 0xec, 0];
+    let variants = [
+        (nop, [or, rol], 0xc040, 0xc048, 0x1000, 0, [0xc044, 0x48, 0xc048, 0xfedd, 0x4567, 0x8888, 0, 0x5678]),
+        (nop, [[0x2b, 0xec, 0], [0x21, 0xc1, 0x57]], 0xc040, 0xc048, 0, 0xff00, [0xc044, 0x48, 0xc048, 0x789a, 0x4567, 0x8888, 0x2000, 0x5678]),
+        (nop, [rol, or], 0xc040, 0xc048, 0x1000, 0xffff, [0xc044, 0x48, 0xc048, 0xfedd, 0x4567, 0x8888, 0x3001, 2]),
+        (nop, sequential_rol, 0xc040, 0xc048, 0x1000, 0xffff, [0xc044, 0x48, 0xc048, 0x789a, 0x4567, 0x8888, 0x3001, 2]),
+        (nop, [xor, [0x21, 0xc3, 0x17]], 0x4040, 0x4040, 0x1000, 0xffff, [0x4042, 0x4b, 0x4042, 0x789a, 0, 0x8888, 0x3008, 0x5678]),
+        (nop, [xor, [0x21, 0xe1, 0x17]], 0x4040, 0x4040, 0, 0xff00, [0x4042, 0x48, 0x4040, 0x789a, 0x4567, 0x8888, 0x2000, 0x5678]),
+        ([0x2b, 0xec, 0, 0x12, 0x03, 0x1d], [[0x2b, 0xec, 0], rol], 0xc040, 0xc048, 0x1000, 0xffff, [0xc044, 0x48, 0xc048, 0x789a, 0x4567, 0x094c, 0x3d40, 0x5678]),
+        (add_carry, sequential_rol, 0xc040, 0xc048, 0x1000, 0xffff, [0xc044, 0x48, 0xc048, 0x789a, 0x4567, 1, 0x3001, 3]),
+    ];
+    let projections: [&[usize]; 8] = [
+        &[0, 3, 6], &[0, 6], &[0, 3, 6], &[0, 6],
+        &[0, 1, 2, 4, 6], &[0, 1, 2, 4, 6], &[0, 5, 6], &[0, 5, 6],
+    ];
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         volatile unsigned short rotate_in, rotate_out, shared_word, or_word, other_out;\n",
+    );
+    let mut calls = String::from("int main(void) {\n");
+    let registers = ["R3", "R4", "R7", "A1L", "A4H", "A0L", "EST"];
+    for (i, (prefix, packet, r3, r7, cfg, table, after)) in variants.into_iter().enumerate() {
+        let specs = binary.with_extension(format!("specs-{i}"));
+        tracked_carmel_entry_specs(&specs, &[("R3", r3), ("R4", 0x48), ("R5", 0x4048), ("R7", r7),
+            ("RN3", if r3 == 0x4040 { 2 } else { 4 }), ("RN4", 3),
+            ("RN7", if r7 == 0x4040 { 2 } else { 4 }), ("PACFG", 0)], 0x1000, 0);
+        let [left, right] = packet;
+        let mut program = vec![prefix, [left[0], left[1], left[2], right[0], right[1], right[2]]];
+        program.extend([nop, nop, nop, nop, ret]);
+        fs::write(&binary, program.as_slice().as_flattened()).unwrap();
+        let with_carry = prefix == add_carry;
+        let input = [("A0L", 0x8888), ("A0H", if with_carry { 0xffff } else { 0x8002 }), ("GB0", 0xab),
+                     ("A1L", 0x789a), ("A2L", 0xfedc), ("A4L", 0x89ab), ("A4H", 0x4567),
+                     ("X1", 2), ("X2", 0x894a), ("EST", 0), ("ECFG", 0), ("CECFG1", cfg),
+                     ("CECFG2", cfg), ("CETBL", table)];
+        let args = input.iter().map(|(_, value)| value.to_string()).collect::<Vec<_>>().join(", ");
+        for &j in projections[i] {
+            let reg = registers[j];
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "data [data,0xc040] volatile unsigned short rotate_in",
+                "--assert", "data [data,0x48] volatile unsigned short rotate_out",
+                "--assert", "data [data,0x4040] volatile unsigned short shared_word",
+                "--assert", "data [data,0xc04c] volatile unsigned short or_word",
+                "--assert", "data [data,0x4048] volatile unsigned short other_out",
+            ]);
+            for (k, (field, _)) in input.into_iter().enumerate() {
+                let ty = if field == "GB0" { "unsigned char" } else { "unsigned short" };
+                kuna.args(["--assert", &format!("param {k} %{field} {ty} in_{k}")]);
+            }
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let function = &json["functions"][0];
+            let text = function["code"].as_str().unwrap();
+            assert!(function["error"].is_null() && !text.contains("halt_"), "{function}");
+            assert!(json["assertions"].as_array().unwrap().iter().all(|a| a["status"] == "applied"), "{json}");
+            let name = format!("rotate_{i}_{j}");
+            writeln!(c, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+            writeln!(calls,
+                "rotate_in = 0x8001; rotate_out = 0x5678; shared_word = 0x89ab; or_word = 0x2005; other_out = 0x22cc;\n\
+                 if ({name}({args}) != {} || rotate_out != {} || rotate_in != 0x8001 || shared_word != 0x89ab ||\
+                     or_word != 0x2005 || other_out != 0x22cc) return {};",
+                after[j], after[7], i * 7 + j + 1).unwrap();
+        }
+        fs::remove_dir_all(specs).unwrap();
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")
