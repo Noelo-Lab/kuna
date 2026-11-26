@@ -2341,7 +2341,7 @@ mod tests {
         // and kuna-word-index-scalar / a word index matching a global stays numeric without pointer evidence
         // and kuna-sparc-trap-resume / a branch after a delay-slot trap is the trap's resume
         // and kuna-ptrfromuse-faroffset / a parameter read only at field offsets of 0x1000 or more is a pointer
-        assert_eq!(count, 939, "corpus file count drifted");
+        assert_eq!(count, 942, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

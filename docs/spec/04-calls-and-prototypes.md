@@ -6063,6 +6063,64 @@ purely to preserve it across a call and pops it into a *different* register that
 it then returns; nothing local distinguishes that from the alignment idiom, and
 this rule reads it as maintenance.
 
+#### (kuna) The register an epilogue pops to release the frame (`kuna_epiloguepop.rs`)
+
+`float f(void *p, unsigned i) { double d = *(double *)((char *)p + 0x108);
+return ((float *)&d)[i]; }` is, from clang for Win64 (and for x86-64 System V
+without a red zone), `push rax; vmovsd xmm0,[rcx+0x108]; vmovsd [rsp],xmm0; mov
+eax,edx; vmovss xmm0,[rsp+rax*4]; pop rax; ret` (GH-1969). The `push rax` and
+`pop rax` are the function's eight-byte frame, and the spill overwrote the
+pushed slot, so at the RETURN `rax` holds the double's bits and `xmm0` the
+selected float. Both trials pass ancestor realism and `ancestorOpUse`, and the
+output model's fallback prefers the general class, so the function printed
+`unsigned long long f(void *a0) { return ((unsigned long long *)a0)[0x21]; }`:
+the index parameter and the indexed read were dead. The same happens to every
+float function clang gives an eight-byte frame and a call: `float twice(float x)
+{ g(); return x * 2.0f; }` is `push rax; movss [rsp+4],xmm0; call g; movss
+xmm0,[rsp+4]; addss xmm0,xmm0; pop rax; ret` and printed `unsigned long
+twice(unsigned int a0)` returning the spill slot, and i386's `push eax` ...
+`pop eax` around an x87 result returned the argument's bits from `eax`.
+
+GCC and LLVM pop into a register only to release stack, and choose one that is
+dead there. `kuna_epiloguepop::note_pops`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_epiloguepop.rs`) runs right
+after `ActionReturnRecovery` scores the output trials for the first time, while
+each RETURN still reads the register the instruction wrote, and marks a trial
+when:
+
+* its value at every live RETURN is the write of a single-register pop: copied
+  out of the instruction's temporary, or written directly, by a LOAD whose
+  address is the stack pointer, in an instruction that also adds the loaded
+  width to that same stack pointer (`kuna_epiloguepop.rs (popped)`); and
+* another trial, in an output entry of a different storage class (`xmm0`,
+  `ST0`), is already active on that pass (`kuna_epiloguepop.rs (rival)`).
+
+The first pass still sees the frame's stores. A float the function stores into
+the slot the pop reads, as when an eight-byte `struct { float f; int i; }` is
+built in the frame and returned in `rax`, has a STORE among its uses and is not
+active yet, so nothing is marked and the struct keeps its return.
+
+After the last scoring pass, before the output map,
+`kuna_epiloguepop::yield_to_other_class` makes a marked trial inactive when its
+rival is still active and the output model, given the trials without it,
+returns something. The float then stands alone: `unsigned int f(void *a0,unsigned
+int a1)` returns `((unsigned int *)&v1)[a1]`, as the red-zone build of the same
+function always did, `twice` is `float twice(float a0) { g(); return a0 + a0; }`,
+and the i386 one returns `ST0`.
+
+A pop with no rival is unchanged: `pushfq; pop rax; ret` still returns the flags,
+and a function that only moves a double through `xmm0` to memory before `pop rax`
+keeps `rax`, since that `xmm0` is not active. A pop into one register of a pair
+is in the same class as the other and is left to the pair rules above. The rule
+is always on. What it cannot separate is hand-written code that leaves a dead
+float in `xmm0` while returning a value it popped into `rax`; compilers emit
+neither the dead float nor a pop into a live return register.
+
+`tests/stages/kuna-epiloguepop.xml` pins the issue's function, a Win64 float
+array returned by index and the two controls; `kuna-epiloguepop-sysv.xml` pins
+`twice` and the issue's function without a red zone, which must read as its
+red-zone build; `kuna-epiloguepop-x87.xml` pins the i386 `twice`.
+
 #### (kuna, rustc) The two-register `ScalarPair` return (`rustabi`)
 
 rustc returns a `Result`, an `Option`, a slice or a fat pointer whose layout it

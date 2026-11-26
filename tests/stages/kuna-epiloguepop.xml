@@ -1,0 +1,64 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+  GH-1969. clang -O2 for Win64 gives a leaf float function an eight-byte frame
+  with push rax / pop rax. halfsel is
+  float f(void *p, unsigned i) { double d = *(double *)((char *)p + 0x108);
+  return ((float *)&d)[i]; }: the spill overwrites the pushed slot, so at the
+  ret rax holds the double's bits and xmm0 the selected float. scaled stores
+  two computed floats into the frame and returns one by index. Both returned
+  rax, losing the index parameter and the indexed read.
+  Controls: pushfq; pop rax returns the flags, and a pop of the third argument
+  beside an xmm0 that is only stored returns that argument.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+50c5fb10810801000089d0c5fb110424c5fa10048458c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1020" readonly="true">
+50f30f1001f30f58c0f30f110424f30f104104f30f5905c5000000f30f11442404
+89d0f30f10048458c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1060" readonly="true">9c58c3</bytechunk>
+<bytechunk space="ram" offset="0x1070" readonly="true">50f20f1001f20f11024c89042458c3</bytechunk>
+<bytechunk space="ram" offset="0x1100" readonly="true">00004040</bytechunk>
+<symbol space="ram" offset="0x1000" name="halfsel"/>
+<symbol space="ram" offset="0x1020" name="scaled"/>
+<symbol space="ram" offset="0x1060" name="eflags"/>
+<symbol space="ram" offset="0x1070" name="spill"/>
+</binaryimage>
+<script>
+  <com>read symbols</com>
+  <com>lo fu halfsel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu eflags</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu spill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EPILOGUE-POP #1: halfsel takes the index" min="1" max="1">^[a-z0-9 ]+ halfsel\(void \*a0,uint4 a1\)$</stringmatch>
+<stringmatch name="EPILOGUE-POP #2: halfsel returns the element the index selects" min="1" max="1">^  return \(\(unsigned int \*\)&amp;v1\)\[a1\];$</stringmatch>
+<stringmatch name="EPILOGUE-POP #3: no function returns the popped double" min="0" max="0">^  return \(\(unsigned long long \*\)a0\)\[0x21\];$</stringmatch>
+<stringmatch name="EPILOGUE-POP #4: scaled returns a float by index" min="1" max="1">
+^float4 scaled\(float4 \*a0,uint4 a1\)$
+^\{$
+^  float4 v1 \[2\];.*$
+^  $
+^  v1\[1\] = a0\[1\] \* dat_1100;$
+^  v1\[0\] = \*a0 \+ \*a0;$
+^  return v1\[a1\];$
+</stringmatch>
+<stringmatch name="EPILOGUE-POP #5: a pop with no rival still returns the flags" min="1" max="1">^uint8 eflags\(void\)$</stringmatch>
+<stringmatch name="EPILOGUE-POP #6: xmm0 only stored leaves the popped argument returned" min="1" max="1">
+^unsigned long long spill\(unsigned long long \*a0,unsigned long long \*a1,unsigned long long a2\)$
+^\{$
+^  \*a1 = \*a0;$
+^  return a2;$
+</stringmatch>
+</decompilertest>
