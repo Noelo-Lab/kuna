@@ -4530,6 +4530,18 @@ and take carry from the input's low bit. The status destination discards
 the word but still drives carry. The unconnected configuration input
 rejects at decode, even when CE2 would veto execution.
 
+For the covered wide `LSHIFT` with a count at `DATA[R1]`, `A1L` goes
+into bits 16–31 and the word result writes the high word to `FF1`.
+The whole-accumulator `LEA` input selects the saved loop-end bank by
+loop depth, with bank one selected at depth zero. It uses the unsigned
+24-bit bound without word alignment and writes all 40 bits of `A0`.
+Both forms drive arithmetic feedback; a zero count keeps incoming carry,
+which is distinct from a disconnected result preserving all arithmetic
+flags. Disconnected loop-bound word and flag-only results remain
+unimplemented: they fetch the DATA count but do not execute a shift, and
+can publish a stale result from a previous issue. The `IOSPACE` input
+that can observe such a result is also unimplemented.
+
 Covered wide logical read-modify-write forms send the high result word to
 aliased control registers. `PSTATUS` keeps its two depth bits only when the
 repeat-active bit is set. A low-word destination instead publishes the

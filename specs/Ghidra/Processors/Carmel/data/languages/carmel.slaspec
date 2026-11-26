@@ -9926,6 +9926,42 @@ wide_lshift_intbase_src: "PACFG" is wide_shift_source_tail=0x1d5 { export PACFG;
     publish_alu_ce((EST & 0xcfc6) | flags);
 }
 
+@define WIDE_LSHIFT_R1 "$(WIDE_LSHIFT_ROUTED) & wide_40_45=1 & bitfield_descriptor=0"
+
+:LSHIFT "FF1","A1L","*R1" is $(WIDE_LSHIFT_R1) & wide_shift_destination=0xbe & wide_shift_source_tail=0x122 {
+    local count:2 = *[data]:2 R1;
+    local input:8 = zext(A1L) << 16;
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 32:4, 16:4, 0:1, result, flags);
+    FF1 = result(2);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+:LSHIFT "A0","LEA","*R1" is $(WIDE_LSHIFT_R1) & wide_shift_destination=0x88 & wide_shift_source_tail=0x1a6 {
+    # This operand port selects a saved bound, including bank one at depth zero.
+    local depth:2 = PSTATUS & 7;
+    local bound:4 = LEA1W;
+    if (depth < 2) goto <selected>;
+    bound = LEA2W;
+    if (depth == 2) goto <selected>;
+    bound = LEA3W;
+    if (depth == 3) goto <selected>;
+    bound = LEA4W;
+  <selected>
+    local input:8 = zext(bound & 0xffffff);
+    local count:2 = *[data]:2 R1;
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, count, 40:4, 0:4, 0:1, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_alu_ce((EST & 0xcfc6) | flags);
+}
+
+@undef WIDE_LSHIFT_R1
+
 @undef WIDE_LSHIFT_LONG
 @undef WIDE_LSHIFT_ROUTED
 

@@ -2908,6 +2908,68 @@ fn wide_lshift_control_aliases() {
 }
 
 #[test]
+fn wide_lshift_loop_input_feedback() {
+    let mut issues = [(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6), (10, 5, 6), (12, 1, 0)];
+    for (right, count, a1l, expected_a0, ff1, est) in [
+        (0xf17d22, 1, 0, 0xea43380000, 0, 0x3008),
+        (0xf17d22, 0, 0x8001, 0xea43380000, 0x8001, 0x3021),
+        (0xf17d22, 0x7f, 0x8001, 0xea43380000, 0x4000, 0x3001),
+        (0xf17d22, 5, 0x0800, 0xea43380000, 0, 0x3021),
+        (0xf111a6, 1, 0, 0, 0x1234, 0x3008),
+        (0xf111a6, 0, 0, 0, 0x1234, 0x3009),
+    ] {
+        let mut packets = [(NOP, NOP); 7];
+        packets[0] = (INC_A0, NOP);
+        packets[5] = (0xc10000, right);
+        let mut m = Machine::new(0x1000, &packets, &issues, None);
+        m.seed(&[("A0", 0xea4338ffff), ("A1L", a1l), ("R1", 0x4040),
+                 ("FF1", 0x1234), ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff)]);
+        m.seed_data(0x4040, count);
+        m.start(0x1000).unwrap();
+        for word in (0x1002..=0x100a).step_by(2) {
+            assert_eq!(m.step(), 3 * word);
+        }
+        assert_eq!(m.reg("EST"), 0x3009);
+        assert_eq!(m.step(), 3 * 0x100c);
+        assert_eq!((m.reg("A0"), m.reg("FF1"), m.reg("EST")), (expected_a0, ff1, est));
+        assert_eq!((m.reg("A1L"), m.reg("R1"), m.data(0x4040)), (a1l, 0x4040, count));
+    }
+
+    // An ordinary LOAD populates the selected saved bank before the original producer and shift.
+    let mut packets = [(NOP, NOP); 12];
+    packets[0] = (0x01fa02, 0xc27b4d);
+    packets[5] = (INC_A0, NOP);
+    packets[10] = (0xc10000, 0xf111a6);
+    let mut with_bound = [(0, 1, 6); 12];
+    for (i, context) in with_bound.iter_mut().enumerate() {
+        *context = (2 * i as u64, 1, 6);
+    }
+    with_bound[0].1 = 4;
+    with_bound[10].1 = 5;
+    with_bound[11].2 = 0;
+    for (depth, saved) in [(0, "LEA1"), (9, "LEA1"), (10, "LEA2"), (11, "LEA3"), (12, "LEA4")] {
+        let mut m = Machine::new(0x0ff6, &packets, &with_bound, None);
+        m.seed(&[("A0", 0xea4338ffff), ("R1", 0x4040), ("PSTATUS", depth),
+                 ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff)]);
+        m.seed_data(0x4040, 0x7f);
+        m.seed_data(0x4041, 0x80);
+        m.start(0x0ff6).unwrap();
+        for word in (0x0ff8..=0x100a).step_by(2) {
+            assert_eq!(m.step(), 3 * word);
+        }
+        assert_eq!((m.reg(saved), m.reg("EST")), (0x80007e, 0x3009));
+        assert_eq!(m.step(), 3 * 0x100c);
+        assert_eq!((m.reg("A0"), m.reg("EST")), (0x40003f, 0x3000));
+    }
+
+    issues[0].1 = 5;
+    for right in [0xf17da4, 0xf17da6, 0xf17db0, 0xf1b1a6, 0xf1b1c4] {
+        let mut m = Machine::new(0, &[(0xc10000, right), (NOP, NOP)], &issues[..2], None);
+        assert!(matches!(m.start(0), Err(KunaError::Unimpl { instruction_length: 6, .. })), "{right:06x}");
+    }
+}
+
+#[test]
 fn packed_banks_displacements_compact() {
     for (left, right, seed, stored, flags) in [
         (0x696624, NOP, 0, 0x24, 0x400),
