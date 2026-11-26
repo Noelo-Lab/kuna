@@ -60,6 +60,9 @@ f30f1efa554889e5897dfc8975f88955f4894df0837dfc007512837df8007413
 <script>
   <!-- kuna: guardarm defaults to auto; this test pins the out-index arm order -->
   <com>option guardarm off</com>
+  <!-- kuna: boolbranch defaults to return, which prints this whole-body guard
+       as one return of the condition; this test pins the folded guard -->
+  <com>option boolbranch keep</com>
   <com>lo fu t</com>
   <com>decompile</com>
   <com>print C</com>

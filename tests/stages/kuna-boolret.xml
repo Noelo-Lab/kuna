@@ -1,0 +1,67 @@
+<decompilertest>
+<!-- P8 structuring, option boolbranch (default return). gcc 11 -O0 -fno-pic
+     -fno-stack-protector -fcf-protection=none, x86-64:
+
+       int is_abs(const char *path) { return path != 0 && path[0] == '/'; }
+       int is_full(int *s) { if (s[0x17] < 256 && s[0x18] > 0) return 0; else return 1; }
+       int same(int a, int b) { if (a == b) return 1; return 0; }
+       int either(int a, int b) { if (a == 3) return 1; if (b == 9) return 1; return 0; }
+       int bump_and_test(int *p, int a, int *out) { *out = a + 1; return p != 0 && *p == a; }
+
+     (is_full's s[0x17] is unsigned in the source.) gcc materializes each
+     result with a jump to a block that sets 1 and a block that sets 0, which
+     structuring recovers as a guard and a final return. Under keep every
+     function prints two returns. Under return a function that is only a guard
+     on a short-circuit condition returns the condition: is_abs as written,
+     is_full its negation (the guard returns 0). same's simple condition,
+     either's two guards and bump_and_test's guard after a store keep their
+     returns. -->
+<binaryimage arch="x86:LE:64:default:gcc">
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e548897df848837df8007412488b45f80fb6003c2f7507b801000000eb05b8000000005dc3554889e548897df8488b45f88b405c3dff0000007712488b45f88b406085c07e07b800000000eb05b8010000005dc3554889e5897dfc8975f88b45fc3b45f87507b801000000eb05b8000000005dc3554889e5897dfc8975f8837dfc037507b801000000eb12837df8097507b801000000eb05b8000000005dc3554889e548897df88975f4488955e88b45f48d5001488b45e8891048837df8007412488b45f88b003945f47507b801000000eb05b8000000005dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="is_abs"/>
+<symbol space="ram" offset="0x100028" name="is_full"/>
+<symbol space="ram" offset="0x100057" name="same"/>
+<symbol space="ram" offset="0x100077" name="either"/>
+<symbol space="ram" offset="0x1000a2" name="bump_and_test"/>
+</binaryimage>
+<script>
+<com>option truthycond on</com>
+<com>parse line extern int is_abs(char *path);</com>
+<com>parse line extern int is_full(unsigned int *s);</com>
+<com>parse line extern int same(int a, int b);</com>
+<com>parse line extern int either(int a, int b);</com>
+<com>parse line extern int bump_and_test(int *p, int a, int *out);</com>
+<com>option boolbranch keep</com>
+<com>lo fu is_abs</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu is_full</com>
+<com>decompile</com>
+<com>print C</com>
+<com>option boolbranch return</com>
+<com>lo fu is_abs</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu is_full</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu same</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu either</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu bump_and_test</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="BOOLRET #1: keep tests the short-circuit condition in a guard" min="1" max="1">^  if \(\(path\) &amp;&amp; \(\*path == '/'\)\)$</stringmatch>
+<stringmatch name="BOOLRET #2: return returns the short-circuit condition" min="1" max="1">^  return \(\(path\) &amp;&amp; \(\*path == '/'\)\);$</stringmatch>
+<stringmatch name="BOOLRET #3: keep returns 0 from the guard of the other polarity" min="1" max="1">^  if \(\(s\[0x17\] &lt;= 0xff\) &amp;&amp; \(1 &lt;= \(int4\)s\[0x18\]\)\)$</stringmatch>
+<stringmatch name="BOOLRET #4: return returns the negation of that condition" min="1" max="1">^  return !\(\(s\[0x17\] &lt;= 0xff\) &amp;&amp; \(1 &lt;= \(int4\)s\[0x18\]\)\);$</stringmatch>
+<stringmatch name="BOOLRET #5: a simple condition keeps its if" min="1" max="1">^  if \(a == b\)$</stringmatch>
+<stringmatch name="BOOLRET #6: two guards stay two guards" min="1" max="1">^  if \(b == 9\)$</stringmatch>
+<stringmatch name="BOOLRET #7: a guard after a statement keeps its if" min="1" max="1">^  if \(\(p\) &amp;&amp; \(a == \*p\)\)$</stringmatch>
+<stringmatch name="BOOLRET #8: the final return is gone only where the condition is returned" min="5" max="5">^  return [01];$</stringmatch>
+</decompilertest>

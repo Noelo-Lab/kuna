@@ -9718,7 +9718,11 @@ fn a_shift_that_carries_into_the_first_register_keeps_the_int() {
         let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp, "--option", "bejoin", "on"]);
         assert!(ok, "kuna decompile-all {fixture} failed: {stderr}");
         let printed = callrettype_functions(&stdout, &ALL);
-        let sigs: Vec<&str> = printed.split("// Function: ").skip(1).filter_map(|part| part.lines().nth(1)).collect();
+        let sigs: Vec<&str> = printed
+            .split("// Function: ")
+            .skip(1)
+            .filter_map(|part| part.lines().nth(1).and_then(|line| line.split(" //").next()))
+            .collect();
         assert_eq!(sigs.len(), ALL.len(), "{fixture}: every function prints:\n{stdout}");
         let sshr33 = sigs.iter().find(|sig| sig.contains("sshr33(")).copied().unwrap_or("");
         let sshr33_args = if bejoin_arity(sshr33) == 1 { "H(v)" } else { "H(v), L(v)" };

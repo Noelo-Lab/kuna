@@ -1,0 +1,52 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `returndup auto`, the default: in an optimized function, a shared
+    return of a value the arms merge (`if (c) v = f(); else { ...; v = -1; }
+    return v;`) gives each arm its own return, as the source wrote it.
+
+    Stage / sub-stage: P8 "goto-quality", before the final structuring:
+    `returndup` splits the return block (kuna_retshape::arm_returns finds it)
+    after the join the stripped stack-protector check left is spliced into it.
+    The P0 assertion `option returndup record` keeps the merged return.
+
+    The image is decompiler/crates/kuna-analysis/tests/fixtures/
+    retshape_gcc_O2_x86_64, loaded whole.  `describe` returns -1 after an
+    error message or the result of `measure`; the canary check joins both
+    paths before one exit.  `wrap_add` updates the value it returns in one arm
+    (`if (res < data) res += knob;`) and keeps its one return.
+
+    Pass 1 runs with the default: describe returns in each arm, wrap_add keeps
+    its update.  Pass 2 (`option returndup record`) prints describe's merged
+    variable.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/retshape_gcc_O2_x86_64</com>
+  <com>read symbols</com>
+  <com>load function describe</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load function wrap_add</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option returndup record</com>
+  <com>load function describe</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="retshape arms #1: default, the measured arm returns its call" min="1" max="1">^  if \(prepare\(a0,v1\) != -1\)$
+^    return measure\(a1,v1,a3 &amp; 0xffffffff\);$</stringmatch>
+<stringmatch name="retshape arms #2: default, the error arm returns -1" min="1" max="1">^  __snprintf_chk\(a2,a3,1,0xffffffffffffffff,"cannot prepare %s",a1\);$
+^  return 0xffffffff;$</stringmatch>
+<stringmatch name="retshape arms #3: the one-armed update keeps one return" min="1" max="1">^  if \(v1 &lt; a1\)$
+^    v1 \+= \(int8\)knob;$
+^  return v1;$</stringmatch>
+<stringmatch name="retshape arms #4: record, the arms assign the merged variable" min="1" max="1">^    v1 = measure\(a1,v2,a3 &amp; 0xffffffff\);$</stringmatch>
+<stringmatch name="retshape arms #5: record, one return of the variable" min="1" max="1">^    v1 = 0xffffffff;$
+^  \}$
+^  return v1;$</stringmatch>
+</decompilertest>

@@ -53,6 +53,7 @@ c366662e0f1f8400000000000f1f4000f30f1efa85f67830534889fbe81ffeffff4885db741a662e
 <symbol space="ram" offset="0x1470" name="first_value"/>
 </binaryimage>
 <script>
+  <com>option truthycond on</com>
   <com>option tailform off</com>
   <com>lo fu note_if_zero</com>
   <com>decompile</com>

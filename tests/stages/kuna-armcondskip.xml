@@ -31,6 +31,8 @@ c3
 <script>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/xreffp_arm_le32</com>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function clamp</com>
   <com>decompile</com>

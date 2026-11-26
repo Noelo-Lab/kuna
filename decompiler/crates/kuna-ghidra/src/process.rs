@@ -1211,12 +1211,14 @@ pub fn kuna_banner_text() -> String {
 /// `calltargettype` is held off: its function-pointer types are anonymous
 /// `<type metatype="code">` elements, which `PcodeDataTypeManager.decodeDataType`
 /// reads back as `undefined1`, so a retyped local would reach the program as
-/// `undefined1 *` where it is `code *` today.
+/// `undefined1 *` where it is `code *` today. `ppc32picimports` is skipped: it
+/// acts only while kuna's loader reads an image, which Ghidra does itself, and
+/// setting it would write the process environment the wire reset just cleared.
 fn apply_ghidra_mode_defaults(arch: &mut Architecture) {
     arch.name_style_ghidra = true;
     if let Some(overrides) = kuna_decomp::modes::mode_overrides("aggressive") {
         for (name, value) in overrides {
-            if kuna_decomp::options::KUNA_OPTION_NAMES.contains(name) {
+            if kuna_decomp::options::KUNA_OPTION_NAMES.contains(name) && *name != "ppc32picimports" {
                 // Engine-tier knob: apply.  Unknown/analysis-tier names have
                 // no engine seam in ghidra mode and are skipped.
                 let _ = arch.set_kuna_option(name, value);

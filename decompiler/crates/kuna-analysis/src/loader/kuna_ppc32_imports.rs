@@ -145,6 +145,16 @@ pub(super) fn word(file: &object::File<'_>, bytes: &[u8]) -> u32 {
     }
 }
 
+/// The complete r30-relative stubs of an image whose `.plt` holds validated
+/// relocation slots: the import calls only `ppc32picimports abi` can name.
+pub fn pic_stub_count(file: &object::File<'_>) -> usize {
+    let (bss, slots) = slots(file);
+    if bss || slots.is_empty() {
+        return 0;
+    }
+    stubs(file).iter().filter(|(_, form)| matches!(form, Stub::Pic(_))).count()
+}
+
 /// Every complete stub in the word-aligned executable sections.
 pub(super) fn stubs(file: &object::File<'_>) -> Vec<(u64, Stub)> {
     let mut out = Vec::new();

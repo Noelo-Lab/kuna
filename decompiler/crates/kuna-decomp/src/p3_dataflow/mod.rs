@@ -66,6 +66,7 @@ pub mod kuna_pointeestorekeep;
 pub mod kuna_constspaceload;
 pub mod kuna_simdlane;
 pub mod kuna_x87truncate;
+pub(crate) mod kuna_sdivpow2;
 pub mod kuna_opaquepredicate;
 pub mod kuna_cancelbytearithmetic;
 pub mod kuna_wideslice;
