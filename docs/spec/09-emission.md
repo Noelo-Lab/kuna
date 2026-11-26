@@ -4521,6 +4521,13 @@ corpus. The ranges bound which constant addresses become `&dat_<addr>`; a
 lies, a GOT slot or an import address table entry included (*The declaration*
 below).
 
+In an address space whose unit is larger than a byte, a constant can be a
+machine word index without being a C object address. An exact symbol match does
+not prove that an untyped or integer constant is a pointer there:
+`decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs (is_pointer)`
+also requires address-use evidence in that space. Pointer-typed uses still
+resolve as addresses.
+
 **What one function knows.** `kuna_globalref.rs (plan)` walks the function
 once when its document starts, and records three facts:
 
