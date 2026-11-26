@@ -505,10 +505,11 @@ mod tests {
     #[test]
     fn returndup_auto_keeps_duplication_on_and_adds_the_record() {
         let opt = crate::p8_structure::kuna_returndup::OptionReturnDup;
-        assert!(matches!(opt.apply("auto"), Ok((true, false, true, _))));
-        assert!(matches!(opt.apply("on"), Ok((true, false, false, _))));
-        assert!(matches!(opt.apply("off"), Ok((false, false, false, _))));
-        assert!(matches!(opt.apply("calls"), Ok((true, true, true, _))));
+        assert!(matches!(opt.apply("auto"), Ok((true, false, true, true, _))));
+        assert!(matches!(opt.apply("record"), Ok((true, false, true, false, _))));
+        assert!(matches!(opt.apply("on"), Ok((true, false, false, false, _))));
+        assert!(matches!(opt.apply("off"), Ok((false, false, false, false, _))));
+        assert!(matches!(opt.apply("calls"), Ok((true, true, true, true, _))));
         assert!(opt.apply("sometimes").is_err());
     }
 

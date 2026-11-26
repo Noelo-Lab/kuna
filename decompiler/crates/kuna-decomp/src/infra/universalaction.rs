@@ -635,6 +635,7 @@ pub fn universal_sched(
             act!(ActionDeterminedBranch::boxed("unreachable")),
             act!(ActionUnreachable::boxed("unreachable")),
             act!(ActionNodeJoin::boxed("nodejoin")),
+            act!(crate::p8_structure::kuna_latchjoin::ActionLatchJoin::boxed("nodejoin")),
             act!(Box::new(crate::condexe::ActionConditionalExe::new("conditionalexe"))),
             act!(ActionConditionalConst::boxed("analysis")),
         ],
@@ -872,7 +873,9 @@ pub fn universal_sched(
             act!(crate::p8_structure::kuna_dedupitetail::ActionDedupIteTail::boxed("blockrecovery")),
             // (kuna) tailform: choose the wrapped or guard form of each function-tail
             // `if` by the size of its conditional tail (print-tree edit only).
+            act!(crate::p8_structure::kuna_retshape::ActionRetShape::boxed("blockrecovery")),
             act!(crate::p8_structure::kuna_tailform::ActionTailForm::boxed("blockrecovery")),
+            act!(crate::p8_structure::kuna_boolret::ActionBoolRet::boxed("blockrecovery")),
             // (kuna) angr ITERegionConverter (option `iteregion`, default-OFF — a
             // runtime choice).  After the tree is final + goto targets labelled,
             // mark a narrow two-arm assignment diamond (`if (c) v=A; else v=B;`,

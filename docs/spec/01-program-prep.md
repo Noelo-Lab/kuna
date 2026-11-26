@@ -2350,19 +2350,37 @@ funcsym stream:
   and table reads per code word; an image that exhausts it gets no PIC names. Both byte orders
   are supported. Off keeps PIC stubs unresolved; BSS-PLT and absolute stubs
   are unaffected. In the console, set the option before `load file`; CLI
-  options are bridged before either loader runs. The `abi` mode is opt-in because
-  the proof walks every function:
+  options are bridged before either loader runs. The `abi` mode is off in the
+  catalog default because the proof walks every function:
   about 0.15-0.3 s for libstdc++ or libc, which makes listing a PPC32 PIC
   image's functions about 1.05-1.35x slower and a single-function decompile
   of a large library up to 2.9x. A meet updates the stored state in place and
   reports whether it changed, and a stub is found from any byte it covers by
   one hash lookup.
-  The default path and other formats pay nothing, and the proof runs once per
-  image content. Resolved PPC32 import names take
+  The `aggressive` preset sets `abi`, and `auto` selects that preset for files
+  under 500 KiB, so a small PPC32 PIC image gets the names without the option;
+  larger files and the catalog default keep `off`. A front end applies the
+  preset's `abi` before it loads the image, the browser restoring the
+  load-option environment afterwards; the console's `mode` on an open image
+  sets it for the next `load file` and keeps the live mode, and the Ghidra
+  preset layer skips it. `kuna xrefs` loads under `reliable` unless `--mode`
+  names another preset, so it names these imports only with `--mode
+  aggressive` or the option. Other formats pay nothing,
+  and the proof runs once per image content. Resolved PPC32 import names take
   precedence over local stub labels, which remain aliases. Existing library
   prototypes, no-return facts and name-based xrefs therefore see the same
   imported identity, including when a terminal call has no mapped fall-through
   bytes. This does not add a sectionless PPC32 resolver.
+  A CLI run that leaves the option short of `abi` (by `--option`, its mode
+  preset or `KUNA_PPC32PICIMPORTS`) on an image whose `.plt` holds validated
+  slots and whose code has r30-relative stubs says so in a `ppc32-pic-imports`
+  note, counted by
+  `decompiler/crates/kuna-analysis/src/loader/kuna_ppc32_imports.rs (pic_stub_count)`.
+  The count is of complete stub shapes, so `abi` may name fewer. The note
+  reads the 20-byte ELF header first and goes no further unless it is ELF32
+  `EM_PPC`; it then resolves the mode the subcommand loads under (`xrefs`
+  defaults to `reliable`, the others to `auto`). `strings` and `read`,
+  which print no import names, get no note.
   Every input named so far is keyed on the section table — `object` builds its
   dynamic-relocation iterator by scanning it for `SHT_REL`/`SHT_RELA`, reads
   `.dynsym` as a section, and the stub scan finds `.plt*` by name — so an ELF
@@ -3005,6 +3023,30 @@ already says which bytes are code (over stripped x86-64 ELF the clip's overshoot
 is alignment padding, 694 of 1,093 functions; MSVC lays a switch table out after
 its function in `.text`, and ARM a literal pool, both bytes of the function), and
 another raw language would need its own table and literal-pool readers.
+
+(kuna `coverage`) **A decompile reports the exact body beside the bound**
+(always on; `decompiler/crates/kuna-console/src/kuna_coverage.rs (output_ranges)`).
+The flow records the bytes of every instruction it decodes for a function, delay
+slots included (§2, `decoded_ranges`), so a decompile knows its function's body,
+code it goes on to prove dead included. Mapped to the target's address units as
+`line_mappings` is, the ranges ride `FuncResult::ranges` across the `--jobs` wire
+and the result store. A function whose C failed to render keeps its ranges, since
+it was decoded; a function whose decompile failed has none. Over a batch,
+`Code::measure_results` sets those ranges against the bytes the image holds for the
+CODE spans the extent clip uses: the section table, or else the executable load
+segments. The spans are snapshotted, a bit per byte for whether it is NUL, before a
+`--jobs` parent drops its program. The measure gives three counts:
+
+- the bytes some function lifted;
+- the bytes covered by a function that decompiled without an error;
+- the NUL bytes no function lifted.
+
+The NUL bytes are alignment fill or a zero-filled tail far more often than code, so
+they are left out of the total a share is taken of. Only bytes inside the spans
+count, so a block lifted outside them, such as an `--addr` into data, adds nothing.
+`decompile-all --json --coverage` reports the measure as `coverage`, and a
+whole-binary project export's completion line reports its two shares. Nothing here
+changes what is decompiled or printed.
 
 Naming a pointer slot is not by itself enough to bind a call *through* it. An ELF
 PLT stub and a Mach-O `__stubs` entry are code, so the call is direct and the name
@@ -7615,7 +7657,12 @@ and x86 images this removes 492 starts, every one inside a sized symbol, and add
 none. A stripped shared object
 keeps the sizes of its exported functions in `.dynsym`, and those filter the same
 way; an image with no sized function symbol (a fully stripped executable, Mach-O)
-is unchanged. The rule trusts the size: a symbol-less routine that hand-written
+is unchanged. A PowerPC64 ELFv1 symbol names a function descriptor in `.opd` and states
+the size of the code, so its extent starts at the descriptor's validated code word. One
+that states 24 bytes is left out: the dot-symbol ABI (GCC's `-mcall-aixdesc`, GMP's
+assembly) gives every descriptor its own size, and the `.name` symbol at the code states
+the function's. A function whose code is itself 24 bytes then filters nothing, as before.
+The rule trusts the size: a symbol-less routine that hand-written
 assembly places inside another function's `.size`, and that only a data pointer
 reaches, loses its pattern start. One with an FDE or a direct call is still found
 by those passes.

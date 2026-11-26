@@ -360,15 +360,20 @@ pub fn full_pattern_starts(file: &object::File) -> Vec<u64> {
 /// The extents of every defined function symbol that states its size, as
 /// `(start, furthest end of any extent starting at or before it)` sorted by
 /// start. A prologue shape inside one (a shrink-wrapped prologue after an early
-/// `jr ra`, a loop head) is that function's own code.
+/// `jr ra`, a loop head) is that function's own code. A PowerPC64 ELFv1 symbol
+/// names a descriptor and states the size of the code behind it, unless it states
+/// the descriptor's own, as the dot-symbol ABI does.
 pub(crate) fn sized_function_bodies(file: &object::File) -> Vec<(u64, u64)> {
+    let descriptors = crate::loader::elfv1::Descriptors::read(file);
     let mut out: Vec<(u64, u64)> = file
         .symbols()
         .chain(file.dynamic_symbols())
         .filter(|sym| sym.kind() == SymbolKind::Text && !sym.is_undefined() && sym.size() != 0)
-        .map(|sym| {
-            let start = thumb_masked(file, sym.address());
-            (start, start.saturating_add(sym.size()))
+        .filter_map(|sym| {
+            let symbol = thumb_masked(file, sym.address());
+            let start = descriptors.code_address(symbol);
+            let own_size = start != symbol && sym.size() == crate::loader::elfv1::DESCRIPTOR_SIZE;
+            (!own_size).then(|| (start, start.saturating_add(sym.size())))
         })
         .collect();
     out.sort_unstable();
@@ -2552,6 +2557,24 @@ mod tests {
         assert!(!inside_body(&bodies, 0x10), "an extent's own start");
         assert!(inside_body(&bodies, 0x11) && inside_body(&bodies, 0x2f), "strictly inside");
         assert!(!inside_body(&bodies, 0x30) && !inside_body(&bodies, 0x8), "outside");
+    }
+
+    /// An ELFv1 symbol's size is that of the code its descriptor names: `sample` is
+    /// 0x1c bytes at 0xeb8, and the routine after it at 0xed4 has no symbol. `dotted`
+    /// states its descriptor's 0x18 bytes, which say nothing of its 8 bytes of code.
+    #[test]
+    fn a_descriptor_symbol_sizes_the_code_behind_it() {
+        for name in ["elfv1_symbol_extent_be.so", "elfv1_symbol_extent_le.so"] {
+            let bytes = fixture(name);
+            let file = object::File::parse(bytes.as_slice()).expect("parse");
+            let bodies = sized_function_bodies(&file);
+            assert!(inside_body(&bodies, 0xebc) && inside_body(&bodies, 0xec4) && inside_body(&bodies, 0xed0), "{name}");
+            assert!(!inside_body(&bodies, 0xeb8) && !inside_body(&bodies, 0xed4), "{name}: outside sample");
+            assert!(!inside_body(&bodies, 0xf20) && !inside_body(&bodies, 0xf24), "{name}: dotted");
+            let opd = file.section_by_name(".opd").expect(".opd");
+            let descriptors = opd.address()..opd.address() + opd.size();
+            assert!(!bodies.iter().any(|(start, _)| descriptors.contains(start)), "{name}: no descriptor is a body");
+        }
     }
 
     /// A Mach-O `LC_MAIN` states its entry as a `__TEXT`-relative FILE OFFSET, so
