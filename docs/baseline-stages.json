@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5520,
-    5520
+    5524,
+    5524
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1544,6 +1544,10 @@
     "data:ITEREGION AUTO #7: with iteregion on arg keeps its if/else (pass 2)",
     "data:Immutable GOT graph resolution keeps the existing named C call",
     "data:Immutable GOT graph resolution keeps writable C calls indirect",
+    "data:JUMPAS-CALL #1: only the live indirect path warns",
+    "data:JUMPAS-CALL #2: the pruned branch does not warn on the return",
+    "data:JUMPAS-CALL #3: the live indirect target still renders as a call",
+    "data:JUMPAS-CALL #4: a live fallback call's warning still prints before a pipeline warning at its address",
     "data:JUMPTABLEMAX #1: at the default cap the four-case switch is recovered",
     "data:JUMPTABLEMAX #2: every case of the table is a case label",
     "data:JUMPTABLEMAX #3: `option jumptablemax 2` refuses the four-case table and the dispatch prints as a call",
