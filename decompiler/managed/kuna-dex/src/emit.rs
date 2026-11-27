@@ -150,7 +150,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     /// so the parameter's own keeps the parameter throughout.
     fn local(&mut self, reg: u32, c: Mask, v: u32) -> Result<u16> {
         let m = self.m;
-        let reused = m.params.iter().enumerate().any(|(p, &pr)| pr == (reg, c) && m.root(p as u32) != m.root(v));
+        let reused = m.params.contains(&(reg, c)) && m.reused.contains(&m.root(v));
         self.slot(if reused { reg | REUSED } else { reg }, c)
     }
 
@@ -1281,10 +1281,12 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             let key = if own || !self.slots.contains_key(&(l.reg | REUSED, c)) { l.reg } else { l.reg | REUSED };
             let Some(&slot) = self.slots.get(&(key, c)) else { continue };
             let whole = m.params.iter().zip(&m.clean_param).any(|(&(r, pc), &clean)| clean && r == l.reg && pc == c);
-            let span = if l.start == 0 && whole {
-                vec![(0, code.len() as u32)]
-            } else if l.start == 0 {
-                self.span(0, l.end).first().map(|&(_, e)| vec![(0, e)]).unwrap_or_default()
+            let span = if l.start == 0 {
+                match self.span(0, l.end).first() {
+                    Some(&(_, e)) => vec![(0, e)],
+                    None if whole => vec![(0, code.len() as u32)],
+                    None => Vec::new(),
+                }
             } else {
                 self.span(l.start, l.end)
             };

@@ -126,7 +126,7 @@ fn an_untranslatable_method_fails_alone() {
 fn d8_lambda_classes_become_invokedynamic_again() {
     let classes = translate("release.dex");
     let objects = &classes.iter().find(|c| c.0 == "dx/Objects").unwrap().1;
-    assert_eq!(objects.version, 52);
+    assert!(objects.version >= 52, "{}", objects.version);
     assert!(objects.attrs.iter().any(|a| a == "BootstrapMethods"));
     assert!(objects.utf8.iter().any(|s| s == "java/lang/invoke/LambdaMetafactory"));
     assert!(objects.utf8.iter().any(|s| s == "applyAsInt"));

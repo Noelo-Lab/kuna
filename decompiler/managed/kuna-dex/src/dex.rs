@@ -183,6 +183,7 @@ pub struct Dex<'a> {
     lambdas: OnceLock<crate::lambda::Lambdas>,
     backports: OnceLock<crate::backport::Backports>,
     records: OnceLock<crate::record::Records>,
+    nest: OnceLock<crate::nest::Nest>,
 }
 
 impl<'a> Dex<'a> {
@@ -256,6 +257,7 @@ impl<'a> Dex<'a> {
             lambdas: OnceLock::new(),
             backports: OnceLock::new(),
             records: OnceLock::new(),
+            nest: OnceLock::new(),
         };
         if map_off != 0 {
             dex.read_map(map_off)?;
@@ -443,6 +445,11 @@ impl<'a> Dex<'a> {
         d.push(b')');
         d.extend_from_slice(self.type_desc(p.ret)?);
         Ok(d)
+    }
+
+    /// The d8 nest-access accessors of the file, recognised on first use.
+    pub(crate) fn nest(&self) -> &crate::nest::Nest {
+        self.nest.get_or_init(|| crate::nest::scan(self))
     }
 
     /// The d8 records of the file, recognised on first use.

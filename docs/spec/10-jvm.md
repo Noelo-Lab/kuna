@@ -1710,11 +1710,14 @@ description.
 
 A DEX file or an APK reaches the engine as class files. The loader
 (`decompiler/managed/kuna-jvm/src/p0_knowledge/kuna_input.rs (dex_unit)`) parses each
-`classes*.dex` in order, translates every class definition with `kuna-dex`, keeps the first
-definition of each class name, and lists and serves the bytes as a jar unit's entries; a
-class that cannot be translated at all is an entry whose read fails with the reason. The
-rest of this section is `kuna-dex`, which depends on nothing and translates one class
-without reading any other class's code.
+`classes*.dex` in order, translates every class definition with `kuna-dex`, each file with
+the others as its *peers* (d8 may call a synthetic class placed in another file), keeps the
+first definition of each class name, leaves out the classes `kuna-dex` marks as omitted (a
+d8 helper whose every use it wrote back), and lists and serves the bytes as a jar unit's
+entries; a class that cannot be translated at all is an entry whose read fails with the
+reason. The rest of this section is `kuna-dex`, which depends on nothing and translates one
+class without reading any other class's code (only the d8 synthetic classes of the file and
+its peers are recognised, once per file).
 
 **Parsing.** `decompiler/managed/kuna-dex/src/dex.rs` validates the header (versions 035
 to 039, little-endian, the declared file size) and the bounds of every id table once, and
@@ -1731,11 +1734,13 @@ into line positions and local ranges (parameters, `this` included, start at addr
 into an op with its register uses in JVM push order and its def, each with a category
 mask (int-like, float, long, double, reference): an invoke absorbs the `move-result` that
 follows it, `fill-array-data` reads and redefines its array (so `new int[]{...}` keeps the
-array on the stack), and a `new-instance` whose register every path from it carries, within
-a few blocks and without another read or write, to one `<init>` call on it becomes one op at
-that call defining the constructed object (`new T(...)`, arguments computed before it).
-Blocks start at branch targets, after branches, returns and throws, at try boundaries and
-at handlers; a block in a try range has its handlers as exception successors, and
+array on the stack), and a `new-instance` whose reference every path from it carries, within
+a few blocks and without another read, to one `<init>` call on it becomes one op at that
+call defining the constructed object (`new T(...)`, arguments computed before it). The
+reference may travel through `move-object` copies d8 makes to line up a range call; those
+copies vanish, and the op defines whichever of the reference's registers is read after the
+call (it fails over when more than one is). Blocks start at branch targets, after branches,
+returns, throws and the monitor ops, at try boundaries and at handlers; a block in a try range has its handlers as exception successors, and
 reachability follows normal edges and the handlers of blocks with a throwing instruction.
 Unreachable blocks are not translated, and a reachable block that falls off the code is an
 error.
@@ -1747,7 +1752,13 @@ block entry the block gets a phi for that register; a use names the one value re
 Webs are the union-find classes of values joined through phis. A web of a single constant
 def with no phi is *inline*: the constant is written at each of its uses, typed by that use,
 so one register can carry one literal (`0` as int, float and `null`) to differently-typed
-uses, and no store is emitted.
+uses, and no store is emitted. After typing, a `move` that d8 wrote to line up a range call
+is forwarded: when its source is a parameter or a value read only by the move, and its copy
+is read once later in the same block, that reader reads the source instead and the move
+vanishes, provided no other op writes the source's local in between; a chain of such moves
+(d8's register shuffles) resolves to the first source. The source can then fold into its
+reader as an expression, so the arguments of a `super(...)` or `new T(...)` that d8
+evaluated out of order, or parked in other registers, are written inside the call.
 
 **Types.** Each web is a type variable starting from all categories; the method's
 parameter types, every typed opcode, field type, invoke parameter and return type, and
@@ -1760,10 +1771,13 @@ one is a method failure. An array whose type stays unknown (always `null`) is ac
 the opcode its value's category picks, and `aconst_null` is accepted by every array opcode.
 
 **Emission.** `decompiler/managed/kuna-dex/src/emit.rs` writes one JVM local per
-(register, category), parameters in their JVM slots. Blocks are laid out in address order,
-a fall-through successor right after its block, and a block whose only predecessor jumps to
-it unconditionally right after that predecessor, with the `goto` dropped (so a handler's
-code is contiguous, as javac writes it). Within a block, a value defined once and used once
+(register, category), parameters in their JVM slots; a parameter's register that d8 reuses
+for a value outside the parameter's web gets a second local for that, so the parameter's own
+local holds the parameter throughout and a copy of it can always read it. Blocks are laid
+out in address order, a fall-through successor right after its block, and a block whose
+only predecessor jumps to it unconditionally right after that predecessor, with the `goto`
+dropped (so a handler's code is contiguous, as javac writes it); the regions below then
+move blocks, and a block whose fall-through successor no longer follows it gets a `goto`. Within a block, a value defined once and used once
 later in the same block, not named by debug info there, is not stored: its op is pushed on a
 pending stack, and an op folds pending values into its operands only when they form the top
 of that stack in the operand order the JVM evaluates (`aput`, `iput` and `sput` push their
@@ -1787,11 +1801,30 @@ becomes `iinc`, `not-int` becomes `^ -1`, `rsub-int` pushes its literal first,
 (default: the fall-through block), `if-eqz` on a reference `ifnull`, `invoke-polymorphic`
 `invokevirtual` with the call-site descriptor, and `invoke-custom` `invokedynamic` with a
 `BootstrapMethods` entry. A handler block starting with `move-exception` is the JVM handler
-and stores the exception; any other handler is reached through a stub that pops it. Each
-try item protects the JVM pc intervals of the blocks it covers (merged where adjacent);
-when its catch-all handler starts with `move-exception` and releases a monitor, the
-handler's own `move-exception` right before the range and the `monitor-exit` of that
-monitor right after it are protected too, as javac protects a `synchronized` block.
+and stores the exception; any other handler is reached through a stub that pops it.
+
+**Regions.** d8 keeps a try item only over instructions that can throw, places blocks by
+its own order (a handler among the code it protects, a `throw` after the method's return),
+and cannot list a typed handler after a catch-all, so javac's one `finally` range arrives in
+pieces and an outer handler does not cover the inner `finally` it encloses; the engine's
+`finally` processing (10.9) matches neither. `decompiler/managed/kuna-dex/src/region.rs`
+therefore lays out each catch-all handler that throws the exception it caught again (a
+`finally`, or a `synchronized` block's release) as javac does: its *region* is the blocks
+it protects plus the regions of the handlers whose first throwing code it protects (the
+nested ones), excluding its own handler code (the blocks only its entry reaches). Regions
+are arranged innermost first: within the span of layout positions the region occupies, a
+block that cannot throw, is no handler and is entered only from the region stays and is
+covered, and every other block moves right after the region in its order. A region whose
+handler releases a monitor also takes in the `monitor-exit` blocks of that monitor entered
+only from it (the normal exits) and the blocks between the `monitor-enter` and its first
+protected block, and its handler protects its own code up to the release, as javac writes
+`synchronized`. Each region is one exception-table entry, after the per-try-item entries of
+the other handlers and innermost first, plus one for the handler code it protects. The
+table is kept only if every block that can throw still meets, entry by entry, exactly the
+handlers its try item lists, in that order, up to a catch-all; otherwise every try item
+protects the pc intervals of its own blocks, as without regions. A catch-all handler that
+does not throw its exception again is javac's `catch (Throwable t)`, which DEX writes as a
+catch-all, and is written with the catch type `java/lang/Throwable`.
 `LineNumberTable` maps each statement's first pc to the line of its earliest Dalvik
 instruction; `LocalVariableTable` maps each debug local to the pc intervals of the ops in
 its address range. Branches are 16-bit unless one overflows, when the method is assembled
@@ -1800,6 +1833,7 @@ register read before any write, or a type conflict fails that method only: it ge
 that throws and a `KunaDexError` attribute (a constant-pool string, laid out as
 `SourceFile`), which the engine turns into its failure comment
 (`decompiler/managed/kuna-jvm/src/infra/method_processor.rs (code_to_java_schedule)`).
+A panic in the translation of one method is caught and fails that method the same way.
 
 **Lambdas.** d8 desugars every `invokedynamic` to `LambdaMetafactory` into a class
 `X$$ExternalSyntheticLambdaN`. `decompiler/managed/kuna-dex/src/lambda.rs` recognises
@@ -1811,9 +1845,58 @@ method's name, the captures' types to the interface, and `metafactory` with the 
 method's type, a handle to the implementation (static, virtual, interface, special or
 constructor reference, from the call) and the instantiated type (the implementation's
 parameter types after the captures, refined by the casts, boxed where the interface
-method takes references, and its return type, likewise). The engine then prints the
-lambda or method reference. A lambda class of any other shape (d8 inlined the body into
-it) is left as it is.
+method takes references, and its return type, likewise). A method whose whole work is the
+unboxing call is the method reference to it (`Long::longValue`). d8 reaches a private
+instance method (a lambda body, or a method reference's target) through a public static
+synthetic bridge of the same class (`$r8$lambda$...`) that passes its parameters on
+unchanged; the handle then names the method itself, virtual (interface in an interface), as
+javac's does (the bridge stays, synthetic, for the lambda class). The engine then prints the lambda or
+method reference. A lambda class of any other shape (d8 inlined the body into it) is left as
+it is; the lambda class of a `new` in a peer file is found there.
+
+**Backports.** Below the API level that added a JDK method, d8 calls a static method of a
+synthetic class (`X$$ExternalSyntheticBackportN.m`) holding its own implementation.
+`decompiler/managed/kuna-dex/src/backport.rs` recognises such a method by its body: a hash
+(FNV-1a) of its descriptor, its opcodes, literals, branch offsets, strings, and the JDK
+members and types it names, any other class counting as one name, and a call into another
+synthetic method of the file standing for that method's own hash (d8 nests backports), with
+a second hash that names such calls only, for a nested method in a peer file. The hashes
+are looked up in `backports.tsv`, recorded by
+`decompiler/managed/kuna-jvm/fixtures/dex/backports/regen.sh`: it turns d8's own list of
+backported methods (`BackportedMethodList`, at min-api 1 to 35) into one probe method per
+JDK method, compiles it with d8 at each level, debug and release, and hashes every
+synthetic method a probe calls instead (`examples/backports.rs`); a hash two JDK methods
+share is kept for `Math` over the identical `StrictMath` and dropped otherwise. A call to a
+recognised method, here or in a peer file, is written as the JDK call (static, virtual, or
+interface, the receiver first), and a synthetic class holding only recognised methods is
+omitted. An unrecognised synthetic (another d8 version, `sun.misc` methods) stays as it is.
+
+**Nest access.** javac 11 and later read a private member of a nestmate directly; d8
+reaches a private field or method through a static synthetic accessor of the member's class
+(`-$$Nest$fget...`, `-$$Nest$m...`) whose body is that one access on its parameters, and a
+private constructor through a synthetic one taking an extra argument of an empty class
+`X-IA` (always `null`). `decompiler/managed/kuna-dex/src/nest.rs` recognises both by their
+bodies; before ops are built, a call of an accessor in the same file becomes the access
+itself (a field read takes over the `move-result`, which becomes a `nop`) and a call of such
+a constructor the call of the private one, without its last argument. The empty `-IA`
+classes are omitted, the accessors stay (synthetic, for calls from other files), and every
+class with nested classes gets `NestMembers` (all of them, at any depth) and every nested
+class `NestHost` (its outermost class), at version 55, so the accesses are legal again.
+
+**Records.** Below API 34 d8 gives a record the superclass `com.android.tools.r8.RecordTag`,
+drops the `Record` attribute, and writes `toString` (`$record$getFieldsAsObjects`, the
+class, the `;`-joined component names, a helper in `$$ExternalSyntheticRecordN`),
+`hashCode` (the component fields to a helper) and `equals` (a private `$record$equals`) in
+its own way. `decompiler/managed/kuna-dex/src/record.rs` recognises those three shapes; the
+component order is the order of the names given to the `toString` helper or, when the
+record writes its own `toString`, the order in which the canonical constructor's parameters
+reach the fields (or match one field each by type). A recognised record gets
+`java/lang/Record` back as its superclass (references to `RecordTag` in code too), a
+`Record` attribute with each component's name, descriptor, `Signature` and annotations from
+its field, and javac's methods: one `invokedynamic` to `ObjectMethods.bootstrap` with the
+class, the names and a getter handle per component. The private helpers are left out, a
+helper class only recognised records call is omitted, and `RecordTag` too when every class
+of the file extending it was recognised.
 
 **Classes.** `decompiler/managed/kuna-dex/src/class.rs` writes the members and the
 attributes of 10.3 from the system annotations, and `decompiler/managed/kuna-dex/src/classfile.rs`
@@ -1829,5 +1912,6 @@ expresses the class: 50 (or the `min_version` option, down to 49), 51 for method
 method-type constants, 52 for `invokedynamic`, interfaces with code, and interface calls
 other than `invokeinterface`. Its `verifiable` option keeps classes at their minimum by
 calling library interface methods through `Methodref` (verifiable, but failing if run) and
-keeping d8's lambda classes, for checking translations with the JVM's own verifier.
+keeping d8's lambda, backport and record classes as d8 wrote them, for checking
+translations with the JVM's own verifier.
 

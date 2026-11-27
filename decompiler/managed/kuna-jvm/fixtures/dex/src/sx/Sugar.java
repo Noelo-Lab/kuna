@@ -78,6 +78,25 @@ public class Sugar {
     }
 
     private int count;
+    private static int secret = 5;
+
+    private int hidden() {
+        return count + 1;
+    }
+
+    static final class Peer {
+        private final int v;
+
+        private Peer(int v) {
+            this.v = v;
+        }
+
+        int read(Sugar s) {
+            secret++;
+            s.count += v;
+            return s.hidden() + s.count + v;
+        }
+    }
 
     private void add(String s) {
         count += s.length();
@@ -151,5 +170,6 @@ public class Sugar {
         System.out.println(anyNegative(new int[] {1, -2}) + " " + anyNegative(new int[] {1}) + " " + parses("12") + " " + parses("x"));
         System.out.println(pick(true, 3, 4) + " " + pick(false, 3, 4));
         System.out.println(backports("a", 2));
+        System.out.println(new Peer(2).read(new Sugar()) + " " + secret);
     }
 }

@@ -17,6 +17,7 @@ mod dex;
 mod emit;
 mod insn;
 mod lambda;
+mod nest;
 mod reader;
 mod record;
 mod region;

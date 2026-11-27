@@ -1,7 +1,7 @@
 //! d8's desugared lambdas, undone: a `final class X$$ExternalSyntheticLambdaN`
 //! implementing one interface, whose constructor stores its captures in
 //! fields and whose single method loads them, adapts its parameters (casts,
-//! unboxing), calls one implementation method and returns its (boxed)
+//! unboxing, primitive widening), calls one implementation method and returns its (boxed)
 //! result, is what javac's `invokedynamic` to `LambdaMetafactory.metafactory`
 //! became (an unboxing call alone is the method reference `Long::longValue`).
 //! A `new` of such a class is written back as that `invokedynamic`, so the
@@ -30,6 +30,8 @@ pub struct Lambda {
 enum Origin {
     Capture(usize),
     Param(usize),
+    /// The second register of a wide value.
+    High,
     Other,
 }
 
@@ -116,12 +118,17 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<(Lambda, Option<u32
     let mut reg = first + 1;
     for (j, &t) in sam_params.params.iter().enumerate() {
         *origin.get_mut(reg)? = Origin::Param(j);
-        reg += if matches!(dex.type_desc(t).ok()?.first(), Some(b'J' | b'D')) { 2 } else { 1 };
+        if matches!(dex.type_desc(t).ok()?.first(), Some(b'J' | b'D')) {
+            *origin.get_mut(reg + 1)? = Origin::High;
+            reg += 1;
+        }
+        reg += 1;
     }
     let mut cast: BTreeMap<usize, u32> = BTreeMap::new();
     let mut found: Option<(u8, u32, Vec<Origin>)> = None;
     let mut new_type = NO_INDEX;
     let mut unboxed: Option<(u32, usize)> = None;
+    let mut widened = std::collections::BTreeSet::new();
     let mut k = 0;
     while k < insns.len() {
         let x = &insns[k];
@@ -129,6 +136,9 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<(Lambda, Option<u32
             0x52..=0x58 if x.b as usize == first => {
                 let i = fields.iter().position(|&f| f == x.idx)?;
                 origin[x.a as usize] = Origin::Capture(i);
+                if x.op == 0x53 {
+                    *origin.get_mut(x.a as usize + 1)? = Origin::High;
+                }
             }
             0x1f => {
                 if let Origin::Param(j) = origin[x.a as usize] {
@@ -139,13 +149,16 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<(Lambda, Option<u32
             0x6e..=0x72 | 0x74..=0x78 => {
                 let mid = dex.method(x.idx).ok()?;
                 let name = dex.string(mid.name).ok()?;
-                let args: Vec<Origin> = x.args().iter().map(|&r| origin[r as usize]).collect();
+                let args: Vec<Origin> = x.args().iter().map(|&r| origin[r as usize]).filter(|&o| o != Origin::High).collect();
                 let unbox = x.op == 0x6e && UNBOX.contains(&name) && args.len() == 1;
                 let valueof = x.op == 0x71 && name == b"valueOf" && found.is_some();
                 if unbox {
                     if let Some(Origin::Param(j)) = args.first().copied() {
                         let next = insns.get(k + 1).filter(|n| matches!(n.op, 0x0a..=0x0c) && (n.a as usize) < regs)?;
                         origin[next.a as usize] = Origin::Param(j);
+                        if next.op == 0x0b {
+                            *origin.get_mut(next.a as usize + 1)? = Origin::High;
+                        }
                         cast.insert(j, mid.class);
                         unboxed = Some((x.idx, j));
                         k += 2;
@@ -170,6 +183,15 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<(Lambda, Option<u32
                 };
                 let args = if kind == 8 { args[1..].to_vec() } else { args };
                 found = Some((kind, x.idx, args));
+            }
+            0x81..=0x83 | 0x85 | 0x86 | 0x89 => {
+                if let Origin::Param(j) = origin[x.b as usize] {
+                    widened.insert(j);
+                }
+                origin[x.a as usize] = origin[x.b as usize];
+                if matches!(x.op, 0x81 | 0x83 | 0x86 | 0x89) {
+                    *origin.get_mut(x.a as usize + 1)? = Origin::High;
+                }
             }
             0x0a..=0x0c | 0x0e..=0x11 | 0x00 => {}
             0x01..=0x09 => origin[x.a as usize] = origin[x.b as usize],
@@ -213,6 +235,7 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<(Lambda, Option<u32
         let p: &[u8] = if sam_desc.first() == Some(&b'L') && p.len() == 1 { boxed(p) } else { p };
         let p = match cast.get(&j) {
             Some(&t) if sam_desc.first() == Some(&b'L') => dex.type_desc(t).ok()?,
+            _ if widened.contains(&j) => sam_desc,
             _ => p,
         };
         inst.extend_from_slice(p);
@@ -248,13 +271,15 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<(Lambda, Option<u32
 /// (a lambda body or a method reference's target) through a public static
 /// synthetic method of the same class that passes its parameters on
 /// unchanged (`$r8$lambda$...`), where javac's handle names the method itself
-/// (javac's own lambda bodies, static ones included, are never public).
+/// (javac's own lambda bodies, static ones included, are never public), and
+/// likewise through a nest accessor.
 fn unbridge(dex: &Dex, idx: u32) -> Option<(u8, u32)> {
     let m = dex.method(idx).ok()?;
     let def = dex.class_def(dex.class_of_type(m.class)?).ok()?;
     let data = dex.class_data(def.class_data_off).ok()?;
     let em = data.direct_methods.iter().find(|e| e.method == idx)?;
-    if em.access & 0x1009 != 0x1009 {
+    let accessor = matches!(dex.nest().accessors.get(&idx), Some(crate::nest::Access::Call { .. }));
+    if em.access & 0x1009 != 0x1009 && !accessor {
         return None;
     }
     let code = dex.code_item(em.code_off).ok()?;

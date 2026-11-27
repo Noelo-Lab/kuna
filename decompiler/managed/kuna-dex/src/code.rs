@@ -156,9 +156,12 @@ pub struct Method<'d, 'a> {
     pub edge_const: BTreeMap<(u32, u32, u32), u32>,
     /// Registers live into some exception handler (a bit per register).
     pub handler_live: Vec<u64>,
-    /// Per parameter: no instruction writes its value's web (another value
-    /// in its register gets a local of its own).
+    /// Per parameter: nothing writes its local (no def in its web, and none
+    /// in its register that debug info names as the parameter).
     pub clean_param: Vec<bool>,
+    /// Webs of values in a parameter's register that are another variable:
+    /// they get a local of their own.
+    pub reused: std::collections::BTreeSet<u32>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -216,12 +219,14 @@ pub fn binop_masks(k: u8) -> (Mask, Mask, Mask) {
 }
 
 impl<'d, 'a> Method<'d, 'a> {
+    /// `undo` writes d8's nest accessors back as the accesses they make.
     pub fn new(
         dex: &'d Dex<'a>,
         code: &'d CodeItem<'a>,
         debug: &'d DebugInfo,
         is_static: bool,
         proto: Proto,
+        undo: bool,
     ) -> Result<Method<'d, 'a>> {
         let mut m = Method {
             dex,
@@ -247,19 +252,35 @@ impl<'d, 'a> Method<'d, 'a> {
             edge_const: BTreeMap::new(),
             handler_live: Vec::new(),
             clean_param: Vec::new(),
+            reused: std::collections::BTreeSet::new(),
         };
-        m.build_ops()?;
+        m.build_ops(undo)?;
         m.build_blocks()?;
         m.fuse_constructors()?;
         m.number_values()?;
         m.infer_types()?;
         m.forward_moves();
-        m.clean_param = (0..m.params.len() as u32)
-            .map(|p| {
-                let (r, root) = (m.params[p as usize].0, m.root(p));
-                !m.ops.iter().any(|o| o.def.as_ref().is_some_and(|d| d.reg == r && m.root(d.id) == root))
-            })
-            .collect();
+        let name_at = |m: &Self, r: u32, pc: u32| {
+            m.debug.locals.iter().find(|l| l.reg == r && l.start <= pc && pc < l.end.max(l.start + 1)).map(|l| l.name)
+        };
+        let mut named = std::collections::BTreeSet::new();
+        for p in 0..m.params.len() {
+            let (r, root) = (m.params[p].0, m.root(p as u32));
+            let name = name_at(&m, r, 0);
+            let mut clean = true;
+            for o in &m.ops {
+                let Some(d) = o.def.as_ref().filter(|d| d.reg == r) else { continue };
+                let web = m.root(d.id);
+                if web == root || (name.is_some() && name_at(&m, r, o.end) == name) {
+                    clean = false;
+                    named.insert(web);
+                } else {
+                    m.reused.insert(web);
+                }
+            }
+            m.clean_param.push(clean);
+        }
+        m.reused.retain(|w| !named.contains(w));
         Ok(m)
     }
 
@@ -424,9 +445,12 @@ impl<'d, 'a> Method<'d, 'a> {
         }
     }
 
-    fn build_ops(&mut self) -> Result<()> {
+    fn build_ops(&mut self, undo: bool) -> Result<()> {
         self.param_layout()?;
-        let insns = decode(self.code.insns)?;
+        let mut insns = decode(self.code.insns)?;
+        if undo {
+            crate::nest::rewrite(self.dex, &mut insns);
+        }
         let regs = u32::from(self.code.registers);
         let mut k = 0;
         while k < insns.len() {

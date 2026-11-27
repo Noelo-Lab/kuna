@@ -384,6 +384,46 @@ impl<'d, 'a> Writer<'d, 'a> {
         Ok(attrs)
     }
 
+    /// `NestHost` (the outermost class) or `NestMembers` (every class nested
+    /// in it, at any depth), so the private accesses d8's nest accessors stood
+    /// for are legal again (version 55).
+    fn nest_attributes(&mut self, ty: u32, nesting: &Nesting) -> Result<Vec<Attr>> {
+        let dex = self.dex;
+        let mut host = ty;
+        for _ in 0..64 {
+            match nesting.outer_of(dex, host) {
+                Some(o) if o != host => host = o,
+                _ => break,
+            }
+        }
+        let mut body = Body::default();
+        let name = if host != ty {
+            body.u16(self.pool.class(internal(dex.type_desc(host)?)));
+            "NestHost"
+        } else {
+            let mut members = Vec::new();
+            let mut work = vec![ty];
+            while let Some(t) = work.pop() {
+                for &n in nesting.nested.get(&t).into_iter().flatten() {
+                    if n != ty && !members.contains(&n) && members.len() < 4096 {
+                        members.push(n);
+                        work.push(n);
+                    }
+                }
+            }
+            if members.is_empty() {
+                return Ok(Vec::new());
+            }
+            body.u16(members.len() as u16);
+            for m in members {
+                body.u16(self.pool.class(internal(dex.type_desc(m)?)));
+            }
+            "NestMembers"
+        };
+        self.version = self.version.max(55);
+        Ok(vec![self.attr(name, body.0)])
+    }
+
     fn failed_body(&mut self, message: &str) -> Vec<u8> {
         let mut asm = Asm::new(false);
         let class = self.pool.class(b"java/lang/IllegalStateException");
@@ -603,7 +643,7 @@ impl<'d, 'a> Writer<'d, 'a> {
             reg += if matches!(dex.type_desc(t)?.first(), Some(b'J' | b'D')) { 2 } else { 1 };
         }
         let debug = dex.debug_info(&code, &params, THIS_NAME).unwrap_or_default();
-        let mut m = Method::new(dex, &code, &debug, is_static, proto)?;
+        let mut m = Method::new(dex, &code, &debug, is_static, proto, !opts.verifiable)?;
         m.this_desc = this_desc.to_vec();
         let peers = self.peers;
         let interfaces = |desc: &[u8]| {
@@ -729,9 +769,7 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options, peers: &[Dex]) -> Result<T
     let mut failures = Vec::new();
     let is_interface = def.access & ACC_INTERFACE != 0;
     for em in data.direct_methods.iter().chain(&data.virtual_methods) {
-        if !opts.verifiable && dex.lambdas().bridges.contains(&em.method) {
-            continue;
-        }
+
         if let Some(r) = record {
             if r.hidden.contains(&em.method) {
                 continue;
@@ -805,6 +843,9 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options, peers: &[Dex]) -> Result<T
     w.signature(&class_anns, &mut attrs)?;
     let nesting = dex.nesting();
     attrs.extend(w.inner_classes(def.class, nesting)?);
+    if !opts.verifiable {
+        attrs.extend(w.nest_attributes(def.class, nesting)?);
+    }
     w.annotations(&class_anns, &mut attrs)?;
     if !w.bootstrap.is_empty() {
         let mut b = Body::default();
@@ -836,6 +877,7 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options, peers: &[Dex]) -> Result<T
         name: crate::mutf8_to_string(name),
         bytes: file.write(&w.pool)?,
         failures,
-        omit: !opts.verifiable && (dex.backports().classes.contains(&idx) || dex.records().omit.contains(&idx)),
+        omit: !opts.verifiable
+            && (dex.backports().classes.contains(&idx) || dex.records().omit.contains(&idx) || dex.nest().classes.contains(&idx)),
     })
 }
