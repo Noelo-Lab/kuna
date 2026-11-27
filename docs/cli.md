@@ -3187,6 +3187,17 @@ back are indistinguishable from one long one. Without a range check to read, not
 is followed. This is what puts the callees inside a `switch` on
 `kuna decompile-graph`'s callee list.
 
+The base and the range check need not sit in the dispatch's own block. A base
+hoisted above a loop or an `if/else`, or shared by two switches (MSVC keeps one
+`LEA reg,[__ImageBase]` for every table of a function), is found by following the
+one decoded branch into a block nothing falls into, and a range check may sit up
+to 128 instructions above the jump. Either way the check must compare the register
+the table is indexed by, or one it was copied from just above the comparison, with
+no call in between that may overwrite it, and
+`jae` after `cmp $c` admits `c` cases where `ja` admits `c + 1`. A dispatch whose
+check compares another value, or that a branch enters between the check and the
+jump, is still not followed.
+
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
@@ -4357,6 +4368,33 @@ binary and attempt recompilation:
   use their source address space's units; a `dat_<hex>` label retains the coordinate
   printed in C, and aliases a named symbol only in the same address space at the same
   displayed coordinate.
+
+  A narrowed export (`--functions` or `--addr`) sweeps only the code its `.c` was
+  decompiled from, not every CODE section. For each selected function that is its
+  extent, `[entry, entry + size)` as `kuna functions` reports it, joined with every
+  instruction its decompile decoded (the `ranges` of `decompile-all --json`). Those
+  ranges reach past the extent where the flow does, for example to the `.cold` block
+  gcc lays out away from its function. The union is clipped to the CODE sections and
+  merged where it touches, and each stretch is swept under its own
+  `; --- code range 0x<start>..0x<end> ---` line, in address order, where a whole-image
+  export prints `; --- code section` lines. Only the selected functions are labeled.
+  Inside a stretch the sweep is the whole-image one, apart from an instruction that
+  would run past the stretch's end, which becomes `db` lines. A function with no
+  extent and nothing decoded inside a CODE section gets no stretch and no label. The
+  data tail labels the `dat_<hex>` addresses the `.c` references, as a whole-image
+  tail does, but of the image's named globals only those the `.c` names or the swept
+  code points into. The `.c` names a global the `.h` declares, or a name the C text
+  spells, split at `.` and `:` so `obj.field` and `ns::obj` name `obj`. The code
+  points into a global when a `0x<hex>` constant in a swept instruction's operands
+  falls inside it, so a string the C prints as a literal keeps its `s_<hex>` label
+  when an instruction loads its address. A small constant can keep a label at a low
+  address as well, such as an ARM vector name. The globals left out still end a bare
+  `dat_<hex>` label's dump, so every label reads as it does in a tail that keeps
+  them all. The README's file inventory says the `.asm`
+  covers the selected functions' code; the `.c`, the `.h` and the rest of the README
+  are what they were. Four functions of `libLLVM-15.so.1` (117 MB) selected with
+  `--addr` export in 7 s with a 15 KB `.asm`, where the whole-image `.asm` was
+  869 MB and the export took 32 s.
 - `README.md` — size, arch id, entry point, function counts, sections table, file
   inventory. The entry point is the container's, reported through the inventory
   (an ARM entry carrying the Thumb bit prints at its even address) and
@@ -4413,7 +4451,11 @@ two header lines, `index.jsonl` empty — and `.streaming` moves to phase `decom
 carrying `functions_total`. From there the decompile, the disassembly sweep and the
 writer run at once: the `.asm` completes early, and each function is appended to the
 `.c` and then announced in `index.jsonl`. Finalisation puts the real type block in
-the `.h`, appends the `.asm` tails, rewrites the README and removes `.streaming`.
+the `.h`, appends the `.asm` tails, rewrites the README and removes `.streaming`. A
+narrowed export (`--functions`/`--addr`) is the exception for the `.asm`: its sweep
+covers the bytes the selected functions' decompiles decoded, so it runs during
+finalisation, ahead of the tails, and the `.asm` holds only its two header lines
+until then.
 
 **The order.** Two seeds start it: the image entry point (resolved through the
 inventory, so an ARM entry carrying the Thumb bit lands on its even address) and
@@ -4518,7 +4560,7 @@ the export runs.
 | `functions_failed` | How many of `functions_done` are error records. |
 | `seconds_since_last_result` | How long the decompile has been quiet — the staleness signal. |
 | `c_bytes` | Size of the `.c` as of this write. |
-| `asm` | `pending` (the sweep has not started), `sweeping`, or `complete`. An image with no CODE section has nothing to sweep and reports `complete` from the first `decompiling` write — it is `pending` for as long as the phase is `loading`, since the target set that decides there is nothing to sweep is not resolved yet. |
+| `asm` | `pending` (the sweep has not started), `sweeping`, or `complete`. An image with no CODE section has nothing to sweep and reports `complete` from the first `decompiling` write — it is `pending` for as long as the phase is `loading`, since the target set that decides there is nothing to sweep is not resolved yet. A narrowed export's sweep waits for the decompile, so it reads `pending` until `phase` is `finalizing`. |
 | `error` | `null`, or why the run stopped. Non-null only with `phase: failed`. |
 
 It is written on the writer's own 500 ms clock rather than per result, so it can trail

@@ -119,6 +119,7 @@ impl<'a> A64Tables<'a> {
             settled: false,
             named: None,
             next_table: self.extent.then_some(&next_table),
+            entered: None,
         };
         let read = register_targets(
             translate, code_space, self.data_space.as_ref(), &decoded, from, &branch, self.pool, exec, &reach,

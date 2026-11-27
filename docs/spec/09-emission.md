@@ -4285,7 +4285,9 @@ adds three pieces of its own, none of which a non-stream export can see.
 The linear disassembly walk becomes **resumable**
 (`decompiler/crates/kuna-console/src/project_stream.rs (AsmSweep)`): the
 same section-by-section walk
-`decompiler/crates/kuna-console/src/project.rs (build_asm)` performs,
+`decompiler/crates/kuna-console/src/project.rs (build_asm)` performs (range by
+range for a selected export, `project.rs (build_selection_asm)`, chapter
+[00](00-overview.md)),
 cut into steps against a code-byte budget, carrying its scratch state —
 above all an in-progress `db` run — across the cut, so a chopped budget
 shifts which step a byte is written in and not which byte is written.

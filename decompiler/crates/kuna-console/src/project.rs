@@ -1995,12 +1995,42 @@ pub fn build_asm(
     file_name: &str,
 ) -> String {
     let labels = crate::project_stream::asm_labels_from_results(results);
-    let mut sweep = crate::project_stream::AsmSweep::new(prog, file_name, labels);
+    let sweep = crate::project_stream::AsmSweep::new(prog, file_name, labels);
+    finish_asm(prog, sweep, dat_addrs, None)
+}
+
+/// (kuna #1978) The `.asm` of a narrowed export: [`build_asm`] with the sweep
+/// cut down to the selected functions' code
+/// ([`crate::kuna_asmscope::selection_spans`]) and the data tail to the named
+/// globals its C names ([`crate::kuna_asmscope::referenced_names`]) or its
+/// swept operands point into ([`crate::kuna_asmscope::TailScope`]).
+pub fn build_selection_asm(
+    prog: &ConsoleProgram,
+    results: &[FuncResult],
+    dat_addrs: &BTreeSet<u64>,
+    file_name: &str,
+) -> String {
+    let labels = crate::project_stream::asm_labels_from_results(results);
+    let spans = crate::kuna_asmscope::selection_spans(prog, results);
+    let sweep = crate::project_stream::AsmSweep::over(prog, file_name, labels, spans);
+    let mut named = BTreeSet::new();
+    crate::kuna_asmscope::referenced_names(results, &mut named);
+    finish_asm(prog, sweep, dat_addrs, Some(named))
+}
+
+fn finish_asm(
+    prog: &ConsoleProgram,
+    mut sweep: crate::project_stream::AsmSweep,
+    dat_addrs: &BTreeSet<u64>,
+    named: Option<BTreeSet<String>>,
+) -> String {
     let mut buf: Vec<u8> = Vec::new();
     buf.extend_from_slice(sweep.header_lines().as_bytes());
     while !sweep.step(prog, u64::MAX, &mut buf).expect("a Vec sink cannot fail") {}
     let mut out = String::from_utf8(buf).expect("the sweep emits UTF-8");
-    emit_data_tail(prog, &prog.sections(), dat_addrs, &mut out);
+    let scope = named
+        .map(|names| crate::kuna_asmscope::TailScope { names, operands: sweep.take_operands() });
+    emit_data_tail(prog, &prog.sections(), dat_addrs, scope.as_ref(), &mut out);
     out
 }
 
@@ -2737,29 +2767,53 @@ struct DataLabel {
     type_size: Option<i64>,
     dat_alias: bool,
     address: Option<Address>,
+    /// Printed when nonzero; a narrowed tail's [`crate::kuna_asmscope::TailScope::rank`].
+    kept: u8,
 }
 
 /// `; --- data ---`: address-sorted deduped labels (named globals ∪ `dat_`
 /// tokens), each with a raw-byte dump (16/line + printable-ASCII column) or an
 /// `?? (uninitialized/unmapped)` line for image-backed-less ranges (.bss).
+/// `scope`, when given, prints only the named globals it keeps and the ones at
+/// a `dat_` address; the rest still bound a bare `dat_` label's size, so each
+/// label it prints reads as it does in a tail that keeps them all.
 pub(crate) fn emit_data_tail(
     prog: &ConsoleProgram,
     sections: &[(u64, u64, u32)],
     dat_addrs: &BTreeSet<u64>,
+    scope: Option<&crate::kuna_asmscope::TailScope>,
     out: &mut String,
 ) {
     let mut data: BTreeMap<(u64, i32), DataLabel> = BTreeMap::new();
     for (name, address, type_size) in prog.global_data_symbol_addresses() {
         let display_vma = prog.output_address_offset(&address);
+        let kept = match scope {
+            Some(scope) if !dat_addrs.contains(&display_vma) => {
+                scope.rank(&name, [display_vma, address.get_offset()], type_size.max(1) as u64)
+            }
+            _ => 2,
+        };
         let space_index = address.get_space().map_or(i32::MAX, |space| space.get_index());
         // First named symbol at a displayed address wins (global_data_symbols
-        // is address/name-sorted; duplicates at one address are aliases).
-        data.entry((display_vma, space_index)).or_insert(DataLabel {
+        // is address/name-sorted; duplicates at one address are aliases), unless
+        // a narrowed tail keeps a later alias more firmly.
+        let label = DataLabel {
             name,
             type_size: Some(type_size),
             dat_alias: false,
             address: Some(address),
-        });
+            kept,
+        };
+        match data.entry((display_vma, space_index)) {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(label);
+            }
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                if kept > slot.get().kept {
+                    slot.insert(label);
+                }
+            }
+        }
     }
     let data_space_index = prog
         .arch()
@@ -2768,20 +2822,24 @@ pub(crate) fn emit_data_tail(
         .map_or(i32::MAX, |space| space.get_index());
     for &display_vma in dat_addrs {
         data.entry((display_vma, data_space_index))
-            .and_modify(|l| l.dat_alias = true)
+            .and_modify(|l| {
+                l.dat_alias = true;
+                l.kept = 2;
+            })
             .or_insert_with(|| DataLabel {
                 name: format!("dat_{display_vma:x}"),
                 type_size: None,
                 dat_alias: false,
                 address: None,
+                kept: 2,
             });
     }
-    if data.is_empty() {
+    if !data.values().any(|label| label.kept > 0) {
         return;
     }
 
     out.push_str("\n; --- data ---\n");
-    for (&(display_vma, _space_index), label) in &data {
+    for (&(display_vma, _space_index), label) in data.iter().filter(|(_, label)| label.kept > 0) {
         let byte_vma = label.address.as_ref().map_or(display_vma, Address::get_offset);
         // Size: a typed symbol's datatype size; a bare `dat_` gets
         // min(gap to the next label / containing-section end, 32), floor 1.
@@ -2895,6 +2953,9 @@ pub struct ReadmeFacts {
     /// export uses.
     pub entry: Option<u64>,
     pub sections: Vec<ReadmeSectionRow>,
+    /// (kuna #1978) A narrowed export (`--functions`/`--addr`), whose `.asm`
+    /// sweeps the selected functions' code instead of every code section.
+    pub selection: bool,
 }
 
 impl ReadmeFacts {
@@ -2907,6 +2968,7 @@ impl ReadmeFacts {
             description: None,
             entry: None,
             sections: Vec::new(),
+            selection: false,
         }
     }
 
@@ -3203,9 +3265,18 @@ fn render_readme_inner(
          \x20 data model — the prelude names the pointer width — or a recovered aggregate\n\
          \x20 with a pointer member lays out differently here than in the binary.\n"
     ));
+    let swept = if facts.selection { "the selected functions' code" } else { "every code section" };
+    let when = if facts.selection {
+        "The disassembly is swept once the decompile\n\
+         \x20 finishes, and as in every streamed export the variable comment blocks a\n\
+         \x20 non-stream export prints under"
+    } else {
+        "The disassembly is swept before the decompile\n\
+         \x20 finishes, so the variable comment blocks a non-stream export prints under"
+    };
     match layout {
         ReadmeLayout::Standard | ReadmeLayout::Progress => out.push_str(&format!(
-            "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
+            "- `{file_name}.asm` — labeled linear disassembly of {swept}. Function\n\
              \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); under each label\n\
              \x20 a comment block maps the decompiled variables to their storage\n\
              \x20 (`; arg: <name> (<type>)`, `; stack: <name> @ [stack-0x18] (<type>)`).\n\
@@ -3214,16 +3285,23 @@ fn render_readme_inner(
              \x20 bytes (`??` for unmapped/.bss ranges).\n"
         )),
         ReadmeLayout::Streamed => out.push_str(&format!(
-            "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
+            "- `{file_name}.asm` — labeled linear disassembly of {swept}. Function\n\
              \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); undecodable\n\
-             \x20 bytes appear as `db` lines. The disassembly is swept before the decompile\n\
-             \x20 finishes, so the variable comment blocks a non-stream export prints under\n\
+             \x20 bytes appear as `db` lines. {when}\n\
              \x20 each label are appended in a `; --- variables ---` section instead\n\
              \x20 (`; arg: <name> (<type>)`, `; stack: <name> @ [stack-0x18] (<type>)`), ahead\n\
              \x20 of the `; --- data ---` tail. That tail labels the named globals and every\n\
              \x20 `dat_<hex>` address the `.c` references, with raw bytes (`??` for\n\
              \x20 unmapped/.bss ranges).\n"
         )),
+    }
+    if facts.selection {
+        out.push_str(
+            "\x20 Each `; --- code range` block is one stretch of that code: the selected\n\
+             \x20 functions' extents (their `size`) joined with every instruction their\n\
+             \x20 decompiles decoded, which can lie outside them. The data tail labels only\n\
+             \x20 the named globals the `.c` names or that code's operands point into.\n",
+        );
     }
     if layout == ReadmeLayout::Streamed {
         out.push_str(
