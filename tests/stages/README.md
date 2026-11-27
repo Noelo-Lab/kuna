@@ -383,6 +383,23 @@ loop now prints inside its case and the switch prints once.
 `x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
 computed call instead of a switch with a `case` label for each value of `x`.
 
+`kuna-bytemap-noguard.xml` checks MSVC-style two-stage jump tables in four x64
+functions (kuna #1157): a byte map names a row of image-base-relative offsets
+that lie directly before it, and the first three repeat their bounds check on
+both arms of a branch before the dispatch, so no guard bounds the map's index.
+The table used to keep all 256 values of the map byte, and row 3, read from the
+map's own bytes, sent the flow to code elsewhere in the image; each table now
+ends at its map. `cmp_nodes` has a second dispatch that reuses the index
+unchecked. `cmp_folded` reads its map at `map - 2 + tag` and keeps its last real
+row, which lies past that folded base, because it lands in the function's own
+code and holds an offset rather than map bytes. `cmp_bytetag` indexes a 16-byte
+map with a byte tag, whose values are proven over all 256 tags and so take in
+the byte after the map. `cmp_coldrow` reads a 28-row table at `map - 0x61 + c`
+with no bound, and its row 10 lands in a part split off below the entry, as gcc
+places a `.cold` block: that row is real, so the table keeps it and ends at row
+28, the first read from the map. One pass, no option. Source:
+`fixtures/kuna-bytemap-noguard.asm`.
+
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
 instead of a `switch` with only a `default` arm.

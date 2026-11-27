@@ -2345,7 +2345,8 @@ mod tests {
         // and gh1883-quotientreturn-x64 / a div quotient beside a float computed from its remainder is no return
         // and kuna-epiloguepop(-sysv, -x87) / a register the epilogue pops is not the return beside a float
         // and gh1793-outparam-argslot / an address-taken incoming slot no parameter claims is one local
-        assert_eq!(count, 945, "corpus file count drifted");
+        // and kuna-bytemap-noguard / a two-stage table with no bound on its map's index ends at the map
+        assert_eq!(count, 946, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
