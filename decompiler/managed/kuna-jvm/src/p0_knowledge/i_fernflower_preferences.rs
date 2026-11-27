@@ -34,7 +34,6 @@ impl IFernflowerPreferences {
     pub const USER_RENAMER_CLASS: &str = "user-renamer-class";
     pub const INDENT_STRING: &str = "indent-string";
     pub const PREFERRED_LINE_LENGTH: &str = "preferred-line-length";
-    pub const ERROR_MESSAGE: &str = "error-message";
     pub const THREADS: &str = "thread-count";
     pub const SKIP_EXTRA_FILES: &str = "skip-extra-files";
     pub const DUMP_BYTECODE_ON_ERROR: &str = "dump-bytecode-on-error";
@@ -90,7 +89,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::RENAME_ENTITIES, "0".to_string()),
             (IFernflowerPreferences::INDENT_STRING, "   ".to_string()),
             (IFernflowerPreferences::PREFERRED_LINE_LENGTH, "160".to_string()),
-            (IFernflowerPreferences::ERROR_MESSAGE, "Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)".to_string()),
             (IFernflowerPreferences::THREADS, available_processors().to_string()),
             (IFernflowerPreferences::SKIP_EXTRA_FILES, "0".to_string()),
             (IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, "1".to_string()),
@@ -172,7 +170,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "USER_RENAMER_CLASS", key: IFernflowerPreferences::USER_RENAMER_CLASS, short_name: Some("urc"), name: Some("User Renamer Class"), description: Some("Path to a class that implements IIdentifierRenamer."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "INDENT_STRING", key: IFernflowerPreferences::INDENT_STRING, short_name: Some("ind"), name: Some("Indent String"), description: Some("A string of spaces or tabs that is placed for each indent level."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "PREFERRED_LINE_LENGTH", key: IFernflowerPreferences::PREFERRED_LINE_LENGTH, short_name: Some("pll"), name: Some("Preferred line length"), description: Some("Max line length before formatting is applied."), type_: Some(OptionType::Integer), dynamic_default_value: None },
-    PreferenceOption { field: "ERROR_MESSAGE", key: IFernflowerPreferences::ERROR_MESSAGE, short_name: Some("erm"), name: Some("Error Message"), description: Some("Message to display when an error occurs in the decompiler."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "THREADS", key: IFernflowerPreferences::THREADS, short_name: Some("thr"), name: Some("Thread Count"), description: Some("How many threads to use to decompile."), type_: Some(OptionType::Integer), dynamic_default_value: Some("all available processors") },
     PreferenceOption { field: "SKIP_EXTRA_FILES", key: IFernflowerPreferences::SKIP_EXTRA_FILES, short_name: Some("sef"), name: Some("Skip Extra Files"), description: Some("Skip copying non-class files from the input folder or file to the output"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_BYTECODE_ON_ERROR", key: IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, short_name: Some("dbe"), name: Some("Dump Bytecode On Error"), description: Some("Put the bytecode in the method body when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

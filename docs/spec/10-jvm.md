@@ -1023,7 +1023,7 @@ Numbers print with the JDK's own algorithms (section 10.13).
 
 **Failed methods.** A method whose schedule threw is written as its signature and a body
 of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then the
-`error-message` note (a request to report the class to kuna's tracker; section 10.16), the
+note asking for the class to be reported to kuna's tracker (section 10.16), the
 exception text and its throw location, and a listing of
 the method's bytecode. The class around it is written normally. (Vineflower's
 `dump-exception-on-error` off drops the note and the exception.)
@@ -1456,8 +1456,7 @@ mechanisms groups of them share. A fix longer than a few lines lives in its fami
 
 **No switch.** A fix is a correction, not a judgement call, so it has no option and no
 gate: its code takes the place of the Java's at its site, and the engine has one mode.
-`Fernflower::new` (`decompiler/managed/kuna-jvm/src/p0_knowledge/fernflower.rs`) sets the
-`error-message` default to kuna's note (`report_to_kuna`). The regression corpus's runner
+The regression corpus's runner
 (`decompiler/managed/kuna-jvm/src/infra/kuna_corpus.rs (execute)`) runs every case
 with the defaults: the cases from Vineflower's own test suite against a digest of the text kuna
 printed when last reviewed, and kuna's cases (`decompiler/managed/kuna-jvm/corpus/kuna-fixes/`) against kuna's
@@ -1469,9 +1468,9 @@ reviewed text.
   where the evidence a fix needs is missing (a class outside the input, a type kuna cannot
   resolve), Vineflower's choice stands.
 - The failure marker line never changes: the CLI and the benchmark count failed methods by
-  it. `report_to_kuna` changes only the `error-message` note under it, putting kuna's
-  request (`KUNA_ERROR_MESSAGE`) in place of the default before the caller's options are
-  applied, so an `error-message` the caller passes still wins; it reads the set being built, since `Fernflower::new` has installed no context yet.
+  it. Only the note under it is kuna's: a request to report the class to kuna's tracker
+  (`decompiler/managed/kuna-jvm/src/p0_knowledge/fernflower.rs (KUNA_ERROR_MESSAGE)`) where
+  Vineflower names its own.
 - The `kt_*` fixes change Kotlin output only: in a pass or writer that Java output shares,
   they act only on a class written as Kotlin (a class with Kotlin metadata, the Kotlin
   plugin on).

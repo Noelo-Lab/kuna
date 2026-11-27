@@ -1,8 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/main/Fernflower.java`, adapted to
 //! kuna: finished classes are handed to a callback instead of an
 //! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
-//! by the custom property `jvm_plugins`) instead of the class path; an
-//! `error-message` the caller did not set names kuna's tracker; renamer
+//! by the custom property `jvm_plugins`) instead of the class path; renamer
 //! class loading has no Rust counterpart, and `include-classpath` adds the
 //! current JDK runtime (the system-module half of `ClasspathScanner`; the
 //! JVM's own class path has no analogue here).
@@ -61,7 +60,7 @@ pub struct DecompiledClass {
 /// `JrtFinder.CURRENT`.
 const JRT_CURRENT: &str = "current";
 
-/// The `error-message` default (kuna).
+/// The note under a failure comment (kuna; Vineflower names its own tracker).
 pub const KUNA_ERROR_MESSAGE: &str = "Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)";
 
 pub struct Fernflower {
@@ -106,10 +105,6 @@ impl Fernflower {
         let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
         let custom_properties = &custom_properties[..];
         let mut properties = IFernflowerPreferences::DEFAULTS();
-        properties.put(
-            IFernflowerPreferences::ERROR_MESSAGE.to_string(),
-            KUNA_ERROR_MESSAGE.to_string(),
-        );
         for (key, value) in custom_properties {
             if key.jlen() == 3 {
                 OptionParser::parse_short(&format!("-{key}={value}"), &mut properties);

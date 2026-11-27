@@ -1,19 +1,15 @@
-//! kuna's fixes on hand-built input, and the engine's defaults they set.
+//! kuna's fixes on hand-built input.
 
 use std::path::Path;
 
 use kuna_jvm::basic_block_statement::BasicBlockStatement;
 use kuna_jvm::const_exprent::ConstExprent;
-use kuna_jvm::decompiler_context::DecompilerContext;
 use kuna_jvm::dummy_exit_statement::DummyExitStatement;
-use kuna_jvm::fernflower::{Fernflower, KUNA_ERROR_MESSAGE};
 use kuna_jvm::generic_type::GenericType;
-use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
-use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::if_exprent::{IfExprent, Type as IfType};
 use kuna_jvm::if_helper::IfHelper;
 use kuna_jvm::if_statement::IfStatement;
-use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
+use kuna_jvm::kuna_corpus::with_engine_stack;
 use kuna_jvm::list_stack::ListStack;
 use kuna_jvm::root_statement::RootStatement;
 use kuna_jvm::rt::{reset_class_scope, JHashMap, JHashSet};
@@ -22,32 +18,6 @@ use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::Statement;
 
 use crate::common::{fixture_method, install_default_context, start_method};
-
-fn pairs(list: &[(&'static str, &'static str)]) -> Vec<(String, String)> {
-    list.iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
-}
-
-/// The `error-message` of the context `Fernflower::new` installs for `options`.
-fn error_message(options: &[(&'static str, &'static str)]) -> String {
-    let options = pairs(options);
-    with_engine_stack(move || {
-        reset_engine_thread();
-        let mut fernflower = Fernflower::new(&options, <dyn IFernflowerLogger>::NO_OP());
-        let message = DecompilerContext::get_property(IFernflowerPreferences::ERROR_MESSAGE).unwrap();
-        fernflower.clear_context();
-        reset_engine_thread();
-        message
-    })
-}
-
-#[test]
-fn failure_comments_name_kuna_unless_the_caller_sets_the_message() {
-    assert_eq!(error_message(&[]), KUNA_ERROR_MESSAGE);
-    assert_eq!(error_message(&[("error-message", "see the docs")]), "see the docs");
-    assert_eq!(error_message(&[("erm", "")]), "");
-}
 
 /// `if (a) { if (b) throw; if (c) return; else e(); } z; return;` as IfHelper sees it after
 /// `ExprProcessor`: the else branch `e` falls through to `z`, so `ifElseChainDenesting` must not

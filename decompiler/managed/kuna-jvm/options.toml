@@ -558,10 +558,6 @@ vineflower = "preferred-line-length"
 kuna = "fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests"
 
 [[driver_owned]]
-vineflower = "error-message"
-kuna = "fixed: the note under a failure comment asks for reports to kuna's tracker; the corpus fixture sets it empty"
-
-[[driver_owned]]
 vineflower = "dump-bytecode-on-error"
 kuna = "fixed on: a failed method's comment lists its bytecode"
 

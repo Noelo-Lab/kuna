@@ -16,7 +16,6 @@ Vineflower keys kuna sets itself, so they are not options:
 - `decompile-preview` -- read nowhere in Vineflower 1.12.0: it has no effect
 - `indent-string` -- fixed at Vineflower's default, three spaces
 - `preferred-line-length` -- fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests
-- `error-message` -- fixed: the note under a failure comment asks for reports to kuna's tracker; the corpus fixture sets it empty
 - `dump-bytecode-on-error` -- fixed on: a failed method's comment lists its bytecode
 - `dump-exception-on-error` -- fixed on: a failure comment names the exception; the corpus fixture turns it off
 - `kt-unknown-defaults` -- fixed at the Kotlin plugin's default: ... stands for a default argument the $default stub does not reveal

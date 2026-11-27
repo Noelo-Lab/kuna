@@ -2561,15 +2561,9 @@ impl ClassWriter {
         type_text
     }
 
-    /// The non-empty lines of the `ERROR_MESSAGE` property.
+    /// The note under a failure comment.
     pub fn get_error_comment() -> Vec<String> {
-        let message =
-            DecompilerContext::get_property(IFernflowerPreferences::ERROR_MESSAGE).unwrap();
-        message
-            .split('\n')
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect()
+        vec![crate::fernflower::KUNA_ERROR_MESSAGE.to_string()]
     }
 
     fn append_comment(buffer: &mut TextBuffer, comment: &str, indent: i32) {
