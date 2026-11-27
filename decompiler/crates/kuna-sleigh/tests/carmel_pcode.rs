@@ -62,6 +62,11 @@ struct Machine {
 impl Machine {
     /// Paint independent fixture literals: (relative CODE word, issue mode, next issue bytes).
     fn new(base: u64, fetches: &[(u32, u32)], issues: &[(u64, u32, u32)], template: Option<[u32; 3]>) -> Self {
+        Self::with_root_context(base, fetches, issues, template, &[])
+    }
+
+    fn with_root_context(base: u64, fetches: &[(u32, u32)], issues: &[(u64, u32, u32)],
+                         template: Option<[u32; 3]>, root_fields: &[(&[u8], u32)]) -> Self {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
         let sla = std::fs::read(root.join("specs/Ghidra/Processors/Carmel/data/languages/carmel.sla"))
             .expect("compile the Carmel specification before running these tests");
@@ -91,8 +96,11 @@ impl Machine {
                 db.set_variable_region(b"carmel_issue", &start, &end, mode).unwrap();
                 db.set_variable_region(b"carmel_next_issue_size", &start, &end, next).unwrap();
             }
+            let (start, end) = (address(0), address(1));
+            for &(field, value) in root_fields {
+                db.set_variable_region(field, &start, &end, value).unwrap();
+            }
             if let Some([high, mid, low]) = template {
-                let (start, end) = (address(0), address(1));
                 for (field, value) in [
                     (b"carmel_cliw_known".as_slice(), 1),
                     (b"carmel_cliw_95_64".as_slice(), high),
@@ -544,20 +552,22 @@ fn dynamic_register_repeat_samples_before_the_setup_and_modifies_r1_once() {
 #[test]
 fn dynamic_data_repeat_zero_skips_only_the_first_of_the_selected_issues() {
     for (delay, count, expected) in [
-        (2, 3, [1, 1, 1]), (3, 3, [3, 1, 1]), (4, 3, [3, 3, 1]),
+        (2u32, 3, [1, 1, 1]), (3, 3, [3, 1, 1]), (4, 3, [3, 3, 1]),
         (5, 0, [0, 1, 1]), (5, 3, [3, 3, 3]), (7, 3, [3, 3, 3]),
     ] {
-        let mut m = Machine::new(
+        let body = delay.saturating_sub(2);
+        let mut m = Machine::with_root_context(
             0,
             &[(0xb84100, 0xcf0000 | delay << 11), (INC_A0, NOP), (INC_A1, NOP), (INC_A2, NOP),
               (0x21ace6, NOP), (0x21ad28, NOP), (0x21ad6a, NOP), (NOP, NOP), (NOP, NOP), (NOP, NOP)],
             &[(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6),
               (10, 1, 6), (12, 1, 6), (14, 1, 6), (16, 1, 6), (18, 1, 0)],
             None,
+            &[(b"carmel_direct_repeat", body + 1)],
         );
         m.seed_data(0x4100, count);
         m.start(0).unwrap();
-        let end = 2 + 2 * (3 + delay.saturating_sub(2).max(1));
+        let end = 2 + 2 * (3 + body.max(1));
         assert_eq!(m.step(), u64::from(end) * 3);
         for _ in (end..14).step_by(2) {
             m.step();

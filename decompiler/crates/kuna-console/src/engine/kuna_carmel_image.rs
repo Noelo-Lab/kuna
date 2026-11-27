@@ -10,6 +10,7 @@ use kuna_sleigh::loadimage::LoadImage;
 mod block_repeat;
 mod conditional_return;
 mod peer_redirect;
+mod single_repeat;
 
 pub(super) const TARGET: &str = "Carmel:BE:24:default:default";
 const SLOT: u64 = 3;
@@ -27,6 +28,7 @@ const ADDRUPDATE_RIGHT_R0: &str = "carmel_addrupdate_right_r0";
 enum Specialization {
     PeerRedirect(peer_redirect::Redirect),
     ConditionalReturn(conditional_return::ReturnDelay),
+    DirectRepeat(single_repeat::DirectRepeat),
     ImplicitRepeat,
     AddrUpdateRightR0,
 }
@@ -107,6 +109,18 @@ fn covered(paints: &[ContextPaint], addr: u64) -> bool {
 impl Framing {
     pub(super) fn is_issue_start(&self, addr: u64) -> bool {
         addr.is_multiple_of(SLOT) && covered(&self.issues, addr)
+    }
+
+    fn issue_size_at(&self, addr: u64) -> Option<u64> {
+        let next = self.issues.partition_point(|paint| paint.addr <= addr);
+        let paint = self.issues.get(next.checked_sub(1)?)?;
+        if addr >= paint.end? || covered(&self.bad_fetches, addr) {
+            return None;
+        }
+        if paint.value == Issue::SeqLeft as u32 || paint.value == Issue::SeqRight as u32 {
+            return Some(SLOT);
+        }
+        (!covered(&self.bad_fetches, addr + SLOT)).then_some(FETCH)
     }
 
     pub(super) fn require_entries(&self, entries: impl IntoIterator<Item = u64>) -> KunaResult<()> {
@@ -306,6 +320,8 @@ pub(super) fn frame(
                 candidates.push((addr, Specialization::PeerRedirect(redirect)));
             } else if let Some(delay) = conditional_return::ReturnDelay::parse(&fetch) {
                 candidates.push((addr, Specialization::ConditionalReturn(delay)));
+            } else if let Some(repeat) = single_repeat::DirectRepeat::parse(&fetch) {
+                candidates.push((addr, Specialization::DirectRepeat(repeat)));
             } else if fetch[0] & 0x80 != 0 && fetch[3] == 0xcf && fetch[4] == 0x18 && fetch[5] & 2 != 0 {
                 candidates.push((addr, Specialization::ImplicitRepeat));
             }
@@ -328,6 +344,12 @@ pub(super) fn frame(
         let (context, safe) = match candidate {
             Specialization::PeerRedirect(redirect) => (peer_redirect::CONTEXT, redirect.admissible(start, fetch_at)?),
             Specialization::ConditionalReturn(delay) => (conditional_return::CONTEXT, delay.admissible(start, fetch_at)?),
+            Specialization::DirectRepeat(repeat) => {
+                if let Some(plan) = repeat.plan(start, |at| result.issue_size_at(at)) {
+                    paint(&mut result.specializations, single_repeat::DIRECT, start, plan);
+                }
+                continue;
+            }
             Specialization::AddrUpdateRightR0 => (ADDRUPDATE_RIGHT_R0, true),
             Specialization::ImplicitRepeat => {
                 // Three issues retire before the restart, but the end is
