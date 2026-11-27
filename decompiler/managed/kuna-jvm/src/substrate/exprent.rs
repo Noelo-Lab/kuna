@@ -379,6 +379,7 @@ impl Exprent {
                 AssignmentExprent::check_expr_type_bounds(self.as_assignment())
             }
             ExprentType::Exit => ExitExprent::check_expr_type_bounds(self.as_exit()),
+            ExprentType::Field => FieldExprent::check_expr_type_bounds(self.as_field()),
             ExprentType::Function => FunctionExprent::check_expr_type_bounds(self.as_function()),
             ExprentType::Invocation => {
                 InvocationExprent::check_expr_type_bounds(self.as_invocation())

@@ -5,14 +5,12 @@
 
 use std::collections::VecDeque;
 
-use super::{class_node, has_member, inner_member_declaring, this_class};
+use super::{class_node, has_member, inner_member_declaring, listed_inner_member, this_class};
 use crate::classes_processor::{ClassNode, ClassNodeType};
-use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_util::ExprUtil;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationKind};
-use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::text_buffer::TextBuffer;
 
 /// Whether `arg` is the instance of the innermost class enclosing the current
@@ -31,22 +29,6 @@ fn is_implicit(arg: Exprent, declaring: &str) -> bool {
         scope = cn_parent;
     }
     false
-}
-
-/// The class declaring `class` when the current class's InnerClasses
-/// attribute lists it as an inner member class and it is not in the input.
-fn external_inner_member_declaring(class: &str) -> Option<String> {
-    if class_node(class).is_some() {
-        return None;
-    }
-    let current = DecompilerContext::get_current_class_node()?.with(|d| d.class_struct);
-    let attr = current.get_attribute(StructGeneralAttribute::ATTRIBUTE_INNER_CLASSES)?;
-    attr.get_entries()
-        .iter()
-        .find(|e| {
-            e.inner_name == class && e.simple_name.is_some() && (e.access_flags & ACC_STATIC) == 0
-        })
-        .and_then(|e| e.enclosing_name.clone())
 }
 
 /// How a superclass constructor call `call` (written `super(..)`) passes
@@ -72,7 +54,7 @@ pub fn super_outer(call: InvocationExprent) -> Option<(Option<Exprent>, bool)> {
             }
             (declaring, false)
         }
-        None => (external_inner_member_declaring(&classname)?, true),
+        None => (listed_inner_member(&classname)?, true),
     };
     let arg = params.get(0);
     let qualifier = call.is_kuna_checked_outer() || !is_implicit(arg, &declaring);
@@ -236,7 +218,7 @@ pub fn mark_checked_copy(target: Exprent, next: Exprent, is_static: bool) -> boo
 }
 
 fn is_inner_member(class: &str) -> bool {
-    inner_member_declaring(class).is_some() || external_inner_member_declaring(class).is_some()
+    inner_member_declaring(class).is_some() || listed_inner_member(class).is_some()
 }
 
 fn is_super_call(call: InvocationExprent) -> bool {

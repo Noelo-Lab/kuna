@@ -1,5 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/FieldExprent.java`.
 
+use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
@@ -130,6 +131,17 @@ impl FieldExprent {
 
     pub fn get_expr_type(self) -> VarType {
         self.d(|d| d.descriptor.type_.clone())
+    }
+
+    /// An instance whose only value is `null` takes the field's class as its
+    /// upper bound: `getfield` and `putfield` name the class of the instance.
+    pub fn check_expr_type_bounds(self) -> Option<CheckTypesResult> {
+        let instance = self.get_instance()?;
+        let mut result = CheckTypesResult::new();
+        if instance.get_expr_type().type_ == CodeType::Null {
+            result.add_expr_upper_bound(instance, &VarType::new_signature_cl(&self.get_classname(), true));
+        }
+        Some(result)
     }
 
     pub fn get_inferred_expr_type(self, _upper_bound: Option<&VarType>) -> VarType {

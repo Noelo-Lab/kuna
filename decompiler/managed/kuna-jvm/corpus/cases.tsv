@@ -533,7 +533,7 @@ kuna	600e077e4a86cc6a
 case	default/pkg/TestIrreducible	Default	classes/jasm/pkg/TestIrreducible
 kuna	5e6e0e96805c212a
 case	default/pkg/TestIterationOverGenericsWithoutLvt	Default	classes/java8nodebug/pkg/TestIterationOverGenericsWithoutLvt
-kuna	fabc47f683eeece6
+kuna	3211e3833cc10346
 case	default/pkg/TestIterationOverGenericsWithoutLvt1	Default	classes/java8nodebug/pkg/TestIterationOverGenericsWithoutLvt1
 kuna	3b5d4adf8db8413f
 case	default/pkg/TestJava11StringConcat	Default	classes/java11/pkg/TestJava11StringConcat
@@ -2048,3 +2048,15 @@ case	kuna-fixes/pkg/TestLambdaReceiverGeneric	Kuna Fixes	kuna-fixes/classes/pkg/
 case	kuna-fixes/pkg/TestCapturedConstantType	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedConstantType
 # kuna-fixes/src/pkg/TestNestedLambdaCapturedGeneric.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestNestedLambdaCapturedGeneric	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedLambdaCapturedGeneric
+# kuna-fixes/src/pkg/TestNullReceiverType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullReceiverType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullReceiverType
+# kuna-fixes/src/pkg/TestAnonymousVarReceiver.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestAnonymousVarReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestAnonymousVarReceiver
+# kuna-fixes/src/pkg/TestListedInnerMember.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestListedInnerMember	Kuna Fixes	kuna-fixes/classes/pkg/TestListedInnerMember
+# kuna-fixes/src/pkg/TestLambdaInstantiatedType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestLambdaInstantiatedType	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaInstantiatedType
+# kuna-fixes/src/pkg/TestExplicitLambdaParams.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestExplicitLambdaParams	Kuna Fixes	kuna-fixes/classes/pkg/TestExplicitLambdaParams
+# kuna-fixes/src/pkg/TestTypeVariableLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestTypeVariableLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeVariableLocal

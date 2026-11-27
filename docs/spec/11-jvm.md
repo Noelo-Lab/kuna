@@ -868,7 +868,38 @@ null; take(s);` printed `Object var0 = null; take((Source)var0);`. Such a variab
 its upper bound when that is a class or array type: the type an argument, a store or a return
 of it requires, which the descriptors in the class file give. A variable that a reference cast
 reads keeps `Object`: javac writes a `checkcast` only where the value's type is not already
-the target's, so `Object o = null; accept((Integer) o)` must keep both.
+the target's, so `Object o = null; accept((Integer) o)` must keep both. The receiver of a
+call and the instance of a field access whose value is `null` are bounded by the class the
+instruction names (`InvocationExprent::check_expr_type_bounds`,
+`FieldExprent::check_expr_type_bounds`), and a `null` value stored into a field by the
+field's type (`AssignmentExprent::check_expr_type_bounds`): Vineflower bounded a receiver
+by its own type, which for a `null` local is the null type and erased every other bound, so
+`Cursor c = null; c.read()` printed `Object var0 = null; ((Cursor)var0).read()` and
+`int[] v = null; v.clone()` printed `var0.clone()` on an `Object`, which does not compile.
+The verifier checks the class an `invokevirtual`, `getfield` or `putfield` names; it checks
+an interface owner (`invokeinterface`, an interface-typed field) only loosely, so such a
+bound is evidence from javac, which names the receiver's compile-time type (JLS 13.1); a
+`null` local has no other type the call could compile with. The receiver of `arraylength`
+names no element type and keeps the `Object[]` cast.
+
+**A `var` local of an anonymous class (kuna).** An anonymous class creation has the type of
+the class it extends or implements (`anonymous_class_type`), so a local assigned one is
+declared with that type. Java 10's `var` declares the local with the anonymous class
+itself, and its members are then reachable through it: `var c = new Object() { int n; void
+bump() {..} }; c.bump();`, which javac compiles to an `invokevirtual` naming the anonymous
+class. Without a LocalVariableTable that printed `Object var0 = ..; var0.bump();` and
+`((<unrepresentable>)var0).n`, neither of which compiles. In a class file of version 54 or
+later, `VarVersionsProcessor::type_anonymous_receivers` gives a variable that a call or a
+field access reads as an instance of an anonymous class (the class the instruction names
+is one) that class as its type, which prints as `var`; such a variable can hold no other
+value, since no other type could be the call's qualifying type (JLS 13.1). Only a member
+the anonymous class declares and no supertype does counts (`declared_above`; a supertype
+that is not known counts as declaring it, `Object` by its fixed members): a member it
+inherits or overrides is reachable through the supertype the local already has. The class
+file version does not tell a DEX-derived class (kuna-dex raises a nest member to 55), where
+d8 holds `new TypeVisitor() {..}.visit(from)` in a register: `var` there printed text the
+project's Java 8 does not compile (guava's `TypeResolver.populateTypeMappings`, release
+DEX).
 
 **An `int` conditional assigned to a local (kuna).** Vineflower lowers the `int` type of a
 conditional on the right of an assignment to `bytechar`, so that `byte v = b ? 0 : 1` keeps its
@@ -904,7 +935,22 @@ type extends. Any other read (an argument, a store, a capture by a lambda, a cal
 `add(x)` whose argument the type arguments would constrain) keeps the erased type, since
 the source may have declared it raw; the class file cannot tell, but the declared type is
 the value's own, so every accepted read compiles as it did. The type is the local's in
-every inference that reads it (`raw_receiver_erasure` included).
+every inference that reads it (`raw_receiver_erasure` included). A local (not compounded)
+every value of which has one type variable's type (or is `null`, the local itself or a
+conditional of such), and the variable of a for-each whose iterable's element type is a
+type variable, is declared with that variable when it is in scope (the method's or, for an
+instance method, the class's) and erases to the local's type: `for (N item : source)
+map.put(item.toString(), item)` for a `List<N> source` and a `Map<String, N> map` printed
+`for (Number var3 : var1)`, which does not compile. A variable of a type variable accepts
+every read its erasure did, its bound's members and conversions included, so no read is
+checked. A value's type counts only where declarations fix it (`generic_type`): a
+parameter's from the method's signature, `this`, an element of such an array, a field's
+signature, a variable this pass typed, and a call on one of these whose result is a type
+variable of the method's class, given by the receiver's type arguments, when no argument
+is of a raw type for a parameter with type arguments (that unchecked conversion erases the
+result, JLS 15.12.2.6: `V v = this.operate(k, v, rawDecisionMaker)` does not compile);
+javac's `checkcast` of such a value to its erasure is a value of the variable
+(`U u = (U)io.mutate(t)`).
 The pass, like every fix that asks which method a call names before the call is written,
 looks the method up without recording it (`InvocationExprent::find_desc`). The ported
 `get_desc` records what it finds, and a call with a recorded method is written without the
@@ -1076,7 +1122,34 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    cast is dropped: `String s = ((Supplier<String>) () -> "x").get()` under the raw
    `(Supplier)` did not compile wherever the interface's signature is known (always, with a
    Java runtime found). An inferred type that names a type variable out of scope is not
-   stored on the lambda, and the cast stays the raw class.
+   stored on the lambda, and the cast stays the raw class. (kuna) Under a raw cast, or as
+   the value of a raw local without a LocalVariableTable, a lambda's parameters are typed
+   `Object` and its body may not compile (`((Mapper) (s -> s.get())).apply(source)`,
+   `Function f = s -> s.length() + 1`). The `invokedynamic`'s instantiated method type is
+   the erasure of the function type of the lambda's target (JLS 15.27.3), so
+   `lambdas::instantiated_parameterization` gives each type variable of the interface that
+   is a parameter or the return of its method's signature the instantiated type at that
+   place: `Mapper<Source, Object>`, `Function<String, Object>`. The lambda's body is written
+   from its implementation method, whose parameters have exactly these erased types, so it
+   compiles against them, and the parameterization's method erases to the descriptor the
+   call site names. It is used only when every type variable is determined and a parameter
+   is more specific than `Object` (where the raw type would serve), for the receiver cast
+   when no inferred type is stored, and by `initializer_local_type` as the type of a lambda
+   value. (kuna) Vineflower writes a lambda's parameters without types, so a lambda whose
+   target leaves a parameter's type open printed text whose parameter is an `Object`:
+   `g(s -> s.length())` for `g(Function<?, ?>)` (the wildcard's bound, JLS 9.9),
+   `h(s -> s.length())` for `<T> h(Function<T, ?>)` (an implicitly typed lambda does not take
+   part in inferring `T`), and with a LocalVariableTable `Function<?, ?> f = s -> s.length()`.
+   `explicit_lambda_parameters` marks a lambda passed to a call or assigned to a variable or
+   field whose target type gives a parameter that is a type variable of the interface
+   another type than the instantiated one, through a wildcard or a type variable of the
+   called method that neither another parameter nor the result mentions; the lambda is
+   then written with every parameter declared with its implementation method's type
+   (`(String s) -> s.length()`), which inference from explicit parameter types (JLS 18.5.3)
+   accepts for these targets. A parameter whose target type argument is a class with type
+   arguments, or whose type in the interface method is generic, leaves the lambda as it
+   was: a declared type must equal the target's exactly, and the class file holds only its
+   erasure.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.
@@ -1823,6 +1896,18 @@ its value; where it finds no such constant, the check stays written.
 already reads the outer instance and the creation still the stack variable holding it
 (`implicit_outer_instance::mark_checked`, which matched only an equal argument): it printed
 `new Base.Inner(..)`, which javac compiles without the check.
+(kuna) A creation of an inner member class whose class is not in the input (a nested class of
+another top-level class decompiled alone, or of a library) printed its outer instance as the
+first constructor argument, `new Cursor(Outer.this, false)`, which does not compile: the
+outer-instance parameter is known only from the created class's own node. The InnerClasses
+attribute of the class being written lists every nested class its constant pool names, with
+its outer class, simple name and flags (JVMS 4.7.6); `constructor_calls::listed_inner_member`
+reads a non-static member entry from it, and when the constructor's first parameter has that
+outer class's type (`listed_outer_instance_mask`) the argument is the outer instance: it is
+left out of the argument list and printed as the qualifier, or not at all, by the rules
+`implicit_outer_instance` applies to a class of the input (`lib.new Entry(2)`,
+`Outer.this.new Entry(3)` after javac's check, `new Entry(1)`). The superclass-call path of
+`qualified_super_call` reads the same entry.
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and

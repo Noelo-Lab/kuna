@@ -21,9 +21,11 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::kt_calls::kt_explicit_type_arguments;
 use crate::fixes::kt_calls::kt_mapped_java_member::{self, Form as MappedForm};
 use crate::fixes::kt_util::writing_kotlin;
+use crate::fixes::constructor_calls;
 use crate::fixes::lambdas;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::fixes::kt_java_syntax::kt_unboxing_cast_type;
+use crate::fixes::lambdas::explicit_lambda_parameters;
 use crate::fixes::lambdas::lambda_argument_overload;
 use crate::fixes::lambdas::lambda_pertinence;
 use crate::fixes::lambdas::lambda_type_variable_target;
@@ -1221,11 +1223,17 @@ impl InvocationExprent {
         let mut result = CheckTypesResult::new();
 
         if let Some(instance) = self.get_instance() {
+            let instance_type = instance.get_expr_type();
             result.add_expr_lower_bound(
                 instance,
-                &VarType::find_family_bottom(instance.get_expr_type().type_family),
+                &VarType::find_family_bottom(instance_type.type_family),
             );
-            result.add_expr_upper_bound(instance, &instance.get_expr_type());
+            let upper = if instance_type.type_ == CodeType::Null {
+                VarType::new_signature_cl(&self.get_classname(), true)
+            } else {
+                instance_type
+            };
+            result.add_expr_upper_bound(instance, &upper);
         }
 
         let lst_parameters = self.get_lst_parameters();
@@ -1789,6 +1797,12 @@ impl InvocationExprent {
                 is_enum = new_node
                     .with(|d| d.class_struct)
                     .has_modifier(CodeConstants::ACC_ENUM);
+            } else if self.get_instance().is_none() {
+                mask = constructor_calls::listed_outer_instance_mask(
+                    &classname,
+                    &string_descriptor,
+                    lst_parameters.len(),
+                );
             }
         }
         let curr_cls = DecompilerContext::get_current_class_node();
@@ -1825,6 +1839,7 @@ impl InvocationExprent {
         }
 
         lambda_type_variable_target::mark(self);
+        explicit_lambda_parameters::mark(self);
 
         let start: usize = if is_enum { 2 } else { 0 };
         let mut parameters: Vec<Exprent> = lst_parameters.to_vec();

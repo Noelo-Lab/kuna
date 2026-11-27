@@ -325,6 +325,7 @@ impl ClassWriter {
                     }
                     initializer_local_type::type_locals(
                         root,
+                        cl,
                         mw.with(|d| d.method_struct),
                         mw.with(|d| d.varproc),
                     );
@@ -373,6 +374,7 @@ impl ClassWriter {
         buffer: &mut TextBuffer,
         method_object: Option<Exprent>,
         indent: i32,
+        explicit_params: bool,
     ) {
         let Some(wrapper) = node.get_wrapper() else {
             return;
@@ -492,7 +494,8 @@ impl ClassWriter {
                     }
                 }
                 if !written {
-                    let lambda_parameters_need_parentheses = md_lambda.params.len() != 1;
+                    let lambda_parameters_need_parentheses =
+                        md_lambda.params.len() != 1 || explicit_params;
 
                     if lambda_parameters_need_parentheses {
                         buffer.append("(");
@@ -523,6 +526,9 @@ impl ClassWriter {
                             }
                             let parameter_name = parameter_name
                                 .expect("NullPointerException: parameter name");
+                            if explicit_params {
+                                buffer.append_cast_type_name(&md_content.params[i]).append(" ");
+                            }
                             buffer.append_variable_descriptor(
                                 &parameter_name,
                                 true,
