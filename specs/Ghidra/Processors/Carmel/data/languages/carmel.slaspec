@@ -483,6 +483,7 @@ define token slot (24)
     slot_4_7 = (4,7)
     slot_5_7 = (5,7)
     saved_lea_store_ptr = (5,7)
+    saved_lea_store_step = (5,7)
     shift_8_dst = (11,13)
     shift_8_dst_lo = (11,13)
     shift_8_dst_hi = (11,13)
@@ -1009,6 +1010,7 @@ attach variables [short_alu_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [short_alu_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [short_alu_dst_ptr short_alu_src_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [saved_lea_store_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [saved_lea_store_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [short_alu_src_step short_alu_rhs_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [short_alu_dst_modulo wide_logic_lhs_modulo wide_logic_rhs_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
 attach variables [short_alu_dst_bound wide_logic_lhs_bound wide_logic_rhs_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
@@ -8318,26 +8320,56 @@ macro compact_pair_long_store(address, result) {
     *[data]:2 upper = result(2);
 }
 
-macro compact_store_saved_lea(pointer) {
-    local address:2 = pointer;
+macro compact_store_saved_lea(pointer, step) {
+    local address:2 = pointer + step;
     local saved:4 = (zext(LEA1H) << 16) | zext(LEA1L);
     local value:4 = saved >> ((ECFG >> 5) & 1);
     compact_pair_long_store(address, value);
     clock_ce();
 }
 
-@define SAVED_LEA_STORE "slot_8_22=0x31e4 & slot_1_4=3 & slot_0_0=0 & saved_lea_store_ptr"
+@define SAVED_LEA_STORE "slot_8_22=0x31e4 & slot_1_4=3 & slot_0_0=0 & saved_lea_store_ptr & saved_lea_store_step"
 
-:MOVE "long *"^saved_lea_store_ptr,"LEA1" is $(SHIFT_SEQ) & $(SAVED_LEA_STORE) {
-    compact_store_saved_lea(saved_lea_store_ptr);
+:MOVE "long *("^saved_lea_store_ptr^"+"^saved_lea_store_step^")","LEA1" is $(SHIFT_SEQ) & $(SAVED_LEA_STORE) {
+    compact_store_saved_lea(saved_lea_store_ptr, saved_lea_store_step);
 }
-:MOVE "long *"^saved_lea_store_ptr,"LEA1" "||" nop_right is
+:MOVE "long *("^saved_lea_store_ptr^"+"^saved_lea_store_step^")","LEA1" "||" nop_right is
     (carmel_issue=1 & slot_mode=0 & $(SAVED_LEA_STORE)); (slot_mode=0 & nop_right) {
-    compact_store_saved_lea(saved_lea_store_ptr);
+    compact_store_saved_lea(saved_lea_store_ptr, saved_lea_store_step);
 }
-:^nop_left "||" "MOVE" "long *"^saved_lea_store_ptr,"LEA1" is
+:^nop_left "||" "MOVE" "long *("^saved_lea_store_ptr^"+"^saved_lea_store_step^")","LEA1" is
     (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SAVED_LEA_STORE)) {
-    compact_store_saved_lea(saved_lea_store_ptr);
+    compact_store_saved_lea(saved_lea_store_ptr, saved_lea_store_step);
+}
+
+:ADDABS "CE1" "A5","*R0--","A3" is $(SHIFT_SEQ) & slot_0_22=0x1b1b87
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local flags:2 = EST & 0xcfff;
+    if (admitted == 0) goto <publish>;
+    local address:2 = R0;
+    modify_native_agu(R0, -1:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    local rhs:2 = *[data]:2 address;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <publish>;
+    local magnitude:8;
+    compact_long_sample(A3L, A3H, GB3, magnitude);
+    if (magnitude < 0x8000000000) goto <add>;
+    magnitude = 0x10000000000 - magnitude;
+  <add>
+    local word:8 = sext(rhs);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(word + magnitude, (word & 0xffffffffff) + magnitude,
+                         0:1, 0:1, 0:1, 0:1, result, active);
+    A5L = result:2;
+    A5H = result(2);
+    GB5 = result(4);
+    raw_mac_flags(flags, active, 0:4);
+  <publish>
+    publish_alu_ce(flags);
+    carmel_end_unmodeled_issue();
 }
 
 macro compact_pair_shift(value, count, result, flags) {

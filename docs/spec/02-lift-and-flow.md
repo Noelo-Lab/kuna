@@ -4139,10 +4139,16 @@ The implicit window uses the saved alignment mask and a signed sum
 before truncation. A guest write to active `RM6` refreshes the mask; its
 entry value is not inferred from `RM6` alone.
 
-A compact long `MOVE` from saved `LEA1` uses the unmodified selected
-`R0`–`R7` as its DATA address. `SR1` shifts the zero-extended 24-bit saved
-address as one value before storing the low and high words. The second
-word uses the next 16-bit address, including wrap at `0xffff`.
+Sequential `ADDABS CE1,A5,*R0--,A3` captures the old DATA address
+and decrements `R0` at early admission. The late gate can still veto
+the accumulator write. A signed DATA word adds to the magnitude of
+the full 40-bit `A3`; `A5` gets the wrapped result even when automatic
+limiting suppresses sticky loss.
+
+A compact long `MOVE` from saved `LEA1` addresses DATA at `Rn + RNn`
+without modifying `Rn`. `SR1` shifts the zero-extended 24-bit saved
+address as one value before storing the low and high words. The two
+16-bit word addresses wrap independently.
 
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two

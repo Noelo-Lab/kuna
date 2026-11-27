@@ -5990,7 +5990,7 @@ fn carmel_compact_move_literal_and_ff_ports_execute_in_emitted_c() {
 }
 
 #[test]
-fn carmel_compact_saved_lea_store_uses_an_unmodified_word_address() {
+fn carmel_compact_saved_lea_store_uses_index_without_postmodify() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
     }
@@ -5998,8 +5998,6 @@ fn carmel_compact_saved_lea_store_uses_an_unmodified_word_address() {
     let binary = scratch.path().join("saved-lea.bin");
     let source = scratch.path().join("saved-lea.c");
     let executable = scratch.path().join("saved-lea");
-    let specs = scratch.path().join("specs");
-    tracked_carmel_entry_specs(&specs, &[("R1", 0x4043), ("R7", 0xffff)], 0, 0);
     let nop = [0x2b, 0xec, 0];
     let mut c = String::from(
         "#include <stdint.h>\n\
@@ -6008,11 +6006,14 @@ fn carmel_compact_saved_lea_store_uses_an_unmodified_word_address() {
          volatile unsigned short lo, hi;\n",
     );
     let mut calls = String::new();
-    for (row, (packet, address)) in [
-        ([[0x31, 0xe4, 0x26], nop], 0x4043u16),
-        ([[0xab, 0xec, 0], [0x31, 0xe4, 0xe6]], 0xffff),
-        ([nop, [0x31, 0xe4, 0x26]], 0x4043),
+    for (row, (packet, reg, index, base, step)) in [
+        ([[0x31, 0xe4, 0x26], nop], "R1", "RN1", 0x4043u16, 0u16),
+        ([[0xab, 0xec, 0], [0x31, 0xe4, 0xe6]], "R7", "RN7", 0xfffd, 2),
+        ([nop, [0x31, 0xe4, 0x26]], "R1", "RN1", 0x4043, 0xfffe),
     ].into_iter().enumerate() {
+        let address = base.wrapping_add(step);
+        let specs = scratch.path().join(format!("specs-{row}"));
+        tracked_carmel_entry_specs(&specs, &[(reg, base.into()), (index, step.into())], 0, 0);
         fs::write(&binary, [packet[0], packet[1], [0x2b, 0xd8, 0], nop].as_flattened()).unwrap();
         let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
         kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
@@ -6021,6 +6022,7 @@ fn carmel_compact_saved_lea_store_uses_an_unmodified_word_address() {
             "--assert", "param 0 %LEA1H unsigned char saved_hi",
             "--assert", "param 1 %LEA1L unsigned short saved_lo",
             "--assert", "param 2 %ECFG unsigned short ecfg",
+            "--assert", &format!("return %{reg} unsigned short"),
             "--assert", &format!("data [data,{address:#x}] volatile unsigned short lo"),
             "--assert", &format!("data [data,{:#x}] volatile unsigned short hi", address.wrapping_add(1)),
         ]);
@@ -6029,12 +6031,71 @@ fn carmel_compact_saved_lea_store_uses_an_unmodified_word_address() {
         let function = &json["functions"][0];
         assert!(function["error"].is_null(), "{function}");
         writeln!(c, "#define sub_0 saved_lea_{row}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
-        writeln!(calls, "lo = hi = 0x1111; saved_lea_{row}(0x80, 0xabcd, 0); \
-                        if (lo != 0xabcd || hi != 0x80) return {}; \
-                        lo = hi = 0x1111; saved_lea_{row}(0x80, 0xabcd, 0x20); \
-                        if (lo != 0x55e6 || hi != 0x40) return {};", 2 * row + 1, 2 * row + 2).unwrap();
+        writeln!(calls, "lo = hi = 0x1111; \
+                        if (saved_lea_{row}(0x80, 0xabcd, 0) != {base} || lo != 0xabcd || hi != 0x80) return {}; \
+                        lo = hi = 0x1111; \
+                        if (saved_lea_{row}(0x80, 0xabcd, 0x20) != {base} || lo != 0x55e6 || hi != 0x40) return {};",
+                 2 * row + 1, 2 * row + 2).unwrap();
     }
     writeln!(c, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
+fn carmel_sequential_addabs_commits_wrapped_accumulator_after_address_admission() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("addabs.bin");
+    let source = scratch.path().join("addabs.c");
+    let executable = scratch.path().join("addabs");
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(&specs, &[
+        ("R0", 0x40), ("R1", 0x4040), ("RN1", 2), ("PACFG", 0), ("EST", 0), ("CECFG2", 0),
+        ("A3L", 0xffff), ("A3H", 0xffff), ("GB3", 0x7f), ("GB5", 0x89),
+        ("LEA1L", 0xbcde), ("LEA1H", 0x8a),
+    ], 0, 0);
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut code = vec![NOP; 6];
+    code.extend([[0x9b, 0x1b, 0x87, 0x31, 0xe4, 0x26], NOP, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], NOP]);
+    fs::write(&binary, code.as_flattened()).unwrap();
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n\
+        static volatile unsigned short word, lo, hi;\n");
+    for (reg, name, ty) in [
+        ("R0", "pointer", "unsigned short"), ("EST", "flags", "unsigned short"),
+        ("GB5", "guard", "unsigned char"),
+    ] {
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict", "--assert", &format!("return %{reg} {ty}"),
+            "--assert", "data [data,0x40] volatile unsigned short word",
+            "--assert", "data [data,0x4042] volatile unsigned short lo",
+            "--assert", "data [data,0x4043] volatile unsigned short hi",
+        ]);
+        for (n, reg) in ["CECFG1", "CETBL", "ECFG"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {n} %{reg} unsigned short in_{n}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        writeln!(c, "#define sub_0 {name}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+    }
+    c.push_str("int main(void) {\n\
+        word = 1;\n\
+        if (pointer(0, 0, 0) != 0x40 || guard(0, 0, 0) != 0x89) return 1;\n\
+        if (pointer(0x1000, 0, 0) != 0x3f || guard(0x1000, 0, 0) != 0x89) return 2;\n\
+        if (pointer(0, 0xffff, 0) != 0x3f || guard(0, 0xffff, 0) != 0x80) return 3;\n\
+        if (flags(0, 0xffff, 0) != 0x3036 || flags(0, 0xffff, 4) != 0x3032) return 4;\n\
+        word = 0xffff;\n\
+        if (guard(0, 0xffff, 0) != 0x7f || flags(0, 0xffff, 0) != 0x3021) return 5;\n\
+        if (lo != 0xbcde || hi != 0x8a) return 6;\n\
+        pointer(0, 0, 0x20);\n\
+        if (lo != 0x5e6f || hi != 0x45) return 7;\n\
+        return 0;\n}\n");
     fs::write(&source, &c).unwrap();
     run_emitted_c(&source, &executable, &c);
 }
