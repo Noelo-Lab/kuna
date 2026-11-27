@@ -6134,7 +6134,7 @@ result depends on, becomes a parameter, and the `__fastcall` model puts the
 `ecx` the helper only saves before it.
 
 `tests/stages/kuna-epiloguepop.xml` pins the issue's function, a Win64 float
-array returned by index and the two controls; `kuna-epiloguepop-sysv.xml` pins
+array returned by index, the two controls and the frame-built struct; `kuna-epiloguepop-sysv.xml` pins
 `twice` and the issue's function without a red zone, which must read as its
 red-zone build; `kuna-epiloguepop-x87.xml` pins the i386 `twice`. In
 `decompile-all`, clang's `float v1(void) { return (float)geti(); }`

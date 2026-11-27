@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5581,
-    5581
+    5582,
+    5582
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -849,6 +849,7 @@
     "data:EPILOGUE-POP #4: scaled returns a float by index",
     "data:EPILOGUE-POP #5: a pop with no rival still returns the flags",
     "data:EPILOGUE-POP #6: xmm0 only stored leaves the popped argument returned",
+    "data:EPILOGUE-POP #7: a struct built in the frame keeps its rax return",
     "data:EPILOGUE-POP-SYSV #1: twice returns the doubled float",
     "data:EPILOGUE-POP-SYSV #2: halfsel reads as its red-zone build",
     "data:EPILOGUE-POP-SYSV #3: no function returns the popped slot",
