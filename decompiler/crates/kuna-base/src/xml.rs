@@ -2341,7 +2341,9 @@ mod tests {
         // and kuna-word-index-scalar / a word index matching a global stays numeric without pointer evidence
         // and kuna-sparc-trap-resume / a branch after a delay-slot trap is the trap's resume
         // and kuna-ptrfromuse-faroffset / a parameter read only at field offsets of 0x1000 or more is a pointer
-        assert_eq!(count, 942, "corpus file count drifted");
+        // and kuna-homespill-win64 / a Windows x64 argument register spilled to its home slot is a parameter
+        // and kuna-epiloguepop(-sysv, -x87) / a register the epilogue pops is not the return beside a float
+        assert_eq!(count, 943, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
