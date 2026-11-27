@@ -1731,6 +1731,27 @@ fn wide_product_machine(packet: u64) -> Machine {
 }
 
 #[test]
+fn wide_register_square_selects_one_input_and_preserves_incoming_ce_feedback() {
+    for (packet, input, ecfg, incoming, table, result, latch, est) in [
+        (0x910000b0888d, 0x9005, 0, 0, 0,      0x30fba019,  0xf234, 0),
+        (0x910000b3888d, 0x9005, 0, 0, 0,      0x5105a019,  0xf234, 0),
+        (0x910000b0888d, 0,      0, 0, 0x0180, 0,           0xf234, 0x2008),
+        (0x910000b0888d, 0x8000, 5, 8, 0x0180, 0x7fffffff,  0xf234, 0x1024),
+        (0xbe0000b3889d, 0xffff, 1, 0, 0x8001, 0x1fffc0002, 0xffff, 0x1020),
+    ] {
+        let mut m = wide_product_machine(packet);
+        let (a1, ff1) = if packet == 0xbe0000b3889d { (0xbeef, input) } else { (input, 0xbeef) };
+        m.seed(&[("A0", 7), ("A1", a1), ("FF1", ff1), ("X1", 0xf234), ("X2", 0xa67b),
+                 ("ECFG", ecfg), ("EST", incoming), ("CETBL", table),
+                 ("CECFG1", 0x888), ("CECFG2", 0x888)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("X1"), m.reg("EST")), (result, latch, est), "{packet:x}");
+        assert_eq!((m.reg("A1"), m.reg("FF1"), m.reg("X2")), (a1, ff1, 0xa67b), "{packet:x}");
+    }
+}
+
+#[test]
 fn wide_insert_keeps_the_agu_gate_and_result_ports_separate() {
     let words = [(0x4036, 0xdda4), (0x4037, 0x69bd), (0x4044, 0x25de), (0x4045, 0xd3e5),
                  (0x8040, 0x7c4b), (0x8041, 0x20fa), (0x8043, 0x8be1)];

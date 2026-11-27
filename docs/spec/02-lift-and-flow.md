@@ -4086,6 +4086,10 @@ testing zero; the long port writes the shifted low word first.
 `RN5`, not the DATA operand, drives the early `X1` latch. The `A1H`
 result changes only that half. A connected `FF1` first input loads
 `X1`, whereas accumulator halves and the literal square bypass it.
+Unqualified register square forms use the same 16-bit word for both
+multiplier inputs. The signed and unsigned `A1L` forms leave `X1`
+alone; the unsigned `FF1` form publishes that word to `X1`. CE feedback
+samples incoming EST, before the product updates its arithmetic flags.
 An unqualified signed `MOVE` from `X1` to `A3` sign-extends the
 published word into the whole accumulator.
 

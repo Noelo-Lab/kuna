@@ -7979,6 +7979,30 @@ macro wide_mpy_result(first, second, kind, narrow, store, shift, product, result
   <done>
 }
 
+wide_mpy_square_input: "square A1L" is (wide_acc_mac_op=0x30 | wide_acc_mac_op=0x33)
+    & wide_acc_mac_first=0x46 & wide_0_0=1 & wide_40_45=0x11 { export A1L; }
+wide_mpy_square_input: "square FF1" is wide_acc_mac_op=0x33
+    & wide_acc_mac_first=0x4e & wide_0_0=1 & wide_40_45=0x3e {
+    X1 = FF1;
+    export FF1;
+}
+
+:^wide_mpy_kind "A0",wide_mpy_square_input is carmel_issue=5
+    & wide_left_mode=1 & wide_right_mode=1 & wide_acc_mac_dst=0x88
+    & wide_mpy_kind & wide_mpy_square_input {
+    build wide_mpy_square_input;
+    local input:2 = wide_mpy_square_input;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    local product:8;
+    local result:8;
+    wide_mpy_result(input, input, wide_mpy_kind, 0:1, 0:1, 0:4, product, result, flags);
+    A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_ce_feedback(flags, incoming);
+}
+
 :^wide_mpy_kind^wide_mpy_enable wide_mpy_discard,wide_mpy_first,wide_mpy_second is
     $(WIDE_MPY) & wide_mpy_discard {
     build wide_mpy_enable;
