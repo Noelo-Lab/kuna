@@ -39,6 +39,7 @@ scripts/javabench/     python package (python3 -m scripts.javabench ..., from th
   bytecode.py          symbolized instruction listings, similarity, class matching
   java/Recompile.java  javax.tools compile server (one JVM per shard)
   score.py run.py cli.py
+  roundtrip.py         round trip of small sources (its own command, see "Round trip")
   pins/<project>.json  every pinned artifact + SHA-256 (the lock the original fetch wrote)
   docs/dataset.md      ranked candidate list, why kept/dropped, pins, calibration
   tests/               hand-made metric tests
@@ -279,7 +280,33 @@ They need the Python packages above and JDK 21 and 17 homes; without a package
 every test is skipped, without a JDK the javac-based ones are. CI has neither,
 so they are not part of `make test-tools`; what `make test-tools` runs is
 `scripts/tests/test_javabench_workspace.py` (the workspace convention and the
-pins, standard library only).
+pins, standard library only) and `scripts/tests/test_javabench_roundtrip.py`
+(the round trip's comparison of two listings).
+
+## Round trip
+
+The benchmark scores large projects, almost all built with full debug info. The
+round trip asks a stricter question of small sources, and asks it with and
+without debug info: compile one source with javac, decompile each top-level
+class, recompile the text with the same flags, and compare the code of every
+method (`javap -c -p`, constant-pool indexes dropped, local slots numbered by
+first use). It needs only a JDK 21 on `PATH`.
+
+```bash
+KUNA_BIN=decompiler/target/release/kuna python3 -m scripts.javabench.roundtrip             # -g
+KUNA_BIN=decompiler/target/release/kuna python3 -m scripts.javabench.roundtrip --no-debug  # -parameters -g:none
+python3 -m scripts.javabench.roundtrip --decompiler vineflower --keep out/ SRC.java...
+```
+
+With no sources it runs the Java sources of kuna's corpus
+(`decompiler/managed/kuna-jvm/corpus/kuna-fixes/src/pkg`); Vineflower's own test
+sources are the other set it has been run on. It prints one line per source that
+does not come back (`NOCOMPILE` with javac's first error, `DIFF` with the methods,
+`FAILED` for a failure comment) and a summary; `--keep DIR` keeps the classes,
+the text and the recompiled classes of those sources. `NOCOMPILE` is a defect.
+`DIFF` is a list to read: javac lays out equivalent text differently (a dropped
+dead store, a jump chain), and without debug info it merges lambda bodies that
+are equal, so a recompiled class can lack a `lambda$..$N`.
 
 ## Harness ceiling
 
