@@ -118,6 +118,10 @@ does not read a second DATA word. Two updates to the same pointer are
 not lifted.
 Selected wide address transfers add the immediate displacement to a word
 source, including saved CODE addresses and the `R3` address unit.
+Selected qualified `TRANSFER` and `NOT LC1,*R3++` lifts require a proved
+earlier address-admission sample on every incoming path. The later result
+enable does not reopen an earlier veto. A direct entry or opaque transfer
+does not establish the missing history.
 Selected CE2 logical shifts use configuration-word sources and preserve
 the destination on a veto. An unconnected configuration input stops before issue.
 Covered wide signed/unsigned multiply-subtract forms select the addend

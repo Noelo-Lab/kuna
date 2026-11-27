@@ -1561,6 +1561,77 @@ int main(void) {
 }
 
 #[test]
+fn carmel_lc1_requires_address_admission_and_later_result_enable() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-lc1-phases", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short phase_word = 0x00ff;\n",
+    );
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    for (label, loadce) in [("split", true), ("stable", false)] {
+        let mut code = vec![[0x80, 0xc0, 0x40, 0xc6, 0x42, 0x8c]]; // MOVE R3, 0xc040
+        code.extend([NOP; 6]);
+        if loadce {
+            code.push([0x8c, 0, 1, 0xcd, 0xe4, 0x33]); // LOADCE 0x0ccc,1
+            code.extend([NOP; 4]);
+        }
+        code.push([0x13, 0x34, 0x68, 0xc2, 0x2f, 0x50]); // NOT CE1 LC1,*R3++
+        code.extend([NOP; 4]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([NOP; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        if loadce {
+            let short = Command::new(env!("CARGO_BIN_EXE_kuna")).arg("decompile").arg(&binary).args([
+                "0x1010", "--addr", "--raw-image", "--base", "0x1000",
+                "--target", "Carmel:BE:24:default:default", "--json",
+            ]).output().unwrap();
+            let error: Value = serde_json::from_slice(&short.stdout).unwrap();
+            assert!(!short.status.success() && error["functions"][0]["code"].is_null());
+        }
+        for register in ["R3", "LC1"] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+                "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+                "--assert", &format!("return %{register} unsigned short"),
+                "--assert", "data [data,0xc040] volatile unsigned short phase_word",
+            ]);
+            for (i, input) in ["R3", "LC1", "EST", "CECFG1", "CECFG2", "CETBL", "PACFG", "RM2", "RL2"]
+                .into_iter().enumerate()
+            {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let name = format!("{label}_{}", register.to_ascii_lowercase());
+            writeln!(generated, "{}", function["code"].as_str().unwrap().replace("sub_1000", &name)).unwrap();
+        }
+    }
+    generated.push_str(r"
+#define INPUTS(table) 0xc040,0x4567,0,0,0,table,0,0,0
+int main(void) {
+    /* Early admission updates R3, even though the later result is vetoed. */
+    if (split_r3(INPUTS(0)) != 0xc041 || split_lc1(INPUTS(0)) != 0x4567) return 1;
+    /* A late true rail cannot reopen the earlier veto. */
+    if (split_r3(INPUTS(0xffff)) != 0xc040 || split_lc1(INPUTS(0xffff)) != 0x4567) return 2;
+    if (stable_r3(INPUTS(0xffff)) != 0xc041 || stable_lc1(INPUTS(0xffff)) != 0xff00) return 3;
+    return 0;
+}
+");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_logic_rmw_routes_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

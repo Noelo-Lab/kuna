@@ -175,6 +175,14 @@ define register offset=0x2b0 size=4 [ LOOP_LAST_AT1 LOOP_LAST_AT2 LOOP_LAST_AT3 
 define register offset=0x2c0 size=4 [ LOOP_FIRST_WORD1 LOOP_FIRST_WORD2 LOOP_FIRST_WORD3 LOOP_FIRST_WORD4 ];
 define register offset=0x2d0 size=4 [ LOOP_LAST_WORD1 LOOP_LAST_WORD2 LOOP_LAST_WORD3 LOOP_LAST_WORD4 ];
 define register offset=0x2e0 size=2 [ RM0S RM2S RM4S RM6S RL0S RL2S RL4S RL6S ESTS ];
+
+# Private storage for the CFG lift, not an architectural input.
+define register offset=0x300 size=1 [
+    __CE_ADDRESS_HISTORY __CE_ADDRESS_HISTORY_1 __CE_ADDRESS_HISTORY_2
+    __CE_ADDRESS_HISTORY_3 __CE_ADDRESS_HISTORY_4
+];
+define pcodeop carmel_record_admission;
+define pcodeop carmel_read_address_admission;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -206,6 +214,7 @@ define context contextreg
     hw_loop_start_at = (256,281) noflow
     hw_loop_end_at = (288,313) noflow
     hw_loop_tail_end = (320,343) noflow
+    carmel_phase_emit = (352,352) noflow
     carmel_of_route = (22,23) noflow
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
@@ -2324,11 +2333,23 @@ macro clock_ce() {
     publish_alu_ce(EST & 0xcfff);
 }
 
-:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left {
-    clock_ce();
+ce_tick: is (carmel_phase_emit=0 | carmel_single_issue=1 | hw_loop_actions=1) { }
+ce_tick: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    local first:1 = ((EST | CECFG1) & 0x1000) != 0;
+    local second:1 = (EST & 0x2000) != 0 || (CECFG2 & 0x1000) != 0;
+    carmel_record_admission(first | (second << 1));
 }
-:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & nop_right) {
+
+ce_marked_load_tick: is wide_left_mode=0 { }
+ce_marked_load_tick: is wide_left_mode=1 & ce_tick { build ce_tick; }
+
+:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left & ce_tick {
     clock_ce();
+    build ce_tick;
+}
+:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_tick); (slot_mode=0 & nop_right) {
+    clock_ce();
+    build ce_tick;
 }
 
 compact_cmpu: "CMPU" cmpu_lhs,cmpu_rhs is slot_0_0=0 & slot_10_22=0x82e
@@ -2338,17 +2359,20 @@ compact_cmpu: "CMPU" cmpu_lhs,cmpu_rhs is slot_0_0=0 & slot_10_22=0x82e
     export flags;
 }
 
-:^compact_cmpu is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_cmpu {
+:^compact_cmpu is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & compact_cmpu & ce_tick {
     build compact_cmpu;
     publish_ce_feedback((EST & 0xcff6) | compact_cmpu, EST);
+    build ce_tick;
 }
-:^compact_cmpu "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_cmpu); (slot_mode=0 & nop_right) {
+:^compact_cmpu "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_cmpu & ce_tick); (slot_mode=0 & nop_right) {
     build compact_cmpu;
     publish_ce_feedback((EST & 0xcff6) | compact_cmpu, EST);
+    build ce_tick;
 }
-:^nop_left "||" compact_cmpu is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_cmpu) {
+:^nop_left "||" compact_cmpu is (carmel_issue=1 & slot_mode=0 & nop_left & ce_tick); (slot_mode=0 & compact_cmpu) {
     build compact_cmpu;
     publish_ce_feedback((EST & 0xcdbf) | (compact_cmpu << 6), EST);
+    build ce_tick;
 }
 
 compact_cmp: "CMP" cmp_lhs,cmp_rhs is slot_0_0=0 & slot_10_22=0x826
@@ -3857,9 +3881,10 @@ macro load_ce_ports(prefix, config, truth, low, high, invert) {
     build wide_ce_prefix;
     load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 0:1, 1:1, 0:2);
 }
-:LOADCE wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=2 {
+:LOADCE wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=2 & ce_marked_load_tick {
     build wide_ce_prefix;
     load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 1:1, 1:1, 0:2);
+    build ce_marked_load_tick;
 }
 :"LOADCE.NOT" wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=3 {
     build wide_ce_prefix;
@@ -10748,6 +10773,53 @@ macro packed_r2_long(displacement, high, low) {
     packed_rhs_guard = high(2);
   <publish>
     publish_alu_ce(EST & 0xcfff);
+}
+
+ce_address_mask: is unary_wide_ce_bank=0 { export 1:1; }
+ce_address_mask: is unary_wide_ce_bank=1 { export 2:1; }
+
+ce_result_sample: is unary_wide_ce_bank=0 {
+    local result:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, result);
+    export result;
+}
+ce_result_sample: is unary_wide_ce_bank=1 {
+    local result:2;
+    unary_ce(CECFG2, EST, CETBL, 1:2, result);
+    export result;
+}
+
+:NOT wide_ce_prefix "LC1","*R3++" is carmel_issue=4
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & wide_left_mode=0 & wide_right_mode=1 & wide_24_45=0x133468 & wide_0_22=0x422f50
+    & wide_ce_prefix & ce_address_mask & ce_result_sample & ce_tick {
+    local admitted:1 = carmel_read_address_admission(ce_address_mask);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    if (admitted == 0) goto <publish>;
+    local address:2 = R3;
+    transfer_address_word(R3, RM2, RL2, 6:2, 1:2, R3);
+    local word:2 = *[data]:2 address;
+    build ce_result_sample;
+    if (ce_result_sample == 0) goto <publish>;
+    local inverted:2 = ~word;
+    LC1 = inverted;
+    flags = (flags & 0xffe7) | (zext(inverted == 0) << 3) | (zext(inverted s< 0) << 4);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+    build ce_tick;
+}
+
+:TRANSFER wide_ce_prefix "R2","INTBASE",transfer_roles_imm is carmel_issue=4
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & wide_left_mode=0 & wide_right_mode=1 & wide_40_45=0x36 & wide_2_22=0x102b22 & wide_0_1=1
+    & wide_ce_prefix & transfer_roles_imm & ce_address_mask & ce_tick {
+    local admitted:1 = carmel_read_address_admission(ce_address_mask);
+    if (admitted == 0) goto <feedback>;
+    R2 = INTBASE + transfer_roles_imm;
+  <feedback>
+    clock_ce();
+    build ce_tick;
 }
 
 :TRANSFER "R2","A0L",transfer_roles_imm is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_22=0x100422 & transfer_roles_imm { R2 = A0L + transfer_roles_imm; }
