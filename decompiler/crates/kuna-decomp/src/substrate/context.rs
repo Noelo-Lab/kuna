@@ -346,8 +346,15 @@ impl GlobalQuery {
     /// `space_index`: the function whose body holds `offset` as far as the
     /// symbol table can tell. The sorted entries are built on first use.
     pub fn function_entry_at_or_before(&self, space_index: int4, offset: u64) -> Option<u64> {
+        let starts = self.function_starts(space_index)?;
+        let after = starts.partition_point(|&start| start <= offset);
+        after.checked_sub(1).map(|at| starts[at])
+    }
+
+    /// The sorted function entries of `space_index`, built on first use.
+    fn function_starts(&self, space_index: int4) -> Option<&[u64]> {
         let index = self.index_for_space(space_index)?;
-        let starts = index.function_starts.get_or_init(|| {
+        Some(index.function_starts.get_or_init(|| {
             let mut starts: Vec<u64> = index
                 .interval_order
                 .iter()
@@ -357,9 +364,13 @@ impl GlobalQuery {
                 .collect();
             starts.dedup();
             starts
-        });
-        let after = starts.partition_point(|&start| start <= offset);
-        after.checked_sub(1).map(|at| starts[at])
+        }))
+    }
+
+    /// The entry of the first function symbol after `offset` in `space_index`.
+    pub fn function_entry_after(&self, space_index: int4, offset: u64) -> Option<u64> {
+        let starts = self.function_starts(space_index)?;
+        starts.get(starts.partition_point(|&start| start <= offset)).copied()
     }
 
     fn index_for_space(&self, space_index: int4) -> Option<&GlobalSpaceIndex> {
@@ -748,6 +759,8 @@ pub struct ArchContext {
     pub retsysreg_cop_userops: Vec<kuna_base::types::uint4>,
     /// Retain register trials carrying proven stack addresses.
     pub stack_addr_arg_trial: bool,
+    /// (kuna) `option calleefilledarg`.
+    pub callee_filled_arg: bool,
     /// (kuna) `option bejoin`: when may a two-register value join with its
     /// high word in the first register where the ABI puts it?  Read by
     /// [`crate::p4_calls::kuna_bejoin::mode`].
@@ -788,6 +801,10 @@ pub struct ArchContext {
     /// (kuna) `option gonewtype`; read by [`crate::p5_types::kuna_gonewtype`].
     /// Copied from the engine `Architecture` in `build_arch_handle`.
     pub go_new_type: bool,
+    /// (kuna `swifttypes`) Type Swift metadata accessor call results; read by
+    /// [`crate::p5_types::kuna_swiftmetaresult`]. Copied from the engine
+    /// `Architecture` in `build_arch_handle`.
+    pub swift_metadata_results: bool,
     /// (kuna) The `SoftwareBreakpoint` user-op id when `option ptrauthtrap`
     /// is on; read by [`crate::p2_lift::kuna_ptrauthtrap`].
     pub ptrauth_trap_userop: Option<kuna_base::types::uint4>,
@@ -817,6 +834,12 @@ pub struct ArchContext {
     pub global_array_anchor: bool,
     /// Fold comparisons proven constant for every input (`opaquepredicate`).
     pub opaque_predicate: bool,
+    /// (kuna `bytestorewidth`) Mirror of `Architecture::byte_store_width`.
+    pub byte_store_width: bool,
+    /// (kuna `boolbranch`) Mirror of `Architecture::bool_branch_keep`.
+    pub bool_branch_keep: bool,
+    /// (kuna `boolbranch return`) Mirror of `Architecture::bool_ret`, in C output only.
+    pub bool_ret: bool,
     /// (kuna) refuse to split a shared RETURN block that stores to GLOBALS
     /// (`retsplitglobal`).  Read by
     /// [`Funcdata::return_split_is_splittable`](crate::funcdata::Funcdata),
@@ -924,14 +947,25 @@ pub struct ArchContext {
     /// [`Architecture::char_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_charptr`](crate::p5_types::kuna_charptr).
     pub char_ptr: bool,
+    /// (kuna `valuewitness`) Type a Swift value witness table loaded through
+    /// type metadata. Copied from
+    /// [`Architecture::analysis_valuewitness`](crate::architecture::Architecture).
+    pub analysis_valuewitness: bool,
+    /// Android ELF with the NDK JNI type declarations installed.
+    pub android_jni: bool,
     /// (kuna `elemptr`) Declare a pointer used only as an array of one element
     /// type as that pointer; option `elemptr on|off`.  Copied from
     /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
     /// lives in [`kuna_elemptr`](crate::p5_types::kuna_elemptr).
     pub elem_ptr: bool,
-    /// (kuna `elemptr`) The sections a program's data objects live in, sorted and
-    /// inclusive; the `globalref` ranges, copied from the Architecture.
+    /// (kuna `elemptr`, `ptrfromuse`) The sections a program's data objects live
+    /// in, sorted and inclusive; the `globalref` ranges, copied from the
+    /// Architecture.
     pub elem_ptr_ranges: std::rc::Rc<Vec<(u64, u64)>>,
+    /// (kuna `ptrfromuse`) The image has a section table, so an empty
+    /// [`Self::elem_ptr_ranges`] means it holds no data objects.  Copied from
+    /// [`Architecture::section_table`](crate::architecture::Architecture).
+    pub section_table: bool,
     /// (kuna `libctypes`) The named libc aggregate tables are on.  Copied from
     /// [`Architecture::analysis_libctypes`](crate::architecture::Architecture);
     /// read by [`kuna_libcfit`](crate::p5_types::kuna_libcfit), which holds a
@@ -973,6 +1007,9 @@ pub struct ArchContext {
     /// (kuna) `mixedtailret`: a value returned beside a claimed tail-call
     /// result is returned too.  Read by [`crate::p4_calls::kuna_mixedtailret`].
     pub mixed_tail_ret: bool,
+    /// (kuna) `cachereturn`: a return register holding one memory cell's value
+    /// on every path is returned.  Read by [`crate::p4_calls::kuna_cachereturn`].
+    pub cache_return: bool,
     /// (kuna) `armfloatreturn` is on and the image states the ARM VFP calling
     /// convention.  Read by [`crate::p4_calls::kuna_armfloatreturn`].
     pub arm_float_return: bool,
@@ -1106,18 +1143,21 @@ pub struct ArchContext {
     /// Read by [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
     pub region_structure: bool,
     /// (kuna) source-layout tie-break for `ruleBlockIfNoExit`'s clause arm
-    /// (`guard_arm`, option `guardarm`, opt-in default-off).  When set and BOTH
-    /// out-arms are eligible clauses, the earlier-addressed arm becomes the `if`
-    /// clause instead of out-index 0.  Read by
+    /// (`guard_arm`, option `guardarm`).  Where it applies and BOTH out-arms
+    /// are eligible clauses, the earlier-addressed arm becomes the `if` clause
+    /// instead of out-index 0.  Read by
     /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
-    pub guard_arm: bool,
-    /// (kuna) defer a live loop head in the deferred `ruleBlockIfNoExit` scan
-    /// (`loop_cond_hoist`, option `loopcondhoist`, opt-in default-off) so
-    /// `ruleBlockWhileDo` keeps the loop's head test.  Read by
-    /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure).
-    pub loop_cond_hoist: bool,
+    pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
+    /// (kuna) which exit of a loop the structurers keep (`loop_cond_hoist`,
+    /// option `loopcondhoist`).  Read by
+    /// [`ActionBlockStructure`](crate::blockaction::ActionBlockStructure) and
+    /// [`ActionReturnSplit`](crate::blockaction::ActionReturnSplit).
+    pub loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
+    /// (kuna) `loopcontinue auto` — the recorded jump statements keep their
+    /// tests apart in an unoptimized function ([`crate::p8_structure::kuna_o0jumps`]).
+    pub loop_continue_record: bool,
     /// (kuna `loopcontinue`) The output language's do-while runs its test on
     /// `continue;`: C `do..while` and Go's `for` post statement do, Rust's
     /// `loop { ..; if !(c) { break; } }` restarts the body instead.
@@ -1164,6 +1204,12 @@ pub struct ArchContext {
     /// pre-SSA op graph.  Read by
     /// [`ActionRemoveCleanupCode`](crate::p2_lift::kuna_cleanupcode::ActionRemoveCleanupCode).
     pub remove_cleanup_code: bool,
+    /// (kuna) `option varargsave`: fold the x86-64 System V variadic
+    /// register-save prologue (`p4_calls/kuna_varargsave.rs`).
+    pub vararg_save: bool,
+    /// (kuna) The language is x86-64 under a Windows compiler spec, whose
+    /// argument registers have home slots (`p4_calls/kuna_homespill.rs`).
+    pub win64_home_slots: bool,
     /// (kuna) `option linuxsyscall`: rewrite a 32-bit Linux `int 0x80` from an
     /// indirect call through the `swi` userop into a named call on the syscall
     /// the number in `EAX` selects.  Read by
@@ -1235,7 +1281,12 @@ pub struct ArchContext {
     pub lowered_switch_linear: bool,
     /// (kuna) `loweredswitch tree|all` — compare trees re-roll from 2 to 64 cases.
     pub lowered_switch_tree: bool,
+    /// (kuna) `loweredswitch auto` — unoptimized functions decide by the compiled tests.
+    pub lowered_switch_compiled: bool,
     pub cond_fold: int4,
+    /// (kuna `condfold noreturn|auto`) Which chains of tests into one shared
+    /// block fold.  See [`crate::p8_structure::kuna_fatalchain`].
+    pub cond_fold_chain: crate::p8_structure::kuna_fatalchain::ChainFold,
     /// (kuna) `condstmts`: most statements a folded condition operand may print
     /// before its test; negative = off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
@@ -1257,12 +1308,17 @@ pub struct ArchContext {
     /// opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_dedupitetail`]'s `ActionDedupIteTail`.
     pub dedup_ite_tail: bool,
+    /// (kuna) join duplicated loop latches (`dedupitetail latch`).
+    pub latch_join: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
     /// (`if (c) v = A; else v = B;`) to a `?:` ternary (`v = c ? A : B;`)
     /// (`iteregion`, opt-in default-off — a **runtime choice**: matches source only
     /// when the source used a ternary).  Read by
     /// [`crate::p8_structure::kuna_iteregion`]'s `ActionIteRegion`.
     pub iteregion: bool,
+    /// (kuna) `iteregion auto` -- the recorded conditional values decide an
+    /// unoptimized function ([`crate::p8_structure::kuna_o0select`]).
+    pub iteregion_record: bool,
     /// (kuna) `iteexpr`: extend iteregion to computed-expression diamond arms (see
     /// `Architecture::iteexpr`).  Per-function snapshot copy.
     pub iteexpr: bool,
@@ -1274,6 +1330,11 @@ pub struct ArchContext {
     /// one-block `if` -- see `Architecture::returndup_triangle`.  Read by
     /// `Funcdata::returndup_apply`.
     pub returndup_triangle: bool,
+    /// (kuna) `tailform`: the function-tail form policy, `None` when off -- see
+    /// `Architecture::tail_form`.
+    pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
+    /// (kuna) `returndup auto` in optimized functions -- see `Architecture::ret_shape`.
+    pub ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy,
     /// (kuna) `paramcopyhoist`: anchor an unmodified incoming parameter's trim COPY
     /// in the entry block rather than at the MULTIEQUAL slot's predecessor tail —
     /// see `Architecture::param_copy_hoist`.  Read by
@@ -1288,6 +1349,9 @@ pub struct ArchContext {
     /// (kuna) `returndup calls` — also split a cross-jumped call tail per
     /// predecessor ([`crate::p8_structure::kuna_returndupcalls`]).
     pub duplicate_call_returns: bool,
+    /// (kuna) `returndup auto` — the recorded return statements decide the
+    /// splits in an unoptimized function ([`crate::p8_structure::kuna_o0returns`]).
+    pub returndup_record: bool,
     /// (kuna) hoist a leading const-guard into an early return by peeling only the
     /// CONSTANT arm of a mixed return phi (`early_return`, opt-in default-off).  Read by
     /// [`crate::p8_structure::kuna_earlyreturn`]'s `ActionEarlyReturn`.
@@ -1378,6 +1442,10 @@ pub struct ArchContext {
     /// architecture.  Read by `JumpBasic::recoverModel` before
     /// `kunaTryModuloBoundTable`.  `false` (default off / upstream byte-identical).
     pub switch_modulo_bound: bool,
+    /// (kuna) End a jump table no range check bounds at the next jump table
+    /// its function dispatches through (`option switchextent`,
+    /// `p2_lift/kuna_switchextent.rs`), shared from the real architecture.
+    pub switch_extent: bool,
     /// (kuna `lazyfuncs`) The entry starts the commit installed as names only,
     /// sorted, so the run-on cut (`kuna_switchrunon`) sees the same functions
     /// with the option on.
@@ -1453,10 +1521,10 @@ pub struct ArchContext {
     /// every hand-built fixture and every XML `<binaryimage>` load, which is why
     /// the datatest parity oracle cannot see this field.
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
-    /// (kuna `litpoolconst`) `[start, stop]` (inclusive) offsets of the image's
-    /// executable, non-writable, file-backed regions — the instruction stream, and
-    /// so the literal pools embedded in it. A read entirely inside one is foldable
-    /// with [`Self::readonlypropagate`] off.
+    /// (kuna `litpoolconst`, `ptrfromuse`) `[start, stop]` (inclusive) offsets of
+    /// the image's executable, non-writable, file-backed regions — the
+    /// instruction stream, and so the literal pools embedded in it. A read
+    /// entirely inside one is foldable with [`Self::readonlypropagate`] off.
     /// Sorted ascending, disjoint, and EMPTY for every hand-built fixture and every
     /// XML `<binaryimage>` load, which is why the datatest parity oracle cannot see
     /// this field.
@@ -1517,6 +1585,9 @@ pub struct ArchContext {
     pub loader_transfer_sites: Rc<std::collections::BTreeSet<Address>>,
     /// MIPS GOT import entries identified by the loader, never ordinary definitions.
     pub loader_mips_imports: Rc<std::collections::BTreeSet<Address>>,
+    /// The [`Self::loader_mips_imports`] whose symbol version binds them to glibc,
+    /// with the versioned symbol's name.
+    pub loader_glibc_imports: Rc<std::collections::BTreeMap<Address, String>>,
     pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
     pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
     /// The calling convention each declared callee was declared under, keyed the
@@ -1537,6 +1608,9 @@ pub struct ArchContext {
     /// (kuna `swiftcall`) The Swift registers and the throwing model, when the
     /// image binds the Swift convention ([`crate::kuna_swiftcall`]).
     pub swift_abi: Option<Rc<crate::kuna_swiftcall::SwiftAbi>>,
+    /// (kuna `swiftmetadata`) Each local Swift enum's case count by its
+    /// metadata accessor's entry offset (`p2_lift/kuna_switchextent.rs`).
+    pub swift_enum_cases: Rc<std::collections::BTreeMap<u64, u32>>,
     /// (kuna `calleereginputs`) The `__thiscall` model, the ECX storage a
     /// virtual call reads its `this` from and EAX's, when the option applies.
     pub virtual_this: Option<(Rc<crate::fspec::ProtoModel>, kuna_base::address::Address, int4, kuna_base::address::Address)>,
@@ -1579,6 +1653,7 @@ impl ArchContext {
             callee_proto_models: Vec::new(),
             bound_proto_models: Rc::default(),
             swift_abi: None,
+            swift_enum_cases: Rc::default(),
             virtual_this: None,
             defaultfp: None,
             evalfp_current: None,
@@ -1594,6 +1669,7 @@ impl ArchContext {
             retsysreg_userops: Vec::new(),
             retsysreg_cop_userops: Vec::new(),
             stack_addr_arg_trial: false,
+            callee_filled_arg: true,
             // (kuna) `option bejoin`; the real value is copied from the engine
             // Architecture in `build_arch_handle`.
             be_join: crate::kuna_bejoin::BeJoinMode::Off,
@@ -1619,6 +1695,7 @@ impl ArchContext {
             go_write_barrier: 1,
             // (kuna) `option gonewtype` default on; copied the same way.
             go_new_type: true,
+            swift_metadata_results: false,
             ptrauth_trap_userop: None,
             arm64e: false,
             // (kuna) angr-style default naming is default-on (Architecture::reset).
@@ -1636,6 +1713,9 @@ impl ArchContext {
             // unit tests.
             global_array_anchor: false,
             opaque_predicate: false,
+            byte_store_width: false,
+            bool_branch_keep: false,
+            bool_ret: false,
             ret_split_global: false,     // retsplitglobal (the ArchSeam carries the real default)
             ret_split_limit: None,       // retsplitlimit (the ArchSeam carries the real default)
             simd_shuffle_userops: Vec::new(),
@@ -1666,8 +1746,11 @@ impl ArchContext {
             cast_index: false, // (kuna) option castindex
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            android_jni: false,
+            analysis_valuewitness: true, // (kuna) option valuewitness
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
+            section_table: false, // (kuna) ptrfromuse
             libctypes: false, // (kuna) option libctypes, copied from Architecture
             recover_lowered_switch: false, // loweredswitch
             nul_terminator: false,
@@ -1698,6 +1781,7 @@ impl ArchContext {
             narrow_ext: crate::kuna_narrowext::Rules::default(),
             pass_through: true, // (kuna) option passthrough (default on)
             mixed_tail_ret: false, // (kuna) option mixedtailret (default off)
+            cache_return: true, // (kuna) option cachereturn (default on)
             readonly_calls: Some(crate::p3_dataflow::heritage::READONLY_CROSS_PRODUCT),
             persist_calls: Some(crate::p3_dataflow::heritage::PERSIST_CROSS_PRODUCT),
             kuna_custom_reg_callers: Rc::default(),
@@ -1721,16 +1805,19 @@ impl ArchContext {
             strlen_scan: false, // strlenscan (live value copied from the Architecture)
             rep_string: false, // repstring (live value copied from the Architecture)
             region_structure: false,     // regionstructure (opt-in default-off)
-            guard_arm: false,            // guardarm (opt-in default-off)
+            guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode::Off, // guardarm
             loop_continue: true,
+            loop_continue_record: false, // loopcontinue auto
             do_while_continue: true,
             goto_next: false,
             post_increment: false,
-            loop_cond_hoist: false,      // loopcondhoist (opt-in default-off)
+            loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist::Off, // loopcondhoist
             region_loop_refine: false,   // regionlooprefine (opt-in default-off)
             region_edge_order: false,    // regionedgeorder (opt-in default-off)
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
+            vararg_save: true, // varargsave (default-on; x86-64 System V only)
+            win64_home_slots: false,
             linux_syscall: false,        // linuxsyscall (the mode resolves against the Linux-ELF fact in build_arch_handle)
             msvc_str_append: false,      // msvcstrappend (opt-in default-off)
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)
@@ -1746,19 +1833,26 @@ impl ArchContext {
             switch_selector_guard: false, // switchselector (opt-in default-off)
             lowered_switch_linear: false, // loweredswitch linear|all
             lowered_switch_tree: false, // loweredswitch tree|all
+            lowered_switch_compiled: false, // loweredswitch auto
             cond_fold: 0,                // condfold (opt-in default-off; 0 = off)
+            cond_fold_chain: crate::p8_structure::kuna_fatalchain::ChainFold::Off, // condfold noreturn|auto
             cond_stmts: -1,              // condstmts (-1 = off)
             goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off, // gotoreduce
             flatten_ifelse: false,  // ifelseflatten (opt-in default-off)
             revert_cross_jumps: false,   // crossjumprevert (opt-in default-off)
             dedup_ite_tail: false,        // dedupitetail (opt-in default-off)
+            latch_join: false,            // dedupitetail latch
             iteregion: false,             // iteregion (opt-in default-off, runtime-choice)
+            iteregion_record: false,      // iteregion auto
             iteexpr: false,               // iteexpr (computed-arm ?: extension, default-off)
             iteboolean: false,            // iteboolean (0/1 select -> boolean assignment)
             param_copy_hoist: false,      // paramcopyhoist (parameter copy-shadow -> entry block)
             returndup_triangle: false,    // rettriangle (one-block-if join, copied from the Architecture)
+            tail_form: None,              // tailform (copied from the Architecture)
+            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // returndup auto (copied from the Architecture)
             duplicate_shared_returns: false, // returndup (opt-in default-off)
             duplicate_call_returns: false, // returndup calls
+            returndup_record: false, // returndup auto
             early_return: false, // earlyreturn (opt-in default-off)
             switch_return: false, // switchreturn (opt-in default-off)
             recover_loop_break: false,   // loopbreak_recovery (opt-in default-off)
@@ -1783,6 +1877,7 @@ impl ArchContext {
             alias_block_level: 2, // Architecture default: block structs and arrays
             funcptr_align: 0,
             switch_modulo_bound: false, // (kuna) GH-9191 default off (upstream byte-identical)
+            switch_extent: false, // (kuna) option switchextent; the real architecture carries the shipped default
             lazy_entry_starts: Rc::default(),
             const_select_jump: crate::kuna_constselectjump::ConstSelectMode::Off, // (kuna) constant-select indirect branch; reset_defaults sets the shipped default
             highslice_guard: false,
@@ -1823,6 +1918,7 @@ impl ArchContext {
             callee_protos: Rc::new(Vec::new()),
             loader_transfer_sites: Rc::default(),
             loader_mips_imports: Rc::default(),
+            loader_glibc_imports: Rc::default(),
             nullable_relocations: Rc::default(),
             nullable_literal_values: Rc::default(),
             // No tracked registers until build_arch_handle snapshots the context DB.
@@ -2344,6 +2440,44 @@ impl ArchContext {
             let after = parked.partition_point(|&start| start <= offset);
             named.max(after.checked_sub(1).map(|at| parked[at]))
         })
+    }
+
+    /// (kuna `loweredswitch`) True when a global symbol or a known function
+    /// starts at `addr`: a constant equal to it prints as the symbol's name.
+    pub fn symbol_starts_at(&self, addr: &Address) -> bool {
+        let Some(space) = addr.get_space() else { return false };
+        let offset = addr.get_offset();
+        self.effective_global_query(addr)
+            .is_some_and(|q| q.entries_starting_at(space.get_index(), offset).next().is_some())
+            || self.lazy_entry_starts.binary_search(&offset).is_ok()
+    }
+
+    /// (kuna `switchextent`) The first known function entry above `addr`'s
+    /// offset in its space, over the same functions [`Self::function_owner`]
+    /// sees.
+    pub fn function_entry_after(&self, addr: &Address) -> Option<u64> {
+        let query = self.effective_global_query(addr)?;
+        let space_index = addr.get_space()?.get_index();
+        let offset = addr.get_offset();
+        let named = query.function_entry_after(space_index, offset);
+        let at = self.lazy_entry_starts.partition_point(|&start| start <= offset);
+        let parked = self.lazy_entry_starts.get(at).copied();
+        match (named, parked) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+
+    /// (kuna `switchextent`) The name of the function symbol that starts at
+    /// `entry`, without building its prototype as [`Self::query_function`] does.
+    pub fn function_name_at(&self, entry: &Address) -> Option<String> {
+        let query = self.effective_global_query(entry)?;
+        let space_index = entry.get_space()?.get_index();
+        let name = query
+            .entries_starting_at(space_index, entry.get_offset())
+            .find(|e| e.is_function)
+            .map(|e| e.symbol_name.clone());
+        name
     }
 
     /// (kuna `switchrunon`) Whether `b` lies in the load-image section that

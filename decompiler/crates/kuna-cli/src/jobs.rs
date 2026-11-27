@@ -176,6 +176,7 @@ pub(crate) struct PoolConfig<'a> {
     pub(crate) mode: &'static str,
     pub(crate) options: &'a [(String, String)],
     pub(crate) func_decls: Vec<String>,
+    pub(crate) jump_assertions: &'a [kuna_console::assertions::Directive],
     pub(crate) no_vars: bool,
     pub(crate) want_proto: bool,
     pub(crate) want_provenance: bool,
@@ -486,8 +487,17 @@ struct RetiredBlocks {
 }
 
 impl Session {
+    /// Open the pool's scratch directory. The parent's accepted jump facts are
+    /// snapshotted there, so workers and retries never reopen the user's file.
     fn open(cfg: &PoolConfig, inventory: &[TargetSpec]) -> Result<Session, String> {
         let scratch = ScratchDir::create()?;
+        if !cfg.jump_assertions.is_empty() {
+            let lines: Vec<_> = cfg.jump_assertions.iter().map(|d|
+                d.raw.split_whitespace().collect::<Vec<_>>().join(" ")
+            ).collect();
+            std::fs::write(scratch.path().join("jumps.assert"), lines.join("\n"))
+                .map_err(|e| format!("cannot write worker jump assertions: {e}"))?;
+        }
         if !cfg.full_load {
             let path = scratch.path().join(INVENTORY_FILE);
             std::fs::write(&path, encode_spec(inventory))
@@ -1107,6 +1117,9 @@ impl Worker {
                 cmd.arg(flag).arg(v);
             }
         }
+        if !cfg.jump_assertions.is_empty() {
+            cmd.arg("--assert").arg(format!("@{}", scratch.join("jumps.assert").display()));
+        }
         for decl in &cfg.func_decls {
             cmd.arg("--define-function").arg(decl);
         }
@@ -1644,6 +1657,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         aliases: t.aliases.clone(),
         object_location: t.object_location.clone(),
         callee_hints: Vec::new(),
+        ranges: Vec::new(),
         synth: None,
         pointerargs: None,
         warnings: Vec::new(),
@@ -2161,6 +2175,7 @@ mod tests {
                 offset: 0x40,
             }),
             callee_hints: vec![0x401200, 0x401340, 0xffff_ffff_ffff_fff0],
+            ranges: vec![(0x401200, 0x401210), (0x401220, 0x401233)],
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -2182,6 +2197,7 @@ mod tests {
             && a.aliases == b.aliases
             && a.object_location == b.object_location
             && a.callee_hints == b.callee_hints
+            && a.ranges == b.ranges
             && a.field_calls == b.field_calls
             && a.pointerargs == b.pointerargs
             && a.warnings == b.warnings
@@ -2271,6 +2287,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -2304,7 +2321,7 @@ mod tests {
     }
 
     #[test]
-    fn result_encoding_matches_the_version_twelve_wire_layout() {
+    fn result_encoding_matches_the_version_thirteen_wire_layout() {
         let dir = ScratchDir::create().unwrap();
         let path = dir.path().join("wire.bin").to_string_lossy().into_owned();
         let result = FuncResult {
@@ -2327,13 +2344,14 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
             detail: None,
         };
         let expected = [
-            b"KUNAJOBRES12\x01\x55\0\0\0".as_slice(),
+            b"KUNAJOBRES13\x01\x59\0\0\0".as_slice(),
             b"\x10\0\0\0\0\0\0\0\x20\0\0\0\0\0\0\0",
             b"\xff\xff\xff\xff\xff\xff\xff\xff",
             b"\x01\0\0\0f\0\x01\x01\0\0\0e\0\0",
@@ -2346,6 +2364,7 @@ mod tests {
             b"\0\0\0\0", // globals
             b"\0\0\0\0", // field calls
             b"\0\0\0\0", // callee hints
+            b"\0\0\0\0", // ranges
             b"\0\0", // synth and pointer arguments
             b"\0\0\0\0", // warnings
             b"\0\0\0\0", // call declarations
@@ -2879,6 +2898,7 @@ mod tests {
             aliases: Vec::new(),
             object_location: None,
             callee_hints: Vec::new(),
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -2907,6 +2927,7 @@ mod tests {
             mode: "fast",
             options: &[],
             func_decls: Vec::new(),
+            jump_assertions: &[],
             no_vars: false,
             want_proto: false,
             want_provenance: false,

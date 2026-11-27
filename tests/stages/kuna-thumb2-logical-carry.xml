@@ -1,0 +1,44 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v8-m">
+<!--
+    Thumb-2 ANDS, BICS, MOVS, MVNS with a modified immediate or a shifted
+    register set C to the shifter's carry-out. The vendored spec set only N
+    and Z for these, so a bcs after them read the caller's C: f and g both
+    printed "if (!cy)" on an undefined flag. Unicorn on the same bytes sets
+    C from bit 0 of r2 in f, and clears it in g (#0x1000 is 0x80 rotated, so
+    its carry-out is bit 31 of the constant, 0).
+
+    f:  0x0  11 ea 52 00   ands.w r0,r1,r2, lsr #1
+        0x4  01 d2         bcs 0xa
+        0x6  01 20         movs r0,#1
+        0x8  70 47         bx lr
+        0xa  02 20         movs r0,#2
+        0xc  70 47         bx lr
+    g:  0xe  10 f4 80 50   ands r0,r0,#0x1000
+        0x12 01 d2         bcs 0x18
+        0x14 01 20         movs r0,#1
+        0x16 70 47         bx lr
+        0x18 02 20         movs r0,#2
+        0x1a 70 47         bx lr
+-->
+<bytechunk space="ram" offset="0x0">
+11ea520001d2012070470220704710f4805001d20120704702207047
+</bytechunk>
+</binaryimage>
+<script>
+  <com>option readonly on</com>
+  <com>set context TMode 1 [ram,0x0] [ram,0x20]</com>
+  <com>map function r0x0 f</com>
+  <com>map function r0xe g</com>
+  <com>lo fu f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="Thumb-2 logical carry #1: f branches on the bit the shift moved into C" min="1" max="1">if \(!\(a2 &amp; 1\)\)</stringmatch>
+<stringmatch name="Thumb-2 logical carry #2: no branch reads an undefined carry" min="0" max="0">\bcy\b</stringmatch>
+<stringmatch name="Thumb-2 logical carry #3: g's cleared carry folds its branch away" min="1" max="1">return 2;</stringmatch>
+</decompilertest>

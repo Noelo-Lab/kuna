@@ -151,7 +151,7 @@ c3
 <stringmatch name="REPFRAMECOPY #7: the entry's other calls keep their pushed arguments" min="1" max="1">sub_401070\(0x402000,2,0\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #8: the thirteen frame moves left alone (big_pass, zero_pass stosd and movsd, loop_fill, d_virtual, d_ptr, d_direct, cleanup, local, nested, stray, unsettled, quit without noreturn_known) stay loops, and only those" min="13" max="13">while \(v[0-9]+\) \{</stringmatch>
 <stringmatch name="REPFRAMECOPY #8b: copy_global, which reaches no frame slot, is a memcpy (repstring)" min="1" max="1">^  builtin_memcpy\(a0,&amp;dat_402000,0x10\);</stringmatch>
-<stringmatch name="REPFRAMECOPY #9: the indexed fill stays a loop" min="1" max="1">\} while \(v[0-9]+ &lt; 8\);</stringmatch>
+<stringmatch name="REPFRAMECOPY #9: the indexed fill stays a loop" min="1" max="1">while \(v[0-9]+ &lt; 8\)</stringmatch>
 <stringmatch name="REPFRAMECOPY #10: an overlapping move at the stack pointer shifts the slots down" min="1" max="1">sub_401000\(1,2,3,4,5,6,7,8,8\);</stringmatch>
 <stringmatch name="REPFRAMECOPY #11: the virtual calls after a bottom-of-frame local take no stack argument" min="0" max="0">0x58\)\)\([^)]</stringmatch>
 <stringmatch name="REPFRAMECOPY #12: both virtual calls are kept" min="2" max="2">\(code \*\*\)\(\*v[0-9]+ \+ 0x58\)</stringmatch>

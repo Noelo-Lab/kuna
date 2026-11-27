@@ -191,6 +191,18 @@ pub struct CalleeEntryDead {
     /// (SysV's `xor %eax,%eax`) is a store alone evidence. Read by
     /// [`Self::reads_low_byte`].
     stored_read_bytes: ByteSet,
+    /// The register bytes an instruction that stores several registers stores
+    /// together with a register above them in the register file: gcc's
+    /// Cortex-M `push {r3, lr}` keeping the stack 8-byte aligned. A variadic
+    /// register save stores the argument registers in a store of their own, the
+    /// last one highest, beneath the incoming stack arguments (`push {r0, r1,
+    /// r2, r3}; push {lr}`), so such a store is no save. Read by
+    /// [`Self::stores_below_another`].
+    stored_below_bytes: ByteSet,
+    /// The register bytes an instruction that stores several registers stores
+    /// as the highest of them, the shape of a register save (`stm r0!, {r1, r2,
+    /// r3}`). Read by [`Self::stores_below_another`].
+    stored_top_bytes: ByteSet,
     /// Did some path reach an instruction the walk could not decode? A body
     /// decoded in the wrong instruction set reads registers at random before it
     /// breaks. Read by [`Self::reads_low_byte`].
@@ -207,6 +219,9 @@ pub struct CalleeEntryDead {
     /// in a register survives one of these provably. Read by
     /// [`resolve_forward_transfer`].
     opaque_cuts: Vec<ByteSet>,
+    /// How many of [`Self::opaque_cuts`] are an indirect jump (`BRANCHIND`).
+    /// Read by [`Self::is_trampoline`].
+    jumps: usize,
     /// The subset of [`Self::cuts`] taken at a DIRECT call, with the target's
     /// entry address. Naming the target is not the same as accounting for what
     /// is forwarded to it — the callee's own recovery only accounted for a
@@ -358,6 +373,31 @@ impl CalleeEntryDead {
             || (stores && self.stored_read_bytes.contains(&(self.reg_idx, low)))
     }
 
+    /// Does some path store the LOW byte of `[addr, addr+size)`, unwritten,
+    /// with an instruction that also stores a register above it
+    /// ([`Self::stored_below_bytes`]), and no path store it alone or as the
+    /// highest register of a store (clang -Oz's `push {r3, r4, lr}` pad beside
+    /// its `stm r0!, {r1, r2, r3}` save)? Read by
+    /// [`crate::p4_calls::kuna_calleereadarg`].
+    pub fn stores_below_another(&self, addr: &Address, size: int4) -> bool {
+        if !self.complete || size <= 0 {
+            return false;
+        }
+        let Some(sp) = addr.get_space() else { return false };
+        if self.reg_idx < 0 || sp.get_index() != self.reg_idx {
+            return false;
+        }
+        let low = if addr.is_big_endian() {
+            addr.get_offset().wrapping_add(size as u64 - 1)
+        } else {
+            addr.get_offset()
+        };
+        let key = (self.reg_idx, low);
+        self.stored_below_bytes.contains(&key)
+            && !self.stored_read_bytes.contains(&key)
+            && !self.stored_top_bytes.contains(&key)
+    }
+
     /// How many bytes of `[addr, addr+size)`, counted from its least
     /// significant end, the widest counted read of that end consumes, rounded
     /// up to a power of two. `None` unless [`Self::reads_low_byte`] holds.
@@ -488,6 +528,24 @@ impl CalleeEntryDead {
             && self.takes_none(idx, off, end)
     }
 
+    /// Is this body a trampoline: every path it has leaves through an indirect
+    /// jump (through a GOT slot or a register), none returns, calls or runs a
+    /// user op, and nothing is read before it is written? What such a body
+    /// writes is its own business; every other register goes to the real
+    /// target untouched. Read by [`crate::p4_calls::kuna_calleefilledarg`].
+    pub fn is_trampoline(&self) -> bool {
+        self.complete
+            && !self.lost
+            && self.skipped.is_none()
+            && !self.cuts.is_empty()
+            && self.cuts.len() == self.jumps
+            && self.named_cuts.is_empty()
+            && self.trap_cuts.is_empty()
+            && self.returning_opaque == 0
+            && self.reads.is_empty()
+            && self.return_reads.is_empty()
+    }
+
     /// Does some path reach a system call with a byte of `[addr, addr+size)`
     /// still holding the caller's value, so the kernel may read it?
     pub fn traps_unwritten(&self, addr: &Address, size: int4) -> bool {
@@ -543,6 +601,8 @@ impl CalleeEntryDead {
             &mut self.live_read_bytes,
             &mut self.unpadded_read_bytes,
             &mut self.stored_read_bytes,
+            &mut self.stored_below_bytes,
+            &mut self.stored_top_bytes,
             &mut self.cond_written,
         ];
         for set in sets {
@@ -614,6 +674,7 @@ impl CalleeEntryDead {
             reads,
             cuts: cuts.into_iter().map(|c| c.into_iter().collect()).collect(),
             opaque_cuts: Vec::new(),
+            jumps: 0,
             named_cuts: Vec::new(),
             returning_opaque: 0,
             return_reads: Vec::new(),
@@ -622,6 +683,8 @@ impl CalleeEntryDead {
             skipped: None,
             trap_cuts: Vec::new(),
             stored_read_bytes: ByteSet::new(),
+            stored_below_bytes: ByteSet::new(),
+            stored_top_bytes: ByteSet::new(),
             undecodable: false,
             complete,
         }
@@ -634,6 +697,26 @@ impl CalleeEntryDead {
             self.unpadded_read_bytes.remove(&(self.reg_idx, b));
             self.stored_read_bytes.insert((self.reg_idx, b));
         }
+        self
+    }
+
+    /// Turn the read of byte `b` into one a multi-register store made with a
+    /// register above it (`push {r3, lr}`).
+    #[cfg(test)]
+    pub(crate) fn with_stored_below_byte(mut self, b: u64) -> Self {
+        self.live_read_bytes.remove(&(self.reg_idx, b));
+        self.unpadded_read_bytes.remove(&(self.reg_idx, b));
+        self.stored_below_bytes.insert((self.reg_idx, b));
+        self
+    }
+
+    /// Record that a multi-register store stores byte `b` as its highest
+    /// register (`stm r0!, {r1, r2, r3}`).
+    #[cfg(test)]
+    pub(crate) fn with_stored_top_byte(mut self, b: u64) -> Self {
+        self.live_read_bytes.remove(&(self.reg_idx, b));
+        self.unpadded_read_bytes.remove(&(self.reg_idx, b));
+        self.stored_top_bytes.insert((self.reg_idx, b));
         self
     }
 
@@ -860,7 +943,8 @@ type ThroughMemo = HashMap<(int4, u64, u32), Rc<Vec<RegRead>>>;
 /// was handed. A target's read counts for the register bytes nothing on the
 /// forwarder's path wrote before that call ([`add_reads_through`]), and only
 /// where the target's own `protoorder` statement takes that register on the
-/// terms `passthrough` asks of a callee ([`taken_reads`]): a variadic's
+/// terms `passthrough` asks of a callee, or, where it stated nothing, its body
+/// takes it ([`taken_reads`]): a variadic's
 /// register-save prologue reads every argument register, and a forwarder into
 /// one would otherwise be read as taking them all. Calls are followed
 /// [`MAX_THROUGH_DEPTH`] deep, so a cycle of calls ends. Only
@@ -883,8 +967,10 @@ pub fn reads_through_calls(
 
 /// The live reads of the function at `entry`, its own direct calls followed
 /// `depth` more levels, kept where its statement takes a parameter: an
-/// arity-sound list naming the register, not as a variadic tail. Empty for a
-/// function that stated nothing.
+/// arity-sound list naming the register, not as a variadic tail. A function
+/// that stated nothing is read by its body: the leading run of the default
+/// model's argument registers it takes
+/// ([`crate::p4_calls::kuna_passthrough::taken_run`]).
 fn taken_reads(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
@@ -908,11 +994,35 @@ fn taken_reads(
             let reads = through.unwrap_or_else(|| dead.reads_live.clone());
             reads.into_iter().filter(|r| takes(&stated, r)).collect()
         }
+        None if arch.pass_through => {
+            let dead = probe_cached(arch, entry, reg_idx)?;
+            let through = if depth == 0 {
+                None
+            } else {
+                add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, depth - 1, memo))
+            }
+            .map(|reads_live| CalleeEntryDead { reads_live, ..(*dead).clone() });
+            match arch.default_fp().cloned() {
+                Some(model) if dead.complete => {
+                    let regs = crate::p4_calls::kuna_passthrough::general_arg_registers(&model);
+                    let run = crate::p4_calls::kuna_passthrough::taken_run(&dead, through.as_ref(), &regs, false);
+                    let reads = through.as_ref().map_or(&dead.reads_live, |t| &t.reads_live);
+                    reads.iter().filter(|r| run.iter().any(|(a, s)| overlaps_read(a, *s, r))).copied().collect()
+                }
+                _ => Vec::new(),
+            }
+        }
         _ => Vec::new(),
     };
     let out = Rc::new(taken);
     memo.insert((key.0, key.1, depth), Rc::clone(&out));
     Some(out)
+}
+
+/// Does `read` overlap `[a, a+size)`?
+fn overlaps_read(a: &Address, size: int4, &(ridx, off, sz): &RegRead) -> bool {
+    let end = off + sz.max(0) as u64;
+    a.get_space().is_some_and(|s| s.get_index() == ridx) && a.get_offset() < end && off < a.get_offset() + size.max(0) as u64
 }
 
 /// Does `stated` take a parameter that `read` overlaps, other than a variadic tail?
@@ -1252,8 +1362,11 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.live_read_bytes.clear();
         res.unpadded_read_bytes.clear();
         res.stored_read_bytes.clear();
+        res.stored_below_bytes.clear();
+        res.stored_top_bytes.clear();
         res.cuts.clear();
         res.opaque_cuts.clear();
+        res.jumps = 0;
         res.named_cuts.clear();
         res.returning_opaque = 0;
         res.return_reads.clear();
@@ -1473,6 +1586,17 @@ fn step_instruction(
         })
         .count()
         >= 2;
+    let stored_top = if multi_store {
+        emit.ops
+            .iter()
+            .filter(|o| o.opc == OpCode::CPUI_STORE)
+            .filter_map(|o| o.ins.get(2))
+            .filter(|v| v.space.as_ref().is_some_and(|s| s.get_index() == res.reg_idx))
+            .map(|v| v.offset)
+            .max()
+    } else {
+        None
+    };
     let push = push_copies(emit, res.reg_idx);
     if let Some((sp, _)) = &push {
         if pushed.sp.is_some_and(|s| s != *sp) {
@@ -1506,6 +1630,11 @@ fn step_instruction(
                     res.reads_live.push((idx, off, sz));
                 }
                 let stored = op.opc == OpCode::CPUI_STORE && i == 2;
+                if stored && multi_store {
+                    let below = stored_top.is_some_and(|top| off + v.size as u64 <= top);
+                    let into = if below { &mut res.stored_below_bytes } else { &mut res.stored_top_bytes };
+                    into.extend((off..off + v.size as u64).filter(|b| !base.contains(&(idx, *b))).map(|b| (idx, b)));
+                }
                 if !formal && !(stored && multi_store) {
                     let into = if stored { &mut res.stored_read_bytes } else { &mut res.live_read_bytes };
                     for b in off..off + v.size as u64 {
@@ -1557,6 +1686,7 @@ fn step_instruction(
                 let returns = op.opc == OpCode::CPUI_CALLOTHER
                     && !emit.internal_flow
                     && note_returning_user_op(res, &emit.ops[k + 1..]);
+                res.jumps += usize::from(op.opc == OpCode::CPUI_BRANCHIND);
                 res.opaque_cuts.push(cur.clone());
                 res.cuts.push(cur);
                 if returns {
@@ -1748,7 +1878,8 @@ pub fn seed_callee_entry_dead(
         if let Some(d) = probe_cached(arch, &e, reg_idx) {
             data.kuna_set_callee_entry_dead(&e, d);
         }
-        if pass_through && arch.kuna_protoorder_types.get(&key).is_some_and(|s| !s.inputs.is_empty()) {
+        let stated = arch.kuna_protoorder_types.get(&key);
+        if (pass_through && stated.is_some_and(|s| !s.inputs.is_empty())) || (arch.pass_through && stated.is_none()) {
             if let Some(t) = reads_through_calls(arch, &e, reg_idx, &mut through_memo) {
                 data.kuna_set_callee_entry_through(&e, t);
             }

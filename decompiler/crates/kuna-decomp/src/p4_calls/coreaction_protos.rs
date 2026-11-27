@@ -492,6 +492,8 @@ impl Action for ActionDefaultParams {
         // manager while `data`'s call specs are mutated.
         let arch = data.get_arch().clone();
         let default_fp = arch.default_fp().cloned();
+        let witness_tables = crate::kuna_valuewitness::tables(&arch);
+        let mut ordered: Option<Vec<crate::context::OpId>> = None;
         let size = data.num_calls();
         for i in 0..size {
             if !data.get_call_specs(i).proto().has_model() {
@@ -521,6 +523,18 @@ impl Action for ActionDefaultParams {
                     }
                     _ => None,
                 };
+                // (kuna `valuewitness`) A call through a Swift value witness
+                // table slot takes the slot's prototype, locked, now rather than
+                // in type recovery. See `kuna_valuewitness::call_prototype`.
+                let witness_proto = match (&slot_proto, &witness_tables, has_funcdata) {
+                    (None, Some(tables), false) => {
+                        let ops = ordered.get_or_insert_with(|| crate::kuna_valuewitness::ordered_ops(data));
+                        crate::kuna_valuewitness::call_prototype(data, data.get_call_specs(i).get_op(), ops, tables)
+                    }
+                    _ => None,
+                };
+                let locks_inputs = witness_proto.is_some();
+                let slot_proto = slot_proto.or(witness_proto);
                 let own_slot = matches!(indirect_slot, Some((_, crate::context::IndirectSlotType::FunctionCode, true)));
                 let pieces_entry = if has_funcdata {
                     Some(data.get_call_specs(i).get_entry_address().clone())
@@ -616,6 +630,9 @@ impl Action for ActionDefaultParams {
                         let fc = data.get_call_specs(i);
                         if !fc.proto().is_model_locked() && !fc.proto().has_matching_model(&model) {
                             data.get_call_specs_mut(i).proto_mut().set_model(Some(model));
+                        }
+                        if locks_inputs {
+                            data.get_call_specs_mut(i).proto_mut().set_input_lock(true);
                         }
                     }
                     None => {
@@ -753,6 +770,7 @@ impl Action for ActionExtraPopSetup {
         let sb_size = point.size as int4;
 
         let exact = crate::p4_calls::kuna_calleepurge::every_pop_settled(data);
+        let defer = crate::p4_calls::kuna_declaredpop::allowed(data, exact);
         for i in 0..data.num_calls() {
             let mut extrapop = data.get_call_specs(i).get_extra_pop();
             if extrapop == EXTRAPOP_UNKNOWN && exact {
@@ -765,6 +783,10 @@ impl Action for ActionExtraPopSetup {
             }
             if extrapop == 0 {
                 continue;
+            }
+            // (kuna) See [`crate::p4_calls::kuna_declaredpop`].
+            if crate::p4_calls::kuna_declaredpop::deferred(data, i, defer) {
+                extrapop = EXTRAPOP_UNKNOWN;
             }
             let fc_op = data.get_call_specs(i).get_op();
             let fc_op_addr = match data.obank().get(fc_op) {
@@ -1482,9 +1504,14 @@ impl Action for ActionActiveParam {
                 // the next slot is on the stack -- the ABI reaches the stack
                 // only past a full register file.
                 fc.get_active_input().set_stack_arg_gap(true);
+                let (stored, takes, untaken) = crate::p4_calls::kuna_passthrough::forwarded_evidence(data, &fc);
+                fc.get_active_input().set_forwarded_evidence(stored, takes, untaken);
                 let reads = fc.callee_reg_model().is_some_and(|m| fc.proto().has_matching_model(m));
                 fc.get_active_input().set_callee_reads_registers(reads);
                 crate::kuna_armfloatargs::mark_single_floats(&mut fc, data);
+                // (kuna) `calleefilledarg`: an unfilled register the callee
+                // loads itself is no slot, and ends no argument list.
+                crate::p4_calls::kuna_calleefilledarg::mark(&mut fc, data);
                 let written = crate::kuna_armfloatargs::written_inputs(&fc, data);
                 // resolveModel(activeinput) + deriveInputMap(activeinput): resolve
                 // the model and fill in the trial → parameter map.
@@ -1861,7 +1888,9 @@ impl Action for ActionReturnRecovery {
                     let t = active.get_trial(i);
                     (t.get_address().clone(), t.get_size())
                 };
-                if crate::p4_calls::kuna_passthrough::returns_tail_result(data, vn, &taddr, tsize) {
+                if crate::p4_calls::kuna_passthrough::returns_tail_result(data, vn, &taddr, tsize)
+                    || crate::p4_calls::kuna_cachereturn::returns_cached(data, &return_ops, slot, &taddr, tsize)
+                {
                     active.get_trial_mut(i).mark_active();
                     self.base.count += 1;
                     continue;
@@ -2094,6 +2123,7 @@ impl Action for ActionInputPrototype {
                     triallist.push(vn);
                 }
             }
+            crate::kuna_homespill::mark(data, &mut active);
             crate::kuna_armfloatargs::mark_own_reads(&mut active, data);
             let manager = data.get_arch().manage.clone();
             let _ = data.get_func_proto_mut().resolve_model(&active);
@@ -2133,6 +2163,7 @@ impl Action for ActionInputPrototype {
             } else {
                 update_input_no_types(data, &triallist, &mut active);
             }
+            crate::kuna_varargsave::mark_variadic(data);
         }
         let _ = data.clear_dead_varnodes();
         0

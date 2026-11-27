@@ -100,7 +100,7 @@ fn directives(device: Xml<'_>, path: &str) -> Result<Vec<Directive>> {
         count_directive(&mut bytes, raw.len() + decl.len())?;
         directives.push(Directive {
             raw,
-            body: Body::Data { addr, decl },
+            body: Body::Data { addr, space: None, decl },
         });
         let size = register.bytes as i32;
         for (mask, field) in register.fields {

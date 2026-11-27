@@ -27,7 +27,8 @@
 //!   `; arg:` / `; stack:` comments mapping decompiled variables to stack
 //!   offsets, undecodable bytes as `db` lines, and a `; --- data ---` tail
 //!   listing the named globals plus every `dat_<hex>` address the `.c`
-//!   references, with raw bytes.
+//!   references, with raw bytes. A `--functions`/`--addr` export sweeps only
+//!   the selected functions' code (`kuna_console::kuna_asmscope`).
 //! * `README.md`  — binary metadata (size, arch, entry point, sections,
 //!   function counts) and the artifact/labeling conventions.
 //!
@@ -55,8 +56,9 @@ use std::path::{Path, PathBuf};
 
 use kuna_console::engine::ConsoleProgram;
 use kuna_console::project::{
-    build_asm, build_c, build_header, build_readme, collect_dat_addrs,
-    decompile_export_targets_watched, BatchOutcome, FuncResult,
+    build_asm, build_c, build_header, build_selection_asm, collect_dat_addrs,
+    decompile_export_targets_watched, render_readme, BatchOutcome, FuncResult, ReadmeCounts,
+    ReadmeFacts, ReadmeLayout,
 };
 use kuna_decomp::decompile_drive::{print_c_recompile_prelude, print_c_types};
 
@@ -181,7 +183,8 @@ fn usage() {
          \x20 <name>.h    recompile prelude + type definitions + globals named by\n\
          \x20             address + prototypes\n\
          \x20 <name>.asm  labeled disassembly (function labels, stack-var comments,\n\
-         \x20             dat_<hex> data labels with raw bytes)\n\
+         \x20             dat_<hex> data labels with raw bytes); with --functions or\n\
+         \x20             --addr, of the selected functions' code only\n\
          \x20 README.md   binary metadata (size, arch, entry, sections, counts)\n\
          Unfiltered fast exports default to 10 seconds per function; other runs\n\
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
@@ -360,11 +363,18 @@ pub(crate) fn decompile_project(
     let header = build_header(&file_name, &prelude, &types, &results)?;
     let c_file = build_c(&file_name, &results);
     let dat_addrs = collect_dat_addrs(&results);
-    let asm = build_asm(&prog, &results, &dat_addrs, &file_name);
+    let asm = if whole {
+        build_asm(&prog, &results, &dat_addrs, &file_name)
+    } else {
+        build_selection_asm(&prog, &results, &dat_addrs, &file_name)
+    };
     // The CLI's `| Path |` row prints the canonicalized on-disk path (the wasm
     // front-end passes a virtual label instead), so output stays byte-identical.
-    let readme =
-        build_readme(&binary_path, &binary_path.display().to_string(), &file_name, &prog, &results);
+    let facts = ReadmeFacts {
+        selection: !whole,
+        ..ReadmeFacts::snapshot(&binary_path, &binary_path.display().to_string(), &file_name, &prog)
+    };
+    let readme = render_readme(&facts, Some(ReadmeCounts::of(&results)), ReadmeLayout::Standard);
 
     std::fs::create_dir_all(&out_dir)
         .map_err(|e| format!("cannot create {}: {e}", out_dir.display()))?;
@@ -401,11 +411,42 @@ pub(crate) fn decompile_project(
         .map(|(n, s)| format!("{n} ({s} bytes)"))
         .collect::<Vec<_>>()
         .join(", ");
+    let coverage = whole.then(|| kuna_console::kuna_coverage::Code::of(&prog).measure_results(&results));
     Ok(ProjectCompletion {
         summary: format!(
-            "wrote {}: {files}; functions: {ok} ok, {failed} failed\n",
-            out_dir.display()
+            "wrote {}: {files}; functions: {ok} ok, {failed} failed{}\n",
+            out_dir.display(),
+            coverage_clause(coverage.as_ref())
         ),
         error,
     })
+}
+
+/// (kuna `coverage`) The completion line's `; code: ...` clause: how much of the
+/// program's executable bytes a whole-binary export lifted and decompiled, NUL
+/// bytes no function lifted left out. Empty for a narrowed export, and when the
+/// image publishes no executable bytes.
+pub(crate) fn coverage_clause(coverage: Option<&kuna_console::kuna_coverage::Coverage>) -> String {
+    let Some(coverage) = coverage else {
+        return String::new();
+    };
+    let (Some(lifted), Some(decompiled)) = (coverage.lifted_share(), coverage.decompiled_share()) else {
+        return String::new();
+    };
+    format!(
+        "; code: {} lifted, {} decompiled of {} bytes",
+        percent(lifted),
+        percent(decompiled),
+        coverage.share_total()
+    )
+}
+
+/// `share` as a percentage to one decimal, never rounded up to a whole 100.
+fn percent(share: f64) -> String {
+    let shown = format!("{:.1}%", share * 100.0);
+    if share < 1.0 && shown == "100.0%" {
+        "99.9%".to_string()
+    } else {
+        shown
+    }
 }

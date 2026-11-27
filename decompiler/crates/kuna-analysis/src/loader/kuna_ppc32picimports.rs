@@ -111,26 +111,40 @@ impl State {
         state
     }
 
-    fn meet(&self, other: &Self) -> Self {
-        let pick = |a: Value, b: Value| if a == b { a } else { Value::Unknown };
-        let mut slots = [None; SLOTS];
-        for (out, slot) in slots.iter_mut().zip(self.slots) {
-            *out = slot.filter(|s| other.slots.contains(&Some(*s)));
+    /// Meets `other` into this state in place: each register, saved offset,
+    /// slot and compare that differs is forgotten. Whether anything changed.
+    fn meet(&mut self, other: &Self) -> bool {
+        #[inline(always)]
+        fn pick(a: &mut Value, b: Value) -> bool {
+            let changed = *a != Value::Unknown && *a != b;
+            if changed {
+                *a = Value::Unknown;
+            }
+            changed
         }
-        Self {
-            regs: std::array::from_fn(|i| pick(self.regs[i], other.regs[i])),
-            lr: pick(self.lr, other.lr),
-            ctr: pick(self.ctr, other.ctr),
-            saved: std::array::from_fn(|i| {
-                if self.saved[i] == other.saved[i] {
-                    self.saved[i]
-                } else {
-                    UNSAVED
-                }
-            }),
-            slots,
-            compare: self.compare.filter(|c| other.compare == Some(*c)),
+        let mut changed = false;
+        for (a, &b) in self.regs.iter_mut().zip(&other.regs) {
+            changed |= pick(a, b);
         }
+        changed |= pick(&mut self.lr, other.lr);
+        changed |= pick(&mut self.ctr, other.ctr);
+        for (a, &b) in self.saved.iter_mut().zip(&other.saved) {
+            if *a != UNSAVED && *a != b {
+                *a = UNSAVED;
+                changed = true;
+            }
+        }
+        for slot in self.slots.iter_mut() {
+            if slot.is_some_and(|s| !other.slots.contains(&Some(s))) {
+                *slot = None;
+                changed = true;
+            }
+        }
+        if self.compare.is_some() && self.compare != other.compare {
+            self.compare = None;
+            changed = true;
+        }
+        changed
     }
 
     /// On the edge where the last unsigned compare `cmplwi crF,rX,N` shows
@@ -356,6 +370,7 @@ struct Image<'a> {
     little: bool,
     relocs: FxHashMap<u32, Reloc>,
     stubs: BTreeMap<u32, u32>,
+    stub_cover: FxHashMap<u32, u32>,
     slots: BTreeMap<u64, Vec<u8>>,
     absolute: BTreeSet<u32>,
     resolvers: Vec<(u32, u32)>,
@@ -437,12 +452,19 @@ impl<'a> Image<'a> {
             .is_some_and(super::noreturn::elf_name_is_noreturn)
     }
 
+    /// Index every byte of each stub for [`Self::stub_at`].
+    fn cover_stubs(&mut self) {
+        self.stub_cover.clear();
+        for &start in self.stubs.keys() {
+            if let Some(end) = start.checked_add(16) {
+                self.stub_cover.extend((start..end).map(|pc| (pc, start)));
+            }
+        }
+    }
+
+    /// The stub whose 16 bytes hold `pc`, the later one where two overlap.
     fn stub_at(&self, pc: u32) -> Option<u32> {
-        self.stubs
-            .range(..=pc)
-            .next_back()
-            .filter(|(&start, _)| pc < start.wrapping_add(16))
-            .map(|(&start, _)| start)
+        self.stub_cover.get(&pc).copied()
     }
 
     /// The stub a call returning past the end of its scope at `pc` would run
@@ -832,11 +854,8 @@ impl Analysis<'_, '_> {
             return;
         }
         match walk.states.get_mut(&target) {
-            Some(old) if *old == state => {}
             Some(old) => {
-                let merged = old.meet(&state);
-                if merged != *old {
-                    *old = merged;
+                if old.meet(&state) {
                     walk.queue.push_back(target);
                 }
             }
@@ -1800,6 +1819,7 @@ fn prove(
     if image.stubs.is_empty() {
         return Vec::new();
     }
+    image.cover_stubs();
     image.code.sort_unstable_by_key(|(start, _)| *start);
     image.data.sort_unstable_by_key(|d| d.start);
     code.sort_unstable_by_key(|&(pc, _)| pc);
@@ -2281,7 +2301,7 @@ mod tests {
     #[test]
     fn a_table_entry_outside_its_scope_withholds_the_stub_it_reaches() {
         // Entries: the in-scope label, a nop before the stub, the stub itself.
-        let image = Image {
+        let mut image = Image {
             code: vec![(
                 0x1000,
                 vec![
@@ -2293,6 +2313,7 @@ mod tests {
             scopes: vec![(0x1000, 0x1014)],
             ..Image::default()
         };
+        image.cover_stubs();
         let (targets, stubs) = image.table(0x1000, 0x1004, false, 2);
         assert_eq!(targets, vec![0x1010]);
         assert_eq!(stubs, vec![0x1018, 0x1018]);
@@ -2300,6 +2321,92 @@ mod tests {
             image.table(0x1000, 0x1004, false, UNBOUNDED).1,
             vec![0x1018]
         );
+    }
+
+    #[test]
+    fn meeting_in_place_forgets_what_the_copying_meet_forgot() {
+        fn copying(a: &State, b: &State) -> State {
+            let pick = |x: Value, y: Value| if x == y { x } else { Value::Unknown };
+            let mut slots = [None; SLOTS];
+            for (out, slot) in slots.iter_mut().zip(a.slots) {
+                *out = slot.filter(|s| b.slots.contains(&Some(*s)));
+            }
+            State {
+                regs: std::array::from_fn(|i| pick(a.regs[i], b.regs[i])),
+                lr: pick(a.lr, b.lr),
+                ctr: pick(a.ctr, b.ctr),
+                saved: std::array::from_fn(|i| if a.saved[i] == b.saved[i] { a.saved[i] } else { UNSAVED }),
+                slots,
+                compare: a.compare.filter(|c| b.compare == Some(*c)),
+            }
+        }
+        let mut seed = 0x2545_f491_u64;
+        let mut next = |n: u64| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            (seed >> 33) % n
+        };
+        let values = [Value::Unknown, Value::Constant(1), Value::Constant(2), Value::Entry(30), Value::Stack(8), Value::Return];
+        let slots = [None, Some((16, Value::Return)), Some((20, Value::Stack(0))), Some((24, Value::Return))];
+        let compares = [None, Some((0, 3, 4, Value::Mark(1))), Some((0, 3, 5, Value::Mark(1)))];
+        let random = |next: &mut dyn FnMut(u64) -> u64| {
+            let mut s = State::entry();
+            for r in s.regs.iter_mut() {
+                if next(3) == 0 {
+                    *r = values[next(values.len() as u64) as usize];
+                }
+            }
+            s.lr = values[next(values.len() as u64) as usize];
+            s.ctr = values[next(values.len() as u64) as usize];
+            for o in s.saved.iter_mut() {
+                *o = [UNSAVED, 8, 12][next(3) as usize];
+            }
+            for slot in s.slots.iter_mut() {
+                *slot = slots[next(4) as usize];
+            }
+            s.compare = compares[next(3) as usize];
+            s
+        };
+        let perturb = |mut s: State, next: &mut dyn FnMut(u64) -> u64| {
+            let value = values[next(values.len() as u64) as usize];
+            match next(6) {
+                0 => s.regs[next(32) as usize] = value,
+                1 => s.lr = value,
+                2 => s.ctr = value,
+                3 => s.saved[next(32) as usize] = [UNSAVED, 8, 12][next(3) as usize],
+                4 => s.slots[next(SLOTS as u64) as usize] = slots[next(4) as usize],
+                _ => s.compare = compares[next(3) as usize],
+            }
+            s
+        };
+        for _ in 0..20_000 {
+            let a = random(&mut next);
+            let b = match next(4) {
+                0 => a,
+                1 => perturb(a, &mut next),
+                _ => random(&mut next),
+            };
+            let expected = copying(&a, &b);
+            let mut met = a;
+            let changed = met.meet(&b);
+            assert_eq!(met, expected);
+            assert_eq!(changed, a != b && expected != a);
+        }
+    }
+
+    #[test]
+    fn stub_lookup_is_the_last_stub_at_or_below_within_sixteen_bytes() {
+        let mut image = Image {
+            stubs: [(0x1000, 0), (0x1004, 0), (0x1040, 0), (u32::MAX - 7, 0)].into_iter().collect(),
+            ..Image::default()
+        };
+        image.cover_stubs();
+        let tree = |pc: u32| {
+            image.stubs.range(..=pc).next_back().filter(|(&start, _)| pc < start.wrapping_add(16)).map(|(&start, _)| start)
+        };
+        for pc in (0xff0..0x1060).chain(u32::MAX - 24..=u32::MAX) {
+            assert_eq!(image.stub_at(pc), tree(pc), "{pc:#x}");
+        }
+        assert_eq!(image.stub_at(0x1010), Some(0x1004));
     }
 
     #[test]

@@ -1,0 +1,89 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    Swift instantiation helpers and lazy witness table accessors named from
+    their bodies (`option swifthelpers on|off`, the helper arm of
+    `swiftmetadata`), and metadata accessor results typed at the call
+    (`option swifttypes`).
+
+    Issue: a stripped Swift image calls `sub_<addr>(cache)` before every use
+    of a generic type instantiated at a concrete type, and `sub_<addr>()` for
+    every conformance witness table it builds lazily; neither the helper,
+    nor the type it is asked for, nor the conformance is visible. The
+    helper's body (a cache test, then `swift_getTypeByMangledNameInContext2`
+    on a relative mangled name) and the accessor's (a cache test, then a
+    metadata call and `swift_getWitnessTable`) say what they are, and the
+    mangled name the call passes says which type. On a large third-party
+    iOS app the main binary has two copies of the helper with thousands of
+    call sites. A generic type's metadata accessor result stays `long`.
+
+    Stage / sub-stage: P1 external-refinement, the Swift metadata pass
+    (`kuna-analysis/src/analyzers/swift/kuna_swifthelpers.rs`), and P5
+    type propagation (`kuna-decomp/src/p5_types/kuna_swiftmetaresult.rs`,
+    a `sitetypelock` client).
+
+    P0 assertion: `option swifthelpers on|off` (default on; inert unless
+    `swiftmetadata` is on) and `option swifttypes on|off`.
+
+    Both passes clear the harness architecture and load the real fixture
+    `swift_helpers_arm64_elf` (arm64 ELF shared object, swiftc 6.4.2
+    `-parse-stdlib`, `llvm-objcopy strip-all`) with `swiftmetadata on`.
+    Pass 1 (`swifthelpers off`, `swifttypes off`) reproduces the BUG:
+    `hf.useBox(_:)` calls `sub_112e4(0x31da0)` and `sub_11328()`, and
+    `hf.pair(_:)` keeps the accessor result in a `long`. Pass 2 (the
+    defaults) is the FIX: the helper call names the cache after
+    `hf.Box<hf.Unit>`, the accessor is
+    `<hf.Box<hf.Unit>:hf.Shape>.lazy_protocol_witness_table_accessor`
+    with its cache, and the accessor results are `swift.type_metadata *`,
+    also in `hf.wrap(_:)`, which loads the value witness table below one
+    (`valuewitness`).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_helpers_arm64_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>option swifthelpers off</com>
+  <com>option swifttypes off</com>
+  <com>read symbols</com>
+  <com>load addr 0x1194c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x11ab8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/swift_helpers_arm64_elf</com>
+  <com>option swiftmetadata on</com>
+  <com>read symbols</com>
+  <com>load addr 0x1194c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x11328</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x11ab8</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x1198c</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="swifthelpers off: the helper call is anonymous and passes a bare constant" min="1" max="1">v2 = sub_112e4\(0x31da0\);</stringmatch>
+<stringmatch name="swifthelpers off: the lazy witness table accessor is anonymous" min="1" max="1">hf\.measure\(_:\)\(&amp;v1,v2,sub_11328\(\)\);</stringmatch>
+<stringmatch name="swifttypes off: the accessor result is an integer" min="1" max="1">unsigned long v1; // x0 \| x19</stringmatch>
+<stringmatch name="swifthelpers on: the helper is named and its cache names the type it asks for" min="1" max="1">v2 = __swift_instantiateConcreteTypeFromMangledName\(&amp;hf\.Box&lt;hf\.Unit&gt;\.type_metadata_demangling_cache\);</stringmatch>
+<stringmatch name="swifthelpers on: the lazy witness table accessor is named after its conformance at the concrete type" min="1" max="1">hf\.measure\(_:\)\(&amp;v1,v2,&lt;hf\.Box&lt;hf\.Unit&gt;:hf\.Shape&gt;\.lazy_protocol_witness_table_accessor\(\)\);</stringmatch>
+<stringmatch name="swifthelpers on: the accessor takes nothing" min="1" max="1">void \* &lt;hf\.Box&lt;hf\.Unit&gt;:hf\.Shape&gt;\.lazy_protocol_witness_table_accessor\(void\)</stringmatch>
+<stringmatch name="swifthelpers on: its cache is named" min="1" max="1">if \(&lt;hf\.Box&lt;hf\.Unit&gt;:hf\.Shape&gt;\.lazy_protocol_witness_table_cache\)</stringmatch>
+<stringmatch name="swifthelpers on: the Abstract helper is named too" min="1" max="1">__swift_instantiateConcreteTypeFromMangledNameAbstract\(&amp;hf\.Box&lt;hf\.Unit&gt;\.type_metadata_demangling_cache\)</stringmatch>
+<stringmatch name="swifttypes on: the helper result is a metadata pointer" min="2" max="2">swift\.type_metadata \*v2; // x0</stringmatch>
+<stringmatch name="swifttypes on: a generic accessor's result is a metadata pointer" min="1" max="1">swift\.type_metadata \*v1; // x0 \| x19</stringmatch>
+<stringmatch name="swifttypes on: a result whose value witness table is loaded is typed too" min="1" max="1">swift\.type_metadata \*self; // x0 \| x23</stringmatch>
+<stringmatch name="swifttypes on: the table below it stays a byte offset" min="1" max="1">v5 = \(\(swift\.value_witness_table \*\*\)self\)\[-1\];</stringmatch>
+</decompilertest>

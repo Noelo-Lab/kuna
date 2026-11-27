@@ -103,7 +103,7 @@ pub(crate) fn reentry_edges(
 
 /// Operations one round's reachability walks may visit before every
 /// provisional dispatch is assumed reachable.
-const REACH_BUDGET: usize = 1 << 20;
+pub(super) const REACH_BUDGET: usize = 1 << 20;
 
 /// For each provisional dispatch, the new edges whose destination reaches it
 /// through decoded code. Only those edges can bring it another value, so only
@@ -131,7 +131,7 @@ pub(crate) fn reaching_edges(
 /// unless the operation always transfers, direct targets, every operation of an
 /// instruction with an internal relative branch, and the recovered targets of
 /// an indirect jump. `None` when the budget runs out.
-fn reached(
+pub(super) fn reached(
     data: &Funcdata,
     start: OpId,
     wanted: &BTreeSet<OpId>,
@@ -249,7 +249,7 @@ pub(crate) fn target_encoding(data: &Funcdata, branch: OpId) -> Option<(i32, u64
     Some((size, result))
 }
 
-fn incoming_return(data: &Funcdata, vn: VarnodeId) -> bool {
+pub(crate) fn incoming_return(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(value) = data.vbank().get(vn).filter(|v| v.is_input()) else {
         return false;
     };
@@ -390,14 +390,27 @@ pub(crate) fn normalize_return_selector(data: &mut Funcdata, table: &JumpTable) 
     };
     let budget = 128.max(4 * table.address_table().len());
     let Some(proof) = destinations(data, root, encoding, budget) else { return false };
-    if !proof.returns || proof.constants.is_empty() || !proof.constants.iter().all(|target| {
-        table.address_table().iter().any(|address| address.get_offset() == *target)
-    }) {
+    // A tagged selector and its byte destination can differ. Check the pair
+    // the switch will actually use, and reserve every case label for its case.
+    let mut labels = BTreeSet::new();
+    let mut matched = BTreeSet::new();
+    for (i, address) in table.address_table().iter().enumerate() {
+        let label = table.get_label_by_index(i as i32);
+        if label == crate::jumptable::NO_LABEL { continue; }
+        labels.insert(label);
+        if address.get_space().is_some_and(|space| {
+            crate::kuna_constselectjump::target_offset(label, space.get_word_size(), data.get_arch().funcptr_align)
+                == address.get_offset()
+        }) {
+            matched.insert(label);
+        }
+    }
+    if !proof.returns || proof.constants.is_empty() || !proof.constants.is_subset(&matched) {
         return false;
     }
     let size = data.vbank().get(root).unwrap().get_size();
     let mask = encoding.1 & calc_mask(size);
-    let sentinel = (0..=proof.constants.len() as u64).find_map(|ordinal| {
+    let sentinel = (0..=labels.len() as u64).find_map(|ordinal| {
         let mut value = 0;
         let mut source = ordinal;
         let mut bits = mask;
@@ -407,7 +420,7 @@ pub(crate) fn normalize_return_selector(data: &mut Funcdata, table: &JumpTable) 
             source >>= 1;
             bits &= bits - 1;
         }
-        (source == 0 && !proof.constants.contains(&value)).then_some(value)
+        (source == 0 && !labels.contains(&value)).then_some(value)
     });
     let Some(sentinel) = sentinel else { return false };
     let replacement = clone_selector(data, root, sentinel, &mut HashMap::new());

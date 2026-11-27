@@ -1,4 +1,6 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "ppc32_computed_lr.rs"]
+mod ppc32_computed_lr;
 #[path = "mips_elf_selection.rs"]
 mod mips_elf_selection;
 #[path = "return_branch_cli.rs"]
@@ -6,6 +8,8 @@ mod return_branch_cli;
 #[path = "riscv_zcmp.rs"]
 mod riscv_zcmp;
 mod common;
+#[path = "android_jni.rs"]
+mod android_jni;
 #[path = "rust_signature_summary.rs"]
 mod rust_signature_summary;
 #[path = "sparc_prologue_start.rs"]
@@ -32,6 +36,9 @@ mod array_record;
 #[path = "aif_lea_padding.rs"]
 mod aif_lea_padding;
 
+#[path = "switchextent_cli.rs"]
+mod switchextent_cli;
+
 #[path = "ambiguous_selector_cli.rs"]
 mod ambiguous_selector_cli;
 
@@ -46,6 +53,10 @@ mod archive_members_cli;
 
 #[path = "assert_callee.rs"]
 mod assert_callee;
+#[path = "assert_named_data.rs"]
+mod assert_named_data;
+#[path = "stated_jump_targets.rs"]
+mod stated_jump_targets;
 
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
@@ -160,6 +171,8 @@ mod caller_stack_cli;
 
 #[path = "castnarrow_round_trip.rs"]
 mod castnarrow_round_trip;
+#[path = "sdivpow2_round_trip.rs"]
+mod sdivpow2_round_trip;
 #[path = "strlenscan_round_trip.rs"]
 mod strlenscan_round_trip;
 #[path = "repstring_round_trip.rs"]
@@ -175,6 +188,8 @@ mod coldentry_source_boundary;
 mod compact_switch_cli;
 #[path = "switch_self_loop_cli.rs"]
 mod switch_self_loop_cli;
+#[path = "open_dispatch.rs"]
+mod open_dispatch;
 #[path = "indirect_dispatch.rs"]
 mod indirect_dispatch;
 
@@ -325,6 +340,23 @@ mod libgcc_divdi3;
 #[path = "rettriangle_round_trip.rs"]
 mod rettriangle_round_trip;
 
+#[path = "retshape_round_trip.rs"]
+mod retshape_round_trip;
+
+#[path = "boolret_round_trip.rs"]
+mod boolret_round_trip;
+
+#[path = "rangetest_round_trip.rs"]
+mod rangetest_round_trip;
+
+#[path = "tailform_round_trip.rs"]
+mod tailform_round_trip;
+
+#[path = "tailform_noreturn_round_trip.rs"]
+mod tailform_noreturn_round_trip;
+#[path = "fatalchain_round_trip.rs"]
+mod fatalchain_round_trip;
+
 #[path = "return_copy_clone.rs"]
 mod return_copy_clone;
 
@@ -362,6 +394,8 @@ mod narrow_extension;
 
 #[path = "narrow_switch_labels.rs"]
 mod narrow_switch_labels;
+#[path = "narrow_multiply_emission.rs"]
+mod narrow_multiply_emission;
 
 #[path = "narrow_zext_returns.rs"]
 mod narrow_zext_returns;
@@ -503,6 +537,8 @@ mod repeated_global_pointer_stores;
 
 #[path = "stored_return_values.rs"]
 mod stored_return_values;
+#[path = "forced_return_callers.rs"]
+mod forced_return_callers;
 
 #[path = "strings_cli.rs"]
 mod strings_cli;
@@ -687,6 +723,8 @@ mod windows_stack_argument_alignment;
 mod imported_data_identifiers;
 #[path = "dwarf_linkage_calls.rs"]
 mod dwarf_linkage_calls;
+#[path = "dwarf_name_chars.rs"]
+mod dwarf_name_chars;
 #[path = "project_named_globals.rs"]
 mod project_named_globals;
 #[path = "x87_register_payload.rs"]
@@ -730,6 +768,9 @@ mod float_literal_width;
 
 #[path = "project_call_declarations.rs"]
 mod project_call_declarations;
+
+#[path = "project_unit_calls.rs"]
+mod project_unit_calls;
 
 #[path = "parameter_spill_reuse.rs"]
 mod parameter_spill_reuse;
@@ -816,9 +857,13 @@ mod ppc32_pic_calls;
 
 #[path = "ppc32_pic_abi.rs"]
 mod ppc32_pic_abi;
+#[path = "ppc32_pic_note.rs"]
+mod ppc32_pic_note;
 
 #[path = "compact_json.rs"]
 mod compact_json;
+#[path = "coverage_cli.rs"]
+mod coverage_cli;
 
 #[path = "rust_probestack.rs"]
 mod rust_probestack;
@@ -888,6 +933,8 @@ mod high_address_branches;
 
 #[path = "mips_import_flow.rs"]
 mod mips_import_flow;
+#[path = "octeon_elf32.rs"]
+mod octeon_elf32;
 
 #[path = "qualified_call.rs"]
 mod qualified_call;
@@ -918,9 +965,19 @@ mod nullable_relocations;
 
 #[path = "call_site_prototype.rs"]
 mod call_site_prototype;
+#[path = "homespill_assert.rs"]
+mod homespill_assert;
 
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;
 
 #[path = "types_header.rs"]
 mod types_header;
+
+#[path = "assert_storage_names.rs"]
+mod assert_storage_names;
+#[path = "bounds_checked_prototypes.rs"]
+mod bounds_checked_prototypes;
+
+#[path = "post_call_resume.rs"]
+mod post_call_resume;

@@ -238,6 +238,7 @@ fn bind(out: &mut AnalysisOutput, ctx: &AnalysisCtx, addr: u64, name: &str) {
             output_storage: None,
             input_storage: Vec::new(),
             kuna_library_names: None,
+            kuna_library_table: false,
         },
     ));
 }

@@ -24,10 +24,17 @@
     default where the binary takes case 0x80 (printed -0x80).  A switch on
     an expression narrower than int whose promotion is not known to extend
     like its type now casts the selector to that type.
+        mul_low: mov eax,edi; imul ax,si; ret
+        mul_shr: mov eax,edi; imul ax,si; shr ax,3; ret
+    C promotes both unsigned short operands to int, so `a * b` overflows
+    int for 43946 * 52719 although the machine keeps only the low word.
+    The product is now taken in unsigned int and converted back to its
+    width, once even where a cast already reads it.
 
-    Stage: P9 emission (ActionSetCasts input casts; the switch selector).
-    A strict fix with no option: #1, #3 and #5 are the corrected reads, #2,
-    #4 and #6 the old ones.
+    Stage: P9 emission (ActionSetCasts input casts; the switch selector;
+    the narrow product).
+    A strict fix with no option: #1, #3, #5, #7 and #8 are the corrected
+    reads, #2, #4 and #6 the old ones.
 -->
 <bytechunk space="ram" offset="0x401000" readonly="true">
 0fb706358000000083c080488907c3
@@ -43,11 +50,17 @@ b803000000eb21b805000000eb1ab807000000eb13b80b000000eb0cb80d000000eb05b8010000
 <bytechunk space="ram" offset="0x402000" readonly="true">
 27114000000000002e1140000000000035114000000000003c114000000000004311400000000000
 </bytechunk>
+<bytechunk space="ram" offset="0x402080" readonly="true">89f8660fafc6c3</bytechunk>
+<bytechunk space="ram" offset="0x402090" readonly="true">89f8660fafc666c1e803c3</bytechunk>
 </binaryimage>
 <script>
   <com>map function r0x401000 widen</com>
   <com>map function r0x401020 shift</com>
   <com>map function r0x401100 sel</com>
+  <com>map function r0x402080 mul_low</com>
+  <com>map prototype mul_low uint2 mul_low(uint2 a,uint2 b);</com>
+  <com>map function r0x402090 mul_shr</com>
+  <com>map prototype mul_shr uint2 mul_shr(uint2 a,uint2 b);</com>
   <com>lo fu widen</com>
   <com>decompile</com>
   <com>print C</com>
@@ -55,6 +68,12 @@ b803000000eb21b805000000eb1ab807000000eb13b80b000000eb0cb80d000000eb05b8010000
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu sel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul_low</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mul_shr</com>
   <com>decompile</com>
   <com>print C</com>
   <com>quit</com>
@@ -65,4 +84,6 @@ b803000000eb21b805000000eb1ab807000000eb13b80b000000eb0cb80d000000eb05b8010000
 <stringmatch name="UNSIGNEDREAD #4: no arithmetic shift of the int" min="0" max="0">return \(\*a0 \^ 0x80\) - 0x80 >> 3;</stringmatch>
 <stringmatch name="UNSIGNEDREAD #5: the byte-sum selector is cast to its byte type" min="1" max="1">switch\(\(char\)\(a0 \+ '\\x01'\)\)</stringmatch>
 <stringmatch name="UNSIGNEDREAD #6: no int-wide selector" min="0" max="0">switch\(a0 \+</stringmatch>
+<stringmatch name="UNSIGNEDREAD #7: multiply in unsigned int before the low-word truncation" min="1" max="1">return \((uint2|unsigned short|ushort)\)\(\((uint4|unsigned int|uint)\)a \* b\);</stringmatch>
+<stringmatch name="UNSIGNEDREAD #8: a cast that reads the product converts it once" min="1" max="1">return \((uint2|unsigned short|ushort)\)\(\((uint4|unsigned int|uint)\)a \* b\) >> 3;</stringmatch>
 </decompilertest>

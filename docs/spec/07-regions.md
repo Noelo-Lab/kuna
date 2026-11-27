@@ -658,13 +658,20 @@ structurer: when `regionstructure` is on (default since DIV-12),
 `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
 (ActionBlockStructure)` routes S8 through
 `decompiler/crates/kuna-decomp/src/p8_structure/region_structurer.rs
-(run_region_structurer)`, which builds and computes a fresh
-`KunaRegionIdentifier` over the real CFG per structuring attempt and consumes
-ONE thing from this phase: when `regionlooprefine` is on, the `cyclic_loops()`
-projection — the identifier's refined loop bodies and exit frontiers keyed by
-block start address — as the read side of the omitted
-`force_loop_single_exit` refinement. The identifier run is otherwise a
-non-fatal live-CFG proof whose compute result is discarded; the
+(run_region_structurer)`, which builds a fresh `KunaRegionIdentifier` over
+the real CFG per structuring attempt and consumes ONE thing from this phase:
+when `regionlooprefine` is on, the `cyclic_loops()` projection — the
+identifier's refined loop bodies and exit frontiers keyed by block start
+address — as the read side of the omitted `force_loop_single_exit`
+refinement. With the option off it builds no identifier. With it on it runs
+only the preprocessing and the cyclic phase
+(`kuna_regionid.rs (KunaRegionIdentifier::compute_cyclic)`): the acyclic phase
+only wraps nodes that are already there in new acyclic regions, removing each
+member from the graph it is processing and keeping it inside the wrapper, so it
+leaves every loop's head address, leaf blocks and successor frontier as the
+cyclic phase made them; on the decbench `bash` it was about 60% of the
+identifier's time. The identifier run is otherwise a non-fatal live-CFG proof
+whose result is discarded; the
 virtualize-to-goto tie-break is the structurer's own address-keyed order over
 `sblocks` (`region_structurer.rs (RegionStructurer::order_virtualizable_edges)`). Nothing is cached in `Funcdata`; region
 identification is recomputed by every consumer. How the structurer matches

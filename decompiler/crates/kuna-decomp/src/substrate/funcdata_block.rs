@@ -284,6 +284,8 @@ impl Funcdata {
         }
         // stable_sort by CaseOrder::compare (label, then depth).
         cases.sort_by(crate::block::CaseOrder::compare);
+        // (kuna `switchcaseorder`) default and unstopped arms last.
+        crate::p8_structure::kuna_switchcaseorder::order_cases(self, &mut cases);
         if let Some(slot) = self.sblocks_mut().block_mut(sw).switch_caseblocks_mut() {
             *slot = cases;
         }
@@ -1991,11 +1993,13 @@ impl Funcdata {
     ///      to the new BRANCHIND so the existing structurer + printer emit a
     ///      `switch`.
     ///
-    /// Returns `Ok(Some((jt_index, read_head_operand)))` on success, `Ok(None)` if
-    /// the CFG no longer matches the record (e.g. the head/targets were merged
-    /// away — install declines gracefully rather than corrupting the CFG).
-    /// `read_head_operand` reports that `prefer_head_operand` found an operand of
-    /// the head compare other than `var_addr` and the switch reads it.
+    /// Returns `Ok(Some((jt_index, read_head_operand, strict)))` on success,
+    /// `Ok(None)` if the CFG no longer matches the record (e.g. the head/targets
+    /// were merged away — install declines gracefully rather than corrupting the
+    /// CFG). `read_head_operand` reports that `prefer_head_operand` found an
+    /// operand of the head compare other than `var_addr` and the switch reads it;
+    /// `strict` that the install enters every body directly and passes the value
+    /// check with every raw read counted as a use.
     #[allow(clippy::too_many_arguments)]
     pub fn kuna_install_lowered_switch(
         &mut self,
@@ -2007,7 +2011,11 @@ impl Funcdata {
         default_target: &Address,
         signed_labels: bool,
         prefer_head_operand: bool,
-    ) -> KunaResult<Option<(usize, bool)>> {
+        load_at: Option<&Address>,
+        path_spine: &[Address],
+        path_returns: &[(Address, int4)],
+        linear: bool,
+    ) -> KunaResult<Option<(usize, bool, bool)>> {
         use kuna_base::types::uintb;
 
         // Don't re-install if a table already exists for this branch address.
@@ -2027,53 +2035,84 @@ impl Funcdata {
         // address-table entry; duplicate-valued cases collapse to the same edge,
         // and the C++ trivial recovery emits one label per edge).
         // (kuna `loweredswitchexact`) every label of a shared body is kept instead.
-        let mut out_targets: Vec<Address> = Vec::new();
-        let mut out_labels: Vec<Vec<uintb>> = Vec::new();
-        let mut out_is_default: Vec<bool> = Vec::new();
-
-        for (i, tgt) in case_targets.iter().enumerate() {
-            if tgt == default_target {
-                continue; // a case that coincides with the default folds away
+        // (kuna `loweredswitchpath`) A tree that loads each case's value inside it
+        // installs along its raw paths.
+        let (out_blocks, out_labels, out_is_default, strict) = if !path_spine.is_empty() {
+            use crate::p2_lift::kuna_loweredswitchpath as lsp;
+            let arms = match lsp::plan_install(self, head, var_addr, var_size, case_vals, prefer_head_operand, load_at, path_spine, path_returns) {
+                Some(arms) if arms.len() >= 3 => arms,
+                _ => return Ok(None),
+            };
+            let targets: Vec<BlockId> = arms.iter().map(|a| a.target).collect();
+            if self.kuna_lowered_switch_strands_table(head, &targets) {
+                return Ok(None);
             }
-            if let Some(k) = out_targets.iter().position(|a| a == tgt) {
-                out_labels[k].push(case_vals[i]);
-                continue; // duplicate target: one out-edge
+            if linear && !crate::p2_lift::kuna_loweredswitchexact::raw_cases_private(self, head, &targets[..targets.len() - 1], &targets) {
+                return Ok(None);
             }
-            out_targets.push(tgt.clone());
-            out_labels.push(vec![case_vals[i]]);
-            out_is_default.push(false);
-        }
-        // Default out-edge last.
-        out_targets.push(default_target.clone());
-        out_labels.push(vec![0]);
-        out_is_default.push(true);
+            let blocks = lsp::build_arm_blocks(self, &arms)?;
+            let n = arms.len();
+            let labels: Vec<Vec<uintb>> = arms.into_iter().map(|a| if a.labels.is_empty() { vec![0] } else { a.labels }).collect();
+            (blocks, labels, (0..n).map(|i| i + 1 == n).collect::<Vec<bool>>(), false)
+        } else {
+            let mut out_targets: Vec<Address> = Vec::new();
+            let mut out_labels: Vec<Vec<uintb>> = Vec::new();
+            let mut out_is_default: Vec<bool> = Vec::new();
 
-        // Resolve every target to a live basic block; if any is missing the CFG no
-        // longer matches — decline.
-        let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
-        for tgt in &out_targets {
-            match self.kuna_block_at_start(tgt) {
-                Some(b) => out_blocks.push(b),
-                None => return Ok(None),
+            for (i, tgt) in case_targets.iter().enumerate() {
+                if tgt == default_target {
+                    continue; // a case that coincides with the default folds away
+                }
+                if let Some(k) = out_targets.iter().position(|a| a == tgt) {
+                    out_labels[k].push(case_vals[i]);
+                    continue; // duplicate target: one out-edge
+                }
+                out_targets.push(tgt.clone());
+                out_labels.push(vec![case_vals[i]]);
+                out_is_default.push(false);
             }
-        }
-        // Need at least 2 case edges + a default for a switch.
-        if out_blocks.len() < 3 {
-            return Ok(None);
-        }
+            // Default out-edge last.
+            out_targets.push(default_target.clone());
+            out_labels.push(vec![0]);
+            out_is_default.push(true);
 
-        // The rewiring severs the head's out-edges, so everything reachable only
-        // through the cascade spine is swept.  If an already-recovered jump table
-        // sits down there, the cascade was a guard chain in front of a genuine
-        // switch and installing would delete it — decline.
-        if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
-            return Ok(None);
-        }
-        // (kuna `loweredswitchexact`) Nothing a deleted compare block writes may be
-        // read again on the raw p-code this edits.
-        if !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
-            return Ok(None);
-        }
+            // Resolve every target to a live basic block; if any is missing the CFG no
+            // longer matches — decline.
+            let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
+            for tgt in &out_targets {
+                match self.kuna_block_at_start(tgt) {
+                    Some(b) => out_blocks.push(b),
+                    None => return Ok(None),
+                }
+            }
+            // (kuna `loweredswitchexact`) Enter each body through the raw block the tree
+            // reaches it by.
+            let entered = out_blocks.clone();
+            crate::p2_lift::kuna_loweredswitchexact::raw_case_entries(self, head, &mut out_blocks);
+            // Need at least 2 case edges + a default for a switch.
+            if out_blocks.len() < 3 {
+                return Ok(None);
+            }
+
+            // The rewiring severs the head's out-edges, so everything reachable only
+            // through the cascade spine is swept.  If an already-recovered jump table
+            // sits down there, the cascade was a guard chain in front of a genuine
+            // switch and installing would delete it — decline.
+            if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
+                return Ok(None);
+            }
+            // (kuna `loweredswitchexact`) Nothing a deleted compare block writes may be
+            // read again on the raw p-code this edits.
+            if !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
+                return Ok(None);
+            }
+            let strict = out_blocks == entered
+                && crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values_strictly(self, head, &out_blocks);
+            if linear && !crate::p2_lift::kuna_loweredswitchexact::raw_cases_private(self, head, &out_blocks[..out_blocks.len() - 1], &out_blocks) {
+                return Ok(None);
+            }
+            (out_blocks, out_labels, out_is_default, strict)
+        };
 
         // The head's trailing op must be the recorded CBRANCH.
         let cbranch = match self.bb_op_tail(head) {
@@ -2098,6 +2137,17 @@ impl Funcdata {
         } else {
             None
         };
+        // (kuna) A selector the detection graph held in a temporary has no storage
+        // to fall back to: the head compare must read the output of that load.
+        if let Some(at) = load_at {
+            let loaded = match &head_operand {
+                Some(HeadOperand::Value(v)) => self.vbank().get(*v).and_then(|v| v.get_def()).and_then(|d| self.obank().get(d)),
+                _ => None,
+            };
+            if !loaded.is_some_and(|op| op.code() == OpCode::CPUI_LOAD && op.get_addr() == at) {
+                return Ok(None);
+            }
+        }
         let read_head_operand = head_operand.is_some();
         let swvn = match head_operand {
             Some(_) => None,
@@ -2237,7 +2287,7 @@ impl Funcdata {
 
         self.jumpvec_mut().push(jt);
         let idx = self.num_jump_tables() as usize - 1;
-        Ok(Some((idx, read_head_operand)))
+        Ok(Some((idx, read_head_operand, strict)))
     }
 
     /// (kuna) Would installing the lowered switch at `head` strand a genuine jump
@@ -2576,18 +2626,9 @@ impl Funcdata {
         let share = self.get_arch().jumptable_share_partial;
         let mut owned: Option<Funcdata> = None;
         if !share || shared.is_none() {
-            let mut fresh = match self.build_jumptable_partial() {
-                Ok(p) => p,
-                Err(_) => return RecoveryMode::FailNormal,
-            };
-            // Mark the partial as a jump-table-recovery clone, then build its blocks
-            // and run the reduced "jumptable" universalAction over it (C++
-            // partial.truncatedFlow + allacts.setCurrent("jumptable") + perform).
-            fresh.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
-            if run_pipeline(&mut fresh, visited).is_err() {
-                // C++ catches LowlevelError, warns, and returns fail_normal.
+            let Some(fresh) = self.jumptable_partial(visited, run_pipeline) else {
                 return RecoveryMode::FailNormal;
-            }
+            };
             if share {
                 *shared = Some(fresh);
             } else {
@@ -2632,12 +2673,15 @@ impl Funcdata {
         let addr2 = partial.obank().get(partop).unwrap().get_addr().clone();
         jt.set_indirect_op_addr(partop, addr2);
         let res = if jt.is_partial() {
-            let targets = self.get_override().multistage_targets(&addr).map(<[Address]>::to_vec);
-            jt.recover_multistage(partial).map(|()| {
-                if let Some(targets) = targets {
-                    jt.kuna_adopt_multistage_targets(targets);
-                }
-            })
+            let recovered = jt.recover_multistage(partial);
+            // A failed re-entry must preserve its followed singleton. An ordinary
+            // restart uses the guarded targets established by the late model.
+            if self.get_override().multistage_targets(&addr)
+                .is_some_and(|targets| jt.kuna_adopt_multistage_targets(targets, recovered.is_err())) {
+                Ok(())
+            } else {
+                recovered
+            }
         } else {
             jt.recover_addresses(partial)
         };
@@ -2655,6 +2699,18 @@ impl Funcdata {
                 }
             }
         }
+    }
+
+    /// Build the SSA view of the flow decoded so far.
+    pub(crate) fn jumptable_partial(
+        &self,
+        visited: &crate::flow::VisitedMap,
+        run_pipeline: &mut crate::flow::JtPipelineFn<'_>,
+    ) -> Option<Funcdata> {
+        let mut partial = self.build_jumptable_partial().ok()?;
+        partial.set_flag_raw(crate::funcdata::funcdata_flags::jumptablerecovery_on);
+        run_pipeline(&mut partial, visited).ok()?;
+        Some(partial)
     }
 
     /// Build the partial Funcdata for jump-table recovery: a fresh function
@@ -2685,6 +2741,9 @@ impl Funcdata {
             }
         }
         partial.truncated_flow_clone(self)?;
+        partial.kuna_extent_tables = self.kuna_extent_tables.clone();
+        partial.kuna_later_tables = self.kuna_later_tables.clone();
+        partial.kuna_later_wanted = std::rc::Rc::clone(&self.kuna_later_wanted);
         Ok(partial)
     }
 
@@ -2999,7 +3058,7 @@ impl Funcdata {
     /// substantive operation in the block (C++ `ActionReturnSplit::isSplittable`,
     /// `blockaction.cc:2242`).  Only MULTIEQUAL / COPY / RETURN ops with
     /// constant/annotation/non-free inputs are allowed.
-    fn return_split_is_splittable(&self, b: BlockId) -> bool {
+    pub(crate) fn return_split_is_splittable(&self, b: BlockId) -> bool {
         let mut global_stores: usize = 0;
         let mut cur = self.bb_op_head(b);
         while let Some(op) = cur {
@@ -3076,6 +3135,8 @@ impl Funcdata {
         }
         let mut splitedge: Vec<int4> = Vec::new();
         let mut retnode: Vec<BlockId> = Vec::new();
+        let keep_breaks =
+            crate::p8_structure::kuna_loopcond::rule_for(self) == Some(crate::p8_structure::kuna_loopcond::Rule::Layout);
 
         let return_ops: Vec<OpId> = self.obank().iter_code(OpCode::CPUI_RETURN).collect();
         for op in return_ops {
@@ -3103,11 +3164,19 @@ impl Funcdata {
             // splitedge holds edges to split, biggest index first, so edge removal
             // does not shift the index of remaining edges.
             let size_in = self.bblocks_ref().block(parent).size_in();
+            let shared = if keep_breaks { crate::p8_structure::kuna_loopcond::shared_return(self, parent) } else { Vec::new() };
             for i in (0..size_in).rev() {
                 let inbl = self.bblocks_ref().block(parent).get_in(i);
                 let mut bl = self.bblocks_ref().block(inbl).get_copy_map();
                 while let Some(cur) = bl {
                     if self.sblocks_ref().block(cur).is_mark() {
+                        // (kuna `loopcontinue auto`, `loopcondhoist`) a `break` keeps its one return.
+                        if crate::p8_structure::kuna_o0jumps::keeps_return(self, parent, i, cur)
+                            || (shared.contains(&i)
+                                && crate::p8_structure::kuna_loopcond::is_loop_break(self.sblocks_ref(), cur))
+                        {
+                            break;
+                        }
                         splitedge.push(i);
                         retnode.push(parent);
                         bl = None;
@@ -3247,7 +3316,8 @@ impl Funcdata {
     }
 
     pub(crate) fn returndup_apply(&mut self, max_splits: int4, max_inedges: int4) -> int4 {
-        let mut count = 0;
+        // (kuna `returndup auto`) the recorded return statements first.
+        let mut count = crate::p8_structure::kuna_o0returns::split(self, max_splits, max_inedges);
 
         // Collect the candidate RETURN blocks up front — `node_split` mutates the CFG
         // (adds duplicate blocks, calls `structure_reset`), so we must not iterate the
@@ -3273,6 +3343,9 @@ impl Funcdata {
             if !self.return_split_is_splittable(parent) {
                 continue;
             }
+            if crate::p8_structure::kuna_o0returns::recorded(self, parent) {
+                continue;
+            }
             // (kuna, angr-selective) Only duplicate a SIMPLE CONST-RETURN region — angr
             // `ReturnDuplicatorHigh._should_duplicate_dst = dst_is_const_ret`. kuna used to
             // duplicate every splittable shared return, INCLUDING `return <variable>`, which
@@ -3294,6 +3367,13 @@ impl Funcdata {
             }
             if !parents.contains(&parent) {
                 parents.push(parent);
+            }
+        }
+
+        // (kuna `retshape`) a shared return of a value the arms merge.
+        for b in crate::p8_structure::kuna_retshape::arm_returns(self, max_inedges) {
+            if !parents.contains(&b) {
+                parents.push(b);
             }
         }
 
@@ -3417,6 +3497,9 @@ impl Funcdata {
                 continue;
             }
             if !self.return_split_is_splittable(parent) {
+                continue;
+            }
+            if crate::p8_structure::kuna_o0returns::recorded(self, parent) {
                 continue;
             }
             let mut edges = self.earlyreturn_const_edges(parent);

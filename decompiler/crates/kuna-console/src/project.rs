@@ -124,6 +124,12 @@ pub struct FuncResult {
     /// every error record, and on every run that did not ask for it
     /// ([`DecompileOptions::want_callee_hints`]).
     pub callee_hints: Vec<u64>,
+    /// (kuna `coverage`) The bytes of every instruction the decompile decoded
+    /// for this function, in the units of `address`
+    /// ([`crate::kuna_coverage::output_ranges`]): the body [`size`](Self::size)
+    /// only bounds. Kept when the C fails to render; empty when the decompile
+    /// itself failed or never ran.
+    pub ranges: Vec<(u64, u64)>,
     /// (kuna `structsynth`) What this decompile asked the synthesized-structure
     /// ledger, recorded only by a `--jobs` worker whose architecture carries the
     /// shard hook, so the parent can name every `struct_N` as the serial run
@@ -602,6 +608,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -642,6 +649,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -670,6 +678,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -981,18 +990,27 @@ pub fn decompile_pulled(
                 drop(budget);
                 prog.arch_mut().print_mut().restore_line_size(line_size);
                 fd.set_display_name(&original_display);
+                let ranges = crate::kuna_coverage::output_ranges(prog, &fd);
                 match rendered {
                     Ok((code, variables, types, (globals, field_calls, call_declarations, callwide_prototypes), proto, line_mappings, callee_hints, detail, (pointerargs, warnings), stack_objects)) => {
                     crate::assertions::verify_printed(prog, &fd, &code, &replayed);
                     if replay {
                         crate::assertions::verify_formats(prog, &fd, &name, single_target);
                     }
+                    let (mut code, mut proto) = (Some(code), proto);
+                    if header_carries_types
+                        && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C
+                        && !fd.get_func_proto().is_input_locked()
+                        && is_jump_stub(prog, byte_address)
+                    {
+                        kuna_decomp::kuna_unitcalls::unknown_stub_params(&mut proto, &mut code);
+                    }
                     sink(FuncResult {
                         name,
                         address,
                         byte_address,
                         size: size as i64,
-                        code: Some(code),
+                        code,
                         error: None,
                         proto,
                         emitted_c_name: (header_carries_types && prog.arch().print().out_lang() == kuna_decomp::kuna_lang::OutLang::C).then_some(emitted_name),
@@ -1007,6 +1025,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints,
+                        ranges,
                         synth: None,
                         pointerargs,
                         warnings,
@@ -1033,6 +1052,7 @@ pub fn decompile_pulled(
                         aliases,
                         object_location,
                         callee_hints: Vec::new(),
+                        ranges,
                         synth: None,
                         pointerargs: None,
                         warnings: Vec::new(),
@@ -1060,6 +1080,7 @@ pub fn decompile_pulled(
                 aliases,
                 object_location,
                 callee_hints: Vec::new(),
+                ranges: Vec::new(),
                 synth: None,
                 pointerargs: None,
                 warnings: Vec::new(),
@@ -1220,6 +1241,21 @@ pub fn sanitize_guard(file_name: &str) -> String {
     s
 }
 
+/// Is the function at `vma` a jump stub: one indirect jump, such as an x86 PLT
+/// stub's `jmp [GOT]` or a PE or Mach-O import thunk, perhaps after `endbr64` or
+/// `endbr32` (a CET `.plt.sec` stub; GNU ld's `bnd jmp` decodes as one jump)? A
+/// stub forwards whatever its caller passes, so in an export one kuna recovered
+/// no parameters for takes any. An AArch64 PLT or Mach-O stub (`adrp; ldr; br`)
+/// or an ARM PLT stub (`add; add; ldr pc`) is several instructions, and a direct
+/// `jmp` to a decompiled function keeps the parameters recovered for it.
+fn is_jump_stub(prog: &ConsoleProgram, vma: u64) -> bool {
+    prog.lone_jump_target(vma) == Some(None)
+        || (prog
+            .read_bytes(vma, 4)
+            .is_some_and(|b| matches!(b.as_slice(), [0xf3, 0x0f, 0x1e, 0xfa | 0xfb]))
+            && prog.lone_jump_target(vma + 4) == Some(None))
+}
+
 /// (kuna) Every name the type block introduces as a TYPEDEF name.
 ///
 /// C has one ordinary-identifier namespace, so a typedef and a function cannot
@@ -1375,7 +1411,8 @@ pub fn deferred_callwide_header<'a>(
             } else {
                 required.insert(contract.name.as_str());
                 if !result.call_declarations.iter().any(|decl| {
-                    declarator_name(decl.trim().trim_end_matches(';')) == contract.name
+                    !kuna_decomp::kuna_unitcalls::is_helper(decl)
+                        && declarator_name(decl.trim().trim_end_matches(';')) == contract.name
                 }) {
                     return Err(format!("callwide export: missing call declaration for {}", contract.name));
                 }
@@ -1405,6 +1442,7 @@ pub fn deferred_callwide_header<'a>(
             continue;
         }
         let declarations: BTreeSet<_> = results.iter().flat_map(|r| &r.call_declarations)
+            .filter(|decl| !kuna_decomp::kuna_unitcalls::is_helper(decl))
             .filter(|decl| declarator_name(decl.trim().trim_end_matches(';')) == name)
             .map(|decl| decl.trim()).collect();
         if declarations.len() != 1 {
@@ -1476,11 +1514,17 @@ pub fn build_header_with_names(
         .collect();
     let mut calls: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
     for declaration in results.iter().flat_map(|r| &r.call_declarations) {
+        if kuna_decomp::kuna_unitcalls::is_helper(declaration) { continue; }
         let name = declarator_name(declaration.trim().trim_end_matches(';'));
         if !own.contains(&name) {
             calls.entry(name).or_default().insert(declaration.trim());
         }
     }
+    let data: BTreeSet<_> = results.iter().flat_map(|r| &r.globals).map(|g| g.name.as_str()).collect();
+    let helpers = kuna_decomp::kuna_unitcalls::header_block(
+        results.iter().flat_map(|r| &r.call_declarations).map(String::as_str),
+        |name| own.contains(name) || shadowed.contains(name) || calls.contains_key(name) || data.contains(name),
+    );
     if !calls.is_empty() { out.push_str("\n/* declared call targets */\n"); }
     for (name, declarations) in calls {
         let text = declarations.iter().copied().collect::<Vec<_>>().join(" ");
@@ -1493,6 +1537,7 @@ pub fn build_header_with_names(
             let _ = writeln!(out, "extern {text}");
         }
     }
+    out.push_str(&helpers);
     out.push_str("\n/* function prototypes */\n");
     for r in results {
         match (&r.proto, &r.error) {
@@ -1950,12 +1995,42 @@ pub fn build_asm(
     file_name: &str,
 ) -> String {
     let labels = crate::project_stream::asm_labels_from_results(results);
-    let mut sweep = crate::project_stream::AsmSweep::new(prog, file_name, labels);
+    let sweep = crate::project_stream::AsmSweep::new(prog, file_name, labels);
+    finish_asm(prog, sweep, dat_addrs, None)
+}
+
+/// (kuna #1978) The `.asm` of a narrowed export: [`build_asm`] with the sweep
+/// cut down to the selected functions' code
+/// ([`crate::kuna_asmscope::selection_spans`]) and the data tail to the named
+/// globals its C names ([`crate::kuna_asmscope::referenced_names`]) or its
+/// swept operands point into ([`crate::kuna_asmscope::TailScope`]).
+pub fn build_selection_asm(
+    prog: &ConsoleProgram,
+    results: &[FuncResult],
+    dat_addrs: &BTreeSet<u64>,
+    file_name: &str,
+) -> String {
+    let labels = crate::project_stream::asm_labels_from_results(results);
+    let spans = crate::kuna_asmscope::selection_spans(prog, results);
+    let sweep = crate::project_stream::AsmSweep::over(prog, file_name, labels, spans);
+    let mut named = BTreeSet::new();
+    crate::kuna_asmscope::referenced_names(results, &mut named);
+    finish_asm(prog, sweep, dat_addrs, Some(named))
+}
+
+fn finish_asm(
+    prog: &ConsoleProgram,
+    mut sweep: crate::project_stream::AsmSweep,
+    dat_addrs: &BTreeSet<u64>,
+    named: Option<BTreeSet<String>>,
+) -> String {
     let mut buf: Vec<u8> = Vec::new();
     buf.extend_from_slice(sweep.header_lines().as_bytes());
     while !sweep.step(prog, u64::MAX, &mut buf).expect("a Vec sink cannot fail") {}
     let mut out = String::from_utf8(buf).expect("the sweep emits UTF-8");
-    emit_data_tail(prog, &prog.sections(), dat_addrs, &mut out);
+    let scope = named
+        .map(|names| crate::kuna_asmscope::TailScope { names, operands: sweep.take_operands() });
+    emit_data_tail(prog, &prog.sections(), dat_addrs, scope.as_ref(), &mut out);
     out
 }
 
@@ -2210,6 +2285,50 @@ mod tests {
         assert!(!header.contains("extern int split") && !header.contains("extern long split"), "{header}");
     }
 
+    #[test]
+    fn helper_declarations_stay_out_of_the_call_targets_until_asked_for() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "int puts(char *a0);".into(),
+            "bool SCARRY4(KUNA_ANY_ARGS);".into(),
+            "undefined8 puts(KUNA_ANY_ARGS);".into(),
+            "void local(KUNA_ANY_ARGS);".into(),
+        ];
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        let at = |text: &str| header.find(text).unwrap_or_else(|| panic!("no {text}: {header}"));
+        let (targets, block, prototypes) =
+            (at("/* declared call targets */"), at("#ifdef KUNA_DECLARE_HELPERS"), at("/* function prototypes */"));
+        assert!(targets < block && block < prototypes, "{header}");
+        assert!(header[targets..block].contains("extern int puts(char *a0);"), "{header}");
+        assert!(!header[targets..block].contains("SCARRY4"), "{header}");
+        assert!(header[block..prototypes].contains("#ifndef SCARRY4\nextern bool SCARRY4(KUNA_ANY_ARGS);\n#endif\n"), "{header}");
+        assert!(!header.contains("puts(KUNA_ANY_ARGS)") && !header.contains("local(KUNA_ANY_ARGS)"), "{header}");
+    }
+
+    #[test]
+    fn an_import_declaration_is_written_unless_the_header_declares_its_name() {
+        let mut result = streamed("int local(int a0);", "int");
+        result.call_declarations = vec![
+            "extern void __libc_start_main(KUNA_ANY_ARGS);".into(),
+            "extern undefined8 local(KUNA_ANY_ARGS);".into(),
+            "extern undefined8 environ(KUNA_ANY_ARGS);".into(),
+            "extern undefined4 puts(KUNA_ANY_ARGS);".into(),
+            "int puts(char *a0);".into(),
+        ];
+        result.globals.push(super::GlobalInfo {
+            address: 0x5000, name: "environ".into(), declaration: "char **environ".into(),
+            size: 8, unknown: false, direct: true, aggregate: false, elem: false, integer: false,
+        });
+        let header = super::build_header("fresh", "", "", &[result]).unwrap();
+        let block = "\n/* the imports the code calls with no known prototype */\n\
+                     extern void __libc_start_main(KUNA_ANY_ARGS);\n";
+        assert!(header.contains(block), "{header}");
+        assert!(!header.contains("KUNA_DECLARE_HELPERS"), "{header}");
+        for name in ["local", "environ", "puts"] {
+            assert!(!header.contains(&format!("{name}(KUNA_ANY_ARGS)")), "{header}");
+        }
+    }
+
     fn wide_call() -> FuncResult {
         let mut result = streamed("unsigned long long caller(void);", "unsigned long long");
         result.call_declarations = vec!["unsigned long long producer(int,int,int,int);".into()];
@@ -2218,6 +2337,17 @@ mod tests {
             inputs: vec![true; 4], definition: false,
         }];
         result
+    }
+
+    #[test]
+    fn a_helper_named_like_a_wide_call_target_neither_declares_nor_contradicts_it() {
+        let mut result = wide_call();
+        result.call_declarations.push("void producer(KUNA_ANY_ARGS);".into());
+        let header = super::build_header("fresh", "", "", std::slice::from_ref(&result)).unwrap();
+        assert!(header.contains("extern unsigned long long producer(int,int,int,int);"), "{header}");
+        assert!(!header.contains("producer(KUNA_ANY_ARGS)"), "{header}");
+        result.call_declarations.retain(|declaration| declaration.contains("KUNA_ANY_ARGS"));
+        assert!(super::build_header("fresh", "", "", &[result]).is_err());
     }
 
     #[test]
@@ -2328,6 +2458,7 @@ mod tests {
             aliases: vec![],
             object_location: None,
             callee_hints: vec![],
+            ranges: Vec::new(),
             synth: None,
             pointerargs: None,
             warnings: Vec::new(),
@@ -2636,29 +2767,53 @@ struct DataLabel {
     type_size: Option<i64>,
     dat_alias: bool,
     address: Option<Address>,
+    /// Printed when nonzero; a narrowed tail's [`crate::kuna_asmscope::TailScope::rank`].
+    kept: u8,
 }
 
 /// `; --- data ---`: address-sorted deduped labels (named globals ∪ `dat_`
 /// tokens), each with a raw-byte dump (16/line + printable-ASCII column) or an
 /// `?? (uninitialized/unmapped)` line for image-backed-less ranges (.bss).
+/// `scope`, when given, prints only the named globals it keeps and the ones at
+/// a `dat_` address; the rest still bound a bare `dat_` label's size, so each
+/// label it prints reads as it does in a tail that keeps them all.
 pub(crate) fn emit_data_tail(
     prog: &ConsoleProgram,
     sections: &[(u64, u64, u32)],
     dat_addrs: &BTreeSet<u64>,
+    scope: Option<&crate::kuna_asmscope::TailScope>,
     out: &mut String,
 ) {
     let mut data: BTreeMap<(u64, i32), DataLabel> = BTreeMap::new();
     for (name, address, type_size) in prog.global_data_symbol_addresses() {
         let display_vma = prog.output_address_offset(&address);
+        let kept = match scope {
+            Some(scope) if !dat_addrs.contains(&display_vma) => {
+                scope.rank(&name, [display_vma, address.get_offset()], type_size.max(1) as u64)
+            }
+            _ => 2,
+        };
         let space_index = address.get_space().map_or(i32::MAX, |space| space.get_index());
         // First named symbol at a displayed address wins (global_data_symbols
-        // is address/name-sorted; duplicates at one address are aliases).
-        data.entry((display_vma, space_index)).or_insert(DataLabel {
+        // is address/name-sorted; duplicates at one address are aliases), unless
+        // a narrowed tail keeps a later alias more firmly.
+        let label = DataLabel {
             name,
             type_size: Some(type_size),
             dat_alias: false,
             address: Some(address),
-        });
+            kept,
+        };
+        match data.entry((display_vma, space_index)) {
+            std::collections::btree_map::Entry::Vacant(slot) => {
+                slot.insert(label);
+            }
+            std::collections::btree_map::Entry::Occupied(mut slot) => {
+                if kept > slot.get().kept {
+                    slot.insert(label);
+                }
+            }
+        }
     }
     let data_space_index = prog
         .arch()
@@ -2667,20 +2822,24 @@ pub(crate) fn emit_data_tail(
         .map_or(i32::MAX, |space| space.get_index());
     for &display_vma in dat_addrs {
         data.entry((display_vma, data_space_index))
-            .and_modify(|l| l.dat_alias = true)
+            .and_modify(|l| {
+                l.dat_alias = true;
+                l.kept = 2;
+            })
             .or_insert_with(|| DataLabel {
                 name: format!("dat_{display_vma:x}"),
                 type_size: None,
                 dat_alias: false,
                 address: None,
+                kept: 2,
             });
     }
-    if data.is_empty() {
+    if !data.values().any(|label| label.kept > 0) {
         return;
     }
 
     out.push_str("\n; --- data ---\n");
-    for (&(display_vma, _space_index), label) in &data {
+    for (&(display_vma, _space_index), label) in data.iter().filter(|(_, label)| label.kept > 0) {
         let byte_vma = label.address.as_ref().map_or(display_vma, Address::get_offset);
         // Size: a typed symbol's datatype size; a bare `dat_` gets
         // min(gap to the next label / containing-section end, 32), floor 1.
@@ -2794,6 +2953,9 @@ pub struct ReadmeFacts {
     /// export uses.
     pub entry: Option<u64>,
     pub sections: Vec<ReadmeSectionRow>,
+    /// (kuna #1978) A narrowed export (`--functions`/`--addr`), whose `.asm`
+    /// sweeps the selected functions' code instead of every code section.
+    pub selection: bool,
 }
 
 impl ReadmeFacts {
@@ -2806,6 +2968,7 @@ impl ReadmeFacts {
             description: None,
             entry: None,
             sections: Vec::new(),
+            selection: false,
         }
     }
 
@@ -3102,9 +3265,18 @@ fn render_readme_inner(
          \x20 data model — the prelude names the pointer width — or a recovered aggregate\n\
          \x20 with a pointer member lays out differently here than in the binary.\n"
     ));
+    let swept = if facts.selection { "the selected functions' code" } else { "every code section" };
+    let when = if facts.selection {
+        "The disassembly is swept once the decompile\n\
+         \x20 finishes, and as in every streamed export the variable comment blocks a\n\
+         \x20 non-stream export prints under"
+    } else {
+        "The disassembly is swept before the decompile\n\
+         \x20 finishes, so the variable comment blocks a non-stream export prints under"
+    };
     match layout {
         ReadmeLayout::Standard | ReadmeLayout::Progress => out.push_str(&format!(
-            "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
+            "- `{file_name}.asm` — labeled linear disassembly of {swept}. Function\n\
              \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); under each label\n\
              \x20 a comment block maps the decompiled variables to their storage\n\
              \x20 (`; arg: <name> (<type>)`, `; stack: <name> @ [stack-0x18] (<type>)`).\n\
@@ -3113,16 +3285,23 @@ fn render_readme_inner(
              \x20 bytes (`??` for unmapped/.bss ranges).\n"
         )),
         ReadmeLayout::Streamed => out.push_str(&format!(
-            "- `{file_name}.asm` — labeled linear disassembly of every code section. Function\n\
+            "- `{file_name}.asm` — labeled linear disassembly of {swept}. Function\n\
              \x20 labels match the `.c` names exactly (`main:`, `sub_<addr>:`); undecodable\n\
-             \x20 bytes appear as `db` lines. The disassembly is swept before the decompile\n\
-             \x20 finishes, so the variable comment blocks a non-stream export prints under\n\
+             \x20 bytes appear as `db` lines. {when}\n\
              \x20 each label are appended in a `; --- variables ---` section instead\n\
              \x20 (`; arg: <name> (<type>)`, `; stack: <name> @ [stack-0x18] (<type>)`), ahead\n\
              \x20 of the `; --- data ---` tail. That tail labels the named globals and every\n\
              \x20 `dat_<hex>` address the `.c` references, with raw bytes (`??` for\n\
              \x20 unmapped/.bss ranges).\n"
         )),
+    }
+    if facts.selection {
+        out.push_str(
+            "\x20 Each `; --- code range` block is one stretch of that code: the selected\n\
+             \x20 functions' extents (their `size`) joined with every instruction their\n\
+             \x20 decompiles decoded, which can lie outside them. The data tail labels only\n\
+             \x20 the named globals the `.c` names or that code's operands point into.\n",
+        );
     }
     if layout == ReadmeLayout::Streamed {
         out.push_str(

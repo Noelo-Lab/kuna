@@ -5,6 +5,7 @@
 
 pub mod funcdata_callsite;
 pub mod fspec;
+pub(crate) mod kuna_jnigetenv;
 pub(crate) mod kuna_joincalloutput;
 pub mod modelrules;
 mod kuna_aggregateabi;
@@ -12,6 +13,7 @@ pub mod coreaction_protos;
 pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
 pub mod kuna_calleereadarg; // (kuna) keep a refused argument the callee's own body reads
+pub mod kuna_calleefloatreads; // (kuna) pass a float argument register an unstated callee's body reads
 pub mod kuna_zerofillreturn; // (kuna) the zero a narrow write leaves in a returned q register's upper half is no part of the value
 pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue clears is no part of the return value
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
@@ -22,6 +24,7 @@ pub mod kuna_calleestackargs; // (kuna `calleeargs`) the stack-argument bytes an
 pub mod kuna_calleepurge; // (kuna) an x86-32 callee's stack purge read off its RET
 pub mod kuna_stackcookie; // (kuna) the frame cookie MSVC stores on the stack is no argument
 pub mod kuna_slotargs; // (kuna) a call through an import slot takes the declared parameters its caller's writes back
+pub mod kuna_declaredpop; // (kuna) a declared pop on a call through a pointer is the solver's equation, not an early INT_ADD
 pub mod kuna_calleeprotostack; // (kuna) a declared callee's prototype states its stack contract
 pub mod kuna_msvcbyval; // (kuna) an MSVC __cdecl import's by-value class argument sized at the call site
 pub(crate) mod kuna_calleenoreturn;
@@ -43,12 +46,14 @@ pub mod kuna_directalias; // (kuna) a direct access at a known stack offset alia
 pub mod kuna_returnuncomputed;
 pub mod kuna_spillargtrial;
 pub mod kuna_stackaddrargtrial;
+pub mod kuna_calleefilledarg; // (kuna) a register the callee loads itself is no slot, and no evidence about the slots after it
 pub mod kuna_zeroidiomuse; // (kuna) a self-cancelling `xor r,r` is not a competing use of the value it eats
 pub mod kuna_varargstackargs; // (kuna) the variadic call's stack tail is its own fillinMap section
 pub mod kuna_argclobber; // (kuna) drop a trailing register argument a previous call's clobber put there
 pub mod kuna_passthrough; // (kuna) a register forwarded untouched to a callee that reads it is a parameter
 pub mod kuna_pltlocal; // (kuna) a call through a PLT stub bound to the image's own definition calls that definition
 pub mod kuna_mixedtailret; // (kuna) a value returned beside a claimed tail-call result is returned too
+pub mod kuna_cachereturn; // (kuna) a return register holding one memory cell's value on every path is the return value
 pub mod kuna_varargtail; // (kuna) a recovered parameter that only feeds a variadic tail is not one a caller may gain
 pub mod kuna_calleearity; // (kuna) one callee, one argument list across its call sites
 pub mod kuna_calleearityfwd; // (kuna) reconcile against a sibling call that finalizes later
@@ -83,10 +88,14 @@ pub mod kuna_entryreads; // (kuna) the incoming registers a function's own body 
 pub mod kuna_callerargs; // (kuna) a 32-bit ARM parameter every caller passes narrow is declared that narrow
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
+pub mod kuna_lockedreturnarg; // (kuna) a stated return register stays an input trial of the call
+pub mod kuna_varargsave; // (kuna) the x86-64 System V register-save prologue is va_start, not code
+pub mod kuna_homespill; // (kuna) a Windows x64 argument register spilled to its home slot is a parameter
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;
 pub mod kuna_varargforward; // (kuna) a declared parameter forwarded unchanged to a variadic call
+pub mod kuna_stackpadarg; // (kuna) a stack argument slot whose upper bytes only pad an int
 pub mod kuna_varargsharedfloat; // (kuna) a counted variadic double that also feeds an earlier argument
 pub mod kuna_voidret; // (kuna) a function whose result a caller reads returns it
 pub mod kuna_callerreads; // (kuna) a function decompiled alone returns what its callers read

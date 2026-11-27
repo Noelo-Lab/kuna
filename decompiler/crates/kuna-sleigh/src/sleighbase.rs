@@ -40,7 +40,7 @@ mod tests;
 
 /// C++ `SourceFileIndexer`: associates each constructor in a SLEIGH language
 /// with the source file where it is defined.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct SourceFileIndexer {
     /// One-up count for assigning indices to files (C++ `leastUnusedIndex`).
     least_unused_index: i32,
@@ -158,6 +158,10 @@ pub struct SleighBase {
     /// C++ `indexer`.
     indexer: SourceFileIndexer,
     registry: OnceCell<IdRegistry>,
+    /// The `<spaces>` records the `.sla` decoded, in order, and the default
+    /// code space's index, so [`Self::clone_decoded`] can build a fresh space set.
+    sla_spaces: Vec<SlaSpace>,
+    default_space: i32,
 }
 
 impl SleighBase {
@@ -176,6 +180,8 @@ impl SleighBase {
             num_sections: 0,
             indexer: SourceFileIndexer::new(),
             registry: OnceCell::new(),
+            sla_spaces: Vec::new(),
+            default_space: 0,
         }
     }
 
@@ -307,14 +313,10 @@ impl SleighBase {
         &self.userop
     }
 
-    /// C++ `SleighBase::decodeSlaSpace`: add a space parsed from a `.sla`.
+    /// C++ `SleighBase::decodeSlaSpace`: read one space record of a `.sla`.
     /// `big_end_default` carries the processor endianness the C++ space
     /// constructors read from the (here-absent) Translate back-pointer.
-    fn decode_sla_space(
-        &mut self,
-        decoder: &mut dyn Decoder,
-        big_end_default: bool,
-    ) -> KunaResult<Rc<AddrSpace>> {
+    fn decode_sla_space(decoder: &mut dyn Decoder, big_end_default: bool) -> KunaResult<SlaSpace> {
         let elem_id = decoder.open_element()?;
         let mut index: i32 = 0;
         let mut address_size: i32 = 0;
@@ -347,57 +349,42 @@ impl SleighBase {
             }
         }
         decoder.close_element(elem_id)?;
-        // C++ inits deadcodedelay = -1 and, since the sla space format never
-        // carries it, the `if (deadcodedelay == -1)` always sets it to delay.
-        let deadcodedelay = delay;
         if index == 0 {
             return Err(KunaError::lowlevel("Expecting index attribute"));
         }
-        let res = if elem_id == sla::ELEM_SPACE_UNIQUE {
-            // C++ new UniqueSpace(this,trans,index,flags): endianness from
-            // the processor (Translate) — here threaded as big_end_default.
-            UniqueSpace::new(index, flags, big_end_default)
-        } else if elem_id == sla::ELEM_SPACE_OTHER {
-            OtherSpace::new(index)
-        } else {
-            if address_size == 0 || delay == -1 || name.is_empty() {
-                return Err(KunaError::lowlevel("Expecting size/delay/name attributes"));
-            }
-            AddrSpace::new(
-                spacetype::IPTR_PROCESSOR,
-                &lossy(&name),
-                big_end,
-                address_size as u32, // C++ int4 -> uint4 (validated non-zero)
-                wordsize as u32,
-                index,
-                flags,
-                delay,
-                deadcodedelay,
-            )
-        };
-        Ok(Rc::new(res))
+        let is_processor = elem_id != sla::ELEM_SPACE_UNIQUE && elem_id != sla::ELEM_SPACE_OTHER;
+        if is_processor && (address_size == 0 || delay == -1 || name.is_empty()) {
+            return Err(KunaError::lowlevel("Expecting size/delay/name attributes"));
+        }
+        Ok(SlaSpace {
+            elem_id,
+            index,
+            address_size,
+            delay,
+            name,
+            wordsize,
+            big_end,
+            big_end_default,
+            flags,
+        })
     }
 
     /// C++ `SleighBase::decodeSlaSpaces`.  `big_end` is the processor
     /// endianness (already set on `self.base` before this call).
     fn decode_sla_spaces(&mut self, decoder: &mut dyn Decoder, big_end: bool) -> KunaResult<()> {
+        let elem_id = decoder.open_element_id(&sla::ELEM_SPACES)?;
+        let defname = decoder.read_string_id(&sla::ATTRIB_DEFAULTSPACE)?;
+        let mut records = Vec::new();
+        while decoder.peek_element()? != 0 {
+            records.push(Self::decode_sla_space(decoder, big_end)?);
+        }
+        decoder.close_element(elem_id)?;
         // The shared manager is mutated only during this initialization phase,
         // while the engine is still the sole `Rc` owner (no `glb` has cloned it
         // yet).  `Rc::get_mut` therefore always succeeds; a `None` would mean an
         // `Architecture`/`Funcdata` was wired before the `.sla` decoded, which
-        // the build flow forbids.  Each mutation re-borrows because the
-        // surrounding decode helpers take `&self`.
-        // The first space should always be the constant space.
-        manager_get_mut(&mut self.manager).insert_space(Rc::new(ConstantSpace::new()))?;
-
-        let elem_id = decoder.open_element_id(&sla::ELEM_SPACES)?;
-        let defname = decoder.read_string_id(&sla::ATTRIB_DEFAULTSPACE)?;
-        while decoder.peek_element()? != 0 {
-            let spc = self.decode_sla_space(decoder, big_end)?;
-            // Re-borrow per iteration: `decode_sla_space` takes `&self`.
-            manager_get_mut(&mut self.manager).insert_space(spc)?;
-        }
-        decoder.close_element(elem_id)?;
+        // the build flow forbids.
+        insert_sla_spaces(manager_get_mut(&mut self.manager), &records)?;
         let spc_index = match self.manager.get_space_by_name(&lossy(&defname)) {
             Some(spc) => spc.get_index(),
             None => {
@@ -408,7 +395,52 @@ impl SleighBase {
             }
         };
         manager_get_mut(&mut self.manager).set_default_code_space(spc_index)?;
+        self.sla_spaces = records;
+        self.default_space = spc_index;
         Ok(())
+    }
+
+    /// A copy of a translator fresh from [`Self::decode`] that shares nothing
+    /// with it: a new space set built from the same `.sla` records, with every
+    /// space reference in the symbol table and templates moved onto it. The
+    /// register cross-reference and user-op names are rebuilt, and context
+    /// variables registered, by [`Self::build_xrefs`] as a decode does.
+    pub(crate) fn clone_decoded(
+        &self,
+        register_context: impl FnMut(&[u8], i32, i32) -> KunaResult<()>,
+    ) -> KunaResult<SleighBase> {
+        let mut manager = AddrSpaceManager::new();
+        insert_sla_spaces(&mut manager, &self.sla_spaces)?;
+        manager.set_default_code_space(self.default_space)?;
+        let remap = SpaceRemap { manager: &manager };
+        let mut symtab = self.symtab.clone();
+        symtab.remap_spaces(&remap);
+        let mut templates = self.templates.clone();
+        for tpl in &mut templates {
+            tpl.remap_spaces(&remap);
+        }
+        let mut copy = SleighBase {
+            manager: Rc::new(manager),
+            base: self.base.clone(),
+            userop: Vec::new(),
+            varnode_xref: std::collections::BTreeMap::new(),
+            root: self.root,
+            symtab,
+            templates,
+            maxdelayslotbytes: self.maxdelayslotbytes,
+            unique_allocatemask: self.unique_allocatemask,
+            num_sections: self.num_sections,
+            indexer: self.indexer.clone(),
+            registry: OnceCell::new(),
+            sla_spaces: self.sla_spaces.clone(),
+            default_space: self.default_space,
+        };
+        let mut error_pairs: Vec<Vec<u8>> = Vec::new();
+        copy.build_xrefs(&mut error_pairs, register_context)?;
+        if !error_pairs.is_empty() {
+            return Err(KunaError::sleigh("Duplicate register pairs"));
+        }
+        Ok(copy)
     }
 
     /// C++ `SleighBase::decode`: parse the main `<sleigh>` tag from a `.sla`.
@@ -588,6 +620,79 @@ impl Default for SleighBase {
 /// Lossy UTF-8 view of a `.sla` byte-string name (identifiers are ASCII).
 fn lossy(b: &[u8]) -> String {
     String::from_utf8_lossy(b).into_owned()
+}
+
+/// One `<space>`/`<space_unique>`/`<space_other>` record of a `.sla`.
+#[derive(Debug, Clone)]
+struct SlaSpace {
+    elem_id: u32,
+    index: i32,
+    address_size: i32,
+    delay: i32,
+    name: Vec<u8>,
+    wordsize: i32,
+    big_end: bool,
+    big_end_default: bool,
+    flags: u32,
+}
+
+impl SlaSpace {
+    /// The space C++ `SleighBase::decodeSlaSpace` constructs for this record.
+    fn build(&self) -> AddrSpace {
+        if self.elem_id == sla::ELEM_SPACE_UNIQUE {
+            // C++ new UniqueSpace(this,trans,index,flags): endianness from
+            // the processor (Translate) — here threaded as big_end_default.
+            UniqueSpace::new(self.index, self.flags, self.big_end_default)
+        } else if self.elem_id == sla::ELEM_SPACE_OTHER {
+            OtherSpace::new(self.index)
+        } else {
+            // C++ inits deadcodedelay = -1 and, since the sla space format never
+            // carries it, the `if (deadcodedelay == -1)` always sets it to delay.
+            AddrSpace::new(
+                spacetype::IPTR_PROCESSOR,
+                &lossy(&self.name),
+                self.big_end,
+                self.address_size as u32, // C++ int4 -> uint4 (validated non-zero)
+                self.wordsize as u32,
+                self.index,
+                self.flags,
+                self.delay,
+                self.delay,
+            )
+        }
+    }
+}
+
+/// C++ `SleighBase::decodeSlaSpaces`' inserts: the constant space, then each
+/// `.sla` space in order.
+fn insert_sla_spaces(manager: &mut AddrSpaceManager, records: &[SlaSpace]) -> KunaResult<()> {
+    manager.insert_space(Rc::new(ConstantSpace::new()))?;
+    for record in records {
+        manager.insert_space(Rc::new(record.build()))?;
+    }
+    Ok(())
+}
+
+/// Moves space references onto the space with the same index in another
+/// manager (see [`SleighBase::clone_decoded`]).
+pub(crate) struct SpaceRemap<'a> {
+    manager: &'a AddrSpaceManager,
+}
+
+impl SpaceRemap<'_> {
+    pub(crate) fn space(&self, spc: &mut Rc<AddrSpace>) {
+        *spc = Rc::clone(
+            self.manager
+                .get_space(spc.get_index())
+                .expect("a decoded .sla space is in the rebuilt space set"),
+        );
+    }
+
+    pub(crate) fn opt_space(&self, spc: &mut Option<Rc<AddrSpace>>) {
+        if let Some(spc) = spc {
+            self.space(spc);
+        }
+    }
 }
 
 /// Mutably borrow the shared manager during initialization (LOSS-132).  The

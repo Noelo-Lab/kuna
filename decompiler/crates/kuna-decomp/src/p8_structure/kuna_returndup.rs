@@ -142,26 +142,52 @@ impl Action for ActionReturnDup {
 }
 
 //===========================================================================
-// Option parse (`returndup on|off|calls`).
+// Option parse (`returndup on|off|record|auto|calls`).
 //===========================================================================
 
-/// The `returndup on|off|calls` ArchOption (angr SAILR gotoless
-/// `ReturnDuplicatorHigh` shared-bare-epilogue return duplication; `calls` adds
-/// [`crate::p8_structure::kuna_returndupcalls`]).
+/// The `returndup on|off|record|auto|calls` ArchOption (angr SAILR gotoless
+/// `ReturnDuplicatorHigh` shared-bare-epilogue return duplication; `record`
+/// follows [`crate::p8_structure::kuna_o0returns`] in unoptimized functions;
+/// `auto` is `record` plus [`crate::p8_structure::kuna_retshape`] in optimized
+/// ones; `calls` is `auto` plus [`crate::p8_structure::kuna_returndupcalls`]).
 pub struct OptionReturnDup;
 
 impl OptionReturnDup {
     /// The option name.
     pub const NAME: &'static str = "returndup";
 
-    /// Parse `on`/`off`/`calls`, returning whether bare epilogues are
-    /// duplicated, whether call tails are too, and a confirmation message.
-    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, String)> {
-        if p1 == "calls" {
-            return Ok((true, true, "Shared return duplication turned on, call tails included".to_string()));
+    /// Parse `on`/`off`/`record`/`auto`/`calls`, returning whether bare
+    /// epilogues are duplicated, whether call tails are too, whether the
+    /// recorded return statements decide unoptimized functions, whether
+    /// optimized functions fold adjacent guards and split merged returns per arm
+    /// ([`crate::p8_structure::kuna_retshape`]), and a confirmation message.
+    pub fn apply(&self, p1: &str) -> KunaResult<(bool, bool, bool, bool, String)> {
+        match p1 {
+            "calls" => {
+                return Ok((true, true, true, true, "Shared return duplication turned on, call tails included".to_string()))
+            }
+            "auto" => {
+                return Ok((
+                    true,
+                    false,
+                    true,
+                    true,
+                    "Shared return duplication turned on, recorded returns in unoptimized functions, return shapes in optimized ones".to_string(),
+                ))
+            }
+            "record" => {
+                return Ok((
+                    true,
+                    false,
+                    true,
+                    false,
+                    "Shared return duplication turned on, recorded returns in unoptimized functions".to_string(),
+                ))
+            }
+            _ => {}
         }
         let val = on_or_off(p1)?;
         let prop = if val { "on" } else { "off" };
-        Ok((val, false, format!("Shared bare-epilogue return duplication turned {prop}")))
+        Ok((val, false, false, false, format!("Shared bare-epilogue return duplication turned {prop}")))
     }
 }

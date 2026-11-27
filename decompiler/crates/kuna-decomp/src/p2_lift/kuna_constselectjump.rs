@@ -67,6 +67,11 @@ pub const MAX_INTRAPROCEDURAL_SPAN: uintb = 0xffff;
 /// Ceiling on the varnodes the backward walk will visit before giving up.
 const MAX_WALK_NODES: usize = 64;
 
+/// The branch input is in addressable units. Flow and locality use byte offsets.
+pub(crate) fn target_offset(selector: u64, word_size: u32, align_bits: i32) -> u64 {
+    AddrSpace::address_to_byte(selector, word_size) & (u64::MAX << align_bits)
+}
+
 /// (kuna) Is `dest` close enough to the branch at `branch_offset` to be taken as
 /// an intraprocedural destination rather than a tail-call target?
 pub fn kuna_destination_is_local(branch_offset: uintb, dest: uintb) -> bool {
@@ -141,13 +146,15 @@ pub fn kuna_collect_const_destinations(
     branch_offset: uintb,
     maxtablesize: uint4,
 ) -> Option<Vec<uintb>> {
-    collect_within(fd, root, branch_offset, maxtablesize, MAX_WALK_NODES)
+    let word_size = fd.get_address().get_space()?.get_word_size();
+    collect_within(fd, root, word_size, branch_offset, maxtablesize, MAX_WALK_NODES)
 }
 
 /// The walk of [`kuna_collect_const_destinations`] under a stated node ceiling.
 fn collect_within(
     fd: &Funcdata,
     root: VarnodeId,
+    word_size: u32,
     branch_offset: uintb,
     maxtablesize: uint4,
     ceiling: usize,
@@ -167,7 +174,7 @@ fn collect_within(
         let v = fd.vbank().get(vn)?;
         if v.is_constant() {
             let off = v.get_offset();
-            if !kuna_destination_is_local(branch_offset, off) {
+            if !kuna_destination_is_local(branch_offset, target_offset(off, word_size, fd.get_arch().funcptr_align)) {
                 return None;
             }
             if !dests.contains(&off) {
@@ -209,7 +216,7 @@ fn collect_within(
 /// no normalization and no guard to fold.
 #[derive(Debug, Clone, Default)]
 pub struct JumpModelConstSelect {
-    /// The recovered destination offsets, sorted and deduplicated.
+    /// Raw branch selectors in addressable units, sorted and deduplicated.
     dests: Vec<uintb>,
     /// The transfer's own address mask, set only for a re-entered dispatch,
     /// whose destinations may then include the caller's return address.
@@ -219,6 +226,7 @@ pub struct JumpModelConstSelect {
     /// A re-entered dispatch grows one target per retry, so its walk is
     /// bounded by the table ceiling instead of the select's small one.
     reentered: bool,
+    stated: Option<crate::jumptable::StatedSelector>,
 }
 
 impl JumpModelConstSelect {
@@ -249,6 +257,7 @@ impl JumpModelConstSelect {
         fd: &Funcdata,
         root: VarnodeId,
         branch_offset: uintb,
+        word_size: u32,
         maxtablesize: uint4,
     ) -> bool {
         let Some(encoding) = self.return_encoding else {
@@ -262,7 +271,10 @@ impl JumpModelConstSelect {
         if !found.returns
             || found.constants.is_empty()
             || found.constants.len() >= maxtablesize as usize
-            || found.constants.iter().any(|&d| d == stub || !kuna_destination_is_local(branch_offset, d))
+            || found.constants.iter().any(|&d| {
+                let offset = target_offset(d, word_size, fd.get_arch().funcptr_align);
+                offset == stub || !kuna_destination_is_local(branch_offset, offset)
+            })
         {
             return false;
         }
@@ -272,7 +284,11 @@ impl JumpModelConstSelect {
     }
 
     pub(crate) fn from_flow_targets(dests: Vec<u64>, stub: Option<u64>) -> Self {
-        Self { dests, return_stub: stub, reentered: true, return_encoding: None }
+        Self { dests, return_stub: stub, reentered: true, ..Self::default() }
+    }
+
+    pub(crate) fn stated(dests: Vec<u64>, selector: crate::jumptable::StatedSelector) -> Self {
+        Self { dests, stated: Some(selector), ..Self::default() }
     }
 
     /// The recovered destination offsets.
@@ -283,7 +299,7 @@ impl JumpModelConstSelect {
 
 impl JumpModel for JumpModelConstSelect {
     fn is_override(&self) -> bool {
-        false
+        self.stated.is_some()
     }
 
     fn get_table_size(&self) -> int4 {
@@ -297,21 +313,26 @@ impl JumpModel for JumpModelConstSelect {
         _matchsize: uint4,
         maxtablesize: uint4,
     ) -> KunaResult<bool> {
+        if self.stated.is_some() {
+            return Ok(true);
+        }
         self.dests.clear();
         self.return_stub = None;
-        let (root, branch_offset) = match fd.obank().get(indop) {
+        let (root, address) = match fd.obank().get(indop) {
             Some(o) => match o.get_in(0) {
-                Some(vn) => (vn, o.get_addr().get_offset()),
+                Some(vn) => (vn, o.get_addr()),
                 None => return Ok(false),
             },
             None => return Ok(false),
         };
-        match collect_within(fd, root, branch_offset, maxtablesize, self.walk_ceiling(maxtablesize)) {
+        let branch_offset = address.get_offset();
+        let word_size = address.get_space().unwrap().get_word_size();
+        match collect_within(fd, root, word_size, branch_offset, maxtablesize, self.walk_ceiling(maxtablesize)) {
             Some(d) => {
                 self.dests = d;
                 Ok(true)
             }
-            None => Ok(self.recover_with_return(fd, root, branch_offset, maxtablesize)),
+            None => Ok(self.recover_with_return(fd, root, branch_offset, word_size, maxtablesize)),
         }
     }
 
@@ -329,13 +350,9 @@ impl JumpModel for JumpModelConstSelect {
     ) -> KunaResult<()> {
         addresstable.clear();
         let spc = Rc::clone(fd.obank().get(indop).unwrap().get_addr().get_space().unwrap());
-        let mut mask: uintb = !0u64;
-        let bit = fd.get_arch().funcptr_align;
-        if bit != 0 {
-            mask = (mask >> bit) << bit;
-        }
-        for &d in self.dests.iter() {
-            let off = AddrSpace::address_to_byte(d, spc.get_word_size()) & mask;
+        for &d in &self.dests {
+            let align = if self.stated.is_some() { 0 } else { fd.get_arch().funcptr_align };
+            let off = target_offset(d, spc.get_word_size(), align);
             addresstable.push(Address::new(Rc::clone(&spc), off));
         }
         if let Some(stub) = self.return_stub {
@@ -356,14 +373,32 @@ impl JumpModel for JumpModelConstSelect {
 
     fn build_labels(
         &self,
-        _fd: &mut Funcdata,
+        fd: &mut Funcdata,
         addresstable: &mut [Address],
         label: &mut Vec<uintb>,
-        _orig: &dyn JumpModel,
+        orig: &dyn JumpModel,
     ) -> KunaResult<()> {
-        for a in addresstable.iter() {
-            let returns = self.return_stub == Some(a.get_offset());
-            label.push(if returns { crate::jumptable::NO_LABEL } else { a.get_offset() });
+        let Some(space) = addresstable.first().and_then(Address::get_space) else { return Ok(()) };
+        if self.stated.is_some() {
+            let units = u64::from(space.get_word_size());
+            label.extend(addresstable.iter().map(|a| a.get_offset() / units));
+            return Ok(());
+        }
+        if space.get_word_size() == 1 && fd.get_arch().funcptr_align == 0 {
+            label.extend(addresstable.iter().map(|a| {
+                if Some(a.get_offset()) == self.return_stub { crate::jumptable::NO_LABEL } else { a.get_offset() }
+            }));
+            return Ok(());
+        }
+        let original = orig.as_any().downcast_ref::<Self>().unwrap_or(self);
+        let mut selectors = std::collections::BTreeMap::<_, Vec<_>>::new();
+        for &selector in original.dests.iter().rev() {
+            let byte = target_offset(selector, space.get_word_size(), fd.get_arch().funcptr_align);
+            selectors.entry(byte).or_default().push(selector);
+        }
+        for address in addresstable {
+            label.push(selectors.get_mut(&address.get_offset()).and_then(Vec::pop)
+                .unwrap_or(crate::jumptable::NO_LABEL));
         }
         Ok(())
     }

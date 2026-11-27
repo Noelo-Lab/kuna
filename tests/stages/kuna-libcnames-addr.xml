@@ -43,8 +43,10 @@ c3
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_addr_x86_64</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>option libcnames off</com>
   <com>lo fu echo</com>
@@ -87,6 +89,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libcnames_win32_i386.exe</com>
+  <com>option tailform off</com>
   <com>read symbols</com>
   <com>option libcnames off</com>
   <com>lo fu sub_401000</com>

@@ -580,6 +580,7 @@ fn build_pieces(
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     })
 }
 
@@ -663,13 +664,28 @@ fn build_param_type(
         if name.is_empty() || !is_identifier(&name) {
             return None;
         }
-        types.get_type_struct(&name).ok()?
+        named_pointee(&name, types)?
     };
     let mut ty = base;
     for _ in 0..indirection {
         ty = types.get_type_pointer(ptr, ty, word_size).ok()?;
     }
     Some(ty)
+}
+
+/// The aggregate a pointee name denotes: the struct or union the program's types
+/// already hold under that name (an Android image's NDK `_JNIEnv` or
+/// `JNINativeMethod`), otherwise an opaque shell.
+fn named_pointee(name: &str, types: &dyn TypeFactory) -> Option<Rc<Datatype>> {
+    if let Ok(Some(held)) = types.find_by_name(name) {
+        if matches!(
+            held.get_metatype(),
+            type_metatype::TYPE_STRUCT | type_metatype::TYPE_UNION
+        ) {
+            return Some(held);
+        }
+    }
+    types.get_type_struct(name).ok()
 }
 
 /// The C/C++ primitive spellings c++filt emits, at their LP64/ILP32 width.

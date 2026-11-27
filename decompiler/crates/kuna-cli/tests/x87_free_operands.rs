@@ -3,6 +3,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn ffree_preserves_each_register_identity_without_numeric_inputs() {
@@ -113,7 +114,7 @@ int main(void) {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
-            assert!(Command::new(&executable).status().unwrap().success());
+            assert!(Command::new(&executable).capped_status().unwrap().success());
             ran = true;
         }
     }

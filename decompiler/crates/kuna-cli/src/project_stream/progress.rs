@@ -178,12 +178,15 @@ impl ExportWatch for ProgressWatch<'_> {
     }
 
     fn decompiling(&self, prog: &ConsoleProgram, total: usize) -> Result<(), String> {
-        let facts = ReadmeFacts::snapshot(
-            &self.layout.binary_path,
-            &self.layout.path_label,
-            &self.layout.file_name,
-            prog,
-        );
+        let facts = ReadmeFacts {
+            selection: self.layout.selection,
+            ..ReadmeFacts::snapshot(
+                &self.layout.binary_path,
+                &self.layout.path_label,
+                &self.layout.file_name,
+                prog,
+            )
+        };
         self.open_feed()?;
         let _gate = self.readme_gate.lock().unwrap_or_else(|e| e.into_inner());
         {

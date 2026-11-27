@@ -2,6 +2,7 @@
 use crate::common;
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 #[test]
 fn wide_arguments_follow_an_integer_or_hidden_return_pointer_without_padding() {
@@ -70,7 +71,7 @@ fn wide_arguments_follow_an_integer_or_hidden_return_pointer_without_padding() {
                 String::from_utf8_lossy(&output.stderr)
             );
             assert!(
-                Command::new(&executable).status().unwrap().success(),
+                Command::new(&executable).capped_status().unwrap().success(),
                 "{compiler} {level}\n{code}"
             );
         }

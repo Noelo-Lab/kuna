@@ -1,0 +1,28 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="stage_entry"/>
+</binaryimage>
+<script>
+<com>clear architecture</com>
+<com>load file tests/fixtures/stated-jump/dispatch.elf</com>
+<com>read symbols</com>
+<!-- kuna: tailform default model; this test pins the 4-line size rule's function-tail form -->
+<com>option tailform on</com>
+<com>load function dispatch</com>
+<com>decompile</com>
+<com>print C</com>
+<com>override jumptable 401009 401050 401020 401030 401020</com>
+<com>decompile</com>
+<com>print C</com>
+<com>decompile</com>
+<com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="Opaque jump is unresolved before its destinations are stated" min="1" max="1">jump-as-call</stringmatch>
+<stringmatch name="Stated first destination labels the target operand" min="2" max="2">case 0x401020:</stringmatch>
+<stringmatch name="Stated second destination labels the target operand" min="2" max="2">case 0x401030:</stringmatch>
+<stringmatch name="Stated third destination labels the target operand" min="2" max="2">case 0x401050:</stringmatch>
+<stringmatch name="Stating taken destinations preserves the independent miss" min="2" max="2">if \(\(uint4\)a1 &gt; 2\)
+return 0x4d;</stringmatch>
+</decompilertest>

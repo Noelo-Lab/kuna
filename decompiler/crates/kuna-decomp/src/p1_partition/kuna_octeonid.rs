@@ -4,7 +4,8 @@
 //! An Octeon language is `MIPS:BE:64:<variant>[-32addr]:<compiler>`. Every
 //! variant has the soft-float `default` compiler and its ABI alias (`n64`, or
 //! `n32` for a 32-bit-address variant), both naming the same compiler spec;
-//! Octeon III adds `hard`.
+//! Octeon III adds `hard`. The original 32-bit-address variant also offers
+//! `o64`, with four soft-float argument slots and hidden aggregate returns.
 
 /// The Octeon core variants, oldest first.
 pub const VARIANTS: [&str; 4] = ["octeon", "octeonplus", "octeon2", "octeon3"];
@@ -17,6 +18,12 @@ pub fn language_id(variant: &str, n32: bool, hard: bool) -> String {
         if n32 { "-32addr" } else { "" },
         if hard { "hard" } else { "default" }
     )
+}
+
+/// The language ID of the original Octeon with 32-bit addresses and the
+/// soft-float O64 compiler model, the only Octeon O64 language.
+pub fn o64_language_id() -> String {
+    "MIPS:BE:64:octeon-32addr:o64".to_string()
 }
 
 /// The floating-point convention an Octeon language ID's compiler model
@@ -34,6 +41,7 @@ pub fn hard_float(id: &str) -> Option<bool> {
     }
     match (parts.next()?, n32) {
         ("hard", _) => Some(true),
+        ("o64", true) if core == "octeon" => Some(false),
         ("default", _) | ("n32", true) | ("n64", false) => Some(false),
         _ => None,
     }
@@ -57,7 +65,8 @@ mod tests {
                 assert_eq!(hard_float(&id("unknown")), None);
             }
         }
-        for id in ["MIPS:BE:64:64-32addr:n32", "MIPS:BE:64:default:default", "MIPS:LE:64:octeon3:default",
+        assert_eq!(hard_float("MIPS:BE:64:octeon-32addr:o64"), Some(false));
+        for id in ["MIPS:BE:64:octeon:o64", "MIPS:BE:64:octeon2-32addr:o64", "MIPS:BE:64:64-32addr:n32", "MIPS:BE:64:default:default", "MIPS:LE:64:octeon3:default",
             "x86:LE:64:default:gcc"] {
             assert_eq!(hard_float(id), None);
         }

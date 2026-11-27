@@ -134,7 +134,7 @@ pub(crate) enum Guard {
 /// into an executable range. Scanning *all* allocated sections — not just the
 /// non-executable ones — is what reaches the literal pools and vector tables that
 /// bare-metal firmware links inside `.text`.
-fn code_pointer_sites(
+pub(crate) fn code_pointer_sites(
     file: &object::File,
     exec_ranges: &[(u64, u64)],
 ) -> BTreeMap<u64, Vec<u64>> {

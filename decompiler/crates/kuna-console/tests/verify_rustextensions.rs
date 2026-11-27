@@ -58,6 +58,7 @@ fn body(binary: &Path, name: &str) -> String {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn signed_text_storage_widens_before_arithmetic() {
     let source = root().join("tests/fixtures/rust-extensions/extensions.rs");
     let native = common::scratch_file("rustextensions-native", "elf");

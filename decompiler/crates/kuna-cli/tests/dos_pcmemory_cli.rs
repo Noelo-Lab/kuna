@@ -71,7 +71,7 @@ fn a_dos_program_reads_the_bios_and_video_memory_as_volatile() {
 
     let tick = stdout(&["decompile", exe, "sub_10010"]);
     assert!(
-        tick.contains("v1 = dat_46c;\n  do {\n  } while (v1 == dat_46c);"),
+        tick.contains("v1 = dat_46c;\n  while (v1 == dat_46c) {\n  }"),
         "the wait for the next timer tick: {tick}"
     );
     let vga = stdout(&["decompile", exe, "sub_10030"]);

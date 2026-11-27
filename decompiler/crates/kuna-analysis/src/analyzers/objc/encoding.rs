@@ -85,6 +85,7 @@ pub fn decode_method(
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
+        kuna_library_table: false,
     })
 }
 
@@ -101,16 +102,25 @@ pub fn split_method(encoding: &str) -> Option<(String, Vec<String>)> {
     Some((ret, args))
 }
 
-/// The struct a by-value encoding names (`{CGRect={CGPoint=dd}{CGSize=dd}}`),
+/// The struct a struct encoding names (`{CGRect={CGPoint=dd}{CGSize=dd}}`),
 /// built once per name with its leaf members as fields — nested geometry
 /// flattened (`x, y, width, height`), since a field of a field is what the
 /// printer renders worst — so a method returning one has a type the model can
-/// place in registers. `None` for an unnamed or malformed layout.
+/// place in registers. A member named in the encoding (`"state"Q`) keeps that
+/// name, and an array member (`[5Q]`) is an array. `None` for an unnamed or
+/// malformed layout.
 pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
+    struct_type_at(encoding, tctx, 0)
+}
+
+/// [`struct_type`] for a struct reached through `depth` pointers, which bounds
+/// the recursion through pointer members.
+fn struct_type_at(encoding: &str, tctx: &TypeCtx, depth: usize) -> Option<Rc<Datatype>> {
     let name = struct_name(encoding)?;
     if let Some(t) = tctx.structs.borrow().get(name) {
         return Some(Rc::clone(t));
     }
+    struct_fields_at(encoding, 0)?;
     let types = tctx.types;
     let shell = match types.find_by_name(name).ok().flatten() {
         Some(t) if t.get_metatype() == type_metatype::TYPE_STRUCT && !t.is_incomplete() => {
@@ -120,26 +130,83 @@ pub fn struct_type(encoding: &str, tctx: &TypeCtx) -> Option<Rc<Datatype>> {
         Some(_) => return None,
         None => types.kuna_declare_record(name, false).ok()?,
     };
-    let members = struct_members(encoding)?;
     let names = member_names(name);
-    let mut fields = Vec::new();
-    let mut offset = 0i32;
-    for (k, code) in members.iter().enumerate() {
-        let ty = Parser::new(code).next_type(tctx)?;
-        let size = ty.get_size();
-        if size <= 0 {
-            return None;
-        }
-        let align = size.min(tctx.ptr_size);
-        offset = (offset + align - 1) / align * align;
-        let field = names.get(k).map(|n| n.to_string()).unwrap_or_else(|| format!("field_{k}"));
-        fields.push(TypeField::new(offset, offset, field, ty));
-        offset += size;
-    }
-    let size = (offset + tctx.ptr_size - 1) / tctx.ptr_size * tctx.ptr_size;
-    let done = types.set_fields_struct_raw(&shell, fields, Vec::new(), size, tctx.ptr_size, 0).ok()?;
+    let (leaves, size, align) = layout(encoding, tctx, depth, 0)?;
+    let fields = leaves
+        .into_iter()
+        .enumerate()
+        .map(|(k, (named, ty, offset))| {
+            let field = named.or_else(|| names.get(k).map(|n| n.to_string())).unwrap_or_else(|| format!("field_{k}"));
+            TypeField::new(offset, offset, field, ty)
+        })
+        .collect();
+    let done = types.set_fields_struct_raw(&shell, fields, Vec::new(), size, align, 0).ok()?;
     tctx.structs.borrow_mut().insert(name.to_string(), Rc::clone(&done));
     Some(done)
+}
+
+/// The leaf members of a struct encoding at their C offsets, with the
+/// struct's size and alignment: each member aligned to its own alignment, a
+/// nested struct to its widest member's and padded to a multiple of it, the
+/// whole padded the same way (`{S={T=iC}C}` puts the last `C` at 8, and
+/// `{T=iii}` is 12 bytes).
+#[allow(clippy::type_complexity)]
+fn layout(
+    encoding: &str,
+    tctx: &TypeCtx,
+    depth: usize,
+    level: usize,
+) -> Option<(Vec<(Option<String>, Rc<Datatype>, i32)>, i32, i32)> {
+    if level > MAX_STRUCT_DEPTH {
+        return None;
+    }
+    let body = encoding.strip_prefix('{')?.strip_suffix('}')?;
+    let (_, members) = body.split_once('=')?;
+    let mut p = Parser::new(members);
+    p.named = members.starts_with('"');
+    let (mut out, mut offset, mut align) = (Vec::new(), 0i32, 1i32);
+    while !p.at_end() {
+        let name = p.member_name();
+        let (leaves, size, member_align) = if p.peek() == Some(b'{') {
+            let start = p.pos;
+            p.pos += 1;
+            p.skip_balanced(b'{', b'}');
+            layout(&members[start..p.pos], tctx, depth, level + 1)?
+        } else {
+            let (ty, a) = member_type(&p.type_text()?, tctx, depth)?;
+            let size = ty.get_size();
+            (vec![(name, ty, 0)], size, a)
+        };
+        offset = offset.checked_add(member_align - 1)? / member_align * member_align;
+        for (n, t, o) in leaves {
+            out.push((n, t, offset.checked_add(o)?));
+        }
+        offset = offset.checked_add(size)?;
+        align = align.max(member_align);
+    }
+    if out.is_empty() {
+        return None;
+    }
+    Some((out, offset.checked_add(align - 1)? / align * align, align))
+}
+
+/// The type of one leaf member and its alignment: a scalar or pointer aligned
+/// to its size, an array `[N T]` of `N` elements aligned to its element.
+/// `None` for a bitfield (`b3`), whose packing the encoding does not give.
+fn member_type(code: &str, tctx: &TypeCtx, depth: usize) -> Option<(Rc<Datatype>, i32)> {
+    if depth > MAX_STRUCT_DEPTH || code.starts_with('b') {
+        return None;
+    }
+    if let Some(body) = code.strip_prefix('[').and_then(|b| b.strip_suffix(']')) {
+        let digits = body.bytes().take_while(u8::is_ascii_digit).count();
+        let count: i32 = body[..digits].parse().ok().filter(|&n| n > 0)?;
+        let (elem, align) = member_type(&body[digits..], tctx, depth + 1)?;
+        count.checked_mul(elem.get_size())?;
+        return Some((tctx.types.get_type_array(count, elem).ok()?, align));
+    }
+    let ty = Parser { bytes: code.as_bytes(), pos: 0, depth, named: false }.next_type(tctx)?;
+    let size = ty.get_size();
+    (size > 0).then(|| (Rc::clone(&ty), size.min(tctx.ptr_size)))
 }
 
 /// The name of a struct encoding (`CGRect` of `{CGRect=…}`), `None` when it
@@ -155,10 +222,12 @@ pub fn struct_name(encoding: &str) -> Option<&str> {
 /// member whatever it points to (`{S=^{T=ii}q}` → `^{T=ii} q`). `None` for a
 /// malformed layout or one nested deeper than [`MAX_STRUCT_DEPTH`].
 pub fn struct_members(encoding: &str) -> Option<Vec<String>> {
-    struct_members_at(encoding, 0)
+    Some(struct_fields_at(encoding, 0)?.into_iter().map(|(_, code)| code).collect())
 }
 
-fn struct_members_at(encoding: &str, level: usize) -> Option<Vec<String>> {
+/// [`struct_members`] with the name each leaf member carries in the encoding
+/// (`{S="count"q"items"^@}`), if any.
+fn struct_fields_at(encoding: &str, level: usize) -> Option<Vec<(Option<String>, String)>> {
     if level > MAX_STRUCT_DEPTH {
         return None;
     }
@@ -166,14 +235,16 @@ fn struct_members_at(encoding: &str, level: usize) -> Option<Vec<String>> {
     let (_, members) = body.split_once('=')?;
     let mut out = Vec::new();
     let mut p = Parser::new(members);
+    p.named = members.starts_with('"');
     while !p.at_end() {
+        let name = p.member_name();
         if p.peek() == Some(b'{') {
             let start = p.pos;
             p.pos += 1;
             p.skip_balanced(b'{', b'}');
-            out.extend(struct_members_at(&members[start..p.pos], level + 1)?);
+            out.extend(struct_fields_at(&members[start..p.pos], level + 1)?);
         } else {
-            out.push(p.type_text()?);
+            out.push((name, p.type_text()?));
         }
     }
     (!out.is_empty()).then_some(out)
@@ -260,6 +331,8 @@ struct Parser<'a> {
     pos: usize,
     /// Pointer nesting (`^^^…`) entered so far; a hostile depth is refused.
     depth: usize,
+    /// Reading struct members that carry `"name"`s.
+    named: bool,
 }
 
 /// The deepest `^` nesting decoded; a real encoding is two or three deep.
@@ -270,7 +343,7 @@ const MAX_STRUCT_DEPTH: usize = 32;
 
 impl<'a> Parser<'a> {
     fn new(s: &'a str) -> Parser<'a> {
-        Parser { bytes: s.as_bytes(), pos: 0, depth: 0 }
+        Parser { bytes: s.as_bytes(), pos: 0, depth: 0, named: false }
     }
 
     /// At (or past) the end of the encoding.
@@ -297,18 +370,35 @@ impl<'a> Parser<'a> {
 
     /// The `"Name"` an ivar encoding appends to `@` (`@"NSString"`, also
     /// `@"<Proto>"` for a protocol-qualified `id`, which names no class),
-    /// consumed when present.
+    /// consumed when present. Among named struct members (`"a"@"next"Q`) a
+    /// quoted string is the class only when another name or the end follows it.
     fn quoted_class_name(&mut self) -> Option<String> {
         if self.peek()? != b'"' {
             return None;
         }
         let rest = &self.bytes[self.pos + 1..];
         let end = rest.iter().position(|&b| b == b'"')?;
+        if self.named && rest.get(end + 1).is_some_and(|&b| b != b'"') {
+            return None;
+        }
         let name = std::str::from_utf8(&rest[..end]).ok()?;
         self.pos += end + 2;
         let class = name.split('<').next().unwrap_or("");
         (!class.is_empty() && class.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'$'))
             .then(|| class.to_string())
+    }
+
+    /// The `"name"` a struct member's encoding may carry before its type
+    /// (`{S="count"q}`), consumed when present.
+    fn member_name(&mut self) -> Option<String> {
+        if self.peek()? != b'"' {
+            return None;
+        }
+        let rest = &self.bytes[self.pos + 1..];
+        let end = rest.iter().position(|&b| b == b'"')?;
+        let name = std::str::from_utf8(&rest[..end]).ok()?.to_string();
+        self.pos += end + 2;
+        (!name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')).then_some(name)
     }
 
     /// Skip the decimal frame-offset digits trailing a type code in a *method*
@@ -372,14 +462,22 @@ impl<'a> Parser<'a> {
             b'#' => tctx.opaque_ptr("objc_class")?,
             // `:` = SEL → an opaque `objc_selector*`.
             b':' => tctx.opaque_ptr("objc_selector")?,
-            // `^T` = pointer to T: decode the pointee (name-level), fall back to
-            // void* on an opaque/unparseable pointee.
+            // `^T` = pointer to T: decode the pointee, a named struct with its
+            // layout (`^{S=Q^@}`) included; void* on an opaque/unparseable pointee.
             b'^' => {
                 self.depth += 1;
                 if self.depth > MAX_POINTER_DEPTH {
                     return None;
                 }
-                let pointee = self.next_type(tctx);
+                let pointee = if self.peek() == Some(b'{') {
+                    let start = self.pos;
+                    self.pos += 1;
+                    self.skip_balanced(b'{', b'}');
+                    let text = std::str::from_utf8(&self.bytes[start..self.pos]).ok()?;
+                    struct_type_at(text, tctx, self.depth)
+                } else {
+                    self.next_type(tctx)
+                };
                 if self.depth > MAX_POINTER_DEPTH {
                     return None;
                 }
@@ -643,5 +741,65 @@ mod tests {
         assert_eq!(first.field_type.get_metatype(), type_metatype::TYPE_PTR);
         assert_eq!(s.get_field(1).unwrap().offset, 8);
         assert!(s.get_field(2).is_none());
+    }
+
+    /// A pointer to a named struct layout is a pointer to that struct, with
+    /// the member names the encoding carries and `[N T]` members as arrays; a
+    /// quoted string after `@` is a class only when another name follows it.
+    #[test]
+    fn a_pointer_to_a_struct_layout_points_to_the_struct() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let ptr = decode_ivar_type("^{State=\"state\"Q\"items\"^@\"owner\"@\"Bag\"\"mutations\"^Q\"extra\"[5Q]}", &tctx).unwrap();
+        let s = ptr.get_ptr_to().unwrap();
+        assert_eq!((s.get_name(), s.get_size()), ("State", 72));
+        let fields: Vec<(String, i32, i32)> =
+            (0..5).map(|k| s.get_field(k).unwrap()).map(|f| (f.name.clone(), f.offset, f.field_type.get_size())).collect();
+        assert_eq!(
+            fields,
+            [("state", 0, 8), ("items", 8, 8), ("owner", 16, 8), ("mutations", 24, 8), ("extra", 32, 40)]
+                .map(|(n, o, z)| (n.to_string(), o, z))
+        );
+        assert_eq!(s.get_field(4).unwrap().field_type.get_metatype(), type_metatype::TYPE_ARRAY);
+        assert_eq!(s.get_field(1).unwrap().field_type.get_metatype(), type_metatype::TYPE_PTR);
+        let anonymous = decode_ivar_type("^{?=QQ}", &tctx).unwrap();
+        assert_eq!(anonymous.get_ptr_to().unwrap().get_metatype(), type_metatype::TYPE_VOID);
+        let opaque = decode_ivar_type("^{__Opaque=}", &tctx).unwrap();
+        assert_eq!(opaque.get_ptr_to().unwrap().get_metatype(), type_metatype::TYPE_VOID);
+        assert!(f.find_by_name("__Opaque").ok().flatten().is_none(), "an empty layout declares nothing");
+    }
+
+    /// Members sit at their C offsets: a nested struct is padded to its own
+    /// alignment before the next member, and a struct of 4-byte members is not
+    /// padded to a pointer.
+    #[test]
+    fn struct_layout_follows_c_alignment() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let outer = decode_ivar_type("^{Outer={Inner=iC}Ci}", &tctx).unwrap().get_ptr_to().unwrap();
+        let offsets: Vec<i32> = (0..4).map(|k| outer.get_field(k).unwrap().offset).collect();
+        assert_eq!((offsets, outer.get_size()), (vec![0, 4, 8, 12], 16));
+        assert_eq!(struct_type("{Tri=iii}", &tctx).unwrap().get_size(), 12);
+        assert_eq!(struct_type("{Three=CCC}", &tctx).unwrap().get_size(), 3);
+        assert_eq!(struct_type("{Tagged=Cd}", &tctx).unwrap().get_field(1).unwrap().offset, 8);
+        let rect = struct_type("{CGRect={CGPoint=dd}{CGSize=dd}}", &tctx).unwrap();
+        assert_eq!((rect.get_size(), rect.get_field(3).unwrap().offset), (32, 24));
+        let packed = decode_ivar_type("^{Packed=b8b4b20[8S]}", &tctx).unwrap();
+        assert_eq!(packed.get_ptr_to().unwrap().get_metatype(), type_metatype::TYPE_VOID, "bitfields are not laid out");
+    }
+
+    /// A struct reached through a chain of pointers deeper than the cap stops
+    /// at a `void *` instead of recursing.
+    #[test]
+    fn a_hostile_pointer_chain_is_cut() {
+        let f = factory();
+        let tctx = TypeCtx::new(&f, 8, 1);
+        let mut enc = "Q".to_string();
+        for k in 0..200 {
+            enc = format!("^{{S{k}=\"p\"{enc}}}");
+        }
+        assert!(decode_ivar_type(&enc, &tctx).is_some());
+        let nested = format!("{}Q{}", "[1".repeat(10_000), "]".repeat(10_000));
+        assert!(struct_type(&format!("{{Deep=\"a\"{nested}}}"), &tctx).is_none());
     }
 }

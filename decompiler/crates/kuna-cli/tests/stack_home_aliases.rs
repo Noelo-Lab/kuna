@@ -4,6 +4,7 @@ use crate::common;
 use serde_json::Value;
 use std::process::Command;
 use std::time::Duration;
+use crate::common::process::Capped;
 
 const FIXTURE: &str = "stackhome_alias_x86_64";
 
@@ -48,6 +49,7 @@ fn decompile() -> String {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "runs a Linux ELF fixture")]
 fn reused_home_and_argument_slots_keep_call_keys() {
     common::process::required_output(&mut Command::new(common::fixture(FIXTURE)));
     let code = decompile();
@@ -93,7 +95,7 @@ fn reused_home_and_argument_slots_keep_call_keys() {
                     .arg("-o")
                     .arg(&binary),
             );
-            let ran = Command::new(&binary).output().unwrap();
+            let ran = Command::new(&binary).capped_output().unwrap();
             assert!(
                 ran.status.success(),
                 "{compiler} {level} lost a key store:\n{code}"

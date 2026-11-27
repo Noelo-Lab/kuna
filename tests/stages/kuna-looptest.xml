@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    looptest: where a bottom-tested loop prints its test.
+
+    Issue: kuna-looptest (decbench O2: gcc's loop header copying turns
+    `while (c) body` into `if (c) do body while (c)`, and kuna printed the
+    rotated form).  Stage P8 (goto-quality), P0 assertion
+    `option looptest binary|proven|assume`.
+
+    Authored x86-64 (nasm), each function laid out as gcc -O2 emits it:
+      fill   if (n == 0) return; end = a + n; do *a++ = v; while (a != end);
+             (the guard's return and the loop's return are two blocks)
+      drain  if (n > 0) { i = 0; do { a[i] = i; i++; } while (i < n); } return n;
+      zero16 i = 0; do { a[i] = 0; i++; } while (i != 16);   (no guard)
+      count  if (n > 0) { i = 0; do ...; while (i != n); }   (i steps by 1 from 0
+             to n, so i != n is i < n, the guard's test)
+      walk   if (p) do { q = *p; p[1] = 0; p = q; } while (q);
+      skip   do c = *s++; while (c != ' ');   (the test reads a body value)
+
+    Pass 1 (default `proven`): fill, drain and walk print `while (c)` with
+    the guard gone, zero16 prints `while` because its entry test folds to
+    true, walk's test reads `p` (the variable `q` is copied into), count
+    prints `while (i < n)` and skip stays do-while.  Pass 2 (`option looptest binary`): every loop is
+    a do-while again and fill, drain and walk keep their guards.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+4885f67411488d04f74889174883c7084839c775f4c3c390909090909090909090909090909090909090909090909090909090909090909090909090909090904889f84885ff7e0f31c948890cce4883c1014839f97cf3c39090909090909090909090909090909090909090909090909090909090909090909090909090909031c048c704c7000000004883c0014883f81075eec3909090909090909090909090909090909090909090909090909090909090909090909090909090909090904885f67e1031c0488904c74883c0014839f075f3c3c39090909090909090909090909090909090909090909090909090909090909090909090909090909090904885ff7416488b0748c74708000000004889c74885c075ed31c0c331c0c3909090909090909090909090909090909090909090909090909090909090909090900fb6074883c7013c2075f548893ec3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="fill"/>
+<symbol space="ram" offset="0x100040" name="drain"/>
+<symbol space="ram" offset="0x100080" name="zero16"/>
+<symbol space="ram" offset="0x1000c0" name="count"/>
+<symbol space="ram" offset="0x100100" name="walk"/>
+<symbol space="ram" offset="0x100140" name="skip"/>
+</binaryimage>
+<script>
+  <!-- kuna: tailform default-on; this test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
+  <com>parse line extern void fill(int8 *a,int8 n,int8 v);</com>
+  <com>parse line extern int8 drain(int8 n,int8 *a);</com>
+  <com>parse line extern void zero16(int8 *a);</com>
+  <com>parse line extern void count(int8 *a,int8 n);</com>
+  <com>parse line extern int8 walk(int8 **p);</com>
+  <com>parse line extern void skip(char *s,char **out);</com>
+  <com>lo fu fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu drain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu count</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu skip</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option looptest binary</com>
+  <com>lo fu fill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu drain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero16</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu walk</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LOOPTEST #1: fill tests its pointer at the top" min="1" max="1">^  while \(a != v1\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #2: fill keeps its n == 0 guard only under binary" min="1" max="1">^  if \(n\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #3: drain and count test i &lt; n at the top" min="2" max="2">^  while \(v1 &lt; n\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #4: drain is a guarded do-while under binary" min="1" max="1">^    \} while \(v1 &lt; n\);$</stringmatch>
+<stringmatch name="LOOPTEST #5: zero16's entry test folds to true" min="1" max="1">^  while \(v1 != 0x10\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #6: zero16 is a do-while under binary" min="1" max="1">^  \} while \(v1 != 0x10\);$</stringmatch>
+<stringmatch name="LOOPTEST #7: count's latch i != n prints as i &lt; n" min="0" max="0">^    \} while \(v1 != n\);$</stringmatch>
+<stringmatch name="LOOPTEST #8: the n &gt; 0 guard is printed only for drain under binary" min="1" max="1">^  if \(1 &lt;= n\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #9: walk tests the variable q is copied into" min="1" max="1">^  while \(p\) \{$</stringmatch>
+<stringmatch name="LOOPTEST #10: walk keeps its guard and do-while under binary" min="1" max="1">^    \} while \(v1\);$</stringmatch>
+<stringmatch name="LOOPTEST #11: skip's test reads a body value, so it stays a do-while" min="1" max="1">^  \} while \(v1 != ' '\);$</stringmatch>
+<stringmatch name="LOOPTEST #12: no guarded loop prints a second return" min="0" max="0">^  return;$</stringmatch>
+</decompilertest>

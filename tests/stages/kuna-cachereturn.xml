@@ -1,0 +1,107 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<!--
+    A lazy accessor on a Swift image returns the value of its cache cell
+    (`option cachereturn on|off`, default on, Swift images only).
+
+    `void *get(void) { void *v = g; if (v) return v; v = make(); g = v; return v; }`
+    leaves in x0, at the RETURN, the load of `g` on one path and the value
+    stored into `g` on the other. upstream's ancestorOpUse refuses both (the
+    load is branched on, the stored value is stored), so the function printed
+    `void` and its callers read a result it does not have. Swift's lazy
+    witness-table accessors and its mangled-name type cache are this shape.
+
+    Stage / sub-stage: P4 output-prototype. p4_calls/kuna_cachereturn.rs takes
+    a return trial in an output register of the model when every value
+    reaching each live RETURN is a load of one cell or a call's result stored
+    into it, at least one of each, and the image's source language is Swift.
+
+    Chunk 0x1000a8, clang 22 -O2 -fno-pic for aarch64-linux-gnu (make is in
+    another translation unit):
+      void *g_cache, *g_other;
+      void *get_cached(void) { void *v = g_cache; if (v) return v; v = make(); g_cache = v; return v; }
+      void ensure(void) { if (!g_other) g_other = make(); }
+            (control: a void function tests the cell in x8; it stays void)
+      void *get_slot(void **slot) { void *v = *slot; if (v) return v; v = make(); *slot = v; return v; }
+            (the cell is behind a parameter)
+    get_split at 0x10012c is hand-written in the shape of a Swift lazy
+    witness-table accessor: `ldr x0,[g]; cbz x0,1f; ret; 1: ... bl make;
+    adr x8,g; stlr x0,[x8]; ... ret` (two RETURNs, the store a release).
+
+    The chunk has no language signal, so the first two passes force
+    `option sourcelang swift`. Pass 1 (`option cachereturn off`) reproduces
+    the bug: get_cached, get_slot and get_split print void. Pass 2 is the
+    shipped default on a Swift image: they return the cell's value. Pass 3
+    (`option sourcelang c`) is the shipped default on a C image: the rule is
+    inert (gcc AArch64 compiles a void initializer to an accessor's bytes),
+    so every function prints void. ensure stays void in every pass.
+-->
+<bytechunk space="ram" offset="0x1000a8">
+fd7bbea9f30b00f9fd03009193000090
+600240f9600000b527000094600200f9
+f30b40f9fd7bc2a8c0035fd6fd7bbea9
+f30b00f9fd03009193000090680640f9
+680000b51c000094600600f9f30b40f9
+fd7bc2a8c0035fd6fd7bbea9f30b00f9
+fd030091f30300aa000040f9600000b5
+11000094600200f9f30b40f9fd7bc2a8
+c0035fd688000090000940f9400000b4
+c0035fd6fd7bbfa9fd03009106000094
+1f2003d528f6071000fd9fc8fd7bc1a8
+c0035fd61f2003d5c0f50710c0035fd6
+</bytechunk>
+<symbol space="ram" offset="0x1000a8" name="get_cached"/>
+<symbol space="ram" offset="0x1000d4" name="ensure"/>
+<symbol space="ram" offset="0x100100" name="get_slot"/>
+<symbol space="ram" offset="0x10012c" name="get_split"/>
+<symbol space="ram" offset="0x10015c" name="make"/>
+</binaryimage>
+<script>
+  <com>option sourcelang swift</com>
+  <com>option cachereturn off</com>
+  <com>lo fu get_cached</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ensure</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_slot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_split</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option cachereturn on</com>
+  <com>lo fu get_cached</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ensure</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_slot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_split</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option sourcelang c</com>
+  <com>lo fu get_cached</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu ensure</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_slot</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu get_split</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CACHERETURN #1: off, and on a C image, the accessors print void" min="6" max="6">void (get_cached|get_slot|get_split)\(</stringmatch>
+<stringmatch name="CACHERETURN #2: on a Swift image, get_cached returns the cell" min="1" max="1">int8 get_cached\(void\)</stringmatch>
+<stringmatch name="CACHERETURN #3: on a Swift image, get_slot returns the cell behind its parameter" min="1" max="1">int8 get_slot\(int8 \*a0\)</stringmatch>
+<stringmatch name="CACHERETURN #4: on a Swift image, the two-RETURN accessor returns the cell" min="1" max="1">int8 get_split\(void\)</stringmatch>
+<stringmatch name="CACHERETURN #5: the void control stays void in every pass" min="3" max="3">void ensure\(void\)</stringmatch>
+</decompilertest>

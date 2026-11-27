@@ -54,6 +54,9 @@ fc4889d04801c04801d048c1e003488d1548060c004801d0eb0f8345fc01837dfc0c76a9b800
 <symbol space="ram" offset="0x14c77" name="lookup_flag_data_by_name"/>
 </binaryimage>
 <script>
+  <!-- loopcondhoist (default on) prints this loop as the source's for with the
+       bound check as its condition; kept off so the overflow form is checked. -->
+  <com>option loopcondhoist off</com>
   <com>lo fu lookup_flag_data_by_name</com>
   <com>decompile</com>
   <com>print C</com>

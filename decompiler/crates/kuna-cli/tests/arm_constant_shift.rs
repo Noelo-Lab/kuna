@@ -3,6 +3,7 @@ mod common;
 
 use common::process;
 use std::process::Command;
+use crate::common::process::Capped;
 
 struct Probe {
     name: String,
@@ -73,6 +74,18 @@ fn probes() -> Vec<Probe> {
         words: vec![0xe3a01802, 0xe5910000, 0xe1a00100, 0xe12fff1e],
         check: "{ shared = value; CHECK(load(), (uint32_t)((uint64_t)raw << 2)); }".into(),
     });
+    for (name, parameter) in [("masked", "unsigned int"), ("masked_signed", "int")] {
+        probes.push(Probe {
+            name: name.into(),
+            prototype: format!("unsigned int {name}({parameter} value, unsigned int count)"),
+            words: vec![0xe201101f, 0xe1a00110, 0xe12fff1e],
+            check: format!(
+                "for (unsigned c = 0; c < 300; ++c) {{ \
+                 uint32_t want = (uint32_t)((uint64_t)raw << (c & 31)); \
+                 CHECK({name}(({parameter})value, c), want); }}"
+            ),
+        });
+    }
     for (name, parameter) in [("variable", "unsigned int"), ("variable_signed", "int")] {
         probes.push(Probe {
             name: name.into(),
@@ -165,6 +178,9 @@ fn signed_constant_lsl_is_defined_and_preserves_signed_consumers() {
         "--option",
         "armconstshift",
         "on",
+        "--option",
+        "armshiftguard",
+        "needed",
         "--jobs",
         "1",
         "--assert-strict",
@@ -214,6 +230,9 @@ fn signed_constant_lsl_is_defined_and_preserves_signed_consumers() {
                 code.contains("< 32u ?"),
                 "register-count guard lost: {code}"
             );
+        }
+        if function["name"] == "masked" || function["name"] == "masked_signed" {
+            assert!(!code.contains("< 32u ?"), "masked count still guarded: {code}");
         }
         emitted.push_str(code);
         emitted.push('\n');
@@ -277,7 +296,7 @@ int main(void) {{
                     "{cc} {level}: {}\n{source}",
                     String::from_utf8_lossy(&compiled.stderr)
                 );
-                let run = Command::new(&exe).output().unwrap();
+                let run = Command::new(&exe).capped_output().unwrap();
                 assert!(
                     run.status.success(),
                     "{cc} {level} sanitize={sanitize}: {}\n{}\n{source}",

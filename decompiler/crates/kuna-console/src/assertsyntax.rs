@@ -172,6 +172,41 @@ fn take_token(s: &str) -> (&str, &str) {
     }
 }
 
+pub(crate) fn parse_data(rest: &str) -> Result<(Option<&str>, u64, &str), &'static str> {
+    let (location, decl) = take_token(rest);
+    let (space, addr) = if let Some(explicit) = location.strip_prefix('[') {
+        let (space, addr) = explicit
+            .strip_suffix(']')
+            .and_then(|pair| pair.split_once(','))
+            .filter(|(space, _)| {
+                !space.is_empty()
+                    && space.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.'))
+            })
+            .ok_or("data needs [space,hex-address]")?;
+        (Some(space), addr)
+    } else {
+        (None, location)
+    };
+    let addr = parse_vma(addr).ok_or("data needs a hex <addr>")?;
+    if decl.is_empty() {
+        return Err("data needs a C type declaration naming the symbol");
+    }
+    Ok((space, addr, decl))
+}
+
+pub(crate) fn jump_targets(text: &str) -> Result<(u64, Vec<u64>), String> {
+    let mut tokens = text.split_whitespace();
+    let site = tokens.next().and_then(parse_vma).ok_or("jumptable needs a hex branch address")?;
+    let mut targets = tokens.map(|s| parse_vma(s).ok_or_else(|| format!("invalid jump destination {s:?}")))
+        .collect::<Result<Vec<_>, _>>()?;
+    if targets.is_empty() {
+        return Err("jumptable needs at least one taken destination".into());
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    Ok((site, targets))
+}
+
 /// Parse one directive line.
 pub fn parse_directive(spec: &str) -> Result<Directive, String> {
     let raw = spec.trim().to_string();
@@ -223,12 +258,8 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             Body::Prototype { func: func.to_string(), decl: decl.to_string() }
         }
         "data" => {
-            let (addr, decl) = take_token(rest);
-            let addr = parse_vma(addr).ok_or_else(|| bad("data needs a hex <addr>"))?;
-            if decl.is_empty() {
-                return Err(bad("data needs a C type declaration naming the symbol"));
-            }
-            Body::Data { addr, decl: decl.to_string() }
+            let (space, addr, decl) = parse_data(rest).map_err(bad)?;
+            Body::Data { addr, space: space.map(str::to_owned), decl: decl.to_string() }
         }
         "mmio-mask" => {
             let (addr, rest) = take_token(rest);
@@ -362,6 +393,10 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Bytes { addr, data }
         }
+        "jumptable" => {
+            let (addr, targets) = jump_targets(rest).map_err(|e| bad(&e))?;
+            Body::JumpTable { addr, targets }
+        }
         "flow" => {
             let (addr, kind) = take_token(rest);
             let (func, addr) = split_qualifier(addr);
@@ -402,8 +437,8 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, callproto, data, param, return, comment, flow, callee, \
-                 name, type, format, isolate, readonly, volatile, mmio-mask, bytes)"
+                 function, typedef, prototype, callproto, data, param, return, comment, flow, \
+                 jumptable, callee, name, type, format, isolate, readonly, volatile, mmio-mask, bytes)"
             ))
         }
     };

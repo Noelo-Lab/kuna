@@ -190,9 +190,10 @@ fn verify_shortcut_collision_walk_and_signed_char_key() {
 
 /// AddrSpace::read / get_offset_size (space.cc:224-298) strtoul-base-0 and
 /// suffix quirks, with the register branch dead (no Translate):
-/// octal detection, hex size/offset suffixes, wordsize scaling, the bare
-/// "0x" endptr quirk, and the leading-'+' string that strtoul consumes
-/// whole (so the suffix parser never runs).
+/// octal detection, hex size/offset suffixes, wordsize scaling, and the
+/// leading-'+' string that strtoul consumes whole (so the suffix parser never
+/// runs). (kuna) A bare "0x", which upstream read as offset 0 by ignoring the
+/// `x` its strtoul left behind, is rejected as a malformed suffix.
 #[test]
 fn verify_addrspace_read_strtoul_quirks() {
     let mut manager = AddrSpaceManager::new();
@@ -213,11 +214,8 @@ fn verify_addrspace_read_strtoul_quirks() {
     assert_eq!(ram.read("0x100:2+0x10", &mut size, &manager).unwrap(), 0x110);
     assert_eq!(size, 2);
 
-    // bare "0x": strtoul consumes only the "0" (endptr at 'x'), so the
-    // string is not fully consumed; no ':'/'+' suffix exists -> offset 0
-    size = -99;
-    assert_eq!(ram.read("0x", &mut size, &manager).unwrap(), 0);
-    assert_eq!(size, 8);
+    let err = ram.read("0x", &mut size, &manager).unwrap_err();
+    assert!(err.explain().contains("malformed"), "{}", err.explain());
 
     // leading '+': strtoul accepts the sign and consumes the whole string,
     // taking the early return; the '+' suffix parser never runs

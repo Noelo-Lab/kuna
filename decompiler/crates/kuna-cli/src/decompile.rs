@@ -1232,7 +1232,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
 fn usage() {
     eprintln!(
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
-         \x20                     [--no-vars] [--omit aliases,line_mappings,variables,types] \\\n\
+         \x20                     [--no-vars] [--omit aliases,ranges,line_mappings,variables,types] \\\n\
          \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
@@ -1248,7 +1248,7 @@ fn usage() {
          decompile-all record for that one function\n\
          ({{binary,count,functions:[{{name,address,code,error,warnings,variables,..}}]}});\n\
          without it, the C text alone.  With --json, --omit KEY[,KEY].. leaves those\n\
-         record collections out (aliases, line_mappings, variables -- with\n\
+         record collections out (aliases, ranges, line_mappings, variables -- with\n\
          stack_objects -- and types) and lists them in a top-level `omitted` array;\n\
          name and address always stay.  --no-vars skips the variable extraction\n\
          and leaves `variables` empty, as on decompile-all.\n\
@@ -1278,8 +1278,8 @@ fn usage() {
          \n\
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
          derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
-         name, type, format, isolate, comment, flow, callee, callproto, readonly, volatile,\n\
-         mmio-mask, bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
+         name, type, format, isolate, comment, flow, jumptable, callee, callproto, readonly,\n\
+         volatile, mmio-mask, bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
          `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
          `format <addr> hex|dec|oct|bin|char [<value>]` sets the form the constant\n\

@@ -35,6 +35,8 @@ f30f1efa488b0748ba454c4556454e54
 <symbol space="ram" offset="0x1000e4" name="negative_ptr"/>
 </binaryimage>
 <script>
+  <!-- kuna: tailform default-on; this upstream test pins the binary's own function-tail return layout -->
+  <com>option tailform off</com>
   <com>option readonly on</com>
   <com>parse line struct mystring { char *val; int4 len; };</com>
   <com>parse line struct mywide { wchar2 *wval; int4 len; };</com>
