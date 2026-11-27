@@ -37,6 +37,26 @@ path) leave such a read of the incoming register on paths the code never runs:
 libwebp's NEON transforms and `GetEntropyUnrefined_C` otherwise take an
 `unsigned long long` first parameter.
 
+A copy of the incoming value into memory is a store of the whole double, for
+this rule and for the rule that takes a d-register read only through its two
+words as two words (`kuna_armfloatreturn.rs (in_memory)`). A store to an
+address the function resolves, such as `vstr d0,[r3]` with r3 the address of a
+global, becomes a copy of the register into that global or into an
+address-taken local, and nothing in the function need read that location
+again. `void put_g(double v) { g = v; }` keeps its parameter instead of reading
+an uninitialized `d0`, and glibc's compatibility `totalorder(double, double)`,
+which stores both doubles to the stack and passes their addresses to a call,
+keeps both: the call's effect on that memory still carries the copied value.
+So does a volatile write of the incoming value, and a store after a forward
+merge, such as `g = c ? a : b` or `if (c) v = 0.5; g = v;`, where the incoming
+double reaches memory on the path that keeps it. A store reached only through
+a lane edit, or through a merge around a loop (a merge whose block dominates
+one of its predecessors, `kuna_armfloatreturn.rs (loop_merge)`), is no such
+store: glibc's `printf_size` writes `d5` only in a loop and stores it only on
+the paths where the loop ran, so the incoming `d5` reaches the store only on a
+path that never runs, and is not a parameter. A symbol mapped onto a register
+is not memory.
+
 The AAPCS-VFP back-fill slot is not a parameter. When a single-precision
 parameter fills the low half of a d-register and every later VFP parameter is a
 double, the high half is the slot the convention skips: `f(float, float, float,

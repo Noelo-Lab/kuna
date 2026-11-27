@@ -405,6 +405,18 @@ and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
 
+`kuna-arm-stored-double.xml` checks ARM hard-float double parameters that a
+gcc -O2 function only stores to a global, in ARM and Thumb. `vstr d0,[r3]` to
+the global's address becomes a copy of `d0` into it, the only read of the
+register; that copy reads the whole double, so `put_g`, `put_gv` and `put_two`
+take their doubles instead of reading an uninitialized `d0`, and the float
+control `put_gf` is unchanged. `put_ref` stores its double to a stack slot whose
+address it passes on, `sel` and `zero_if` store a double that a select or an if
+merges first, and an authored `put_mmio` writes `d0` to a range the script marks
+volatile; each keeps its double. An authored `scaled`, glibc's `printf_size`
+shape, writes `d5` only in a loop and stores it only on the paths where the loop
+ran, so it takes no double parameter.
+
 `kuna-calleefloatreads.xml` checks calls to callees with no prototype that
 read a float argument register: an x86-64 `xmm0` written after a `pxor`, an
 ARM hard-float double forwarded or computed in `d0`, and a variadic callee

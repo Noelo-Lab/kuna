@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5591,
-    5591
+    5606,
+    5606
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3384,6 +3384,21 @@
     "data:argclobber-forward #1: the non-clobber path writes the caller's own parameter, so the trailing argument survives both passes",
     "data:argclobber-forward #2: and caller4 keeps the second parameter that argument reads",
     "data:argclobber-guards #1: the callee reads rdx before writing it, so the trailing argument survives both passes",
+    "data:arm-stored-double #10: scaled stores its loop's quotient only where the loop ran",
+    "data:arm-stored-double #11: sel takes both doubles and the int",
+    "data:arm-stored-double #12: sel stores its second double when c is zero",
+    "data:arm-stored-double #13: zero_if takes its double",
+    "data:arm-stored-double #14: zero_if stores the constant when c is set",
+    "data:arm-stored-double #15: put_mmio takes the d0 it writes to volatile memory",
+    "data:arm-stored-double #1: put_g takes the double it stores",
+    "data:arm-stored-double #2: put_g, put_two and sel store their first double",
+    "data:arm-stored-double #3: put_gv takes the double it stores to a global declared volatile",
+    "data:arm-stored-double #4: put_two takes both doubles",
+    "data:arm-stored-double #5: put_two stores its second double",
+    "data:arm-stored-double #6: the float control is unchanged",
+    "data:arm-stored-double #7: no function reads an uninitialized d register",
+    "data:arm-stored-double #8: put_ref takes the double whose address it passes",
+    "data:arm-stored-double #9: a d5 stored only through the loop's merge is no parameter",
     "data:armfloat preset #10: the soft-float image passes its doubles in core registers in both passes",
     "data:armfloat preset #11: no soft-float function takes a floating parameter in either pass",
     "data:armfloat preset #12: the preset returns the NaN payload as a float, bit for bit",
