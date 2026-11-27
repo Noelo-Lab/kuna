@@ -944,8 +944,44 @@ pub fn split_double_input(data: &Funcdata, vn: VarnodeId) -> bool {
         })
 }
 
+/// Is `vn` a memory location, such as the global that a store to a resolved
+/// address becomes? A value copied there leaves the function whole. A symbol
+/// mapped onto a register is no memory.
+pub(crate) fn in_memory(data: &Funcdata, vn: VarnodeId) -> bool {
+    let register = data.get_arch().manage().get_space_by_name("register");
+    data.vbank().get(vn).is_some_and(|v| {
+        (v.is_persist() || v.is_addr_tied())
+            && !v
+                .get_addr()
+                .get_space()
+                .is_some_and(|s| register.is_some_and(|r| r.get_index() == s.get_index()))
+    })
+}
+
+/// Does `op` write `vn` to volatile memory (`write_volatile`, the form a store
+/// to a volatile range takes)?
+pub(crate) fn volatile_write_of(data: &Funcdata, op: &crate::op::PcodeOp, vn: VarnodeId) -> bool {
+    op.code() == OpCode::CPUI_CALLOTHER
+        && op.num_input() > 2
+        && op.get_in(2) == Some(vn)
+        && op
+            .get_in(0)
+            .and_then(|c| data.vbank().get(c))
+            .is_some_and(|c| c.is_constant() && c.get_offset() == crate::userop::BUILTIN_VOLATILE_WRITE as u64)
+}
+
+/// Does the MULTIEQUAL `op` merge a value around a loop: is one of its inputs
+/// carried by an edge from a block its own block dominates?
+pub(crate) fn loop_merge(data: &Funcdata, op: &crate::op::PcodeOp) -> bool {
+    let Some(head) = op.get_parent() else { return true };
+    let graph = data.bblocks_ref();
+    let block = graph.block(head);
+    (0..block.size_in()).any(|i| graph.dominates(head, Some(block.get_in(i))))
+}
+
 /// Every read of `vn` ends in a 4-byte SUBPIECE, directly or through a CAST,
-/// COPY or a right shift by 32 that only such reads consume.
+/// COPY or a right shift by 32 that only such reads consume. A copy into
+/// memory ([`in_memory`]) is a whole read.
 pub(crate) fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     let Some(value) = data.vbank().get(vn) else { return false };
     depth > 0
@@ -955,7 +991,7 @@ pub(crate) fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
             let small = data.vbank().get(out).is_some_and(|o| o.get_size() <= 4);
             match op.code() {
                 OpCode::CPUI_SUBPIECE => small,
-                OpCode::CPUI_CAST | OpCode::CPUI_COPY => halves_only(data, out, depth - 1),
+                OpCode::CPUI_CAST | OpCode::CPUI_COPY => !in_memory(data, out) && halves_only(data, out, depth - 1),
                 OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => {
                     op.get_in(0) == Some(vn)
                         && op

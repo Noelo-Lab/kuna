@@ -1,7 +1,7 @@
 //! Unit tests for the `passthrough` option surface and the decisions the module
 //! makes without a function in front of it: which ranges a claim covers
 //! ([`overlaps_claim`]), which forwarded registers extend a
-//! settled argument list ([`extension`]), and the width a callee's body says it
+//! settled argument list ([`extension`], [`extension_past_gaps`]), and the width a callee's body says it
 //! consumes ([`crate::p4_calls::kuna_calleedeadarg::CalleeEntryDead::live_input_width`]).
 //! The end-to-end behaviour is
 //! `tests/cli/passthrough-gives-a-forwarding-function-its-parameter.json` and
@@ -182,4 +182,59 @@ fn a_list_that_already_covers_or_contradicts_the_stated_one_is_left_alone() {
     assert!(extension(&regs(&sp, &[RDI, RSI]), &stated, &regs(&sp, &[RDI, RSI])).is_empty(), "sysinttostr after the sibling rescue");
     assert!(extension(&regs(&sp, &[RDI, RSI, RDX]), &stated, &regs(&sp, &[RDX])).is_empty(), "longer than stated");
     assert!(extension(&regs(&sp, &[RSI]), &stated, &regs(&sp, &[RSI])).is_empty(), "not a leading run");
+}
+
+const XMM0: u64 = 0x1200;
+const XMM1: u64 = 0x1220;
+
+fn file(k: &[u64], stated: &[u64]) -> Vec<Option<crate::dtype::type_class>> {
+    use crate::dtype::type_class::{TYPECLASS_FLOAT, TYPECLASS_GENERAL};
+    stated.iter().map(|o| Some(if k.contains(o) { TYPECLASS_FLOAT } else { TYPECLASS_GENERAL })).collect()
+}
+
+#[test]
+fn an_unforwarded_float_register_does_not_stop_the_core_registers() {
+    let sp = reg_space();
+    let offs = [XMM0, RDI, RSI];
+    let files = file(&[XMM0, XMM1], &offs);
+    let got = extension_past_gaps(&[], &regs(&sp, &offs), &regs(&sp, &[RDI, RSI]), |k| files[k], |_| true);
+    assert_eq!(got, vec![0, 1], "movq %xmm0,%rax in the callee: rdi and rsi are still where they were");
+    let offs = [XMM0, XMM1, RDI];
+    let files = file(&[XMM0, XMM1], &offs);
+    let got = extension_past_gaps(&[], &regs(&sp, &offs), &regs(&sp, &[XMM1, RDI]), |k| files[k], |_| true);
+    assert_eq!(got, vec![1], "xmm1 without xmm0 sits in the wrong register; rdi does not");
+}
+
+#[test]
+fn a_gap_still_stops_its_own_register_file() {
+    let sp = reg_space();
+    let offs = [XMM0, RDI, RSI, RDX];
+    let files = file(&[XMM0], &offs);
+    let got = extension_past_gaps(&[], &regs(&sp, &offs), &regs(&sp, &[RDI, RDX]), |k| files[k], |_| true);
+    assert_eq!(got, vec![0], "rsi is not forwarded: stop before rdx");
+}
+
+#[test]
+fn a_register_the_model_would_place_elsewhere_is_not_taken() {
+    let sp = reg_space();
+    let offs = [XMM0, RDX];
+    let files = file(&[XMM0], &offs);
+    let got = extension_past_gaps(&[], &regs(&sp, &offs), &regs(&sp, &[RDX]), |k| files[k], |_| false);
+    assert!(got.is_empty(), "Windows x64: without xmm0 the pointer would arrive in rcx");
+    let got = extension_past_gaps(&[], &regs(&sp, &offs), &regs(&sp, &[RDX]), |k| files[k], |kept| kept != [1]);
+    assert!(got.is_empty());
+}
+
+#[test]
+fn a_settled_list_is_extended_past_a_float_gap_only_in_order() {
+    let sp = reg_space();
+    let offs = [XMM0, RDI, RSI];
+    let files = file(&[XMM0], &offs);
+    let stated = regs(&sp, &offs);
+    let got = extension_past_gaps(&regs(&sp, &[RDI]), &stated, &regs(&sp, &[RSI]), |k| files[k], |_| true);
+    assert_eq!(got, vec![0], "the caller's own rdi, then the forwarded rsi");
+    let got = extension_past_gaps(&regs(&sp, &[RSI]), &stated, &regs(&sp, &[RDI]), |k| files[k], |_| true);
+    assert!(got.is_empty(), "rdi cannot follow a settled rsi");
+    let got = extension_past_gaps(&regs(&sp, &[RDI]), &stated, &regs(&sp, &[XMM0, RSI]), |k| files[k], |_| true);
+    assert_eq!(got, vec![1], "xmm0 cannot follow a settled rdi; rsi still can");
 }

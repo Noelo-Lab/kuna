@@ -291,6 +291,8 @@ mod entry_ret_dispatch_cli;
 
 #[path = "entry_selectors.rs"]
 mod entry_selectors;
+#[path = "selection_files_cli.rs"]
+mod selection_files_cli;
 
 #[path = "explicit_branch_assertion_cli.rs"]
 mod explicit_branch_assertion_cli;
@@ -400,6 +402,8 @@ mod narrow_extension;
 
 #[path = "narrow_switch_labels.rs"]
 mod narrow_switch_labels;
+#[path = "narrow_compare_emission.rs"]
+mod narrow_compare_emission;
 #[path = "narrow_multiply_emission.rs"]
 mod narrow_multiply_emission;
 
