@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5694,
-    5694
+    5707,
+    5707
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -720,6 +720,15 @@
     "data:CUSTOM-CALL-STORAGE #7: return-only declaration keeps the inferred input across rebuilds",
     "data:CUSTOM-CALL-STORAGE #8: return-only body retains its incoming value",
     "data:CUSTOM-CALL-STORAGE #9: return-only declaration never claims no inputs",
+    "data:CXXALLOC #1: new[] takes the size",
+    "data:CXXALLOC #2: copy3 is handed the first parameter",
+    "data:CXXALLOC #3: cmp3 is handed the second",
+    "data:CXXALLOC #4: delete[] takes the pointer",
+    "data:CXXALLOC #5: roundtrip keeps its one parameter",
+    "data:CXXALLOC #6: fill2 is handed the new node and the parameter",
+    "data:CXXALLOC #7: the sized delete keeps both arguments",
+    "data:CXXALLOC #8: an imported delete[] keeps its pointer",
+    "data:CXXALLOC #9: no operator call drops all its arguments",
     "data:Call push #1: the push before the call in the loop is never printed",
     "data:Call push #2: the push before the call with stack arguments is never printed",
     "data:Call push #3: the call in the loop is kept",
@@ -4956,6 +4965,10 @@
     "data:reentereddispatch #6: the callback transfers after the store",
     "data:refusals and foreign renderings retain LOCK",
     "data:refusals and foreign renderings retain UNLOCK",
+    "data:regionedgeorder preset #1: the defaults and mode aggressive print the source's else if",
+    "data:regionedgeorder preset #2: option regionedgeorder on prints a guard return",
+    "data:regionedgeorder preset #3: only the ordering returns early",
+    "data:regionedgeorder preset #4: every pass stores 2 and 1",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",

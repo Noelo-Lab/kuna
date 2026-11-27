@@ -208,6 +208,13 @@ image twice. With the catalog defaults its PIC stub stays `sub_1800`; after
 `mode aggressive`, which sets `ppc32picimports abi` and which `auto` selects
 for files under 500 KiB, the same call prints as the import `extra`.
 
+`kuna-regionedgeorder-preset.xml` checks that `mode aggressive` leaves option
+`regionedgeorder` off. A gcc -O0 x86-64 `set_exit_status` prints the source's
+`else if (!x) x = 1;` with the catalog defaults and after `mode aggressive`;
+`option regionedgeorder on` cuts the edge from that test into the function's
+exit and prints `if (x) return; x = 1;`, as the preset did while it carried
+the option.
+
 `kuna-mips-octeon-elf32-o64.xml` loads big-endian Octeon ELF32 images without a
 target: one declaring O64, one declaring no ABI with GCC's `.mdebug.abiO64`
 marker, and one declaring no ABI at all. Each now loads with the Octeon O64
