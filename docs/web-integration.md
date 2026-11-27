@@ -481,7 +481,11 @@ row.
 The landing page and `/dev-viz/` share the Noelo Lab site's palette and typefaces
 (`noelo.org`, BSD-2-Clause; provenance note at the top of `assets/css/site.css`) but not
 its layout: they are tool pages — one display line, then monospace throughout, small
-red-ticked section labels instead of a lab-page rail. `/decompile/` has its own stylesheet
+red-ticked section labels instead of a lab-page rail. The landing page opts into a dark
+theme that follows the reader's system setting (`<html data-theme="auto">`; the dark tokens
+reuse `/decompile/`'s palette, and the header and hero marks swap to `kuna-mark-dark.svg`
+through `<picture>`); `/dev-viz/` stays light, since its charts
+use fixed light colours. `/decompile/` has its own stylesheet
 on the same palette, dark by default (§4.2); `assets/js/highlight-c.js` is the single C
 highlighter shared by the compare panes and the decompiler. The landing
 page is otherwise inert — no wasm, no network — and `compare-samples.js` is pure data, so
@@ -1411,6 +1415,12 @@ skips it as too costly):
    node integrations/web/test/decompile-collab-rtc.mjs
    node integrations/web/test/decompile-collab-rtc.mjs --late 60
    ```
+   **`test/site-theme.mjs`** drives the landing page the same way, served from the source
+   tree with no build: each `<picture>` loads its `-dark.svg` only under a dark system
+   theme and swaps without a reload when the theme changes, every swapped image is served,
+   no width from 320 to 1920 px scrolls sideways in either theme, and `/dev-viz/` stays
+   light. Unlike the five above it runs in CI, in the Tests workflow on every pull request,
+   where a missing Chrome fails it instead of skipping it.
    The filter's DOM half was verified the same way during development (raw CDP): 16
    checks on `sample.elf` — row hiding is `display:none` and not the `.fn` flex rule,
    header and stub-divider counts, the invalid-regex report, `/`-to-focus, `Escape`,

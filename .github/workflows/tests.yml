@@ -152,7 +152,8 @@ jobs:
       # current Node; the runner's default Node is not pinned. The suites that
       # drive headless Chrome (decompile-browser, -collab-browser, -collab-page,
       # -collab-rtc) are not run in CI, which is too costly for them; run them
-      # locally (integrations/web/README.md -> Tests).
+      # locally (integrations/web/README.md -> Tests). site-theme is the cheap
+      # exception: no build, one page, seconds.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -175,6 +176,11 @@ jobs:
           node integrations/web/test/decompile-collab-cases.mjs
           node integrations/web/test/decompile-collab-sync.mjs
           node integrations/web/test/decompile-collab-fuzz.mjs
+
+      # The landing page's light/dark themes in headless Chrome, from source.
+      # Under CI a missing Chrome fails the step instead of skipping it.
+      - name: Test the landing page's themes
+        run: node integrations/web/test/site-theme.mjs
 
       - name: Assemble and test the browser Worker boundary
         run: |
