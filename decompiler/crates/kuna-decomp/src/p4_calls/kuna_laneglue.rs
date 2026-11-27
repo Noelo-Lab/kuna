@@ -17,7 +17,10 @@
 //! such a join on the register's own storage: a SUBPIECE of a PIECE, or a PIECE
 //! input holding the whole trial. Those steps move no data, so they cost no
 //! level, up to [`MAX_FREE_STEPS`] in one walk; a step that truncates the trial
-//! to one input, and every other op, still does.
+//! to one input, and every other op, still does. Both take only a PIECE wider
+//! than a general register: `setz cl` or `mov al,..` inside `rcx` or `rax`
+//! keeps upstream's verdict and cost, so a control-flow-flattened function
+//! whose `eax` holds its dispatcher state at the RET still returns `void`.
 //!
 //! The same joins carry the zeros `vzeroall` writes into every vector register
 //! as 8-byte lanes. Hand-written AVX code (OpenSSL's ChaCha20 and AES-GCM) ends
@@ -35,15 +38,23 @@ use kuna_num::opcodes::OpCode;
 /// How many level-free join steps one use walk may take.
 pub const MAX_FREE_STEPS: u32 = 64;
 
+/// The widest join that is not a lane join: a PIECE no wider than this is a
+/// general register's partial write (`al` or `eax` inside `rax`), and keeps
+/// the cost and the verdict upstream gives it.
+const GENERAL_WIDTH: int4 = 8;
+
 /// How many COPYs of zero into registers one instruction must make to clear
 /// the register bank: `vzeroall` makes 128 (64 outside 64-bit mode), and no
 /// instruction that computes a value makes more than a few.
 const BANK_CLEAR: usize = 32;
 
 /// The input slot of a PIECE (`in0` most significant, `in1` least) that holds
-/// all `size` bytes at `offset` of its output, and their offset within it.
+/// all `size` bytes at `offset` of its output, and their offset within it,
+/// when the PIECE joins lanes of a register wider than [`GENERAL_WIDTH`].
 pub fn piece_holding(offset: int4, size: int4, in0_size: int4, in1_size: int4) -> Option<(int4, int4)> {
-    if offset + size <= in1_size {
+    if in0_size + in1_size <= GENERAL_WIDTH {
+        None
+    } else if offset + size <= in1_size {
         Some((1, offset))
     } else if offset >= in1_size && offset - in1_size + size <= in0_size {
         Some((0, offset - in1_size))
@@ -63,7 +74,8 @@ pub fn free_step(data: &Funcdata, vn: VarnodeId, def: OpId, next: VarnodeId, off
     match o.code() {
         OpCode::CPUI_SUBPIECE => {
             let Some(c) = o.get_in(1).and_then(|c| data.vbank().get(c)) else { return false };
-            v.overlap(n) == c.get_offset() as int4
+            n.get_size() > GENERAL_WIDTH
+                && v.overlap(n) == c.get_offset() as int4
                 && n.get_def().and_then(|d| data.obank().get(d)).is_some_and(|d| d.code() == OpCode::CPUI_PIECE)
         }
         OpCode::CPUI_PIECE => {

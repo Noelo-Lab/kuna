@@ -9717,7 +9717,11 @@ The rule (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_laneglue.rs`, always
 on) changes the two walks in
 `decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs`. Both now step
 into the input of a PIECE that holds all of the trial's bytes, at their offset in
-that input (`piece_holding`), when upstream's two cases do not apply. In
+that input (`piece_holding`), when upstream's two cases do not apply. Only a
+PIECE wider than eight bytes counts: one no wider is a general register's
+partial write (`setz cl`, `mov al,..` inside `rcx`, `rax`) and keeps upstream's
+verdict and level cost, so an obfuscated, control-flow-flattened function whose
+`eax` holds its dispatcher state at the RET still returns `void`. In
 `ancestor_op_use` that step, and a SUBPIECE on the same storage whose input is a
 PIECE, cost no level (`free_step`): neither moves the trial's bytes. A PIECE
 input on other storage, a PIECE that the walk truncates to its low input (the
