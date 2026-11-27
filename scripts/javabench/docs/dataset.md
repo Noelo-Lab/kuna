@@ -183,8 +183,9 @@ inside the size target, so the size rule changed nothing. dsl-json and jasypt go
 | langchain4j | `langchain4j-core` 1.24.1 | 3,599 | 384 | 685 (major 61): 8 records, 10 sealed types | full | 25 `--release` | 99.08% / 100% |
 
 51,458 scored methods in 2,952 top-level classes. The source oracle reaches 92.79% of them
-perfect on all metrics and recompiles 2,944 of the 2,947 class files it compiles. The three
-failures are dependencies no pom declares: hsqldb's `DatabaseManagerSwing` needs hsqldb's
+perfect on all metrics and recompiles 2,944 of the 2,947 source files it compiles (five ECJ
+and undertow files declare two top-level classes each). The three failures are dependencies
+no pom declares: hsqldb's `DatabaseManagerSwing` needs hsqldb's
 separate transfer tool, ECJ's `JDTCompilerAdapter` needs Ant, and luaj's `JavaBuilder` needs
 BCEL. The ceiling is lower than for the other sets for two reasons, and both apply to every
 decompiler equally. ECJ is compiled by ECJ, so no javac reproduces its bytecode: about 70% of
