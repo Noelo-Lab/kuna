@@ -107,7 +107,6 @@ opt	decompile-generics	1
 opt	remove-synthetic	1
 opt	remove-bridge	1
 opt	keep-literals	1
-opt	error-message	
 opt	include-runtime	
 case	default/InvalidMethodSignature	Default	classes/custom/InvalidMethodSignature
 kuna	481f6b85016c9c03

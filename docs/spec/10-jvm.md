@@ -1472,8 +1472,7 @@ reviewed text.
 - The failure marker line never changes: the CLI and the benchmark count failed methods by
   it. `report_to_kuna` changes only the `error-message` note under it, putting kuna's
   request (`KUNA_ERROR_MESSAGE`) in place of the default before the caller's options are
-  applied, so an `error-message` the caller passes (the corpus fixture's empty one) still
-  wins; it reads the set being built, since `Fernflower::new` has installed no context yet.
+  applied, so an `error-message` the caller passes still wins; it reads the set being built, since `Fernflower::new` has installed no context yet.
 - The `kt_*` fixes change Kotlin output only: in a pass or writer that Java output shares,
   they act only on a class written as Kotlin (a class with Kotlin metadata, the Kotlin
   plugin on).

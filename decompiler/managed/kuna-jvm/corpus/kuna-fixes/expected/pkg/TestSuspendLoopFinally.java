@@ -37,6 +37,7 @@ public final class TestSuspendLoopFinally {
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Irreducible bytecode was duplicated to produce valid code
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public final Object drain(@NotNull TestSuspendLoopFinally.Source src, @NotNull List<Integer> out, @NotNull Continuation<? super Integer> $completion) {
       Continuation $continuation;
@@ -188,6 +189,7 @@ public final class TestSuspendLoopFinally {
    // $VF: Handled exception range with multiple entry points by splitting it
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public final Object first(@NotNull TestSuspendLoopFinally.Source src, @NotNull Continuation<? super Integer> $completion) {
       Continuation $continuation;

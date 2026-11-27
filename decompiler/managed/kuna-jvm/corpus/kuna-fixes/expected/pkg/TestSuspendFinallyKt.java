@@ -41,6 +41,7 @@ public final class TestSuspendFinallyKt {
    // $VF: Handled exception range with multiple entry points by splitting it
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public static final Object once(@NotNull Function0<Unit> done, @NotNull Continuation<? super Unit> $completion) {
       Continuation $continuation;
@@ -121,6 +122,7 @@ public final class TestSuspendFinallyKt {
    // $VF: Handled exception range with multiple entry points by splitting it
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public static final Object twice(@NotNull Function0<Unit> done, @NotNull Continuation<? super Integer> $completion) {
       Continuation $continuation;
@@ -240,6 +242,7 @@ public final class TestSuspendFinallyKt {
    // $VF: Handled exception range with multiple entry points by splitting it
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public static final Object early(boolean flag, @NotNull Function0<Unit> done, @NotNull Continuation<? super Integer> $completion) {
       Continuation $continuation;

@@ -5,6 +5,7 @@ public class TestIrreducibleTry {
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Irreducible bytecode was duplicated to produce valid code
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    public static int run(int var0, TestIrreducibleTry.Src var1) {
       boolean var10;
       if (var0 == 0) {
@@ -91,6 +92,7 @@ public class TestIrreducibleTry {
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Irreducible bytecode was duplicated to produce valid code
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    public static int poll(int var0, TestIrreducibleTry.Src var1) {
       boolean var34;
       boolean var49;

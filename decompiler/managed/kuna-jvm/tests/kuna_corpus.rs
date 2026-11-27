@@ -506,14 +506,6 @@ fn vendored_corpus_is_complete() {
     assert_eq!(cases.len(), 889);
     assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 591);
     assert_eq!(cases.iter().filter(|c| c.set_slug == "kuna-fixes").count(), 298);
-    for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes") {
-        assert!(
-            case.options
-                .contains(&("error-message".to_string(), String::new())),
-            "{}",
-            case.id
-        );
-    }
     assert_eq!(
         cases
             .iter()
@@ -568,7 +560,6 @@ fn vendored_corpus_is_complete() {
             .options
             .iter()
             .skip(usize::from(as_java))
-            .filter(|(k, _)| k != "error-message")
             .take(base.len())
             .map(|(k, _)| k.as_str())
             .collect();
