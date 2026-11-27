@@ -127,6 +127,9 @@ mod arm_veneer_tailcall;
 #[path = "arm_wrapper_returns.rs"]
 mod arm_wrapper_returns;
 
+#[path = "thumb_forwarded_return.rs"]
+mod thumb_forwarded_return;
+
 #[path = "arm_xref_roots.rs"]
 mod arm_xref_roots;
 
@@ -234,6 +237,9 @@ mod dos_exit_cli;
 
 #[path = "dos_extent_cli.rs"]
 mod dos_extent_cli;
+
+#[path = "raw_thumb_extent.rs"]
+mod raw_thumb_extent;
 
 #[path = "decompile_cli.rs"]
 mod decompile_cli;

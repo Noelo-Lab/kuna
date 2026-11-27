@@ -1089,7 +1089,9 @@ fn follow_lr_flow(arch: &mut Architecture, fd: Funcdata) -> KunaResult<Funcdata>
 }
 
 /// C++ `Funcdata::followFlow` through `startProcessing`'s sorting, without
-/// publishing the flow's buffered comments.
+/// publishing the flow's buffered comments. A bounded isolated callee drive
+/// (`with_caller_return_types`) fails when an instruction crosses its declared
+/// extent, where an ordinary drive still shows the clipped body.
 #[allow(clippy::mutable_key_type)]
 fn generate_flow(
     arch: &mut Architecture,
@@ -1191,6 +1193,12 @@ fn generate_flow_once(
             return Err(error);
         }
         generated?;
+    }
+    if flow.data.get_size() > 0
+        && CONTRACT_DEPTH.with(|depth| depth.get() != 0)
+        && flow.get_size() > flow.data.get_size()
+    {
+        return Err(KunaError::lowlevel("Isolated callee instruction crosses its declared extent"));
     }
     flow.generate_blocks()?;
     if recovered.is_some() {
@@ -1824,6 +1832,90 @@ fn state_contracts(arch: &mut Architecture, entries: Vec<Address>, budget: usize
     tried
 }
 
+/// Make the possible producers of a raw Thumb wrapper's observed return
+/// available to its forced redo. This does not lock a callee or publish a
+/// prototype: the redo scores the actual SSA value reaching every return.
+/// `callee_bound` declines drives whose directives cannot be applied in isolation.
+/// The callee drives run under a drive scope, so they publish nothing the
+/// wrapper's own redo would not.
+pub fn with_caller_return_types(
+    arch: &mut Architecture,
+    root: &Funcdata,
+    storage: &(Address, int4),
+    callee_bound: &dyn Fn(u64, &str) -> Option<int4>,
+    redo: impl FnOnce(&mut Architecture) -> KunaResult<Funcdata>,
+) -> Option<Funcdata> {
+    use crate::p4_calls::{kuna_callerreads, kuna_callrettype};
+
+    if arch.kuna_raw_thumb_call_returns.is_empty() {
+        return redo(arch).ok().filter(kuna_callerreads::returns_value);
+    }
+    let mut entries = if arch.call_ret_type {
+        kuna_callerreads::forwarded_callees(root)
+    } else {
+        Vec::new()
+    };
+    entries.sort_unstable_by_key(|fc| crate::p4_calls::kuna_protoorder::stated_key(fc.get_entry_address()));
+    entries.dedup_by(|a, b| a.get_entry_address() == b.get_entry_address());
+    let mut statements = Vec::new();
+    {
+        let _scope = arch.kuna_drive_scope();
+        for call in entries.into_iter().take(MAX_TAIL_CONTRACTS) {
+            if deadline_passed() {
+                break;
+            }
+            let entry = call.get_entry_address();
+            let Some(key) = crate::p4_calls::kuna_protoorder::stated_key(entry) else { continue };
+            let sites = &arch.kuna_raw_thumb_call_returns;
+            let lo = sites.partition_point(|&(callee, _, _)| callee < key.1);
+            if entry == root.get_address()
+                || sites.get(lo).is_none_or(|&(callee, _, _)| callee != key.1)
+                || arch.symboltab.function_proto_pieces_across_scopes(entry).is_some()
+            {
+                continue;
+            }
+            let Some(size) = callee_bound(key.1, call.get_name()) else { continue };
+            let stated = recover_isolated_callee(arch, entry, size, Some(MAX_TAIL_CALLEE_INSTRUCTIONS), |_, callee| {
+                if !kuna_callerreads::has_complete_value(callee)
+                    || (0..callee.num_calls()).any(|i| {
+                        let target = callee.get_call_specs(i).get_entry_address();
+                        target == root.get_address() || target == entry
+                    })
+                {
+                    return None;
+                }
+                let stated = kuna_callrettype::recovered_return(callee, true)?;
+                (stated.addr == storage.0 && stated.size == storage.1).then(|| Rc::new(stated))
+            });
+            if let Some(stated) = stated {
+                statements.push((key, stated));
+            }
+        }
+    }
+    let previous: Vec<_> = statements
+        .into_iter()
+        .map(|(key, stated)| (key, arch.kuna_callret_types.insert(key, stated)))
+        .collect();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| redo(arch)));
+    for (key, stated) in previous {
+        kuna_callrettype::restore(arch, key, stated);
+    }
+    if result.is_err() {
+        kuna_callerreads::release(arch, root.get_address());
+    }
+    result
+        .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
+        .ok()
+        .filter(|fd| {
+            let output = fd.get_func_proto().get_output();
+            output.get_address() == storage.0
+                && output.get_size() == storage.1
+                && kuna_callerreads::returns_value(fd)
+                && kuna_callerreads::has_complete_value(fd)
+                && crate::kuna_returnuncomputed::every_return_computes_with(fd, true)
+        })
+}
+
 /// Decompile one callee far enough to state its recovered parameter types, then
 /// restore the caller's drive state.  The restored state is the per-drive
 /// switches the callee drive rewrites; the statements are handed back explicitly
@@ -1841,6 +1933,35 @@ fn recover_one_contract(
     instruction_limit: Option<u32>,
 ) -> Option<(Option<Rc<crate::kuna_protoorder::RecoveredTypes>>, Vec<Address>)> {
     arch.kuna_protoorder_types = prior.clone();
+    recover_isolated_callee(arch, entry, 0, instruction_limit, |arch, callee| {
+        let calls = (0..callee.num_calls())
+            .filter_map(|i| {
+                let entry = callee.get_call_specs(i).get_entry_address();
+                (!entry.is_invalid()).then(|| entry.clone())
+            })
+            .collect();
+        let name = format!("sub_{:x}", entry.get_offset());
+        let _ = crate::p4_calls::kuna_protoorder::park_recovered(
+            arch,
+            entry,
+            &name,
+            callee,
+            callee.get_func_proto(),
+            crate::p4_calls::kuna_protoorder::ProtoOrderMode::Types,
+        );
+        let stated = crate::p4_calls::kuna_protoorder::stated_key(entry)
+            .and_then(|key| arch.kuna_protoorder_types.get(&key).cloned());
+        Some((stated, calls))
+    })
+}
+
+fn recover_isolated_callee<T>(
+    arch: &mut Architecture,
+    entry: &Address,
+    size: int4,
+    instruction_limit: Option<u32>,
+    extract: impl FnOnce(&mut Architecture, &Funcdata) -> Option<T>,
+) -> Option<T> {
     let saved_deadline = arch.kuna_fn_deadline;
     let saved_action = arch.allacts.get_current_name().to_string();
     let saved_max_instructions = arch.max_instructions;
@@ -1857,26 +1978,14 @@ fn recover_one_contract(
         arch.max_instructions = arch.max_instructions.min(limit);
         arch.flowoptions |= crate::flow::flow_flags::error_toomanyinstructions;
     }
+    if size > 0 {
+        arch.flowoptions &= !crate::flow::flow_flags::ignore_outofbounds;
+        arch.flowoptions |= crate::flow::flow_flags::error_outofbounds;
+    }
     CONTRACT_DEPTH.with(|depth| depth.set(depth.get() + 1));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let callee = decompile_func(arch, &name, entry.clone(), 0).ok()?;
-        let calls = (0..callee.num_calls())
-            .filter_map(|i| {
-                let entry = callee.get_call_specs(i).get_entry_address();
-                (!entry.is_invalid()).then(|| entry.clone())
-            })
-            .collect();
-        let _ = crate::p4_calls::kuna_protoorder::park_recovered(
-            arch,
-            entry,
-            &name,
-            &callee,
-            callee.get_func_proto(),
-            crate::p4_calls::kuna_protoorder::ProtoOrderMode::Types,
-        );
-        let stated = crate::p4_calls::kuna_protoorder::stated_key(entry)
-            .and_then(|key| arch.kuna_protoorder_types.get(&key).cloned());
-        Some((stated, calls))
+        let callee = decompile_func(arch, &name, entry.clone(), size).ok()?;
+        extract(arch, &callee)
     }));
     CONTRACT_DEPTH.with(|depth| depth.set(depth.get() - 1));
     arch.kuna_fn_deadline = saved_deadline;

@@ -119,6 +119,7 @@ pub struct DecompileStep {
 /// `FormatStringAnalyzer` decompile likewise reads constant strings out of
 /// read-only memory.  Gate-safe: with `formatstring` off the value is unchanged,
 /// so every parity gate is byte-identical.
+/// Without program declarations, this entry point does not probe raw callees.
 pub fn decompile_one(
     arch: &mut Architecture,
     name: &str,
@@ -127,7 +128,7 @@ pub fn decompile_one(
     seed: &DecompileSeed<'_>,
     proto_overrides: &[(Address, PrototypePieces)],
 ) -> DecompileStep {
-    decompile_one_prefollowed(arch, name, entry, size, seed, proto_overrides, None)
+    decompile_one_prefollowed(arch, name, entry, size, seed, proto_overrides, None, &|_, _| None)
 }
 
 /// [`decompile_one`], but able to adopt an already-followed `Funcdata` for the
@@ -138,6 +139,10 @@ pub fn decompile_one(
 /// new per-call-site prototype overrides, which are consumed AT FLOW TIME, so
 /// that second pass always re-follows. Both drives, and the callee
 /// materialization between them, run under the program's load-time options.
+///
+/// `raw_callee_bound` returns the declared size (0 for no bound), or `None`
+/// if an isolated callee drive cannot account for all applicable directives.
+#[allow(clippy::too_many_arguments)]
 pub fn decompile_one_prefollowed(
     arch: &mut Architecture,
     name: &str,
@@ -146,6 +151,7 @@ pub fn decompile_one_prefollowed(
     seed: &DecompileSeed<'_>,
     proto_overrides: &[(Address, PrototypePieces)],
     prefollowed: Option<Funcdata>,
+    raw_callee_bound: &dyn Fn(u64, &str) -> Option<int4>,
 ) -> DecompileStep {
     let _load = arch.load_scope();
     let mut first = decompile_one_prefollowed_once(
@@ -156,6 +162,7 @@ pub fn decompile_one_prefollowed(
         seed,
         proto_overrides,
         prefollowed,
+        raw_callee_bound,
     );
     // (kuna `lazyfuncs`) Materialize the targets this lift read and re-run; each round
     // creates at least one `Function`, so the finite entry set bounds the loop.  The
@@ -174,12 +181,14 @@ pub fn decompile_one_prefollowed(
                 seed,
                 proto_overrides,
                 None,
+                raw_callee_bound,
             );
         }
     }
     first
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decompile_one_prefollowed_once(
     arch: &mut Architecture,
     name: &str,
@@ -188,6 +197,7 @@ fn decompile_one_prefollowed_once(
     seed: &DecompileSeed<'_>,
     proto_overrides: &[(Address, PrototypePieces)],
     prefollowed: Option<Funcdata>,
+    raw_callee_bound: &dyn Fn(u64, &str) -> Option<int4>,
 ) -> DecompileStep {
     let formatstring_mode = arch.analysis_formatstring;
     let saved_readonlypropagate = arch.readonlypropagate;
@@ -409,28 +419,35 @@ fn decompile_one_prefollowed_once(
     // (kuna `callerreads`) Use raw caller evidence when the driver has no
     // callee-first return settling pass.
     let read = match &result {
-        Ok(fd) if !arch.kuna_settle_caller_reads => kuna_decomp::kuna_callerreads::read(arch, fd),
+        Ok(fd) if !arch.kuna_settle_caller_reads => {
+            kuna_decomp::kuna_callerreads::read(arch, fd, raw_callee_bound)
+        }
         _ => None,
     };
-    if let Some(storage) = read {
-        kuna_decomp::kuna_callerreads::force(arch, &redo_entry, storage);
-        let redo = kuna_decomp::decompile_drive::decompile_func_full_with_override_dyn(
-            arch,
-            name,
-            redo_entry.clone(),
-            size,
-            seed.mapped_symbols,
-            seed.usepoint_symbols,
-            seed.dynamic_symbols,
-            seed.pending_proto,
-            &flow_overrides,
-            &last_overrides,
-            seed.mapped_params,
-            seed.purpose,
-        );
-        kuna_decomp::kuna_callerreads::release(arch, &redo_entry);
-        if redo.as_ref().is_ok_and(kuna_decomp::kuna_callerreads::returns_value) {
-            result = redo;
+    if let (Ok(first), Some(storage)) = (&result, read) {
+        let redo = kuna_decomp::decompile_drive::with_caller_return_types(arch, first, &storage, raw_callee_bound, |arch| {
+            kuna_decomp::kuna_callerreads::force(arch, &redo_entry, storage.clone());
+            let redo = kuna_decomp::decompile_drive::decompile_func_full_with_objects(
+                arch,
+                name,
+                redo_entry.clone(),
+                size,
+                seed.mapped_symbols,
+                seed.usepoint_symbols,
+                seed.dynamic_symbols,
+                seed.pending_proto,
+                &flow_overrides,
+                &last_overrides,
+                seed.mapped_params,
+                None,
+                seed.object_assertions,
+                seed.purpose,
+            );
+            kuna_decomp::kuna_callerreads::release(arch, &redo_entry);
+            redo
+        });
+        if let Some(redo) = redo {
+            result = Ok(redo);
         }
     }
     arch.format_override_callpoints.clear();

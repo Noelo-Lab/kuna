@@ -660,10 +660,12 @@ pub struct ConsoleProgram {
     /// (kuna `mzsweep`) An MS-DOS executable's relocated module and relocation
     /// words, the evidence its raw-image call sweep reads.
     mz_evidence: Option<kuna_analysis::listing::kuna_mzsweep::MzEvidence>,
-    /// (kuna #1288) An x86 real-mode raw image's flow ends, entry VMA ->
-    /// exclusive end (`kuna_rawextent`): what bounds [`crate::funcextent`]'s
-    /// clip where the one CODE range holds the program's data too. `None` on
-    /// every other image.
+    /// DOS no-return facts for roots whose assertion has not installed a symbol yet.
+    deferred_raw_noreturn: BTreeSet<u64>,
+    /// Proven raw-image flow ends, entry VMA -> exclusive end (`kuna_rawextent`).
+    /// They shorten [`crate::funcextent`]'s clip where the CODE range also
+    /// holds data. `None` on images that did not measure flow (every image but
+    /// an x86 real-mode or 32-bit ARM raw one).
     flow_ends: Option<BTreeMap<u64, u64>>,
     data_name_aliases: HashMap<String, u64>,
     /// (kuna) **Caller-declared function extents**, entry VMA → byte size — what
@@ -2559,6 +2561,13 @@ impl ConsoleProgram {
         self.declared_extents.get(&vma).copied().unwrap_or(UNBOUNDED_SIZE)
     }
 
+    /// Borrow the driver and its declared bounds together for an isolated callee probe.
+    pub(crate) fn arch_and_declared_extents(&mut self) -> (&mut Architecture, impl Fn(u64) -> int4 + '_) {
+        let extents = &self.declared_extents;
+        let arch = self.arch.base_mut().expect("ConsoleProgram: Architecture base present after bootstrap");
+        (arch, move |vma| extents.get(&vma).copied().unwrap_or(UNBOUNDED_SIZE))
+    }
+
     /// Is any function extent declared for this program?  Cheap enough to gate a
     /// per-entry lookup in the inventory bulk pass.
     pub fn has_declared_extents(&self) -> bool {
@@ -2876,6 +2885,12 @@ impl ConsoleProgram {
             self.declared_revision = next_revision();
             self.seed_declared_libc_prototype(&name, &addr);
         }
+        if self.deferred_raw_noreturn.remove(&vma) {
+            let arch = self.arch_mut();
+            if let Some((sid, _)) = arch.symboltab.find_function_across_scopes(&addr) {
+                arch.symboltab.set_function_no_return(sid, true);
+            }
+        }
         Ok(name)
     }
 
@@ -3080,6 +3095,8 @@ impl ConsoleProgram {
             let sid = self.arch().symboltab.find_function_across_scopes(&addr).map(|(sid, _)| sid);
             if let Some(sid) = sid {
                 self.arch_mut().symboltab.set_function_no_return(sid, true);
+            } else if self.mz_evidence.is_none() {
+                self.deferred_raw_noreturn.insert(fact.addr);
             }
         }
     }
@@ -3089,10 +3106,11 @@ impl ConsoleProgram {
     /// call in the executable bytes, plus the direct-call closure of those and
     /// the seeds.
     ///
-    /// Seeds and executable bounds both come from the raw loader: the caller's
-    /// `--entry` addresses, and the synthetic `CODE` section it publishes for
-    /// the whole file. A seed is never dropped, so the inventory can only grow;
-    /// an image whose bytes hold no direct call returns unchanged.
+    /// The raw loader supplies `--entry` and the synthetic `CODE` range for the
+    /// whole file. Mapped entry-only declarations also seed the walk, except on
+    /// a native MZ load, which applies both declaration spellings after its
+    /// normal commit. A seed is never dropped, so an image whose bytes hold no
+    /// direct call returns those roots unchanged.
     ///
     /// (kuna #1288) The DOS exits of a real-mode image are parked for the flow,
     /// and the functions they make no-return are returned for the caller to
@@ -3107,8 +3125,22 @@ impl ConsoleProgram {
             .filter(|(_, _, flags)| flags & section_flags::CODE != 0)
             .map(|(addr, size, _)| (addr, addr.saturating_add(size)))
             .collect();
-        let seeds: Vec<u64> =
-            self.pending_synthetic_entries.iter().map(|addr| addr.get_offset()).collect();
+        let mapped = |vma| exec.iter().any(|&(lo, hi)| (lo..hi).contains(&vma));
+        let assertion_roots = if self.mz_evidence.is_none() {
+            let mut roots = crate::assertions::raw_discovery_roots(self);
+            roots.retain(|&vma| mapped(vma));
+            roots
+        } else {
+            BTreeSet::new()
+        };
+        let seeds: Vec<u64> = self
+            .pending_synthetic_entries
+            .iter()
+            .map(|addr| addr.get_offset())
+            .chain(self.declared_entries.iter().copied().filter(|&vma| {
+                self.declared_extent(vma) == 0 && mapped(vma)
+            }))
+            .collect();
         let known: BTreeSet<u64> = seeds.iter().copied().collect();
         let found = {
             let arch = self.arch();
@@ -3119,6 +3151,7 @@ impl ConsoleProgram {
                 &code_space,
                 &exec,
                 &seeds,
+                assertion_roots,
                 mz,
             )
         };
@@ -3130,6 +3163,7 @@ impl ConsoleProgram {
         }
         self.flow_ends = found.flow_ends;
         self.arch_mut().dos_exit_sites = found.dos_exits.sites;
+        self.arch_mut().kuna_raw_thumb_call_returns = found.call_returns;
         found.dos_exits.noreturn
     }
 
@@ -3165,11 +3199,8 @@ impl ConsoleProgram {
             return Err(KunaError::lowlevel("Rust signature application requires an unmodified object image before its analysis commit"));
         }
         if !self.pending_synthetic_entries.is_empty() {
-            // (kuna `rawdiscover`) A headerless image reaches this point holding
-            // only the `--entry` addresses the caller typed, because the
-            // object-file discovery tier below declines without an
-            // `object::File`. Discover the rest first, so the entries it finds
-            // are named and installed by the same loop.
+            // A headerless image has no object-backed discovery. Walk its raw
+            // roots before installing the names of the discovered entries.
             let dos_noreturn = if self.container == ProgramContainer::Raw {
                 self.discover_raw_entries()
             } else {
@@ -3178,6 +3209,7 @@ impl ConsoleProgram {
             let entries = std::mem::take(&mut self.pending_synthetic_entries);
             let symbols = entries
                 .into_iter()
+                .filter(|addr| !self.declared_entries.contains(&addr.get_offset()))
                 .map(|addr| ProgramSymbol {
                     ordinal: 0,
                     name: self.arch().name_function(&addr),
@@ -4606,6 +4638,7 @@ fn empty_program(
         loader_data_objects: Vec::new(),
         loader_data_exports: Vec::new(),
         mz_evidence: None,
+        deferred_raw_noreturn: BTreeSet::new(),
         flow_ends: None,
         data_name_aliases: HashMap::new(),
         declared_extents: BTreeMap::new(),

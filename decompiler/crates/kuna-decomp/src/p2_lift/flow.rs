@@ -4374,9 +4374,14 @@ truncating the fall-through here"
         }
         self.data.op_set_opcode_code(op, OpCode::CPUI_CALLIND);
         self.setup_callind_specs(op)?;
-        // The no-return / thunk fc bookkeeping (fc->setNoReturn /
-        // setInternal) is the W4 FuncCallSpecs surface -- STUB(W4); the op-code
-        // change to CALLIND is the load-bearing CFG effect.
+        if let Some(index) = self.data.get_call_specs_index(op) {
+            let spec = self.data.get_call_specs_mut(index);
+            if matches!(mode, RecoveryMode::FailThunk | RecoveryMode::FailCallother) {
+                spec.mark_silent_jump_fallback();
+            } else {
+                spec.set_bad_jump_table(true);
+            }
+        }
         // Create an artificial return after the call.
         let return_type = if mode == RecoveryMode::FailCallother {
             pcodeop_flags::noreturn
@@ -4384,18 +4389,8 @@ truncating the fall-through here"
             0
         };
         let addr = self.data.obank().get(op).unwrap().get_addr().clone();
-        // Keep the fallback classification on its call through simplification.
-        match mode {
-            RecoveryMode::FailCallother => {
-                // fc->setNoReturn(true) is the STUB(W4) FuncCallSpecs surface.
-                self.data.warning("Does not return", &addr);
-            }
-            RecoveryMode::FailThunk => {}
-            _ => {
-                if let Some(index) = self.data.get_call_specs_index(op) {
-                    self.data.get_call_specs_mut(index).set_bad_jump_table(true);
-                }
-            }
+        if mode == RecoveryMode::FailCallother {
+            self.data.warning("Does not return", &addr);
         }
         let truncop = self.artificial_halt(&addr, return_type)?;
         self.data.op_dead_insert_after(truncop, op);

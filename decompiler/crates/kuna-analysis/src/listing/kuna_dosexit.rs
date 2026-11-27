@@ -365,13 +365,18 @@ impl PcodeEmit for Capture {
 }
 
 pub(super) fn decode(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64) -> Option<Vec<Op>> {
+    decode_sized(translate, code_space, vma).map(|(_, ops)| ops)
+}
+
+/// [`decode`] with the instruction's byte length.
+pub(super) fn decode_sized(translate: &dyn Translate, code_space: &Rc<AddrSpace>, vma: u64) -> Option<(u32, Vec<Op>)> {
     let addr = Address::new(Rc::clone(code_space), vma);
     let mut cap = Capture::default();
     let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         translate.one_instruction(&mut cap, &addr)
     }));
     match decoded {
-        Ok(Ok(len)) if len > 0 => Some(cap.ops),
+        Ok(Ok(len)) if len > 0 => Some((u32::try_from(len).ok()?, cap.ops)),
         _ => None,
     }
 }

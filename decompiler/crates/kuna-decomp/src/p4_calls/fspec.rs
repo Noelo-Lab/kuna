@@ -6953,6 +6953,13 @@ use crate::funcdata::Funcdata;
 use crate::kuna_restartlog::{KunaRestartReason, RestartLog};
 use crate::context::{OpId, VarnodeId};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum JumpFallback {
+    None,
+    Silent,
+    Warn,
+}
+
 /// A class for analyzing parameters to a sub-function call (C++
 /// `FuncCallSpecs`, `fspec.hh:1645`).
 ///
@@ -7001,9 +7008,8 @@ pub struct FuncCallSpecs {
     /// Are we actively trying to recover output parameters (C++
     /// `isoutputactive`).
     isoutputactive: bool,
-    /// Was the call originally a jump-table we couldn't recover (C++
-    /// `isbadjumptable`).
-    isbadjumptable: bool,
+    /// Jump recovery's fallback to a call, and whether it merits a diagnostic.
+    jump_fallback: JumpFallback,
     /// Do we have a locked output on the stack (C++ `isstackoutputlock`).
     isstackoutputlock: bool,
     /// (kuna) `calleearity`: the storage each recovered argument occupies, in
@@ -7081,7 +7087,7 @@ impl FuncCallSpecs {
             input_consume: Vec::new(),
             isinputactive: false,
             isoutputactive: false,
-            isbadjumptable: false,
+            jump_fallback: JumpFallback::None,
             isstackoutputlock: false,
             final_input_storage: Vec::new(), // (kuna) calleearity
             zext_trimmed: Vec::new(),        // (kuna) truncarg
@@ -7106,7 +7112,7 @@ impl FuncCallSpecs {
     /// to the matching ops of a partial (jump-table recovery) clone.  Copies the
     /// `FuncProto` portion (incl. the effect list that drives the call's INDIRECT
     /// markers, which keep a post-call stack slot symbolic during recovery),
-    /// `effective_extrapop`/`stackoffset`/`paramshift`/`isbadjumptable`, and the
+    /// `effective_extrapop`/`stackoffset`/`paramshift`/`jump_fallback`, and the
     /// entry/name/funcdata identity.  `activeinput`/`activeoutput` are skipped,
     /// exactly as the C++ does.
     pub fn clone_for_op(&self, newop: OpId) -> FuncCallSpecs {
@@ -7123,7 +7129,7 @@ impl FuncCallSpecs {
         res.stackoffset = self.stackoffset;
         res.paramshift = self.paramshift;
         // We are skipping activeinput, activeoutput (per C++).
-        res.isbadjumptable = self.isbadjumptable;
+        res.jump_fallback = self.jump_fallback;
         res.proto.copy(&self.proto); // Copy the FuncProto portion
         res.format_arity = self.format_arity;
         res.jump_target_storage = self.jump_target_storage.clone();
@@ -7308,15 +7314,22 @@ impl FuncCallSpecs {
     pub fn is_output_active(&self) -> bool {
         self.isoutputactive
     }
-    /// Toggle whether the call site looked like an indirect jump (C++
-    /// `setBadJumpTable`).
+    /// Toggle the diagnostic for an ordinary indirect-jump recovery failure
+    /// (C++ `setBadJumpTable`).
     pub fn set_bad_jump_table(&mut self, val: bool) {
-        self.isbadjumptable = val;
+        self.jump_fallback = if val { JumpFallback::Warn } else { JumpFallback::None };
     }
-    /// True if this call site looked like an indirect jump (C++
-    /// `isBadJumpTable`).
+    /// Does a surviving call require the jump-as-call diagnostic?
     pub fn is_bad_jump_table(&self) -> bool {
-        self.isbadjumptable
+        self.jump_fallback == JumpFallback::Warn
+    }
+    /// Mark a thunk or non-returning fallback that does not use that diagnostic.
+    pub(crate) fn mark_silent_jump_fallback(&mut self) {
+        self.jump_fallback = JumpFallback::Silent;
+    }
+    /// Was this call synthesized from a failed indirect-jump recovery?
+    pub(crate) fn is_jump_fallback(&self) -> bool {
+        self.jump_fallback != JumpFallback::None
     }
     /// Toggle whether output is locked and on the stack (C++ `setStackOutputLock`).
     pub fn set_stack_output_lock(&mut self, val: bool) {

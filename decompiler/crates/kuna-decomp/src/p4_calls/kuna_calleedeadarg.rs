@@ -1326,6 +1326,16 @@ pub fn probe_entry<T: kuna_sleigh::translate::Translate + ?Sized>(
     probe_entry_with(tr, entry, reg_idx, follow, &[], &std::collections::BTreeMap::new())
 }
 
+/// Probe a call continuation without reading beyond the caller's declared body.
+pub(super) fn probe_entry_bounded<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+    reg_idx: int4,
+    span: (u64, u64),
+) -> CalleeEntryDead {
+    probe(tr, entry, reg_idx, false, &[], &std::collections::BTreeMap::new(), Some(span))
+}
+
 /// [`probe_entry`], recording where a path reaches one of the system-call user
 /// ops `traps` ([`CalleeEntryDead::traps_unwritten`]). `stack_args` gives the
 /// stack-argument count of each format call by its VMA, so a register the callee
@@ -1339,6 +1349,18 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
     traps: &[uint4],
     stack_args: &std::collections::BTreeMap<u64, usize>,
 ) -> CalleeEntryDead {
+    probe(tr, entry, reg_idx, follow, traps, stack_args, None)
+}
+
+fn probe<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+    reg_idx: int4,
+    follow: bool,
+    traps: &[uint4],
+    stack_args: &std::collections::BTreeMap<u64, usize>,
+    span: Option<(u64, u64)>,
+) -> CalleeEntryDead {
     let mut res = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -1350,10 +1372,10 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
     }
     let start = vec![Frame { at: entry.clone(), written: ByteSet::new(), pushed: Pushed::default() }];
     let mut skips = Vec::new();
-    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped }, traps, stack_args);
+    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped }, traps, stack_args, span);
     if res.complete && !skips.is_empty() {
         let mut late = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
-        walk(tr, &mut late, skips, Skips::Walked, traps, stack_args);
+        walk(tr, &mut late, skips, Skips::Walked, traps, stack_args, span);
         res.skipped = Some(Box::new(late));
     }
     if !res.complete {
@@ -1395,6 +1417,7 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
     mut skips: Skips<'_>,
     traps: &[uint4],
     stack_args: &std::collections::BTreeMap<u64, usize>,
+    span: Option<(u64, u64)>,
 ) {
     let mut visited: HashMap<(int4, u64), ByteSet> = HashMap::new();
     let mut budget = MAX_PROBE_INSTRUCTIONS;
@@ -1405,7 +1428,11 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
             res.complete = false;
             break;
         };
-        let key = (sp.get_index(), frame.at.get_offset());
+        let offset = frame.at.get_offset();
+        if span.is_some_and(|(lo, hi)| !(lo..hi).contains(&offset)) {
+            continue;
+        }
+        let key = (sp.get_index(), offset);
         // A revisit whose incoming written set is a SUPERSET of one already
         // processed adds nothing: the earlier, more conservative pass recorded
         // at least every read-before-write this one would.
@@ -1433,6 +1460,9 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
                 continue;
             }
         };
+        if span.is_some_and(|(_, hi)| len as u64 > hi - offset) {
+            continue;
+        }
         let skip = if follow { Some(&mut found) } else { None };
         match step_instruction(res, &emit, frame.written, frame.pushed, &frame.at, len, skip, traps, stack_args) {
             Some(next) => todo.extend(next),

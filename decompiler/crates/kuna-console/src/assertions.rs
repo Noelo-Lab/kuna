@@ -62,6 +62,8 @@
 //! * **Program-scoped** (`function`, `typedef`, `prototype`, `data`, `import`) is applied
 //!   by [`apply_program_scoped`] right after the analysis commit, so a declared
 //!   fact outranks whatever discovery decided.
+//!   Raw discovery can also use mapped, entry-only function declarations as
+//!   roots without applying those directives early.
 //! * **Function-scoped** (`param`, `return`, `comment`, `flow`, `callee`, `callproto`) is turned into
 //!   decompile SEEDS by [`function_seed`] — the facts the drive consumes at flow
 //!   time.  `flow` is the sharpest of them: it reclassifies the flow out of one
@@ -89,6 +91,7 @@
 //! `<func>::<symbol>`.  Rejecting is the point: a directive that is accepted and
 //! does nothing is worse than an error.
 
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use kuna_base::address::Address;
@@ -329,6 +332,45 @@ fn code_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
     Ok(Address::new(space, vma))
 }
 
+fn function_bounds(
+    prog: &ConsoleProgram,
+    start: u64,
+    end: Option<u64>,
+) -> Result<(Address, int4), String> {
+    let addr = code_addr(prog, start)?;
+    let size = match end {
+        None => 0,
+        Some(end) => {
+            let end = prog.input_code_offset(end).map_err(|e| e.explain().to_string())?;
+            let size = end
+                .checked_sub(addr.get_offset())
+                .filter(|size| *size > 0)
+                .ok_or_else(|| {
+                    "function end must be above start after target address conversion".to_string()
+                })?;
+            int4::try_from(size)
+                .map_err(|_| "function byte extent exceeds the supported range".to_string())?
+        }
+    };
+    Ok((addr, size))
+}
+
+/// Preview raw discovery roots without publishing names, applying prototypes,
+/// or recording outcomes ahead of the ordered program-scope replay.
+pub(crate) fn raw_discovery_roots(prog: &ConsoleProgram) -> BTreeSet<u64> {
+    let mut roots = BTreeSet::new();
+    for directive in prog.assertions() {
+        let Body::Function { start, end, .. } = &directive.body else { continue };
+        let Ok((addr, size)) = function_bounds(prog, *start, *end) else { continue };
+        if size == 0 {
+            roots.insert(addr.get_offset());
+        } else {
+            roots.remove(&addr.get_offset());
+        }
+    }
+    roots
+}
+
 /// Scale a user address without treating its low bit as a function state bit.
 pub(crate) fn data_addr(prog: &ConsoleProgram, vma: u64) -> Result<Address, String> {
     let vma = prog.input_address_offset(vma).map_err(|e| e.explain().to_string())?;
@@ -485,24 +527,7 @@ pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
 fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<(), String> {
     match body {
         Body::Function { start, end, name } => {
-            let addr = code_addr(prog, *start)?;
-            let size = match end {
-                None => 0,
-                Some(end) => {
-                    let end = prog
-                        .input_code_offset(*end)
-                        .map_err(|e| e.explain().to_string())?;
-                    let size = end
-                        .checked_sub(addr.get_offset())
-                        .filter(|size| *size > 0)
-                        .ok_or_else(|| {
-                            "function end must be above start after target address conversion"
-                                .to_string()
-                        })?;
-                    int4::try_from(size)
-                        .map_err(|_| "function byte extent exceeds the supported range".to_string())?
-                }
-            };
+            let (addr, size) = function_bounds(prog, *start, *end)?;
             prog.declare_function(addr, name.as_deref(), size)
                 .map(|_| ())
                 .map_err(|e| e.explain().to_string())

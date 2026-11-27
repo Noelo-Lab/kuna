@@ -2996,6 +2996,98 @@ pointer slot the zero exists for, and choosing a segment for it would hand a bod
 to exactly those. The analyzer tier already degrades this way for entry point
 discovery, which is where the shape comes from.
 
+(kuna) **On a 32-bit ARM raw image the extent ends where the function's flow
+and its literal pool do** (always on;
+`decompiler/crates/kuna-analysis/src/listing/kuna_rawextent.rs (measure)`). A
+firmware dump loaded with `--raw-image` publishes one synthetic CODE range
+holding the read-only data as well as the code, so the clip ran the last
+function before that data on through it. The walk reads instruction lengths
+and successors from the raw Listing, retained even with `PARTITION_ONLY`, and
+never decodes a target the descent did not. It follows direct branches and
+fall-throughs, including paths that leave the clip and come back; an ordinary
+call contributes its continuation, not its callee. A completed walk ends at the
+last reached instruction in the clip, counting any gaps before it. An
+unresolved jump (even if its conditional skip is known), a missing or truncated
+instruction, or an unproved successor (including a transfer outside the mapped
+bytes) leaves the clip intact, as do 16,384 visits for one entry or the
+exhaustion of the address-ordered walks' shared budget of four times the
+Listing's decoded instructions.
+
+The measured end then extends over the literal pool. Every fixed address a
+reached instruction reads or forms into a register (`adr r3,..` ahead of
+`ldrd r2,r3,[r3]`, counted as a doubleword) that lies at or past the end, short
+of the clip and within 8 KiB of the instruction, moves the end to the last byte
+so named, capped at the clip. The pool and the alignment padding in front of it
+therefore stay with the function that loads them. The bytes decide which
+instructions to read: a 16-bit Thumb `ldr rN,[pc,#..]` or `adr` names
+`Align(pc,4)` plus its scaled immediate directly, a 32-bit encoding whose base
+register field is not the PC names nothing, and the rest are decoded once more
+for their p-code, where a direct memory operand or a `LOAD` through an address
+folded from constants (`vldr s0,[pc,#8]` aligns `inst_start` in temporaries)
+names the address. ARM's PC-relative `ldrd`, `ldrh`, `ldrsh` and `ldrsb` lift
+their literal's address as a memory operand of the `LOAD` (and of the
+`INT_ADD` that forms `ldrd`'s second word); there that operand stands for its
+own address. A second decode that disagrees with the Listing's length is
+skipped. On the raw `functions` inventory of betaflight (4,177 entries) this
+costs nothing measurable against main. Over 16 Cortex-M and ARM firmware images from the decbench O0/O2
+corpus (19,110 symbolized functions, loaded raw with every `FUNC` symbol as an
+`--entry`), 18,869 extents equal ELF `st_size` where the clip matched 16,829,
+and the clip's 460,312 bytes of overshoot fall to 107,248; 12 functions end
+2 to 4 bytes short of `st_size`, each at a `bx lr` after a tail branch or an
+assembler `.align` inside a naked handler, code and padding no flow reaches.
+What remains over `st_size` is mostly entries the walk leaves unmeasured (a
+switch, or a final call to a no-return function the walk falls through into
+the data after it) and the pools an assembler or armcc leaves out of a
+symbol's size.
+An exception landing pad, reached only through unwind tables a raw image does
+not carry, is past the end the same way unless a pool the body loads follows
+it. With few seeds, a pool several functions share can pull the undiscovered
+ones between them into the first function's extent, still inside the clip. A function decoded in the wrong instruction set (ARM-mode assembly in an
+image given `--isa thumb`) ends where that decode's flow does.
+
+Other raw languages keep the clip. Over static glibc on x86-64, MIPS and
+PowerPC the same flow walk cut exception landing pads off `_IO_fclose`,
+`fwrite` and their kin (12 to 116 bytes each), code the function owns, beside
+alignment padding no function owns. Object-backed images keep their
+section-based extents.
+
+A mapped entry-only `--define-function` or `--assert function` declaration is
+a raw descent root. Raw discovery previews assertion addresses without applying
+the directives early; the normal assertion order and explicit extent
+precedence are unchanged.
+
+The non-real-mode discovery sweep decodes the whole range, data included, so
+its context writes are rolled back before the descent, and an explicit ARM
+`--isa` mode is protected inside it: a `bx`, `blx` or `it` spelled by data no
+longer switches the decode mode for the bytes after it or leaves IT state on
+the code (crazyflie's `vec_cross_product`, decoded under a stale IT block,
+went from 16 parameters to its 3). The cost is that the sweep no longer finds
+code of the other mode by accident: main's sweep, flipping modes as it went,
+found 387 of a static armhf glibc image's functions from its Thumb entry under
+a wrong `--isa arm` and 1,166 of u-boot's from a Thumb entry under a wrong
+`--isa thumb`; now an image decodes as its `--isa` says, and those runs find 6
+and none. Under the right `--isa` the armhf run finds 552 against main's 405.
+
+The descent's own commits, such as the mode switch of a real `blx` into
+ARM-mode library code, persist, and three rules keep them right. Under an
+explicit ARM `--isa` the seeds are walked before the swept roots, so a seed's
+closure, with each real `blx` in it, decodes before a swept root does; a swept
+root the sweep found through a `blx` would otherwise decode in the wrong mode
+whenever it lies above its caller, since the walk takes the highest root
+first. Before the descent each seed's `TMode` is painted over `[seed, next
+seed)` with its own value, so a `blx` switches its target's mode up to the
+next seed and no further: without that fence the switch into one ARM function
+flowed over every Thumb function after it until the next change point, and the
+static armhf image kept its better decompilation but had 706 exact extents
+instead of 837 (`__setstate_r` measured 12 of its 164 bytes). With both, that image has
+837 exact extents against 593 on main and bad-instruction output in 66 of its
+891 functions against 193. Under `--isa arm` a swept call target off a word
+boundary (a `blx` to Thumb, spelled by data) is not a root, which removes
+u-boot's two such entries inside real functions; a Thumb function the descent
+reaches through a real `blx` stays an entry. Swept-only code (reached by no
+seed's closure) can still call a cross-mode function above it, which then
+decodes in the image's mode.
+
 (kuna #1288) **On an x86 real-mode raw image the extent ends where the function's
 flow does** (always on;
 `decompiler/crates/kuna-analysis/src/listing/kuna_rawextent.rs (measure)`). An
@@ -3040,11 +3132,8 @@ bounded by it, so the C is unchanged. Over 72 DOS executables (MS-DOS 1.25 to
 4.0 tools, FreeDOS, DAZZLE) 3,112 of 7,956 functions shrink, none grows, and
 965,898 bytes are no longer attributed to a function whose flow reaches none of
 them; for every shrunk function, no address of the decompiler's own p-code for
-it lies between the new end and the clip. It is x86 real mode only: an image with a section table
-already says which bytes are code (over stripped x86-64 ELF the clip's overshoot
-is alignment padding, 694 of 1,093 functions; MSVC lays a switch table out after
-its function in `.text`, and ARM a literal pool, both bytes of the function), and
-another raw language would need its own table and literal-pool readers.
+it lies between the new end and the clip. The DOS exit and indirect-table rules
+are specific to x86 real mode.
 
 (kuna `coverage`) **A decompile reports the exact body beside the bound**
 (always on; `decompiler/crates/kuna-console/src/kuna_coverage.rs (output_ranges)`).
