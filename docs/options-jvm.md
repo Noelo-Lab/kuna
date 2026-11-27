@@ -64,8 +64,6 @@ Three tiers:
 | duplicated try blocks in an obfuscated method | [`jvm_old_try_dedup`](#jvm_old_try_dedup----on--off-default-off) |
 | method with jsr/ret fails to decompile in a modern class file | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
-| a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
-| functions of a @JvmMultifileClass facade are missing | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
 | Outer$Inner written as a separate class instead of nested | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
 | anonymous class body lands in the wrong method | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
 | need each class file decompiled on its own | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
@@ -206,15 +204,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** infra/method_processor · vineflower · vineflower-option
 - **Also spelled:** `force-jsr-inline`, `fji`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_force_jsr_inline on`
-
-### `jvm_kt_decompile_facades` -- on | off, default `off`
-
-- **Symptoms:** a facade class prints only This is a multifile facade and a list of files; functions of a @JvmMultifileClass facade are missing.
-- **What it does:** Kotlin plugin: also write the wrapper functions of a multifile facade class (@file:JvmMultifileClass); off writes only the comment that lists the part classes holding the real implementations.
-- **When to flip:** Turn on to see a facade's forwarding functions, for example when callers in Java code call the facade and you need its exact signatures.
-- **Where / provenance:** kotlin/kotlin_writer · vineflower · vineflower-option
-- **Also spelled:** `kt-decompile-facades`
-- **Example:** `kuna decompile app.jar com.ex.UtilsKt --option jvm_kt_decompile_facades on`
 
 ## Input & analysis
 

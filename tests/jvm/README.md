@@ -85,10 +85,10 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 
 ## Counts
 
-- Vendored: **884 runs** in all, each of which must match: the 594 Vineflower-oracle cases (the
+- Vendored: **881 runs** in all, each of which must match: the 591 Vineflower-oracle cases (the
   Java cases here, the plugin and Kotlin cases below) against kuna's text (their `kuna` digests), and
   the 290 kuna-fixes cases (below).
-- Java cases: **521** (Default 505, Javadoc 1, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3), 845 class files (874 KiB); 989 KiB in all
+- Java cases: **521** (Default 505, Javadoc 1, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3), 840 class files (866 KiB); 976 KiB in all
   with `cases.tsv`.
 - Of the oracle corpus's 594 runnable tests, **68 are not vendored** because their
   output depends on a particular JDK's class library; run them from the external corpus (below).
@@ -105,11 +105,11 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 
 ## Kotlin cases
 
-`kotlin.json` holds **71** cases (Kotlin Core Default 5, Kotlin Entire Classpath 63, Kotlin Multifile Facade 3): 103 class files (191 KiB).
+`kotlin.json` holds **68** cases (Kotlin Core Default 5, Kotlin Entire Classpath 63): 100 class files (189 KiB).
 They come from the Kotlin oracle corpus `$KUNA_JVM_ORACLE/corpus-kt` (the oracle's `README.md`
 documents the build: kotlinc 2.0.0, JVM target 17, the plugin's own Gradle setup; all 73 of its fixture
 outputs pass the fixture comparison with upstream's `.dec`). Each case replays one test of
-Vineflower's Kotlin plugin (`KotlinTests`: sets *Kotlin Entire Classpath* and *Kotlin Multifile Facade*,
+Vineflower's Kotlin plugin (`KotlinTests`: set *Kotlin Entire Classpath*,
 only the Kotlin plugin loaded, so here `jvm_plugins` is on; the release jar's other two bundled plugins do
 not change these outputs) or one `KOTLIN` test of core `SingleClassesTest` (*Kotlin Core Default*, no
 plugin: the Kotlin classes come out as Java). A set's pairs are the complete effective option map; the

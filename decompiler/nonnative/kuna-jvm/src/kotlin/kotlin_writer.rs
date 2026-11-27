@@ -57,7 +57,6 @@ use crate::fixes::kt_initializers;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
-use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality};
@@ -515,9 +514,7 @@ impl KotlinWriter {
 
             buffer.append(" */").append_line_separator();
 
-            if !DecompilerContext::get_option(KotlinOptions::DECOMPILE_FACADES) {
-                return true;
-            }
+            return true;
         }
 
         let synthetic_object = !matches!(kt_data, Some(KElement::Class(_)))

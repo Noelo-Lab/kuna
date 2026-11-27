@@ -195,7 +195,7 @@ mismatch prints both digests; `tests/jvm/README.md`, "When a case does not match
 Vineflower's text beside kuna's. The datatest flags (`--all`, `--unittests`,
 `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`) are refused next to it, and
 `--jobs`, `--manifest`, `--out` and `--save-digests` without it (exit `2`). The summary line reads
-`jvm: 884/884 cases matched (0 mismatch, 0 error, 0 unsupported) in 5.2 s`. `--all`
+`jvm: 881/881 cases matched (0 mismatch, 0 error, 0 unsupported) in 5.2 s`. `--all`
 stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,
@@ -4974,7 +4974,7 @@ names, the ones `kuna functions` lists, not Kotlin declaration names:
 | a top-level function of `Counters.kt` | `com.ex.kt.CountersKt.quadruple` | the function (`com.ex.kt.CountersKt` is the whole file) |
 | a lambda | the function that contains it | that function, the lambda inline; the method a lambda compiles to (`quadruple$lambda$0`) is an error |
 | an `object` expression | its class, as a nested class (`Outer$f$obj$1`) | its part of the unit |
-| a function of a multifile facade (`@file:JvmMultifileClass`) | the function in its part class (`Facade__PartKt`) | the function; the facade class prints only the list of its parts unless `--option jvm_kt_decompile_facades on` |
+| a function of a multifile facade (`@file:JvmMultifileClass`) | the function in its part class (`Facade__PartKt`) | the function; the facade class prints only the list of its parts |
 
 A method the Kotlin writer folds into another declaration has no text of its own: a
 `$default` stub, the method a lambda compiles to, a `@JvmStatic` forwarder, a body-less
@@ -4995,7 +4995,7 @@ public final var label: String
 $ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
 error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"
 $ kuna decompile tests/fixtures/jvm/kotlin/classes 'com.ex.kt.Counter.bump$default'
-error: could not decompile com.ex.kt.Counter: com.ex.kt.Counter.bump$default has no declaration of its own in the Kotlin source of com.ex.kt.Counter: the Kotlin writer puts a primary constructor in the class header and folds lambda bodies, $default methods and @JvmStatic forwarders into the declarations they serve (--option jvm_kt_decompile_facades on writes a multifile facade's functions); --language java (jvm_kt_enable off) writes the class as Java, method by method, and --option jvm_remove_synthetic off adds its synthetic methods
+error: could not decompile com.ex.kt.Counter: com.ex.kt.Counter.bump$default has no declaration of its own in the Kotlin source of com.ex.kt.Counter: the Kotlin writer puts a primary constructor in the class header and folds lambda bodies, $default methods and @JvmStatic forwarders into the declarations they serve; --language java (jvm_kt_enable off) writes the class as Java, method by method, and --option jvm_remove_synthetic off adds its synthetic methods
 $ kuna decompile-project tests/fixtures/jvm/kotlin/classes -o out
 wrote out: 2 .kt files (848 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
 ```

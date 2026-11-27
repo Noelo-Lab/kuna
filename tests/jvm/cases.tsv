@@ -176,22 +176,6 @@ opt	__dump_original_lines__	1
 opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
-set	Kotlin Multifile Facade	kotlin-multifile-facade
-opt	jvm_plugins	1
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	0
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	kt-decompile-facades	1
 set	Kuna Fixes	kuna-fixes	kuna-fixes/expected
 opt	log-level	warn
 opt	decompile-generics	1
@@ -1455,15 +1439,6 @@ compare	TestWhenBoolean.kt	TestWhenBoolean.java
 case	kotlin-entire-classpath/pkg/TestWhenControlFlow	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhenControlFlow
 kuna	7914e0adc2eca726
 compare	TestWhenControlFlow.kt	TestWhenControlFlow.java
-case	kotlin-multifile-facade/pkg/TestMultifile	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile
-kuna	d52c295002f45e96
-compare	TestMultifile.kt	TestMultifile.java
-case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile__TestMultifileAKt
-kuna	af2a31fa448e9763
-compare	TestMultifile__TestMultifileAKt.kt	TestMultifile__TestMultifileAKt.java
-case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt
-kuna	b4654466634d8f12
-compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
 case	kuna-fixes/pkg/NoMetaBag	Kuna Fixes	kuna-fixes/classes/pkg/NoMetaBag	kuna-fixes/classes/pkg/NoMetaReader
 opt	jvm_plugins	1
 case	kuna-fixes/pkg/TestAbstractClassConstructor	Kuna Fixes	kuna-fixes/classes/pkg/TestAbstractClassConstructor

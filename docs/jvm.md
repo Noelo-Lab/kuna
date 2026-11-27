@@ -799,7 +799,6 @@ each also answers to Vineflower's name (`kt-enable`, ...):
 | Option | Default | Effect |
 |---|---|---|
 | `jvm_kt_enable` | `on` | write Kotlin classes as Kotlin; `off` writes them as Java with the `@Metadata` annotation |
-| `jvm_kt_decompile_facades` | `off` | also write the forwarding functions of a multifile facade (`@file:JvmMultifileClass`), not only the comment listing its parts |
 
 **Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps, apart
 from those kuna's fixes close (*Kuna-only fixes*, above). The plugin rewrites syntax, not

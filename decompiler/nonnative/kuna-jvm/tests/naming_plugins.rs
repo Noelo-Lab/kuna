@@ -19,11 +19,6 @@ fn bundled_plugins_register_in_oracle_order_with_their_options() {
                 "kt-unknown-defaults",
                 Some("...".to_string())
             ),
-            (
-                "Kotlin".to_string(),
-                "kt-decompile-facades",
-                Some("0".to_string())
-            ),
         ]
     );
 }

@@ -159,74 +159,6 @@
      "1"
     ]
    ]
-  },
-  {
-   "name": "Kotlin Multifile Facade",
-   "slug": "kotlin-multifile-facade",
-   "fixture": false,
-   "source": "plugins/kotlin/src/test/java/org/vineflower/kotlin/KotlinTests.java (this::registerMultifileTests)",
-   "option_pairs": [
-    [
-     "jvm_plugins",
-     "1"
-    ],
-    [
-     "log-level",
-     "warn"
-    ],
-    [
-     "decompile-generics",
-     "1"
-    ],
-    [
-     "remove-synthetic",
-     "0"
-    ],
-    [
-     "remove-bridge",
-     "1"
-    ],
-    [
-     "keep-literals",
-     "1"
-    ],
-    [
-     "__unit_test_mode__",
-     "1"
-    ],
-    [
-     "new-line-separator",
-     "1"
-    ],
-    [
-     "error-message",
-     ""
-    ],
-    [
-     "include-runtime",
-     ""
-    ],
-    [
-     "bytecode-source-mapping",
-     "1"
-    ],
-    [
-     "__dump_original_lines__",
-     "1"
-    ],
-    [
-     "dump-exception-on-error",
-     "0"
-    ],
-    [
-     "ignore-invalid-bytecode",
-     "1"
-    ],
-    [
-     "kt-decompile-facades",
-     "1"
-    ]
-   ]
   }
  ],
  "tests": [
@@ -1009,39 +941,6 @@
    "decompiled_file": "TestWhenControlFlow.kt",
    "decompiled_file_fallback": "TestWhenControlFlow.java",
    "reference": "plugins/kotlin/testData/results/pkg/TestWhenControlFlow.dec"
-  },
-  {
-   "id": "kotlin-multifile-facade/pkg/TestMultifile",
-   "set": "Kotlin Multifile Facade",
-   "class_files": [
-    "kotlin/kt/pkg/TestMultifile.class"
-   ],
-   "oracle": "expected/multifile-facade/pkg/TestMultifile.kt",
-   "decompiled_file": "TestMultifile.kt",
-   "decompiled_file_fallback": "TestMultifile.java",
-   "reference": "plugins/kotlin/testData/results/pkg/TestMultifile.dec"
-  },
-  {
-   "id": "kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA",
-   "set": "Kotlin Multifile Facade",
-   "class_files": [
-    "kotlin/kt/pkg/TestMultifile__TestMultifileAKt.class"
-   ],
-   "oracle": "expected/multifile-facade/pkg/TestMultifile__TestMultifileA.kt",
-   "decompiled_file": "TestMultifile__TestMultifileAKt.kt",
-   "decompiled_file_fallback": "TestMultifile__TestMultifileAKt.java",
-   "reference": "plugins/kotlin/testData/results/pkg/TestMultifile__TestMultifileA.dec"
-  },
-  {
-   "id": "kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB",
-   "set": "Kotlin Multifile Facade",
-   "class_files": [
-    "kotlin/kt/pkg/TestMultifile__TestMultifileBKt.class"
-   ],
-   "oracle": "expected/multifile-facade/pkg/TestMultifile__TestMultifileB.kt",
-   "decompiled_file": "TestMultifile__TestMultifileBKt.kt",
-   "decompiled_file_fallback": "TestMultifile__TestMultifileBKt.java",
-   "reference": "plugins/kotlin/testData/results/pkg/TestMultifile__TestMultifileB.dec"
   }
  ]
 }

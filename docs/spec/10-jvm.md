@@ -1303,7 +1303,7 @@ class`, `annotation class`, `object`, `companion object`, `data`, `value`, `seal
 the primary constructor's parameters in the header, the supertypes; a file class (kind 2
 or 5) has no declaration, only its top-level members; a lambda class (kind 3) is written
 as a lambda where it is created; a multifile facade (kind 4) is written as a comment listing
-its parts, and with `jvm_kt_decompile_facades` also its forwarding functions. The members
+its parts. The members
 are walked in class-file order, enum constants first, then fields, then methods, then
 member classes, but each is written as the metadata element it belongs to: a field or an
 accessor as its property, once, at the first of them (`val` or `var`, type, initializer,
