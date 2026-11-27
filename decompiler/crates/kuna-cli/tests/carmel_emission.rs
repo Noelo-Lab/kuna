@@ -1707,6 +1707,66 @@ int main(void) {
 }
 
 #[test]
+fn carmel_qualified_wide_transfer_uses_early_address_enable() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const INC: [u8; 6] = [0x21, 0xac, 0x20, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("transfer.bin");
+    let source = scratch.path().join("transfer.c");
+    let executable = scratch.path().join("transfer");
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(
+        &specs,
+        &[("A0L", 0xffff), ("ECFG", 0), ("R3", 0xc040), ("PACFG", 0), ("INTBASE", 2), ("RL0", 0x1234)],
+        0,
+        0,
+    );
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut checks = String::new();
+    for (r, (left, tail, reader, output, held, written)) in [
+        (0x36, [0xc0, 0xc0, 0x89], false, "R2", 0x6666, 0x21b8),
+        (0x76, [0xc0, 0xac, 0x89], false, "R2", 0x6666, 0x21bb),
+        (0x36, [0xc0, 0x46, 0xc1], false, "RL0", 0x1234, 0xe1f9),
+        (0x36, [0xc0, 0x47, 0x61], true, "R2", 0x21b9, 0x03b2),
+    ].into_iter().enumerate() {
+        let mut code = vec![INC, NOP, NOP, NOP, NOP, [left, 0x21, 0xb9, tail[0], tail[1], tail[2]]];
+        if reader {
+            code.push([0x76, 0x21, 0xb9, 0xc0, 0xb0, 0x89]);
+        }
+        code.extend([NOP, RET, NOP]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict", "--assert", &format!("return %{output} unsigned short"),
+        ]);
+        for (i, reg) in ["R2", "CETBL", "IOSPACE_ADDR", "CECFG1", "CECFG2", "EST"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{reg} unsigned short in_{i}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let name = format!("transfer_{r}");
+        writeln!(c, "#define sub_0 {name}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+        let early = if left == 0x36 { 1 } else { 0x100 };
+        let reader_table = if reader { 0xff00 } else { 0 };
+        writeln!(checks,
+            "if ({name}(0x6666,{admit},0,0x888,0x888,0) != {written} || \
+                 {name}(0x6666,{late},0,0x888,0x888,0) != {held}) return {case};",
+            admit = early | reader_table, late = (early << 7) | reader_table, case = r + 1,
+        ).unwrap();
+    }
+    writeln!(c, "int main(void) {{\n{checks}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

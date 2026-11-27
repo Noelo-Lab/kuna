@@ -50,6 +50,7 @@ define register offset=0x0ac size=2 [ CETBL ];
 define register offset=0x0b0 size=2 [ ECFG ];
 define register offset=0x0b4 size=2 [ EST ];
 define register offset=0x0b8 size=2 [ INTBASE ];
+define register offset=0x0ba size=2 [ IOSPACE_ADDR ];
 define register offset=0x0bc size=2 [ LC ];
 define register offset=0x0c0 size=3 [ LEA ];
 define register offset=0x0c0 size=1 [ LEAH ];
@@ -11503,13 +11504,37 @@ ce_result_sample: is unary_wide_ce_bank=1 {
     build ce_tick;
 }
 
-:TRANSFER wide_ce_prefix "R2","INTBASE",transfer_roles_imm is carmel_issue=4
+qualified_transfer_r2_src: "INTBASE" is wide_2_22=0x102b22 { export INTBASE; }
+qualified_transfer_r2_src: "IOSPACE" is wide_2_22=0x102c22 { export IOSPACE_ADDR; }
+qualified_transfer_r2_src: "open" is wide_2_22=0x103022 { local ones:2 = 0xffff; export ones; }
+
+qualified_transfer_r3_dst: "RL0" is wide_2_22=0x1011b0 { export RL0; }
+qualified_transfer_r3_dst: "INTBASE" is wide_2_22=0x1011d6 { export INTBASE; }
+qualified_transfer_r3_dst: "IOSPACE" is wide_2_22=0x1011d8 { export IOSPACE_ADDR; }
+
+qualified_transfer: "R2",qualified_transfer_r2_src,transfer_roles_imm
+is qualified_transfer_r2_src & transfer_roles_imm {
+    build qualified_transfer_r2_src;
+    R2 = qualified_transfer_r2_src + transfer_roles_imm;
+}
+
+qualified_transfer: "RL0","IOSPACE",transfer_roles_imm is wide_2_22=0x102c30 & transfer_roles_imm {
+    RL0 = IOSPACE_ADDR + transfer_roles_imm;
+}
+
+qualified_transfer: qualified_transfer_r3_dst,"R3",transfer_roles_imm
+is qualified_transfer_r3_dst & transfer_roles_imm {
+    local delta:2 = transfer_roles_imm;
+    transfer_address_word(R3, RM2, RL2, 6:2, delta, qualified_transfer_r3_dst);
+}
+
+:TRANSFER wide_ce_prefix qualified_transfer is carmel_issue=4
     & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
-    & wide_left_mode=0 & wide_right_mode=1 & wide_40_45=0x36 & wide_2_22=0x102b22 & wide_0_1=1
-    & wide_ce_prefix & transfer_roles_imm & ce_address_mask & ce_tick {
+    & wide_left_mode=0 & wide_right_mode=1 & wide_40_45=0x36 & wide_0_1=1
+    & wide_ce_prefix & qualified_transfer & ce_address_mask & ce_tick {
     local admitted:1 = carmel_read_address_admission(ce_address_mask);
     if (admitted == 0) goto <feedback>;
-    R2 = INTBASE + transfer_roles_imm;
+    build qualified_transfer;
   <feedback>
     clock_ce();
     build ce_tick;

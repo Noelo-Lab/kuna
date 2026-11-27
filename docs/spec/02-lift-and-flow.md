@@ -5215,6 +5215,13 @@ Wide indexed I/O/DATA moves access the original DATA word and update its
 pointer once. The covered displaced and absolute EXT loads send the word to
 DATA; the EXT source's ninth address bit is independent of the DATA address.
 
+Covered qualified wide `TRANSFER` forms publish at address generation,
+controlled by the early admission sample, not by the later predicate
+writeback. The `IOSPACE` selector on their address path reads or writes
+a separate 16-bit address latch, not `INTBASE` or the I/O bus. An
+unbound register source contributes `0xffff`; an `R3` source applies
+the configured modulo window before publishing its address.
+
 The mixed compact MAC and add packets keep each lane’s 40-bit arithmetic
 result separate from its physical write port. A narrow destination can
 receive the high word or an accumulator guard without changing which
