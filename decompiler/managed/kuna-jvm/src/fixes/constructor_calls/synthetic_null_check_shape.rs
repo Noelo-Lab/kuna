@@ -1,15 +1,18 @@
 //! Fix `synthetic_null_check_shape`: a discarded `requireNonNull`/`getClass`
 //! call is removed only when its instructions are one of javac's two null-check
 //! shapes; a check of `x` before `x.CONST` only when a loaded class declares
-//! that constant field.
+//! that constant field, and the constant is then written as that field's read.
 
 use crate::code_constants::*;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::field_descriptor::FieldDescriptor;
+use crate::field_exprent::FieldExprent;
 use crate::instruction_sequence::InstructionSequence;
 use crate::kuna_static_types::param_type;
 use crate::primitive_constant::ConstValue;
+use crate::struct_field::StructField;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::var_type::VarType;
 
@@ -19,8 +22,9 @@ use crate::var_type::VarType;
 pub enum Shape {
     /// The call checks a `dup` of a value left on the stack.
     Dup,
-    /// A non-`null` constant is loaded next, as for `x.CONST`.
-    Constant(Load),
+    /// A non-`null` constant is loaded next, at the bytecode offset given, as
+    /// for `x.CONST`.
+    Constant(Load, i32),
 }
 
 /// The constant an instruction loads: its value, or its pool index (`ldc`)
@@ -34,8 +38,9 @@ pub enum Load {
     Pool(i32),
 }
 
-/// The shape of the null check whose result the `pop` at `i` in `seq` discards.
-pub fn shape(seq: InstructionSequence, i: i32) -> Option<Shape> {
+/// The shape of the null check whose result the `pop` at `i` in `seq` discards;
+/// `next_offset` is the bytecode offset of the instruction after the `pop`.
+pub fn shape(seq: InstructionSequence, i: i32, next_offset: i32) -> Option<Shape> {
     if i < 1 || !(OPC_INVOKEVIRTUAL..=OPC_INVOKESTATIC).contains(&seq.get_instr(i - 1).opcode()) {
         return None;
     }
@@ -55,7 +60,7 @@ pub fn shape(seq: InstructionSequence, i: i32) -> Option<Shape> {
         OPC_LDC | OPC_LDC_W | OPC_LDC2_W => Load::Pool(next.operand(0)),
         _ => return None,
     };
-    Some(Shape::Constant(load))
+    Some(Shape::Constant(load, next_offset))
 }
 
 /// Whether a check of `target` in `shape` is javac's: a `Dup` always; a
@@ -65,13 +70,54 @@ pub fn is_javac_check(shape: Option<Shape>, target: Exprent) -> bool {
     match shape {
         None => false,
         Some(Shape::Dup) => true,
-        Some(Shape::Constant(load)) => {
-            let t = static_type(target);
-            t.type_ == CodeType::Object
-                && t.array_dim == 0
-                && loaded_value(load).is_some_and(|v| constant_field_holds(t.value_str(), &v))
+        Some(Shape::Constant(load, _)) => constant_field_read(load, target).is_some(),
+    }
+}
+
+/// The constant instance field of `target`'s class (or a superclass) whose
+/// value `load` loads: its declaring class and the field.
+fn constant_field_read(load: Load, target: Exprent) -> Option<(String, StructField)> {
+    let t = static_type(target);
+    if t.type_ != CodeType::Object || t.array_dim != 0 {
+        return None;
+    }
+    constant_field(t.value_str(), &loaded_value(load)?)
+}
+
+/// After javac's check of `target` in `shape` is removed: true when the shape
+/// is not `Constant`; else whether the constant it guards in `next` was found
+/// and written as the field read javac compiled, `target.CONST`.
+pub fn restore_field_read(shape: Option<Shape>, target: Exprent, next: Exprent) -> bool {
+    let Some(Shape::Constant(load, offset)) = shape else {
+        return true;
+    };
+    let Some((_, field)) = constant_field_read(load, target) else {
+        return false;
+    };
+    if offset < 0 {
+        return false;
+    }
+    let mut stack = vec![next];
+    while let Some(parent) = stack.pop() {
+        for child in parent.get_all_exprents() {
+            let loaded = child.try_as_const().is_some()
+                && child.get_bytecode().is_some_and(|b| b.get(offset as usize));
+            if loaded {
+                let read = FieldExprent::new(
+                    field.get_name(),
+                    static_type(target).value_str().to_string(),
+                    false,
+                    Some(target),
+                    FieldDescriptor::parse_descriptor(&field.get_descriptor()),
+                    child.get_bytecode().as_ref(),
+                );
+                parent.replace_exprent(child, read.0);
+                return true;
+            }
+            stack.push(child);
         }
     }
+    false
 }
 
 /// The type `e` is declared with: a parameter's, a local's from the
@@ -106,30 +152,26 @@ fn loaded_value(load: Load) -> Option<ConstValue> {
     })
 }
 
-/// Whether `class` or a superclass declares an instance field whose
-/// constant value is `value`; a class that is not loaded is not known to.
-fn constant_field_holds(class: &str, value: &ConstValue) -> bool {
+/// The first instance field of `class` or a superclass whose constant value
+/// is `value`, with its declaring class; a class that is not loaded is not
+/// known to declare one.
+fn constant_field(class: &str, value: &ConstValue) -> Option<(String, StructField)> {
     let context = DecompilerContext::get_struct_context();
     let mut name = class.to_string();
     for _ in 0..64 {
-        let Some(cl) = context.get_class(&name) else {
-            return false;
-        };
+        let cl = context.get_class(&name)?;
         let pool = cl.get_pool();
-        let holds = cl.get_fields().to_vec().into_iter().any(|f| {
+        let found = cl.get_fields().to_vec().into_iter().find(|f| {
             !f.has_modifier(ACC_STATIC)
                 && f.get_attribute(StructGeneralAttribute::ATTRIBUTE_CONSTANT_VALUE)
                     .and_then(|attr| pool.get_primitive_constant(attr.get_index()))
                     .and_then(|constant| constant.value.clone())
                     .is_some_and(|field_value| field_value.equals(value))
         });
-        if holds {
-            return true;
+        if let Some(field) = found {
+            return Some((name, field));
         }
-        match cl.super_class().and_then(|s| s.get_string_opt()) {
-            Some(s) => name = s.to_string(),
-            None => return false,
-        }
+        name = cl.super_class().and_then(|s| s.get_string_opt())?.to_string();
     }
-    false
+    None
 }

@@ -18,11 +18,11 @@ public class TestNullCheckConstantValue {
    }
 
    static int constant(TestNullCheckConstantValue.Box b) {
-      return 3;
+      return b.k;
    }
 
    static String name(TestNullCheckConstantValue.Box b) {
-      return "box";
+      return b.name;
    }
 
    static int string(String s) {

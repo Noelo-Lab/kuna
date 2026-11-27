@@ -1673,6 +1673,12 @@ javac emits, judged by offsets, operand-stack identity, LocalVariableTable names
 LineNumberTable lines and the switch instruction's targets (javac sorts keys but lays
 bodies out in source order, and points a `tableswitch`'s gaps at the default by
 `Gen.visitSwitch`'s cost rule); otherwise the code is printed as the bytecode has it.
+For `x.CONST`, a constant instance field read through an expression, javac emits the null
+check of `x` and then loads the constant: removing the check alone printed `return 3;` for
+`return b.k;`, which no longer throws for a null `b`. `synthetic_null_check_shape` records
+the offset of the loaded constant, and `restore_field_read` writes the constant at that
+offset as the read of the first instance field of `x`'s class (or a superclass) that holds
+its value; where it finds no such constant, the check stays written.
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and

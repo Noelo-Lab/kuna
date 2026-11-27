@@ -848,8 +848,10 @@ impl ExprProcessor {
                                         invocation.set_synthetic_null_check();
                                     }
                                 }
+                                let next_offset =
+                                    if i + 1 < seq.length() { block.get_old_offset(i + 1) } else { -1 };
                                 invocation.set_kuna_null_check_shape(
-                                    synthetic_null_check_shape::shape(seq, i),
+                                    synthetic_null_check_shape::shape(seq, i, next_offset),
                                 );
                             }
                         }

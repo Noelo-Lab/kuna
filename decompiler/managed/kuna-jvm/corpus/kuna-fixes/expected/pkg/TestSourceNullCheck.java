@@ -26,7 +26,7 @@ public class TestSourceNullCheck {
    }
 
    static int sizeOf(TestSourceNullCheck t) {
-      return 5;
+      return t.size;
    }
 
    static char[] hex(byte[] bytes) {
