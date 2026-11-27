@@ -962,6 +962,8 @@ mod nullable_relocations;
 
 #[path = "call_site_prototype.rs"]
 mod call_site_prototype;
+#[path = "homespill_assert.rs"]
+mod homespill_assert;
 
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;
