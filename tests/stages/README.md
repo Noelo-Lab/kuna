@@ -1029,3 +1029,12 @@ still returns the flags, a pop beside an `xmm0` that is only stored still
 returns the popped argument, an eight-byte `struct { float f; int i; }`
 built in the frame and popped into `rax` keeps its `rax` return, and clang
 `-Oz`'s `push 5; pop rax` beside a discarded float read still returns 5.
+
+`kuna-passthrough-filegap-arm.xml` and `kuna-passthrough-filegap.xml` check a
+tail-call wrapper that forwards a double and a pointer untouched, on ARM
+hard-float and SysV x86-64. The callee's stated prototype names the double's
+VFP or XMM register first, as an integer `passthrough` does not forward,
+or as a register its body only stores. The wrapper still takes the pointer in
+`r0` or `rdi` and passes it on, because those conventions fill float and core
+argument registers apart. Before, it printed `bits_tail(void)` and
+`sst_tail(void)` and passed nothing, with one pass.
