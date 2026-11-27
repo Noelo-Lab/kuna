@@ -722,19 +722,22 @@ impl Scopes {
     }
 
     /// Merges declaration `j`'s variable into `target`: its occurrences become
-    /// `target`'s and its definition an assignment.
+    /// `target`'s and its definition an assignment, and every occurrence of
+    /// the merged variable carries one table entry (`target`'s, else `j`'s).
     fn merge(&self, j: usize, target: VarVersionPair) {
         let x = &self.decls[j];
-        let lvt = self
-            .occurrences
-            .get(&target.var)
-            .into_iter()
-            .flatten()
-            .find_map(|v| v.get_lvt());
-        for &var in self.occurrences.get(&x.var.get_index()).into_iter().flatten() {
+        let of = |index: i32| self.occurrences.get(&index).into_iter().flatten();
+        let own = of(target.var).find_map(|v| v.get_lvt());
+        let lvt = own.clone().or_else(|| of(x.var.get_index()).find_map(|v| v.get_lvt()));
+        for &var in of(x.var.get_index()) {
             var.set_index(target.var);
             var.set_version(target.version);
             if lvt.is_some() {
+                var.set_lvt(lvt.clone());
+            }
+        }
+        if own.is_none() && lvt.is_some() {
+            for &var in of(target.var) {
                 var.set_lvt(lvt.clone());
             }
         }

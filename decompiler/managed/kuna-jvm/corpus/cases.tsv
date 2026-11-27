@@ -1881,6 +1881,8 @@ opt	jvm_plugins	1
 # kuna-fixes/src/pkg/TestLocalVisibilityComment.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
 case	kuna-fixes/pkg/TestLocalVisibilityComment	Kuna Fixes	kuna-fixes/classes/pkg/TestLocalVisibilityComment
 opt	jvm_plugins	1
+# kuna-fixes/src/pkg/TestLoopCarriedLocal.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLoopCarriedLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestLoopCarriedLocal
 # kuna-fixes/src/pkg/TestLoopFirstIfExit.java, javac 17.0.21
 case	kuna-fixes/pkg/TestLoopFirstIfExit	Kuna Fixes	kuna-fixes/classes/pkg/TestLoopFirstIfExit
 # kuna-fixes/src/pkg/TestMappedJavaMember.kt, kotlinc 2.0.0 -jvm-target 17

@@ -845,6 +845,11 @@ merged into that variable (Vineflower splits `it = new Wrapper(it)` or `origin =
 origin.getParent()` into a new `var3`). Every merge is refused when a read of one variable could see
 a write of the other (`fixes::var_merge::var_merge_liveness::overwrites_live`, both ways), and a variable a
 lambda or a local or anonymous class captures, or a `final` one, is neither moved nor merged.
+A merged variable carries one table entry on every occurrence, its target's or else the merged
+declaration's: a variable gets its entry from the store the entry starts after, so in a loop
+(`long acc; do { acc = ..; acc ^= ..; } while (acc < 0);`) only the first store's version has it,
+and the version declared before the loop, which the first store's declaration is merged into,
+printed `var7` beside an undeclared `acc` (and `var7 ^= ..` read the unset `var7`).
 A variable none of whose instructions an entry covers takes the name of an entry that starts
 right after one of its stores (the offsets an occurrence records can lie up to four bytes before
 its store instruction), unless another variable of the slot stores in between: javac starts a
