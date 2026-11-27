@@ -212,6 +212,29 @@ fn inc_wrap_and_status_use_the_widened_alu_and_physical_lane() {
 }
 
 #[test]
+fn compact_half_publication_samples_both_ce_rails_before_lane_writeback() {
+    for (fetch, mode, first, flags, next_rails) in [
+        ((INC_A0, NOP), 1, 0, 0x0009, 0x3000),
+        ((NOP, INC_A0), 1, 0, 0x0240, 0),
+        ((INC_A0, 0x21ac62), 1, 0, 0x0249, 0x1000),
+        ((INC_A0, 0x31aa20), 1, 0, 0x0409, 0x3000),
+        ((SEQUENTIAL | INC_A0, NOP), 2, 0, 0x0009, 0x3000),
+        ((SEQUENTIAL | NOP, INC_A0), 2, 1, 0x0009, 0x3000),
+    ] {
+        let (next, right_mode) = if mode == 1 { (6, 0) } else { (3, 3) };
+        let mut m = Machine::new(
+            0, &[fetch, (NOP, NOP), (NOP, NOP)], &[(0, mode, next), (1, right_mode, 6), (2, 1, 6), (4, 1, 0)], None,
+        );
+        m.seed(&[("A0L", 0xffff), ("A1L", 0xffff), ("CECFG1", 0x0888), ("CECFG2", 0x0999), ("CETBL", 0x0180)]);
+        m.start(first).unwrap();
+        m.step();
+        assert_eq!(m.reg("EST"), 0x2000 | flags, "{fetch:x?}");
+        m.step();
+        assert_eq!(m.reg("EST"), next_rails | flags, "{fetch:x?}");
+    }
+}
+
+#[test]
 fn compact_half_compare_uses_signed_order_and_the_physical_lane() {
     for (word, lhs, rhs, flags) in [
         (0x209a02, 0x8000, 1, 0x10),

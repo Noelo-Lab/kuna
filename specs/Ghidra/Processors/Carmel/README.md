@@ -47,6 +47,9 @@ zero and register-half MOVE; half-register CMP/CMPU and signed full-accumulator
 CMP with an inactive peer; signed register-only MUL, MAC, MSU, and DIV;
 logical and arithmetic low-half shifts with an inactive peer; assigned
 ADDRUPDATE pointer pairs; and ordinary signed conditional GOTO with no delay.
+Compact half-register INC and MOVE publish the predicate rails sampled before
+the issue updates either lane's status flags. The following issue's feedback
+uses the new flags.
 Compact signed literal MOVE writes `R` or `RN` when its lane predicate or
 address enable is set. A following `MOVE A2,*R1++RN1` reads DATA at the old
 `R1` and uses the new `RN1` to postmodify the pointer.

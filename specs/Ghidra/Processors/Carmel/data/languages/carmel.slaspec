@@ -1119,6 +1119,26 @@ attach variables [cliw_alu_62_low_1_0] [A4L A5L _ _];
 attach variables [cliw_alu_57_low_0_0] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
 attach variables [cliw_alu_52_low_0_0] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
 
+macro unary_ce_select(cfg, est, shift, bit) {
+    local selector:2 = (cfg >> shift) & 0xf;
+    local taps:8 = 0x00dcb593a4826071;
+    local tap:8 = (taps >> (selector << 2)) & 0xf;
+    bit = ((est >> tap) & 1) * zext(selector < 14);
+}
+macro unary_ce(cfg, est, tbl, bank, enabled) {
+    enabled = (est >> (12 + bank)) & 1;
+    if ((cfg & 0x2000) != 0) goto <unary_ce_ready>;
+    local first:2;
+    local second:2;
+    local third:2;
+    unary_ce_select(cfg, est, 8, first);
+    unary_ce_select(cfg, est, 4, second);
+    unary_ce_select(cfg, est, 0, third);
+    local index:2 = (first << 2) | (second << 1) | third;
+    enabled = (tbl >> (index + bank * 8)) & 1;
+    <unary_ce_ready>
+}
+
 # Stage arithmetic without publishing either packet lane's WB effects.
 # The result is low 16, with the EST set bits in the next 16. L is sticky.
 macro stage_move(value, staged) {
@@ -1140,9 +1160,24 @@ macro stage_inc(value, staged) {
     staged = zext(sum) | (flags << 16);
 }
 
+macro publish_ce_feedback(flags, feedback) {
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, feedback, CETBL, 0, first);
+    unary_ce(CECFG2, feedback, CETBL, 1, second);
+    EST = flags | (first << 12) | (second << 13);
+}
+
 macro commit_half(destination, stage, shift) {
     destination = stage:2;
     EST = (EST & ~(0x3b << shift)) | (stage(2) << shift);
+}
+
+macro commit_half_pair(left_dest, left_stage, right_dest, right_stage) {
+    local incoming:2 = EST;
+    commit_half(left_dest, left_stage, 0);
+    commit_half(right_dest, right_stage, 6);
+    publish_ce_feedback(EST & 0xcfff, incoming);
 }
 
 left_a0l: "INC" "A0L",inc_source is slot_0_0=0x0 & slot_6_22=0x86b0 & (slot_3_5=4 | slot_2_5=10) & inc_source { local staged:4; stage_inc(inc_source, staged); export staged; }
@@ -1475,154 +1510,166 @@ with : hw_loop_phase=1 {
     arm_block_loop(0:2, 12:1, $(ARM_LOOP_PLAN));
 }
 
-:^complete_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(COMPACT_COMPUTE) & complete_left { build complete_left; }
-:^complete_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & nop_right) { build complete_left; }
-:^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; }
+:^complete_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(COMPACT_COMPUTE) & complete_left {
+    local incoming:2 = EST;
+    build complete_left;
+    publish_ce_feedback(EST & 0xcfff, incoming);
+}
+:^complete_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & nop_right) {
+    local incoming:2 = EST;
+    build complete_left;
+    publish_ce_feedback(EST & 0xcfff, incoming);
+}
+:^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) {
+    local incoming:2 = EST;
+    build complete_right;
+    publish_ce_feedback(EST & 0xcfff, incoming);
+}
 
 # Sample and compute both lanes before publishing either lane's result.
 :^left_a0l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) unimpl
-:^left_a0l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a0l; build right_a1l; commit_half(A0L, left_a0l, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a0l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a0l; build right_a2l; commit_half(A0L, left_a0l, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a0l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a0l; build right_a3l; commit_half(A0L, left_a0l, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a0l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a0l; build right_a4l; commit_half(A0L, left_a0l, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a0l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a0l; build right_a5l; commit_half(A0L, left_a0l, 0); commit_half(A5L, right_a5l, 6); }
+:^left_a0l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a0l; build right_a1l; commit_half_pair(A0L, left_a0l, A1L, right_a1l); }
+:^left_a0l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a0l; build right_a2l; commit_half_pair(A0L, left_a0l, A2L, right_a2l); }
+:^left_a0l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a0l; build right_a3l; commit_half_pair(A0L, left_a0l, A3L, right_a3l); }
+:^left_a0l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a0l; build right_a4l; commit_half_pair(A0L, left_a0l, A4L, right_a4l); }
+:^left_a0l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a0l; build right_a5l; commit_half_pair(A0L, left_a0l, A5L, right_a5l); }
 :^left_a0l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) unimpl
-:^left_a0l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a0l; build right_a1h; commit_half(A0L, left_a0l, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a0l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a0l; build right_a2h; commit_half(A0L, left_a0l, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a0l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a0l; build right_a3h; commit_half(A0L, left_a0l, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a0l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a0l; build right_a4h; commit_half(A0L, left_a0l, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a0l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a0l; build right_a5h; commit_half(A0L, left_a0l, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a1l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a1l; build right_a0l; commit_half(A1L, left_a1l, 0); commit_half(A0L, right_a0l, 6); }
+:^left_a0l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a0l; build right_a1h; commit_half_pair(A0L, left_a0l, A1H, right_a1h); }
+:^left_a0l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a0l; build right_a2h; commit_half_pair(A0L, left_a0l, A2H, right_a2h); }
+:^left_a0l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a0l; build right_a3h; commit_half_pair(A0L, left_a0l, A3H, right_a3h); }
+:^left_a0l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a0l; build right_a4h; commit_half_pair(A0L, left_a0l, A4H, right_a4h); }
+:^left_a0l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0L) & left_a0l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a0l; build right_a5h; commit_half_pair(A0L, left_a0l, A5H, right_a5h); }
+:^left_a1l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a1l; build right_a0l; commit_half_pair(A1L, left_a1l, A0L, right_a0l); }
 :^left_a1l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) unimpl
-:^left_a1l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a1l; build right_a2l; commit_half(A1L, left_a1l, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a1l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a1l; build right_a3l; commit_half(A1L, left_a1l, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a1l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a1l; build right_a4l; commit_half(A1L, left_a1l, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a1l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a1l; build right_a5l; commit_half(A1L, left_a1l, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a1l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a1l; build right_a0h; commit_half(A1L, left_a1l, 0); commit_half(A0H, right_a0h, 6); }
+:^left_a1l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a1l; build right_a2l; commit_half_pair(A1L, left_a1l, A2L, right_a2l); }
+:^left_a1l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a1l; build right_a3l; commit_half_pair(A1L, left_a1l, A3L, right_a3l); }
+:^left_a1l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a1l; build right_a4l; commit_half_pair(A1L, left_a1l, A4L, right_a4l); }
+:^left_a1l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a1l; build right_a5l; commit_half_pair(A1L, left_a1l, A5L, right_a5l); }
+:^left_a1l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a1l; build right_a0h; commit_half_pair(A1L, left_a1l, A0H, right_a0h); }
 :^left_a1l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) unimpl
-:^left_a1l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a1l; build right_a2h; commit_half(A1L, left_a1l, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a1l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a1l; build right_a3h; commit_half(A1L, left_a1l, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a1l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a1l; build right_a4h; commit_half(A1L, left_a1l, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a1l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a1l; build right_a5h; commit_half(A1L, left_a1l, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a2l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a2l; build right_a0l; commit_half(A2L, left_a2l, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a2l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a2l; build right_a1l; commit_half(A2L, left_a2l, 0); commit_half(A1L, right_a1l, 6); }
+:^left_a1l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a1l; build right_a2h; commit_half_pair(A1L, left_a1l, A2H, right_a2h); }
+:^left_a1l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a1l; build right_a3h; commit_half_pair(A1L, left_a1l, A3H, right_a3h); }
+:^left_a1l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a1l; build right_a4h; commit_half_pair(A1L, left_a1l, A4H, right_a4h); }
+:^left_a1l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1L) & left_a1l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a1l; build right_a5h; commit_half_pair(A1L, left_a1l, A5H, right_a5h); }
+:^left_a2l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a2l; build right_a0l; commit_half_pair(A2L, left_a2l, A0L, right_a0l); }
+:^left_a2l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a2l; build right_a1l; commit_half_pair(A2L, left_a2l, A1L, right_a1l); }
 :^left_a2l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) unimpl
-:^left_a2l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a2l; build right_a3l; commit_half(A2L, left_a2l, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a2l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a2l; build right_a4l; commit_half(A2L, left_a2l, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a2l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a2l; build right_a5l; commit_half(A2L, left_a2l, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a2l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a2l; build right_a0h; commit_half(A2L, left_a2l, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a2l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a2l; build right_a1h; commit_half(A2L, left_a2l, 0); commit_half(A1H, right_a1h, 6); }
+:^left_a2l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a2l; build right_a3l; commit_half_pair(A2L, left_a2l, A3L, right_a3l); }
+:^left_a2l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a2l; build right_a4l; commit_half_pair(A2L, left_a2l, A4L, right_a4l); }
+:^left_a2l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a2l; build right_a5l; commit_half_pair(A2L, left_a2l, A5L, right_a5l); }
+:^left_a2l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a2l; build right_a0h; commit_half_pair(A2L, left_a2l, A0H, right_a0h); }
+:^left_a2l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a2l; build right_a1h; commit_half_pair(A2L, left_a2l, A1H, right_a1h); }
 :^left_a2l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) unimpl
-:^left_a2l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a2l; build right_a3h; commit_half(A2L, left_a2l, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a2l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a2l; build right_a4h; commit_half(A2L, left_a2l, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a2l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a2l; build right_a5h; commit_half(A2L, left_a2l, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a3l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a3l; build right_a0l; commit_half(A3L, left_a3l, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a3l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a3l; build right_a1l; commit_half(A3L, left_a3l, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a3l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a3l; build right_a2l; commit_half(A3L, left_a3l, 0); commit_half(A2L, right_a2l, 6); }
+:^left_a2l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a2l; build right_a3h; commit_half_pair(A2L, left_a2l, A3H, right_a3h); }
+:^left_a2l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a2l; build right_a4h; commit_half_pair(A2L, left_a2l, A4H, right_a4h); }
+:^left_a2l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2L) & left_a2l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a2l; build right_a5h; commit_half_pair(A2L, left_a2l, A5H, right_a5h); }
+:^left_a3l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a3l; build right_a0l; commit_half_pair(A3L, left_a3l, A0L, right_a0l); }
+:^left_a3l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a3l; build right_a1l; commit_half_pair(A3L, left_a3l, A1L, right_a1l); }
+:^left_a3l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a3l; build right_a2l; commit_half_pair(A3L, left_a3l, A2L, right_a2l); }
 :^left_a3l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) unimpl
-:^left_a3l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a3l; build right_a4l; commit_half(A3L, left_a3l, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a3l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a3l; build right_a5l; commit_half(A3L, left_a3l, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a3l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a3l; build right_a0h; commit_half(A3L, left_a3l, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a3l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a3l; build right_a1h; commit_half(A3L, left_a3l, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a3l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a3l; build right_a2h; commit_half(A3L, left_a3l, 0); commit_half(A2H, right_a2h, 6); }
+:^left_a3l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a3l; build right_a4l; commit_half_pair(A3L, left_a3l, A4L, right_a4l); }
+:^left_a3l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a3l; build right_a5l; commit_half_pair(A3L, left_a3l, A5L, right_a5l); }
+:^left_a3l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a3l; build right_a0h; commit_half_pair(A3L, left_a3l, A0H, right_a0h); }
+:^left_a3l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a3l; build right_a1h; commit_half_pair(A3L, left_a3l, A1H, right_a1h); }
+:^left_a3l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a3l; build right_a2h; commit_half_pair(A3L, left_a3l, A2H, right_a2h); }
 :^left_a3l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) unimpl
-:^left_a3l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a3l; build right_a4h; commit_half(A3L, left_a3l, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a3l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a3l; build right_a5h; commit_half(A3L, left_a3l, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a4l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a4l; build right_a0l; commit_half(A4L, left_a4l, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a4l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a4l; build right_a1l; commit_half(A4L, left_a4l, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a4l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a4l; build right_a2l; commit_half(A4L, left_a4l, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a4l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a4l; build right_a3l; commit_half(A4L, left_a4l, 0); commit_half(A3L, right_a3l, 6); }
+:^left_a3l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a3l; build right_a4h; commit_half_pair(A3L, left_a3l, A4H, right_a4h); }
+:^left_a3l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3L) & left_a3l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a3l; build right_a5h; commit_half_pair(A3L, left_a3l, A5H, right_a5h); }
+:^left_a4l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a4l; build right_a0l; commit_half_pair(A4L, left_a4l, A0L, right_a0l); }
+:^left_a4l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a4l; build right_a1l; commit_half_pair(A4L, left_a4l, A1L, right_a1l); }
+:^left_a4l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a4l; build right_a2l; commit_half_pair(A4L, left_a4l, A2L, right_a2l); }
+:^left_a4l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a4l; build right_a3l; commit_half_pair(A4L, left_a4l, A3L, right_a3l); }
 :^left_a4l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) unimpl
-:^left_a4l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a4l; build right_a5l; commit_half(A4L, left_a4l, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a4l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a4l; build right_a0h; commit_half(A4L, left_a4l, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a4l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a4l; build right_a1h; commit_half(A4L, left_a4l, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a4l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a4l; build right_a2h; commit_half(A4L, left_a4l, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a4l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a4l; build right_a3h; commit_half(A4L, left_a4l, 0); commit_half(A3H, right_a3h, 6); }
+:^left_a4l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a4l; build right_a5l; commit_half_pair(A4L, left_a4l, A5L, right_a5l); }
+:^left_a4l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a4l; build right_a0h; commit_half_pair(A4L, left_a4l, A0H, right_a0h); }
+:^left_a4l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a4l; build right_a1h; commit_half_pair(A4L, left_a4l, A1H, right_a1h); }
+:^left_a4l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a4l; build right_a2h; commit_half_pair(A4L, left_a4l, A2H, right_a2h); }
+:^left_a4l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a4l; build right_a3h; commit_half_pair(A4L, left_a4l, A3H, right_a3h); }
 :^left_a4l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) unimpl
-:^left_a4l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a4l; build right_a5h; commit_half(A4L, left_a4l, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a5l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a5l; build right_a0l; commit_half(A5L, left_a5l, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a5l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a5l; build right_a1l; commit_half(A5L, left_a5l, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a5l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a5l; build right_a2l; commit_half(A5L, left_a5l, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a5l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a5l; build right_a3l; commit_half(A5L, left_a5l, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a5l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a5l; build right_a4l; commit_half(A5L, left_a5l, 0); commit_half(A4L, right_a4l, 6); }
+:^left_a4l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4L) & left_a4l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a4l; build right_a5h; commit_half_pair(A4L, left_a4l, A5H, right_a5h); }
+:^left_a5l "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a5l; build right_a0l; commit_half_pair(A5L, left_a5l, A0L, right_a0l); }
+:^left_a5l "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a5l; build right_a1l; commit_half_pair(A5L, left_a5l, A1L, right_a1l); }
+:^left_a5l "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a5l; build right_a2l; commit_half_pair(A5L, left_a5l, A2L, right_a2l); }
+:^left_a5l "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a5l; build right_a3l; commit_half_pair(A5L, left_a5l, A3L, right_a3l); }
+:^left_a5l "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a5l; build right_a4l; commit_half_pair(A5L, left_a5l, A4L, right_a4l); }
 :^left_a5l "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) unimpl
-:^left_a5l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a5l; build right_a0h; commit_half(A5L, left_a5l, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a5l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a5l; build right_a1h; commit_half(A5L, left_a5l, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a5l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a5l; build right_a2h; commit_half(A5L, left_a5l, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a5l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a5l; build right_a3h; commit_half(A5L, left_a5l, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a5l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a5l; build right_a4h; commit_half(A5L, left_a5l, 0); commit_half(A4H, right_a4h, 6); }
+:^left_a5l "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a5l; build right_a0h; commit_half_pair(A5L, left_a5l, A0H, right_a0h); }
+:^left_a5l "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a5l; build right_a1h; commit_half_pair(A5L, left_a5l, A1H, right_a1h); }
+:^left_a5l "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a5l; build right_a2h; commit_half_pair(A5L, left_a5l, A2H, right_a2h); }
+:^left_a5l "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a5l; build right_a3h; commit_half_pair(A5L, left_a5l, A3H, right_a3h); }
+:^left_a5l "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a5l; build right_a4h; commit_half_pair(A5L, left_a5l, A4H, right_a4h); }
 :^left_a5l "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5L) & left_a5l); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) unimpl
 :^left_a0h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) unimpl
-:^left_a0h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a0h; build right_a1l; commit_half(A0H, left_a0h, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a0h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a0h; build right_a2l; commit_half(A0H, left_a0h, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a0h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a0h; build right_a3l; commit_half(A0H, left_a0h, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a0h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a0h; build right_a4l; commit_half(A0H, left_a0h, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a0h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a0h; build right_a5l; commit_half(A0H, left_a0h, 0); commit_half(A5L, right_a5l, 6); }
+:^left_a0h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a0h; build right_a1l; commit_half_pair(A0H, left_a0h, A1L, right_a1l); }
+:^left_a0h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a0h; build right_a2l; commit_half_pair(A0H, left_a0h, A2L, right_a2l); }
+:^left_a0h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a0h; build right_a3l; commit_half_pair(A0H, left_a0h, A3L, right_a3l); }
+:^left_a0h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a0h; build right_a4l; commit_half_pair(A0H, left_a0h, A4L, right_a4l); }
+:^left_a0h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a0h; build right_a5l; commit_half_pair(A0H, left_a0h, A5L, right_a5l); }
 :^left_a0h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) unimpl
-:^left_a0h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a0h; build right_a1h; commit_half(A0H, left_a0h, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a0h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a0h; build right_a2h; commit_half(A0H, left_a0h, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a0h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a0h; build right_a3h; commit_half(A0H, left_a0h, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a0h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a0h; build right_a4h; commit_half(A0H, left_a0h, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a0h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a0h; build right_a5h; commit_half(A0H, left_a0h, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a1h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a1h; build right_a0l; commit_half(A1H, left_a1h, 0); commit_half(A0L, right_a0l, 6); }
+:^left_a0h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a0h; build right_a1h; commit_half_pair(A0H, left_a0h, A1H, right_a1h); }
+:^left_a0h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a0h; build right_a2h; commit_half_pair(A0H, left_a0h, A2H, right_a2h); }
+:^left_a0h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a0h; build right_a3h; commit_half_pair(A0H, left_a0h, A3H, right_a3h); }
+:^left_a0h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a0h; build right_a4h; commit_half_pair(A0H, left_a0h, A4H, right_a4h); }
+:^left_a0h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A0H) & left_a0h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a0h; build right_a5h; commit_half_pair(A0H, left_a0h, A5H, right_a5h); }
+:^left_a1h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a1h; build right_a0l; commit_half_pair(A1H, left_a1h, A0L, right_a0l); }
 :^left_a1h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) unimpl
-:^left_a1h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a1h; build right_a2l; commit_half(A1H, left_a1h, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a1h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a1h; build right_a3l; commit_half(A1H, left_a1h, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a1h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a1h; build right_a4l; commit_half(A1H, left_a1h, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a1h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a1h; build right_a5l; commit_half(A1H, left_a1h, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a1h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a1h; build right_a0h; commit_half(A1H, left_a1h, 0); commit_half(A0H, right_a0h, 6); }
+:^left_a1h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a1h; build right_a2l; commit_half_pair(A1H, left_a1h, A2L, right_a2l); }
+:^left_a1h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a1h; build right_a3l; commit_half_pair(A1H, left_a1h, A3L, right_a3l); }
+:^left_a1h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a1h; build right_a4l; commit_half_pair(A1H, left_a1h, A4L, right_a4l); }
+:^left_a1h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a1h; build right_a5l; commit_half_pair(A1H, left_a1h, A5L, right_a5l); }
+:^left_a1h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a1h; build right_a0h; commit_half_pair(A1H, left_a1h, A0H, right_a0h); }
 :^left_a1h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) unimpl
-:^left_a1h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a1h; build right_a2h; commit_half(A1H, left_a1h, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a1h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a1h; build right_a3h; commit_half(A1H, left_a1h, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a1h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a1h; build right_a4h; commit_half(A1H, left_a1h, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a1h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a1h; build right_a5h; commit_half(A1H, left_a1h, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a2h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a2h; build right_a0l; commit_half(A2H, left_a2h, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a2h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a2h; build right_a1l; commit_half(A2H, left_a2h, 0); commit_half(A1L, right_a1l, 6); }
+:^left_a1h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a1h; build right_a2h; commit_half_pair(A1H, left_a1h, A2H, right_a2h); }
+:^left_a1h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a1h; build right_a3h; commit_half_pair(A1H, left_a1h, A3H, right_a3h); }
+:^left_a1h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a1h; build right_a4h; commit_half_pair(A1H, left_a1h, A4H, right_a4h); }
+:^left_a1h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A1H) & left_a1h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a1h; build right_a5h; commit_half_pair(A1H, left_a1h, A5H, right_a5h); }
+:^left_a2h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a2h; build right_a0l; commit_half_pair(A2H, left_a2h, A0L, right_a0l); }
+:^left_a2h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a2h; build right_a1l; commit_half_pair(A2H, left_a2h, A1L, right_a1l); }
 :^left_a2h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) unimpl
-:^left_a2h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a2h; build right_a3l; commit_half(A2H, left_a2h, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a2h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a2h; build right_a4l; commit_half(A2H, left_a2h, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a2h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a2h; build right_a5l; commit_half(A2H, left_a2h, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a2h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a2h; build right_a0h; commit_half(A2H, left_a2h, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a2h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a2h; build right_a1h; commit_half(A2H, left_a2h, 0); commit_half(A1H, right_a1h, 6); }
+:^left_a2h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a2h; build right_a3l; commit_half_pair(A2H, left_a2h, A3L, right_a3l); }
+:^left_a2h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a2h; build right_a4l; commit_half_pair(A2H, left_a2h, A4L, right_a4l); }
+:^left_a2h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a2h; build right_a5l; commit_half_pair(A2H, left_a2h, A5L, right_a5l); }
+:^left_a2h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a2h; build right_a0h; commit_half_pair(A2H, left_a2h, A0H, right_a0h); }
+:^left_a2h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a2h; build right_a1h; commit_half_pair(A2H, left_a2h, A1H, right_a1h); }
 :^left_a2h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) unimpl
-:^left_a2h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a2h; build right_a3h; commit_half(A2H, left_a2h, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a2h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a2h; build right_a4h; commit_half(A2H, left_a2h, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a2h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a2h; build right_a5h; commit_half(A2H, left_a2h, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a3h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a3h; build right_a0l; commit_half(A3H, left_a3h, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a3h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a3h; build right_a1l; commit_half(A3H, left_a3h, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a3h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a3h; build right_a2l; commit_half(A3H, left_a3h, 0); commit_half(A2L, right_a2l, 6); }
+:^left_a2h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a2h; build right_a3h; commit_half_pair(A2H, left_a2h, A3H, right_a3h); }
+:^left_a2h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a2h; build right_a4h; commit_half_pair(A2H, left_a2h, A4H, right_a4h); }
+:^left_a2h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A2H) & left_a2h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a2h; build right_a5h; commit_half_pair(A2H, left_a2h, A5H, right_a5h); }
+:^left_a3h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a3h; build right_a0l; commit_half_pair(A3H, left_a3h, A0L, right_a0l); }
+:^left_a3h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a3h; build right_a1l; commit_half_pair(A3H, left_a3h, A1L, right_a1l); }
+:^left_a3h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a3h; build right_a2l; commit_half_pair(A3H, left_a3h, A2L, right_a2l); }
 :^left_a3h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) unimpl
-:^left_a3h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a3h; build right_a4l; commit_half(A3H, left_a3h, 0); commit_half(A4L, right_a4l, 6); }
-:^left_a3h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a3h; build right_a5l; commit_half(A3H, left_a3h, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a3h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a3h; build right_a0h; commit_half(A3H, left_a3h, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a3h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a3h; build right_a1h; commit_half(A3H, left_a3h, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a3h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a3h; build right_a2h; commit_half(A3H, left_a3h, 0); commit_half(A2H, right_a2h, 6); }
+:^left_a3h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a3h; build right_a4l; commit_half_pair(A3H, left_a3h, A4L, right_a4l); }
+:^left_a3h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a3h; build right_a5l; commit_half_pair(A3H, left_a3h, A5L, right_a5l); }
+:^left_a3h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a3h; build right_a0h; commit_half_pair(A3H, left_a3h, A0H, right_a0h); }
+:^left_a3h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a3h; build right_a1h; commit_half_pair(A3H, left_a3h, A1H, right_a1h); }
+:^left_a3h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a3h; build right_a2h; commit_half_pair(A3H, left_a3h, A2H, right_a2h); }
 :^left_a3h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) unimpl
-:^left_a3h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a3h; build right_a4h; commit_half(A3H, left_a3h, 0); commit_half(A4H, right_a4h, 6); }
-:^left_a3h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a3h; build right_a5h; commit_half(A3H, left_a3h, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a4h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a4h; build right_a0l; commit_half(A4H, left_a4h, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a4h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a4h; build right_a1l; commit_half(A4H, left_a4h, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a4h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a4h; build right_a2l; commit_half(A4H, left_a4h, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a4h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a4h; build right_a3l; commit_half(A4H, left_a4h, 0); commit_half(A3L, right_a3l, 6); }
+:^left_a3h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a3h; build right_a4h; commit_half_pair(A3H, left_a3h, A4H, right_a4h); }
+:^left_a3h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A3H) & left_a3h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a3h; build right_a5h; commit_half_pair(A3H, left_a3h, A5H, right_a5h); }
+:^left_a4h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a4h; build right_a0l; commit_half_pair(A4H, left_a4h, A0L, right_a0l); }
+:^left_a4h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a4h; build right_a1l; commit_half_pair(A4H, left_a4h, A1L, right_a1l); }
+:^left_a4h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a4h; build right_a2l; commit_half_pair(A4H, left_a4h, A2L, right_a2l); }
+:^left_a4h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a4h; build right_a3l; commit_half_pair(A4H, left_a4h, A3L, right_a3l); }
 :^left_a4h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) unimpl
-:^left_a4h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a4h; build right_a5l; commit_half(A4H, left_a4h, 0); commit_half(A5L, right_a5l, 6); }
-:^left_a4h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a4h; build right_a0h; commit_half(A4H, left_a4h, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a4h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a4h; build right_a1h; commit_half(A4H, left_a4h, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a4h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a4h; build right_a2h; commit_half(A4H, left_a4h, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a4h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a4h; build right_a3h; commit_half(A4H, left_a4h, 0); commit_half(A3H, right_a3h, 6); }
+:^left_a4h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) { build left_a4h; build right_a5l; commit_half_pair(A4H, left_a4h, A5L, right_a5l); }
+:^left_a4h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a4h; build right_a0h; commit_half_pair(A4H, left_a4h, A0H, right_a0h); }
+:^left_a4h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a4h; build right_a1h; commit_half_pair(A4H, left_a4h, A1H, right_a1h); }
+:^left_a4h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a4h; build right_a2h; commit_half_pair(A4H, left_a4h, A2H, right_a2h); }
+:^left_a4h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a4h; build right_a3h; commit_half_pair(A4H, left_a4h, A3H, right_a3h); }
 :^left_a4h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) unimpl
-:^left_a4h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a4h; build right_a5h; commit_half(A4H, left_a4h, 0); commit_half(A5H, right_a5h, 6); }
-:^left_a5h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a5h; build right_a0l; commit_half(A5H, left_a5h, 0); commit_half(A0L, right_a0l, 6); }
-:^left_a5h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a5h; build right_a1l; commit_half(A5H, left_a5h, 0); commit_half(A1L, right_a1l, 6); }
-:^left_a5h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a5h; build right_a2l; commit_half(A5H, left_a5h, 0); commit_half(A2L, right_a2l, 6); }
-:^left_a5h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a5h; build right_a3l; commit_half(A5H, left_a5h, 0); commit_half(A3L, right_a3l, 6); }
-:^left_a5h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a5h; build right_a4l; commit_half(A5H, left_a5h, 0); commit_half(A4L, right_a4l, 6); }
+:^left_a4h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A4H) & left_a4h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) { build left_a4h; build right_a5h; commit_half_pair(A4H, left_a4h, A5H, right_a5h); }
+:^left_a5h "||" right_a0l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A0L) & right_a0l) { build left_a5h; build right_a0l; commit_half_pair(A5H, left_a5h, A0L, right_a0l); }
+:^left_a5h "||" right_a1l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A1L) & right_a1l) { build left_a5h; build right_a1l; commit_half_pair(A5H, left_a5h, A1L, right_a1l); }
+:^left_a5h "||" right_a2l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A2L) & right_a2l) { build left_a5h; build right_a2l; commit_half_pair(A5H, left_a5h, A2L, right_a2l); }
+:^left_a5h "||" right_a3l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A3L) & right_a3l) { build left_a5h; build right_a3l; commit_half_pair(A5H, left_a5h, A3L, right_a3l); }
+:^left_a5h "||" right_a4l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A4L) & right_a4l) { build left_a5h; build right_a4l; commit_half_pair(A5H, left_a5h, A4L, right_a4l); }
 :^left_a5h "||" right_a5l is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A5L) & right_a5l) unimpl
-:^left_a5h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a5h; build right_a0h; commit_half(A5H, left_a5h, 0); commit_half(A0H, right_a0h, 6); }
-:^left_a5h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a5h; build right_a1h; commit_half(A5H, left_a5h, 0); commit_half(A1H, right_a1h, 6); }
-:^left_a5h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a5h; build right_a2h; commit_half(A5H, left_a5h, 0); commit_half(A2H, right_a2h, 6); }
-:^left_a5h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a5h; build right_a3h; commit_half(A5H, left_a5h, 0); commit_half(A3H, right_a3h, 6); }
-:^left_a5h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a5h; build right_a4h; commit_half(A5H, left_a5h, 0); commit_half(A4H, right_a4h, 6); }
+:^left_a5h "||" right_a0h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A0H) & right_a0h) { build left_a5h; build right_a0h; commit_half_pair(A5H, left_a5h, A0H, right_a0h); }
+:^left_a5h "||" right_a1h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A1H) & right_a1h) { build left_a5h; build right_a1h; commit_half_pair(A5H, left_a5h, A1H, right_a1h); }
+:^left_a5h "||" right_a2h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A2H) & right_a2h) { build left_a5h; build right_a2h; commit_half_pair(A5H, left_a5h, A2H, right_a2h); }
+:^left_a5h "||" right_a3h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A3H) & right_a3h) { build left_a5h; build right_a3h; commit_half_pair(A5H, left_a5h, A3H, right_a3h); }
+:^left_a5h "||" right_a4h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A4H) & right_a4h) { build left_a5h; build right_a4h; commit_half_pair(A5H, left_a5h, A4H, right_a4h); }
 :^left_a5h "||" right_a5h is (carmel_issue=1 & slot_mode=0 & $(COMPACT_A5H) & left_a5h); (slot_mode=0 & $(COMPACT_A5H) & right_a5h) unimpl
 
 # Do not materialize a 40-bit C temporary to compare two accumulators.
@@ -2060,25 +2107,6 @@ macro shift_limit(result, flags) {
 # CE predicates consume the incoming execution feedback. Both banks sample
 # the same flags before either makes its feedback visible.
 # The four-bit CECFG selectors map V,V2,C,C2,L,L2,M,M2,Z,Z2,E,E2,CE1,CE2.
-macro unary_ce_select(cfg, est, shift, bit) {
-    local selector:2 = (cfg >> shift) & 0xf;
-    local taps:8 = 0x00dcb593a4826071;
-    local tap:8 = (taps >> (selector << 2)) & 0xf;
-    bit = ((est >> tap) & 1) * zext(selector < 14);
-}
-macro unary_ce(cfg, est, tbl, bank, enabled) {
-    enabled = (est >> (12 + bank)) & 1;
-    if ((cfg & 0x2000) != 0) goto <unary_ce_ready>;
-    local first:2;
-    local second:2;
-    local third:2;
-    unary_ce_select(cfg, est, 8, first);
-    unary_ce_select(cfg, est, 4, second);
-    unary_ce_select(cfg, est, 0, third);
-    local index:2 = (first << 2) | (second << 1) | third;
-    enabled = (tbl >> (index + bank * 8)) & 1;
-    <unary_ce_ready>
-}
 
 # The compact word port carries a 16-bit input in the upper lane of the
 # shifter. Its flags see the 24 bits that remain above the low result word.
@@ -2278,13 +2306,6 @@ macro wide_logic_bitop(op, lhs, rhs, result) {
   <done>
 }
 
-macro publish_ce_feedback(flags, feedback) {
-    local first:2;
-    local second:2;
-    unary_ce(CECFG1, feedback, CETBL, 0, first);
-    unary_ce(CECFG2, feedback, CETBL, 1, second);
-    EST = flags | (first << 12) | (second << 13);
-}
 
 macro publish_alu_ce(flags) {
     local feedback:2 = (EST & 0x3000) | flags;
