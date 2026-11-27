@@ -259,8 +259,8 @@ objects by creation in the arena; see the fidelity contract below.
   Vineflower on five large projects.
 
 **The test oracle is Vineflower's text.** Every Vineflower-oracle case of the vendored
-corpus matches in compat mode (core's Java tests, the variable-renaming and IDEA not-null
-plugins' tests, and the Kotlin plugin's and core's Kotlin tests: `tests/jvm/README.md` has
+corpus matches in compat mode (core's Java tests, the IDEA not-null
+plugin's tests, and the Kotlin plugin's and core's Kotlin tests: `tests/jvm/README.md` has
 the counts). So do the Java cases that need a particular
 JDK on the machine, run from the external oracle corpus, and the Kotlin
 plugin's tests under nine option overlays (594 runs). Whole jars (log4j, pdfbox, fontbox,
