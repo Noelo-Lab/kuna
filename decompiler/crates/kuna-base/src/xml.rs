@@ -2355,7 +2355,8 @@ mod tests {
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
         // and kuna-narrow-word-compare / a 16-bit sum keeps its wrap before == on a two-byte-int target
         // and kuna-passthrough-filegap(-arm) / a float-register gap keeps the core registers a wrapper forwards
-        assert_eq!(count, 958, "corpus file count drifted");
+        // and kuna-arm-stored-double / an ARM hard-float double stored only to a global is a parameter
+        assert_eq!(count, 959, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
