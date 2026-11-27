@@ -1061,9 +1061,17 @@ pub fn call_input_allowed(
 /// range, writes it first on every path, nor only returns without touching it?
 /// That is an undefined symbol, a PLT stub that jumps through its GOT slot, a
 /// wrapper that branches or calls on to such code with the range unwritten, or a
-/// body the decode cannot finish. A variadic call passes no VFP arguments.
+/// body the decode cannot finish. A variadic call passes no VFP arguments, and
+/// a call that does not return admits none: what is left in a d-register at
+/// `__stack_chk_fail` or `abort` is the caller's own value, as in glibc
+/// strtod's `round_and_return`, whose `d0` there merges its entry value with
+/// the results it computes.
 fn opaque_callee(data: &Funcdata, call: &crate::fspec::FuncCallSpecs, addr: &Address, size: i32) -> bool {
-    if call.is_dotdotdot() {
+    if call.is_dotdotdot()
+        || call.proto().is_no_return()
+        || crate::p4_calls::kuna_noreturnretuse::call_ends_in_noreturn_halt(data, call.get_op())
+        || data.obank().get(call.get_op()).is_some_and(|op| data.kuna_noreturn_note(op.get_addr()))
+    {
         return false;
     }
     let entry = call.get_entry_address();

@@ -2246,6 +2246,9 @@ impl ParamListStandard {
     /// places those doubles past the pair without this slot, so leaving it out
     /// keeps the remaining parameters in the storage the convention assigns. A
     /// slot the body reads on entry, such as one spilled at -O0, is a parameter.
+    /// A later hit counts only through a trial that is active or used: the
+    /// scratch `s13` and `d7` an -O0 caller computes in still hold values at
+    /// the call, and are no arguments.
     fn backfill_hole(&self, active: &ParamActive, hitlist: &[Option<usize>], grp: usize) -> bool {
         if !self.backfill_holes || grp == 0 {
             return false;
@@ -2272,10 +2275,16 @@ impl ParamListStandard {
         if !paired || !hitlist[grp - 1].is_some_and(|e| float(e, 4)) {
             return false;
         }
+        let live = |e: usize| {
+            (0..active.get_num_trials()).any(|t| {
+                let trial = active.get_trial(t);
+                trial.get_entry() == Some(e) && (trial.is_active() || trial.is_used())
+            })
+        };
         let mut later = hitlist[grp + 1..]
             .iter()
             .flatten()
-            .filter(|&&e| self.entry[e].get_type() == type_class::TYPECLASS_FLOAT)
+            .filter(|&&e| self.entry[e].get_type() == type_class::TYPECLASS_FLOAT && live(e))
             .peekable();
         later.peek().is_some() && later.all(|&e| float(e, 8))
     }
