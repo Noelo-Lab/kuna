@@ -538,8 +538,8 @@ fn is_digest(digest: &Option<String>) -> bool {
 #[test]
 fn vendored_corpus_is_complete() {
     let cases = vendored();
-    assert_eq!(cases.len(), 887);
-    assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 597);
+    assert_eq!(cases.len(), 885);
+    assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 595);
     assert_eq!(cases.iter().filter(|c| c.set_slug == "kuna-fixes").count(), 290);
     for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes") {
         assert!(
@@ -621,10 +621,7 @@ fn vendored_corpus_is_complete() {
             .map(|(k, _)| k.as_str())
             .collect();
         assert_eq!(keys, base.map(|(k, _)| k), "{}", case.id);
-        let literals = matches!(
-            case.set_slug.as_str(),
-            "literals" | "ternary-constant-simplification"
-        );
+        let literals = case.set_slug == "literals";
         for (k, v) in base {
             if k == "keep-literals" && case.set_slug.starts_with("kuna-fixes") {
                 continue;

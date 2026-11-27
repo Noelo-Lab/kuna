@@ -25,7 +25,6 @@ impl IFernflowerPreferences {
     pub const DUMP_CODE_LINES: &str = "dump-code-lines";
     pub const IGNORE_INVALID_BYTECODE: &str = "ignore-invalid-bytecode";
     pub const VERIFY_ANONYMOUS_CLASSES: &str = "verify-anonymous-classes";
-    pub const TERNARY_CONSTANT_SIMPLIFICATION: &str = "ternary-constant-simplification";
     pub const PATTERN_MATCHING: &str = "pattern-matching";
     pub const SWITCH_EXPRESSIONS: &str = "decompile-switch-expressions";
     pub const VERIFY_VARIABLE_MERGES: &str = "verify-merges";
@@ -92,7 +91,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::DUMP_CODE_LINES, "0".to_string()),
             (IFernflowerPreferences::IGNORE_INVALID_BYTECODE, "0".to_string()),
             (IFernflowerPreferences::VERIFY_ANONYMOUS_CLASSES, "0".to_string()),
-            (IFernflowerPreferences::TERNARY_CONSTANT_SIMPLIFICATION, "0".to_string()),
             (IFernflowerPreferences::PATTERN_MATCHING, "1".to_string()),
             (IFernflowerPreferences::SWITCH_EXPRESSIONS, "1".to_string()),
             (IFernflowerPreferences::VERIFY_VARIABLE_MERGES, "0".to_string()),
@@ -183,7 +181,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "DUMP_CODE_LINES", key: IFernflowerPreferences::DUMP_CODE_LINES, short_name: Some("dcl"), name: Some("Dump Code Lines"), description: Some("Dump line mappings to output archive zip entry extra data."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "IGNORE_INVALID_BYTECODE", key: IFernflowerPreferences::IGNORE_INVALID_BYTECODE, short_name: Some("iib"), name: Some("Ignore Invalid Bytecode"), description: Some("Ignore bytecode that is malformed."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "VERIFY_ANONYMOUS_CLASSES", key: IFernflowerPreferences::VERIFY_ANONYMOUS_CLASSES, short_name: Some("vac"), name: Some("Verify Anonymous Classes"), description: Some("Verify that anonymous classes are local."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "TERNARY_CONSTANT_SIMPLIFICATION", key: IFernflowerPreferences::TERNARY_CONSTANT_SIMPLIFICATION, short_name: Some("tcs"), name: Some("Ternary Constant Simplification"), description: Some("Fold branches of ternary expressions that have boolean true and false constants."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "PATTERN_MATCHING", key: IFernflowerPreferences::PATTERN_MATCHING, short_name: Some("pam"), name: Some("Pattern Matching"), description: Some("Decompile with if and switch pattern matching enabled."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "SWITCH_EXPRESSIONS", key: IFernflowerPreferences::SWITCH_EXPRESSIONS, short_name: Some("swe"), name: Some("Decompile Switch Expressions"), description: Some("Decompile switch expressions in modern Java class files."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "VERIFY_VARIABLE_MERGES", key: IFernflowerPreferences::VERIFY_VARIABLE_MERGES, short_name: Some("vvm"), name: Some("[Experimental] Verify Variable Merges"), description: Some("Tries harder to verify the validity of variable merges. If there are strange variable recompilation issues, this is a good place to start."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

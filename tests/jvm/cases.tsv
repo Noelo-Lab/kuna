@@ -140,23 +140,6 @@ opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	mark-corresponding-synthetics	1
 opt	verify-pre-post-merges	1
-set	Ternary Constant Simplification	ternary-constant-simplification
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	0
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	verify-anonymous-classes	1
-opt	ternary-constant-simplification	1
-opt	verify-pre-post-merges	1
 set	With Idea Not Null	with-idea-not-null
 opt	log-level	warn
 opt	decompile-generics	1
@@ -1285,10 +1268,6 @@ case	synthetics-marking/pkg/TestLambdaNaming	Synthetics Marking	classes/java8/pk
 kuna	cc139e1c402db370
 case	synthetics-marking/pkg/TestLocalClassNaming	Synthetics Marking	classes/java8/pkg/TestLocalClassNaming
 kuna	d1804b486d3fcbfd
-case	ternary-constant-simplification/pkg/TestAssignmentTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestAssignmentTernaryConstantSimplification
-kuna	8225055d31930e25
-case	ternary-constant-simplification/pkg/TestReturnTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestReturnTernaryConstantSimplification
-kuna	4c118e72f071b2e9
 case	plugin-defaults/TestIdeaNotNull	Plugin Defaults	classes/custom/TestIdeaNotNull
 kuna	3e749b4c51b4b14f
 case	with-idea-not-null/TestIdeaNotNull	With Idea Not Null	classes/custom/TestIdeaNotNull

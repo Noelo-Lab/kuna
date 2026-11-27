@@ -50,9 +50,6 @@ Three tiers:
 | catch (Throwable var) { ...; throw var; } instead of finally (option is off) | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
 | $VF: Couldn't be decompiled with RuntimeException: Constructor ... not found | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
 | method fails on a new expression in a patched class | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
-| a ? true : b where a logical or was written | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
-| nested ternaries with true and false branches | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
-| x ? false : true instead of !x | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
 | String s = (String)o; after an instanceof test (option is off) | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
 | typeSwitch bootstrap call instead of a pattern switch | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
 | pattern variable reconstructed wrongly | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
@@ -159,15 +156,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** substrate/expr_util · vineflower · vineflower-option
 - **Also spelled:** `ignore-invalid-bytecode`, `iib`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_ignore_invalid_bytecode on`
-
-### `jvm_ternary_constant_simplification` -- on | off, default `off`
-
-- **Symptoms:** a ? true : b where a logical or was written; nested ternaries with true and false branches; x ? false : true instead of !x.
-- **What it does:** Fold ternaries with a boolean constant branch into logic: c ? true : x to c || x, c ? x : false to c && x, c ? false : true to !c.
-- **When to flip:** Turn on to read compiled boolean logic as && and || instead of nested ternaries.
-- **Where / provenance:** p3_dataflow/secondary_functions_helper · vineflower · vineflower-option
-- **Also spelled:** `ternary-constant-simplification`, `tcs`
-- **Example:** `kuna decompile app.jar com.ex.Rules --option jvm_ternary_constant_simplification on`
 
 ### `jvm_pattern_matching` -- on | off, default `on`
 

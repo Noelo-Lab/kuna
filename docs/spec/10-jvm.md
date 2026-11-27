@@ -475,9 +475,8 @@ and most changes restart the loop from the top, so the order below is a priority
    an `lcmp`/`fcmpl`/`dcmpg` result compared with zero becomes a direct comparison (one
    used as a value is spelled out as a ternary), `c ? true : false` and `c ? false : true`
    fold to `c` and `!c`, negations are pushed into comparisons, and an `if`-`else` with an
-   empty `if` branch is inverted. `jvm_ternary_constant_simplification` extends the
-   folding to every ternary with one boolean constant branch (`c ? true : x` to
-   `c || x`).
+   empty `if` branch is inverted. The Kotlin plugin extends the folding to every ternary
+   with one boolean constant branch (`c ? true : x` to `c || x`).
 5. `decompiler/nonnative/kuna-jvm/src/p5_types/intersection_cast_processor.rs` builds
    intersection casts (`(A & B) x`).
 6. With `jvm_pattern_matching`, on Java 16+ class files,

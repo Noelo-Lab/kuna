@@ -276,28 +276,6 @@ tier = "analysis"
 symptoms = "anonymous class body inlined at the wrong new expression|class used twice printed as an anonymous class|\"Inconsistent anonymous class\" warnings wanted"
 
 [[option]]
-option = "jvm_ternary_constant_simplification"
-vineflower = "ternary-constant-simplification"
-short = "tcs"
-aliases = ["ternary-constant-simplification", "tcs"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p3_dataflow"
-subphase = "secondary_functions_helper"
-strength = "HARD"
-rewind = "p3_dataflow"
-issue = ""
-summary = "Fold ternaries with a boolean constant branch into logic: c ? true : x to c || x, c ? x : false to c && x, c ? false : true to !c."
-use_when = "Turn on to read compiled boolean logic as && and || instead of nested ternaries."
-example = "kuna decompile app.jar com.ex.Rules --option jvm_ternary_constant_simplification on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.TERNARY_CONSTANT_SIMPLIFICATION (ternary-constant-simplification, -tcs)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "a ? true : b where a logical or was written|nested ternaries with true and false branches|x ? false : true instead of !x"
-
-[[option]]
 option = "jvm_pattern_matching"
 vineflower = "pattern-matching"
 short = "pam"

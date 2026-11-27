@@ -11,7 +11,6 @@ use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::IfStatement;
 use crate::p3_dataflow::kuna_javac_boolean_compare;
 use crate::fixes::numeric_types::{compound_assignment_shape, implicit_widening_arithmetic};
@@ -461,10 +460,7 @@ impl SecondaryFunctionsHelper {
                             }
                         }
 
-                        if DecompilerContext::get_option(
-                            IFernflowerPreferences::TERNARY_CONSTANT_SIMPLIFICATION,
-                        ) || options.force_ternary_simplification
-                        {
+                        if options.force_ternary_simplification {
                             if expr1.is_const() && expr1.get_expr_type().type_ == CodeType::Boolean
                             {
                                 let cexpr1 = expr1.as_const();
