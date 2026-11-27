@@ -4,7 +4,7 @@
 //! that name or find the call ambiguous.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::code_constants::CodeConstants;
@@ -79,10 +79,11 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
 }
 
 type Rivals = Rc<Vec<(StructMethod, MethodDescriptor)>>;
+type RivalKey = (String, String, String, usize);
+type RivalCache = Option<(StructContext, BTreeMap<RivalKey, Option<Rivals>>)>;
 
 thread_local! {
-    static RIVALS: RefCell<Option<(StructContext, HashMap<(String, String, String, usize), Option<Rivals>>)>> =
-        const { RefCell::new(None) };
+    static RIVALS: RefCell<RivalCache> = const { RefCell::new(None) };
 }
 
 /// The methods of `call`'s name and of `arity` parameters the current class
@@ -97,7 +98,7 @@ fn rivals(call: InvocationExprent, arity: usize) -> Option<Rivals> {
     RIVALS.with(|r| {
         let mut r = r.borrow_mut();
         if r.as_ref().is_none_or(|(c, _)| *c != ctx) {
-            *r = Some((ctx, HashMap::new()));
+            *r = Some((ctx, BTreeMap::new()));
         }
         let map = &mut r.as_mut().expect("set above").1;
         if let Some(found) = map.get(&key) {
