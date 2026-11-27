@@ -38,6 +38,7 @@ pub(crate) struct PhaseDecode<'a> {
     idle_tick: Option<u64>,
     reset: Option<u64>,
     register_ex: Option<u64>,
+    data_ex: Option<u64>,
     operand_fetch: Option<u64>,
     reset_ex_end: Option<u64>,
     staged_data: Option<u64>,
@@ -60,6 +61,7 @@ impl<'a> PhaseDecode<'a> {
         let idle_tick = index(b"carmel_record_idle_admission");
         let reset = index(b"carmel_d2_reset");
         let register_ex = index(b"carmel_register_only_ex");
+        let data_ex = index(b"carmel_data_only_ex");
         let operand_fetch = index(b"carmel_operand_fetch_survives");
         let reset_ex_end = index(b"carmel_d2_end_ex_controls");
         let staged_data = index(b"carmel_staged_wb_data");
@@ -77,7 +79,7 @@ impl<'a> PhaseDecode<'a> {
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
-            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, operand_fetch, reset_ex_end,
+            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, data_ex, operand_fetch, reset_ex_end,
             staged_data, ff })
     }
 
@@ -102,6 +104,8 @@ impl<'a> PhaseDecode<'a> {
                 resets.push(op_id);
             } else if Some(index) == self.register_ex {
                 markers.push((op_id, offset, Mark::RegisterEx));
+            } else if Some(index) == self.data_ex {
+                markers.push((op_id, offset, Mark::DataEx));
             } else if Some(index) == self.operand_fetch {
                 markers.push((op_id, offset, Mark::OperandFetch));
             } else if Some(index) == self.reset_ex_end {
@@ -131,15 +135,16 @@ impl<'a> PhaseDecode<'a> {
         let canceled = if resets.is_empty() {
             BTreeSet::new()
         } else {
-            use super::kuna_carmel_reset::{lower_control, IssueEffects};
+            use super::kuna_carmel_reset::{lower_control, Execute, IssueEffects};
             let mut effects = BTreeMap::<u64, IssueEffects>::new();
             for &(id, offset, kind) in &markers {
                 match kind {
                     Mark::Idle => effects.entry(offset).or_default().idle = true,
-                    Mark::RegisterEx => effects.entry(offset).or_default().register_ex = Some(id),
+                    Mark::RegisterEx => effects.entry(offset).or_default().execute = Some(Execute::Register(id)),
+                    Mark::DataEx => effects.entry(offset).or_default().execute = Some(Execute::Data(id)),
                     Mark::OperandFetch => effects.entry(offset).or_default().operand_fetch = Some(id),
                     Mark::ResetExEnd => effects.entry(offset).or_default().reset_ex_end = Some(id),
-                    Mark::StagedData => effects.entry(offset).or_default().staged_data = true,
+                    Mark::StagedData => effects.entry(offset).or_default().staged_data = Some(id),
                     _ => {}
                 }
             }
@@ -170,7 +175,7 @@ impl<'a> PhaseDecode<'a> {
             let modeled = delayed.get(&offset).copied();
             if kind == Mark::OperandFetch {
                 lower_operand_fetch(fd, marker, canceled.contains(&marker))?;
-            } else if matches!(kind, Mark::RegisterEx | Mark::ResetExEnd | Mark::StagedData)
+            } else if matches!(kind, Mark::RegisterEx | Mark::DataEx | Mark::ResetExEnd | Mark::StagedData)
                 || modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
                 fd.op_destroy(marker);
             } else if kind == Mark::Copy {
@@ -375,6 +380,7 @@ enum Mark {
     Tick,
     Idle,
     RegisterEx,
+    DataEx,
     OperandFetch,
     ResetExEnd,
     StagedData,

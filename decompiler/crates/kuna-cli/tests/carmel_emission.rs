@@ -1687,13 +1687,14 @@ fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     let left = [inc, idle].as_flattened().try_into().unwrap();
     let right = [idle, inc].as_flattened().try_into().unwrap();
     let consume = [[0x31, 0xaa, 0x20, 0x2b, 0xec, 0]]; // MOVE A1L,A0L
-    for (i, (packet, after, storage, expected)) in [
-        (left, &[][..], "A0L", 0x8000),
-        (left, &[][..], "EST", 0x24),
-        (right, &[][..], "EST", 0x900),
-        (left, &consume[..], "A1L", 0x8000),
+    for (i, (prefix, after, storage, expected)) in [
+        (&[left][..], &[][..], "A0L", 0x8000),
+        (&[left][..], &[][..], "EST", 0x24),
+        (&[right][..], &[][..], "EST", 0x900),
+        (&[left][..], &consume[..], "A1L", 0x8000),
+        (&[left, nop][..], &[][..], "A0L", 0x7fff),
     ].into_iter().enumerate() {
-        let fun = decode("0", &[packet], after, storage);
+        let fun = decode("0", prefix, after, storage);
         assert!(fun["error"].is_null(), "{fun}");
         let symbol = fun["name"].as_str().unwrap();
         let text = fun["code"].as_str().unwrap();
@@ -1704,7 +1705,7 @@ fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
     fs::write(&source, &generated).unwrap();
     run_emitted_c(&source, &executable, &generated);
-    for (entry, prefix) in [("0x1000", &[][..]), ("0x1000", &[left][..]), ("0", &[left, nop][..])] {
+    for (entry, prefix) in [("0x1000", &[][..]), ("0x1000", &[left][..])] {
         let fun = decode(entry, prefix, &[], "EST");
         assert!(fun["error"].to_string().contains("Unproved Carmel RESET retirement window"), "{fun}");
     }
@@ -1820,6 +1821,65 @@ fn carmel_reset_retires_staged_wb_data_with_old_config_and_ex_with_new_config() 
         let name = format!("reset_ports_{i}");
         writeln!(generated, "#define {symbol} {name}\n{text}\n#undef {symbol}").unwrap();
         writeln!(calls, "cell=0x8042; if ({name}(0x7fff,0x24,0,0x1000,0x1000,0xffff) != {expected:#x} || cell != 0x2b3c) return {};", i + 1).unwrap();
+    }
+    writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+}
+
+#[test]
+fn carmel_reset_preserves_copy_operand_before_overlapping_writeback() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("reset-alias.bin");
+    let source = scratch.path().join("reset-alias.c");
+    let executable = scratch.path().join("reset-alias");
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(&specs, &[
+        ("R0", 0xc042), ("R1", 0xc043), ("RN1", 1),
+        ("R6", 0xc044), ("RN6", 1), ("R7", 0xc042), ("PACFG", 0),
+    ], 0x1000, 0);
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let store = [0x80, 0x56, 0x78, 0xc6, 0x40, 0];
+    let inc = [0x21, 0xac, 0x20, 0x2b, 0xec, 0];
+    let cmp = [0x20, 0x9a, 0x02, 0x2b, 0xec, 0];
+    let copy = [0x31, 0x4b, 0xae, 0x2b, 0xec, 0];
+    let load = [0x31, 0xdc, 0x92, 0x2b, 0xec, 0];
+    let reset = [0xb4, 0xd1, 0x1d, 0xca, 0x74, 0x52];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short from, to;\n",
+    );
+    let mut calls = String::new();
+    for (i, (first, second, after, a0, storage, expected, data)) in [
+        (copy, inc, load, 0x7fff, "A0L", 0x7fff, 0xd242),
+        (copy, inc, load, 0x7fff, "A2L", 0xd242, 0xd242),
+        (cmp, copy, nop, 0xffff, "EST", 0x10, 0xd244),
+    ].into_iter().enumerate() {
+        let mut code = vec![store, first, second, load, reset, after];
+        code.extend([nop; 6]);
+        code.extend([[0x2b, 0xd8, 0, 0x2b, 0xec, 0], nop, nop]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000", "--target", "Carmel:BE:24:default:default",
+            "--json", "--assert-strict", "--assert", &format!("return %{storage} unsigned short"),
+            "--assert", "data [data,0xc042] volatile unsigned short from",
+            "--assert", "data [data,0xc044] volatile unsigned short to",
+        ]);
+        for (n, input) in ["A0L", "A1L", "ECFG", "EST", "CECFG1", "CECFG2", "CETBL"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let fun = &report["functions"][0];
+        assert!(fun["error"].is_null(), "{storage}: {fun}");
+        let symbol = fun["name"].as_str().unwrap();
+        let text = fun["code"].as_str().unwrap();
+        let name = format!("reset_alias_{i}");
+        writeln!(generated, "#define {symbol} {name}\n{text}\n#undef {symbol}").unwrap();
+        writeln!(calls, "from=0xd242; to=0xd244; if ({name}({a0:#x},0,0x20,0xcfff,0x1000,0x1000,0xffff) != {expected:#x} || from != 0x2b3c || to != {data:#x}) return {};", i + 1).unwrap();
     }
     writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
     fs::write(&source, &generated).unwrap();

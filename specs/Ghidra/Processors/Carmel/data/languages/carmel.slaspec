@@ -199,6 +199,7 @@ define pcodeop carmel_register_only_ex;
 define pcodeop carmel_operand_fetch_survives;
 define pcodeop carmel_d2_end_ex_controls;
 define pcodeop carmel_staged_wb_data;
+define pcodeop carmel_data_only_ex;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -1226,10 +1227,12 @@ ce_single_tick: is carmel_phase_emit=1 & hw_loop_actions=0 & carmel_single_issue
     carmel_delay_slot_admission(sample);
 }
 
-register_only_ex: is epsilon { }
-register_only_ex: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
-    & slot_10_22=0x86b {
+register_ex_live: enabled is epsilon [ enabled = 1; ] { export *[const]:1 enabled; }
+register_ex_live: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & (slot_10_22=0x86b | slot_10_22=0x826) {
     carmel_register_only_ex();
+    local live:1 = carmel_operand_fetch_survives(1:1);
+    export live;
 }
 
 macro commit_half(destination, stage, shift) {
@@ -1582,21 +1585,25 @@ with : hw_loop_phase=1 {
     build ce_single_tick;
 }
 :^complete_left "||" nop_right is
-    (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left & ce_single_tick & register_only_ex);
+    (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left & ce_single_tick & register_ex_live);
     (slot_mode=0 & nop_right) {
-    build register_only_ex;
+    build register_ex_live;
+    if (register_ex_live == 0) goto <canceled>;
     local incoming:2 = EST;
     build complete_left;
     publish_ce_feedback(EST & 0xcfff, incoming);
     build ce_single_tick;
+  <canceled>
 }
 :^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick);
-    (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right & register_only_ex) {
-    build register_only_ex;
+    (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right & register_ex_live) {
+    build register_ex_live;
+    if (register_ex_live == 0) goto <canceled>;
     local incoming:2 = EST;
     build complete_right;
     publish_ce_feedback(EST & 0xcfff, incoming);
     build ce_single_tick;
+  <canceled>
 }
 
 # Sample and compute both lanes before publishing either lane's result.
@@ -2482,13 +2489,19 @@ compact_cmp: "CMP" cmp_lhs,cmp_rhs is slot_0_0=0 & slot_10_22=0x826
     build compact_cmp;
     publish_ce_feedback((EST & 0xcfe5) | compact_cmp, EST);
 }
-:^compact_cmp "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_cmp); (slot_mode=0 & nop_right) {
+:^compact_cmp "||" nop_right is (carmel_issue=1 & slot_mode=0 & compact_cmp & register_ex_live); (slot_mode=0 & nop_right) {
+    build register_ex_live;
+    if (register_ex_live == 0) goto <canceled>;
     build compact_cmp;
     publish_ce_feedback((EST & 0xcfe5) | compact_cmp, EST);
+  <canceled>
 }
-:^nop_left "||" compact_cmp is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_cmp) {
+:^nop_left "||" compact_cmp is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_cmp & register_ex_live) {
+    build register_ex_live;
+    if (register_ex_live == 0) goto <canceled>;
     build compact_cmp;
     publish_ce_feedback((EST & 0xc97f) | (compact_cmp << 6), EST);
+  <canceled>
 }
 
 macro bank_pointer(active, shadow, increment, shadow_increment, mask) {
@@ -3329,32 +3342,33 @@ macro compact_indexed_copy_store(ports, value) {
     *[data]:2 addr = value s>> ((ECFG >> 5) & 1);
 }
 
-macro unqualified_indexed_copy(ports, live) {
-    if (live == 0) goto <canceled>;
+copy_data_ex: is epsilon { }
+copy_data_ex: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    carmel_data_only_ex();
+}
+
+unqualified_indexed_copy: compact_indexed_copy_ports is
+    slot_0_0=0 & compact_indexed_copy_ports & reset_of_live & copy_data_ex {
+    build compact_indexed_copy_ports;
+    build reset_of_live;
+    if (reset_of_live == 0) goto <canceled>;
     local value:2;
-    compact_indexed_copy_read(ports, value);
-    compact_indexed_copy_store(ports, value);
+    compact_indexed_copy_read(compact_indexed_copy_ports, value);
+    build copy_data_ex;
+    compact_indexed_copy_store(compact_indexed_copy_ports, value);
     clock_ce();
   <canceled>
 }
 
-:MOVE compact_indexed_copy_ports is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))
-    & slot_0_0=0 & compact_indexed_copy_ports & reset_of_live {
-    build compact_indexed_copy_ports;
-    build reset_of_live;
-    unqualified_indexed_copy(compact_indexed_copy_ports, reset_of_live);
+:MOVE unqualified_indexed_copy is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))
+    & unqualified_indexed_copy { build unqualified_indexed_copy; }
+:MOVE unqualified_indexed_copy "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & unqualified_indexed_copy); (slot_mode=0 & nop_right) {
+    build unqualified_indexed_copy;
 }
-:MOVE compact_indexed_copy_ports "||" nop_right is
-    (carmel_issue=1 & slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports & reset_of_live); (slot_mode=0 & nop_right) {
-    build compact_indexed_copy_ports;
-    build reset_of_live;
-    unqualified_indexed_copy(compact_indexed_copy_ports, reset_of_live);
-}
-:^nop_left "||" "MOVE" compact_indexed_copy_ports is
-    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports & reset_of_live) {
-    build compact_indexed_copy_ports;
-    build reset_of_live;
-    unqualified_indexed_copy(compact_indexed_copy_ports, reset_of_live);
+:^nop_left "||" "MOVE" unqualified_indexed_copy is
+    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & unqualified_indexed_copy) {
+    build unqualified_indexed_copy;
 }
 
 @define COMPACT_INDEXED_COPY_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
@@ -13530,8 +13544,8 @@ staged_wb_data: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions
     & wide_2_11=0x0 & wide_14_22=0x119 & literal_word & staged_wb_data {
     local address:2 = R0;
     local value:2 = literal_word s>> ((ECFG >> 5) & 1);
-    *[data]:2 address = value;
     build staged_wb_data;
+    *[data]:2 address = value;
 }
 :MOVE "*R0",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
 :MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }

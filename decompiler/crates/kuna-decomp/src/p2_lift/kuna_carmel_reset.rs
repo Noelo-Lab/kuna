@@ -3,6 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_base::{address::Address, error::{KunaError, KunaResult}};
+use kuna_num::opcodes::OpCode;
 
 use crate::{context::OpId, flow::VisitedMap, funcdata::Funcdata};
 
@@ -14,12 +15,18 @@ enum Stage {
     Wb,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum Execute {
+    Register(OpId),
+    Data(OpId),
+}
+
 #[derive(Default)]
 pub(super) struct IssueEffects {
     pub idle: bool,
-    pub register_ex: Option<OpId>,
+    pub execute: Option<Execute>,
     pub operand_fetch: Option<OpId>,
-    pub staged_data: bool,
+    pub staged_data: Option<OpId>,
     pub reset_ex_end: Option<OpId>,
 }
 
@@ -88,6 +95,15 @@ fn d2_before_ex(fd: &mut Funcdata, d2: OpId, end: OpId, ex: OpId) -> KunaResult<
     Err(KunaError::lowlevel("Unterminated Carmel RESET control effects"))
 }
 
+fn wb_after_operand_fetch(fd: &mut Funcdata, mark: OpId, ex: OpId) -> KunaResult<()> {
+    let store = fd.bb_op_next(mark).filter(|&id| fd.obank().get(id).is_some_and(|op|
+        op.code() == OpCode::CPUI_STORE && op.get_addr() == fd.obank().get(mark).unwrap().get_addr()))
+        .ok_or_else(|| KunaError::lowlevel("Missing Carmel staged DATA write"))?;
+    fd.op_uninsert(store);
+    fd.op_insert_before(store, ex);
+    Ok(())
+}
+
 pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[OpId],
                             effects: &BTreeMap<u64, IssueEffects>) -> KunaResult<BTreeSet<OpId>> {
     let (incoming, outgoing) = issue_edges(fd);
@@ -100,6 +116,8 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
         let Some(end) = effects.get(&address.get_offset()).and_then(|issue| issue.reset_ex_end) else {
             return Err(KunaError::lowlevel("Missing Carmel RESET execution controls"));
         };
+        let mut execute = None;
+        let mut wb = None;
         let mut stages = [Stage::Ra, Stage::Of, Stage::Ex, Stage::Wb].into_iter();
         let proved = loop {
             let Some(stage) = stages.next() else { break true };
@@ -119,8 +137,8 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
                     Stage::Ra if prior.get_offset() == 0 => {
                         // Physical RA address zero survives, but only the covered entry EX can move.
                         if prior == entry && !incoming.contains_key(&0) {
-                            if let Some(ex) = issue.register_ex {
-                                reorder.push((id, end, ex));
+                            if let Some(Execute::Register(_)) = issue.execute {
+                                execute = issue.execute;
                                 break true;
                             }
                         }
@@ -131,11 +149,17 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
                         canceled.insert(fetch);
                     }
                     Stage::Ex => {
-                        let Some(ex) = issue.register_ex else { break false };
-                        reorder.push((id, end, ex));
+                        execute = issue.execute;
+                        if execute.is_none() {
+                            break false;
+                        }
                     }
-                    Stage::Wb if issue.staged_data => {}
-                    Stage::Wb => break false,
+                    Stage::Wb => {
+                        wb = issue.staged_data;
+                        if wb.is_none() {
+                            break false;
+                        }
+                    }
                 }
             }
             current = prior;
@@ -144,8 +168,20 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
             return Err(KunaError::lowlevel(format!("Unproved Carmel RESET retirement window at CODE {:#x}",
                                                   address.get_offset() / 3)));
         }
+        if let Some(execute) = execute {
+            reorder.push((id, end, execute, wb));
+        }
     }
-    for (d2, end, ex) in reorder {
+    for (d2, end, execute, wb) in reorder {
+        let ex = match execute {
+            Execute::Register(ex) => ex,
+            Execute::Data(ex) => {
+                if let Some(mark) = wb {
+                    wb_after_operand_fetch(fd, mark, ex)?;
+                }
+                ex
+            }
+        };
         d2_before_ex(fd, d2, end, ex)?;
     }
     for &id in resets {

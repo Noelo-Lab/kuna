@@ -4086,16 +4086,22 @@ sequential fetch are separate issues. It proves the four older issues,
 or traces their contents back to a function entry. At a nonzero entry
 at least two older issues are required to exclude the startup alias. The
 physical CODE-zero issue can survive in RA when it immediately precedes
-RESET. A covered register-only compact `INC` at CODE zero in RA or
-already in EX runs after the execution-control reset. It uses the new
-ECFG and publishes fresh lane flags after the EST clear.
+RESET. A covered register-only compact `INC` or signed `CMP` at CODE
+zero in RA or already in EX runs after the execution-control reset.
+It publishes fresh lane flags after the EST clear; the increment also
+uses the new ECFG.
 An older literal DATA write already in WB still retires with the old
 shift configuration. These execution effects do not move the PACFG
 clear ahead of address updates.
+An indexed copy already in EX reads the DATA value captured at OF,
+before a same-clock older WB store can overwrite it. It uses the reset
+shift configuration and publishes after that older store.
 An older unqualified indexed DATA copy or signed DATA load in RA or OF
 retains its address updates under the old PACFG but does not read DATA or
 publish its result. This suppression requires a straight-line path to
 RESET; a path bypassing RESET must keep the original operand and writes.
+Covered register-only `INC` or signed `CMP` in a canceled RA or OF slot
+leaves both the destination and its lane flags unchanged.
 An unproved window is not lifted as a serial register clear.
 
 The compact signed DATA load into `A2` postmodifies `R0` or `R1` by
