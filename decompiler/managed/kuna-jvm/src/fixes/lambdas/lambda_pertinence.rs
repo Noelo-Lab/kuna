@@ -116,7 +116,7 @@ fn free_generic_call(parameter: Exprent) -> bool {
                 .and_then(|c| c.get_signature())
                 .is_some_and(|s| !s.fparameters().is_empty());
     }
-    let Some(sig) = inv.get_desc().and_then(|desc| desc.get_signature()) else {
+    let Some(sig) = inv.find_desc().and_then(|desc| desc.get_signature()) else {
         return false;
     };
     let own = sig.type_parameters().clone();

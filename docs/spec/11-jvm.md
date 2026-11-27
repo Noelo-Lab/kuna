@@ -905,6 +905,14 @@ type extends. Any other read (an argument, a store, a capture by a lambda, a cal
 the source may have declared it raw; the class file cannot tell, but the declared type is
 the value's own, so every accepted read compiles as it did. The type is the local's in
 every inference that reads it (`raw_receiver_erasure` included).
+The pass, like every fix that asks which method a call names before the call is written,
+looks the method up without recording it (`InvocationExprent::find_desc`). The ported
+`get_desc` records what it finds, and a call with a recorded method is written without the
+inference of its type arguments (`append_param_list` runs it only for a call that has
+none), so asking through it changed what a call whose value nothing uses printed: in a
+method without a LocalVariableTable, `elements.accept(x, e -> ..)` on a captured receiver
+came out as `elements.accept(x, (Consumer<Object>) e -> ..)`, which does not compile
+against the receiver's `Consumer<E>`.
 
 **Declarations.** `VarProcessor::set_var_definitions` runs
 `decompiler/managed/kuna-jvm/src/p6_variables/var_definition_helper.rs

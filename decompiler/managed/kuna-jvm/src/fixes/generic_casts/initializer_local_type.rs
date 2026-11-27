@@ -139,7 +139,7 @@ pub fn type_locals(root: RootStatement, method: StructMethod, processor: VarProc
 /// argument whose parameter type in the method's signature names one is a
 /// lambda or method reference, which the receiver's type types.
 fn independent_arguments(inv: crate::invocation_exprent::InvocationExprent) -> bool {
-    let Some(desc) = inv.get_desc() else {
+    let Some(desc) = inv.find_desc() else {
         return false;
     };
     let Some(sig) = desc.get_signature() else {

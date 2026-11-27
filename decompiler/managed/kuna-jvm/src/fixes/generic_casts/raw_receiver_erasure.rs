@@ -191,9 +191,7 @@ fn is_written_cast(func: FunctionExprent) -> Option<bool> {
 fn desc_of(inv: InvocationExprent) -> Option<StructMethod> {
     let context = DecompilerContext::get_struct_context();
     let (name, descriptor) = (inv.get_name(), inv.get_string_descriptor());
-    let desc = inv.get_desc().or_else(|| {
-        context.get_class(&inv.get_classname())?.get_method_recursive(&name, &descriptor)
-    })?;
+    let desc = inv.find_desc()?;
     if !desc.has_modifier(CodeConstants::ACC_BRIDGE) {
         return Some(desc);
     }

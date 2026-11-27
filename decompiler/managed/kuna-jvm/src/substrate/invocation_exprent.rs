@@ -3087,6 +3087,19 @@ impl InvocationExprent {
         self.d(|d| d.generic_args.clone())
     }
 
+    /// The method this call names, looked up without recording it.
+    /// [`Self::get_desc`] records what it finds, and a call with a recorded
+    /// method is written without the inference of its type arguments
+    /// (`append_param_list` runs it only for a call that has none): a
+    /// question asked of a call before it is written must not record one.
+    pub fn find_desc(self) -> Option<StructMethod> {
+        self.d(|d| d.desc).or_else(|| {
+            DecompilerContext::get_struct_context()
+                .get_class(&self.get_classname())?
+                .get_method_recursive(&self.get_name(), &self.get_string_descriptor())
+        })
+    }
+
     pub fn get_desc(self) -> Option<StructMethod> {
         if self.d(|d| d.desc.is_none()) {
             let (classname, name, string_descriptor) = self.d(|d| {

@@ -15,11 +15,7 @@ use crate::var_type::VarType;
 
 /// The method `inv` calls, with its generic signature.
 fn method(inv: InvocationExprent) -> Option<StructMethod> {
-    let m = inv.d(|d| d.desc).or_else(|| {
-        DecompilerContext::get_struct_context()
-            .get_class(&inv.get_classname())?
-            .get_method_recursive(&inv.get_name(), &inv.get_string_descriptor())
-    })?;
+    let m = inv.find_desc()?;
     m.get_signature()
         .is_some_and(|s| !s.type_parameters().is_empty())
         .then_some(m)

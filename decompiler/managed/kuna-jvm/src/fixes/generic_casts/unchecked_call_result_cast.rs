@@ -5,7 +5,6 @@
 use super::mentions;
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, InvocationType, Type};
@@ -26,11 +25,7 @@ pub fn declared_result(
     {
         return None;
     }
-    let Some(m) = inv.d(|d| d.desc).or_else(|| {
-        DecompilerContext::get_struct_context()
-            .get_class(&inv.get_classname())?
-            .get_method_recursive(&inv.get_name(), &inv.get_string_descriptor())
-    }) else {
+    let Some(m) = inv.find_desc() else {
         let r = inv.get_descriptor().ret.clone();
         return (r.type_ == CodeType::Object
             && r.array_dim == 0

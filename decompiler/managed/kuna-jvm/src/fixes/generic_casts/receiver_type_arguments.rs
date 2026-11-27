@@ -4,7 +4,6 @@
 
 use super::{is_exact, mentions};
 use crate::code_type::CodeType;
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, InvocationType, Type};
@@ -80,11 +79,7 @@ fn plain_method(inv: InvocationExprent) -> Option<(StructMethod, VarType, Vec<St
     {
         return None;
     }
-    let m = inv.get_desc().or_else(|| {
-        DecompilerContext::get_struct_context()
-            .get_class(&inv.get_classname())?
-            .get_method_recursive(&inv.get_name(), &inv.get_string_descriptor())
-    })?;
+    let m = inv.find_desc()?;
     let sig = m.get_signature()?;
     let ret = sig.return_type()?;
     if !is_class_type(&ret) || !ret.is_generic() {
@@ -156,7 +151,7 @@ fn bottom_new(new: NewExprent, needed: &VarType) {
         return;
     };
     let params = ctor
-        .get_desc()
+        .find_desc()
         .and_then(|d| d.get_signature())
         .map(|s| s.parameter_types().clone())
         .unwrap_or_default();
