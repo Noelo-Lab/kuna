@@ -63,7 +63,7 @@ fixes do where they were tuned. Eleven more projects were chosen by a rule writt
 2026-11-26, before any decompiler had run on any candidate, and nothing was dropped, added
 or swapped after a decompiler's output on them had been seen. They were measured out of
 sample once; fixes were later developed against what they showed, so this set is no longer
-held out (the second set below is):
+held out:
 
 1. A Maven Central artifact with a binary jar and a `-sources.jar`, at the newest stable
    release in `maven-metadata.xml` on that day.
@@ -120,8 +120,11 @@ fixes were developed against these projects.
 ## The second held-out set (`--project heldout2`)
 
 Fixes were then developed against the first held-out set, so a second set was chosen on
-2026-11-27 by a rule written before any decompiler had run on any candidate. It is measured
-once, on the final binary of that round, and no fix is developed against it in that round.
+2026-11-27 by a rule written before any decompiler had run on any candidate. It was measured
+out of sample once (89.28% of methods perfect against Vineflower's 79.56%); fixes were then
+developed against what that run showed, so this set is no longer held out either, and
+`docs/jvm-benchmark.md` gives both numbers. A new out-of-sample number needs a third set,
+chosen by this rule with this set added to its exclusions.
 Nothing was dropped, added or swapped after a decompiler's output on it had been seen. The
 rule is the first set's, with the first set added to the exclusions:
 
