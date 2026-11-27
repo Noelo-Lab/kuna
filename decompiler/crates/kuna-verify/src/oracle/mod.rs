@@ -1,6 +1,6 @@
 //! Export a shared seed and memory map for concrete function execution.
 
-mod elf;
+pub(crate) mod elf;
 
 use std::collections::BTreeMap;
 
@@ -21,7 +21,7 @@ const SP: u64 = CALLER - 8;
 const HEAP: u64 = 0x6000_0000;
 const RETURN: u64 = 0x7100_0000;
 const MAX_MAPPED: u64 = 16 * 1024 * 1024;
-const GPR: [&str; 16] = [
+pub(crate) const GPR: [&str; 16] = [
     "RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP", "RSP", "R8", "R9", "R10", "R11", "R12", "R13",
     "R14", "R15",
 ];
@@ -30,12 +30,22 @@ const FLAGS: [&str; 21] = [
     "CF", "F1", "PF", "F3", "AF", "F5", "ZF", "SF", "TF", "IF", "DF", "OF", "IOPL", "NT", "F15",
     "RF", "VM", "AC", "VIF", "VIP", "ID",
 ];
+pub(crate) const SYMBOLIC_FLAGS: [(&str, u8); 7] = [
+    ("CF", 0),
+    ("PF", 2),
+    ("AF", 4),
+    ("ZF", 6),
+    ("SF", 7),
+    ("DF", 10),
+    ("OF", 11),
+];
 
 pub struct RunConfig<'a> {
     pub seed: u64,
     pub budget: u64,
     pub input_regs: &'a [(String, String)],
     pub external_entries: &'a BTreeMap<u64, u8>,
+    pub opcode_mutant: Option<usize>,
 }
 
 /// Run the Kuna interpreters and export the exact input for the external runner.
@@ -115,7 +125,7 @@ pub fn capture(
 fn parse_inputs(input_regs: &[(String, String)]) -> Result<BTreeMap<&str, u128>, String> {
     let mut inputs = BTreeMap::new();
     for (name, hex) in input_regs {
-        let bits = if GPR.contains(&name.as_str()) && name != "RSP" {
+        let bits = if (GPR.contains(&name.as_str()) && name != "RSP") || name == "RFLAGS" {
             64
         } else if (0..16).any(|i| *name == format!("XMM{i}")) {
             128
@@ -130,6 +140,9 @@ fn parse_inputs(input_regs: &[(String, String)]) -> Result<BTreeMap<&str, u128>,
         }
         let value = u128::from_str_radix(digits, 16)
             .map_err(|_| format!("{name} requires a hexadecimal input with 0x prefix"))?;
+        if name == "RFLAGS" && (value & !0xed7 != 0 || value & 2 == 0) {
+            return Err("RFLAGS requires fixed bit 1 and only arithmetic flags, DF or IF".into());
+        }
         if inputs.insert(name.as_str(), value).is_some() {
             return Err(format!("{name} is specified twice"));
         }
@@ -137,7 +150,7 @@ fn parse_inputs(input_regs: &[(String, String)]) -> Result<BTreeMap<&str, u128>,
     Ok(inputs)
 }
 
-fn register(env: &Env, name: &str) -> Result<Storage, String> {
+pub(crate) fn register(env: &Env, name: &str) -> Result<Storage, String> {
     env.prog
         .arch()
         .manage()
@@ -197,6 +210,7 @@ fn initial_state(
     for i in 0..8 {
         set(&format!("ST{i}"), Some(&format!("FP{i}")), Some(0))?;
     }
+    let packed_flags = inputs.get("RFLAGS").copied().unwrap_or(2);
     for (name, external, value) in [
         ("FS_OFFSET", Some("FS_BASE"), 0),
         ("GS_OFFSET", Some("GS_BASE"), 0),
@@ -204,13 +218,22 @@ fn initial_state(
         ("FPUControlWord", Some("FPCW"), 0x037f),
         ("FPUStatusWord", Some("FPSW"), 0),
         ("FPUTagWord", Some("FPTAG"), 0xffff),
-        ("rflags", Some("RFLAGS"), 2),
+        ("rflags", Some("RFLAGS"), packed_flags),
         ("RIP", None, u128::from(entry)),
     ] {
         set(name, external, Some(value))?;
     }
     for name in FLAGS {
-        set(name, None, Some(u128::from(name == "F1")))?;
+        let bit = SYMBOLIC_FLAGS
+            .iter()
+            .find_map(|&(flag, n)| (flag == name).then_some(n))
+            .or(match name {
+                "F1" => Some(1),
+                "IF" => Some(9),
+                _ => None,
+            });
+        let value = bit.map_or(0, |n| (packed_flags >> n) & 1);
+        set(name, None, Some(value))?;
     }
     Ok((explicit, regs))
 }
@@ -253,9 +276,10 @@ fn observe(
         .collect();
     env.explicit = Some(explicit);
     env.fd = Some(fd);
-    let calls = calls::sites(fd, &env);
+    let mut calls = calls::sites(fd, &env);
     env.arg_regs = calls.input_regs.clone();
-    let program = program::compile(prog, fd, &calls);
+    let mut program = program::compile(prog, fd, &calls);
+    let mutation = apply_opcode_mutant(&mut program, &mut calls, &env, config.opcode_mutant)?;
     let run = crate::state::EDGE_RUNS;
 
     let raw = machine::run(&env, run, entry, budget, &calls, None);
@@ -338,6 +362,7 @@ fn observe(
 
     Ok(json!({
         "version": 1, "function": fd.get_name(), "seed": format!("{seed:#x}"),
+        "mutation": mutation,
         "provenance": {
             "language": prog.arch().archid,
             "sla_sha256": prog.arch().decode_recipe().map(|recipe| bytes_hex(Sha256::digest(recipe.sla.as_ref()).iter().copied())),
@@ -350,6 +375,25 @@ fn observe(
         },
         "observations": {"raw": raw, "ir": ir},
     }))
+}
+
+pub(crate) fn apply_opcode_mutant(
+    program: &mut program::Program,
+    calls: &mut calls::Calls,
+    env: &Env,
+    op: Option<usize>,
+) -> Result<Option<Value>, String> {
+    let Some(op) = op else { return Ok(None) };
+    let mutation = crate::mutate::Mutation {
+        block: 0,
+        op,
+        operator: crate::mutate::Operator::Opcode,
+    };
+    let description = crate::mutate::apply(program, calls, env, mutation)
+        .ok_or_else(|| format!("no opcode mutant at operation {op} in the entry block"))?;
+    Ok(Some(
+        json!({ "operator": "opcode", "block": 0, "op": op, "description": description }),
+    ))
 }
 
 fn halted(backend: &str, halt: Halt) -> Value {
@@ -400,4 +444,8 @@ fn bytes_hex(bytes: impl Iterator<Item = u8>) -> String {
         result.push(char::from(HEX[(byte & 15) as usize]));
     }
     result
+}
+
+pub(crate) fn sha256(bytes: &[u8]) -> String {
+    bytes_hex(Sha256::digest(bytes).iter().copied())
 }

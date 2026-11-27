@@ -19,6 +19,7 @@ regex.workspace = true
 serde_json = "1"
 sha2 = "0.11"
 slotmap.workspace = true
+tempfile = "3.27"
 
 [dev-dependencies]
 object = { workspace = true, features = ["write"] }

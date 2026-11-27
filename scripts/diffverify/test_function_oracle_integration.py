@@ -13,6 +13,7 @@ import unittest
 
 from oracle_compare import Return, compare
 from oracle_replay import replay
+from proof_replay import replay_proof
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = Path(__file__).with_name("fixtures") / "function_oracle_x86_64.c"
@@ -60,6 +61,25 @@ class CrossBackendTests(unittest.TestCase):
     def observe(self, function, *options):
         data, external = self.capture(function, *options)
         return data["case"], external, data["observations"]["raw"], data["observations"]["ir"]
+
+    def prove(self, name, *options, inputs=("RDI", "RSI"), stop=None):
+        if not shutil.which("z3"):
+            self.skipTest("install Z3 to run translation validation")
+        if stop is None:
+            symbols = subprocess.check_output([
+                os.environ.get("LLVM_NM", "llvm-nm"), "--print-size", "--format=posix", self.elf,
+            ], text=True)
+            _, _, start, size = next(line.split() for line in symbols.splitlines() if line.split()[0] == name)
+            stop = int(start, 16) + int(size, 16) - 1
+        command = [
+            self.verify, "prove", self.elf, name, "--sleighpath", ROOT / "specs",
+            "--stop-at", hex(stop), "--return", "RAX:8", *options,
+        ]
+        for reg in inputs:
+            command.extend(("--input", reg))
+        result = subprocess.run(command, capture_output=True, check=False, timeout=20)
+        self.assertIn(result.returncode, (0, 1, 3), result.stderr)
+        return result.returncode, json.loads(result.stdout)
 
     def assert_returned(self, oracle, raw, ir, expected, register="RAX"):
         self.assertEqual([p["status"] for p in (oracle, raw, ir)], ["returned"] * 3)
@@ -318,6 +338,69 @@ class CrossBackendTests(unittest.TestCase):
         self.assertEqual(report["classification"], "INCONCLUSIVE")
         self.assertEqual(report["findings"][0]["observable"], "return")
         self.assertEqual(set(report["findings"][0]["values"]), {"raw-pcode", "final-ir"})
+
+    def test_symbolic_leaf_equivalence_archives_the_exact_smt_obligation(self):
+        code, proof = self.prove("add")
+        self.assertEqual(code, 0, proof.get("reason"))
+        self.assertEqual(proof["classification"], "MODEL_EQUIVALENCE")
+        for kind, expected in (("domain", b"sat"), ("difference", b"unsat")):
+            smt = proof["obligation"][f"{kind}_smt2"].encode()
+            self.assertEqual(proof["obligation"][f"{kind}_sha256"], hashlib.sha256(smt).hexdigest())
+            answer = subprocess.check_output(["z3", "-in", "-smt2"], input=smt, timeout=10)
+            self.assertEqual(answer.splitlines()[0], expected)
+
+    def test_symbolic_integer_widths_bit_ops_rotates_and_conditional_moves(self):
+        for name, inputs in (
+            ("extend_signed", ("RDI",)), ("extend_unsigned", ("RDI",)),
+            ("bit_ops", ("RDI", "RSI")), ("rotate", ("RDI",)),
+            ("select_cmov", ("RDI", "RSI", "RDX")),
+        ):
+            with self.subTest(name=name):
+                code, proof = self.prove(name, inputs=inputs)
+                self.assertEqual(code, 0, proof.get("reason"))
+                self.assertEqual(proof["classification"], "MODEL_EQUIVALENCE")
+
+    def test_symbolic_signed_extension_mutation_is_visible_at_full_width(self):
+        code, proof = self.prove(
+            "extend_signed", "--opcode-mutant", "0", "--bind", "RDI", "0x80000000", inputs=("RDI",),
+        )
+        self.assertEqual(code, 1, proof.get("reason"))
+        replayed = replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+        self.assertEqual(replayed["independent_replay"], "confirmed")
+        values = replayed["observation_report"]["findings"][0]["values"]
+        self.assertEqual(values["unicorn"], "0xffffffff80000000")
+        self.assertEqual(values["final-ir"], "0x80000000")
+
+    def test_symbolic_mutation_gets_an_independently_reproduced_witness(self):
+        code, proof = self.prove("add", "--opcode-mutant", "0")
+        self.assertEqual(code, 1, proof.get("reason"))
+        self.assertEqual(proof["classification"], "COUNTEREXAMPLE")
+        self.assertEqual(proof["witness"]["independent_replay"], "pending")
+        replayed = replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+        self.assertEqual(replayed["independent_replay"], "confirmed")
+        mismatch = replayed["observation_report"]["findings"][0]
+        self.assertEqual(mismatch["observable"], "return")
+        self.assertEqual(mismatch["values"]["unicorn"], mismatch["values"]["raw-pcode"])
+        self.assertNotEqual(mismatch["values"]["raw-pcode"], mismatch["values"]["final-ir"])
+        proof["obligation"]["difference_smt2"] += "(assert false)\n"
+        with self.assertRaisesRegex(ValueError, "query digest differs"):
+            replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+
+    def test_symbolic_unsatisfiable_domain_is_inconclusive(self):
+        code, proof = self.prove("add", "--bind", "RDI", "0", "--bind", "RDI", "1")
+        self.assertEqual(code, 3)
+        self.assertEqual(proof["classification"], "INCONCLUSIVE")
+        self.assertEqual(proof["reason"], "unsatisfiable-precondition")
+        self.assertNotIn("witness", proof)
+
+    def test_symbolic_memory_and_control_flow_cannot_be_certified_as_a_leaf(self):
+        for name in ("caller_write", "store_loop"):
+            with self.subTest(name=name):
+                code, proof = self.prove(name)
+                self.assertEqual(code, 3)
+                self.assertEqual(proof["classification"], "INCONCLUSIVE")
+                self.assertEqual(proof["phase"], "encoding")
+                self.assertNotIn("obligation", proof)
 
 
 if __name__ == "__main__":

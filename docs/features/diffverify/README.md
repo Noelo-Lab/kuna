@@ -25,6 +25,8 @@ make verify-corpus                       # the same against docs/baseline-verify
 The optional [function oracle](function-oracle.md) runs the same explicit
 x86-64 case in Unicorn, raw p-code and the final IR. Its observations are
 available separately from the Tier C verdicts.
+The [translation validator](translation-validation.md) checks scoped integer
+equivalence with Z3 and produces concrete inputs for model differences.
 
 A difference looks like this (#794's fixture, with the option that brings the bug back):
 

@@ -7,6 +7,27 @@ u64 add(u64 a, u64 b) {
     return a + b;
 }
 
+u64 extend_signed(int a) {
+    return (u64)(long long)a;
+}
+
+u64 extend_unsigned(unsigned a) {
+    return (u64)a;
+}
+
+u64 bit_ops(u64 a, u64 b) {
+    return ((a >> 13) + (b << 9)) ^ b;
+}
+
+u64 rotate(u64 a) {
+    return (a >> 13) | (a << 51);
+}
+
+u64 select_cmov(u64 a, u64 yes, u64 no) {
+    __asm__("testq %2, %2; cmovneq %1, %0" : "+r"(no) : "r"(yes), "r"(a) : "cc");
+    return no;
+}
+
 double add_double(double a, double b) {
     return a + b;
 }

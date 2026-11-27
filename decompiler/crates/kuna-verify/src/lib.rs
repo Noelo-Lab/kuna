@@ -20,6 +20,7 @@ pub mod report;
 pub mod semantics;
 pub mod session;
 pub mod state;
+pub mod symbolic;
 pub mod tools;
 
 pub use abi::{calls, contract, divergence};

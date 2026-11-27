@@ -10,7 +10,7 @@ use crate::state::Region;
 const READ_WRITE: u32 = elf::PF_R | elf::PF_W;
 const READ_EXECUTE: u32 = elf::PF_R | elf::PF_X;
 
-pub(super) fn regions(image: &[u8]) -> Result<Vec<Region>, String> {
+pub(crate) fn regions(image: &[u8]) -> Result<Vec<Region>, String> {
     let file = ElfFile64::<LittleEndian>::parse(image)
         .map_err(|e| format!("expected a little-endian ELF64: {e}"))?;
     let endian = file.endian();

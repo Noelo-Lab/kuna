@@ -4099,6 +4099,15 @@ incomplete observations and only compares a call prefix when all three
 executions stop before modeling the call's effects.
 See `docs/features/diffverify/function-oracle.md` for the input model.
 
+The opt-in `kuna-verify prove` surface encodes an explicitly scoped integer
+block over fixed-width bit vectors. The reference executes raw p-code
+with symbolic register bytes and the other path executes final-IR SSA
+slots. The prover checks entry condition satisfiability before asking for
+a difference in arithmetic definedness or returned bits, and records both
+queries for replay. The initial scope is a straight-line x86-64 interval
+ending immediately before a near return. The observation and its limits
+are documented in `docs/features/diffverify/translation-validation.md`.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the

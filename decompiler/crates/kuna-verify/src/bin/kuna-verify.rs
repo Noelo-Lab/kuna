@@ -33,12 +33,15 @@ use std::time::Instant;
 use kuna_verify::{baseline, check_binary_each, check_datatest, localize, session, Options, Report, Row, Verdict};
 use serde_json::{json, Value};
 
+mod proof;
+
 const USAGE: &str = "usage:
   kuna-verify check <binary> <function|0xaddr>... | --all  [--jobs N] [--fn-seconds S] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
   kuna-verify oracle-case <x86-64-elf> <function|0xaddr> [--input-reg NAME HEX]... [--external-entry ADDR ARITY]... [--seed S] [--budget OPS] [--sleighpath DIR]
+  kuna-verify prove <x86-64-elf> <function|0xaddr> --stop-at ADDR --return REG:BYTES [--input REG]... [--bind REG HEX]... [--timeout-ms N] [--sleighpath DIR]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --call-reruns N (4)  --json  --trace  --sleighpath DIR";
 
@@ -63,6 +66,7 @@ struct Args {
     regs: Vec<String>,
     input_regs: Vec<(String, String)>,
     external_entries: BTreeMap<u64, u8>,
+    opcode_mutant: Option<usize>,
     flags: Vec<String>,
     canonical: bool,
     states: u32,
@@ -92,6 +96,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         regs: Vec::new(),
         input_regs: Vec::new(),
         external_entries: BTreeMap::new(),
+        opcode_mutant: None,
         flags: Vec::new(),
         canonical: false,
         states: 4,
@@ -170,6 +175,10 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 if a.external_entries.insert(address, arity).is_some() {
                     return Err(format!("external entry {address:#x} specified twice"));
                 }
+            }
+            "--opcode-mutant" => {
+                let op = num(it.next(), "--opcode-mutant")?;
+                a.opcode_mutant = Some(usize::try_from(op).map_err(|_| "--opcode-mutant is too large")?);
             }
             "--states" => a.states = num(it.next(), "--states")?.max(1) as u32,
             "--canonical" => a.canonical = true,
@@ -823,9 +832,18 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
+    if cmd == "prove" {
+        return match proof::run(rest) {
+            Ok(code) => code,
+            Err(error) => {
+                eprintln!("kuna-verify: {error}");
+                ExitCode::from(2)
+            }
+        };
+    }
     let result = parse(rest).and_then(|a| match cmd.as_str() {
-        cmd if cmd != "oracle-case" && (!a.input_regs.is_empty() || !a.external_entries.is_empty()) =>
-            Err("--input-reg and --external-entry are for oracle-case".into()),
+        cmd if cmd != "oracle-case" && (!a.input_regs.is_empty() || !a.external_entries.is_empty() || a.opcode_mutant.is_some()) =>
+            Err("--input-reg, --external-entry and --opcode-mutant are for oracle-case".into()),
         "check" => run_check(&a),
         "corpus" => run_corpus(&a),
         "shard" => run_shard(&a),
@@ -853,6 +871,7 @@ fn run_oracle_case(a: &Args) -> Result<ExitCode, String> {
     let config = kuna_verify::oracle::RunConfig {
         seed: a.opts.seed, budget: a.opts.budget, input_regs: &a.input_regs,
         external_entries: &a.external_entries,
+        opcode_mutant: a.opcode_mutant,
     };
     let case = kuna_verify::oracle::capture(path, function, &a.options, &roots, config)?;
     println!("{case}");

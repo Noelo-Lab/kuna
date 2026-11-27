@@ -202,13 +202,18 @@ pub struct Path {
 /// Input bytes a model sets.
 pub type Inputs = Rc<HashMap<(i32, u64), u8>>;
 
-struct Emitter {
+#[derive(Default)]
+pub(crate) struct Emitter {
     ids: HashMap<*const Expr, usize>,
     defs: String,
 }
 
 impl Emitter {
-    fn name(&mut self, e: &Rc<Expr>) -> String {
+    pub(crate) fn definitions(&self) -> &str {
+        &self.defs
+    }
+
+    pub(crate) fn name(&mut self, e: &Rc<Expr>) -> String {
         if let Expr::Var(v) = &**e {
             return v.to_string();
         }
