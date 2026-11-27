@@ -1780,7 +1780,11 @@ unmapped. And the slot must be one scalar: no Varnode straddles either end of
 it, and no other Varnode or other referenced address starts inside it. Two
 `int`s initialized by one 8-byte store and passed as `&optval, &optlen`
 therefore stay unmapped rather than becoming one 8-byte local with a reference
-into its middle. The symbol is as wide as the widest Varnode starting there and
+into its middle. The test sees only the body's own accesses, not the callee's:
+a record whose other fields only the callee touches, or that the body writes
+one field at a time with each store ending where the next begins, maps as its
+first field (a `struct timeval` filled by two 8-byte stores before `select`
+maps `tv_sec`, and `tv_usec` keeps its own name). The symbol is as wide as the widest Varnode starting there and
 takes the declared type of the one variable stored there when that type has the
 same width (otherwise it is an `undefined<N>`), so the reference and the
 accesses bind to one name, `&v2` and `*v2`, and `variables` reports the slot. A
