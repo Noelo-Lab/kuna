@@ -2054,3 +2054,5 @@ case	kuna-fixes/pkg/TestFinallyBodyThrows	Kuna Fixes	kuna-fixes/classes/pkg/Test
 case	kuna-fixes/pkg/TestForEachArrayIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestForEachArrayIncrement
 # kuna-fixes/src/pkg/TestExitCopiedIntoTry.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestExitCopiedIntoTry	Kuna Fixes	kuna-fixes/classes/pkg/TestExitCopiedIntoTry
+# kuna-fixes/src/pkg/TestRecordPatternInstanceofType.java, javac 21.0.13.1 (-g:none --release 21)
+case	kuna-fixes/pkg/TestRecordPatternInstanceofType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternInstanceofType

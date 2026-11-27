@@ -83,10 +83,17 @@ impl PatternExprent {
         self.d(|d| d.var_type.clone())
     }
 
+    /// kuna: the copy keeps the bound types, which say what a component's nested type test
+    /// matched.
     pub fn copy(self) -> Exprent {
-        let (data, var_type, exprents) =
-            self.d(|d| (d.data, d.var_type.clone(), d.exprents.to_vec()));
-        PatternExprent::new(data, var_type, DecHelper::copy_exprent_list(&exprents)).0
+        let (data, var_type, exprents, bound_types) = self.d(|d| {
+            (d.data, d.var_type.clone(), d.exprents.to_vec(), d.bound_types.to_vec())
+        });
+        let copy = PatternExprent::new(data, var_type, DecHelper::copy_exprent_list(&exprents));
+        for (i, bound) in bound_types.into_iter().enumerate() {
+            copy.get_bound_types().set(i, bound);
+        }
+        copy.0
     }
 
     pub fn to_java(self, _indent: i32) -> TextBuffer {

@@ -566,7 +566,11 @@ and most changes restart the loop from the top, so the order below is a priority
    value with `instanceof String`, and on failure goes on to the next case) is bound with the
    tested type, not the component's: without a LocalVariableTable, or for an unnamed `_`,
    the binding had the type `Object`, so the pattern printed as `R(Object var4)`, which
-   matches every `R`.
+   matches every `R`. (kuna) A copy of a record pattern keeps those tested types
+   (`decompiler/managed/kuna-jvm/src/substrate/pattern_exprent.rs (PatternExprent::copy)`);
+   Vineflower's copy dropped them, and the passes that copy a condition (joining ifs into
+   `&&`, a returned condition) turned `return o instanceof Box(Integer i) && i > 0` into
+   `Box(Object var1) && var1 > 0`.
 7. When the method has switches:
    `decompiler/managed/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs`
    rebuilds pattern switches from `SwitchBootstraps.typeSwitch` dispatch (also gated by
