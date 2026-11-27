@@ -123,8 +123,8 @@ fn a_captured_variable_is_read_by_the_name_its_creator_declares() {
 }
 
 /// `tests/data/kt_anonymous_class_failure_reason/` (kotlinc 2.0.0, `-jvm-target 17`) run as a
-/// kuna-fixes Kotlin case: it has no case of its own, because what its fix changes is printed
-/// only with `dump-exception-on-error` on.
+/// kuna-fixes Kotlin case: it has no case of its own, because what its fix changes is the
+/// exception in a failure comment, which names a Rust source line.
 fn unwritable_case() -> Case {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests/data/kt_anonymous_class_failure_reason/pkg");
@@ -152,11 +152,7 @@ fn unwritable_case() -> Case {
 
 /// The unwritable classes' text with the exception in failure comments.
 fn unwritable_text() -> String {
-    let mut case = unwritable_case();
-    case.options.retain(|(k, _)| k != "dump-exception-on-error");
-    case.options
-        .push(("dump-exception-on-error".into(), "1".into()));
-    run(case).expect("the compared unit")
+    run(unwritable_case()).expect("the compared unit")
 }
 
 #[test]

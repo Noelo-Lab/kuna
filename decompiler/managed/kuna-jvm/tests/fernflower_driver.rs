@@ -210,10 +210,7 @@ fn runtime_option_registers_the_current_jdk() {
 fn a_failing_engine_leaves_the_root_context_usable() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("dee", "0"),
-        ]),
+        &options(&[(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0")]),
         logger.clone(),
     );
     let root = DecompilerContext::get_current_context().unwrap();
@@ -248,10 +245,7 @@ fn a_failing_engine_leaves_the_root_context_usable() {
 fn class_content_failure_is_logged_and_skipped() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("dee", "0"),
-        ]),
+        &options(&[(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0")]),
         logger.clone(),
     );
     let root = DecompilerContext::get_current_context().unwrap();
@@ -262,7 +256,9 @@ fn class_content_failure_is_logged_and_skipped() {
         .unwrap();
 
     assert!(try_catch(|| fernflower.process_class(a)).is_err());
-    assert_eq!(fernflower.get_class_content(a), None);
+    assert!(fernflower
+        .get_class_content(a)
+        .is_some_and(|c| c.starts_with("/*\n$VF: Unable to decompile class\n")));
     let failure = record(&logger, "Class p/A couldn't be fully decompiled.").unwrap();
     assert_eq!(failure.severity, Severity::Error);
     assert!(failure.throwable.is_some());
@@ -332,17 +328,12 @@ impl IDecompiledData for ScriptedData {
     }
 }
 
-fn save_scripted(dee: &str) -> (Vec<DecompiledClass>, Rc<CollectingLogger>) {
+fn save_scripted() -> (Vec<DecompiledClass>, Rc<CollectingLogger>) {
     let logger = Rc::new(CollectingLogger::new());
     let data = Rc::new(ScriptedData::default());
     let sc = StructContext::new(data.clone());
-    let mut properties = IFernflowerPreferences::DEFAULTS();
-    properties.put(
-        IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR.to_string(),
-        dee.to_string(),
-    );
     let root = DecompilerContext::new(
-        properties,
+        IFernflowerPreferences::DEFAULTS(),
         logger.clone(),
         sc,
         ClassesProcessor::new(sc),
@@ -374,13 +365,13 @@ fn save_scripted(dee: &str) -> (Vec<DecompiledClass>, Rc<CollectingLogger>) {
 
 #[test]
 fn unit_save_reports_failing_classes_and_keeps_going() {
-    let (out, logger) = save_scripted("0");
+    let (out, logger) = save_scripted();
     let names: Vec<&str> = out.iter().map(|c| c.qualified_name.as_str()).collect();
     assert_eq!(names, ["p/A", "p/B", "p/C"]);
     assert_eq!(out[0].path, "p/A.java");
     assert_eq!(out[0].content, "class p/A same-context true counter 2");
-    assert_eq!(out[1].content, "// $VF: Couldn't be decompiled\n");
-    assert_eq!(out[2].content, "// $VF: Couldn't be decompiled\n");
+    assert!(out[1].content.starts_with("// $VF: Couldn't be decompiled\n"));
+    assert!(out[2].content.starts_with("// $VF: Couldn't be decompiled\n"));
 
     let boom = record(&logger, "Class p/B couldn't be fully decompiled.").unwrap();
     assert_eq!(boom.severity, Severity::Error);
@@ -394,7 +385,7 @@ fn unit_save_reports_failing_classes_and_keeps_going() {
 
 #[test]
 fn unit_save_dumps_the_pre_processing_exception() {
-    let (out, _) = save_scripted("1");
+    let (out, _) = save_scripted();
     assert_eq!(out.len(), 3);
     assert!(out[1]
         .content

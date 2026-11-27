@@ -428,18 +428,14 @@ impl IDecompiledData for FernflowerDecompiledData {
                     ),
                     &t,
                 );
-                if DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR) {
-                    let mut lines = vec![
-                        "/*".to_string(),
-                        "$VF: Unable to decompile class".to_string(),
-                    ];
-                    lines.extend(ClassWriter::get_error_comment());
-                    ClassWriter::collect_error_lines(&t, &mut lines);
-                    lines.push("*/".to_string());
-                    Some(lines.join(DecompilerContext::get_new_line_separator()))
-                } else {
-                    None
-                }
+                let mut lines = vec![
+                    "/*".to_string(),
+                    "$VF: Unable to decompile class".to_string(),
+                ];
+                lines.extend(ClassWriter::get_error_comment());
+                ClassWriter::collect_error_lines(&t, &mut lines);
+                lines.push("*/".to_string());
+                Some(lines.join(DecompilerContext::get_new_line_separator()))
             }
         }
     }

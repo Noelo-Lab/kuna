@@ -37,7 +37,6 @@ impl IFernflowerPreferences {
     pub const THREADS: &str = "thread-count";
     pub const SKIP_EXTRA_FILES: &str = "skip-extra-files";
     pub const DUMP_BYTECODE_ON_ERROR: &str = "dump-bytecode-on-error";
-    pub const DUMP_EXCEPTION_ON_ERROR: &str = "dump-exception-on-error";
     pub const DECOMPILER_COMMENTS: &str = "decompiler-comments";
     pub const FORCE_JSR_INLINE: &str = "force-jsr-inline";
     pub const MARK_CORRESPONDING_SYNTHETICS: &str = "mark-corresponding-synthetics";
@@ -92,7 +91,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::THREADS, available_processors().to_string()),
             (IFernflowerPreferences::SKIP_EXTRA_FILES, "0".to_string()),
             (IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, "1".to_string()),
-            (IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, "1".to_string()),
             (IFernflowerPreferences::DECOMPILER_COMMENTS, "1".to_string()),
             (IFernflowerPreferences::FORCE_JSR_INLINE, "0".to_string()),
             (IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, "0".to_string()),
@@ -173,7 +171,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "THREADS", key: IFernflowerPreferences::THREADS, short_name: Some("thr"), name: Some("Thread Count"), description: Some("How many threads to use to decompile."), type_: Some(OptionType::Integer), dynamic_default_value: Some("all available processors") },
     PreferenceOption { field: "SKIP_EXTRA_FILES", key: IFernflowerPreferences::SKIP_EXTRA_FILES, short_name: Some("sef"), name: Some("Skip Extra Files"), description: Some("Skip copying non-class files from the input folder or file to the output"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_BYTECODE_ON_ERROR", key: IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, short_name: Some("dbe"), name: Some("Dump Bytecode On Error"), description: Some("Put the bytecode in the method body when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "DUMP_EXCEPTION_ON_ERROR", key: IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, short_name: Some("dee"), name: Some("Dump Exceptions On Error"), description: Some("Put the exception message in the method body or source file when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILER_COMMENTS", key: IFernflowerPreferences::DECOMPILER_COMMENTS, short_name: Some("dec"), name: Some("Decompiler Comments"), description: Some("Sometimes, odd behavior of the bytecode or unfixable problems occur. This enables or disables the adding of those to the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "FORCE_JSR_INLINE", key: IFernflowerPreferences::FORCE_JSR_INLINE, short_name: Some("fji"), name: Some("Force JSR inline"), description: Some("Forces the processing of JSR instructions even if the class files shouldn't contain it (Java 7+)"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "MARK_CORRESPONDING_SYNTHETICS", key: IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, short_name: Some("mcs"), name: Some("Mark Corresponding Synthetics"), description: Some("Mark lambdas and anonymous and local classes with their respective synthetic constructs"), type_: None, dynamic_default_value: None },

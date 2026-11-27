@@ -370,17 +370,15 @@ impl ClassWriter {
     pub fn write_exception(buffer: &mut TextBuffer, t: &Caught) {
         buffer.append("// $VF: Couldn't be decompiled");
         buffer.append_line_separator();
-        if DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR) {
-            let mut lines: Vec<String> = Vec::new();
-            lines.extend(ClassWriter::get_error_comment());
-            ClassWriter::collect_error_lines(t, &mut lines);
-            for line in &lines {
-                buffer.append("//");
-                if !line.is_empty() {
-                    buffer.append(" ").append(line);
-                }
-                buffer.append_line_separator();
+        let mut lines: Vec<String> = Vec::new();
+        lines.extend(ClassWriter::get_error_comment());
+        ClassWriter::collect_error_lines(t, &mut lines);
+        for line in &lines {
+            buffer.append("//");
+            if !line.is_empty() {
+                buffer.append(" ").append(line);
             }
+            buffer.append_line_separator();
         }
     }
 
@@ -2203,19 +2201,15 @@ impl ClassWriter {
     fn dump_error(buffer: &mut TextBuffer, wrapper: MethodWrapper, indent: i32) {
         kuna_spans::method_failed(wrapper);
         let mut lines: Vec<String> = vec!["$VF: Couldn't be decompiled".to_string()];
-        let exceptions =
-            DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR);
         let bytecode =
             DecompilerContext::get_option(IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR);
-        if exceptions {
-            lines.extend(ClassWriter::get_error_comment());
-            let error = wrapper
-                .with(|d| d.decompile_error.clone())
-                .expect("NullPointerException: decompileError");
-            ClassWriter::collect_error_lines(&error, &mut lines);
-            if bytecode {
-                lines.push(String::new());
-            }
+        lines.extend(ClassWriter::get_error_comment());
+        let error = wrapper
+            .with(|d| d.decompile_error.clone())
+            .expect("NullPointerException: decompileError");
+        ClassWriter::collect_error_lines(&error, &mut lines);
+        if bytecode {
+            lines.push(String::new());
         }
         if bytecode {
             let method_struct = wrapper.with(|d| d.method_struct);
@@ -2243,7 +2237,7 @@ impl ClassWriter {
         }
     }
 
-    /// The `DUMP_EXCEPTION_ON_ERROR` lines describing `error`: its text and its
+    /// The lines describing `error` in a failure comment: its text and its
     /// throw location as the single stack frame (nothing without a location).
     pub fn collect_error_lines(error: &Caught, lines: &mut Vec<String>) {
         let mut filtered_stack: Vec<&str> = Vec::new();

@@ -562,9 +562,5 @@ vineflower = "dump-bytecode-on-error"
 kuna = "fixed on: a failed method's comment lists its bytecode"
 
 [[driver_owned]]
-vineflower = "dump-exception-on-error"
-kuna = "fixed on: a failure comment names the exception; the corpus fixture turns it off"
-
-[[driver_owned]]
 vineflower = "kt-unknown-defaults"
 kuna = "fixed at the Kotlin plugin's default: ... stands for a default argument the $default stub does not reveal"

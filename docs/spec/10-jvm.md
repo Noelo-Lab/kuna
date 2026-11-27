@@ -1025,8 +1025,7 @@ Numbers print with the JDK's own algorithms (section 10.13).
 of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then the
 note asking for the class to be reported to kuna's tracker (section 10.16), the
 exception text and its throw location, and a listing of
-the method's bytecode. The class around it is written normally. (Vineflower's
-`dump-exception-on-error` off drops the note and the exception.)
+the method's bytecode. The class around it is written normally.
 
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/managed/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
