@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5615,
-    5615
+    5627,
+    5627
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1346,6 +1346,18 @@
     "data:GOMORESTACK #2: only the un-truncated off pass loops",
     "data:GOMORESTACK #3: the real body survives all four passes",
     "data:GOMORESTACK #4: one body return per pass, never a second arm",
+    "data:GOT slot imports #10: control: bail's exit through the stub is no-return, with importdata on and off",
+    "data:GOT slot imports #11: with importdata off no symbol sits at strlen's slot, so first's call through it stays unnamed",
+    "data:GOT slot imports #12: with importdata off the exit slot's no-return fact reaches no function at the slot, so check keeps main's output",
+    "data:GOT slot imports #1: no call through a GOT slot loses its argument",
+    "data:GOT slot imports #2: first's call through the slot keeps the pointer it forwards, with and without a .plt.got stub",
+    "data:GOT slot imports #3: release's tail jump through the slot forwards its pointer, with and without a .plt.got stub",
+    "data:GOT slot imports #4: length's tail jump through the shared slot passes its string",
+    "data:GOT slot imports #5: same's tail jump through the shared slot passes LIBC_EXT memcmp's three arguments",
+    "data:GOT slot imports #6: exit through the slot is no-return, with and without a .plt.got stub",
+    "data:GOT slot imports #7: no flow runs past exit into the next function or unmapped memory",
+    "data:GOT slot imports #8: control: drop's tail call through the .plt.got stub keeps its argument",
+    "data:GOT slot imports #9: control: len2's tail call through the stub keeps its argument",
     "data:GOTIMPORTPROTO: the declared import receives the passed argument",
     "data:GOTIMPORTPROTO: the import call never keeps only the arguments its trials recover",
     "data:GOTTAILCALL #1: the jump through ext's slot is never lost to halt_missing",
