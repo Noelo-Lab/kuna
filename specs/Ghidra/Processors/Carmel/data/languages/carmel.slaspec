@@ -183,6 +183,7 @@ define register offset=0x300 size=1 [
 ];
 define pcodeop carmel_record_admission;
 define pcodeop carmel_read_address_admission;
+define pcodeop carmel_known_redirect;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -2333,11 +2334,31 @@ macro clock_ce() {
     publish_alu_ce(EST & 0xcfff);
 }
 
-ce_tick: is (carmel_phase_emit=0 | carmel_single_issue=1 | hw_loop_actions=1) { }
-ce_tick: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+macro record_ce_admission() {
     local first:1 = ((EST | CECFG1) & 0x1000) != 0;
     local second:1 = (EST & 0x2000) != 0 || (CECFG2 & 0x1000) != 0;
     carmel_record_admission(first | (second << 1));
+}
+
+ce_tick: is (carmel_phase_emit=0 | carmel_single_issue=1 | hw_loop_actions=1) { }
+ce_tick: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 { record_ce_admission(); }
+
+ce_redirect: is (carmel_phase_emit=0 | carmel_single_issue=1 | hw_loop_actions=1) {
+    clock_ce();
+    clock_ce();
+    clock_ce();
+    clock_ce();
+}
+ce_redirect: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    clock_ce();
+    record_ce_admission();
+    clock_ce();
+    record_ce_admission();
+    clock_ce();
+    record_ce_admission();
+    clock_ce();
+    record_ce_admission();
+    carmel_known_redirect();
 }
 
 ce_marked_load_tick: is wide_left_mode=0 { }
@@ -12041,7 +12062,11 @@ wide_call_target: word_address is wide_call_offset_0 & wide_call_offset_22 [ wor
 :CALL wide_call_target "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27dd & wide_call_target & link_2_7 & resume_2_7 [ carmel_counted_delay=1; ] { push_link(link_2_7); delayslot(3); call wide_call_target; goto resume_2_7; }
 wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 [ wide_word_address = (inst_start + (wide_goto_offset_0 | (wide_goto_offset_22 << 22))) & 0xffffff; ] { export *[code]:3 wide_word_address; }
 :"GOTO NC1" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_2_22=0x139001 & wide_goto_target { if ((EST & 1) == 0) goto wide_goto_target; }
-:"GOTO" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c0 & wide_goto_target { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto wide_goto_target; }
+:"GOTO" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_9_22=0x27c0 & wide_goto_target & ce_redirect {
+    build ce_redirect;
+    goto wide_goto_target;
+}
 :"GOTO" wide_goto_target "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27c0 & wide_goto_target { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27c0 & wide_goto_target { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c4 & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(1); clock_ce(); clock_ce(); goto wide_goto_target; }

@@ -19,6 +19,7 @@ pub(crate) struct PhaseDecode<'a> {
     saved: (u32, u32),
     tick: u64,
     admission: u64,
+    redirect: Option<u64>,
 }
 
 impl<'a> PhaseDecode<'a> {
@@ -28,6 +29,7 @@ impl<'a> PhaseDecode<'a> {
         }
         let tick = arch.userops.get_op_by_name(b"carmel_record_admission")?.get_index() as u64;
         let admission = arch.userops.get_op_by_name(b"carmel_read_address_admission")?.get_index() as u64;
+        let redirect = arch.userops.get_op_by_name(b"carmel_known_redirect").map(|op| op.get_index() as u64);
         let (word, bits) = arch.with_context_db(|db| {
             let field = db.get_variable(b"carmel_phase_emit").ok()?;
             Some((field.get_word() as usize, field.get_mask() << field.get_shift()))
@@ -35,29 +37,30 @@ impl<'a> PhaseDecode<'a> {
         let translate = arch.translate();
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
-        Some(Self { translate, word, saved, tick, admission })
+        Some(Self { translate, word, saved, tick, admission, redirect })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
-        let mut clocks = Vec::new();
+        let mut markers = Vec::new();
         let mut reads = false;
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
             if op.get_parent().is_none() { continue; }
             let Some(index) = userop(fd, op) else { continue };
-            if index == self.tick {
-                clocks.push(op_id);
+            if index == self.tick || Some(index) == self.redirect {
+                markers.push((op_id, index == self.tick));
             } else if index == self.admission {
                 reads = true;
             }
         }
         if !reads {
-            for clock in clocks {
-                fd.op_destroy(clock);
+            for (marker, _) in markers {
+                fd.op_destroy(marker);
             }
             return Ok(());
         }
-        let known: BTreeSet<_> = clocks.iter().map(|&id| fd.obank().get(id).unwrap().get_addr().get_offset()).collect();
+        let known: BTreeSet<_> = markers.iter().filter(|(_, tick)| *tick)
+            .map(|&(id, _)| fd.obank().get(id).unwrap().get_addr().get_offset()).collect();
         // structure_reset has assigned dense block numbers in this order.
         let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|n| fd.bblocks_get_block(n)).collect();
         let traces: Vec<_> = blocks.iter().map(|&block| self.trace(fd, visits, &known, block)).collect();
@@ -103,6 +106,9 @@ impl<'a> PhaseDecode<'a> {
                 }
             }
         }
+        for (marker, tick) in markers {
+            if !tick { fd.op_destroy(marker); }
+        }
         Ok(())
     }
 
@@ -120,10 +126,12 @@ impl<'a> PhaseDecode<'a> {
                 }
                 trace.first.get_or_insert_with(|| addr.clone());
                 trace.last = Some(addr.clone());
+                trace.redirect = false;
             }
             match userop(fd, op) {
                 Some(index) if index == self.tick => trace.events.push(Event::Tick(id)),
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
+                Some(index) if Some(index) == self.redirect => trace.redirect = true,
                 _ if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN
                     | OpCode::CPUI_LOAD | OpCode::CPUI_STORE) => {
                     // Bus effects and opaque transfers can change the spacing
@@ -172,6 +180,7 @@ struct Trace {
     first: Option<Address>,
     last: Option<Address>,
     events: Vec<Event>,
+    redirect: bool,
 }
 
 fn contiguous(visits: &VisitedMap, from: &Address, to: &Address) -> bool {
@@ -192,10 +201,16 @@ fn incoming_ages(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces:
             0
         } else {
             (0..block.size_in()).map(|edge| {
-                let predecessor = graph.block(block.get_in(edge)).get_index() as usize;
-                match traces[predecessor].last.as_ref().zip(trace.first.as_ref()) {
-                    Some((from, to)) if contiguous(visits, from, to) => exits[predecessor],
-                    _ => 0,
+                let source = graph.block(block.get_in(edge));
+                let predecessor = source.get_index() as usize;
+                let prior = &traces[predecessor];
+                if prior.redirect && source.size_out() == 1 {
+                    exits[predecessor]
+                } else {
+                    match prior.last.as_ref().zip(trace.first.as_ref()) {
+                        Some((from, to)) if contiguous(visits, from, to) => exits[predecessor],
+                        _ => 0,
+                    }
                 }
             }).min().unwrap()
         };

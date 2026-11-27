@@ -4038,6 +4038,9 @@ parallel comparison still publishes its C/Z. The younger address gate
 sees the sampled rail, not the restored or retained `EST` bits.
 `kuna_carmel_phase.rs` binds the older sample before SSA; it rejects a
 qualified read if any incoming path lacks enough modeled issue clocks.
+An unqualified wide direct `GOTO` without a delay slot records its own
+issue clock and three refill clocks. The phase pass carries those samples
+across that modeled redirect instead of requiring adjacent CODE addresses.
 
 Signed immediate `MOVE` distinguishes the early address-qualified ports
 from late DATA or accumulator results. The indexed store captures the old
