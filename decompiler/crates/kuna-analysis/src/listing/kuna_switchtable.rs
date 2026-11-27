@@ -89,6 +89,7 @@ use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::Translate;
 
 use super::kuna_poolref::PoolImage;
+use super::kuna_switchflow::{self, Entry, Selector};
 use super::xrefs::{decode, in_range, FullCapture, FullOp};
 
 /// Below this an accepted run is a coincidence rather than a table: a compiler
@@ -188,7 +189,7 @@ const MAX_DISPATCH_INSNS: usize = 96;
 /// its `ja` and the jump (`mov %eax,%eax; lea 0(,%rax,4),%rdx; lea jt,%rax; mov
 /// (%rdx,%rax,1),%eax; cltq; lea jt,%rdx; add %rdx,%rax`), and gcc -O2 schedules
 /// the callee-saved pushes and argument moves of the case bodies in between.
-const MAX_GUARD_INSNS: usize = 16;
+pub(super) const MAX_GUARD_INSNS: usize = 16;
 
 /// The widest instruction any vendored processor encodes, which bounds how far
 /// back a predecessor's first byte can lie.
@@ -214,6 +215,9 @@ pub(super) struct Reach<'a> {
     /// function dispatching at `from` dispatches through, given `(from,
     /// table)`: where a relative table with no range check ends.
     pub next_table: Option<&'a dyn Fn(u64, u64) -> Option<u64>>,
+    /// (kuna `switchflow`) The decoded branches into an address: where the
+    /// slice may cross a block boundary and a far range check is believed.
+    pub entered: Option<&'a dyn Fn(u64) -> Entry>,
 }
 
 impl Reach<'_> {
@@ -255,39 +259,8 @@ pub(super) fn register_targets(
     // temporary: `jmp qword ptr [__imp_X]` branches on a data-space varnode and
     // is a forwarding veneer, which is the shape this must never walk back from.
     let Some(want) = key_of(branch, data_space) else { return TableRead::default() };
-    let (slice, gap) = dispatch_slice(translate, code_space, data_space, decoded, from, want, reach);
-
-    let mut vals: Vec<(Key, Val)> = Vec::new();
-    let mut dispatch = None;
-    let mut call = false;
-    let mut index: Option<(u64, usize, Key)> = None;
-    'slice: for (vma, ops) in &slice {
-        for (i, op) in ops.iter().enumerate() {
-            if matches!(op.opcode, OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLIND) && *vma == from {
-                dispatch = op.ins.first().and_then(|vn| value_of(vn, &vals, data_space));
-                call = op.opcode == OpCode::CPUI_CALLIND;
-                break 'slice;
-            }
-            if leaves_registers_unknown(op.opcode) {
-                vals.retain(|(k, _)| survives(*k, reach.preserved));
-            }
-            let folded = fold(op, &vals, data_space, pool);
-            if op.opcode == OpCode::CPUI_INT_ADD && matches!(folded, Some(Val::Indexed(_))) {
-                let unknown = op.ins.iter().find(|vn| value_of(vn, &vals, data_space).is_none());
-                if let Some(key) = unknown.and_then(|vn| key_of(vn, data_space)) {
-                    index = Some((*vma, i, key));
-                }
-            }
-            let Some(out) = &op.out else { continue };
-            let key = key_of(out, data_space);
-            invalidate(&mut vals, key);
-            if let (Some(key), Some(val)) = (key, folded) {
-                if vals.len() < MAX_TRACKED {
-                    vals.push((key, val));
-                }
-            }
-        }
-    }
+    let (slice, gap, crossed) = dispatch_slice(translate, code_space, data_space, decoded, from, want, reach, pool);
+    let (dispatch, call, index) = fold_slice(slice.iter(), Vec::new(), from, data_space, pool, reach.preserved);
     let shape = match dispatch {
         Some(Val::Case { table, base }) => Shape::Delta { table, base },
         Some(Val::Entry { table, width, .. }) if width == pool.ptr_width() => Shape::Pointer { table },
@@ -312,7 +285,11 @@ pub(super) fn register_targets(
     let masked = index.and_then(|at| {
         mask_limit(translate, code_space, data_space, decoded, from, at, max_entries)
     });
-    match (guard_limit(translate, code_space, data_space, decoded, from, reach), masked) {
+    let guard = guard_limit(translate, code_space, data_space, decoded, from, reach, index, crossed);
+    if crossed && guard.is_err() && masked.is_none() {
+        return TableRead { gap, ..TableRead::default() };
+    }
+    match (guard, masked) {
         (Ok(limit), masked) => {
             let limit = masked.map_or(limit, |n| n.min(limit));
             TableRead { cases: read(limit), stated: Some(limit), gap: None, unbounded: false }
@@ -353,6 +330,48 @@ pub(super) fn register_targets(
             _ => TableRead { gap, ..TableRead::default() },
         },
     }
+}
+
+/// The fold of a dispatch slice, in execution order, from `vals`: the value
+/// the computed jump or call at `from` branches on, whether it is a call, and
+/// the addend of the table-address sum the fold could not value, as
+/// (instruction, op, varnode).
+pub(super) fn fold_slice<'s>(
+    slice: impl Iterator<Item = &'s (u64, Vec<FullOp>)>,
+    mut vals: Vec<(Key, Val)>,
+    from: u64,
+    data_space: Option<&Rc<AddrSpace>>,
+    pool: &PoolImage,
+    preserved: &[(u64, u64)],
+) -> (Option<Val>, bool, Option<(u64, usize, Key)>) {
+    let mut index: Option<(u64, usize, Key)> = None;
+    for (vma, ops) in slice {
+        for (i, op) in ops.iter().enumerate() {
+            if matches!(op.opcode, OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALLIND) && *vma == from {
+                let dispatch = op.ins.first().and_then(|vn| value_of(vn, &vals, data_space));
+                return (dispatch, op.opcode == OpCode::CPUI_CALLIND, index);
+            }
+            if leaves_registers_unknown(op.opcode) {
+                vals.retain(|(k, _)| survives(*k, preserved));
+            }
+            let folded = fold(op, &vals, data_space, pool);
+            if op.opcode == OpCode::CPUI_INT_ADD && matches!(folded, Some(Val::Indexed(_))) {
+                let unknown = op.ins.iter().find(|vn| value_of(vn, &vals, data_space).is_none());
+                if let Some(key) = unknown.and_then(|vn| key_of(vn, data_space)) {
+                    index = Some((*vma, i, key));
+                }
+            }
+            let Some(out) = &op.out else { continue };
+            let key = key_of(out, data_space);
+            invalidate(&mut vals, key);
+            if let (Some(key), Some(val)) = (key, folded) {
+                if vals.len() < MAX_TRACKED {
+                    vals.push((key, val));
+                }
+            }
+        }
+    }
+    (None, false, index)
 }
 
 /// The table a dispatch reads, as the fold reported it at the branch.
@@ -519,6 +538,14 @@ pub(super) struct TableRead {
 /// a comparison that does not reach the condition (the carry of a `cmp` ahead
 /// of a `je`) is not a bound. Which side of the comparison the dispatch is on
 /// comes from evaluating the condition both ways ([`guard_cases`]).
+///
+/// (kuna `switchflow`) Past the sixteen instructions, the search goes on up the
+/// same straight run as far as [`kuna_switchflow::MAX_FAR_GUARD_INSNS`] when the
+/// walk says which addresses its branches enter. A check found there, or any
+/// check of a slice that `crossed` a block boundary, bounds the table only when
+/// nothing on the run is entered by a branch and the comparison reads the index
+/// register `index` names, followed up the run ([`Selector`]) or copied just
+/// above the comparison, and its count is exact ([`guard_cases`]).
 fn guard_limit(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -526,33 +553,49 @@ fn guard_limit(
     decoded: &dyn Fn(u64) -> bool,
     from: u64,
     reach: &Reach,
+    index: Option<(u64, usize, Key)>,
+    crossed: bool,
 ) -> Result<usize, Option<u64>> {
     let max_entries = reach.max_entries;
     let mut cap = FullCapture::default();
     let mut cur = from;
     let mut ends_at: Option<u64> = None;
     let mut guard: Option<(Vec<FullOp>, usize, Vec<Key>)> = None;
-    for step in 0..reach.guard_insns() {
+    let mut selector = Selector::new(index);
+    let mut joined = false;
+    let window = if reach.entered.is_some() { kuna_switchflow::MAX_FAR_GUARD_INSNS } else { reach.guard_insns() };
+    for step in 0..window {
+        let near = step < reach.guard_insns();
+        let checked = crossed || !near;
         let len = decode(translate, cur, code_space, &mut cap).ok_or(None)?;
         if ends_at.is_some_and(|end| cur.wrapping_add(u64::from(len)) != end) {
-            return Err(ends_at);
+            return Err(if near { ends_at } else { None });
         }
         if step > 0 && !falls_through(cap.ops()) {
             // The dispatch's block is entered only by branches: the range check
             // may be the one that branches into it.
             return match (guard, ends_at) {
-                (None, Some(head)) => entering_guard(translate, code_space, data, decoded, head, max_entries),
+                (None, Some(head)) if !checked => {
+                    entering_guard(translate, code_space, data, decoded, head, max_entries)
+                }
                 _ => Err(None),
             };
         }
         let ops = cap.ops();
+        let far_reads = |compared: Vec<Key>| {
+            let compared: Vec<Key> = compared.into_iter().filter(|k| matches!(k, Key::Reg(..))).collect();
+            let (Some(key), Some(entered)) = (selector.key(), reach.entered) else { return false };
+            !joined
+                && (compared.iter().any(|c| keys_overlap(*c, key))
+                    || kuna_switchflow::copied_above(translate, code_space, data, decoded, entered, cur, key, &compared))
+        };
         match &guard {
             None => {
                 if let Some(at) = leaving_branch(ops, cur, len) {
                     let want: Vec<Key> = ops[at].ins.get(1).and_then(|vn| key_of(vn, data)).into_iter().collect();
                     let (reads, feeding) = feeders(&ops[..at], want, data);
-                    if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries, false) {
-                        return Ok(n);
+                    if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries, false, checked) {
+                        return if !checked || far_reads(reads) { Ok(n) } else { Err(None) };
                     }
                     let reads = reads.into_iter().filter(|k| matches!(k, Key::Reg(..))).collect();
                     guard = Some((ops.to_vec(), at, reads));
@@ -562,13 +605,16 @@ fn guard_limit(
                 let writes = ops.iter().filter_map(|op| op.out.as_ref().and_then(|vn| key_of(vn, data)));
                 let written: Vec<Key> = writes.filter(|w| reads.iter().any(|r| keys_overlap(*r, *w))).collect();
                 if !written.is_empty() {
-                    let (_, feeding) = feeders(ops, written, data);
-                    return guard_cases(ops, &feeding, branch, *at, data, max_entries, false).ok_or(None);
+                    let (compared, feeding) = feeders(ops, written, data);
+                    let n = guard_cases(ops, &feeding, branch, *at, data, max_entries, false, checked).ok_or(None)?;
+                    return if !checked || far_reads(compared) { Ok(n) } else { Err(None) };
                 }
             }
         }
+        joined |= reach.entered.is_some_and(|entered| entered(cur) != Entry::Unentered);
+        selector.step(cur, ops, data);
         ends_at = Some(cur);
-        cur = previous(decoded, cur).ok_or(Some(cur))?;
+        cur = previous(decoded, cur).ok_or(if near { Some(cur) } else { None })?;
     }
     Err(None)
 }
@@ -607,7 +653,7 @@ fn entering_guard(
         };
         let want: Vec<Key> = ops[at].ins.get(1).and_then(|vn| key_of(vn, data)).into_iter().collect();
         let (reads, feeding) = feeders(&ops[..at], want, data);
-        if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries, true) {
+        if let Some(n) = guard_cases(&[], &feeding, ops, at, data, max_entries, true, false) {
             return Ok(n);
         }
         let reads: Vec<Key> = reads.into_iter().filter(|k| matches!(k, Key::Reg(..))).collect();
@@ -626,7 +672,7 @@ fn entering_guard(
             let written: Vec<Key> = writes.filter(|w| reads.iter().any(|r| keys_overlap(*r, *w))).collect();
             if !written.is_empty() {
                 let (_, feeding) = feeders(ops, written, data);
-                return guard_cases(ops, &feeding, &branch, at, data, max_entries, true).ok_or(None);
+                return guard_cases(ops, &feeding, &branch, at, data, max_entries, true, false).ok_or(None);
             }
             ends_at = above;
         }
@@ -651,6 +697,11 @@ fn entering_guard(
 /// five-case table indexed by `sel + 5`. Read as `c + 1`, that one ran on into
 /// the next table. A lower bound that leaves more than `max_entries` values is
 /// no bound at all: it is the first of two checks, not a table's size.
+///
+/// (kuna `switchflow`) An `exact` count also evaluates the condition with the
+/// selector equal to `c`, and leaves `c` out when the check sends it away from
+/// the dispatch.
+#[allow(clippy::too_many_arguments)]
 fn guard_cases(
     writer: &[FullOp],
     feeding: &[usize],
@@ -659,6 +710,7 @@ fn guard_cases(
     data: Option<&Rc<AddrSpace>>,
     max_entries: usize,
     entering: bool,
+    exact: bool,
 ) -> Option<usize> {
     let ops = if writer.is_empty() { branch } else { writer };
     let mut best: Option<u64> = None;
@@ -678,7 +730,7 @@ fn guard_cases(
         if c == 0 {
             continue;
         }
-        let taken = |x: u64| condition_when(writer, i, branch, at, x, data);
+        let taken = |x: u64| condition_when(writer, i, branch, at, x, 0, data);
         // A branch into the dispatch is taken for the small selector instead.
         let n = match (taken(above), taken(1 - above), entering) {
             (Some(true), Some(false), false) | (Some(false), Some(true), true) => c.checked_add(1),
@@ -686,6 +738,19 @@ fn guard_cases(
                 .checked_sub(c)
                 .filter(|&n| n <= max_entries as u64),
             _ => None,
+        };
+        // (kuna `switchflow`) At `sel == c` a `<` is false, a `<=` true, and
+        // the equality flag set: `ja` keeps `c` in range, `jae` sends it away.
+        let n = match n {
+            Some(n) if exact => {
+                let equal = u64::from(matches!(op.opcode, OpCode::CPUI_INT_LESSEQUAL | OpCode::CPUI_INT_SLESSEQUAL));
+                match condition_when(writer, i, branch, at, equal, 1, data) {
+                    Some(t) if t != entering => n.checked_sub(1),
+                    Some(_) => Some(n),
+                    None => None,
+                }
+            }
+            n => n,
         };
         best = best.max(n);
     }
@@ -707,19 +772,21 @@ fn constant_in(ops: &[FullOp], vn: &VarnodeData, data: Option<&Rc<AddrSpace>>) -
 /// The guard's condition when the op at `set` (in `writer`, or in `branch`
 /// when `writer` is empty) yields `x`: `writer` runs first and `branch` up to
 /// its `CBRANCH` at `at` after it, and a register `branch` reads that nothing
-/// evaluated is a clear flag. `None` when the condition does not follow.
+/// evaluated is a flag holding `unset`. `None` when the condition does not
+/// follow.
 fn condition_when(
     writer: &[FullOp],
     set: usize,
     branch: &[FullOp],
     at: usize,
     x: u64,
+    unset: u64,
     data: Option<&Rc<AddrSpace>>,
 ) -> Option<bool> {
     let mut env: Vec<(Key, u64)> = Vec::new();
     let in_branch = writer.is_empty();
-    let phases: [(&[FullOp], bool, Option<usize>); 2] =
-        [(writer, false, Some(set)), (&branch[..at], true, in_branch.then_some(set))];
+    let phases: [(&[FullOp], Option<u64>, Option<usize>); 2] =
+        [(writer, None, Some(set)), (&branch[..at], Some(unset), in_branch.then_some(set))];
     for (ops, clear, set) in phases {
         for (i, op) in ops.iter().enumerate() {
             let Some(out) = op.out.as_ref() else { continue };
@@ -732,24 +799,24 @@ fn condition_when(
         }
     }
     let cond = branch.get(at)?.ins.get(1)?;
-    known(cond, &env, true, data).map(|v| v != 0)
+    known(cond, &env, Some(unset), data).map(|v| v != 0)
 }
 
-/// `vn`'s value in `env`; with `clear`, a register nothing set reads as zero.
-fn known(vn: &VarnodeData, env: &[(Key, u64)], clear: bool, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
+/// `vn`'s value in `env`; with `clear`, a register nothing set reads as that value.
+fn known(vn: &VarnodeData, env: &[(Key, u64)], clear: Option<u64>, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
     if is_constant(vn) {
         return Some(vn.offset & mask(vn.size));
     }
     let key = key_of(vn, data)?;
     match env.iter().rev().find(|(k, _)| *k == key) {
         Some(&(_, v)) => Some(v),
-        None if clear && matches!(key, Key::Reg(..)) => Some(0),
+        None if matches!(key, Key::Reg(..)) => clear,
         None => None,
     }
 }
 
 /// The boolean and bitwise ops a branch condition is spelled in.
-fn evaluate(op: &FullOp, env: &[(Key, u64)], clear: bool, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
+fn evaluate(op: &FullOp, env: &[(Key, u64)], clear: Option<u64>, data: Option<&Rc<AddrSpace>>) -> Option<u64> {
     let get = |i: usize| known(op.ins.get(i)?, env, clear, data);
     Some(match op.opcode {
         OpCode::CPUI_COPY | OpCode::CPUI_INT_ZEXT => get(0)?,
@@ -769,7 +836,7 @@ fn evaluate(op: &FullOp, env: &[(Key, u64)], clear: bool, data: Option<&Rc<AddrS
 /// The closest decoded address below `cur`: the walk's partition does not
 /// overlap, so anything further back either ends before `cur` or is not an
 /// instruction start at all.
-fn previous(decoded: &dyn Fn(u64) -> bool, cur: u64) -> Option<u64> {
+pub(super) fn previous(decoded: &dyn Fn(u64) -> bool, cur: u64) -> Option<u64> {
     (1..=MAX_INSN_BYTES).filter_map(|d| cur.checked_sub(d)).find(|&at| decoded(at))
 }
 
@@ -777,7 +844,7 @@ fn previous(decoded: &dyn Fn(u64) -> bool, cur: u64) -> Option<u64> {
 /// (`classify`): it does unless the last op is a `BRANCH`, `BRANCHIND` or
 /// `RETURN`. Stepping back over an instruction that does not is leaving the
 /// block for code that never runs ahead of the dispatch.
-fn falls_through(ops: &[FullOp]) -> bool {
+pub(super) fn falls_through(ops: &[FullOp]) -> bool {
     !ops.last().is_some_and(|op| {
         matches!(op.opcode, OpCode::CPUI_BRANCH | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN)
     })
@@ -819,6 +886,13 @@ pub(super) fn is_constant(vn: &VarnodeData) -> bool {
 /// 0x8(%rax),%rdx` is settled one instruction back, because a value that reaches
 /// the branch through an operation the fold does not model — a multiply, a mask,
 /// a call's return — is unknown and asks for nothing further.
+///
+/// (kuna `switchflow`) Where the step back leaves the block, the slice may go
+/// on from the one decoded branch into its head instead
+/// ([`kuna_switchflow::missing_base`] says when, and the table must have a
+/// checked range check or a mask), once per head: reaching a head again is a
+/// loop the base is not in. The flag says whether it did.
+#[allow(clippy::too_many_arguments)]
 fn dispatch_slice(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -827,25 +901,54 @@ fn dispatch_slice(
     from: u64,
     want: Key,
     reach: &Reach,
-) -> (Vec<(u64, Vec<FullOp>)>, Option<u64>) {
+    pool: &PoolImage,
+) -> (Vec<(u64, Vec<FullOp>)>, Option<u64>, bool) {
     let mut cap = FullCapture::default();
     let mut need: Vec<Key> = vec![want];
     let mut out: Vec<(u64, Vec<FullOp>)> = Vec::new();
     let mut cur = from;
     let mut ends_at: Option<u64> = None;
     let mut gap = None;
+    let mut crossed = false;
+    let mut heads: Vec<u64> = Vec::new();
+    let bounded = std::cell::OnceCell::new();
+    let cross = |head: u64, heads: &mut Vec<u64>, out: &[(u64, Vec<FullOp>)], need: &[Key]| -> Option<u64> {
+        if heads.contains(&head) {
+            return None;
+        }
+        let Entry::One(branch) = (reach.entered?)(head) else { return None };
+        let index = kuna_switchflow::missing_base(out, need, from, data, pool, reach.preserved)?;
+        let bounded = *bounded.get_or_init(|| {
+            guard_limit(translate, code_space, data, decoded, from, reach, index, true).is_ok()
+                || index.and_then(|at| mask_limit(translate, code_space, data, decoded, from, at, reach.max_entries)).is_some()
+        });
+        if !bounded {
+            return None;
+        }
+        heads.push(head);
+        Some(branch)
+    };
     for step in 0..reach.slice_insns() {
         let Some(len) = decode(translate, cur, code_space, &mut cap) else { break };
         // The step back trusted the closest decoded address below the previous
         // instruction; this is where that is confirmed, at no cost, by requiring
         // the two to be contiguous.
-        if ends_at.is_some_and(|end| cur.wrapping_add(u64::from(len)) != end) {
-            gap = ends_at;
-            break;
+        if !crossed {
+            let apart = ends_at.is_some_and(|end| cur.wrapping_add(u64::from(len)) != end);
+            if apart || (step > 0 && !falls_through(cap.ops())) {
+                if apart {
+                    gap = gap.or(ends_at);
+                }
+                match ends_at.and_then(|head| cross(head, &mut heads, &out, &need)) {
+                    Some(branch) => {
+                        (cur, crossed) = (branch, true);
+                        continue;
+                    }
+                    None => break,
+                }
+            }
         }
-        if step > 0 && !falls_through(cap.ops()) {
-            break;
-        }
+        crossed = false;
         let mut relevant = step == 0;
         let mut stop = false;
         for op in cap.ops().iter().rev() {
@@ -880,14 +983,20 @@ fn dispatch_slice(
             break;
         }
         let Some(prev) = previous(decoded, cur) else {
-            gap = Some(cur);
-            break;
+            gap = gap.or(Some(cur));
+            match cross(cur, &mut heads, &out, &need) {
+                Some(branch) => {
+                    (cur, crossed) = (branch, true);
+                    continue;
+                }
+                None => break,
+            }
         };
         ends_at = Some(cur);
         cur = prev;
     }
     out.reverse();
-    (out, gap)
+    (out, gap, !heads.is_empty())
 }
 
 /// Does the fold give this op's output a value derived from its inputs? The
@@ -995,7 +1104,7 @@ pub(super) fn value_of(vn: &VarnodeData, vals: &[(Key, Val)], data: Option<&Rc<A
 /// Does this op make every tracked register unbelievable? A call clobbers the
 /// caller-saved ones; what the calling convention preserves survives it
 /// ([`survives`]).
-fn leaves_registers_unknown(opcode: OpCode) -> bool {
+pub(super) fn leaves_registers_unknown(opcode: OpCode) -> bool {
     matches!(
         opcode,
         OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER
@@ -1355,7 +1464,7 @@ mod tests {
             .filter(|w| reads.iter().any(|r| keys_overlap(*r, *w)))
             .collect();
         let (_, feeding) = feeders(writer, written, None);
-        guard_cases(writer, &feeding, branch, at, None, max, false)
+        guard_cases(writer, &feeding, branch, at, None, max, false, false)
     }
 
     /// `ja` sends the selectors above `c` away: the dispatch sees `c + 1`.
@@ -1381,6 +1490,40 @@ mod tests {
         let jb = vec![op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), vn(&reg, 0x200, 1)])];
         assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 0xffff_fffb), &jb, 1024), Some(5));
         assert_eq!(guarded(&x86_cmp(&reg, &uniq, &cst, 5), &jb, 1024), None);
+    }
+
+    /// Counted exactly, `ja` after `cmp $5` keeps 5 in range and `jae` sends
+    /// it away: six cases and five.
+    #[test]
+    fn an_exact_count_keeps_the_constant_only_where_the_check_does() {
+        let (reg, uniq, cst) = spaces();
+        let (cf, zf, t) = (vn(&reg, 0x200, 1), vn(&reg, 0x206, 1), |o| vn(&uniq, o, 1));
+        let ja = vec![
+            op(OpCode::CPUI_BOOL_NEGATE, Some(t(0x10)), vec![cf.clone()]),
+            op(OpCode::CPUI_BOOL_NEGATE, Some(t(0x11)), vec![zf]),
+            op(OpCode::CPUI_BOOL_AND, Some(t(0x12)), vec![t(0x10), t(0x11)]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), t(0x12)]),
+        ];
+        let jae = vec![
+            op(OpCode::CPUI_BOOL_NEGATE, Some(t(0x10)), vec![cf]),
+            op(OpCode::CPUI_CBRANCH, None, vec![vn(&reg, 0x9000, 8), t(0x10)]),
+        ];
+        let cmp = x86_cmp(&reg, &uniq, &cst, 5);
+        let exact = |branch: &[FullOp], exact: bool| {
+            let at = branch.len() - 1;
+            let want: Vec<Key> = branch[at].ins.get(1).and_then(|v| key_of(v, None)).into_iter().collect();
+            let (reads, _) = feeders(&branch[..at], want, None);
+            let written: Vec<Key> = cmp
+                .iter()
+                .filter_map(|o| o.out.as_ref().and_then(|v| key_of(v, None)))
+                .filter(|w| reads.iter().any(|r| keys_overlap(*r, *w)))
+                .collect();
+            let (_, feeding) = feeders(&cmp, written, None);
+            guard_cases(&cmp, &feeding, branch, at, None, 1024, false, exact)
+        };
+        assert_eq!(exact(&ja, true), Some(6));
+        assert_eq!(exact(&jae, true), Some(5));
+        assert_eq!(exact(&jae, false), Some(6), "the near read is unchanged");
     }
 
     /// `je` reads only ZF: the carry of the same `cmp` is no bound.
