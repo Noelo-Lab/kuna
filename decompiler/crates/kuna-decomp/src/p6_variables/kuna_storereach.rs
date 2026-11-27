@@ -46,11 +46,12 @@
 //! maps any slot a guard INDIRECT names inside a guarded store's reach (its
 //! bounded reach, or everything at or above an unbounded piece's base),
 //! whether read or not, outside the local holding the store's base, holds the
-//! base in a local that is not an array of bytes or of 2-, 4- or 8-byte
-//! integers or unknowns (a bounded reach may also lie wholly in a float
-//! local), or splits or reads as an integer a float local a guarded piece lies
-//! in: the drive then analyzes a freshly built copy of the function without
-//! the guard (`withdraw_spoiled_guard`), which prints the unguarded analysis.
+//! base in a local that is neither an array of bytes or of 2-, 4- or 8-byte
+//! integers or unknowns nor a 1-, 2-, 4- or 8-byte integer or unknown scalar (a
+//! bounded reach may also lie wholly in a float local), or splits or reads as
+//! an integer a float local a guarded piece lies in: the drive then analyzes a
+//! freshly built copy of the function without the guard
+//! (`withdraw_spoiled_guard`), which prints the unguarded analysis.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -895,28 +896,29 @@ fn loop_walk_step(fd: &Funcdata, vn: VarnodeId, depth: u32, walk: &Walk<bool>) -
 /// bytes or of 2-, 4- or 8-byte integers or unknowns is laid out to the next
 /// local and written through a byte pointer (`v1[i]`, `((char *)v1)[i]`); a
 /// float local holding all of a bounded reach is written the same way and read
-/// by the float checks. Any other local (a scalar, an `undefined16` array) may
-/// end before the bytes the store writes, or print an index the C cannot
-/// express (`v1[0][i]`).
+/// by the float checks. A 1-, 2-, 4- or 8-byte integer or unknown scalar is the
+/// one-element array an open range becomes when the next local starts one
+/// element above the base (`uint4 v5` below the argument an ARM `push {r0,
+/// r1}` saves), and the store writes it the same way (`*(uint1 *)v2 = x` for
+/// `v2 = &v5`). Any other local (a pointer, an `undefined16` array) is left to
+/// the unguarded analysis: an array of wider elements prints an index the C
+/// cannot express (`v1[0][i]`).
 fn holds_reach(ct: &Datatype, s: intb, e: intb, base: intb, end: intb) -> bool {
     let bounded = end != intb::MAX;
     if bounded && !(s <= base && end <= e) {
         return false;
     }
+    let integer = |t: &Datatype| {
+        matches!(t.get_size(), 1 | 2 | 4 | 8)
+            && matches!(
+                t.get_metatype(),
+                type_metatype::TYPE_INT | type_metatype::TYPE_UINT | type_metatype::TYPE_UNKNOWN
+            )
+    };
     let elem = ct.get_array_base();
     match elem.as_deref() {
-        Some(el) if el.get_size() == 1 => true,
-        Some(el)
-            if matches!(el.get_size(), 2 | 4 | 8)
-                && matches!(
-                    el.get_metatype(),
-                    type_metatype::TYPE_INT
-                        | type_metatype::TYPE_UINT
-                        | type_metatype::TYPE_UNKNOWN
-                ) =>
-        {
-            true
-        }
+        Some(el) if el.get_size() == 1 || integer(el) => true,
+        None if integer(ct) => true,
         el => bounded && el.unwrap_or(ct).get_metatype() == type_metatype::TYPE_FLOAT,
     }
 }
