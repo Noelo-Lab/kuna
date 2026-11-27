@@ -19,7 +19,6 @@ impl IFernflowerPreferences {
     pub const ASCII_STRING_CHARACTERS: &str = "ascii-strings";
     pub const SYNTHETIC_NOT_SET: &str = "synthetic-not-set";
     pub const USE_DEBUG_VAR_NAMES: &str = "use-lvt-names";
-    pub const USE_METHOD_PARAMETERS: &str = "use-method-parameters";
     pub const FINALLY_DEINLINE: &str = "decompile-finally";
     pub const BYTECODE_SOURCE_MAPPING: &str = "bytecode-source-mapping";
     pub const DUMP_CODE_LINES: &str = "dump-code-lines";
@@ -83,7 +82,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::ASCII_STRING_CHARACTERS, "0".to_string()),
             (IFernflowerPreferences::SYNTHETIC_NOT_SET, "0".to_string()),
             (IFernflowerPreferences::USE_DEBUG_VAR_NAMES, "1".to_string()),
-            (IFernflowerPreferences::USE_METHOD_PARAMETERS, "1".to_string()),
             (IFernflowerPreferences::FINALLY_DEINLINE, "1".to_string()),
             (IFernflowerPreferences::BYTECODE_SOURCE_MAPPING, "0".to_string()),
             (IFernflowerPreferences::DUMP_CODE_LINES, "0".to_string()),
@@ -171,7 +169,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "ASCII_STRING_CHARACTERS", key: IFernflowerPreferences::ASCII_STRING_CHARACTERS, short_name: Some("asc"), name: Some("ASCII String Characters"), description: Some("Encode non-ASCII characters in string and character literals as Unicode escapes."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "SYNTHETIC_NOT_SET", key: IFernflowerPreferences::SYNTHETIC_NOT_SET, short_name: Some("nns"), name: Some("Synthetic Not Set"), description: Some("Treat some known structures as synthetic even when not explicitly set."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "USE_DEBUG_VAR_NAMES", key: IFernflowerPreferences::USE_DEBUG_VAR_NAMES, short_name: Some("udv"), name: Some("Use LVT Names"), description: Some("Use LVT names for local variables and parameters instead of var<index>_<version>."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "USE_METHOD_PARAMETERS", key: IFernflowerPreferences::USE_METHOD_PARAMETERS, short_name: Some("ump"), name: Some("Use Method Parameters"), description: Some("Use method parameter names, as given in the MethodParameters attribute."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "FINALLY_DEINLINE", key: IFernflowerPreferences::FINALLY_DEINLINE, short_name: Some("fdi"), name: Some("Decompile Finally"), description: Some("Decompile finally blocks."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "BYTECODE_SOURCE_MAPPING", key: IFernflowerPreferences::BYTECODE_SOURCE_MAPPING, short_name: Some("bsm"), name: Some("Bytecode to Source Mapping"), description: Some("Map Bytecode to source lines."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_CODE_LINES", key: IFernflowerPreferences::DUMP_CODE_LINES, short_name: Some("dcl"), name: Some("Dump Code Lines"), description: Some("Dump line mappings to output archive zip entry extra data."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

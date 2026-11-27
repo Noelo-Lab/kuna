@@ -90,10 +90,9 @@ Three tiers:
 | homoglyphs in a compared string | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | terminal mangles non-ASCII text in decompiled strings | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | variables named like keywords or with misleading names from debug info | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
-| LocalVariableTable names contradict their use | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
+| LocalVariableTable or MethodParameters names contradict their use | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
+| unexpected final on parameters | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
 | var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
-| parameter names differ from the debug-info names | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
-| unexpected final on parameters | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
@@ -286,21 +285,12 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 
 ### `jvm_use_lvt_names` -- on | off, default `on`
 
-- **Symptoms:** variables named like keywords or with misleading names from debug info; LocalVariableTable names contradict their use; var1 var2 names although debug info exists (option is off).
-- **What it does:** Name parameters and locals from the LocalVariableTable (debug info) and take local generic types from it, instead of var1/var2-style names.
-- **When to flip:** Turn off when the debug names are misleading (obfuscated or forged LocalVariableTable) or clash with keywords.
-- **Where / provenance:** p1_classfile/class_wrapper, var_exprent · vineflower · vineflower-option
+- **Symptoms:** variables named like keywords or with misleading names from debug info; LocalVariableTable or MethodParameters names contradict their use; unexpected final on parameters; var1 var2 names although debug info exists (option is off).
+- **What it does:** Name parameters and locals from the LocalVariableTable (debug info), take local generic types from it, and name parameters (and mark them final) from the MethodParameters attribute (javac -parameters, records), instead of var1/var2-style names.
+- **When to flip:** Turn off when the debug names are misleading (obfuscated or forged LocalVariableTable or MethodParameters) or clash with keywords: off trusts no name the class file carries.
+- **Where / provenance:** p1_classfile/class_wrapper, var_exprent, var_definition_helper, class_writer · vineflower · vineflower-option
 - **Also spelled:** `use-lvt-names`, `udv`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_use_lvt_names off`
-
-### `jvm_use_method_parameters` -- on | off, default `on`
-
-- **Symptoms:** parameter names differ from the debug-info names; unexpected final on parameters.
-- **What it does:** Name parameters, and mark them final, from the MethodParameters attribute (javac -parameters, records) when a method has one.
-- **When to flip:** Turn off when the MethodParameters names are forged or worse than the LocalVariableTable ones.
-- **Where / provenance:** p9_emit/class_writer, var_definition_helper · vineflower · vineflower-option
-- **Also spelled:** `use-method-parameters`, `ump`
-- **Example:** `kuna decompile app.jar com.ex.Api --option jvm_use_method_parameters off`
 
 ### `jvm_decompiler_comments` -- on | off, default `on`
 

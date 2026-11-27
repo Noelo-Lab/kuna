@@ -133,7 +133,7 @@ impl VarDefinitionHelper {
         paramcount += md.params.len() as i32;
 
         let mut method_parameters: Option<Vec<MethodParameter>> = None;
-        if DecompilerContext::get_option(IFernflowerPreferences::USE_METHOD_PARAMETERS) {
+        if DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
             let attr = mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_METHOD_PARAMETERS);
             if let Some(attr) = attr {
                 method_parameters = Some(attr.get_entries());

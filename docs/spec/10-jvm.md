@@ -232,8 +232,7 @@ fails when its class is first used rather than when the input is added.
 `jvm_decompile_generics` decides whether `Signature` attributes are parsed into generic
 descriptors (`decompiler/nonnative/kuna-jvm/src/p5_types/generic_main.rs`); off, every
 type prints erased. Debug attributes feed naming later: the `LocalVariableTable` and
-`LocalVariableTypeTable` (`jvm_use_lvt_names`) and `MethodParameters`
-(`jvm_use_method_parameters`).
+`LocalVariableTypeTable` (`jvm_use_lvt_names`) and `MethodParameters`.
 
 ## 10.4 Bytecode to a control-flow graph
 
@@ -834,9 +833,8 @@ chain takes the class file's slots.
 variables get `varN`-style names that avoid the class's field names
 (`decompiler/nonnative/kuna-jvm/src/p6_variables/var_names_collector.rs`), then, with
 `jvm_use_lvt_names`, the debug names from the `LocalVariableTable` replace them wherever
-the name is a valid identifier (`VarProcessor::set_debug_var_names`). With
-`jvm_use_method_parameters`, a `MethodParameters` attribute names (and marks `final`) the
-parameters. A method without code still gets parameter names. Names that clash within a
+the name is a valid identifier (`VarProcessor::set_debug_var_names`). With the same
+option, a `MethodParameters` attribute names (and marks `final`) the parameters. A method without code still gets parameter names. Names that clash within a
 scope - two variables, a variable and a captured variable, a variable and a field it
 shadows - are renamed apart (`VarDefinitionHelper::remap_clashing_names`), once at
 processing time and again at writing time (`VarProcessor::rerun_clashing`), when nested
