@@ -46,6 +46,7 @@ use crate::args::take_value as take;
 use crate::callgraph::CallGraph;
 use crate::jobs;
 use crate::jsonfmt::{dumps_indent2, Json};
+use crate::listfile::{ListReader, Listed};
 #[cfg(test)]
 use crate::loadtime::last_option_value;
 use crate::loadtime::{apply_to_process as apply_loadtime_env, is_loadtime_gate};
@@ -3019,6 +3020,7 @@ pub(crate) fn parse_args_with_filters(
     let mut names: Option<Vec<String>> = None;
     let mut addrs: Vec<EntrySelector> = Vec::new();
     let mut entry_seeds: Vec<EntrySelector> = Vec::new();
+    let mut lists = ListReader::default();
     let mut no_vars = false;
     let mut omit = Omit::default();
     let mut coverage = false;
@@ -3076,17 +3078,27 @@ pub(crate) fn parse_args_with_filters(
             "--coverage" if cmd == "decompile-all" => coverage = true,
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
-                names = Some(v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect());
+                let list = names.get_or_insert_with(Vec::new);
+                match lists.read_names("--functions", &v)? {
+                    Listed::Inline(v) => list.extend(
+                        v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+                    ),
+                    Listed::File { entries, .. } => list.extend(entries.into_iter().map(|(_, name)| name)),
+                }
             }
             "--addr" | "--entry" => {
                 let flag = a;
                 let v = take(argv, &mut i, flag)?;
-                let selector = parse_entry_selector(&v)?;
+                let selectors = lists.read(flag, &v)?.parse_each(flag, parse_entry_selector, |entry| {
+                    parse_entry_selector(entry).or_else(|e| {
+                        crate::listfile::declared_start(entry).map(EntrySelector::Numeric).ok_or(e)
+                    })
+                })?;
                 if flag == "--entry" {
                     saw_entry = true;
-                    entry_seeds.push(selector);
+                    entry_seeds.extend(selectors);
                 } else {
-                    addrs.push(selector);
+                    addrs.extend(selectors);
                 }
             }
             "--define-function" => {
@@ -3452,7 +3464,7 @@ fn parse_entry_selector(s: &str) -> Result<EntrySelector, String> {
 
 fn usage_decompile_all() {
     eprintln!(
-        "usage: kuna decompile-all <binary> [--json] [--functions a,b,..] [--addr 0xVMA].. \\\n\
+        "usage: kuna decompile-all <binary> [--json] [--functions a,b,..|@FILE].. [--addr 0xVMA|@FILE].. \\\n\
          \x20                   [--no-vars] [--omit aliases,ranges,line_mappings,variables,types] [--coverage] \\\n\
          \x20                   [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
@@ -3517,6 +3529,11 @@ fn usage_decompile_all() {
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\
          exclusive end bounds its flow so it stops swallowing its neighbours.\n\
+         \n\
+         --functions and --addr are repeatable and add up. @FILE reads the list\n\
+         from a file, one entry per line with # comments (an --addr file may hold\n\
+         --define-function lines and selects their starts); @- reads stdin, and\n\
+         @@NAME is the name @NAME.\n\
          \n\
          Triage (narrows the run BEFORE decompiling, so it is also what makes it\n\
          cheap): --filter REGEX matches the name or any alias; --min-size/--max-size\n\

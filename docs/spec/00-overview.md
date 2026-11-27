@@ -2427,6 +2427,34 @@ declaration is applied after discovery has had its say, because it is an asserti
 that outranks it. Durability is caller-carried — the `@file` form is the artifact,
 and kuna does not write boundaries back into the image.
 
+(kuna, issue #1978) **Selection lists from a file.** The selection flags take the same
+`@file` form, so a selection is not bounded by what fits in an argument vector: a
+selection of 300,000 addresses is a file, not 600,000 arguments. `--functions`,
+`--addr` and a raw image's `--entry`, in the parser that `decompile-all`,
+`decompile-project`, `decompile-graph` and `functions` share
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (parse_args_with_filters)`), and
+`fid query --addr` read a value that starts with `@` through one reader
+(`decompiler/crates/kuna-cli/src/listfile.rs (ListReader)`). The format is the
+`--define-function` file format: one entry per line, `#` comments, blank lines
+skipped. A line is one whole entry, so a name may hold the spaces and commas the
+inline comma list splits on. In a name list a `#` opens a comment only at the start
+of a line or after a blank, because a name kuna prints can hold one (a Swift
+`vtable#2` thunk, a Rust v0 `{closure#0}`). An address line may also be a
+`--define-function` declaration, which selects its start, so a single boundaries
+file declares and selects.
+Repeated flags add up. `--functions` used to keep only its last occurrence, which a
+second list would have dropped without a word. The escapes keep every earlier value
+spellable. `@@` stands for a literal leading `@`, which a decorated MSVC name needs.
+`@-` is standard input, read once per command line. `kuna decompile`'s single target
+is forwarded to the shared parser with its `@` doubled, so a name stays a name there.
+An empty list is an error rather than an empty selection, because an empty `--addr`
+selection means the whole binary. The selection resolves one entry at a time, which
+is why an address lookup is a binary search of the cached, address-ordered inventory
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::find_entry_at)`)
+rather than a scan of a fresh copy of it. The copy cost every address the size of the
+whole inventory, about 40 ms per address on a 98,598-function library, so a list of
+that library's own entries took over an hour to resolve.
+
 (kuna, issue #1438) **A declaration the image does not map** is still honored:
 the entry enumerates, resolves by name and names its call sites, which is what a
 routine in a boot ROM or another module, called at a fixed address, needs. What

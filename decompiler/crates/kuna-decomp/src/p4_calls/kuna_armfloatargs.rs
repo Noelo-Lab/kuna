@@ -940,7 +940,13 @@ pub(crate) fn incoming_storage(data: &Funcdata, vn: VarnodeId) -> Option<(Addres
 /// copies, merges and lane edits, it reaches only its own low word or vector
 /// operations. A lane load or a predicated load leaves such a read of the
 /// incoming register on a path the code never runs (libwebp's NEON transforms,
-/// `GetEntropyUnrefined_C`).
+/// `GetEntropyUnrefined_C`). A store of the incoming value into memory
+/// ([`crate::kuna_armfloatreturn::in_memory`]), through copies, forward merges
+/// and a call's effect on that memory, or a volatile write of it, stores the
+/// whole double. One reached through a lane edit, or through a merge around a
+/// loop that writes the register ([`crate::kuna_armfloatreturn::loop_merge`]),
+/// may store it only on such a path: glibc's `printf_size` stores a `d5` its loop
+/// wrote, on the paths where the loop ran.
 pub fn stray_vector_input(data: &Funcdata, vn: VarnodeId) -> bool {
     if !data.get_arch().arm_float_args {
         return false;
@@ -952,17 +958,29 @@ pub fn stray_vector_input(data: &Funcdata, vn: VarnodeId) -> bool {
     if !vfp || value.has_no_descend() {
         return false;
     }
-    let mut todo = vec![vn];
-    let mut seen = vec![vn];
-    while let Some(cur) = todo.pop() {
+    let mut todo = vec![(vn, true)];
+    let mut seen = vec![(vn, true)];
+    while let Some((cur, direct)) = todo.pop() {
         let Some(node) = data.vbank().get(cur) else { return false };
         for id in node.descend_iter() {
             let Some(op) = data.obank().get(id) else { return false };
             let out = op.get_out().and_then(|o| data.vbank().get(o).map(|v| (o, v.get_size())));
+            let copied = direct
+                && match op.code() {
+                    OpCode::CPUI_COPY | OpCode::CPUI_CAST => true,
+                    OpCode::CPUI_MULTIEQUAL => !crate::kuna_armfloatreturn::loop_merge(data, op),
+                    OpCode::CPUI_INDIRECT => out.is_some_and(|(o, _)| crate::kuna_armfloatreturn::in_memory(data, o)),
+                    _ => false,
+                };
             let follow = match op.code() {
                 OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_COPY | OpCode::CPUI_CAST | OpCode::CPUI_INDIRECT => true,
                 OpCode::CPUI_INT_AND | OpCode::CPUI_INT_OR | OpCode::CPUI_INT_XOR => out.is_some_and(|(_, size)| size == 8),
-                OpCode::CPUI_CALLOTHER => false,
+                OpCode::CPUI_CALLOTHER => {
+                    if direct && crate::kuna_armfloatreturn::volatile_write_of(data, op, cur) {
+                        return false;
+                    }
+                    false
+                }
                 OpCode::CPUI_SUBPIECE => {
                     let low = op
                         .get_in(1)
@@ -977,12 +995,24 @@ pub fn stray_vector_input(data: &Funcdata, vn: VarnodeId) -> bool {
             };
             if follow {
                 let Some((o, _)) = out else { return false };
-                if !seen.contains(&o) {
-                    if seen.len() >= 64 {
-                        return false;
+                if copied && crate::kuna_armfloatreturn::in_memory(data, o) {
+                    return false;
+                }
+                match seen.iter_mut().find(|(v, _)| *v == o) {
+                    Some((_, true)) => {}
+                    Some(entry) => {
+                        if copied {
+                            entry.1 = true;
+                            todo.push((o, true));
+                        }
                     }
-                    seen.push(o);
-                    todo.push(o);
+                    None => {
+                        if seen.len() >= 64 {
+                            return false;
+                        }
+                        seen.push((o, copied));
+                        todo.push((o, copied));
+                    }
                 }
             }
         }

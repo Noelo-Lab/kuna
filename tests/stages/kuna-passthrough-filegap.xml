@@ -1,0 +1,62 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    passthrough on SysV x86-64: a stated XMM parameter the wrapper does not
+    get must not cost it the general-register parameters after it. The ARM
+    hard-float side is kuna-passthrough-filegap-arm.xml.
+
+    GNU as 2.38 (Ubuntu 22.04), linked with
+    `ld -Ttext=0x401000 -e bits` without a build id:
+
+        bits:      movq %xmm0,%rax; shr $52,%rax; mov %eax,(%rdi);
+                   movq %xmm0,%rax; ret
+        bits_tail: jmp bits
+        sst:       movq %xmm0,(%rdi); mov (%rdi),%rax; shr $52,%rax; ret
+        sst_tail:  jmp sst
+
+    `bits` is `int bits(double x, int *p)` reading x's bits, the way gcc -O2
+    moves a double it only takes apart; `sst` stores x through p and reads the
+    word back. Each `_tail` forwards both arguments untouched.
+
+    The single-function drive states each tail callee's recovered prototype
+    first (option protoorder): `bits` as `(unsigned long a0 /* xmm0 */,
+    unsigned int *a1 /* rdi */)`, and passthrough does not forward an XMM
+    register stated as an integer. The call's argument list was extended in
+    the stated order up to the first register it did not get, xmm0, so
+    `bits_tail` printed `bits_tail(void)` with `bits();` and lost rdi. `sst`
+    only stores xmm0 and states no arity claim, and the stored xmm0 refused
+    the rdi its body reads, so `sst_tail` printed `sst_tail(void)`.
+
+    SysV allocates XMM and general argument registers independently, so a gap
+    in the XMM registers leaves rdi where it is: both wrappers now take rdi
+    and pass it on. On Windows x64, which groups xmm0 with rcx, the same gap
+    would move the pointer, and the extension still stops there.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring" (passthrough's
+    extend_pending and stated_width). A strict correctness fix with no
+    option: one pass pins the fixed output.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+66480f7ec048c1e834890766480f7ec0c3ebed660fd607488b0748c1e834c3eb
+f2
+</bytechunk>
+<symbol space="ram" offset="0x401000" name="bits"/>
+<symbol space="ram" offset="0x401011" name="bits_tail"/>
+<symbol space="ram" offset="0x401013" name="sst"/>
+<symbol space="ram" offset="0x40101f" name="sst_tail"/>
+</binaryimage>
+<script>
+  <com>lo fu bits_tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sst_tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="filegap x86 #1: the bits wrapper takes the rdi it forwards" min="1" max="1">^[^(]* bits_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap x86 #2: and passes it to bits" min="1" max="1">^  (return )?bits\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap x86 #3: the sst wrapper takes the rdi it forwards" min="1" max="1">^[^(]* sst_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap x86 #4: and passes it to sst" min="1" max="1">^  (return )?sst\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap x86 #5: no tail call drops every argument" min="0" max="0">^  (return )?(bits|sst)\(\); // tail-call$</stringmatch>
+</decompilertest>
