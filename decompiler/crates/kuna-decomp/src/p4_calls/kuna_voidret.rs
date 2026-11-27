@@ -197,6 +197,10 @@ pub struct Ledger {
     /// The functions in `words` a caller computed with wider than the word
     /// since [`due`] last ran.
     pub wide_due: BTreeSet<(int4, uintb)>,
+    /// The called functions [`due`] has to look at again: those whose claims,
+    /// recovered return, return storage, forced storage or withdrawal changed
+    /// since it last looked, and those it last forced or withdrew.
+    pub unsettled: BTreeSet<(int4, uintb)>,
 }
 
 fn key(entry: &Address) -> Option<(int4, uintb)> {
@@ -244,6 +248,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             arch.kuna_voidret.storage.remove(&own);
         }
     }
+    arch.kuna_voidret.unsettled.insert(own);
     file_word(arch, own, word);
     if declared || !proto.has_store() || proto.is_input_locked() {
         arch.kuna_voidret.params.remove(&own);
@@ -706,6 +711,7 @@ pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     let bits_now: Vec<(int4, uintb)> = out.iter().filter(|k| ledger.float_bits.contains(k)).copied().collect();
     ledger.bits_withdrawn.extend(bits_now);
     ledger.withdrawn.extend(out.iter().copied());
+    ledger.unsettled.extend(out.iter().copied());
     out
 }
 
@@ -786,6 +792,7 @@ fn file_claim(arch: &mut Architecture, reader: (int4, uintb), callee: (int4, uin
     let claims = arch.kuna_voidret.read.entry(callee).or_default();
     if !claims.contains(&storage) {
         claims.push(storage);
+        arch.kuna_voidret.unsettled.insert(callee);
     }
     arch.kuna_voidret.readers.entry(callee).or_default().insert(reader);
 }
@@ -994,18 +1001,24 @@ pub(crate) fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, in
 /// withdrawn: it returns nothing again, as before the redo. Also each function
 /// returning a zero-extended word a caller reads wider, kept whole at the
 /// widest such read ([`crate::kuna_zextreturn::zero_extended_word`]).
+///
+/// Only the callees in `unsettled` are looked at. A callee's verdict reads
+/// nothing but its own claims, recovered return, return storage, forced storage
+/// and withdrawal, and one that forces or withdraws it changes them so that it
+/// comes out empty the next time, so every other callee would come out as it
+/// did when it was last looked at: with nothing to do.
 pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
-    let lows: BTreeMap<(int4, uintb), Option<(Address, int4)>> =
-        arch.kuna_voidret.read.iter().map(|(callee, claims)| (*callee, common_low_register(arch, claims))).collect();
-    let ledger = &mut arch.kuna_voidret;
+    let unsettled = std::mem::take(&mut arch.kuna_voidret.unsettled);
+    let ledger = &arch.kuna_voidret;
     let mut force: Vec<((int4, uintb), (Address, int4))> = Vec::new();
     let mut withdraw: Vec<(int4, uintb)> = Vec::new();
     let mut displace: Vec<(int4, uintb)> = Vec::new();
-    for (callee, claims) in &ledger.read {
+    for callee in &unsettled {
+        let Some(claims) = ledger.read.get(callee) else { continue };
         let Some(first) = claims.first() else { continue };
         let space = |a: &Address| a.get_space().map(|s| s.get_index());
         let same = claims.iter().all(|(a, _)| space(a) == space(&first.0) && a.get_offset() == first.0.get_offset());
-        let low = lows.get(callee).cloned().flatten().filter(|_| !same);
+        let low = if same { None } else { common_low_register(arch, claims) };
         let agree = same || low.is_some();
         let widest = match &low {
             Some(low) => low.clone(),
@@ -1028,6 +1041,7 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
             _ => {}
         }
     }
+    let ledger = &mut arch.kuna_voidret;
     ledger.displacing.extend(displace);
     let mut out = BTreeSet::new();
     for (callee, storage) in force {
@@ -1038,6 +1052,7 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
         ledger.withdrawn.insert(callee);
         out.insert(callee);
     }
+    ledger.unsettled.extend(out.iter().copied());
     for callee in std::mem::take(&mut ledger.wide_due) {
         let Some(word) = ledger.words.get(&callee) else { continue };
         let widest = ledger.used.get(&callee).and_then(|u| u.iter().filter(|u| widens(u, word)).max_by_key(|u| u.1));
@@ -1094,9 +1109,56 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
             .is_some_and(|(addr, size)| register(addr) && !overlaps(addr, *size, &read.0, read.1))
 }
 
+/// Per function whose return a redo changed, the stamp of that redo and the
+/// functions decompiled before it that read the function or called it while it
+/// was in `float_bits`, each kept until it is decompiled again: the only
+/// functions [`stale_readers`] can name for that change. A function is filed as
+/// a reader or caller only by its own decompile, which stamps it later, so no
+/// function joins the list once it is made.
+#[derive(Debug, Default, Clone)]
+pub struct Owed(BTreeMap<(int4, uintb), (usize, Vec<Debt>)>);
+
+/// One function [`Owed`] keeps for a changed callee: whether it reads the
+/// callee, and whether it called the callee while it was in `float_bits`.
+#[derive(Debug, Clone, Copy)]
+struct Debt {
+    owner: (int4, uintb),
+    reads: bool,
+    bits_caller: bool,
+}
+
+impl Owed {
+    /// File that the redo stamped `at` changed the return of `callee`, given
+    /// when each function was last decompiled (`stamp_of`).
+    pub fn changed(&mut self, arch: &Architecture, callee: (int4, uintb), at: usize, stamp_of: &BTreeMap<(int4, uintb), usize>) {
+        let ledger = &arch.kuna_voidret;
+        let readers = ledger.readers.get(&callee);
+        let callers = ledger.bits_callers.get(&callee);
+        let before = |c: &(int4, uintb)| *c != callee && stamp_of.get(c).is_some_and(|&s| s < at);
+        let mut owners: Vec<(int4, uintb)> =
+            readers.into_iter().flatten().chain(callers.into_iter().flatten()).copied().filter(before).collect();
+        owners.sort_unstable();
+        owners.dedup();
+        let debts: Vec<Debt> = owners
+            .into_iter()
+            .map(|owner| Debt {
+                owner,
+                reads: readers.is_some_and(|r| r.contains(&owner)),
+                bits_caller: callers.is_some_and(|c| c.contains(&owner)),
+            })
+            .collect();
+        if debts.is_empty() {
+            self.0.remove(&callee);
+        } else {
+            self.0.insert(callee, (at, debts));
+        }
+    }
+}
+
 /// The functions that read a function whose return a redo changed after they
 /// were decompiled, given when each function was last decompiled (`stamp_of`)
-/// and when each changed function's return last changed (`changed`): the type
+/// and what each change left owed (`owed`, which drops every function
+/// decompiled since): the type
 /// that callee now states reaches them only in another decompile.  Such a
 /// reader typed the result itself, against a callee it saw return nothing, and
 /// its text no longer agrees with the callee's declaration: `unsigned long v10
@@ -1134,11 +1196,16 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
 pub fn stale_readers(
     arch: &Architecture,
     stamp_of: &BTreeMap<(int4, uintb), usize>,
-    changed: &BTreeMap<(int4, uintb), usize>,
+    owed: &mut Owed,
 ) -> BTreeSet<(int4, uintb)> {
     let vfp = crate::kuna_armfloatreturn::applies(arch);
     let mut out = BTreeSet::new();
-    for (callee, &at) in changed {
+    for (callee, (at, debts)) in owed.0.iter_mut() {
+        let at = *at;
+        debts.retain(|d| stamp_of.get(&d.owner).is_some_and(|&s| s < at));
+        if debts.is_empty() {
+            continue;
+        }
         let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
         let withdrawn = arch.kuna_voidret.withdrawn.contains(callee);
         let widened = arch.kuna_voidret.wide.contains_key(callee);
@@ -1153,13 +1220,9 @@ pub fn stale_readers(
                 })
         });
         if arch.kuna_voidret.bits_withdrawn.contains(callee) {
-            let callers = arch.kuna_voidret.bits_callers.get(callee).into_iter().flatten();
-            out.extend(callers.filter(|c| *c != callee && stamp_of.get(*c).is_some_and(|&s| s < at)));
+            out.extend(debts.iter().filter(|d| d.bits_caller).map(|d| d.owner));
         }
-        for reader in arch.kuna_voidret.readers.get(callee).into_iter().flatten() {
-            if reader == callee || stamp_of.get(reader).is_none_or(|&s| s >= at) {
-                continue;
-            }
+        for reader in debts.iter().filter(|d| d.reads).map(|d| &d.owner) {
             let waiting = arch.kuna_voidret.forced.contains_key(reader)
                 && arch.kuna_voidret.returns.get(reader) == Some(&Returns::Void);
             if !states && !waiting && !widened {
@@ -1181,6 +1244,7 @@ pub fn stale_readers(
             }
         }
     }
+    owed.0.retain(|_, (_, debts)| !debts.is_empty());
     out
 }
 
@@ -1250,6 +1314,7 @@ pub fn return_storage(arch: &Architecture, k: (int4, uintb)) -> Option<(Address,
 /// as before.
 pub fn restore(arch: &mut Architecture, k: (int4, uintb), returns: Option<Returns>, storage: Option<(Address, int4)>) {
     arch.kuna_voidret.displacing.remove(&k);
+    arch.kuna_voidret.unsettled.insert(k);
     match returns {
         Some(r) => {
             arch.kuna_voidret.returns.insert(k, r);
