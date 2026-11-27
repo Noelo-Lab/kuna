@@ -2659,8 +2659,9 @@ impl JumpBasicModel {
     /// and after a proof, whose index range may come from the index's width
     /// alone and read the bytes after a shorter map as map values. When no
     /// guard bounds the map's index, the map runs up from its base
-    /// ([`crate::p2_lift::kuna_bytemaprows`]), and a row past the base that
-    /// still lands in the function's own code is kept.
+    /// ([`crate::p2_lift::kuna_bytemaprows`]), and a row past the base ends
+    /// the table only when it lands outside the function's own code and its
+    /// bytes are all selector values below its own.
     fn end_table_at_selector_map(&mut self, fd: &Funcdata, selector_vn: VarnodeId) {
         let (space, first, last, exact) = match self.selector_map_extent(fd, selector_vn) {
             Some((space, first, last)) => (space, first, last, true),
@@ -2683,19 +2684,28 @@ impl JumpBasicModel {
                 emul.seed_varnode_value(seed_vn, seed_val);
             }
             emul.set_load_collect(true);
-            let emulated = emul.emulate_path(values.get_value(), &self.path_meld, start_op, start_vn);
+            let value = values.get_value();
+            let emulated = emul.emulate_path(value, &self.path_meld, start_op, start_vn);
             let loads = emul.take_loadpoints().unwrap_or_default();
-            let in_map = loads.iter().any(|row| {
+            let reads_map = |row: &&LoadTable| {
                 let start = row.addr.get_offset();
                 let size = (row.size.max(1) as uintb).saturating_mul(row.num.max(1) as uintb);
                 row.addr.get_space().is_some_and(|s| s.get_index() == space.get_index())
                     && start <= last
                     && start.saturating_add(size - 1) >= first
-            });
+            };
+            let in_map = loads.iter().any(|row| reads_map(&row));
             if entered && !in_map {
                 return;
             }
-            if in_map && (exact || kept == 0 || !emulated.as_ref().is_ok_and(own)) {
+            let map_row = || {
+                !emulated.as_ref().is_ok_and(own)
+                    && loads
+                        .iter()
+                        .filter(reads_map)
+                        .all(|row| crate::p2_lift::kuna_bytemaprows::map_bytes(fd, row, value))
+            };
+            if in_map && (exact || kept == 0 || map_row()) {
                 if kept > 0 {
                     self.jrange_range_mut().truncate(kept);
                 }

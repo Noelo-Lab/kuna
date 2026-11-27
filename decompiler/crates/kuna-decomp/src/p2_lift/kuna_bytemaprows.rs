@@ -16,8 +16,11 @@
 //! extent is unknown, but it starts at its base, the constant part of the
 //! LOAD's address, and runs up from there. A compiler may fold the index's
 //! normalization into that constant (`map - 1 + idx`), which puts the last
-//! real rows past it, so past the base the table keeps the rows that still
-//! land in the function's own code.
+//! real rows past it, so a row past the base ends the table only when it
+//! reads the map: it lands outside the function's own code, and each of its
+//! bytes is a selector value below its own, naming a row already kept. A
+//! real row that gcc sends to the function's split-off `.cold` part lands
+//! outside the function too, but it holds an address or an offset.
 
 use std::rc::Rc;
 
@@ -28,6 +31,7 @@ use kuna_num::opcodes::OpCode;
 
 use crate::context::VarnodeId;
 use crate::funcdata::Funcdata;
+use crate::p2_lift::jumptable::LoadTable;
 
 /// The space and first byte of the map `selector` is loaded from: the sum of
 /// the constants in its address, when the rest of the address is one term.
@@ -76,4 +80,13 @@ pub(crate) fn own_code(fd: &Funcdata, raw: uintb) -> bool {
     let dest = Address::new(Rc::clone(space), AddrSpace::address_to_byte(raw, space.get_word_size()) & mask);
     let Some(owner) = fd.get_arch().function_owner(entry) else { return false };
     owner(dest.get_offset()) == Some(entry.get_offset()) && fd.get_arch().in_section_of(entry, &dest)
+}
+
+/// Whether the bytes `row` reads are all below `value`: selector values
+/// naming earlier rows, as the map holds. A row that cannot be read is not.
+pub(crate) fn map_bytes(fd: &Funcdata, row: &LoadTable, value: uintb) -> bool {
+    let mut buf = [0u8; 16];
+    let len = (row.size.max(1) as usize).saturating_mul(row.num.max(1) as usize);
+    let Some(bytes) = buf.get_mut(..len) else { return false };
+    fd.get_arch().loader_fill(bytes, &row.addr).is_ok() && bytes.iter().all(|&b| uintb::from(b) < value)
 }

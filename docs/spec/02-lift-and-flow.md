@@ -2582,33 +2582,40 @@ the case targets.
    collected; the first one that reads a byte of the map ends the table, and
    the earlier values keep their rows. A table whose first row already lies
    in the map is left alone. When no guard bounds any upstream index, the
-   map's extent is unknown but its start is not: `kuna_bytemaprows.rs
-   (map_base)` takes the constants in the selector LOAD's address (their sum,
-   when the rest of the address is one term), and the map runs up from there.
-   A row read at or past that base ends the table as before, with one
-   exception: a compiler may fold the index's normalization into the
-   constant (`map - 2 + tag`), which puts the table's last real rows past the
-   base, so there a row is kept while its destination is the function's own
-   code (between its entry and the next known entry, in its section,
-   `kuna_bytemaprows.rs (own_code)`), and the first row that lands elsewhere
-   ends the table. A row that comes back below the base after one past it
-   leaves the table alone. The cut also runs after a proven domain: an index
-   whose range only its width bounds (a byte tag read straight from memory)
-   reads a shorter map's following bytes as map values, and their rows lie
-   in the map. Before this, a two-stage table whose bounds check
-   the guard analysis did not find (in the stage fixture the check is
-   repeated on both arms of two branches before the dispatch) kept all 256
-   values of the map byte. In a 34 MB image the rows read from the map named
-   code all over it, mostly below the function where the run-on cut keeps
-   them, and the flow decoded that code for up to 90 seconds, or until the
-   budget stopped it (#1157). The `kuna-bytemap-noguard.xml` stage pins the
-   plain base, the folded base and the byte tag. The `selector_domain.S` fixture places a
-   three-row table directly before its byte map, as MSVC lays out its
-   two-stage tables; with a 70,000-entry or writable map, rows 3 to 255 were
-   read from the map and from the bytes after it, and flow left for the
-   addresses they named. Only the selector's own map ends the table: a map
-   placed before the table, another switch's map after it, or padding between
-   table and map is still read as rows.
+   map's extent is unknown but its start is not:
+   `kuna_bytemaprows.rs (map_base)` takes the constants in the selector LOAD's
+   address (their sum, when the rest of the address is one term), and the map
+   runs up from there. A row read at or past that base is read from the map,
+   as before, unless the compiler folded the index's normalization into the
+   constant (`map - 2 + tag`, or gcc's `movzbl cls-97(%rdi)`), which puts the
+   table's last real rows past the base. So a row there ends the table only
+   when it lands outside the function's own code (between its entry and the
+   next known entry, in its section, `kuna_bytemaprows.rs (own_code)`) and
+   every byte it reads is a selector value below its own
+   (`kuna_bytemaprows.rs (map_bytes)`), as each map byte names a row already
+   kept. A real row that lands outside the function, such as a case gcc moves
+   to the function's split-off `.cold` part below its entry, holds an address
+   or an offset instead and is kept: with the destination test alone, gcc
+   -O2's `switch (cls[c - 'a'])` with an unreachable default ended at its
+   first cold case and lost the cases after it. A row that comes back below
+   the base after one past it leaves the table alone. The cut also runs after
+   a proven domain: an index whose range only its width bounds (a byte tag
+   read straight from memory) reads a shorter map's following bytes as map
+   values, and their rows lie in the map. Before this, a two-stage table whose
+   bounds check the guard analysis did not find (in the stage fixture the
+   check is repeated on both arms of two branches before the dispatch) kept
+   all 256 values of the map byte. In a 34 MB image the rows read from the map
+   named code all over it, mostly below the function where the run-on cut
+   keeps them, and the flow decoded that code for up to 90 seconds, or until
+   the budget stopped it (#1157). The `kuna-bytemap-noguard.xml` stage pins
+   the plain base, the folded base, the byte tag and a folded table with a row
+   in a split-off part. The `selector_domain.S` fixture places a three-row
+   table directly before its byte map, as MSVC lays out its two-stage tables;
+   with a 70,000-entry or writable map, rows 3 to 255 were read from the map
+   and from the bytes after it, and flow left for the addresses they named.
+   Only the selector's own map ends the table: a map placed before the table,
+   another switch's map after it, or padding between table and map is still
+   read as rows.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of

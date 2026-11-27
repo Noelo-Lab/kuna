@@ -1,5 +1,5 @@
 ; MSVC-style two-stage jump tables (a byte map naming a row of 4-byte
-; image-base-relative offsets) in three x64 functions, for #1157.
+; image-base-relative offsets) in four x64 functions, for #1157.
 ; nasm -f bin kuna-bytemap-noguard.asm -o kuna-bytemap-noguard.bin (loaded at 0x1820e0000)
 bits 64
 org 0x1820e0000
@@ -292,3 +292,42 @@ cmp_bytetag.map:
   db 3
   align 16, db 0
   times 1024 db 0
+cmp_coldrow.cold:
+  ; split off below the entry, as gcc places a .cold part; owned by cmp_bytetag
+  mov eax, 0x1ca
+  ret
+  align 16, db 0xcc
+cmp_coldrow:
+  lea r8, [rel IMGB]
+  movsxd rax, ecx
+  movzx eax, byte [r8 + rax + (cmp_coldrow.map - 0x61 - IMGB)]
+  mov ecx, [r8 + rax*4 + (cmp_coldrow.tbl - IMGB)]
+  add rcx, r8
+  jmp rcx
+%assign i 0
+%rep 28
+  %if i != 10
+.c %+ i:
+    mov eax, 0x1c0 + i
+    ret
+  %endif
+  %assign i i+1
+%endrep
+  align 16, db 0xcc
+cmp_coldrow.tbl:
+%assign i 0
+%rep 28
+  %if i = 10
+    dd cmp_coldrow.cold - IMGB
+  %else
+    dd cmp_coldrow.c %+ i - IMGB
+  %endif
+  %assign i i+1
+%endrep
+cmp_coldrow.map:
+%assign i 0
+%rep 28
+  db i
+  %assign i i+1
+%endrep
+  align 16, db 0xcc
