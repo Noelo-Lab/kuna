@@ -225,19 +225,29 @@ plugin and Kotlin classes print as Kotlin. Code is translated so that the engine
 javac would have written: registers are typed by dataflow, each (register, type category)
 becomes one local, a value defined once and read once in a block stays on the operand stack
 as an expression, constants are written at each use, `new-instance` and its constructor call
-become `new T(...)`, a value that only joins constants (`boolean b = x > 3`) is carried on
-the stack across the join, d8's lambda classes are turned back into the `invokedynamic`
-javac wrote (so lambdas and method references print as such), and a block reached only by a
-`goto` follows its predecessor (`docs/spec/10-jvm.md` 10.17 has the algorithm). A method whose code cannot be translated
-fails alone, with the engine's usual failure comment naming the reason
+become `new T(...)` (through d8's register copies too), the copies d8 makes to line up a
+call are forwarded so arguments print inside the call (`super(...)` first, as javac wrote
+it), a value that only joins constants (`boolean b = x > 3`) is carried on the stack across
+the join, and `finally` and `synchronized` regions are laid out and protected as javac lays
+them out. d8's desugaring is undone: lambda classes become the `invokedynamic` javac wrote
+(lambdas and method references print as such), calls into API backports
+(`$$ExternalSyntheticBackport`, recognised by their code against a table recorded from d8)
+become the JDK calls, records on `com.android.tools.r8.RecordTag` print as records, nest
+accessors (`-$$Nest$...`, `-IA` constructors) become the private accesses, and a catch-all
+that does not rethrow is `catch (Throwable t)`; these work across the `classes*.dex` of an
+APK (`docs/spec/10-jvm.md` 10.17 has the algorithm). A method whose code cannot be
+translated fails alone, with the engine's usual failure comment naming the reason
 (`DEX code not translated: ...`).
 
-**What is lost relative to class files.** Except for lambdas, d8's own work is not
-undone: register reuse and copy propagation, comparisons and constants shared between uses,
-code moved or merged across branches, default and static interface methods moved into
-`$-CC` classes below min-api 24, the lambda classes themselves (still listed and printed),
-string concatenation, records and nest-access bridges, and a `synchronized` method's lock written as an explicit `synchronized (this)`
-block. Local names and types exist only in debug builds (a release build keeps lines and
+**What is lost relative to class files.** The rest of d8's work is not undone: register
+reuse, comparisons and constants shared between uses, code moved or merged across branches
+(shared returns, a `throw` placed after the return), default and static interface methods
+moved into `$-CC` classes below min-api 24, string concatenation (a `StringBuilder` chain),
+pattern `switch` (`$$ExternalSyntheticTypeSwitch`), `AutoCloseable` dispatch, the inlined
+backports (`List.of()` as `Collections.EMPTY_LIST`, `Boolean.logicalAnd` as `&`), the lambda
+classes themselves (still listed and printed), and a `synchronized` method's lock written as
+an explicit `synchronized (this)` block. Backports are recognised for d8 8.13 (another
+version's bodies may differ). Local names and types exist only in debug builds (a release build keeps lines and
 maybe parameter names). A value that crosses blocks is a variable unless only constants
 join (a `?:` with computed arms prints as an `if`). DEX does not say
 whether a library class is an interface, so a static or `super` call into one is an
@@ -263,21 +273,21 @@ the same sources, methods perfect on all metrics:
 
 | project | from the jar | from DEX, kuna | from DEX, jadx 1.5.3 |
 |---|---|---|---|
-| Guava | 98.78% | 79.35% | 42.65% |
-| spring-boot | 99.29% | 51.93% | 57.40% |
-| spring-framework | 99.03% | 54.33% | 62.92% |
-| Ghidra | 98.71% | 64.16% | 56.59% |
-| Elasticsearch | 98.89% | 34.36% | 36.05% |
-| all | 98.88% | 47.38% | 44.31% |
+| Guava | 98.78% | 80.32% | 42.65% |
+| spring-boot | 99.29% | 76.33% | 57.40% |
+| spring-framework | 99.03% | 73.86% | 62.92% |
+| Ghidra | 98.71% | 73.01% | 56.59% |
+| Elasticsearch | 98.89% | 64.60% | 36.05% |
 
-Most of the loss is d8's: calls into classes the sources do not have (API backports
-`$$ExternalSyntheticBackport`, record desugaring onto `com.android.tools.r8.RecordTag`), code
-d8 moved before a `super(...)` or `this(...)` call, and code shapes that differ from
-javac's (shared comparisons and constants, merged returns); kuna's engine also fails 709
-methods on d8's `try`/`finally` and `synchronized` layouts (`FinallyProcessor`). Loading is
+Most of the remaining loss is structure that differs from javac's (d8's shared comparisons
+and merged returns, string concatenation), `byte`/`int` typed where `boolean` is needed
+(a constant shared between a boolean and an int use), and 442 methods the engine fails
+(mostly "parsing failure" on d8 layouts it cannot structure, and `FinallyProcessor` on the
+rest of the `finally` shapes). Loading is
 cheap: on Elasticsearch's APK (21,939 classes in three DEX files, 19.8 MB) `functions` takes
-1.6 s (0.5 s for the jar) and `decompile-all --jobs 8` 92 s at 6.4 GB peak (63 s and 5.0 GB
-for the jar's 10,371 classes; d8 adds a class per lambda).
+1.6 s (0.5 s for the jar) and `decompile-all --jobs 8` 43 s at 6.1 GB peak (d8 adds a class
+per lambda). Nine release APKs (R8-optimised, 3,689 classes) decompile with no panic or
+hang and 136 failure comments, none from names that are not Java identifiers.
 
 Not read yet: the binary manifest and resources, ODEX/VDEX/OAT/CDEX, native libraries
 inside an APK, and protected (packed or encrypted) APKs.

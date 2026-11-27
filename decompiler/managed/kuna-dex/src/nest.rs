@@ -47,7 +47,7 @@ fn accessor(dex: &Dex, class: u32, proto: u32, code: &crate::dex::CodeItem) -> O
     let x = insns.first()?;
     let rest: Vec<&Insn> = insns[1..].iter().collect();
     match x.op {
-        0x52..=0x66 => {
+        0x52..=0x58 | 0x60..=0x66 => {
             let f = dex.field(x.idx).ok()?;
             if f.class != class {
                 return None;
@@ -56,7 +56,7 @@ fn accessor(dex: &Dex, class: u32, proto: u32, code: &crate::dex::CodeItem) -> O
             let object = if x.op <= 0x58 { Some(arg(x.b)?) } else { None };
             ok.then_some(Access::Field { insn: x.clone(), value: None, object })
         }
-        0x59..=0x6d => {
+        0x59..=0x5f | 0x67..=0x6d => {
             let f = dex.field(x.idx).ok()?;
             if f.class != class || !matches!(&rest[..], [r] if r.op == 0x0e) {
                 return None;
