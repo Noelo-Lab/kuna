@@ -2628,6 +2628,7 @@ fn name_local_highs_angr(data: &mut Funcdata) {
     // (C++ `ProtoStoreSymbol::setInput` did this at recovery time; the kuna
     // `ProtoStoreInternal` does not, so it is done here before the walk).
     data.link_proto_params();
+    crate::kuna_paramareaslot::map(data);
 
     // C++ `ActionNameVars::apply` (coreaction.cc:3065) opens with
     // `getScopeLocal()->recoverNameRecommendationsForSymbols()`.  Its
