@@ -143,7 +143,8 @@ impl MergeHelper {
                 && elseedge.closure() == Some(stat.0)
                 && Self::is_last_in_loop(stat.0)
                 && Self::is_direct_path(stat.0, ifedge.get_destination()));
-        if !matched {
+        if !matched || (kuna_javac_layout::active() && kuna_javac_layout::not_do_while(lastif, stat))
+        {
             return;
         }
 

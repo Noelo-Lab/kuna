@@ -703,7 +703,15 @@ infinite loop, a bare condition, and jumps where the `goto` of the second one's 
 goes (javac's loop condition and an `if (..) break;` after it, `separate_jumps`; `if (a || b)
 break;` jumps there the same way and is not the loop condition either). `if (c) continue;` is
 recognised by its condition jumping over the `goto` right after it even when the code after
-it lost its first instructions to a loop header (a `for` loop's init, `jumps_over_goto`). The
+it lost its first instructions to a loop header (a `for` loop's init, `jumps_over_goto`).
+javac compiles a `do`-`while` condition to a conditional jump back to the loop's start, so
+`MergeHelper::match_do_while` does not take a loop's last `if` for one when that `if`'s
+condition jumps forward over a `goto` to the start (`not_do_while`): that is javac's `if (c)
+continue;` before the code that leaves the loop, and `reorder_last` lays such an `if` without
+a body out so (`continue_before_exit`). `do { x++; if (x < 100) continue; return; } while
+(true);` printed as `do { x++; } while (x < 100);`, which javac compiles to other code, and
+prints as `while (true) { x++; if (x < 100) { continue; } break; }`, which it compiles to the
+same. The
 body of a loop's first or last `if` stays in the loop when javac placed it before the loop's
 last jump back to its start (`inside_loop`; `LoopExtractHelper::extract_first_if` and
 `extract_last_if` would move it after the loop, where javac puts the code after a loop), and
