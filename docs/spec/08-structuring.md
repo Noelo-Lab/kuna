@@ -2017,7 +2017,10 @@ in-edges are re-pointed at its successor with their labels
 (`BlockGraph::remove_from_flow`), so the tags reach the RETURN block's in-edges
 after simplification; edge flags are only ever cleared by mask. Which reading
 applies, and whether the join computed the returned register, is decided when
-`returndup` runs, against the recovered output storage.
+`returndup` runs, against the storage the RETURN op returns
+(`kuna_o0returns.rs (groups)`). The prototype's output is recovered only after
+`returndup`, so at that point it holds a declared output, which is the RETURN's
+own storage, or nothing.
 
 At `returndup` time `kuna_o0returns.rs (split)` groups the RETURN block's
 in-edges by tag and gives each group its own copy of the epilogue with

@@ -1,0 +1,56 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna restart consistency, P0 restart machinery: what a function prints
+    must not depend on whether its analysis restarted.  A restarted pass
+    starts from the prototype store the drive gave the first pass
+    (infra/decompile_drive.rs (run_pipeline)), and `returndup auto` reads the
+    returned register off the RETURN op (p8_structure/kuna_o0returns.rs
+    (groups)).
+
+    gcc 11 -O0 (-fno-pic -fno-stack-protector -fcf-protection=none) of
+        int pick(int c)
+        {
+            int ret = -1;
+            switch (c) {
+            case 'e': ret = 2; break;
+            case 'i': ret = 0; break;
+            case 'o': ret = 1; break;
+            }
+            return ret;
+        }
+    The cases jump to the epilogue, which loads ret itself (mov eax,[rbp-4]),
+    so the function has one return statement.  By default `loweredswitch`
+    records the compare cascade and restarts the function to install the
+    switch; the restarted pass used to see the prototype store the first pass
+    attached, whose output the restart had cleared, so the epilogue read as
+    not computing eax and was split into one `return K;` per case.  An
+    installed switch stays for the rest of a session, so the bytes are loaded
+    twice and pass 2 reads the copy at 0x200000.
+
+    Pass 1 (default): pick prints the switch (#1) with its cases breaking to
+    one return of the frame slot (#2, #3).  Pass 2 (option loweredswitch off,
+    no restart): pick_off keeps its tests (#4) and returns the frame slot
+    from the same one statement (#3).  Neither pass splits the epilogue (#5).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e5897decc745fcffffffff837dec6f7426837dec6f7f28837dec657408837dec69740beb1ac745fc02000000eb11c745fc00000000eb08c745fc01000000908b45fc5dc3</bytechunk>
+<bytechunk space="ram" offset="0x200000" readonly="true">554889e5897decc745fcffffffff837dec6f7426837dec6f7f28837dec657408837dec69740beb1ac745fc02000000eb11c745fc00000000eb08c745fc01000000908b45fc5dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="pick"/>
+<symbol space="ram" offset="0x200000" name="pick_off"/>
+</binaryimage>
+<script>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option loweredswitch off</com>
+  <com>lo fu pick_off</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="RESTARTPROTO #1: pick's cascade prints as a switch (pass 1)" min="1" max="1">^  switch\(a0\) \{$</stringmatch>
+<stringmatch name="RESTARTPROTO #2: pick's cases break to the shared return (pass 1)" min="2" max="2">^      break;$</stringmatch>
+<stringmatch name="RESTARTPROTO #3: each function returns its frame slot once (pass 1, pass 2)" min="2" max="2">^  return v1;$</stringmatch>
+<stringmatch name="RESTARTPROTO #4: with loweredswitch off pick_off keeps its tests (pass 2)" min="1" max="1">^ +if \(a0 == 0x69\)$</stringmatch>
+<stringmatch name="RESTARTPROTO #5: no epilogue is split (pass 1, pass 2)" min="0" max="0">return-dupe</stringmatch>
+</decompilertest>
