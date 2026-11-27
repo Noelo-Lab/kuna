@@ -8801,6 +8801,68 @@ fn carmel_cliw_mac1_fetches_the_selected_continuation() {
 }
 
 #[test]
+fn carmel_cliw_chained_short_reads_keep_distinct_effective_addresses() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let arch = "Carmel:BE:24:default:default";
+    let image = common::scratch_file("carmel-cliw-chained", "xml");
+    let specs = image.with_extension("specs");
+    let source = image.with_extension("c");
+    let executable = image.with_extension("exe");
+    tracked_carmel_entry_specs(&specs, &[("R2", 0x7fff), ("PACFG", 0), ("EST", 0),
+                                         ("CECFG1", 0), ("CECFG2", 0)], 0, 0);
+    let mut c = String::from("#include <stdbool.h>\n\
+        volatile unsigned short old_word=0x8001, patched=0x8123, next=0x0605, prior=0xffff;\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (row, (packet, first, second, pointer)) in [
+        ("0c614fdfa972", 0x8123, 0x0605, 0x7fff),
+        ("8c614fdfa972", 0x8001, 0x0605, 0x7fff),
+        ("0c614fdfa952", 0x8123, 0x0605, 0x8001),
+        ("0c614fdfb932", 0x8123, 0xffff, 0x8004),
+    ].into_iter().enumerate() {
+        fs::write(&image, format!(
+            "<binaryimage arch=\"{arch}\">\n\
+             <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">{packet}2bd8002bec00</bytechunk>\n\
+             <bytechunk space=\"cliw\" offset=\"0xfb4\" readonly=\"true\">7fffff2601003fffff932088</bytechunk>\n\
+             <symbol space=\"code\" offset=\"0\" name=\"cliw_chain\"/>\n</binaryimage>\n"
+        )).unwrap();
+        let guard1 = if second & 0x8000 != 0 { 0xff } else { 0 };
+        for (column, (reg, expected, typ)) in [
+            ("A0L", first, "unsigned short"), ("A1L", second, "unsigned short"),
+            ("GB0", 0xff, "unsigned char"), ("GB1", guard1, "unsigned char"),
+            ("R2", pointer, "unsigned short"),
+        ].into_iter().enumerate() {
+            let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .env("KUNA_SPECS", &specs).arg("decompile").arg(&image)
+                .args(["cliw_chain", "--target", arch, "--assert-strict",
+                    "--assert", "param 0 %RN2 unsigned short increment",
+                    "--assert", "param 1 %CETBL unsigned short condition_table",
+                    "--assert", "data [data,0x7fff] volatile unsigned short old_word",
+                    "--assert", "data [data,0x8003] volatile unsigned short patched",
+                    "--assert", "data [data,0x8000] volatile unsigned short next",
+                    "--assert", "data [data,0x7ffe] volatile unsigned short prior",
+                    "--assert", &format!("return %{reg} {typ}")]));
+            let code = String::from_utf8(output.stdout).unwrap();
+            assert!(!code.contains("halt_") && !code.to_lowercase().contains("warning:"), "{code}");
+            let name = format!("project_{row}_{column}");
+            writeln!(c, "#define cliw_chain {name}\n{code}\n#undef cliw_chain").unwrap();
+            let index = row * 5 + column + 1;
+            writeln!(calls, "if ({name}(5, 0) != {expected:#x} || {name}(5, 0xffff) != {expected:#x}) return {index};")
+                .unwrap();
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [image, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+    fs::remove_dir_all(specs).unwrap();
+}
+
+#[test]
 fn carmel_cliw_unmarked_ma1_uses_the_trailing_address_width() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

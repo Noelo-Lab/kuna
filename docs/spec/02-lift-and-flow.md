@@ -5506,6 +5506,13 @@ address pass is independent of the immutable template's execution
 predicate. Write-qualified ports without a template result clear their
 addressed words, including the two words of a long port or stack push.
 
+When two short CLIW address operations chain through R2, both reads use
+the incoming pointer and the merged update is applied once. Without a
+left wide marker the first read is displaced by the width of the next
+address record; the second read keeps its original offset. Opposite
+steps cancel, two forward steps add two, and the indexed update uses RN2.
+Neither of the bound move results is predicated in these layouts.
+
 For the short postmodify MA1 and MA2 routes with only a register
 accumulator add active, each write-qualified port independently
 stores zero at its incoming DATA address. Read qualifiers do not

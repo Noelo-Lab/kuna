@@ -517,6 +517,49 @@ macro cliw_dm_dual_product(left, right, word_port, accumulator, data_result, fla
     publish_alu_ce(status);
 }
 
+# Without the left wide marker the D2 skip width replaces MA1's immediate.
+# Count only the AGU records after MA1, including any stack records.
+cliw_skip_unmarked: is wide_left_mode=0 { local value:2 = 1; export value; }
+cliw_skip_unmarked: is wide_left_mode=1 { local value:2 = 0; export value; }
+
+cliw_chain_short_second: is wide_10_14=10 & wide_3_7=14 {
+    export 1:2;
+}
+cliw_chain_short_second: is wide_10_14=10 & wide_3_7=10 & wide_left_mode=0 {
+    modify_native_agu(R2, 2:2, RM2, RL2, RM2_ALIGN, 4:4, 4:2);
+    export 1:2;
+}
+cliw_chain_short_second: is wide_10_14=14 & wide_3_7=6 & wide_left_mode=0 {
+    modify_native_agu(R2, RN2, RM2, RL2, RM2_ALIGN, 4:4, 1:2);
+    export 0xffff:2;
+}
+
+# MA1 and MA2 sample the incoming pointer. MA1's patched displacement
+# does not alter the merged R2 update or the second read.
+:CLIW template_index is ((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) &
+    wide_right_mode=1 & wide_20_22=5 & template_index & carmel_cliw_known=1 &
+    cliw_address_bank=15 & cliw_terminal_ma3_condition=24 & cliw_terminal_ma4=24 &
+    wide_8_9=1 & wide_1_2=1 & wide_0_0=0 & cliw_skip_unmarked & cliw_chain_short_second &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) &
+    tpl_67_72=36 & tpl_64_66=6 & tpl_62_63=0 & tpl_57_61=0 & $(CLIW_DM_ACC1) &
+    tpl_18_23=36 & tpl_13_17=25 & tpl_8_12=0 & $(CLIW_DM_ACC2) & $(CLIW_DM_DISTINCT_ACC) {
+    local base:2 = R2;
+    build cliw_chain_short_second;
+    local first_addr:2 = base + cliw_skip_unmarked * 4;
+    local second_addr:2 = base + cliw_chain_short_second;
+    local first:2 = *[data]:2 first_addr;
+    local second:2 = *[data]:2 second_addr;
+    local left:8 = sext(first) & 0xffffffffff;
+    local right:8 = sext(second) & 0xffffffffff;
+    local flags1:2;
+    local flags2:2;
+    cliw_alu_status(left, flags1);
+    cliw_alu_status(right, flags2);
+    write_accumulator40(cliw_alu_52_acc_0_0, cliw_alu_52_acc_0_1, cliw_alu_52_acc_0_2, left);
+    write_accumulator40(cliw_alu_3_acc_0_0, cliw_alu_3_acc_0_1, cliw_alu_3_acc_0_2, right);
+    publish_alu_ce((EST & 0xc104) | flags1 | (flags2 << 6));
+}
+
 @undef CLIW_DM_MA34
 @undef CLIW_DM_MA23
 @undef CLIW_DM_DISTINCT_ACC
@@ -528,11 +571,6 @@ macro cliw_dm_dual_product(left, right, word_port, accumulator, data_result, fla
 @undef CLIW_DM_MOVE1
 @undef CLIW_DM_EXT_END
 @undef CLIW_DM_EXT_BASE
-
-# Without the left wide marker the D2 skip width replaces MA1's immediate.
-# Count only the AGU records after MA1, including any stack records.
-cliw_skip_unmarked: is wide_left_mode=0 { local value:2 = 1; export value; }
-cliw_skip_unmarked: is wide_left_mode=1 { local value:2 = 0; export value; }
 
 @define CLIW_SKIP "((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_20_22=5 & template_index & carmel_cliw_known=1 & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_3_23=0xfffff & cliw_skip_unmarked"
 @define CLIW_SKIP_MOVE "$(CLIW_DM_IDLE1) & tpl_67_72=36 & tpl_64_66=2 & tpl_62_63=1 & tpl_57_61=31 & tpl_52_56=16"
