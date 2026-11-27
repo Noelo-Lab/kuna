@@ -4,7 +4,7 @@
 //!
 //! ```text
 //!   kuna decompile-graph <binary> [-o|--output FILE] [--label TEXT]
-//!                        [--functions a,b,..] [--addr 0xVMA].. [--max-fn-seconds N]
+//!                        [--functions a,b,..|@FILE].. [--addr 0xVMA|@FILE].. [--max-fn-seconds N]
 //!                        [--mode auto|reliable|aggressive|fast]
 //!                        [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load]
 //!                        [--define-function S[-E][=N]|@FILE].. [--option N V]..
@@ -476,7 +476,7 @@ fn analysis_image_base(file: &object::File) -> Option<u64> {
 fn usage() {
     eprintln!(
         "usage: kuna decompile-graph <binary> [-o|--output FILE] [--label TEXT] \\\n\
-         \x20                   [--functions a,b,..] [--addr 0xVMA].. [--max-fn-seconds N] \\\n\
+         \x20                   [--functions a,b,..|@FILE].. [--addr 0xVMA|@FILE].. [--max-fn-seconds N] \\\n\
          \x20                   [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
@@ -490,6 +490,7 @@ fn usage() {
          key, not `name` -- a thunk and the import it forwards to share a name.\n\
          --label TEXT is copied verbatim into `binary.label`, for a consumer that\n\
          wants to stamp the document with its own version.\n\
+         --functions/--addr take @FILE, one entry per line (see decompile-all -h).\n\
          Every function is a node; --functions/--addr narrow which of them are\n\
          decompiled, not which appear.  Unfiltered fast runs default to 10 seconds\n\
          per function, other runs to 120; a function over budget becomes its own\n\

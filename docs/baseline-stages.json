@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5720,
-    5720
+    5730,
+    5730
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4163,6 +4163,16 @@
     "data:fieldtype #7: with the option on the function pointer is called as it is",
     "data:fieldtype #8: with the option off the walking pointers are dereferenced through casts",
     "data:fieldtype #9: with the option on they are dereferenced and stepped as pointers",
+    "data:filegap arm #1: the bits wrapper takes the r0 it forwards",
+    "data:filegap arm #2: and passes it to bits",
+    "data:filegap arm #3: the sst wrapper takes the r0 it forwards",
+    "data:filegap arm #4: and passes it to sst",
+    "data:filegap arm #5: no tail call drops every argument",
+    "data:filegap x86 #1: the bits wrapper takes the rdi it forwards",
+    "data:filegap x86 #2: and passes it to bits",
+    "data:filegap x86 #3: the sst wrapper takes the rdi it forwards",
+    "data:filegap x86 #4: and passes it to sst",
+    "data:filegap x86 #5: no tail call drops every argument",
     "data:finalorder #1: no statement is emitted after an unconditional goto",
     "data:finalorder #2: the body does not open with a label",
     "data:finalorder #3: the body opens with an indented statement",

@@ -7177,7 +7177,8 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
 - the callee's recovered prototype (`RecoveredTypes`, stated by `protoorder` for a
   callee decompiled first) has a parameter starting at `R`;
 - that list is one `lock` would accept as an **arity claim**, or every register
-  it names is one the callee's body takes (*What a body takes*, below)
+  it names in `R`'s register file is one the callee's body takes (*What a body
+  takes*, below; *A gap stops its own register file* says what a file is)
   (`RecoveredTypes::arity_sound`, computed only while the option is on): every
   parameter is in a register, the callee's body does not read the register its
   next parameter would arrive in (a variadic's register-save prologue does,
@@ -7359,9 +7360,16 @@ entry walk decides, because it follows constant branches (betaflight's
 and its callers would otherwise all gain the argument), with the statement's
 hand-offs added for what it cannot see past a call. An arity-sound list asks the
 walk's `proves_input` as before; any other list must have every register it names
-taken by the body, read on its low byte other than by a store or an alignment
-push -- a list with a register the body never takes in the middle
-(`microsISR`'s recovered `r1`) or at the end is not evidence. Where the walk is
+in `R`'s register file taken by the body, read on its low byte other than by a
+store or an alignment push -- a list with a register the body never takes in the
+middle (`microsISR`'s recovered `r1`) or at the end is not evidence. A register of
+another file is not asked: Debian 12 armhf libasan's
+`__interceptor_modf.part.0` hands the `d0` it is recovered with to an indirect
+call, or saves it around one, so its entry walk sees no read, and that says
+nothing about the `r0` the convention fills apart from it; and glibc MIPS
+o32 libm's `lgamma_r` hands its leading `$f12` to `__lgamma_r_finite`,
+whose recovered list also names the `a0` and `a1` the double consumes, which
+its body never reads. Where the walk is
 incomplete, the first-heritage record answers. A function **calling itself**
 asks its own record and its own entry walk; there is no statement yet, and the
 registers its call can take are the model's argument registers up to the
@@ -7470,6 +7478,34 @@ argument, never an argument on its own), and the pass acts twice outside it:
   stopping at the first one the function does not forward. The final list must
   be a leading run of the stated one, and a list holding a stack argument is
   left alone.
+
+**A gap stops its own register file.** Parameters are positional within one
+register file, not across files the convention fills independently
+(`kuna_passthrough.rs (extension_past_gaps)`). AAPCS-VFP, AAPCS64 and SysV
+x86-64 allocate float and core argument registers apart, so a stated `d0` or
+`xmm0` parameter the call does not get -- typically one the callee recovered
+as an integer, which the evidence above declines to forward because a
+float-register parameter of integer type is no claim about its kind -- leaves
+every core register after it where it was. Stopping at that first stated
+register dropped every forwarded argument behind it: Debian 12 armhf
+libasan's `__interceptor_modf` is `b __interceptor_modf.part.0`, and with the
+callee recovered as `double part.0(unsigned long long a0,unsigned int a1)`
+(`a0` in `d0`) the wrapper printed `void modf(void)` and the call
+`__interceptor_modf.part.0()`, where `--option protoorder off` kept `r0`.
+gcc -O2 x86-64 `f(double x,int *p)` that moves `x` with `movq %xmm0,%rax` is
+recovered `(unsigned long a0,unsigned int *a1)`, and its tail-calling wrapper
+printed `f()` the same way. A register file is the type class of the model
+input entries the register overlaps, with grouped entries one file, as
+upstream's resource sections count them. So a stated register the call does
+not get stops the extension for the later stated registers of its own file
+only. A register of another file is taken only while the model assigns the
+list kept so far (the settled list included) to exactly its stated storage at
+the callee's stated types. Where a float slot also consumes a core one, the
+register sits elsewhere once the gap is removed, and the extension does not
+take it: Windows x64 groups `xmm0` with `rcx`, and MIPS o32 rules make a
+leading float consume `a0`/`a1`. The pass still never forwards the declined
+float register itself, so the wrapper prints `modf(unsigned int a0)` with
+`__interceptor_modf.part.0(a0)`, as with the option off.
 
 **A forwarded register fills its slot.** A register trial the scoring leaves
 inactive because it stands on the function's own value -- its input Varnode, or
