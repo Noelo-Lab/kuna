@@ -587,6 +587,42 @@ fn a_parameter_returned_on_some_path_keeps_its_argument() {
     }
 }
 
+// gcc -O2 hard-float ARM and Thumb builds of `armfloatargs_stored.c`: `put_g`
+// only stores its double to a global (`vstr d0,[r3]`), which becomes a copy into
+// the global that nothing reads again, `put_ref` stores it to a stack slot
+// whose address it passes on, and `sel` and `zero_if` store a double an if or a
+// select merges first. Each keeps its doubles, and the callee-first run passes
+// `put_g` the double `call_put` computes. The authored `scaled`
+// (`armfloatargs_merged_store.s`) stores a d5 it wrote in a loop only where the
+// loop ran, and takes no double.
+#[test]
+fn a_double_parameter_only_stored_is_kept_and_passed() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    for build in ["arm", "thumb"] {
+        let bytes = std::fs::read(fixtures.join(format!("armfloatargs_stored_{build}.o"))).unwrap();
+        let code = decompile_with(&bytes, &[]);
+        for line in [
+            "void put_g(double a0)",
+            "void put_gv(double a0)",
+            "void put_two(double a0,double a1)",
+            "void put_gf(float a0)",
+            "void put_ref(double a0)",
+            "void sel(double a0,double a1,int a2)",
+            "  if (a2)\n    a1 = a0;\n  g = a1;\n",
+            "void zero_if(double a0,int a1)",
+            "void call_put(double a0)",
+            "  put_g(a0 + a0);\n",
+        ] {
+            assert!(code.contains(line), "{build}: lacks {line}\n{code}");
+        }
+        assert!(!code.contains("double v1; // d0\n"), "{build}\n{code}");
+    }
+    let bytes = std::fs::read(fixtures.join("armfloatargs_merged_store.o")).unwrap();
+    let code = decompile_with(&bytes, &[]);
+    assert!(code.contains("void scaled(double *a0,char *a1)"), "{code}");
+}
+
 // clang 14 hard-float ARM and Thumb builds of `armfloatargs_early.c`: `C2`
 // and `C9` return early through `bxgt lr` (`it gt; bxgt lr` in Thumb). `C2`
 // never reads its second float, which `W2` leaves holding `GF2`'s leftover, so
