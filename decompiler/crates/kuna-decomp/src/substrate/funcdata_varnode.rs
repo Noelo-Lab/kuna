@@ -2654,11 +2654,24 @@ impl Funcdata {
                         return self.ancestor_op_use_in(memo, maxlevel - 1, in0, op, trial, offset, main_flags);
                     }
                 }
+                if crate::p4_calls::kuna_laneglue::clears_bank(self, def) {
+                    return Ancestry::NONE;
+                }
                 Ancestry::of(self.only_op_use(invn, op, trial, main_flags))
             }
             OpCode::CPUI_PIECE => {
                 let in1 = self.obank().get(def).and_then(|o| o.get_in(1));
                 let in1_size = in1.and_then(|v| self.vbank().get(v)).map(|v| v.get_size()).unwrap_or(0);
+                let in0 = self.obank().get(def).and_then(|o| o.get_in(0));
+                let in0_size = in0.and_then(|v| self.vbank().get(v)).map(|v| v.get_size()).unwrap_or(0);
+                let size = trial.get_size();
+                let held = crate::p4_calls::kuna_laneglue::piece_holding(offset, size, in0_size, in1_size)
+                    .and_then(|(slot, at)| if slot == 1 { in1 } else { in0 }.map(|next| (next, at)))
+                    .filter(|&(next, _)| crate::p4_calls::kuna_laneglue::free_step(self, invn, def, next, offset, size))
+                    .filter(|_| memo.take_free());
+                if let Some((next, at)) = held {
+                    return self.ancestor_op_use_in(memo, maxlevel, next, op, trial, at, main_flags);
+                }
                 if offset == 0 {
                     if let Some(in1) = in1 {
                         return self.ancestor_op_use_in(memo, maxlevel - 1, in1, op, trial, 0, main_flags);
@@ -2721,9 +2734,12 @@ impl Funcdata {
                     .unwrap_or(false);
                 if space_internal || incidental || in0_incid || overlap_match {
                     if let Some(in0) = in0 {
+                        let free = overlap_match
+                            && crate::p4_calls::kuna_laneglue::free_step(self, invn, def, in0, offset, trial.get_size())
+                            && memo.take_free();
                         return self.ancestor_op_use_in(
                             memo,
-                            maxlevel - 1,
+                            if free { maxlevel } else { maxlevel - 1 },
                             in0,
                             op,
                             trial,
@@ -2799,6 +2815,8 @@ struct AncestorMemo {
     /// The MULTIEQUALs marked on the current path, outermost first.
     path: Vec<OpId>,
     unused: crate::kuna_fasthash::FxHashMap<AncestorKey, UnusedAbove>,
+    /// Level-free join steps taken ([`crate::p4_calls::kuna_laneglue`]).
+    free: u32,
     #[cfg(test)]
     every_path: bool,
     #[cfg(test)]
@@ -2837,6 +2855,12 @@ impl AncestorMemo {
 
     fn leave(&mut self) {
         self.path.pop();
+    }
+
+    /// May the walk take one more level-free join step?
+    fn take_free(&mut self) -> bool {
+        self.free += 1;
+        self.free <= crate::p4_calls::kuna_laneglue::MAX_FREE_STEPS
     }
 
     fn recall(&self, fd: &Funcdata, key: AncestorKey, maxlevel: int4) -> Option<Ancestry> {
@@ -3289,6 +3313,11 @@ impl AncestorRealistic {
                         return AncestorCmd::EnterNode;
                     } else if state.offset == in1_size && in0_size <= trial_size {
                         self.state_stack.push(AncestorState::new(op, 0));
+                        return AncestorCmd::EnterNode;
+                    } else if let Some((slot, offset)) =
+                        crate::p4_calls::kuna_laneglue::piece_holding(state.offset, trial_size, in0_size, in1_size)
+                    {
+                        self.state_stack.push(AncestorState { op, slot, flags: 0, offset });
                         return AncestorCmd::EnterNode;
                     }
                     let spbase = fd
