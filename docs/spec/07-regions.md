@@ -671,6 +671,7 @@ when `regionlooprefine` is on, the `cyclic_loops()` projection — the
 identifier's refined loop bodies and exit frontiers keyed by block start
 address — as the read side of the omitted `force_loop_single_exit`
 refinement. With the option off it builds no identifier. With it on it runs
+the identifier only when the structurer first refines a loop, and then
 only the preprocessing and the cyclic phase
 (`kuna_regionid.rs (KunaRegionIdentifier::compute_cyclic)`): the acyclic phase
 only wraps nodes that are already there in new acyclic regions, removing each
