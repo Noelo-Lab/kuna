@@ -642,7 +642,7 @@ kuna	bdc518a6d45ab591
 case	default/pkg/TestLocalClass	Default	classes/java8/pkg/TestLocalClass
 kuna	1fb008a86f3b6d78
 case	default/pkg/TestLocalClassesSwitch	Default	classes/java8/pkg/TestLocalClassesSwitch
-kuna	4524079927828f54
+kuna	e25144a7344411c7
 case	default/pkg/TestLocalEnum	Default	classes/java16/pkg/TestLocalEnum
 kuna	890eb4e8d98dfe0a
 case	default/pkg/TestLocalInterface	Default	classes/java16/pkg/TestLocalInterface
@@ -2109,6 +2109,8 @@ case	kuna-fixes/pkg/TestSwitchAssignNotYield	Kuna Fixes	kuna-fixes/classes/pkg/T
 case	kuna-fixes/pkg/TestSwitchCaseOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchCaseOrder
 # kuna-fixes/src/pkg/TestSwitchCaseScope.java, javac 17.0.20.1 (-g)
 case	kuna-fixes/pkg/TestSwitchCaseScope	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchCaseScope
+# kuna-fixes/src/pkg/TestSwitchEmptyGroupBreak.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSwitchEmptyGroupBreak	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchEmptyGroupBreak
 # kuna-fixes/src/pkg/TestSwitchExprConstLub.java, javac 17.0.20.1 (-source 17 -target 17 -g)
 case	kuna-fixes/pkg/TestSwitchExprConstLub	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchExprConstLub
 # kuna-fixes/src/pkg/TestSwitchExprPolyCast.java, javac 17.0.20.1 (-g)

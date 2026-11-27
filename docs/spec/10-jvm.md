@@ -1556,6 +1556,18 @@ turns the index constants of a `SwitchBootstraps.typeSwitch` back into labels, o
 of which each of `type_switch_enum_label`, `type_switch_pattern_type` and
 `type_switch_label_lookup` corrects.
 
+**A case's own `break` (kuna).** `LabelHelper::set_explicit_edges` takes a case followed by an
+empty case that only breaks (labels whose keys jump to a `goto` past the switch, javac's `case
+'a': case 'b': break;`, or the default javac points past the switch) as running into the
+statement that empty case breaks to, so the case's own break became implicit and printed as a
+fall-through into the empty labels, or vanished with a hidden empty default. The control-flow graph
+drops every `goto`, so only the instructions tell the two apart: javac lays cases out in order, and a
+case ending with `break;` ends with a `goto` right before the instruction the empty labels' keys jump
+to, going where they go (past the switch). `decompiler/managed/kuna-jvm/src/fixes/switches.rs
+(falls_into)` keeps the edge explicit exactly when that `goto` ends one of the case's blocks and the
+empty case breaks this switch; an empty case that leaves another way (code of the next case that the
+structuring moved out of the switch, a loop's `break label`) keeps Vineflower's rule.
+
 **Heap reads copied into several uses.**
 `decompiler/managed/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor)`
 copies a value with several uses into each use, and the Kotlin plugin's schedule adds a
