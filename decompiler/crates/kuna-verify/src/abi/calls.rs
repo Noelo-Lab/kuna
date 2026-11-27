@@ -76,6 +76,7 @@ pub struct Site {
     pub params: usize,
     /// Where the callee's prototype returns its value.
     pub output: Option<Storage>,
+    pub(crate) output_float: bool,
     /// kuna bound the call past a PLT stub or replaced it with an injection:
     /// its target comes from relocations or a fixup the machine does not run.
     pub resolved: bool,
@@ -439,6 +440,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                     .then(|| Storage::at(&proto.get_output().get_address(), proto.get_output().get_size() as u32))
                     .flatten()
                     .or_else(|| copied_to_register(fd, env, op.get_out())),
+                output_float: proto.get_output_type().is_some_and(|t| t.get_metatype() == kuna_decomp::dtype::type_metatype::TYPE_FLOAT),
                 ret_ext: crate::abi::return_extension(env, proto),
                 input_storage,
                 cdecl_stack: x86_cdecl_stack && proto.get_model_name() == "__cdecl" && !proto.is_input_locked(),
@@ -460,6 +462,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         locked: false,
         params: 0,
         output: None,
+        output_float: false,
         ret_ext: None,
         input_storage: Vec::new(),
         cdecl_stack: false,

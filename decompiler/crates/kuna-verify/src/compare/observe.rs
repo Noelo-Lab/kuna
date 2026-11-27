@@ -21,8 +21,9 @@ use crate::divergence::{self};
 use crate::calls::{Calls, Record, UserEvent};
 use crate::state::{Env, State, Writes};
 use crate::storage::{hex, Storage};
-use crate::value::mask;
+use crate::value::{mask, Halt};
 use crate::{graph, machine};
+use super::returns::{Compare, ReturnValue};
 
 /// The first byte the two sides left different, of the memory either wrote.
 /// `read`: the frame bytes a callee run for real read, when only those count.
@@ -215,22 +216,46 @@ pub(crate) fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &
     CallCompare { differs: None, declared, stop, suspects }
 }
 
-/// What a callee run for real did differently given other arguments: the
-/// value it returns, or what it wrote to memory.
-pub(crate) fn callee_differs(prog: &ConsoleProgram, calls: &Calls, a: Option<&Record>, b: Option<&Record>) -> Option<String> {
-    let (ea, eb) = (a?.effect.as_ref()?, b?.effect.as_ref()?);
-    let site = calls.site(a?.at);
+/// Compare the recorded effects of two completed runs of the same callee.
+pub(super) fn callee_differs(
+    prog: &ConsoleProgram, calls: &Calls, a: Option<&Record>, b: Option<&Record>, stack: bool,
+) -> Result<Option<String>, &'static str> {
+    let (Some(a), Some(b)) = (a, b) else { return Err("the callee was not reached in both runs") };
+    if a.at != b.at || a.target != b.target {
+        return Err("the replay reached a different callee");
+    }
+    let (Some(ea), Some(eb)) = (&a.effect, &b.effect) else { return Err("the callee did not complete a concrete replay") };
+    if stack && (a.stack_in.is_none() || b.stack_in.is_none()) {
+        return Err("the callee did not complete a concrete stack-argument replay");
+    }
+    let site = calls.site(a.at);
     if let Some(out) = site.output.as_ref().filter(|o| o.space.get_type() == spacetype::IPTR_PROCESSOR) {
-        let within = |r: &&(u64, u8)| r.0 >= out.off && r.0 < out.off + u64::from(out.size);
+        let value = ReturnValue::new(prog, out, site.output_float);
+        let st = value.physical();
+        let within = |r: &&(u64, u8)| r.0 >= st.off && r.0 < st.off + u64::from(st.size);
         let (ra, rb): (Vec<_>, Vec<_>) = (ea.regs.iter().filter(within).collect(), eb.regs.iter().filter(within).collect());
         if ra != rb {
-            return Some(format!("callee returns another {}", out.name(prog)));
+            let get = |regs: &[&(u64, u8)]| -> Option<u128> {
+                if st.size > 16 {
+                    return None;
+                }
+                let mut raw = 0u128;
+                for pos in 0..u64::from(st.size) {
+                    let (_, b) = regs.iter().find(|r| r.0 == st.off + pos)?;
+                    let i = if st.space.is_big_endian() { u64::from(st.size) - pos - 1 } else { pos };
+                    raw |= u128::from(*b) << (8 * i);
+                }
+                Some(value.normalize(raw))
+            };
+            if !get(&ra).zip(get(&rb)).is_some_and(|(a, b)| value.agrees(a, b)) {
+                return Ok(Some(format!("callee returns another {}", out.name(prog))));
+            }
         }
     }
     let writes = |e: &crate::state::Effect| -> Vec<(i32, u64, u8)> {
         e.events.iter().filter_map(|ev| if let crate::state::Event::Write(s, o, b) = ev { Some((*s, *o, *b)) } else { None }).collect()
     };
-    (writes(ea) != writes(eb)).then(|| "callee writes other memory".to_string())
+    Ok((writes(ea) != writes(eb)).then(|| "callee writes other memory".to_string()))
 }
 
 /// The machine stopped in a pointer-authentication trap kuna does not reach.
@@ -341,39 +366,36 @@ pub(crate) fn event_gap(prog: &ConsoleProgram, m: &[UserEvent], g: &[UserEvent])
 }
 
 /// The first observable two machine runs differ in.
-pub(crate) fn machine_differs(
+pub(super) fn machine_differs(
     prog: &ConsoleProgram,
     env: &Env,
     run: u32,
     calls: &Calls,
-    claim: &abi::Claim,
+    compare: &Compare,
     a: &machine::Outcome,
     b: &machine::Outcome,
-) -> Option<String> {
+) -> Result<Option<String>, Halt> {
     if a.noreturn != b.noreturn {
-        return Some("run differs in whether it returns".into());
+        return Ok(Some("run differs in whether it returns".into()));
     }
     if a.bad_return.is_some() != b.bad_return.is_some() {
-        return Some("run differs in whether it reaches the return address".into());
+        return Ok(Some("run differs in whether it reaches the return address".into()));
     }
-    if let Some(out) = claim.storage.as_ref().filter(|_| !a.noreturn && a.copy_operands.is_none() && a.bad_return.is_none()) {
-        let (mut sa, mut sb) = (a.state.clone(), b.state.clone());
-        if let (Ok(x), Ok(y)) = (sa.read_storage(&out.space, out.off, out.size), sb.read_storage(&out.space, out.off, out.size)) {
-            if x != y {
-                return Some(format!("return is {} instead of {}", hex(y, out.size), hex(x, out.size)));
-            }
+    if !a.noreturn && a.copy_operands.is_none() && b.copy_operands.is_none() && a.bad_return.is_none() {
+        if let Some(d) = compare.machine_return_diff(&mut a.state.clone(), &mut b.state.clone())? {
+            return Ok(Some(d));
         }
     }
     if let Some(l) = compare_calls(prog, env, run, calls, &a.calls, &b.calls).differs {
-        return Some(format!("calls differ: {}", l.join("; ")));
+        return Ok(Some(format!("calls differ: {}", l.join("; "))));
     }
     if let Some(l) = compare_events(prog, &a.events, &b.events) {
-        return Some(format!("system calls differ: {}", l.join("; ")));
+        return Ok(Some(format!("system calls differ: {}", l.join("; "))));
     }
     if a.copy_operands != b.copy_operands {
-        return Some("overlapping copy operands differ".to_string());
+        return Ok(Some("overlapping copy operands differ".to_string()));
     }
-    compare_writes(env, run, &a.state.writes(), &b.state.writes(), None).map(|d| format!("memory at exit differs: {d}"))
+    Ok(compare_writes(env, run, &a.state.writes(), &b.state.writes(), None).map(|d| format!("memory at exit differs: {d}")))
 }
 
 /// The first observable two runs of kuna's side differ in.
@@ -390,7 +412,8 @@ pub(crate) fn depends(
         return Some("whether it returns".into());
     }
     if let (Some(out), Some(x), Some(y)) = (&claim.storage, a.ret, b.ret) {
-        if x & mask(out.size) != y & mask(out.size) {
+        let value = ReturnValue::new(prog, out, claim.float);
+        if !value.agrees(x & mask(out.size), y & mask(out.size)) {
             return Some(format!("its return {} or {}", hex(x, out.size), hex(y, out.size)));
         }
     }

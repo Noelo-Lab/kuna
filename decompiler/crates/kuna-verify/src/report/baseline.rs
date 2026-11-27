@@ -21,6 +21,7 @@ use crate::report::Row;
 pub type Baseline = BTreeMap<String, Vec<(String, String)>>;
 
 pub const ERROR: &str = "ERROR";
+const VERSION: u64 = 1;
 
 /// What the baseline records of a verdict.
 pub fn class(r: &Row) -> String {
@@ -34,13 +35,13 @@ pub fn class(r: &Row) -> String {
 
 /// One line per file, sorted, so a re-recorded baseline diffs by file.
 pub fn render(b: &Baseline) -> String {
-    let mut s = String::from("{\n");
+    let mut s = format!("{{\n  \"version\": {VERSION},\n  \"files\": {{\n");
     for (k, (file, rows)) in b.iter().enumerate() {
-        let items: Vec<String> = rows.iter().map(|(f, c)| format!("{f} {c}")).collect();
+        let items: Vec<_> = rows.iter().map(|(f, c)| serde_json::json!({"function": f, "verdict": c})).collect();
         let sep = if k + 1 == b.len() { "" } else { "," };
-        s.push_str(&format!("  {}: {}{sep}\n", Value::from(file.as_str()), Value::from(items)));
+        s.push_str(&format!("    {}: {}{sep}\n", Value::from(file.as_str()), Value::from(items)));
     }
-    s.push_str("}\n");
+    s.push_str("  }\n}\n");
     s
 }
 
@@ -56,14 +57,29 @@ fn split_row(r: &str) -> Option<(&str, &str)> {
 
 pub fn parse(text: &str) -> Result<Baseline, String> {
     let v: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
-    let obj = v.as_object().ok_or("the baseline is not a JSON object")?;
+    let root = v.as_object().ok_or("the baseline is not a JSON object")?;
+    let versioned = root.contains_key("version");
+    let files = if versioned {
+        if root["version"].as_u64() != Some(VERSION) {
+            return Err(format!("unsupported baseline version {}", root["version"]));
+        }
+        root.get("files").and_then(Value::as_object).ok_or("the baseline has no files object")?
+    } else {
+        root
+    };
     let mut b = Baseline::new();
-    for (file, rows) in obj {
+    for (file, rows) in files {
         let rows = rows.as_array().ok_or_else(|| format!("{file}: not an array"))?;
         let mut out = Vec::with_capacity(rows.len());
         for r in rows {
-            let r = r.as_str().ok_or_else(|| format!("{file}: not a string: {r}"))?;
-            let (f, c) = split_row(r).ok_or_else(|| format!("{file}: no class in {r:?}"))?;
+            let (f, c) = if versioned {
+                let f = r.get("function").and_then(Value::as_str).ok_or_else(|| format!("{file}: no function in {r}"))?;
+                let c = r.get("verdict").and_then(Value::as_str).ok_or_else(|| format!("{file}: no verdict in {r}"))?;
+                (f, c)
+            } else {
+                let r = r.as_str().ok_or_else(|| format!("{file}: not a string: {r}"))?;
+                split_row(r).ok_or_else(|| format!("{file}: no class in {r:?}"))?
+            };
             out.push((f.to_string(), c.to_string()));
         }
         b.insert(file.clone(), out);
@@ -213,6 +229,18 @@ mod tests {
             ("t/b.xml", &[("", ERROR)]),
         ]);
         assert_eq!(parse(&render(&x)).unwrap(), x);
+    }
+
+    #[test]
+    fn structured_rows_preserve_verdict_tokens_in_names_and_reasons() {
+        let x = b(&[("f.xml", &[
+            ("f UNKNOWN(budget)", "UNKNOWN(replay included AGREES(7))"),
+            ("f UNKNOWN(budget)", "DIVERGES(explanation contains SKIPPED(proof))"),
+        ])]);
+        assert_eq!(parse(&render(&x)).unwrap(), x);
+        assert_eq!(parse(r#"{"f.xml":["-[A b:] UNKNOWN(no switch row)"," ERROR"]}"#).unwrap(),
+            b(&[("f.xml", &[("-[A b:]", "UNKNOWN(no switch row)"), ("", ERROR)])]));
+        assert!(parse(r#"{"version":2,"files":{}}"#).is_err());
     }
 
     #[test]

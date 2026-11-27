@@ -97,8 +97,8 @@ ins16  DIFFERS  (run 1 of 256)
 |---|---|
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides, or ran past `--budget` ops on both sides, are not counted, and the report says how many. A run past the budget on one side only makes the function `UNKNOWN(budget)`: one side may loop where the other does not. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
-| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call cuts the call trace at its site. An overlapping copy cuts the run at that instruction after comparing the earlier calls, system calls and memory, and the source, destination, byte count and direction of the copy. Unavailable machine operands or doubt about a callee's recovered prototype before the copy give `UNKNOWN`. |
-| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run, or a system call whose registers kuna passes with a gap (§9). `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `abi-violation`: a callee run for real changed a register the calling convention says it preserves, and the run depends on that change (§2). `timeout`: no verdict within `--fn-seconds`. |
+| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call cuts the call trace at its site. An overlapping copy cuts the run at that instruction after comparing the earlier calls, system calls and memory, and the source, destination, byte count and direction of the copy. Unavailable machine operands, pending argument reruns or doubt about a callee's recovered prototype before the copy give `UNKNOWN`. |
+| `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run, or a system call whose registers kuna passes with a gap (§9). `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: the replay limit left unchecked arguments before an overlapping copy or on every run. `callee-replay`: a callee could not be rerun concretely with kuna's arguments, or the resulting return value could not be compared. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `abi-violation`: a callee run for real changed a register the calling convention says it preserves, and the run depends on that change (§2). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
 Exit status: 1 when a function differs, 3 when a file could not be checked, 2 for a usage
@@ -181,7 +181,9 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
    callee inside the image runs for real when the model can run it. kuna's side then
    replays that callee's effect. A callee outside the image, or one the model cannot run,
    gets a deterministic stub: it kills the registers the convention says it kills, with
-   values derived from the run, and may change the memory it can reach.
+   values derived from the run, and may change the memory it can reach. A discarded
+   concrete attempt restores memory, registers and the execution metadata, including
+   nested stub observations and symbolic bytes. It still spends its execution budget.
 5. **Run kuna's side.** `graph.rs` interprets the compiled program from the same state,
    with the same stubs and replays. Where kuna's `varargsave` folded a variadic
    function's register-save prologue, the printed `va_list` setup stands for
@@ -200,7 +202,12 @@ common: [--runs N (256)] [--seed S] [--budget OPS (200000)] [--concolic QUERIES 
    then run again with any byte there. Differing there, or ending `UNKNOWN` there, is
    `UNKNOWN(assumed-domain)`, since the domain is kuna's claim, not the program's; a
    declared divergence there is the verdict.
-   Declared prototypes and the extensions the ABI documents keep their domain.
+   Declared prototypes and the extensions the ABI documents keep their domain. Argument
+   replay requires a recorded concrete effect in both runs. If the first value chosen
+   for omitted register bytes prevents a concrete rerun, a second run can establish
+   a difference with zero in those bytes. Replay and the main check
+   use the ABI's return width, including x87 rounding, and apply the same NaN quiet-bit
+   equivalence. A supplied return contract also checks its own storage on machine reruns.
 7. **Report.** `report.rs` prints the verdict as text or JSON.
 
 The crate is grouped by folder; the old module paths (`crate::check`, `crate::calls`,
@@ -233,7 +240,8 @@ A later tier gets a folder of its own (`symbolic/` for Tier S, `printer/` for Ti
 - **Every other change** is listed, with the `AGREES` count before and after.
 
 Rows are paired by function and occurrence, so a file whose function list changed is
-still compared. Re-record the baseline with
+still compared. New baseline files store function names and verdicts in separate fields
+under schema version 1. The reader also accepts the earlier string rows. Re-record the baseline with
 `make verify-corpus VERIFY_ARGS='--save-baseline docs/baseline-verify.json'`.
 
 ## 7. As a check on pull requests

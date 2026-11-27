@@ -35,6 +35,12 @@ fn narrowext_bug_pass_differs_and_fix_pass_agrees() {
     );
 }
 
+#[test]
+fn an_alternative_for_omitted_register_bytes_can_prove_a_difference() {
+    let v = verdicts("gh1922-pushpad-caller-readarg-thumb");
+    assert_eq!(of(&v, &["vsend", "vsendz"]), ["DIFFERS"; 2]);
+}
+
 /// A 32-bit `int` argument in a 64-bit RISC-V register arrives sign-extended.
 #[test]
 fn riscv_arguments_keep_their_abi_extension() {

@@ -4079,6 +4079,13 @@ kuna supplies different bytes there, the machine is rerun with those arguments
 at the callee's entry stack pointer. A change in the callee's return value or
 other observable effects can give `DIFFERS` when the replay completes without a
 stub at the expected return address and stack pointer.
+A register argument replay that loses the concrete callee effect yields
+`UNKNOWN(callee-replay)`. An overlapping copy with pending argument reruns
+yields `UNKNOWN(call-reruns)` after checking the available evidence before the
+copy. Reruns observe returns at the same ABI precision, with x87 rounding and
+NaN quiet-bit equivalence, and also check storage from a supplied contract.
+Discarding a speculative callee restores its execution metadata and machine
+state while charging the steps it spent against the budget.
 
 ## 0.7 Feedback edges
 

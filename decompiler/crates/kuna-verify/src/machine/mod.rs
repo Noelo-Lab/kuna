@@ -11,6 +11,8 @@
 //! real, and its RETURN comes back to the caller.
 
 mod rep_copy;
+#[cfg(test)]
+mod tests;
 mod thunk;
 
 pub(crate) use rep_copy::CopyOperands;
@@ -147,7 +149,7 @@ fn decodes_in(env: &Env, target: u64, mode: Option<u128>) -> bool {
 /// C5's view of one run: what expression of the inputs each written byte
 /// holds, with the byte's concrete value when it was written, so a later
 /// overwrite by code the view does not follow (a callee, a stub) drops it.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Shadow {
     bytes: std::collections::HashMap<(i32, u64), (Rc<crate::concolic::Expr>, u32, u8)>,
     path: crate::concolic::Path,
@@ -314,7 +316,93 @@ struct Machine<'e, 'p, 'c> {
     shadow: Option<Shadow>,
 }
 
-impl<'e, 'p> Machine<'e, 'p, '_> {
+/// The state restored when a concrete execution is discarded. Steps spent
+/// and the remaining callee budget belong to the enclosing run.
+struct MachineCheckpoint<'e, 'p> {
+    state: State<'e, 'p>,
+    records: usize,
+    indirect: usize,
+    followed: usize,
+    events: usize,
+    convention: usize,
+    stubs: u32,
+    unverified_noreturn: bool,
+    proved_noreturn: bool,
+    guessed: bool,
+    narrowed: bool,
+    copies: Vec<(u64, u64, u32)>,
+    restoring: Vec<(u64, u64)>,
+    shadow: Option<Shadow>,
+}
+
+impl<'e, 'p> MachineCheckpoint<'e, 'p> {
+    fn new(m: &Machine<'e, 'p, '_>) -> Self {
+        Self {
+            state: m.state.clone(),
+            records: m.records.len(),
+            indirect: m.indirect.len(),
+            followed: m.followed.len(),
+            events: m.events.len(),
+            convention: m.convention.len(),
+            stubs: m.stubs,
+            unverified_noreturn: m.unverified_noreturn,
+            proved_noreturn: m.proved_noreturn,
+            guessed: m.guessed,
+            narrowed: m.narrowed,
+            copies: m.copies.clone(),
+            restoring: m.restoring.clone(),
+            shadow: m.shadow.clone(),
+        }
+    }
+
+    fn restore(self, m: &mut Machine<'e, 'p, '_>) {
+        m.state = self.state;
+        m.records.truncate(self.records);
+        m.indirect.truncate(self.indirect);
+        m.followed.truncate(self.followed);
+        m.events.truncate(self.events);
+        m.convention.truncate(self.convention);
+        m.stubs = self.stubs;
+        m.unverified_noreturn = self.unverified_noreturn;
+        m.proved_noreturn = self.proved_noreturn;
+        m.guessed = self.guessed;
+        m.narrowed = self.narrowed;
+        m.copies = self.copies;
+        m.restoring = self.restoring;
+        m.shadow = self.shadow;
+    }
+}
+
+impl<'e, 'p, 'c> Machine<'e, 'p, 'c> {
+    fn new(env: &'e Env<'p>, calls: &'c Calls, run: u32, budget: u64, with_args: Option<&'c WithArgs>, stop_before: Option<Checkpoint>) -> Self {
+        Self {
+            with_args,
+            stop_before,
+            env,
+            calls,
+            state: State::new(env, run),
+            records: Vec::new(),
+            indirect: Vec::new(),
+            followed: Vec::new(),
+            steps: 0,
+            budget,
+            callee_pool: budget,
+            in_callee: false,
+            returns: Vec::new(),
+            events: Vec::new(),
+            guessed: false,
+            narrowed: false,
+            stubs: 0,
+            unverified_noreturn: false,
+            proved_noreturn: false,
+            checking_noreturn: false,
+            copies: Vec::new(),
+            restoring: Vec::new(),
+            convention: Vec::new(),
+            shadow: env.record_path.get().then(Shadow::default),
+        }
+    }
+
     fn sp(&self) -> Storage {
         Storage::new(&self.env.register, self.env.sp.0, self.env.sp.1)
     }
@@ -406,22 +494,24 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             return Ok(None);
         }
         if self.env.code_mapped(target & !1) && !leads_out(self.env, target) && !self.in_callee {
-            let saved = self.state.clone();
-            let (records, stubs) = (self.records.len(), self.stubs);
+            let saved = MachineCheckpoint::new(self);
             self.proved_noreturn = false;
             self.checking_noreturn = true;
             let ran = self.real(at, target);
             self.checking_noreturn = false;
             let ran = ran?;
-            if let Some(e @ Exit::Return) = ran.filter(|_| self.stubs == stubs) {
+            if let Some(e @ Exit::Return) = ran.filter(|_| self.stubs == saved.stubs) {
                 return Ok(Some(e));
             }
-            self.state = saved;
-            self.records.truncate(records);
+            let proved = self.proved_noreturn;
+            saved.restore(self);
             if let Some(r) = self.records.last_mut() {
                 r.effect = None;
+                r.frame_reads = None;
+                r.live_in = None;
+                r.stack_in = None;
             }
-            if std::mem::take(&mut self.proved_noreturn) {
+            if proved {
                 return Ok(None);
             }
         }
@@ -572,10 +662,9 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         if limit == 0 {
             return Ok(None);
         }
-        let saved = self.state.clone();
-        let (records, steps, budget) = (self.records.len(), self.steps, self.budget);
+        let saved = MachineCheckpoint::new(self);
+        let (steps, budget) = (self.steps, self.budget);
         let call_sp = self.sp_value()?;
-        let stubs = self.stubs;
         let back = lift(self.env, at).ok().map(|i| self.continuation(at, target, call_sp, &i));
         if outer {
             self.state.frame_reads = Some(crate::state::FrameReads::default());
@@ -584,7 +673,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                 live.stack = crate::state::StackInputs::new(self.env, self.calls.site(at), call_sp);
             }
             if let Some(stack) = &live.stack {
-                if let Some(args) = self.with_args.filter(|o| o.call == records.checked_sub(1)) {
+                if let Some(args) = self.with_args.filter(|o| o.call == saved.records.checked_sub(1)) {
                     for &(off, b) in &args.stack_bytes {
                         if stack.contains(off, 1) {
                             self.state.write(&self.env.ram, call_sp + off, 1, u128::from(b))?;
@@ -623,11 +712,11 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                 } else if matches!(exit, Exit::Return) {
                     let sp = self.env.sp;
                     let regs: Vec<(u64, u32)> = site.preserved.iter().copied().filter(|&(o, s)| o + u64::from(s) <= sp.0 || o >= sp.0 + u64::from(sp.1)).collect();
-                    self.state.restore_registers(&saved, &regs)
+                    self.state.restore_registers(&saved.state, &regs)
                 } else {
                     let mut keep = site.abi_killed.clone();
                     keep.push(self.env.sp);
-                    self.state.preserve_registers(&saved, &keep)
+                    self.state.preserve_registers(&saved.state, &keep)
                 };
                 for o in changed {
                     if !self.convention.contains(&(at, o)) {
@@ -639,14 +728,15 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                 if let Some(r) = self.records.last_mut() {
                     r.frame_reads = reads;
                     r.live_in = live;
-                    r.stack_in = stack.filter(|_| matches!(exit, Exit::Return) && self.stubs == stubs && sp == call_sp + 4);
+                    r.stack_in = stack.filter(|_| matches!(exit, Exit::Return) && self.stubs == saved.stubs && sp == call_sp + 4);
                 }
                 self.state.forget_below(sp.min(call_sp.wrapping_add(u64::from(self.env.ret_slot))));
                 Ok(Some(exit))
             }
-            _ => {
-                self.state = saved;
-                self.records.truncate(records);
+            outcome => {
+                let proved = self.checking_noreturn && self.proved_noreturn && matches!(outcome, Ok(Exit::NoReturn));
+                saved.restore(self);
+                self.proved_noreturn |= proved;
                 Ok(None)
             }
         }
@@ -1182,32 +1272,7 @@ fn run_inner<'e, 'p>(
     with_args: Option<&WithArgs>,
     stop_before: Option<Checkpoint>,
 ) -> Result<Outcome<'e, 'p>, Halt> {
-    let mut m = Machine {
-        with_args,
-        stop_before,
-        env,
-        calls,
-        state: State::new(env, run),
-        records: Vec::new(),
-        indirect: Vec::new(),
-        followed: Vec::new(),
-        steps: 0,
-        budget,
-        callee_pool: budget,
-        in_callee: false,
-        returns: Vec::new(),
-        events: Vec::new(),
-        guessed: false,
-        narrowed: false,
-        stubs: 0,
-        unverified_noreturn: false,
-        proved_noreturn: false,
-        checking_noreturn: false,
-        copies: Vec::new(),
-        restoring: Vec::new(),
-        convention: Vec::new(),
-        shadow: env.record_path.get().then(Shadow::default),
-    };
+    let mut m = Machine::new(env, calls, run, budget, with_args, stop_before);
     m.state.kill_salt = with_args.map_or(0, |o| o.kill_salt);
     m.state.kill_salt_skip = calls.output_regs.clone();
     if let Some(o) = with_args.filter(|o| o.call.is_none()) {

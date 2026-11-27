@@ -63,6 +63,8 @@ pub const CALL_INPUTS: usize = 64;
 pub struct CallInput {
     pub msg: String,
     pub with: crate::machine::WithArgs,
+    /// Omitted bytes that can be tried with zero if the first stand-in fails.
+    pub(crate) omitted_register_bytes: Vec<u64>,
     /// The callee's prototype is declared: kuna's call follows it.
     pub locked: bool,
 }
@@ -212,6 +214,7 @@ impl Run<'_, '_, '_> {
             placed.push(st);
         }
         let mut bytes = Vec::new();
+        let mut omitted_register_bytes = Vec::new();
         let mut first = None;
         for (off, m) in live {
             let (o, n) = self.calls.input_regs.iter().copied().find(|&(o, n)| off >= o && off < o + u64::from(n)).unwrap_or((off, 1));
@@ -240,6 +243,9 @@ impl Run<'_, '_, '_> {
                 continue;
             }
             bytes.push((off, kuna.unwrap_or_else(|| !m)));
+            if kuna.is_none() {
+                omitted_register_bytes.push(off);
+            }
             if first.is_none() {
                 let name = crate::storage::Storage::new(&env.register, o, n).name(env.prog);
                 let target = self.calls.site(op.at).target.map_or_else(|| "?".to_string(), |t| format!("{t:#x}"));
@@ -258,7 +264,10 @@ impl Run<'_, '_, '_> {
         if let Some(msg) = first.or(stack_msg) {
             if self.call_inputs.len() < CALL_INPUTS {
                 let locked = self.calls.site(op.at).locked;
-                self.call_inputs.push(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, stack_bytes, kill_salt: 0 }, locked });
+                self.call_inputs.push(CallInput {
+                    msg, with: crate::machine::WithArgs { call: Some(k), bytes, stack_bytes, kill_salt: 0 },
+                    omitted_register_bytes, locked,
+                });
             } else {
                 self.unkept_inputs += 1;
             }

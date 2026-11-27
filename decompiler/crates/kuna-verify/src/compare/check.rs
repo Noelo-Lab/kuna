@@ -15,15 +15,16 @@ use kuna_decomp::funcdata::Funcdata;
 
 use crate::abi::{self, Claim};
 use crate::contract::{CKind, CType, Contract};
-use crate::divergence::{self, ReturnMismatch};
+use crate::divergence;
 use crate::calls::{self, Record};
 use crate::program::{self, Program};
 use crate::report::{Report, Verdict};
 use crate::state::{Env, State};
 use crate::storage::{hex, Storage};
-use crate::value::{mask, Halt};
+use crate::value::Halt;
 use crate::{graph, machine};
 use super::observe::*;
+use super::returns::{Compare, Outcome};
 use super::setup::*;
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
@@ -108,97 +109,6 @@ impl UpperWatch {
                 )
             })
             .collect()
-    }
-}
-
-/// The whole of x87's 80-bit `ST0` when `out` is it, where a `float` or
-/// `double` return lives in the 80-bit format: the machine's value is rounded
-/// to the claimed size before it is compared.
-fn x87_register(prog: &ConsoleProgram, out: &Storage) -> Option<Storage> {
-    if !(out.size == 4 || out.size == 8) || !prog.arch().archid.starts_with("x86") {
-        return None;
-    }
-    let [piece] = out.pieces(prog).try_into().ok()?;
-    (piece.name(prog) == "ST0").then(|| Storage::new(&piece.space, piece.off, 10))
-}
-
-/// One run's comparison: the report lines when the two sides differ.
-struct Compare<'a> {
-    prog: &'a ConsoleProgram,
-    claim: &'a Claim,
-    contract: Option<(&'a Contract, &'a Storage)>,
-}
-
-enum Outcome {
-    Same,
-    Differs(Vec<String>),
-    Declared(&'static str),
-}
-
-impl Compare<'_> {
-    fn run(&self, ms: &mut State, ret: Option<u128>) -> Result<Outcome, Halt> {
-        let mut lines = Vec::new();
-        if let Some(out) = &self.claim.storage {
-            let k = ret.ok_or_else(|| Halt::Harness("RETURN without the prototype's value".into()))?;
-            let mv = if let Some(st) = x87_register(self.prog, out).filter(|_| self.claim.float) {
-                crate::x87::to_ieee(ms.read_storage(&st.space, st.off, st.size)?, out.size)
-            } else {
-                ms.read_storage(&out.space, out.off, out.size)?
-            };
-            if self.claim.float && divergence::nan_quieting(out.size, mv, k & mask(out.size)) {
-                return Ok(Outcome::Declared(divergence::NAN_QUIETING.id));
-            }
-            if mv != k & mask(out.size) {
-                lines.push(format!("machine  {} = {}", out.name(self.prog), hex(mv, out.size)));
-                lines.push(format!("kuna     {} = {}", self.claim.text, hex(k, out.size)));
-                return Ok(Outcome::Differs(lines));
-            }
-        }
-        let Some((c, cs)) = self.contract else { return Ok(Outcome::Same) };
-        let mv = ms.read_storage(&cs.space, cs.off, cs.size)?;
-        let kuna = match (&self.claim.storage, ret) {
-            (Some(out), Some(k)) => {
-                let value = if c.ret.kind == CKind::Boolean {
-                    let value = k & mask(out.size);
-                    let nonzero = if self.claim.float {
-                        match out.size {
-                            4 => f32::from_bits(value as u32) != 0.0,
-                            8 => f64::from_bits(value as u64) != 0.0,
-                            _ => return Err(Halt::Unsupported(format!("{}-byte float conversion to _Bool", out.size))),
-                        }
-                    } else {
-                        value != 0
-                    };
-                    u128::from(nonzero)
-                } else {
-                    abi::convert(k, out.size, self.claim.signed, cs.size)
-                };
-                Some((out.size, value))
-            }
-            _ => None,
-        };
-        if kuna.is_some_and(|(_, kv)| kv == mv) {
-            return Ok(Outcome::Same);
-        }
-        if let Some((ks, kv)) = kuna {
-            let m = ReturnMismatch { arch: &self.prog.arch().archid, contract_size: cs.size, kuna_size: ks, machine: mv, kuna: kv };
-            if let Some(d) = divergence::find(&m) {
-                return Ok(Outcome::Declared(d.id));
-            }
-        }
-        lines.push(format!("contract {}  ({})", c.declaration, c.source));
-        lines.push(format!("machine  {} = {}", cs.name(self.prog), hex(mv, cs.size)));
-        match (&self.claim.storage, ret, kuna) {
-            (Some(out), Some(k), Some((_, kv))) => lines.push(format!(
-                "kuna     {} = {}; as {} {}",
-                self.claim.text,
-                hex(k, out.size),
-                c.ret.spelling,
-                hex(kv, cs.size)
-            )),
-            _ => lines.push(format!("kuna     {} returns no value", self.claim.text)),
-        }
-        Ok(Outcome::Differs(lines))
     }
 }
 
@@ -442,7 +352,7 @@ fn check_runs(
                     env.kernel.set(true);
                     let alt = rerun_machine(None);
                     env.kernel.set(false);
-                    if alt.is_ok_and(|alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).is_some()) {
+                    if alt.is_ok_and(|alt| matches!(machine_differs(prog, &env, run, &machine_calls, &compare, &mo, &alt), Ok(Some(_)))) {
                         kernel_shows = true;
                     }
                 }
@@ -462,7 +372,8 @@ fn check_runs(
             env.keep_clobbers.set(true);
             let alt = rerun_machine(None);
             env.keep_clobbers.set(false);
-            if let Some(d) = alt.map_or_else(|h| Some(Verdict::from_halt(&h).label()), |alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt)) {
+            if let Some(d) = alt.and_then(|alt| machine_differs(prog, &env, run, &machine_calls, &compare, &mo, &alt))
+                .unwrap_or_else(|h| Some(Verdict::from_halt(&h).label())) {
                 let reg = Storage::new(&env.register, o & !(u64::from(env.sp.1) - 1), env.sp.1).name(prog);
                 unknown.get_or_insert(Halt::AbiViolation(format!(
                     "the callee at {at:#x} changes {reg}, which the calling convention says it preserves; with the change kept, the machine's {d}"
@@ -521,21 +432,39 @@ fn check_runs(
             if cc.differs.is_some() || cc.stop {
                 break;
             }
-            let alt = match rerun_machine(Some(&ci.with)) {
-                Ok(alt) => alt,
-                Err(h) => {
-                    rerun_failed = Some(format!("{}; the machine could not be rerun with kuna's arguments: {}", ci.msg, Verdict::from_halt(&h).label()));
-                    break;
+            let observe = |with: &machine::WithArgs| -> Result<Option<String>, String> {
+                let alt = rerun_machine(Some(with)).map_err(|h| format!("the machine could not be rerun with kuna's arguments: {}", h.render()))?;
+                let callee_difference = callee_differs(
+                    prog, &machine_calls, with.call.and_then(|k| mo.calls.get(k)),
+                    with.call.and_then(|k| alt.calls.get(k)), !with.stack_bytes.is_empty(),
+                ).map_err(str::to_string)?;
+                match machine_differs(prog, &env, run, &machine_calls, &compare, &mo, &alt) {
+                    Ok(d) => Ok(d.or(callee_difference)),
+                    Err(_) if callee_difference.is_some() => Ok(callee_difference),
+                    Err(h) => Err(format!("the return could not be compared: {}", h.render())),
                 }
             };
-            if !ci.with.stack_bytes.is_empty()
-                && ci.with.call.and_then(|k| alt.calls.get(k)).is_none_or(|r| r.stack_in.is_none())
-            {
-                rerun_failed = Some(format!("{}; the callee did not complete a concrete stack-argument replay", ci.msg));
-                break;
-            }
-            let callee = ci.with.call.and_then(|k| callee_differs(prog, &machine_calls, mo.calls.get(k), alt.calls.get(k)));
-            if let Some(d) = machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).or(callee) {
+            let difference = match observe(&ci.with) {
+                Ok(d) => d,
+                Err(reason) => {
+                    let witness = if ci.omitted_register_bytes.is_empty() {
+                        None
+                    } else {
+                        let mut with = ci.with.clone();
+                        for (off, b) in &mut with.bytes {
+                            if ci.omitted_register_bytes.contains(off) {
+                                *b = 0;
+                            }
+                        }
+                        observe(&with).ok().flatten()
+                    };
+                    if witness.is_none() {
+                        rerun_failed.get_or_insert_with(|| format!("{}; {reason}", ci.msg));
+                    }
+                    witness.map(|d| format!("{d} with zero in the omitted argument bytes"))
+                }
+            };
+            if let Some(d) = difference {
                 let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
                 if ci.locked {
                     cc.suspects.push(format!("{l}; the callee's declared prototype does not take it"));
@@ -543,10 +472,6 @@ fn check_runs(
                     cc.differs = Some(vec![l]);
                 }
             }
-        }
-        if let Some(msg) = rerun_failed.filter(|_| cc.differs.is_none()) {
-            unknown.get_or_insert(Halt::Doubtful(msg));
-            continue;
         }
         if cc.differs.is_none() && !cc.stop {
             cc.differs = compare_events(prog, &mo.events, graph_events);
@@ -570,7 +495,7 @@ fn check_runs(
             env.stub_recovered.set(true);
             let alt = rerun_machine(None);
             env.stub_recovered.set(false);
-            alt.map_or(true, |alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).is_some())
+            !matches!(alt.and_then(|alt| machine_differs(prog, &env, run, &machine_calls, &compare, &mo, &alt)), Ok(None))
         };
         let doubtful = suspect || mo.guessed || narrowing;
         let doubt = |lines: &[String]| if suspect { Halt::Doubtful(lines.join("; ")) } else { Halt::Guessed(lines.join("; ")) };
@@ -597,6 +522,10 @@ fn check_runs(
             }
             return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
         }
+        if let Some(msg) = rerun_failed {
+            unknown.get_or_insert(Halt::CalleeReplay(msg));
+            continue;
+        }
         if let Some(halt) = mo.bad_return {
             unknown.get_or_insert(halt);
             unsupported_runs += 1;
@@ -613,6 +542,9 @@ fn check_runs(
             match argument_doubt.clone() {
                 Some(s) => {
                     unknown.get_or_insert(Halt::Doubtful(s));
+                }
+                None if unchecked > 0 => {
+                    unknown.get_or_insert_with(|| Halt::CallReruns(format!("{unchecked} unchecked call argument comparisons before the overlapping copy")));
                 }
                 None => {
                     diverged.get_or_insert(divergence::COPY_OVERLAP.id);
@@ -697,7 +629,7 @@ fn check_runs(
                     let base = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
                     let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&with));
                     match (base, alt) {
-                        (Ok(b), Ok(a)) if machine_differs(prog, &env, run, &machine_calls, &claim, &b, &a).is_none() => {}
+                        (Ok(b), Ok(a)) if matches!(machine_differs(prog, &env, run, &machine_calls, &compare, &b, &a), Ok(None)) => {}
                         _ => continue,
                     }
                 }

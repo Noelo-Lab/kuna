@@ -36,6 +36,10 @@ pub enum Halt {
     /// The sides differ after a call whose argument a recovered callee
     /// prototype may have wrong: the prototype, not the body, may be at fault.
     Doubtful(String),
+    /// The callee could not be rerun with the graph's arguments.
+    CalleeReplay(String),
+    /// The run reached a declared copy divergence with pending argument checks.
+    CallReruns(String),
     /// The sides differ after the decompiled function read a local nothing
     /// wrote: C does not define the value.
     Undefined(String),
@@ -54,6 +58,8 @@ impl Halt {
             Halt::Harness(s) => format!("UNKNOWN(harness: {s})"),
             Halt::NoRow(s) => format!("UNKNOWN(no switch row: {s})"),
             Halt::Doubtful(s) => format!("UNKNOWN(prototype-suspect: {s})"),
+            Halt::CalleeReplay(s) => format!("UNKNOWN(callee-replay: {s})"),
+            Halt::CallReruns(s) => format!("UNKNOWN(call-reruns: {s})"),
             Halt::Undefined(s) => format!("UNKNOWN(uninitialized-local: {s})"),
             Halt::Guessed(s) => format!("UNKNOWN(guessed-callee: {s})"),
             Halt::AbiViolation(s) => format!("UNKNOWN(abi-violation: {s})"),

@@ -594,6 +594,86 @@ fn a_system_call_that_skips_a_register_is_not_an_agreement() {
     assert!(label.contains("not the first ones in order"), "{}", r.render());
 }
 
+/// An overlap after a call whose argument must be replayed: if the
+/// replay budget leaves the argument unverified, the run cannot be called a
+/// copy-overlap divergence, because a real argument mismatch may hide before it.
+#[test]
+fn an_overlap_with_unchecked_argument_replay_is_unknown() {
+    let text = [
+        0x53, 0x55, 0x48, 0x89, 0xfb, 0x89, 0xf5,   // save the copy inputs
+        0xc7, 0x43, 0x40, 7, 0, 0, 0,               // mov dword ptr [rbx+64], 7
+        0xbf, 7, 0, 0, 0,                           // mov edi, 7
+        0xe8, 21, 0, 0, 0,                          // call callee
+        0x83, 0xe5, 7, 0x48, 0x89, 0xde,            // and ebp, 7; mov rsi, rbx
+        0x48, 0x8d, 0x7c, 0x2b, 1,                  // lea rdi, [rbx+rbp+1]
+        0xb9, 16, 0, 0, 0,                          // mov ecx, 16
+        0xf3, 0xa4, 0x5d, 0x5b, 0xc3,               // rep movsb; pop rbp; pop rbx; ret
+        0x89, 0x3d, 0, 1, 0, 0, 0xc3,               // callee: mov [rip+256], edi; ret
+    ];
+    let path = object("overlap_unchecked", &text, &[("caller", 0, 45), ("callee", 45, 7)], &[]);
+    let opts = Options { runs: 8, ..Options::default() };
+    let script = kuna_verify::session::binary_script(&path.to_string_lossy(), &["caller".to_string()], &[]);
+    let mut checked = false;
+    kuna_verify::session::drive(script, None, &[specs()], |prog, fd| {
+        let r = kuna_verify::check::check_function(prog, fd, None, &opts);
+        assert_eq!(r.verdict.label(), "DIVERGES(copy-overlap)", "{}", r.render());
+        let env = kuna_verify::state::Env::new(prog, opts.seed).unwrap();
+        let calls = kuna_verify::calls::sites(fd, &env);
+        let program = kuna_verify::program::compile(prog, fd, &calls);
+        let mutants = kuna_verify::mutate::mutants(&program, &calls);
+        let dropped = mutants
+            .iter()
+            .copied()
+            .find(|m| m.operator == kuna_verify::mutate::Operator::DropArg)
+            .expect("a mutant of the callee argument");
+        let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &opts, dropped).unwrap();
+        assert!(reached);
+        assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
+        let no_replay = Options { call_reruns: 0, ..opts };
+        let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &no_replay, dropped).unwrap();
+        assert!(reached);
+        assert!(r.verdict.label().starts_with("UNKNOWN(call-reruns"), "{}", r.render());
+        checked = true;
+    })
+    .unwrap();
+    assert!(checked);
+}
+
+/// The caller overwrites EAX after the call. When a missing argument takes
+/// the callee through an unsupported instruction, the stub still lets the
+/// caller return zero. That zero gives no evidence about the callee.
+#[test]
+fn a_register_argument_replay_that_falls_back_to_a_stub_is_unknown() {
+    use kuna_verify::mutate::Operator;
+
+    let text = [
+        0x31, 0xff,             // xor edi, edi
+        0xe8, 3, 0, 0, 0,      // call callee
+        0x31, 0xc0, 0xc3,      // xor eax, eax; ret
+        0x85, 0xff, 0x75, 1,   // callee: test edi, edi; jne unsupported
+        0xc3, 0x0f, 0x0b,      // ret; ud2
+    ];
+    let path = object("register_replay_stub", &text, &[("caller", 0, 10), ("callee", 10, 7)], &[]);
+    let script = kuna_verify::session::binary_script(&path.to_string_lossy(), &["caller".to_string()], &[]);
+    let opts = Options { runs: 8, ..Options::default() };
+    let mut checked = false;
+    kuna_verify::session::drive(script, None, &[specs()], |prog, fd| {
+        let r = kuna_verify::check::check_function(prog, fd, None, &opts);
+        assert_eq!(r.verdict, Verdict::Agrees(8), "{}", r.render());
+        let env = kuna_verify::state::Env::new(prog, opts.seed).unwrap();
+        let calls = kuna_verify::calls::sites(fd, &env);
+        let program = kuna_verify::program::compile(prog, fd, &calls);
+        let drop = kuna_verify::mutate::mutants(&program, &calls).into_iter()
+            .find(|m| m.operator == Operator::DropArg).expect("a callee register argument");
+        let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &opts, drop).unwrap();
+        assert!(reached);
+        assert!(r.verdict.label().starts_with("UNKNOWN(callee-replay"), "{}", r.render());
+        assert!(r.verdict.label().contains("did not complete a concrete replay"), "{}", r.render());
+        checked = true;
+    }).unwrap();
+    assert!(checked);
+}
+
 /// `g(p, n)`: `p[16] = 7` (an int), `sink()`, then `rep movsb` of 16 bytes
 /// from `p` to `p + (n & 7) + 1`, an overlap kuna's `memcpy` does not define
 /// and kuna cannot see. The copy is a declared divergence, but what the run did
