@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5580,
-    5580
+    5586,
+    5586
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -283,6 +283,12 @@
     "data:BRKTRAP #7: no function with a compiler trap prints void",
     "data:BRKTRAP #8: brk #0xf000, brk #0 and brk #0x800 keep the jump-as-call",
     "data:BRKTRAP #9: only the three resumable breakpoints are a jump-as-call",
+    "data:BYTEMAPNOGUARD #1: every dispatch is a switch",
+    "data:BYTEMAPNOGUARD #2: no row is read from a byte map",
+    "data:BYTEMAPNOGUARD #3: the folded map keeps its last real row",
+    "data:BYTEMAPNOGUARD #4: each second dispatch keeps its four rows",
+    "data:BYTEMAPNOGUARD #5: flow stays in the functions",
+    "data:BYTEMAPNOGUARD #6: the byte tag's three rows are its cases",
     "data:BYTEMAPROWS #1: the three table rows are the cases",
     "data:BYTEMAPROWS #2: no row is read from the byte map",
     "data:BYTEMAPROWS #3: flow stays in mapped memory",

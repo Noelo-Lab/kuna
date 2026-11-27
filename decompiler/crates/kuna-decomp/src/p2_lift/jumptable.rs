@@ -2607,6 +2607,7 @@ impl JumpBasicModel {
                 exact.set_start_vn(selector_vn);
                 exact.set_start_op(start_op);
                 self.jrange = Some(Box::new(exact));
+                self.end_table_at_selector_map(fd, selector_vn);
                 return;
             }
         }
@@ -2654,16 +2655,27 @@ impl JumpBasicModel {
     /// (kuna) End the table at the selector value whose row would be read
     /// from the selector's own map: the map's bytes are selector values, not
     /// rows, so the table cannot continue through them. Used when the map's
-    /// values could not be proven, which leaves the selector its whole range.
+    /// values could not be proven, which leaves the selector its whole range,
+    /// and after a proof, whose index range may come from the index's width
+    /// alone and read the bytes after a shorter map as map values. When no
+    /// guard bounds the map's index, the map runs up from its base
+    /// ([`crate::p2_lift::kuna_bytemaprows`]), and a row past the base that
+    /// still lands in the function's own code is kept.
     fn end_table_at_selector_map(&mut self, fd: &Funcdata, selector_vn: VarnodeId) {
-        let Some((space, first, last)) = self.selector_map_extent(fd, selector_vn) else {
-            return;
+        let (space, first, last, exact) = match self.selector_map_extent(fd, selector_vn) {
+            Some((space, first, last)) => (space, first, last, true),
+            None => match crate::p2_lift::kuna_bytemaprows::map_base(fd, selector_vn) {
+                Some((space, base)) => (space, base, uintb::MAX, false),
+                None => return,
+            },
         };
         let mut values = self.jrange().clone_box();
         let (Some(start_op), Some(start_vn)) = (values.get_start_op(), values.get_start_varnode()) else {
             return;
         };
+        let own = |raw: &uintb| crate::p2_lift::kuna_bytemaprows::own_code(fd, *raw);
         let mut kept: int4 = 0;
+        let mut entered = false;
         let mut more = values.initialize_for_reading();
         while more {
             let mut emul = EmulateFunction::new(fd);
@@ -2680,7 +2692,10 @@ impl JumpBasicModel {
                     && start <= last
                     && start.saturating_add(size - 1) >= first
             });
-            if in_map {
+            if entered && !in_map {
+                return;
+            }
+            if in_map && (exact || kept == 0 || !emulated.as_ref().is_ok_and(own)) {
                 if kept > 0 {
                     self.jrange_range_mut().truncate(kept);
                 }
@@ -2689,6 +2704,7 @@ impl JumpBasicModel {
             if emulated.is_err() {
                 return;
             }
+            entered |= in_map;
             kept += 1;
             more = values.next().unwrap_or(false);
         }
