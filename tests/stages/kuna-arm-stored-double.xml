@@ -100,7 +100,7 @@
 <stringmatch name="arm-stored-double #7: no function reads an uninitialized d register" min="0" max="0">// d[0-9]+$</stringmatch>
 <stringmatch name="arm-stored-double #8: put_ref takes the double whose address it passes" min="2" max="2">^void put_ref\(float8 a0\)$</stringmatch>
 <stringmatch name="arm-stored-double #9: a d5 stored only through the loop's merge is no parameter" min="1" max="1">^void scaled\(float8 \*a0,char \*a1\)$</stringmatch>
-<stringmatch name="arm-stored-double #10: scaled stores its loop's quotient only where the loop ran" min="1" max="1">^    v3 = v4;$</stringmatch>
+<stringmatch name="arm-stored-double #10: scaled stores its loop's quotient only where the loop ran" min="1" max="1">^    v2 = v3;$</stringmatch>
 <stringmatch name="arm-stored-double #11: sel takes both doubles and the int" min="2" max="2">^void sel\(float8 a0,float8 a1,int4 a2\)</stringmatch>
 <stringmatch name="arm-stored-double #12: sel stores its second double when c is zero" min="2" max="2">^    g = a1;$</stringmatch>
 <stringmatch name="arm-stored-double #13: zero_if takes its double" min="2" max="2">^void zero_if\(float8 a0,int4 a1\)</stringmatch>
