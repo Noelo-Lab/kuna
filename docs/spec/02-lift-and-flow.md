@@ -4080,6 +4080,13 @@ still publishes flags. CE-qualified writes to `A0L` and `A1L` use the
 retired result predicate, not AEN. An immediate write to `EST` changes
 only the transient EX view.
 
+The compact signed DATA `MOVE` with indexed destination and fixed
+source postincrement captures both old addresses. The address stage
+advances the two distinct pointers even if late CE blocks the store.
+The stored word is arithmetically shifted by `ECFG.SR1`, and the copy
+does not set ALU flags. Two update requests for the same pointer are
+not this legal route.
+
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified

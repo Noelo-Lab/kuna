@@ -3273,6 +3273,92 @@ macro move_address_literal(dst, immediate, cfg, bank) {
     EST = (flags & 0xfff) | (first << 12) | (second << 13);
 }
 
+@define COMPACT_INDEXED_COPY_SAFE "((slot_1_3=0 & slot_6_8!=0) | (slot_1_3=1 & slot_6_8!=1) | (slot_1_3=2 & slot_6_8!=2) | (slot_1_3=3 & slot_6_8!=3) | (slot_1_3=4 & slot_6_8!=4) | (slot_1_3=5 & slot_6_8!=5) | (slot_1_3=6 & slot_6_8!=6) | (slot_1_3=7 & slot_6_8!=7))"
+
+compact_indexed_copy_ports: "*"^pair_ptr_6^"+="^pair_rn_6,"*"^pair_ptr_1^"++" is
+    slot_9_22=0x18a5 & slot_4_5=2 & $(COMPACT_INDEXED_COPY_SAFE)
+    & pair_ptr_6 & pair_rn_6 & pair_rm_6 & pair_rl_6 & pair_bank_6
+    & pair_ptr_1 & pair_rm_1 & pair_rl_1 & pair_bank_1 {
+    local destination:2 = pair_ptr_6;
+    local source:2 = pair_ptr_1;
+    modify_ptr(pair_ptr_6, pair_rn_6, pair_rm_6, pair_rl_6, pair_bank_6, 1:2);
+    modify_ptr(pair_ptr_1, 0:2, pair_rm_1, pair_rl_1, pair_bank_1, 2:2);
+    local value:2 = *[data]:2 source;
+    local ports:4 = zext(destination) | (zext(value) << 16);
+    export ports;
+}
+
+macro compact_indexed_copy_store(ports) {
+    local addr:2 = ports:2;
+    local value:2 = ports(2);
+    *[data]:2 addr = value s>> ((ECFG >> 5) & 1);
+}
+
+:MOVE compact_indexed_copy_ports is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))
+    & slot_0_0=0 & compact_indexed_copy_ports {
+    build compact_indexed_copy_ports;
+    compact_indexed_copy_store(compact_indexed_copy_ports);
+    clock_ce();
+}
+:MOVE compact_indexed_copy_ports "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports); (slot_mode=0 & nop_right) {
+    build compact_indexed_copy_ports;
+    compact_indexed_copy_store(compact_indexed_copy_ports);
+    clock_ce();
+}
+:^nop_left "||" "MOVE" compact_indexed_copy_ports is
+    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports) {
+    build compact_indexed_copy_ports;
+    compact_indexed_copy_store(compact_indexed_copy_ports);
+    clock_ce();
+}
+
+@define COMPACT_INDEXED_COPY_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
+@define COMPACT_INDEXED_COPY_CE "slot_0_0=1 & slot_1_3=7 & slot_6_8=6 & compact_indexed_copy_ports"
+
+:MOVE "CE1" compact_indexed_copy_ports is
+    $(COMPACT_INDEXED_COPY_PHASE) & ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(COMPACT_INDEXED_COPY_CE) {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local incoming:2 = EST;
+    if (admitted == 0) goto <publish>;
+    build compact_indexed_copy_ports;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <publish>;
+    compact_indexed_copy_store(compact_indexed_copy_ports);
+  <publish>
+    publish_ce_feedback(incoming & 0xcfff, incoming);
+    carmel_end_unmodeled_issue();
+}
+:MOVE "CE1" compact_indexed_copy_ports "||" nop_right is
+    ($(COMPACT_INDEXED_COPY_PHASE) & carmel_issue=1 & slot_mode=0 & $(COMPACT_INDEXED_COPY_CE)); (slot_mode=0 & nop_right) {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local incoming:2 = EST;
+    if (admitted == 0) goto <publish>;
+    build compact_indexed_copy_ports;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <publish>;
+    compact_indexed_copy_store(compact_indexed_copy_ports);
+  <publish>
+    publish_ce_feedback(incoming & 0xcfff, incoming);
+    carmel_end_unmodeled_issue();
+}
+:^nop_left "||" "MOVE" "CE2" compact_indexed_copy_ports is
+    ($(COMPACT_INDEXED_COPY_PHASE) & carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_INDEXED_COPY_CE)) {
+    local admitted:1 = carmel_read_address_admission(2:1);
+    local incoming:2 = EST;
+    if (admitted == 0) goto <publish>;
+    build compact_indexed_copy_ports;
+    local enabled:2;
+    unary_ce(CECFG2, incoming, CETBL, 1:2, enabled);
+    if (enabled == 0) goto <publish>;
+    compact_indexed_copy_store(compact_indexed_copy_ports);
+  <publish>
+    publish_ce_feedback(incoming & 0xcfff, incoming);
+    carmel_end_unmodeled_issue();
+}
+
 macro unary_not_flags(word) {
     local flags:2 = (zext(word == 0xffff) << 3) | (zext(word < 0x8000) << 4);
     EST = (EST & 0xffc7) | flags;

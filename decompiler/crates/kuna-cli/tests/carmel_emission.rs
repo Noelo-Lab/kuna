@@ -1632,6 +1632,75 @@ int main(void) {
 }
 
 #[test]
+fn carmel_indexed_word_copy_captures_addresses_before_the_late_store() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("copy.bin");
+    let source = scratch.path().join("copy.c");
+    let executable = scratch.path().join("copy");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let loadce = |bypass, table| [0x80, 0, table, 0xcd, 0xe4, if bypass { 0x40 } else { 0 }];
+    let rows = [
+        ([0x31, 0x4b, 0xae, 0x2b, 0xec, 0], false, 0, 0, true, true, true),
+        ([0x2b, 0xec, 0, 0x31, 0x4b, 0xae], false, 0, 0, true, true, false),
+        ([0xb1, 0x4b, 0xae, 0x2b, 0xec, 0], false, 0, 0, true, true, false),
+        ([0xab, 0xec, 0, 0x31, 0x4b, 0xae], false, 0, 0, true, true, false),
+        ([0x31, 0x4b, 0xaf, 0x2b, 0xec, 0], false, 0xff, 0, true, false, false),
+        ([0x2b, 0xec, 0, 0x31, 0x4b, 0xaf], false, 0, 0xff, false, false, false),
+        ([0xb1, 0x4b, 0xaf, 0x2b, 0xec, 0], true, 0, 0xff, true, true, false),
+    ];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short to, from;\n",
+    );
+    let mut calls = String::new();
+    for (i, (packet, bypass, early, late, address, store, shift)) in rows.into_iter().enumerate() {
+        let mut code = vec![
+            [0x80, 0x80, 0x49, 0xc6, 0x42, 0x98], // R6
+            [0x80, 0xc0, 0x4b, 0xc6, 0x42, 0x9c], // R7
+            loadce(bypass, early),
+        ];
+        code.extend([nop; 6]);
+        code.push(loadce(false, late));
+        code.extend([nop; 3]);
+        code.push(packet);
+        code.extend([nop; 4]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([nop; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let (r6, r7) = if address { (0x804b, 0xc04c) } else { (0x8049, 0xc04b) };
+        let word = if !store { 0xcd01 } else if shift { 0xe901 } else { 0xd202 };
+        for (j, (storage, expected)) in [("R6", r6), ("R7", r7)].into_iter().enumerate() {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+                "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+                "--assert", &format!("return %{storage} unsigned short"),
+                "--assert", "data [data,0x8049] volatile unsigned short to",
+                "--assert", "data [data,0xc04b] volatile unsigned short from",
+            ]);
+            for (n, input) in ["RN6", "RM6", "RL6", "PACFG", "ECFG", "EST", "CECFG1", "CECFG2", "CETBL"]
+                .into_iter().enumerate()
+            {
+                kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let fun = &json["functions"][0];
+            assert!(fun["error"].is_null(), "{packet:02x?} {storage}: {fun}");
+            let text = fun["code"].as_str().unwrap();
+            let name = format!("copy_{i}_{j}");
+            writeln!(generated, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+            writeln!(calls, "to=0xcd01; from=0xd202; if ({name}(2,0,0,0,{},0,0,0,0) != {expected:#x} || to != {word:#x} || from != 0xd202) return {};", u16::from(shift) << 5, 2 * i + j + 1).unwrap();
+        }
+    }
+    writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+}
+
+#[test]
 fn carmel_movu_literal_keeps_agu_and_late_flags_independent() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
