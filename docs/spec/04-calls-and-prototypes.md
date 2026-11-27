@@ -6082,8 +6082,9 @@ xmm0,[rsp+4]; addss xmm0,xmm0; pop rax; ret` and printed `unsigned long
 twice(unsigned int a0)` returning the spill slot, and i386's `push eax` ...
 `pop eax` around an x87 result returned the argument's bits from `eax`.
 
-GCC and LLVM pop into a register only to release stack, and choose one that is
-dead there. `kuna_epiloguepop::note_pops`
+GCC and LLVM pop into a register to release stack, and choose one that is dead
+there. The one pop they aim at a live register is clang's minimum-size (`-Oz`)
+constant, `push imm8; pop rax` for `return 5`. `kuna_epiloguepop::note_pops`
 (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_epiloguepop.rs`) runs right
 after `ActionReturnRecovery` scores the output trials for the first time, while
 each RETURN still reads the register the instruction wrote, and marks a trial
@@ -6092,7 +6093,9 @@ when:
 * its value at every live RETURN is the write of a single-register pop: copied
   out of the instruction's temporary, or written directly, by a LOAD whose
   address is the stack pointer, in an instruction that also adds the loaded
-  width to that same stack pointer (`kuna_epiloguepop.rs (popped)`); and
+  width to that same stack pointer (`kuna_epiloguepop.rs (popped)`), and that
+  stack pointer was not set by a `push` of an immediate, an instruction that
+  STOREs a constant through it (`kuna_epiloguepop.rs (pushed_constant)`); and
 * another trial, in an output entry of a different storage class (`xmm0`,
   `ST0`), is already active on that pass (`kuna_epiloguepop.rs (rival)`).
 
@@ -6116,9 +6119,12 @@ keeps `rax`, since that `xmm0` is not active. A popped second register of an
 above. Beside an active `ST0`, the popped `edx` of MSVC's x87 CRT helpers (`push
 edx; fstcw [esp]; ... pop edx; ret`) is dropped as well, and `eax`, which those
 helpers set as a status, still outranks `ST0` in the model's fallback. The rule
-is always on. What it cannot separate is hand-written code that leaves a dead
-float in `xmm0` while returning a value it popped into `rax`; compilers emit
-neither the dead float nor a pop into a live return register.
+is always on. A constant popped into `rax` stays the return beside an active
+`xmm0`: clang `-Oz` builds `int f(volatile float *p) { (void)*p; return 5; }`
+as `movss xmm0,[rdi]; push 5; pop rax; ret`, and the discarded read leaves an
+active `xmm0` that would otherwise take the return. What the rule cannot
+separate is hand-written code that leaves a dead float in `xmm0` while returning
+a register value it pushed and popped back into `rax`.
 
 GCC keeps its frames with `sub`/`add`, so over the decbench x86-64 binaries at
 O0 and O2 and the ARM firmware at O2 (497 images) the rule never fires. Built by
@@ -6136,8 +6142,9 @@ result depends on, becomes a parameter, and the `__fastcall` model puts the
 
 `tests/stages/kuna-epiloguepop.xml` pins the issue's function, a Win64 float
 array returned by index, the two controls and the frame-built struct; `kuna-epiloguepop-sysv.xml` pins
-`twice` and the issue's function without a red zone, which must read as its
-red-zone build; `kuna-epiloguepop-x87.xml` pins the i386 `twice`. In
+`twice`, the issue's function without a red zone, which must read as its
+red-zone build, and the `-Oz` constant beside a discarded float read;
+`kuna-epiloguepop-x87.xml` pins the i386 `twice`. In
 `decompile-all`, clang's `float v1(void) { return (float)geti(); }`
 (`floatparam_retreg_clang_O2`) printed `unsigned long sub_11c0(void)` returning
 the popped slot and now prints `float sub_11c0(void)`.

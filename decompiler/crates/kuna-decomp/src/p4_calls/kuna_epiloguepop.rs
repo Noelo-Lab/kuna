@@ -12,11 +12,13 @@
 //! ((unsigned long long *)a0)[0x21]; }`: the float, the index parameter and the
 //! indexed read were gone.
 //!
-//! Compilers pop into a register only to release stack, and pick one that is
-//! dead there. [`note_pops`] marks, after the first scoring pass, a return
-//! trial whose value at every live RETURN is what a single-register pop wrote
-//! (a load at the stack pointer by an instruction that also advances the stack
-//! pointer by the loaded width) when a trial of another storage class is already
+//! Compilers pop into a register to release stack, and pick one that is dead
+//! there; the one pop they aim at a live register is clang's minimum-size
+//! constant, `push imm8; pop rax`. [`note_pops`] marks, after the first scoring
+//! pass, a return trial whose value at every live RETURN is what a
+//! single-register pop wrote (a load at the stack pointer by an instruction that
+//! also advances the stack pointer by the loaded width, of a slot no `push` of
+//! an immediate filled) when a trial of another storage class is already
 //! active. That pass still sees the frame's stores, so a float stored into the
 //! slot the pop reads (an 8-byte struct built in the frame and returned in
 //! `rax`) is not yet active and marks nothing. [`yield_to_other_class`] makes a
@@ -106,7 +108,8 @@ fn class(data: &Funcdata, t: &ParamTrial) -> Option<type_class> {
 
 /// Is `vn` the register a single-register pop wrote: a LOAD at the stack
 /// pointer, copied out of the instruction's temporary, in an instruction that
-/// also adds the loaded width to that stack pointer?
+/// also adds the loaded width to that stack pointer, of a slot that is not the
+/// constant a `push` of an immediate left there?
 fn popped(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(v) = data.vbank().get(vn) else { return false };
     let size = v.get_size();
@@ -129,6 +132,7 @@ fn popped(data: &Funcdata, vn: VarnodeId) -> bool {
     let Some(ptr) = load.get_in(1) else { return false };
     if load.get_out().and_then(|o| data.vbank().get(o)).map(|o| o.get_size()) != Some(size)
         || !is_stack_pointer(data, ptr)
+        || pushed_constant(data, ptr)
     {
         return false;
     }
@@ -140,6 +144,28 @@ fn popped(data: &Funcdata, vn: VarnodeId) -> bool {
                 c.is_constant() && c.get_offset() == size as u64
             })
             && o.get_out().is_some_and(|out| is_stack_pointer(data, out))
+    })
+}
+
+/// Was the stack pointer `ptr` set by a `push` of an immediate: an instruction
+/// that STOREs a constant, or a temporary copied from one, through `ptr`?
+fn pushed_constant(data: &Funcdata, ptr: VarnodeId) -> bool {
+    let Some(def) = data.vbank().get(ptr).and_then(|v| v.get_def()).and_then(|d| data.obank().get(d)) else {
+        return false;
+    };
+    let constant = |id: VarnodeId| {
+        data.vbank().get(id).is_some_and(|v| {
+            v.is_constant()
+                || v.get_def().and_then(|d| data.obank().get(d)).is_some_and(|d| {
+                    d.code() == OpCode::CPUI_COPY
+                        && d.get_in(0).and_then(|c| data.vbank().get(c)).is_some_and(|c| c.is_constant())
+                })
+        })
+    };
+    data.obank().iter_at(def.get_addr()).any(|(_, id)| {
+        data.obank().get(id).is_some_and(|o| {
+            o.code() == OpCode::CPUI_STORE && o.get_in(1) == Some(ptr) && o.get_in(2).is_some_and(constant)
+        })
     })
 }
 

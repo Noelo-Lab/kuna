@@ -953,5 +953,6 @@ array is returned by index, clang's System V `float twice(float x) { g(); return
 x * 2.0f; }` returns `a0 + a0`, the issue's function without a red zone reads as
 its red-zone build, and the i386 `twice` returns `ST0`. A `pushfq; pop rax`
 still returns the flags, a pop beside an `xmm0` that is only stored still
-returns the popped argument, and an eight-byte `struct { float f; int i; }`
-built in the frame and popped into `rax` keeps its `rax` return.
+returns the popped argument, an eight-byte `struct { float f; int i; }`
+built in the frame and popped into `rax` keeps its `rax` return, and clang
+`-Oz`'s `push 5; pop rax` beside a discarded float read still returns 5.
