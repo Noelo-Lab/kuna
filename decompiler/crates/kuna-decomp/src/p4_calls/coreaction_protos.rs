@@ -2124,6 +2124,7 @@ impl Action for ActionInputPrototype {
                     triallist.push(vn);
                 }
             }
+            crate::kuna_homespill::mark(data, &mut active);
             crate::kuna_armfloatargs::mark_own_reads(&mut active, data);
             let manager = data.get_arch().manage.clone();
             let _ = data.get_func_proto_mut().resolve_model(&active);
