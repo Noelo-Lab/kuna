@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5693,
-    5693
+    5697,
+    5697
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4955,6 +4955,10 @@
     "data:reentereddispatch #6: the callback transfers after the store",
     "data:refusals and foreign renderings retain LOCK",
     "data:refusals and foreign renderings retain UNLOCK",
+    "data:regionedgeorder preset #1: the defaults and mode aggressive print the source's else if",
+    "data:regionedgeorder preset #2: option regionedgeorder on prints a guard return",
+    "data:regionedgeorder preset #3: only the ordering returns early",
+    "data:regionedgeorder preset #4: every pass stores 2 and 1",
     "data:regionstructure #1: the if/else diamond is structured (true clause), both passes",
     "data:regionstructure #2: the else clause is structured, both passes",
     "data:regionstructure #3: the join sequence + tail return is recovered, both passes",
