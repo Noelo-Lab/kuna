@@ -1,5 +1,5 @@
 #!/bin/sh
-# Rebuilds the DEX fixtures and expected outputs from src/. Needs a JDK 11+
+# Rebuilds the DEX fixtures and expected outputs from src/. Needs a JDK 17+
 # (javac, java, jar), kotlinc (KOTLINC, default on PATH) and d8 from Google's
 # r8.jar (R8_JAR). TOOLCHAIN.txt records the versions used. The committed
 # outputs are what kuna-dex's and kuna-cli's tests read; they need no JDK.
@@ -15,12 +15,16 @@ STDLIB="$(dirname "$(readlink -f "$(command -v "$KOTLINC")")")/../lib/kotlin-std
 D8="$JAVA -cp $R8_JAR com.android.tools.r8.D8"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/j" "$tmp/k" "$tmp/d" "$tmp/r" "$tmp/kd" expected
+mkdir -p "$tmp/j" "$tmp/k" "$tmp/d" "$tmp/r" "$tmp/kd" "$tmp/s" "$tmp/sd" expected
 "$JAVAC" -g --release 8 -d "$tmp/j" src/dx/*.java
+"$JAVAC" -g --release 17 -d "$tmp/s" src/sx/*.java
 "$KOTLINC" -nowarn src/kx/Kt.kt -d "$tmp/k"
 $D8 --debug --min-api 21 --lib "$LIB" --output "$tmp/d" $(find "$tmp/j" -name '*.class')
 $D8 --release --min-api 21 --lib "$LIB" --output "$tmp/r" $(find "$tmp/j" -name '*.class')
 $D8 --release --min-api 21 --lib "$LIB" --classpath "$STDLIB" --output "$tmp/kd" $(find "$tmp/k" -name '*.class')
+$D8 --debug --min-api 26 --lib "$LIB" --output "$tmp/sd" $(find "$tmp/s" -name '*.class')
+cp "$tmp/sd/classes.dex" sugar.dex
+"$JAVA" -cp "$tmp/s" sx.Sugar > expected/Sugar.txt
 cp "$tmp/d/classes.dex" debug.dex
 cp "$tmp/r/classes.dex" release.dex
 cp "$tmp/kd/classes.dex" kotlin.dex

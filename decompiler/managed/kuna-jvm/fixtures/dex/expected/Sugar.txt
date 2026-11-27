@@ -1,0 +1,9 @@
+Point[x=3, y=4, name=p, tags=[t], on=true, w=1.5] true true 6
+iae x
+Boxa -1 Empty[] true
+171
+AB10 725
+12
+true false true false
+6 11
+[a, b, c] [1, 2, 3] 2 dflt abab x true 3 -4 true got -1 4294967295 [2]

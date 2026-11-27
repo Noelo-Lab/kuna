@@ -178,8 +178,11 @@ pub struct Dex<'a> {
     call_sites: Table,
     method_handles: Table,
     by_type: OnceLock<BTreeMap<u32, u32>>,
+    by_desc: OnceLock<BTreeMap<Vec<u8>, u32>>,
     nesting: OnceLock<crate::class::Nesting>,
-    lambdas: OnceLock<BTreeMap<u32, crate::lambda::Lambda>>,
+    lambdas: OnceLock<crate::lambda::Lambdas>,
+    backports: OnceLock<crate::backport::Backports>,
+    records: OnceLock<crate::record::Records>,
 }
 
 impl<'a> Dex<'a> {
@@ -248,8 +251,11 @@ impl<'a> Dex<'a> {
             call_sites: Table::default(),
             method_handles: Table::default(),
             by_type: OnceLock::new(),
+            by_desc: OnceLock::new(),
             nesting: OnceLock::new(),
             lambdas: OnceLock::new(),
+            backports: OnceLock::new(),
+            records: OnceLock::new(),
         };
         if map_off != 0 {
             dex.read_map(map_off)?;
@@ -371,6 +377,48 @@ impl<'a> Dex<'a> {
             .copied()
     }
 
+    /// The type index of a class this file defines, by descriptor.
+    pub fn defined(&self, desc: &[u8]) -> Option<u32> {
+        self.by_desc
+            .get_or_init(|| {
+                let mut map = BTreeMap::new();
+                for i in 0..self.classes.count {
+                    if let Some((d, t)) = self.class_def(i).ok().and_then(|def| self.type_desc(def.class).ok().map(|d| (d, def.class))) {
+                        map.entry(d.to_vec()).or_insert(t);
+                    }
+                }
+                map
+            })
+            .get(desc)
+            .copied()
+    }
+
+    /// The d8 lambda class of type `ty`, defined here or in a peer file, with
+    /// the file it is in.
+    pub(crate) fn lambda_in<'s>(&'s self, ty: u32, peers: &'s [Dex<'s>]) -> Option<(&'s Dex<'s>, &'s crate::lambda::Lambda)> {
+        if let Some(l) = self.lambda(ty) {
+            return Some((self, l));
+        }
+        let desc = self.type_desc(ty).ok()?;
+        peers.iter().find_map(|p| p.defined(desc).and_then(|t| p.lambda(t)).map(|l| (p, l)))
+    }
+
+    /// The JDK method a call of method `idx` stands for when its target is a
+    /// d8 backport, here or in a peer file.
+    pub(crate) fn backport_in(&self, idx: u32, peers: &[Dex]) -> Option<crate::backport::Target> {
+        if let Some(t) = self.backports().methods.get(&idx) {
+            return Some(*t);
+        }
+        let key = self.method_key(idx).ok()?;
+        peers.iter().find_map(|p| p.backports().by_name.get(&key).copied())
+    }
+
+    /// A method id as class descriptor, name and descriptor, `\0`-separated.
+    pub(crate) fn method_key(&self, idx: u32) -> Result<Vec<u8>> {
+        let m = self.method(idx)?;
+        Ok([self.type_desc(m.class)?, b"\0", self.string(m.name)?, b"\0", &self.proto_desc(m.proto)?].concat())
+    }
+
     /// Inner-class facts for every class of the file, built on first use.
     pub(crate) fn nesting(&self) -> &crate::class::Nesting {
         self.nesting.get_or_init(|| crate::class::Nesting::build(self))
@@ -378,7 +426,33 @@ impl<'a> Dex<'a> {
 
     /// The d8 lambda class of type `ty`, if it is one.
     pub(crate) fn lambda(&self, ty: u32) -> Option<&crate::lambda::Lambda> {
-        self.lambdas.get_or_init(|| crate::lambda::scan(self)).get(&ty)
+        self.lambdas().by_type.get(&ty)
+    }
+
+    pub(crate) fn lambdas(&self) -> &crate::lambda::Lambdas {
+        self.lambdas.get_or_init(|| crate::lambda::scan(self))
+    }
+
+    /// The method descriptor of prototype `proto`.
+    pub fn proto_desc(&self, proto: u32) -> Result<Vec<u8>> {
+        let p = self.proto(proto)?;
+        let mut d = vec![b'('];
+        for t in p.params {
+            d.extend_from_slice(self.type_desc(t)?);
+        }
+        d.push(b')');
+        d.extend_from_slice(self.type_desc(p.ret)?);
+        Ok(d)
+    }
+
+    /// The d8 records of the file, recognised on first use.
+    pub(crate) fn records(&self) -> &crate::record::Records {
+        self.records.get_or_init(|| crate::record::scan(self))
+    }
+
+    /// The d8 backports of the file, recognised on first use.
+    pub(crate) fn backports(&self) -> &crate::backport::Backports {
+        self.backports.get_or_init(|| crate::backport::scan(self))
     }
 
     pub fn class_data(&self, off: u32) -> Result<ClassData> {

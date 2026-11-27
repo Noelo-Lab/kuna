@@ -13,13 +13,17 @@
 
 use std::collections::BTreeMap;
 
+use crate::backport::Call;
 use crate::classfile::{op, Asm, Body, Label, Pool};
 use crate::code::{cat, is_wide, kind, size, Kind, Mask, Method, Op, D, F, I, J, L};
-use crate::dex::{Value, NO_INDEX};
+use crate::dex::{Dex, Value, NO_INDEX};
 use crate::insn::{fill_array, packed_switch, sparse_switch};
 use crate::{err, Result};
 
 pub const THIS_NAME: u32 = NO_INDEX - 1;
+
+/// Marks the second local of a reused parameter register in `slots`.
+const REUSED: u32 = 1 << 31;
 
 /// Class-level state a method's code adds to.
 pub struct Shared<'p> {
@@ -27,8 +31,11 @@ pub struct Shared<'p> {
     pub bootstrap: &'p mut Vec<(u16, Vec<u16>)>,
     /// The class needs at least this class-file version.
     pub version: u16,
-    pub interfaces: &'p dyn Fn(u32) -> bool,
+    /// Whether a class (by descriptor) is an interface.
+    pub interfaces: &'p dyn Fn(&[u8]) -> bool,
     pub verifiable: bool,
+    /// The other DEX files of the input, whose d8 classes calls here may use.
+    pub peers: &'p [crate::Dex<'p>],
 }
 
 struct Emitter<'m, 'd, 'a, 's, 'p> {
@@ -52,6 +59,7 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     on_stack: Vec<bool>,
     stmts: Vec<(u32, u32)>,
     min_addr: u32,
+    regions: Vec<crate::region::Region>,
 }
 
 /// The `Code` attribute body for `m`.
@@ -72,8 +80,8 @@ pub fn code_attribute(m: &Method, sh: &mut Shared) -> Result<Vec<u8>> {
 struct Join {
     edges: Vec<(u32, usize)>,
     stubs: Vec<(usize, Label)>,
-    /// The phi's register and category when the join stores the value.
-    store: Option<(u32, Mask)>,
+    /// The phi's register, category and value when the join stores it.
+    store: Option<(u32, Mask, u32)>,
 }
 
 fn internal(desc: &[u8]) -> &[u8] {
@@ -121,6 +129,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             on_stack: vec![false; m.ops.len()],
             stmts: Vec::new(),
             min_addr: u32::MAX,
+            regions: Vec::new(),
         }
     }
 
@@ -134,6 +143,15 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             .ok_or_else(|| err("more than 65535 JVM locals".to_string()))?;
         self.slots.insert((reg, c), s);
         Ok(s)
+    }
+
+    /// The local holding value `v` of register `reg` in category `c`: a
+    /// parameter's register d8 reuses for another value gets a second local,
+    /// so the parameter's own keeps the parameter throughout.
+    fn local(&mut self, reg: u32, c: Mask, v: u32) -> Result<u16> {
+        let m = self.m;
+        let reused = m.params.iter().enumerate().any(|(p, &pr)| pr == (reg, c) && m.root(p as u32) != m.root(v));
+        self.slot(if reused { reg | REUSED } else { reg }, c)
     }
 
     fn candidate(&self, k: usize) -> bool {
@@ -211,7 +229,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 self.on_stack[k] = true;
                 None
             } else {
-                Some((r, m.cat[phi as usize]))
+                Some((r, m.cat[phi as usize], phi))
             };
             let mut stubs: Vec<(usize, Label)> = Vec::new();
             for &(p, c) in &edges {
@@ -252,7 +270,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
 
     fn join_cat(&self, j: u32) -> Mask {
         let m = self.m;
-        if let Some((_, c)) = self.joins[&j].store {
+        if let Some((_, c, _)) = self.joins[&j].store {
             return c;
         }
         let k = (m.blocks[j as usize].start..m.ops.len()).find(|&k| self.on_stack[k]).expect("join use");
@@ -262,7 +280,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     fn run(&mut self) -> Result<()> {
         let m = self.m;
         self.find_joins()?;
-        let order = layout(m);
+        let mut order = layout(m);
+        self.regions = crate::region::arrange(m, &mut order);
         for w in order.windows(2) {
             self.next_block[w[0] as usize] = w[1];
         }
@@ -285,8 +304,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             self.asm.bind(self.labels[b]);
             let catches = m.ops[blk.start].insn.op == 0x0d;
             self.asm.depth = i32::from(catches) + i32::from(self.joins.contains_key(&(b as u32)));
-            if let Some((r, c)) = self.joins.get(&(b as u32)).and_then(|j| j.store) {
-                let slot = self.slot(r, c)?;
+            if let Some((r, c, phi)) = self.joins.get(&(b as u32)).and_then(|j| j.store) {
+                let slot = self.local(r, c, phi)?;
                 self.asm.local(op::ISTORE, kind(c), slot, -size(c));
             }
             for k in blk.start..blk.end {
@@ -295,12 +314,20 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             self.flush()?;
             let next = order.get(i + 1).copied();
-            if let Some(n) = next.filter(|&n| falls(&m.ops[blk.end - 1]) && self.joins.contains_key(&n)) {
-                let c = self.edge_value(b as u32, n).expect("join edge");
-                let cat = self.join_cat(n);
-                self.push_const(c, cat)?;
-                if !self.joins[&n].stubs.is_empty() {
-                    self.asm.branch(op::GOTO, self.labels[n as usize], 0);
+            if falls(&m.ops[blk.end - 1]) {
+                let f = b as u32 + 1;
+                let stubbed = match self.joins.get(&f) {
+                    Some(join) => {
+                        let stubbed = !join.stubs.is_empty();
+                        let c = self.edge_value(b as u32, f).expect("join edge");
+                        let cat = self.join_cat(f);
+                        self.push_const(c, cat)?;
+                        stubbed
+                    }
+                    None => false,
+                };
+                if stubbed || next != Some(f) {
+                    self.asm.branch(op::GOTO, self.labels[f as usize], 0);
                 }
             }
             for k in blk.start..blk.end - 1 {
@@ -308,9 +335,6 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             self.pc_end[blk.end - 1] = self.asm.pc();
             self.block_pc[b] = (start, self.asm.pc());
-            if falls(&m.ops[blk.end - 1]) && order.get(i + 1) != Some(&(b as u32 + 1)) {
-                return Err(err(format!("internal: block at {:#x} lost its fall-through", m.ops[blk.start].insn.addr)));
-            }
         }
         let handlers: Vec<u32> = m
             .blocks
@@ -418,7 +442,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         if uses == 0 && !m.named_def(k) {
             self.asm.op(if is_wide(c) { op::POP2 } else { op::POP }, &[], -size(c));
         } else {
-            let s = self.slot(d.reg, c)?;
+            let s = self.local(d.reg, c, d.id)?;
             self.asm.local(op::ISTORE, kind(c), s, -size(c));
         }
         Ok(())
@@ -438,7 +462,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         if u.reg != d.reg || by.is_none() || folded || m.inline_const(u.val) || m.def_cat(d) != I || m.use_cat(o, 0) != I {
             return Ok(false);
         }
-        let s = self.slot(d.reg, I)?;
+        let s = self.local(d.reg, I, d.id)?;
         self.min_addr = self.min_addr.min(o.insn.addr);
         self.asm.iinc(s, by.expect("checked"));
         Ok(true)
@@ -552,7 +576,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             return Ok(());
         }
-        let s = self.slot(o.uses[u].reg, c)?;
+        let s = self.local(o.uses[u].reg, c, v)?;
         self.asm.local(op::ILOAD, kind(c), s, size(c));
         Ok(())
     }
@@ -565,8 +589,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     }
 
     fn class_ref(&mut self, ty: u32) -> Result<u16> {
-        let desc = self.m.dex.type_desc(ty)?;
-        Ok(self.sh.pool.class(internal(desc)))
+        let name = self.class_name(ty)?;
+        Ok(self.sh.pool.class(name))
     }
 
     fn field_ref(&mut self, idx: u32) -> Result<(u16, Mask)> {
@@ -578,21 +602,26 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     }
 
     fn proto_desc(&self, proto: u32) -> Result<Vec<u8>> {
-        let dex = self.m.dex;
-        let p = dex.proto(proto)?;
-        let mut d = vec![b'('];
-        for t in p.params {
-            d.extend_from_slice(dex.type_desc(t)?);
-        }
-        d.push(b')');
-        d.extend_from_slice(dex.type_desc(p.ret)?);
-        Ok(d)
+        self.m.dex.proto_desc(proto)
+    }
+
+    /// A class's internal name, with d8's record superclass written back.
+    fn class_name(&self, ty: u32) -> Result<&'a [u8]> {
+        self.class_name_in(self.m.dex, ty)
+    }
+
+    fn class_name_in<'x>(&self, dex: &Dex<'x>, ty: u32) -> Result<&'x [u8]> {
+        let name = internal(dex.type_desc(ty)?);
+        Ok(if name == crate::record::RECORD_TAG && !self.sh.verifiable { b"java/lang/Record" } else { name })
     }
 
     fn method_ref(&mut self, idx: u32, interface: bool) -> Result<u16> {
-        let dex = self.m.dex;
+        self.method_ref_in(self.m.dex, idx, interface)
+    }
+
+    fn method_ref_in(&mut self, dex: &Dex, idx: u32, interface: bool) -> Result<u16> {
         let mi = dex.method(idx)?;
-        let class = internal(dex.type_desc(mi.class)?).to_vec();
+        let class = self.class_name_in(dex, mi.class)?.to_vec();
         let desc = self.proto_desc(mi.proto)?;
         Ok(self.sh.pool.method(&class, dex.string(mi.name)?, &desc, interface))
     }
@@ -608,7 +637,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             4..=8 => {
                 let kind = [6, 5, 8, 7, 9][usize::from(h.kind - 4)];
-                let iface = h.kind == 8 || (self.sh.interfaces)(dex.method(id)?.class);
+                let iface = h.kind == 8 || (self.sh.interfaces)(dex.type_desc(dex.method(id)?.class)?);
                 (kind, self.method_ref(id, iface)?)
             }
             k => return Err(err(format!("method handle kind {k}"))),
@@ -640,8 +669,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     }
 
     /// The `invokedynamic` constant javac writes for a lambda or method reference.
-    fn metafactory(&mut self, l: &crate::lambda::Lambda) -> Result<u16> {
-        let dex = self.m.dex;
+    fn metafactory(&mut self, dex: &Dex, l: &crate::lambda::Lambda) -> Result<u16> {
         let mf = self.sh.pool.method(
             b"java/lang/invoke/LambdaMetafactory",
             b"metafactory",
@@ -649,11 +677,11 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             false,
         );
         let bsm = self.sh.pool.method_handle(6, mf);
-        let sam = self.proto_desc(l.sam_proto)?;
+        let sam = dex.proto_desc(l.sam_proto)?;
         let sam = self.sh.pool.method_type(&sam);
-        let class = dex.method(l.method)?.class;
+        let class = dex.type_desc(dex.method(l.method)?.class)?;
         let iface = l.kind == 9 || (l.kind != 8 && (self.sh.interfaces)(class));
-        let target = self.method_ref(l.method, iface)?;
+        let target = self.method_ref_in(dex, l.method, iface)?;
         let handle = self.sh.pool.method_handle(l.kind, target);
         let inst = self.sh.pool.method_type(&l.instantiated);
         let entry = (bsm, vec![sam, handle, inst]);
@@ -720,9 +748,9 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         self.min_addr = self.min_addr.min(x.addr);
         let def_cat = o.def.as_ref().map(|d| m.def_cat(d)).unwrap_or(0);
         if let Kind::NewObject { ty } = o.kind {
-            if let Some(l) = m.dex.lambda(ty).filter(|_| !self.sh.verifiable) {
+            if let Some((owner, l)) = m.dex.lambda_in(ty, self.sh.peers).filter(|_| !self.sh.verifiable) {
                 self.push_uses(k)?;
-                let r = self.metafactory(l)?;
+                let r = self.metafactory(owner, l)?;
                 let pops = self.uses_size(k);
                 self.asm.op(op::INVOKEDYNAMIC, &[(r >> 8) as u8, r as u8, 0, 0], 1 - pops);
                 return Ok(L);
@@ -977,9 +1005,24 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                         let r = self.invoke_dynamic(x.idx)?;
                         self.asm.op(op::INVOKEDYNAMIC, &[(r >> 8) as u8, r as u8, 0, 0], push - pops);
                     }
+                    0x71 | 0x77 if !self.sh.verifiable && m.dex.backport_in(x.idx, self.sh.peers).is_some() => {
+                        let t = m.dex.backport_in(x.idx, self.sh.peers).expect("backport");
+                        let iface = matches!(t.call, Call::Interface | Call::InterfaceStatic);
+                        let r = self.sh.pool.method(t.owner.as_bytes(), t.name.as_bytes(), t.desc.as_bytes(), iface);
+                        if iface {
+                            self.sh.version = self.sh.version.max(52);
+                        }
+                        match t.call {
+                            Call::Static | Call::InterfaceStatic => self.asm.op_u16(op::INVOKESTATIC, r, push - pops),
+                            Call::Virtual => self.asm.op_u16(op::INVOKEVIRTUAL, r, push - pops),
+                            Call::Interface => {
+                                self.asm.op(op::INVOKEINTERFACE, &[(r >> 8) as u8, r as u8, pops as u8, 0], push - pops)
+                            }
+                        }
+                    }
                     _ => {
                         let base = if x.op >= 0x74 { x.op - 0x74 } else { x.op - 0x6e };
-                        let class = m.dex.method(x.idx)?.class;
+                        let class = m.dex.type_desc(m.dex.method(x.idx)?.class)?;
                         let iface = base == 4 || (!self.sh.verifiable && (self.sh.interfaces)(class));
                         if iface && base != 4 {
                             self.sh.version = self.sh.version.max(52);
@@ -1122,6 +1165,28 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         merge(iv)
     }
 
+    /// Whether every block that can throw meets, in the exception table, the
+    /// handlers its try item lists, in that order, up to a catch-all.
+    fn covers_as_dex(&self, table: &[(u32, u32, u32, Option<u32>)]) -> bool {
+        let m = self.m;
+        m.blocks.iter().enumerate().filter(|(b, blk)| blk.reachable && crate::region::throws(m, *b as u32)).all(|(b, blk)| {
+            let (s, e) = self.block_pc[b];
+            let mut seen = Vec::new();
+            for &(start, end, h, ty) in table {
+                if start < e && s < end {
+                    if !(start <= s && e <= end) {
+                        return false;
+                    }
+                    seen.push((ty, h));
+                    if ty.is_none() {
+                        break;
+                    }
+                }
+            }
+            seen == blk.handlers
+        })
+    }
+
     /// The JVM pc intervals of the ops whose addresses are in `[start, end)`.
     fn span(&self, start: u32, end: u32) -> Vec<(u32, u32)> {
         let m = self.m;
@@ -1140,26 +1205,40 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         if code.len() > 0xffff {
             return Err(err(format!("method needs {} bytes of JVM code (limit 65535)", code.len())));
         }
-        let mut table = Body::default();
-        let mut entries = 0u16;
-        for t in &m.code.tries {
-            for (start, end) in self.coverage(t) {
-            for &(ty, addr) in &t.handlers {
-                let k = m.ops.partition_point(|o| o.insn.addr < addr);
-                let b = m.ops[k].block;
-                if !m.blocks[b as usize].reachable {
-                    continue;
+        let mut table: Vec<(u32, u32, u32, Option<u32>)> = Vec::new();
+        let per_item = |e: &Self, skip: &dyn Fn(u32, Option<u32>) -> bool, table: &mut Vec<(u32, u32, u32, Option<u32>)>| {
+            for t in &m.code.tries {
+                for (start, end) in e.coverage(t) {
+                    for &(ty, addr) in &t.handlers {
+                        let b = m.ops[m.ops.partition_point(|o| o.insn.addr < addr)].block;
+                        if m.blocks[b as usize].reachable && !skip(b, ty) {
+                            table.push((start, end, b, ty));
+                        }
+                    }
                 }
-                let label = self.stubs.get(&b).copied().unwrap_or(self.labels[b as usize]);
-                let pc = self.asm.bound(label).ok_or_else(|| err("unbound handler".to_string()))?;
-                let catch = match ty {
-                    Some(ty) => self.sh.pool.class(internal(m.dex.type_desc(ty)?)),
-                    None => 0,
-                };
-                table.u16(start as u16).u16(end as u16).u16(pc as u16).u16(catch);
-                entries += 1;
             }
+        };
+        per_item(&self, &|b, ty| self.regions.iter().any(|r| r.handler == b && r.ty == ty), &mut table);
+        for r in &self.regions {
+            table.push((self.block_pc[r.first as usize].0, self.block_pc[r.last as usize].1, r.handler, r.ty));
+            for (start, end) in merge(r.own.iter().map(|&b| self.block_pc[b as usize]).collect()) {
+                table.push((start, end, r.handler, r.ty));
             }
+        }
+        if !self.covers_as_dex(&table) {
+            table.clear();
+            per_item(&self, &|_, _| false, &mut table);
+        }
+        let mut entries = Body::default();
+        for &(start, end, b, ty) in &table {
+            let label = self.stubs.get(&b).copied().unwrap_or(self.labels[b as usize]);
+            let pc = self.asm.bound(label).ok_or_else(|| err("unbound handler".to_string()))?;
+            let catch = match ty {
+                Some(ty) => self.sh.pool.class(internal(m.dex.type_desc(ty)?)),
+                None if crate::region::rethrows(m, b) => 0,
+                None => self.sh.pool.class(b"java/lang/Throwable"),
+            };
+            entries.u16(start as u16).u16(end as u16).u16(pc as u16).u16(catch);
         }
         let mut attrs: Vec<(u16, Vec<u8>)> = Vec::new();
         let mut lines = Body::default();
@@ -1196,8 +1275,19 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 let desc = m.dex.type_desc(l.ty)?;
                 (m.dex.string(l.name)?, desc.to_vec(), cat(desc))
             };
-            let Some(&slot) = self.slots.get(&(l.reg, c)) else { continue };
-            let span = if l.start == 0 { self.span(0, l.end).first().map(|&(_, e)| vec![(0, e)]).unwrap_or_default() } else { self.span(l.start, l.end) };
+            let own = m.params.iter().position(|&p| p == (l.reg, c)).is_some_and(|_| {
+                l.start == 0 || m.debug.locals.iter().any(|p| p.reg == l.reg && p.start == 0 && p.name == l.name)
+            });
+            let key = if own || !self.slots.contains_key(&(l.reg | REUSED, c)) { l.reg } else { l.reg | REUSED };
+            let Some(&slot) = self.slots.get(&(key, c)) else { continue };
+            let whole = m.params.iter().zip(&m.clean_param).any(|(&(r, pc), &clean)| clean && r == l.reg && pc == c);
+            let span = if l.start == 0 && whole {
+                vec![(0, code.len() as u32)]
+            } else if l.start == 0 {
+                self.span(0, l.end).first().map(|&(_, e)| vec![(0, e)]).unwrap_or_default()
+            } else {
+                self.span(l.start, l.end)
+            };
             for (start, end) in span {
                 if start >= end || !seen.insert((start, end, name.to_vec(), slot)) {
                     continue;
@@ -1224,8 +1314,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         let mut out = Body::default();
         out.u16(self.asm.max.max(0) as u16).u16(self.next_slot).u32(code.len() as u32);
         out.0.extend_from_slice(code);
-        out.u16(entries);
-        out.0.extend_from_slice(&table.0);
+        out.u16(table.len() as u16);
+        out.0.extend_from_slice(&entries.0);
         out.u16(attrs.len() as u16);
         for (name, body) in attrs {
             out.u16(name).u32(body.len() as u32);
