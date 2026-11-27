@@ -2,8 +2,9 @@
 //! slot whose every value is an integer constant holds an `int`: its locals
 //! are typed `int`, or the `byte`, `short` or `char` that a read requires
 //! (an argument, a store, a return of that type), instead of the narrowest
-//! type the constants fit. A slot read where the fix cannot judge, or where
-//! reads require different types, keeps Vineflower's types.
+//! type the constants fit. A slot read where the fix cannot judge, where
+//! reads require different types, or that an increment (`n++`) writes keeps
+//! Vineflower's types.
 
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
@@ -56,6 +57,9 @@ pub fn widen(
                     constant.put(slot, all);
                     versions.put(VarVersionPair::from_var(var), ());
                 }
+            }
+            if let Some(var) = stepped(parent) {
+                constant.put(slot_of(var), false);
             }
             for (i, child) in parent.get_all_exprents().into_iter().enumerate() {
                 let Some(var) = child.try_as_var() else {
@@ -112,6 +116,17 @@ pub fn widen(
             lower.borrow_mut().put(pair, target);
         }
     }
+}
+
+/// The local an increment or decrement (`n++`, `--n`) writes, if `exprent`
+/// is one: a value that is not a constant.
+fn stepped(exprent: Exprent) -> Option<i32> {
+    let func = exprent.try_as_function()?;
+    matches!(
+        func.get_func_type(),
+        FunctionType::Imm | FunctionType::Mmi | FunctionType::Ipp | FunctionType::Ppi
+    )
+    .then(|| func.get_lst_operands().first()?.try_as_var().map(|v| v.get_index()))?
 }
 
 /// What a read of a local asks of its type.

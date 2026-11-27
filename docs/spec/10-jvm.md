@@ -787,7 +787,10 @@ element of `byte`, `short` or `char` requires that type. When the reads accept `
 slot's variables are `int`; when they also require one narrow type that every stored constant
 fits, they have that type (`char c = 'q'` for a `char` field store, which kept a cast
 before); reads that require two types, or a read in any other context (a conditional, a
-string concatenation, a copy to another variable), leave Vineflower's types.
+string concatenation, a copy to another variable), leave Vineflower's types. A slot an
+increment or decrement writes (`b++` on a `byte` is `iadd`, `i2b`, `istore`, folded into the
+expression before types are computed) is not constant-only and keeps its narrow type:
+`int b = 0; take(b++)` would not select `take(byte)`.
 
 **Generic locals without a LocalVariableTable (kuna).** Without the table a local has its
 erased type, so `Set keys = settings.keySet(); keys.removeIf(k -> k.startsWith(p))` did not

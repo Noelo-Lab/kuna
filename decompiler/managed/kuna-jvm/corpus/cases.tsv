@@ -2249,3 +2249,5 @@ case	kuna-fixes/pkg/TestDiamondWildcardArg	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestParameterNamesNoDebug	Kuna Fixes	kuna-fixes/classes/pkg/TestParameterNamesNoDebug
 # kuna-fixes/src/pkg/TestStaticFieldBehindLambda.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestStaticFieldBehindLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticFieldBehindLambda
+# kuna-fixes/src/pkg/TestNarrowLocalIncrement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNarrowLocalIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowLocalIncrement
