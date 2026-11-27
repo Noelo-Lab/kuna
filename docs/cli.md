@@ -266,12 +266,29 @@ kuna decompile ./stripped.bin 0x401040 --addr
 kuna decompile ./a.out main --option compareform canonical
 kuna decompile ./sparc.elf main --option returnpair single
 kuna decompile ./a.out main --language rust
+kuna decompile ./protected.exe main --deobfuscate off
 ```
 
 Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`, so
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+`--deobfuscate LIST` selects the deobfuscation techniques and is accepted by
+every subcommand that takes `--option`, of which it abbreviates one, `--option
+deobfuscate LIST`. `auto` (the default) lets each technique act on the
+functions where it detects its obfuscation, `off` decompiles the protected code
+as it is, and technique names separated by commas run those alone, on the
+requested function, without waiting for their detection. The one technique so
+far is `devirtualize`, which recovers a function protected by a VM-based
+obfuscator (VMProtect, Themida, Tigress Virtualize) with the Pushan algorithm
+(NDSS 2027); the header of a function it recovered starts with `warn:
+devirtualize:`. An unknown technique is an error that lists the known ones.
+A recovery runs under its own work budget, which `--max-fn-seconds` does not
+count: over 48 protected test functions the decompile took 12 s at the median
+and five minutes at most, with up to 3.7 GiB resident. `--max-fn-memory` does
+stop it, and in a `--jobs` run so does the pool's stall watchdog (four times
+`--max-fn-seconds`), which leaves that function an `error` record to decompile
+on its own. `--deobfuscate off` skips it.
 For an AArch64 target (any compiler spec with `<prefersplit>`), a single-function
 decompile also bootstraps its direct callees' recovered parameter types — at most
 32, no recursion, types only — so a split-register argument takes the callee's
@@ -641,6 +658,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
 | `data <addr\|[space,addr]> <C typedeclaration>` | a named, typed global, optionally in a named processor space |
+| `import <slot> <name>` | the pointer word at `<slot>` holds the address of the external function `<name>` |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
 | `jumptable <site> <target> [<target> ...]` | every taken destination of a computed branch, in hexadecimal code addresses |
@@ -1056,6 +1074,31 @@ second `callee` for the same call site replaces the first, which is reported
 rejected. A call site the function's flow never reaches is refused after the
 decompile, and the run exits non-zero. In the console the same fact is
 `override indirect <callsite> <name|address>`, given after `load function`.
+
+**`import` names a pointer slot the import table does not.** A call through an
+import slot prints the import's name because the loader read the name from the
+import table. A packer that rebuilds the table keeps the slots and drops the
+names: Themida leaves a protected PE's Import Address Table where the linker put
+it and lists one import per DLL, so every other call through it prints as
+`(*dat_403064)(&v4,0,0x10)`. The same holds for a table a program fills itself
+from `GetProcAddress` or `dlsym`, and for a dumped image. When you know what a
+slot holds, from the unprotected build, a debugger or a memory dump, say so:
+
+```console
+$ kuna decompile ./blaster_tiger_protected.exe 0x40134e --addr
+  (*dat_403064)(&v2,0,0x10);
+$ kuna decompile ./blaster_tiger_protected.exe 0x40134e --addr --assert 'import 0x403064 memset'
+  memset(&v2,0,0x10);
+```
+
+The slot becomes what an import table entry makes it: a function symbol named
+`<name>` at the slot, with the slot's pointer word marked as an external
+reference, so every call through it, in native code and in a devirtualized
+function alike, is a call to `<name>` with that name's built-in signature when
+kuna has one. Reads and writes of the slot itself still print it as data, it is
+not listed as a function body, and a symbol already at the slot is renamed. One
+directive names one slot; an `@FILE` of them restores a whole table. In the
+console the fact is `map import <slot> <name>`, given after `read symbols`.
 
 **Known computed-branch destinations.** Use `jumptable SITE TARGET [TARGET ...]`
 when you know every taken destination of one computed jump. Supply hexadecimal
@@ -4881,7 +4924,7 @@ kuna decompile app.jar com.ex.UtilKt --language java   # a Kotlin class written 
 A class file, a jar (or war, ear, zip), a directory of classes, a DEX file or an APK is decompiled to **Java**,
 and a class compiled from Kotlin to **Kotlin**, by kuna's non-native JVM engine,
 `kuna-jvm`, which began as a Rust port of Vineflower 1.12.0 and its bundled plugins
-(`docs/jvm.md`; the algorithm is `docs/spec/10-jvm.md`). The input is recognized before any native code runs, so none of the native machinery (SLEIGH
+(`docs/jvm.md`; the algorithm is `docs/spec/11-jvm.md`). The input is recognized before any native code runs, so none of the native machinery (SLEIGH
 specs, `decomp_dbg`, the loader, the native option tables) is involved, and a native
 binary pays one `stat` and one eight-byte read for the check. The commands keep their
 native names, flags and output shapes where they make sense for Java and Kotlin, and say so where

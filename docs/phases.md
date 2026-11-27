@@ -57,6 +57,15 @@ registry is `phases.toml`.
 | P8 | `p8_structure/` | structured AST & goto quality (the structuring engine, `blockaction`) |
 | P9 | `p9_emit/` | surface rendering & refinement (PrintC, casts, strings, naming) |
 | Infra | `infra/` | orchestration & framework (the schedule, the Action/Rule engine) |
+| — (deobf) | `deobf/` | deobfuscation plane: deobfuscators acting at stage hooks (before flow, after flow, the rule pool, the final audit) and the recovered-body contract the phases read |
+
+The **deobfuscation plane** (`deobf/`) cuts across the phases instead of being one, because
+obfuscation is undone at the stage whose representation can undo it. A deobfuscator acts at the
+stage hooks it needs: the front (before P2's flow follower, where it can hand over a recovered
+body in place of the function's bytes), after the plain flow, the P3 rule pool, and a final
+audit. The phases after the flow read one contract, the recovered body's facts and analysis
+policy, and never ask which deobfuscator produced it. Its first member is the VM devirtualizer
+(`option deobfuscate`, technique `devirtualize`). Spec: `docs/spec/10-deobfuscation.md`.
 
 The **program-prep analyses** that sit *outside* this phase model (the loader/analyzer tier
 Ghidra runs as "Run Analysis": PLT/GOT markup, strings, DWARF, demangling, function-start
@@ -70,7 +79,7 @@ The one today is `kuna-jvm` (JVM class files and jars to Java, Kotlin classes to
 port of Vineflower and its bundled plugins; `docs/jvm.md`). It **shares the taxonomy, not the schedule**: its source folders carry
 the same phase names, so a stage is found by its phase, but the order its passes run in
 is its own (`infra/method_processor.rs` per method, `p0_knowledge/context_unit.rs` per
-class; `docs/spec/10-jvm.md` section 10.1), and none of the Band B, feedback-edge or registry
+class; `docs/spec/11-jvm.md` section 11.1), and none of the Band B, feedback-edge or registry
 machinery above applies to it. Its decision points are the `jvm_*` options of
 `docs/options-jvm.md`.
 

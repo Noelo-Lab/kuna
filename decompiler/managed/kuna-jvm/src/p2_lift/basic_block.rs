@@ -1,7 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/code/cfg/BasicBlock.java`.
 //!
 //! `copy_of` is kuna's: the block a statement copy's block was copied from
-//! (fix `copied_finally`, spec 10.16).
+//! (fix `copied_finally`, spec 11.16).
 
 use crate::decompiler_context::DecompilerContext;
 use crate::i_graph_node::IGraphNode;

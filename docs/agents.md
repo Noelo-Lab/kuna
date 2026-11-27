@@ -18,7 +18,7 @@ is not needed for day-to-day work.
 
 | Path | What |
 |---|---|
-| `decompiler/` | The engine — a cargo workspace. `kuna-decomp` is the decompiler (`src/` is phase-foldered: `p0_knowledge/`…`p9_emit/`, plus `substrate/` and `infra/`); `kuna-analysis` the loader/analyzer tier (ELF markup, strings, DWARF, function discovery); `kuna-sleigh`/`kuna-slacomp` the SLEIGH runtime/compiler (binary `slacomp`); `kuna-console` the `decomp_dbg`/`decomp_test_dbg` binaries; `kuna-cli` the user-facing `kuna` binary; `kuna-ghidra` and `kuna-wasm` the Ghidra and browser front-ends; `kuna-base`/`kuna-num`/`kuna-harness`/`kuna-lift-diff` support. |
+| `decompiler/` | The engine — a cargo workspace. `kuna-decomp` is the decompiler (`src/` is phase-foldered: `p0_knowledge/`…`p9_emit/`, plus `substrate/`, `infra/` and the deobfuscation plane `deobf/`); `kuna-analysis` the loader/analyzer tier (ELF markup, strings, DWARF, function discovery); `kuna-sleigh`/`kuna-slacomp` the SLEIGH runtime/compiler (binary `slacomp`); `kuna-console` the `decomp_dbg`/`decomp_test_dbg` binaries; `kuna-cli` the user-facing `kuna` binary; `kuna-ghidra` and `kuna-wasm` the Ghidra and browser front-ends; `kuna-base`/`kuna-num`/`kuna-harness`/`kuna-lift-diff` support. |
 | `decompiler/managed/` | Non-native engines, outside the p-code pipeline: `kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins (class files and jars to Java, Kotlin classes to Kotlin), same phase-folder taxonomy, its own schedule and IR; `kuna-cli` routes JVM inputs to it. |
 | `tests/datatests/` | Vendored XML regression corpus (83 files / 675 assertions) — what `make test` runs. |
 | `tests/stages/` | kuna-owned issue testcases — `make test-stages`. Conventions: `tests/stages/README.md`. |
@@ -148,7 +148,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
   `IFernflowerPreferences` and the bundled plugins' options (`kuna-jvm/tests/kuna_options.rs`); a kuna-only behavior is a
   new row with `source_decompiler = "kuna"`, default-on only if `make test-jvm` still
   matches every case. Regenerate `docs/options-jvm.md` with
-  `kuna catalog --markdown --engine jvm`; describe it in `docs/spec/10-jvm.md`.
+  `kuna catalog --markdown --engine jvm`; describe it in `docs/spec/11-jvm.md`.
 - **The spec is live**: every new feature or behavior change is described in natural-language
   prose in the owning `docs/spec/` chapter in the same PR — not just an anchor update (each
   phase folder has exactly one owning chapter; find yours via its `Anchors:` header). Run

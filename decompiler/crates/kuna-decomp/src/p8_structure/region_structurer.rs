@@ -75,6 +75,8 @@ use kuna_base::types::{int4, uintb};
 
 use crate::block::BlockGraph;
 use crate::funcdata::Funcdata;
+use crate::kuna_fasthash::FxHashMap;
+use crate::p8_structure::kuna_compgraph::CompGraph;
 use crate::options::on_or_off;
 use crate::context::BlockId;
 
@@ -131,11 +133,11 @@ impl OptionRegionStructure {
 /// `data.install_switch_defaults()` and `data.seed_sblocks_copy()` have run, so
 /// `sblocks` is a `BlockCopy` mirror of `bblocks` with the same edges.
 ///
-/// 1. Runs the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid) over the
-///    real CFG (proves the W7 adapter; its node order guides the virtualize
-///    fallback).
+/// 1. Builds the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid) over
+///    the real CFG; it runs when a loop first needs refining.
 /// 2. Collapses the `sblocks` graph to a single structured root using the acyclic
-///    sequence schema + the SAILR-ordered virtualize-to-goto fallback.
+///    sequence schema + the SAILR-ordered virtualize-to-goto fallback, declining
+///    at once when [`components_stay_apart`] shows it cannot.
 ///
 /// On success, returns `Ok((true, flips))` where `flips` is the list of `bblocks`
 /// `BlockBasic` ids whose trailing CBRANCH must have its `boolean_flip`/
@@ -150,6 +152,11 @@ pub fn run_region_structurer(
     deadline: Option<std::time::Instant>,
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
 ) -> KunaResult<(bool, Vec<BlockId>, bool)> {
+    // A graph whose components cannot all join is not structured; the attempt
+    // matters only for the fold refusals its pre-pass counts for recorded jumps.
+    if data.kuna_o0jumps.is_none() && components_stay_apart(data.sblocks_ref(), data.sblocks_root()) {
+        return Ok((false, Vec::new(), false));
+    }
 
     // ---- 1b. Precompute the switch/jump-table maps over bblocks (Inc 4) -------
     // The switch-case schema (`match_acyclic_switch_cases`) needs the same two maps
@@ -208,16 +215,14 @@ pub fn run_region_structurer(
     // misses) and exit frontier, so the refinement virtualizes exactly the
     // secondary exits.  Empty (and skipped) when refinement is off.
     // Region identification over the real CFG supplies the loops' bodies and
-    // exits (`regionlooprefine`); only its cyclic regions are read.  A failure to
-    // identify regions is non-fatal: the structurer still runs on the sblocks
-    // topology (honest-partial).
-    let cyclic_loops = if loop_refine {
+    // exits (`regionlooprefine`); only its cyclic regions are read, and only
+    // once a loop needs refining.  A failure to identify regions is non-fatal:
+    // the structurer still runs on the sblocks topology (honest-partial).
+    let region_id = loop_refine.then(|| {
         let mut ri = crate::p7_regions::kuna_regionid::KunaRegionIdentifier::new();
-        let _ = ri.build_from_block_graph(data).and_then(|()| ri.compute_cyclic());
-        ri.cyclic_loops()
-    } else {
-        Vec::new()
-    };
+        let built = ri.build_from_block_graph(data).is_ok();
+        (ri, built)
+    });
 
     // The `cyclic_loops` are keyed by basic-block start ADDRESS, but the structuring
     // graph's `BlockCopy` leaves carry only the bblocks `BlockId` they copy (their
@@ -225,16 +230,16 @@ pub fn run_region_structurer(
     // cross-arena copy).  Precompute the bblocks `BlockId → start offset` map here
     // (while we hold `&Funcdata`) so the structurer can resolve a live component's
     // front-leaf back to its address.  Skipped (empty) when refinement is off.
-    let bb_addr: std::collections::BTreeMap<BlockId, uintb> = if loop_refine {
+    let bb_addr: FxHashMap<BlockId, uintb> = if loop_refine {
         let nbb = data.bblocks_get_size();
-        let mut m = std::collections::BTreeMap::new();
+        let mut m = FxHashMap::default();
         for i in 0..nbb {
             let bb = data.bblocks_get_block(i);
             m.insert(bb, data.bblocks_block_start(bb).get_offset());
         }
         m
     } else {
-        std::collections::BTreeMap::new()
+        FxHashMap::default()
     };
 
     // ---- 2. Structure the seeded sblocks graph -------------------------------
@@ -244,7 +249,7 @@ pub fn run_region_structurer(
         .with_switch_maps(switch_blocks, switch_case_edges)
         .with_complex_blocks(complex_blocks)
         .with_condfold_sets(condfold_sets)
-        .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
+        .with_loop_refine(loop_refine, region_id, bb_addr)
         .with_edge_order(edge_order)
         .with_loop_cond(loop_cond);
     let ok = st.structure(deadline)?;
@@ -322,6 +327,28 @@ fn compute_complex_blocks(data: &Funcdata) -> std::collections::BTreeSet<BlockId
     complex_blocks
 }
 
+/// Whether the components of the structuring graph `root` can never all fold
+/// into one: none ends in a switch, and two have no out-edge or two have no
+/// in-edge.  Without a switch, every fold takes one entry component plus
+/// members reached only from inside, gives the result the out-edges of its
+/// members (a sequence those of its last), and no fold adds an edge; so a
+/// component without in-edges stays one, as does one without out-edges, and
+/// two of either kind never join.  Only a switch absorbs cases without
+/// successors, and only a pending switch-loop absorb merges by address.
+fn components_stay_apart(graph: &BlockGraph, root: BlockId) -> bool {
+    let (mut exits, mut entries) = (0, 0);
+    let g = graph.block(root);
+    for i in 0..g.get_size() {
+        let b = graph.block(g.get_block(i));
+        if b.is_switch_out() {
+            return false;
+        }
+        exits += (b.size_out() == 0) as int4;
+        entries += (b.size_in() == 0) as int4;
+    }
+    exits > 1 || entries > 1
+}
+
 /// The acyclic sequence + virtualize structuring engine, operating on the
 /// seeded `sblocks` [`BlockGraph`] (the `BlockCopy` mirror of `bblocks`).
 struct RegionStructurer<'a> {
@@ -375,13 +402,16 @@ struct RegionStructurer<'a> {
     /// onto basic-block addresses).  Populated only when `loop_refine` is on; used
     /// by `refine_loop_edges` to pick the loop body / single normal exit grounded
     /// in the region identifier's analysis rather than the narrower structural
-    /// natural-loop walk.
+    /// natural-loop walk.  Filled from `region_id` on first use.
     cyclic_loops: std::collections::BTreeMap<uintb, crate::p7_regions::kuna_regionid::KunaCyclicLoop>,
+    /// The region identifier built over the basic blocks, and whether that
+    /// succeeded, until [`cyclic_loops`](Self::cyclic_loops) runs it.
+    region_id: Option<(crate::p7_regions::kuna_regionid::KunaRegionIdentifier, bool)>,
     /// bblocks `BlockBasic` id → start offset, so a live `sblocks` component's
     /// front-leaf `BlockCopy` (whose `copy` is a bblocks id) resolves to its
     /// address — the key the `cyclic_loops` body/exit sets use.  Populated only
     /// when `loop_refine` is on.
-    bb_addr: std::collections::BTreeMap<BlockId, uintb>,
+    bb_addr: FxHashMap<BlockId, uintb>,
     /// (kuna SAILR P2) Last-resort edge-virtualization ORDERING gate
     /// (`Architecture::region_edge_order`, option `regionedgeorder`, default-OFF).
     /// When set, [`virtualize_one_edge`](Self::virtualize_one_edge) orders the edges
@@ -409,6 +439,9 @@ struct RegionStructurer<'a> {
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
     /// (kuna, `option loopcondhoist`) set when a loop's condition exit was kept.
     cond_used: std::cell::Cell<bool>,
+    /// Test only: run every round, as if [`cannot_converge`](Self::cannot_converge) never held.
+    #[cfg(test)]
+    no_early_stop: bool,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -424,12 +457,15 @@ impl<'a> RegionStructurer<'a> {
             pending_flips: Vec::new(),
             loop_refine: false,
             cyclic_loops: std::collections::BTreeMap::new(),
-            bb_addr: std::collections::BTreeMap::new(),
+            region_id: None,
+            bb_addr: FxHashMap::default(),
             edge_order: false,
             pending_inf_loops: std::collections::BTreeSet::new(),
             pending_body_addrs: std::collections::BTreeMap::new(),
             loop_cond: None,
             cond_used: std::cell::Cell::new(false),
+            #[cfg(test)]
+            no_early_stop: false,
         }
     }
 
@@ -446,19 +482,33 @@ impl<'a> RegionStructurer<'a> {
     }
 
     /// Attach the cyclic loop-successor refinement gate (`regionlooprefine`) plus
-    /// the region identifier's cyclic loop projection (keyed by head address) and
-    /// the bblocks-id → address map used to resolve live components to addresses.
+    /// the region identifier built over the basic blocks and the bblocks-id →
+    /// address map used to resolve live components to addresses.
     fn with_loop_refine(
         mut self,
         loop_refine: bool,
-        cyclic_loops: Vec<crate::p7_regions::kuna_regionid::KunaCyclicLoop>,
-        bb_addr: std::collections::BTreeMap<BlockId, uintb>,
+        region_id: Option<(crate::p7_regions::kuna_regionid::KunaRegionIdentifier, bool)>,
+        bb_addr: FxHashMap<BlockId, uintb>,
     ) -> Self {
         self.loop_refine = loop_refine;
-        self.cyclic_loops =
-            cyclic_loops.into_iter().map(|l| (l.head_addr, l)).collect();
+        self.region_id = region_id;
         self.bb_addr = bb_addr;
         self
+    }
+
+    /// The region identifier's cyclic loops by head address.  The identifier
+    /// reads only the basic blocks, which structuring leaves alone, so it runs
+    /// on first use.
+    fn cyclic_loops(
+        &mut self,
+    ) -> &std::collections::BTreeMap<uintb, crate::p7_regions::kuna_regionid::KunaCyclicLoop> {
+        if let Some((mut ri, built)) = self.region_id.take() {
+            if built {
+                let _ = ri.compute_cyclic();
+            }
+            self.cyclic_loops = ri.cyclic_loops().into_iter().map(|l| (l.head_addr, l)).collect();
+        }
+        &self.cyclic_loops
     }
 
     /// Resolve a live structuring component to its front-leaf basic-block start
@@ -704,6 +754,17 @@ impl<'a> RegionStructurer<'a> {
             })
     }
 
+    /// Whether the components can never fold to one root: no switch-loop absorb
+    /// is pending and [`components_stay_apart`] holds.  With no live switch none
+    /// can be queued later.
+    fn cannot_converge(&self) -> bool {
+        #[cfg(test)]
+        if self.no_early_stop {
+            return false;
+        }
+        self.pending_inf_loops.is_empty() && components_stay_apart(self.graph, self.graph_id)
+    }
+
     /// Whether an address-keyed absorb could reach `bl`: its address is in a
     /// pending switch-loop body, or another live component shares it (a later
     /// body set could then name it).
@@ -761,7 +822,7 @@ impl<'a> RegionStructurer<'a> {
                 // Hang-guard: report non-convergence so the caller falls back.
                 return Ok(false);
             }
-            if self.has_stranded_component() {
+            if self.has_stranded_component() || self.cannot_converge() {
                 if std::env::var_os("KUNA_RS_DEBUG").is_some() {
                     eprintln!("[rs] STRANDED: {} components remain (round {rounds})", self.size());
                 }
@@ -1572,7 +1633,7 @@ impl<'a> RegionStructurer<'a> {
             static DUMPED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if !DUMPED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                for (head, l) in self.cyclic_loops.iter() {
+                for (head, l) in self.cyclic_loops().iter() {
                     eprintln!(
                         "[rs] RI loop head=0x{:x} body={} exits=[{}]",
                         head,
@@ -1630,9 +1691,11 @@ impl<'a> RegionStructurer<'a> {
         // EXIT edge (the head's `c != -1` decision out) so the head collapses INTO
         // the switch body, fold the switch with its case→head back-edges as the
         // single (continue) exit, then the body self-loops and `try_fold_loop`'s
-        // inf-loop rule folds it.  See `try_fold_switch_loop`.
-        if self.loop_refine {
-            let ordered = self.order_loop_heads_innermost_first(&heads);
+        // inf-loop rule folds it.  See `try_fold_switch_loop`.  The heads are
+        // ordered once for both passes: a declined fold changes nothing.
+        let ordered = if self.loop_refine { self.order_loop_heads_innermost_first(&heads) } else { Vec::new() };
+        let switches = self.loop_refine && self.any_live_switch();
+        if switches {
             for &head in ordered.iter() {
                 if self.try_fold_switch_loop(head)? {
                     if dbg {
@@ -1666,7 +1729,6 @@ impl<'a> RegionStructurer<'a> {
             // matches CollapseStructure.  Refining one head per round (returning
             // true) lets the acyclic schemas re-collapse the freed body before the
             // next loop is considered.
-            let ordered = self.order_loop_heads_innermost_first(&heads);
             for &head in ordered.iter() {
                 // A switch-bodied loop is owned by `try_fold_switch_loop` (above):
                 // its case→head **continue** back-edges must stay structural so the
@@ -1674,7 +1736,7 @@ impl<'a> RegionStructurer<'a> {
                 // would virtualize all-but-one of those latches to gotos, destroying
                 // the `is_continue_case` shape and shattering the switch — so we skip
                 // such heads here and let the switch-loop path drive them.
-                if self.is_switch_bodied_loop_head(head) {
+                if switches && self.is_switch_bodied_loop_head(head) {
                     continue;
                 }
                 match self.refine_loop_edges(head)? {
@@ -1689,6 +1751,12 @@ impl<'a> RegionStructurer<'a> {
             }
         }
         Ok(false)
+    }
+
+    /// Whether some live component ends in a switch; without one no loop body
+    /// holds a switch.
+    fn any_live_switch(&self) -> bool {
+        (0..self.size()).any(|i| self.graph.block(self.component(i)).is_switch_out())
     }
 
     /// Is `head` the head of a *switch-bodied* natural loop — its structural body
@@ -1766,7 +1834,7 @@ impl<'a> RegionStructurer<'a> {
     /// dominator info (`immed_dom`/`index`) copied from `bblocks`.
     fn natural_loop_body(&self, head: BlockId) -> Vec<BlockId> {
         let mut body: Vec<BlockId> = vec![head];
-        let mut in_body = std::collections::BTreeSet::new();
+        let mut in_body = crate::kuna_fasthash::FxHashSet::default();
         in_body.insert(head);
         // Seed with latches (back-edge sources into head).
         let hb = self.graph.block(head);
@@ -2411,7 +2479,10 @@ impl<'a> RegionStructurer<'a> {
         // dominated switch-case successors a structural natural-loop walk misses).
         // The loop is keyed by its head's basic-block start address.
         let head_addr = self.component_addr(head);
-        let ri_loop = head_addr.and_then(|a| self.cyclic_loops.get(&a).cloned());
+        if head_addr.is_some() {
+            self.cyclic_loops();
+        }
+        let ri_loop = head_addr.and_then(|a| self.cyclic_loops.get(&a));
 
         // Build the live loop-body component set + exit-address set, either from the
         // RI projection (preferred) or the structural natural-loop walk (fallback,
@@ -2419,8 +2490,8 @@ impl<'a> RegionStructurer<'a> {
         // sees).  A live component is "in the body" when its front-leaf address is
         // in the RI body set.
         let dbg = std::env::var_os("KUNA_RS_DEBUG").is_some();
-        let (in_body, exit_addrs): (std::collections::BTreeSet<BlockId>, Option<std::collections::BTreeSet<uintb>>) =
-            match &ri_loop {
+        let in_body: std::collections::BTreeSet<BlockId> =
+            match ri_loop {
                 Some(l) => {
                     let mut s = std::collections::BTreeSet::new();
                     let n = self.size();
@@ -2434,12 +2505,9 @@ impl<'a> RegionStructurer<'a> {
                     }
                     // `head` must be in the body set (it carries the head address).
                     s.insert(head);
-                    (s, Some(l.exits.clone()))
+                    s
                 }
-                None => {
-                    let body = self.natural_loop_body(head);
-                    (body.into_iter().collect(), None)
-                }
+                None => self.natural_loop_body(head).into_iter().collect(),
             };
 
         // (1) Latch edges: back-edges into `head` from a body component.
@@ -2497,7 +2565,7 @@ impl<'a> RegionStructurer<'a> {
         //     normal-exit is the post-order-earliest successor; lowest address is a
         //     deterministic, region-grounded surrogate).  Without RI data, fall
         //     back to the most-targeted exit (ties by index).
-        let normal_exit = self.choose_normal_exit_grounded(&exit_edges, &exit_addrs);
+        let normal_exit = self.choose_normal_exit_grounded(&exit_edges, ri_loop.map(|l| &l.exits));
 
         if dbg {
             eprintln!(
@@ -2631,7 +2699,7 @@ impl<'a> RegionStructurer<'a> {
     fn choose_normal_exit_grounded(
         &self,
         exit_edges: &[(BlockId, int4, BlockId)],
-        exit_addrs: &Option<std::collections::BTreeSet<uintb>>,
+        exit_addrs: Option<&std::collections::BTreeSet<uintb>>,
     ) -> Option<BlockId> {
         if let Some(addrs) = exit_addrs {
             if !addrs.is_empty() {
@@ -2890,7 +2958,7 @@ impl<'a> RegionStructurer<'a> {
         // so this is parity-safe (the protected set is empty without such a loop).
         let mut protected: std::collections::BTreeSet<BlockId> =
             std::collections::BTreeSet::new();
-        if self.loop_refine {
+        if self.loop_refine && self.any_live_switch() {
             for &h in self.collect_loop_heads().iter() {
                 if self.is_switch_bodied_loop_head(h) {
                     for bl in self.natural_loop_body(h) {
@@ -2942,7 +3010,7 @@ impl<'a> RegionStructurer<'a> {
         // immediate-dominators) + the H2 post-dominator heuristic; OFF keeps the
         // flat H1/H3 + address ordering (byte-identical fallback).
         let (best_src, best_edge) = if self.edge_order {
-            let best = self.order_virtualizable_edges_sailr(&candidates)?;
+            let best = self.order_virtualizable_edges_sailr(&candidates);
             (best.src, best.edge)
         } else {
             let best = self.order_virtualizable_edges(&candidates);
@@ -2971,34 +3039,19 @@ impl<'a> RegionStructurer<'a> {
     ///     here, exactly as angr drops `other_edges`).
     /// Virtualize from `crossing` if non-empty, else `secondary`.  Within the chosen
     /// bucket, order by the SAILR heuristic and return the first edge.
-    fn order_virtualizable_edges_sailr<'e>(
-        &self,
-        candidates: &'e [Edge],
-    ) -> KunaResult<&'e Edge> {
-        // Build the snapshot region graph over the live components (angr's
-        // `full_graph`): nodes = components, edges = every component out-edge
-        // (structured, back, and already-virtualized goto edges alike — the
-        // dominator structure must see all live control flow).  `KunaIncrementalDominators`
-        // (the ported angr `IncrementalDominators`) computes forward and post
-        // dominators over it.
-        let (pool, graph, head, id_of) = self.build_component_graph();
-        // Forward immediate-dominators rooted at `head` (angr
-        // `networkx.immediate_dominators(full_graph, head)`).  Reuse the ported
-        // Cooper-Harvey-Kennedy engine; a synthetic head guarantees every node is
-        // reachable (matches angr adding a temporary head for multi-entry graphs).
-        let fdoms = crate::p7_regions::kuna_regiongraph::KunaIncrementalDominators::new(
-            &pool, &graph, head, false,
-        )?;
-        let dominance = super::kuna_domindex::DominanceIndex::new(&fdoms, &graph);
+    fn order_virtualizable_edges_sailr<'e>(&self, candidates: &'e [Edge]) -> &'e Edge {
+        // The snapshot over the live components (angr's `full_graph`) and its
+        // forward dominators from the synthetic head.
+        let (graph, ix) = self.component_graph();
 
         // Bucket the candidate edges by the dominance relationship.
         let mut crossing: Vec<&Edge> = Vec::new();
         let mut secondary: Vec<&Edge> = Vec::new();
         for e in candidates {
-            let sn = id_of[&e.src];
-            let dn = id_of[&e.dst];
-            let s_dom_d = dominance.dominates(sn, dn);
-            let d_dom_s = dominance.dominates(dn, sn);
+            let sn = ix[&e.src];
+            let dn = ix[&e.dst];
+            let s_dom_d = graph.dominates(sn, dn);
+            let d_dom_s = graph.dominates(dn, sn);
             if !s_dom_d && !d_dom_s {
                 crossing.push(e); // all_edges_wo_dominance
             } else if !s_dom_d {
@@ -3015,10 +3068,10 @@ impl<'a> RegionStructurer<'a> {
             // angr returns False (no crossing/secondary edge); fall back to the flat
             // ordering over all candidates so the structurer still makes progress
             // (kuna is honest-partial — it must always remove one edge to converge).
-            return Ok(self.order_virtualizable_edges(candidates));
+            return self.order_virtualizable_edges(candidates);
         };
 
-        Ok(self.sailr_order_within_bucket(&pool, &graph, &id_of, bucket))
+        self.sailr_order_within_bucket(&graph, &ix, bucket)
     }
 
     /// `sailr._order_virtualizable_edges` over one dominance bucket: H1 sibling
@@ -3026,9 +3079,8 @@ impl<'a> RegionStructurer<'a> {
     /// tiebreak.  Returns the single best edge (the first of the final ordering).
     fn sailr_order_within_bucket<'e>(
         &self,
-        pool: &crate::p7_regions::kuna_regiongraph::KunaNodePool,
-        graph: &crate::p7_regions::kuna_regiongraph::KunaRegionGraph,
-        id_of: &std::collections::BTreeMap<BlockId, crate::p7_regions::kuna_regiongraph::KunaNodeId>,
+        graph: &CompGraph,
+        ix: &FxHashMap<BlockId, u32>,
         edges: &[&'e Edge],
     ) -> &'e Edge {
         if edges.len() == 1 {
@@ -3042,9 +3094,7 @@ impl<'a> RegionStructurer<'a> {
         // H1: minimum sibling count = in_degree(dst) - 1 over the snapshot graph.
         // angr drops edges whose dst has no siblings (sibling_cnt == 0) from the H1
         // map; if every edge has zero siblings the map is empty and H1 is skipped.
-        let sib = |e: &Edge| -> int4 {
-            graph.size_in(id_of[&e.dst]).unwrap_or(0) - 1
-        };
+        let sib = |e: &Edge| -> int4 { graph.size_in(ix[&e.dst]) - 1 };
         let with_sib: Vec<&Edge> = best.iter().copied().filter(|e| sib(e) > 0).collect();
         if !with_sib.is_empty() {
             let min_sib = with_sib.iter().map(|e| sib(e)).min().unwrap();
@@ -3056,17 +3106,21 @@ impl<'a> RegionStructurer<'a> {
             best = h1;
         }
 
-        // H2: post-dominator count (capped).  Bounded exactly as angr:
-        // `len(edges) <= postdom_max_edges && len(graph) <= postdom_max_graph_size`.
+        // H2: keep the edges whose removal leaves the most post-dominators (angr:
+        // "more post-dominators == fewer scopes == more linear"), bounded exactly
+        // as angr: `len(edges) <= postdom_max_edges && len(graph) <= postdom_max_graph_size`.
         if best.len() as int4 <= POSTDOM_MAX_EDGES
             && graph.num_nodes() <= POSTDOM_MAX_GRAPH_SIZE
         {
-            if let Some(h2) = self.sailr_h2_postdom(pool, graph, id_of, &best) {
-                if h2.len() == 1 {
-                    return h2[0];
-                }
-                best = h2;
+            let counts: Vec<usize> =
+                best.iter().map(|e| graph.postdominated_without(ix[&e.src], ix[&e.dst])).collect();
+            let most = counts.iter().copied().max().unwrap_or(0);
+            let h2: Vec<&Edge> =
+                best.iter().zip(counts).filter(|&(_, c)| c == most).map(|(&e, _)| e).collect();
+            if h2.len() == 1 {
+                return h2[0];
             }
+            best = h2;
         }
 
         // H3: prefer an edge whose destination is a simple return (a graph sink).
@@ -3082,122 +3136,17 @@ impl<'a> RegionStructurer<'a> {
         // Base tiebreak: `_chick_order_edges` keyed by the post-order node_seq of the
         // destination (destinations closer to the head are virtualized first), then
         // dst in-degree, src out-degree, and address.  We sort and take the first.
-        let node_seq = self.compute_node_seq(pool, graph, id_of);
-        best.sort_by(|a, b| {
-            // node_seq: higher value = earlier in post-order = closer to the head;
-            // angr virtualizes those first (key `-node_seq[dst]`, ascending sort).
-            let ka = (
-                std::cmp::Reverse(node_seq.get(&a.dst).copied().unwrap_or(0)),
-                graph.size_in(id_of[&a.dst]).unwrap_or(0),
-                graph.size_out(id_of[&a.src]).unwrap_or(0),
-                self.block_addr(a.dst),
-                self.block_addr(a.src),
-            );
-            let kb = (
-                std::cmp::Reverse(node_seq.get(&b.dst).copied().unwrap_or(0)),
-                graph.size_in(id_of[&b.dst]).unwrap_or(0),
-                graph.size_out(id_of[&b.src]).unwrap_or(0),
-                self.block_addr(b.dst),
-                self.block_addr(b.src),
-            );
-            ka.cmp(&kb)
+        best.sort_by_key(|e| {
+            let (s, d) = (ix[&e.src], ix[&e.dst]);
+            (
+                std::cmp::Reverse(graph.node_seq(d)),
+                graph.size_in(d),
+                graph.size_out(s),
+                self.block_addr(e.dst),
+                self.block_addr(e.src),
+            )
         });
         best[0]
-    }
-
-    /// H2: for each candidate edge, remove it, recompute post-dominators over the
-    /// snapshot graph, and count the (strict) post-dominator relationships; keep the
-    /// edges whose removal yields the MOST post-dominators (angr: "more
-    /// post-dominators == fewer scopes == more linear").
-    ///
-    /// Post-dominators are forward immediate-dominators over the REVERSED graph
-    /// rooted at a synthetic tail that every original sink connects to (so the
-    /// reversed graph has a single source reaching every node — the standard
-    /// post-dominator construction; this is what angr's `PostDominators` does with
-    /// its synthetic exit `TemporaryNode`).  Bounded by the caller's caps so the
-    /// per-edge recomputation is cheap.  Returns `None` if a post-dom graph could not
-    /// be built (then H2 is simply skipped).
-    fn sailr_h2_postdom<'e>(
-        &self,
-        pool: &crate::p7_regions::kuna_regiongraph::KunaNodePool,
-        graph: &crate::p7_regions::kuna_regiongraph::KunaRegionGraph,
-        id_of: &std::collections::BTreeMap<BlockId, crate::p7_regions::kuna_regiongraph::KunaNodeId>,
-        edges: &[&'e Edge],
-    ) -> Option<Vec<&'e Edge>> {
-        use crate::p7_regions::kuna_regiongraph::{kuna_immediate_dominators, KunaRegionGraph};
-        // The reversed-graph synthetic tail (post-dom root): connect every original
-        // sink (out_degree == 0) to it, then add edges dst->src for every original
-        // edge, so forward idoms over this graph == post-dominators of the original.
-        let real_nodes: Vec<crate::p7_regions::kuna_regiongraph::KunaNodeId> =
-            id_of.values().copied().collect();
-        let mut counts: Vec<(usize, &Edge)> = Vec::with_capacity(edges.len());
-        let mut max_count: usize = 0;
-        for &e in edges {
-            // Build the reversed graph of (snapshot minus edge src->dst).
-            let mut rev = KunaRegionGraph::new();
-            // A synthetic tail id past the real pool size; allocate from a local pool
-            // mirror so `pool.key` stays valid (we extend the borrowed pool's view by
-            // cloning it).  To avoid mutating the shared pool we route the synthetic
-            // node through a fresh node added to a local pool copy.
-            let mut lpool = pool.clone();
-            let tail = lpool.make(
-                crate::p7_regions::kuna_regiongraph::NodeKind::Dummy,
-                u64::MAX,
-                u32::MAX,
-            );
-            for &nid in &real_nodes {
-                rev.add_node(&lpool, nid);
-            }
-            rev.add_node(&lpool, tail);
-            // Reverse every live edge, skipping the removed one.
-            let removed = (id_of[&e.src], id_of[&e.dst]);
-            for &src in &real_nodes {
-                let succs: Vec<_> = match graph.get_succs(src) {
-                    Ok(s) => s.to_vec(),
-                    Err(_) => return None,
-                };
-                let mut has_succ = false;
-                for dst in succs {
-                    if (src, dst) == removed {
-                        continue;
-                    }
-                    has_succ = true;
-                    rev.add_edge(&lpool, dst, src); // reversed
-                }
-                if !has_succ {
-                    // Original sink -> connect to the synthetic post-dom root.
-                    rev.add_edge(&lpool, tail, src);
-                }
-            }
-            let mut idom: std::collections::BTreeMap<
-                crate::p7_regions::kuna_regiongraph::KunaNodeId,
-                crate::p7_regions::kuna_regiongraph::KunaNodeId,
-            > = std::collections::BTreeMap::new();
-            if kuna_immediate_dominators(&lpool, &rev, tail, &mut idom).is_err() {
-                return None;
-            }
-            // Count strict post-dom (node -> immediate post-dom) relationships,
-            // skipping the synthetic tail (angr filters `TemporaryNode`s).
-            let mut cnt = 0usize;
-            for &nid in &real_nodes {
-                if let Some(&d) = idom.get(&nid) {
-                    if d != nid && d != tail {
-                        cnt += 1;
-                    }
-                }
-            }
-            if cnt > max_count {
-                max_count = cnt;
-            }
-            counts.push((cnt, e));
-        }
-        let winners: Vec<&Edge> =
-            counts.into_iter().filter(|(c, _)| *c == max_count).map(|(_, e)| e).collect();
-        if winners.is_empty() {
-            None
-        } else {
-            Some(winners)
-        }
     }
 
     /// Order virtualizable edges, best first (port of
@@ -3249,125 +3198,23 @@ impl<'a> RegionStructurer<'a> {
         best[0]
     }
 
-    /// Build the snapshot region graph over the live top-level components (the
-    /// angr `full_graph`): a [`KunaRegionGraph`] whose nodes are the live components
-    /// and whose edges are every component out-edge (structured, back, and
-    /// already-virtualized goto edges alike — the dominator structure must see all
-    /// live control flow).  A synthetic head node (the angr `postorder_head` /
-    /// temporary entry) is connected to every zero-in-degree component so the graph
-    /// has a single source from which all nodes are reachable — `start` for the
-    /// forward-dominator computation.
-    ///
-    /// Returns `(pool, graph, head, id_of)` where `id_of` maps each component
-    /// `BlockId` to its [`KunaNodeId`].  Node `addr` is the component's front-leaf
-    /// bblocks start address (matching [`block_addr`](Self::block_addr)) and `ident`
-    /// is the component's top-level index, so `(addr, ident)` is a unique,
-    /// deterministic `KunaNodeOrder` key.
-    #[allow(clippy::type_complexity)]
-    fn build_component_graph(
-        &self,
-    ) -> (
-        crate::p7_regions::kuna_regiongraph::KunaNodePool,
-        crate::p7_regions::kuna_regiongraph::KunaRegionGraph,
-        crate::p7_regions::kuna_regiongraph::KunaNodeId,
-        std::collections::BTreeMap<BlockId, crate::p7_regions::kuna_regiongraph::KunaNodeId>,
-    ) {
-        use crate::p7_regions::kuna_regiongraph::{KunaNodePool, KunaRegionGraph, NodeKind};
-        let mut pool = KunaNodePool::new();
-        let mut graph = KunaRegionGraph::new();
-        let mut id_of: std::collections::BTreeMap<BlockId, _> =
-            std::collections::BTreeMap::new();
-        let n = self.size();
-        // Allocate a node per live component.
-        for i in 0..n {
-            let c = self.component(i);
-            let nid = pool.make(NodeKind::Block, self.block_addr(c), i as u32);
-            graph.add_node(&pool, nid);
-            id_of.insert(c, nid);
+    /// The live top-level components as a [`CompGraph`] (the angr `full_graph`)
+    /// over every out-edge between them — structured, back and already-virtualized
+    /// goto edges alike, as the dominator structure must see all live control
+    /// flow — with each component's node index.  A node is ordered by its
+    /// component's front-leaf start address (matching
+    /// [`block_addr`](Self::block_addr)), then by its index.
+    fn component_graph(&self) -> (CompGraph, FxHashMap<BlockId, u32>) {
+        let comps: Vec<BlockId> = (0..self.size()).map(|i| self.component(i)).collect();
+        let ix: FxHashMap<BlockId, u32> =
+            comps.iter().enumerate().map(|(i, &c)| (c, i as u32)).collect();
+        let mut edges = Vec::new();
+        for (i, &c) in comps.iter().enumerate() {
+            let b = self.graph.block(c);
+            edges.extend((0..b.size_out()).filter_map(|e| ix.get(&b.get_out(e))).map(|&d| (i as u32, d)));
         }
-        // Add every component out-edge (only edges between live components — a
-        // component never points outside the live top-level list during structuring).
-        for i in 0..n {
-            let c = self.component(i);
-            let cb = self.graph.block(c);
-            let sout = cb.size_out();
-            for e in 0..sout {
-                let dst = cb.get_out(e);
-                if let (Some(&sn), Some(&dn)) = (id_of.get(&c), id_of.get(&dst)) {
-                    graph.add_edge(&pool, sn, dn);
-                }
-            }
-        }
-        // Synthetic head -> every entry (zero-in-degree component), so the forward
-        // dominator root reaches all nodes (angr's temporary `postorder_head`).
-        let head = pool.make(NodeKind::Dummy, 0, u32::MAX);
-        graph.add_node(&pool, head);
-        for i in 0..n {
-            let c = self.component(i);
-            let nid = id_of[&c];
-            if graph.size_in(nid).unwrap_or(0) == 0 {
-                graph.add_edge(&pool, head, nid);
-            }
-        }
-        (pool, graph, head, id_of)
-    }
-
-    /// Post-order `node_seq` over the snapshot graph (angr's `node_seq`, the
-    /// `_chick_order_edges` base tiebreak): `node_seq[dst]` is larger for nodes
-    /// earlier in the post-order (closer to the head), which the base ordering
-    /// virtualizes first.  Built from the deterministic DFS post-order rooted at the
-    /// synthetic head, mapped from component `BlockId` to its sequence value.
-    fn compute_node_seq(
-        &self,
-        pool: &crate::p7_regions::kuna_regiongraph::KunaNodePool,
-        graph: &crate::p7_regions::kuna_regiongraph::KunaRegionGraph,
-        id_of: &std::collections::BTreeMap<BlockId, crate::p7_regions::kuna_regiongraph::KunaNodeId>,
-    ) -> std::collections::BTreeMap<BlockId, int4> {
-        use crate::p7_regions::kuna_regiongraph::kuna_dfs_postorder_deterministic;
-        // The head is the unique zero-in-degree node (built by build_component_graph);
-        // recover it as the node id not present in id_of's value set with in-degree 0.
-        // Simpler: re-derive from the graph — the synthetic head has the largest
-        // ident (u32::MAX) and addr 0; but we do not have it here.  Instead, find the
-        // single node with in_degree 0 over the whole snapshot (the synthetic head).
-        let mut head = None;
-        let mut all: Vec<crate::p7_regions::kuna_regiongraph::KunaNodeId> = Vec::new();
-        graph.get_nodes(&mut all);
-        for nid in all {
-            if graph.size_in(nid).unwrap_or(0) == 0 {
-                head = Some(nid);
-                break;
-            }
-        }
-        let mut seq: std::collections::BTreeMap<BlockId, int4> =
-            std::collections::BTreeMap::new();
-        let head = match head {
-            Some(h) => h,
-            None => return seq, // no acyclic source; node_seq stays empty (all 0)
-        };
-        let mut postorder: Vec<crate::p7_regions::kuna_regiongraph::KunaNodeId> = Vec::new();
-        if kuna_dfs_postorder_deterministic(pool, graph, head, &mut postorder).is_err() {
-            return seq;
-        }
-        // angr: `ordered_nodes = reversed(post_order)` (reverse post-order, RPO),
-        // then `node_seq[nn] = len - rpo_idx`.  For a node at post-order index `pi`,
-        // its RPO index is `len - 1 - pi`, so `node_seq = len - (len - 1 - pi) =
-        // pi + 1`.  Thus the head (last in post-order, pi = len-1) gets the largest
-        // value `len`, and a node finishing first (pi = 0) gets 1 — exactly angr's
-        // "destinations closer to the head are virtualized first" (key `-node_seq`).
-        // Invert id_of for the lookup.
-        let mut block_of: std::collections::BTreeMap<
-            crate::p7_regions::kuna_regiongraph::KunaNodeId,
-            BlockId,
-        > = std::collections::BTreeMap::new();
-        for (&bl, &nid) in id_of {
-            block_of.insert(nid, bl);
-        }
-        for (pi, &nid) in postorder.iter().enumerate() {
-            if let Some(&bl) = block_of.get(&nid) {
-                seq.insert(bl, pi as int4 + 1);
-            }
-        }
-        seq
+        let addr = comps.iter().map(|&c| self.block_addr(c)).collect();
+        (CompGraph::new(addr, edges), ix)
     }
 
     /// Is `bl` a "simple return" block (angr `structured_node_is_simple_return`)?
@@ -3566,6 +3413,78 @@ mod tests {
     }
 
     #[test]
+    fn components_that_stay_apart_never_structure() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move |m: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % m
+        };
+        let back = crate::block::edge_flags::f_back_edge | crate::block::edge_flags::f_loop_edge;
+        let (mut apart, mut stopped_later, mut folded) = (0, 0, 0);
+        for round in 0..8000 {
+            let n = 2 + next(7) as usize;
+            let mut edges: Vec<(usize, usize)> = Vec::new();
+            let add = |e: (usize, usize), edges: &mut Vec<(usize, usize)>| {
+                if !edges.contains(&e) && edges.iter().filter(|x| x.0 == e.0).count() < 2 {
+                    edges.push(e);
+                }
+            };
+            for s in 0..n {
+                if round % 2 == 0 {
+                    for _ in 0..next(3) {
+                        add((s, next(n as u64) as usize), &mut edges);
+                    }
+                } else if s + 1 < n {
+                    add((next(s as u64 + 1) as usize, s + 1), &mut edges);
+                    if next(3) == 0 {
+                        add((s, s + 1 + next((n - s - 1) as u64) as usize), &mut edges);
+                    }
+                    if next(6) == 0 {
+                        add((s, next(s as u64 + 1) as usize), &mut edges);
+                    }
+                }
+            }
+            if round % 2 == 1 {
+                for s in 0..n - 1 {
+                    if !edges.iter().any(|e| e.0 == s) {
+                        add((s, n - 1), &mut edges);
+                    }
+                }
+            }
+            let refine = next(2) == 1;
+            let run = |stop: bool| {
+                let (mut g, root, b) = graph(n, &edges);
+                for (s, &bl) in b.iter().enumerate() {
+                    for j in 0..g.block(bl).size_out() {
+                        let d = b.iter().position(|&x| x == g.block(bl).get_out(j)).unwrap();
+                        if d <= s {
+                            g.set_out_edge_flag(bl, j, back);
+                        }
+                    }
+                }
+                let at_start = components_stay_apart(&g, root);
+                let mut st = RegionStructurer::new(&mut g, root).with_loop_refine(refine, None, Default::default());
+                st.no_early_stop = !stop;
+                (at_start, matches!(st.structure(None), Ok(true)))
+            };
+            let (at_start, with) = run(true);
+            let (_, without) = run(false);
+            assert_eq!(with, without, "{n} {edges:?} refine={refine}");
+            if at_start {
+                apart += 1;
+                assert!(!without, "{n} {edges:?}");
+            } else if !with {
+                stopped_later += 1;
+            } else {
+                folded += 1;
+            }
+        }
+        assert!(apart > 500 && stopped_later > 100 && folded > 500, "{apart} {stopped_later} {folded}");
+    }
+
+    #[test]
     fn pending_absorb_keeps_an_isolated_body_member_live() {
         let (mut g, root, _) = graph(2, &[(0, 1)]);
         let bb = g.arena.insert(FlowBlock::new_kind(BlockKind::Graph));
@@ -3573,7 +3492,7 @@ mod tests {
         *g.block_mut(leaf).kind_mut() = BlockKind::Copy { copy: Some(bb) };
         let mut st = RegionStructurer::new(&mut g, root).with_loop_refine(
             true,
-            Vec::new(),
+            None,
             [(bb, 0x1000)].into_iter().collect(),
         );
         assert!(st.has_stranded_component());

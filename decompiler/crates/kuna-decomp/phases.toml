@@ -2561,6 +2561,25 @@ tier = "transform"
 symptoms = "switch rendered as nested if/else-if compare tree over one variable|a three- or four-case switch renders as a chain of if (v != 3) { if (v != 2) ... } tests on one variable|a lookup function prints if (x == A) return \"a\"; if (x == B) return \"b\"; ... where the source had a switch|a two-case switch prints as two nested if tests on one variable|a deep if/else tree on one variable with an equality test at every leaf where the source had a dense switch of 17 or more cases|binary-search cascade of constant compares where source had a switch|-O0 two-case switch prints as two nested if tests on one variable|-O0 if/else-if chain the author wrote over one variable prints as a switch|flip off to keep the compiler's lowered compare-tree rendering"
 
 [[settable]]
+option = "deobfuscate"
+values = "auto|off|<technique>[,<technique>...]"
+default = "auto"
+destructive = false
+phase = "P2"
+subphase = "flow-follow"
+strength = "HARD"
+rewind = "P2"
+issue = "deobfuscate-devirtualize"
+summary = "Select the deobfuscation techniques that run (the CLI spells it --deobfuscate LIST). A technique is named for what it undoes, and there is one so far: devirtualize, which recovers a function protected by a VM-based obfuscator (VMProtect, Themida, Tigress Virtualize). Its algorithm is Pushan (Sudhir, Basque, Gibbs et al., NDSS 2027; angr PR #7680), ported onto p-code: the interpreter is emulated symbolically without path constraints, every block keyed by native address and virtual program counter, so the protected program's own control flow is recovered as a flat graph -- constant guards prune, symbolic guards keep both sides, computed targets are enumerated by case-splitting their boolean atoms, and locations that differ where paths meet are symbolized in a further round until the graph is stable. The graph is emitted as synthetic p-code (bytecode fetches, key arithmetic and handler addresses folded to constants, obfuscated stack-pointer arithmetic rebuilt as sp+k) that the ordinary flow follower lifts, and the rest of the decompiler runs unchanged on it. A function that is its own interpreter (Tigress: the virtual PC a local, switch or threaded-code dispatch, bytecode in writable .data, possibly memcpy-ed to the stack or interleaved with bogus programs through pc[select]) is found by a short concrete probe; its VPC fetches read the file's bytes, and the header says when that assumes writable bytecode is what the file holds."
+use_when = "auto (default) lets every technique act where its own detection finds its obfuscation, so devirtualize acts on a function whose direct native flow (up to 4096 instructions) transfers into a separate executable section of at least 64 KiB -- the stub a protector leaves at the original entry -- and, after the plain flow, a function that kept a computed jump and whose probe finds a dispatch through a pointer cell into file data (an in-function interpreter); it costs nothing on an unprotected function without computed jumps. Name techniques, separated by commas, to run those alone and without waiting for their detection: devirtualize forces the analysis on a function the stub heuristic misses (a Themida function whose body was replaced in place, a custom VM entered by a plain jump). Set off to see the protected code as it is (the raw interpreter), or when the analysis runs long on a very large protected function."
+example = "option deobfuscate devirtualize"
+source_decompiler = "angr"
+inspiration = "Pushan: Trace-Free Deobfuscation of Virtualization-Obfuscated Binaries (Sudhir, Basque, Gibbs et al., NDSS 2027), angr PR #7680 (VMDeobfuscation / CFGVMDeobfuscation)"
+change_kind = "structure-recovery"
+tier = "transform"
+symptoms = "a function decompiles to a two-line stub that tail-calls into an unnamed section of the binary|the decompiled body is an interpreter dispatch loop: fetches through a pointer into a high-entropy section, a rolling xor key, computed jumps through a handler table|the decompiled body is a while(true) switch on *pc over a byte array in .data, or a memcpy of a pointer array followed by a jump-as-call through its first element (Tigress Virtualize)|VMProtect .vmp0/.vmp1 or renamed sections and pushfq/popfq register-save sequences at the function entry|hundreds of thousands of instructions reachable from one function with no recognizable program logic"
+
+[[settable]]
 option = "callmechanisms"
 values = "off|auto|on"
 default = "auto"

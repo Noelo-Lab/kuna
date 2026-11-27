@@ -11,8 +11,8 @@
 //! next one. A pattern whose condition ends on a later line than it starts,
 //! with the binding first on that line, reads the same way. javac's own
 //! temporary subject (a slot above the binding's, which javac allocates
-//! first) shows a pattern and keeps it. Docs: `docs/spec/10-jvm.md` section
-//! 10.10.
+//! first) shows a pattern and keeps it. Docs: `docs/spec/11-jvm.md` section
+//! 11.10.
 
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionExprent;

@@ -21,7 +21,7 @@ kuna catalog --engine jvm                     # the jvm_* options
 | Read | For |
 |---|---|
 | `docs/cli.md`, "JVM inputs" | every command, flag, output shape and error on JVM inputs |
-| `docs/spec/10-jvm.md` | what the engine computes, stage by stage, and how its code is organised |
+| `docs/spec/11-jvm.md` | what the engine computes, stage by stage, and how its code is organised |
 | `docs/options-jvm.md` | the generated `jvm_*` option catalog (`kuna catalog --markdown --engine jvm`) |
 | `decompiler/managed/kuna-jvm/corpus/README.md` | the regression corpus: what a case is, how to add one, how to investigate a red one |
 | `docs/jvm-benchmark.md` | the benchmark against Vineflower on five large Java projects: what it scores, how to run it, the result |
@@ -99,7 +99,7 @@ modifiers), and the plugin decodes it to decide what to write. The decision is p
 top-level class and covers everything nested in it; such a unit is written as Kotlin
 source to `<package path>/<Class>.kt`, every other unit as Java to `.java`. A top-level
 function lives in a file class named after its source file (`Counters.kt` compiles to
-`CountersKt`), and so does its unit. The spec's section 10.15 has the algorithm.
+`CountersKt`), and so does its unit. The spec's section 11.15 has the algorithm.
 
 **What the output looks like.** `decompiler/managed/kuna-jvm/fixtures/kotlin` holds two small Kotlin files
 compiled with kotlinc 2.0.0 (`src/` has the source):
@@ -235,7 +235,7 @@ them out. d8's desugaring is undone: lambda classes become the `invokedynamic` j
 become the JDK calls, records on `com.android.tools.r8.RecordTag` print as records, nest
 accessors (`-$$Nest$...`, `-IA` constructors) become the private accesses, and a catch-all
 that does not rethrow is `catch (Throwable t)`; these work across the `classes*.dex` of an
-APK (`docs/spec/10-jvm.md` 10.17 has the algorithm). A method whose code cannot be
+APK (`docs/spec/11-jvm.md` 11.17 has the algorithm). A method whose code cannot be
 translated fails alone, with the engine's usual failure comment naming the reason
 (`DEX code not translated: ...`).
 
@@ -351,14 +351,14 @@ over the same input (`src/infra/kuna_driver.rs`). The output is byte-identical a
 each instance decompiles a batch of root classes in the order a single run would, also
 processes (without writing) the other roots its classes depend on, and a batch whose run
 read state it did not produce is repeated before its result is used (spec section
-10.14). `auto` is the number of cores, at most 24 and at most one per 16 class files,
+11.14). `auto` is the number of cores, at most 24 and at most one per 16 class files,
 reduced until the memory estimate below fits in 90% of the available memory. Measured on
 an 80-core machine (`decompile-project`, best of three): Elasticsearch (53 MB of classes)
 190 s with one worker, 27 s with eight, 12.5 s with twenty-four; Guava (6.6 MB) 20 s with
 one worker, 3.4 s with eight, 1.9 s with twenty-four.
 
 **Memory.** An instance reads a class's constant pool entries and members when it first
-uses them (spec section 10.3), so it holds little more than the classes its batches touch.
+uses them (spec section 11.3), so it holds little more than the classes its batches touch.
 The driver estimates an instance at 32 MiB plus 4 bytes per byte of input class files and
 1 per byte of library class files, and the decompiled state and results at 90 bytes per
 input byte, whatever the count; the estimate bounds the peaks of Elasticsearch (2.5 GB
@@ -369,7 +369,7 @@ spring-boot (3.0 MB: 0.16, 0.31 and 0.67 GB).
 process.
 
 **Time.** `--max-fn-seconds N` (default 120, `0` disables) is a per-method budget. The
-engine polls it at the heads of its fixed-point loops (spec section 10.12) and counts the
+engine polls it at the heads of its fixed-point loops (spec section 11.12) and counts the
 polls: a method may make 200,000 of them per second of the budget, the rate the slowest
 methods measured (Ghidra's ANTLR-generated parsers poll 180,000 to 250,000 times a
 second), so which methods run out does not depend on the machine or its load. A
@@ -380,7 +380,7 @@ rest of the class is written normally. With the default flags Ghidra's full
 `classes.jar` finishes in under five minutes on 24 workers with three methods of its
 ANTLR-generated parsers stopped (`SleighParser.tokendef`, `SleighParser_SemanticParser`'s
 `sizedstar` and `expr_func`), the same three at any worker count; under the wall-clock
-limit it was two on an idle machine and four on a busy one (spec section 10.12). A
+limit it was two on an idle machine and four on a busy one (spec section 11.12). A
 method stuck between two polls is not interrupted; as a last resort the CLI stops waiting
 after `2N+30` seconds, writes the classes that finished, gives the stuck ones a stub
 comment and exits.
@@ -397,7 +397,7 @@ against 14.5 s, using a third of Vineflower's CPU time or less. These are the be
 `decompile-project` runs on the benchmark's full input jars (`docs/jvm-benchmark.md`) on a
 quiet machine, Vineflower with its default thread count (one per core).
 
-**Hard failures.** A method or class that throws is contained (spec section 10.12), and
+**Hard failures.** A method or class that throws is contained (spec section 11.12), and
 so is recursion too deep for the stack: input nested thousands deep (expressions, `else
 if` chains, lambdas, field initializers) fails the method or class it is in with a
 `StackOverflowError`, as on Vineflower's JVM, and the run goes on (`src/rt/stack.rs`). The engine threads have

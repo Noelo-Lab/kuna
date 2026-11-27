@@ -359,6 +359,11 @@ kuna_options! { self, p1;
         self.dead_cascade = val;
         Ok(msg)
     },
+    "deobfuscate" => {
+        self.deobfuscate = crate::kuna_deobf::Selection::parse(p1)?;
+        self.deobf_bodies.clear();
+        Ok(self.deobfuscate.describe())
+    },
     "loweredswitch" => {
         let (mode, msg) = crate::kuna_loweredswitch::OptionLowerSwitch.apply(p1)?;
         self.recover_lowered_switch = mode.enabled();

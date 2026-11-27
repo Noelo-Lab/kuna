@@ -20,7 +20,8 @@ chapter is anchored to the code that implements it.
 | [07 — Region identification](07-regions.md) | (angr) the region graph & identifier |
 | [08 — Structuring](08-structuring.md) | collapse structuring, (angr) region structurer, goto quality |
 | [09 — Emission](09-emission.md) | casts, PrintC, naming, strings |
-| [10 — The JVM engine](10-jvm.md) | (vineflower) the non-native engine: class files and jars to Java (and Kotlin classes to Kotlin), from class loading to the Java and Kotlin writers |
+| [10 — Deobfuscation](10-deobfuscation.md) | the deobfuscation plane: stage hooks, recovered bodies, VM devirtualization |
+| [11 — The JVM engine](11-jvm.md) | (vineflower) the non-native engine: class files and jars to Java (and Kotlin classes to Kotlin), from class loading to the Java and Kotlin writers |
 
 ## Rules (read before editing)
 
@@ -28,7 +29,7 @@ chapter is anchored to the code that implements it.
    changed heuristic or threshold, a changed default, a new option, a new analysis —
    updates the affected chapter **in the same commit/PR**. Find the chapter via its
    `Anchors:` front-matter (chapters map 1:1 onto the phase folders of `kuna-decomp`;
-   chapter 10 owns every folder of the JVM engine, `kuna-jvm/src`). A pure
+   chapter 11 owns every folder of the JVM engine, `kuna-jvm/src`). A pure
    move/rename updates only anchor paths. `make check-spec` enforces the basics.
 2. **Live code only.** Every claim is anchored to a kuna path plus a symbol name in
    parentheses — `decompiler/crates/kuna-decomp/src/p2_lift/jumptable.rs
@@ -41,7 +42,7 @@ chapter is anchored to the code that implements it.
    and `docs/features/*/record.json`. One sanctioned exception: a kuna-original
    implementation whose row records `ghidra-upstream` because an upstream *issue*
    (not upstream code) inspired it may be tagged `(kuna)` with the GH issue named.
-   Chapter 10 has its own lineage: its heading carries `(vineflower)`, its untagged
+   Chapter 11 has its own lineage: its heading carries `(vineflower)`, its untagged
    prose describes the Vineflower port (`source_decompiler = "vineflower"` in
    `kuna-jvm/options.toml`), and kuna's additions there are tagged `(kuna)`. Its
    upstream citations are Java class and method names (`MethodProcessor.codeToJava`),

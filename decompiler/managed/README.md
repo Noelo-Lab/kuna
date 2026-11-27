@@ -20,7 +20,7 @@ lines, output shapes and catalog rows every managed engine shares are under
 `decompiler/crates/kuna-cli/src/managed/`. The JVM engine's side of the contract (its
 selection grammar, the JDK a run reads, its messages) is
 `decompiler/managed/kuna-jvm/src/infra/kuna_engine.rs`; its documentation is `docs/jvm.md`
-(`kuna docs jvm`), its algorithm `docs/spec/10-jvm.md`.
+(`kuna docs jvm`), its algorithm `docs/spec/11-jvm.md`.
 
 `kuna-dex` is not an engine: it is how the JVM engine reads Android input. Given DEX bytes it
 returns one JVM class file per class definition, translating each class independently of
@@ -28,7 +28,7 @@ the others (the loader runs them in parallel); `kuna-jvm`'s loader
 (`src/p0_knowledge/kuna_input.rs`) hands the bytes to the engine as it would a jar's
 entries, so nothing downstream knows the input was DEX. It is written from the published DEX
 and Dalvik bytecode specifications and depends on nothing; `docs/jvm.md` (*Android: DEX and
-APK input*) says what it translates and loses, `docs/spec/10-jvm.md` 10.17 how.
+APK input*) says what it translates and loses, `docs/spec/11-jvm.md` 11.17 how.
 
 ## Adding an engine
 

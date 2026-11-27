@@ -22,7 +22,7 @@
 //! their own jumps apart ([`separate_test`], [`separate_jumps`]), a loop's
 //! first or last if in the loop ([`inside_loop`]), and a try body's or
 //! then-branch's last statement after it ([`place_tails`]). Docs:
-//! `docs/spec/10-jvm.md` section 10.9.
+//! `docs/spec/11-jvm.md` section 11.9.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;

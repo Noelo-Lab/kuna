@@ -42,22 +42,23 @@ fn pe64_double_partial_byte_member_preserves_bits() {
 
 #[test]
 fn pe32_double_register_halves_preserve_bits() {
-    check_target_cpu("i686-w64-windows-gnu", "i686", 8, 8);
+    check_target_cpu("i686-w64-windows-gnu", "i686", 8, 8, "v2");
 }
 #[test]
 fn pe32_double_partial_register_halves_preserve_bits() {
-    check_target_cpu("i686-w64-windows-gnu", "i686", 8, 16);
+    check_target_cpu("i686-w64-windows-gnu", "i686", 8, 16, "v2");
 }
 
 /// i686 pins `-march=pentium4`, the default of current clang, so older clang also copies a
 /// double through SSE; the `register_halves` cases pin `-march=i686`, which copies it as
-/// two general-register words.
+/// two general-register words and keeps the argument's whole value in a local numbered
+/// before the packet.
 fn check_target(target: &str, width: usize, capacity: usize) {
     let cpu = if target.starts_with("i686") { "pentium4" } else { "x86-64" };
-    check_target_cpu(target, cpu, width, capacity);
+    check_target_cpu(target, cpu, width, capacity, "v1");
 }
 
-fn check_target_cpu(target: &str, cpu: &str, width: usize, capacity: usize) {
+fn check_target_cpu(target: &str, cpu: &str, width: usize, capacity: usize, packet: &str) {
     if process::optional_output(Command::new("clang").arg("--version")).is_none() {
         return;
     }
@@ -98,7 +99,7 @@ fn check_target_cpu(target: &str, cpu: &str, width: usize, capacity: usize) {
         ),
         format!("prototype 0x{read:x} {scalar} __cdecl read_packet(Packet *packet)"),
         format!("prototype 0x{wrap:x} {scalar} __cdecl wrap_float({scalar} value)"),
-        "type wrap_float::v1 Packet".to_owned(),
+        format!("type wrap_float::{packet} Packet"),
     ];
     let project = root.join("project");
     let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
