@@ -503,9 +503,9 @@ fn is_digest(digest: &Option<String>) -> bool {
 #[test]
 fn vendored_corpus_is_complete() {
     let cases = vendored();
-    assert_eq!(cases.len(), 898);
+    assert_eq!(cases.len(), 899);
     assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 591);
-    assert_eq!(cases.iter().filter(|c| c.set_slug == "kuna-fixes").count(), 307);
+    assert_eq!(cases.iter().filter(|c| c.set_slug == "kuna-fixes").count(), 308);
     for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes") {
         assert!(
             case.options

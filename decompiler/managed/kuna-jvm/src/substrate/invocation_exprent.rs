@@ -2038,6 +2038,9 @@ impl InvocationExprent {
             };
             let mut buff = TextBuffer::new();
             let ambiguous = set_ambiguous_parameters.get(i);
+            let raw_field = self.get_functype() == Type::General
+                && (types[i].type_ == CodeType::Genvar || types[i].is_generic())
+                && raw_receiver_erasure::raw_field_argument(lst_parameters.get(i));
 
             if i == parameters.len() - 1
                 && lst_parameters
@@ -2062,7 +2065,7 @@ impl InvocationExprent {
                 } else {
                     NullCastType::DontCastAtAll
                 },
-                ambiguous,
+                ambiguous || raw_field,
                 true,
                 true,
                 kuna_formals.get(i).cloned().flatten(),

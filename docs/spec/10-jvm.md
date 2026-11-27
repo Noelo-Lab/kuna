@@ -1660,6 +1660,17 @@ the type the descriptor passes it as, so no cast names a variable of another dec
 class whose variables are in scope at the call (the current class or an enclosing one) keeps
 the remapped type.
 
+**A field of a raw receiver (kuna).** A field read through a receiver whose static type is raw has
+the erasure of its declared type (JLS 4.8), as the result of a call on one has, but its inferred
+type kept its class's type variable; where the reading class has a variable of that name, the
+argument looked like the parameter's type and lost the cast it needs:
+`fill(into.data, ((UnitStore)from).data)` for `fill(N[], N[])`, which javac rejects. Such a field
+read passed for a generic parameter of a method is written with the cast to the parameter's type
+(`decompiler/managed/kuna-jvm/src/fixes/generic_casts/raw_receiver_erasure.rs (has_raw_field_receiver)`,
+read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
+inferred type stays, since a constructor infers its class's type arguments from it (a diamond
+inferred from the erasure would not compile).
+
 **A varargs spread beside a generic overload (kuna).** `vararg_spread_resolution` keeps a
 varargs array written as an array when another overload is applicable to the spread
 arguments, judged by erasure, so `of(c)` for `of(Chromosome<G>, Chromosome<G>...)` printed
