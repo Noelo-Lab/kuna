@@ -5952,6 +5952,46 @@ every other binary's pass list is byte-identical to before the pass existed):
   class by value without reading `*this` (`virtual Vec zero() const`) beside
   another such method.
 
+  The same walk then gives the classes **types**
+  (`decompiler/crates/kuna-analysis/src/analyzers/rtti/kuna_itaniumclasses.rs`).
+  A class's member functions are its primary vtable's slots, each owned by the
+  most-base class whose vtable holds it, and the constructors and destructors
+  named above. A function the vtables of classes outside one inheritance chain
+  share (identical code folding) belongs to none. Each member is walked for up to
+  256 instructions. The walk records every load and store through `this` at a
+  constant offset with its width, and whether the value moves through a
+  floating-point or vector register. It also records the constant passed to
+  `operator delete(this, N)`, called or tail-jumped to (sized deallocation, the
+  GCC and Clang default since C++14). Every class gets `<C>_vtbl`, one `code *`
+  `vfunc_<i>` per primary slot: a slot's prototype is not known, and a declared
+  one would be taken as fact at every call site. The vptr object (`<C>_vptr`) is
+  typed `<C>_vtbl`, so a constructor's store prints `this->vptr = &Circle_vptr`. The
+  commit retypes the untyped label the load placed there rather than adding a
+  second symbol. A class is laid out only when exactly one deletion size is seen,
+  it is at least a base's size, and it covers every access its own members and its
+  bases' members make. A structure smaller than the bytes a method reads prints
+  worse than none (`*(int *)&this[1].vptr`). The layout is `<C>_vtbl *vptr` at 0,
+  then one field per offset accessed at a single width: `float`/`double` when every
+  access goes through a floating-point register, `undefined<N>` when none does. An
+  offset accessed both ways, at two widths, overlapping another access or the vptr
+  gives no field. A base's fields repeat in the derived structure, so
+  `this->field_0x8` reads the same in `Shape::area` and `Circle::area`. The `this` of each
+  member is an unlocked input hint (`kuna_inputhints`) on the convention's first
+  pointer-argument register: typed `C *` when `C` is laid out, and only named
+  `this` otherwise. An opaque `C *` would keep structure synthesis from
+  recovering the fields itself. A member reading `this` from the second parameter
+  (a by-value return slot) gets no hint, nor does any function on a convention
+  passing `this` on the stack (i386), or of a class with more than one
+  sub-vtable, a `__vmi_class_type_info` or such a base, where a slot's `this`
+  may point at a base subobject. A complete structure of the same name (DWARF, a
+  header) is used as it is. Two recovered classes sharing an innermost name are
+  spelled with their scope (`a_Node`, `b_Node`). On the `itaniumrtti` fixture,
+  `int Shape::vfunc_2(void *a0,int a1) { return ((int *)a0)[2] * a1; }` prints as
+  `int Shape::vfunc_2(Shape *this,int a1) { return this->field_0x8 * a1; }`, and a
+  whole-binary run carries the typed `this` of a constructor to the callers that
+  build a class on the heap (`Dog * make_dog`). Pinned by
+  `tests/stages/kuna-itaniumclasses.xml`.
+
   The pass is blind to a `-fno-rtti` build by construction: no typeinfo is emitted,
   so no anchor exists and the output is empty. Independent code-pointer-run scanning
   — which would find such vtables heuristically — is deliberately **not** part of

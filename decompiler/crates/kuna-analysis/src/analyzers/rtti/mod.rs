@@ -60,6 +60,7 @@
 //! [`AnalysisPass`] never-fail contract): a non-PE input, a missing `type_info`
 //! vftable, or any malformed structure yields an **empty** output — never a panic.
 
+pub mod kuna_itaniumclasses;
 pub mod kuna_itaniumctors;
 pub mod kuna_itaniumrtti;
 pub mod models;

@@ -50,7 +50,7 @@ pub(super) fn emit(
     for (func_addr, symbol) in direct {
         let Some(class) = owner(symbol) else { continue };
         let type_ = structs.filter(|_| symbol.starts_with('-')).and_then(|s| s.self_type(tctx, class));
-        out.objc_self_hints.push(InputHintFact { func_addr, reg, name: "self".to_string(), type_ });
+        out.objc_self_hints.push(InputHintFact { func_addr, reg: reg.into(), name: "self".to_string(), type_ });
     }
 }
 

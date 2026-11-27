@@ -161,6 +161,7 @@ struct TypeInfo {
     /// Byte extent of the object, used to reject a pointer *inside* a typeinfo from
     /// being read as a vtable header.
     size: u64,
+    flavor: Flavor,
 }
 
 /// A recovered sub-vtable: one polymorphic base subobject's slice of a `_ZTV<C>`
@@ -369,6 +370,7 @@ fn class_vtables(typeinfos: &[TypeInfo], subs: &[SubVtable]) -> Vec<ClassVtables
                     .iter()
                     .filter_map(|a| index.get(a).copied())
                     .collect(),
+                single: ti.flavor != Flavor::VmiClass && own.len() == 1 && own[0].offset_to_top == 0,
                 primary_slots,
                 vptrs: own.iter().map(|s| s.first_slot).collect(),
             }
@@ -488,7 +490,7 @@ fn decode_typeinfos(
     for (addr, flavor, name_addr, class) in named {
         let flavor = flavor.unwrap_or_else(|| sniff_flavor(img, rk, addr, &accepted));
         let (bases, size) = read_bases(img, rk, addr, flavor, &accepted);
-        out.push(TypeInfo { addr, name_addr, class, bases, size });
+        out.push(TypeInfo { addr, name_addr, class, bases, size, flavor });
     }
     out
 }
@@ -1015,6 +1017,7 @@ mod tests {
             class: "Drawable".into(),
             bases: vec![],
             size: 16,
+            flavor: Flavor::Class,
         };
         let widget = TypeInfo {
             addr: 0x70c0,
@@ -1022,6 +1025,7 @@ mod tests {
             class: "Widget".into(),
             bases: vec![(0x7080, 16)],
             size: 56,
+            flavor: Flavor::VmiClass,
         };
         let by_addr: HashMap<u64, &TypeInfo> =
             [(shape.addr, &shape), (widget.addr, &widget)].into_iter().collect();
