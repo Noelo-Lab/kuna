@@ -16,7 +16,6 @@ pub struct VarVersionNodeData {
     pub successors: JLinkedHashSet<VarVersionNode>,
     pub predecessors: JLinkedHashSet<VarVersionNode>,
     pub phantom_node: Option<VarVersionNode>,
-    pub phantom_parent_node: Option<VarVersionNode>,
     pub live: Option<Shared<SFormsFastMapDirect>>,
     pub lvt: Option<LocalVariable>,
     pub state: Option<State>,
@@ -33,7 +32,6 @@ impl VarVersionNode {
             successors: JLinkedHashSet::new(),
             predecessors: JLinkedHashSet::new(),
             phantom_node: None,
-            phantom_parent_node: None,
             live: None,
             lvt,
             state: None,
@@ -64,14 +62,6 @@ impl VarVersionNode {
 
     pub fn set_phantom_node(self, node: Option<VarVersionNode>) {
         self.with_mut(|d| d.phantom_node = node)
-    }
-
-    pub fn phantom_parent_node(self) -> Option<VarVersionNode> {
-        self.with(|d| d.phantom_parent_node)
-    }
-
-    pub fn set_phantom_parent_node(self, node: Option<VarVersionNode>) {
-        self.with_mut(|d| d.phantom_parent_node = node)
     }
 
     pub fn live(self) -> Option<Shared<SFormsFastMapDirect>> {

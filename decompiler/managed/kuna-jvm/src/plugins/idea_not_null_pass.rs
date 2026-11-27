@@ -55,10 +55,6 @@ fn exprents(stat: Statement) -> JList<Exprent> {
 }
 
 impl IdeaNotNullPass {
-    pub fn new() -> IdeaNotNullPass {
-        IdeaNotNullPass
-    }
-
     pub fn remove_hardcoded_checks(root: RootStatement, mt: StructMethod) -> bool {
         let mut checks_removed = false;
 

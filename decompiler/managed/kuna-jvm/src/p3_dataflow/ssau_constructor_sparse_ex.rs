@@ -114,7 +114,6 @@ impl SSAUConstructorSparseEx {
                 let phantom_node =
                     Self::create_new_node(this, var_node.var(), None, State::Phantom);
                 var_node.set_phantom_node(Some(phantom_node));
-                phantom_node.set_phantom_parent_node(Some(var_node));
                 phantom_node.as_pair()
             }
             Some(phantom_node) => phantom_node.as_pair(),
