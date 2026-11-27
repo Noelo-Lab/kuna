@@ -4769,6 +4769,9 @@ and trace writes in qualified forms. A disconnected extrema result port
 can still publish backtraces. The covered displaced long source reads
 both words at its captured address and updates the pointer once. Packed
 computation preserves the arithmetic flags.
+The accumulator-plus-literal `MIN2` sign-extends the literal across both
+lanes. A short accumulator destination receives only the selected upper
+word; both lane comparisons still update their backtraces.
 
 Covered compact `EXTRACTS` and `EXTRACTZ` use the low five descriptor
 bits for width and the low five bits of its high word for offset. The

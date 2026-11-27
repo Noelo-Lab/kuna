@@ -3148,6 +3148,26 @@ fn wide_lshift_loop_input_feedback() {
 }
 
 #[test]
+fn packed_min2_literal_writes_only_the_upper_minimum_and_both_traces() {
+    for (left, right, source, destination, result, trace) in [
+        (0x8fe26b, 0xc5d395, 0x0080007fff, "A3", 0x6f55668000, (0x4add, 0x4c6a)),
+        (0x8fffff, 0xc5d295, 0x80ffff8000, "A2", 0x80ffffffff, (0x4adc, 0x4c6b)),
+        (0x8f7fff, 0xc5d395, 0xff00008000, "A3", 0x6f55660000, (0x4adc, 0x4c6b)),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("A2", source), ("A3", 0x6f55662222), ("EST", 0x83a5), ("CETBL", 0xffff),
+                 ("BTR1", 0xa56e), ("BTR2", 0xa635)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg(destination), result);
+        let unchanged = if destination == "A3" { ("A2", source) } else { ("A3", 0x6f55662222) };
+        assert_eq!(m.reg(unchanged.0), unchanged.1);
+        assert_eq!((m.reg("BTR1"), m.reg("BTR2")), trace);
+        assert_eq!(m.reg("EST"), 0xb3a5);
+    }
+}
+
+#[test]
 fn packed_banks_displacements_compact() {
     for (left, right, seed, stored, flags) in [
         (0x696624, NOP, 0, 0x24, 0x400),

@@ -10588,6 +10588,23 @@ macro packed_r2_long(displacement, high, low) {
   <publish>
     publish_alu_ce(EST & 0xcfff);
 }
+
+:MIN2 packed_dst_lo,packed_lhs_acc,packed_literal_rhs is $(PACKED_WIDE) & packed_opcode=0x8b
+    & packed_dst_group=0xa & packed_dst_lo & packed_lhs_code>=0x48 & packed_lhs_code<=0x4d
+    & packed_lhs_acc & packed_lhs_hi & packed_lhs_lo & packed_literal_rhs {
+    local left_high:2 = packed_lhs_hi;
+    local literal:2 = packed_literal_rhs;
+    local right_high:2 = 0 - (literal >> 15);
+    local take_high:1 = left_high s< right_high;
+    local take_low:1 = packed_lhs_lo s< literal;
+    packed_trace(take_high, take_low);
+    local result:2 = right_high;
+    if (take_high == 0) goto <publish>;
+    result = left_high;
+  <publish>
+    packed_dst_lo = result;
+    publish_alu_ce(EST & 0xcfff);
+}
 :MIN2 "RMW2",packed_lhs_word,packed_rhs_word is $(PACKED_WIDE) & packed_opcode=0x8b & packed_dst=0x47 & packed_lhs_word & packed_rhs_word {
     # The sink does not realign the two short operands to the high lane.
     local left_high:2 = 0 - zext(packed_lhs_word s< 0);
