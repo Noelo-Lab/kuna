@@ -122,8 +122,8 @@ reads:
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|--:|---|---|---|---|---|---|
 | antlr4 | 1,447 | 83.07% → 97.37% | 95.12% → 99.08% | 98.65% → 99.93% | 83.41% → 98.06% | 98.62% → 99.31% | 0 |
-| h2 | 12,095 | 78.45% → 88.77% | 94.94% → 99.08% | 91.38% → 93.46% | 81.97% → 93.51% | 86.55% → 97.28% | 76 → 0 |
-| httpcore5 | 5,138 | 91.32% → 96.96% | 97.51% → 99.78% | 99.66% → 99.96% | 91.48% → 97.04% | 99.40% → 99.60% | 0 |
+| h2 | 12,095 | 78.45% → 89.00% | 94.94% → 99.08% | 91.38% → 93.70% | 81.97% → 93.55% | 86.55% → 97.83% | 76 → 0 |
+| httpcore5 | 5,138 | 91.32% → 96.96% | 97.51% → 99.78% | 99.66% → 99.96% | 91.48% → 97.04% | 99.40% → 99.80% | 0 |
 | fastjson2 | 6,645 | 67.96% → 93.06% | 88.50% → 98.50% | 98.86% → 99.74% | 68.16% → 93.35% | 91.14% → 97.05% | 0 |
 | tink | 4,384 | 90.10% → 99.59% | 98.41% → 99.80% | 99.75% → 99.85% | 90.21% → 99.70% | 98.21% → 100.00% | 3 |
 | janino | 4,095 | 51.36% → 95.78% | 97.16% → 98.52% | 98.00% → 98.49% | 51.65% → 96.29% | 95.50% → 98.20% | 40 → 38 |
@@ -132,10 +132,10 @@ reads:
 | commons-math3 | 8,073 | 87.44% → 96.84% | 97.85% → 99.89% | 99.54% → 99.97% | 87.48% → 96.85% | 96.38% → 97.32% | 4 → 1 |
 | jenetics | 1,915 | 91.49% → 97.02% | 99.41% → 99.95% | 99.41% → 99.78% | 91.85% → 97.23% | 88.51% → 92.53% | 2 → 0 |
 | nashorn | 9,309 | 87.94% → 97.97% | 96.48% → 98.97% | 99.71% → 99.87% | 88.24% → 98.52% | 93.42% → 95.18% | 1 |
-| **all** | 63,189 | 81.68% → 95.34% | 95.80% → 99.28% | 97.69% → 98.45% | 82.52% → 96.49% | 94.12% → 97.72% | 126 → 43 |
+| **all** | 63,189 | 81.68% → 95.39% | 95.80% → 99.28% | 97.69% → 98.50% | 82.52% → 96.49% | 94.12% → 97.83% | 126 → 43 |
 
-60,247 methods perfect instead of 51,610, and 4,240 of 4,339 classes recompile instead of
-4,084. 9,854 methods score better than Vineflower's and 87 worse. h2 and joda-time ship
+60,274 methods perfect instead of 51,610, and 4,245 of 4,339 classes recompile instead of
+4,084. 9,895 methods score better than Vineflower's and 87 worse. h2 and joda-time ship
 without local-variable tables, which is where the types column stays lowest for both tools.
 
 ### Ten projects nothing had been tuned against (`heldout2`)
@@ -158,7 +158,7 @@ reads:
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|--:|---|---|---|---|---|---|
 | parboiled | 348 | 83.33% → 90.52% | 97.97% → 100.00% | 93.60% → 95.06% | 86.21% → 92.82% | 87.88% → 90.91% | 0 |
-| hsqldb | 9,959 | 75.13% → 88.16% | 92.49% → 98.48% | 89.52% → 92.19% | 78.00% → 92.14% | 94.32% → 97.04% | 2 → 0 |
+| hsqldb | 9,959 | 75.13% → 88.22% | 92.49% → 98.48% | 89.52% → 92.25% | 78.00% → 92.14% | 94.32% → 97.04% | 2 → 0 |
 | undertow | 7,542 | 86.50% → 97.53% | 95.15% → 99.31% | 99.43% → 99.91% | 86.62% → 97.68% | 94.55% → 98.42% | 0 |
 | dsl-json | 1,074 | 80.26% → 98.04% | 95.61% → 100.00% | 99.72% → 100.00% | 80.45% → 98.04% | 93.75% → 98.75% | 0 |
 | jasypt | 673 | 93.16% → 98.37% | 98.66% → 100.00% | 99.67% → 100.00% | 93.31% → 98.37% | 97.44% → 100.00% | 0 |
@@ -167,10 +167,10 @@ reads:
 | junit4 | 1,473 | 90.77% → 97.69% | 97.67% → 99.86% | 99.03% → 99.93% | 90.77% → 97.69% | 96.97% → 97.58% | 0 |
 | ojalgo | 13,686 | 90.68% → 98.30% | 97.65% → 99.76% | 99.82% → 99.93% | 90.81% → 98.45% | 92.53% → 95.07% | 0 |
 | langchain4j | 3,599 | 88.25% → 95.58% | 97.24% → 99.94% | 99.86% → 100.00% | 88.25% → 95.61% | 97.14% → 98.18% | 0 |
-| **all** | 51,458 | 79.56% → 89.37% | 93.36% → 97.93% | 96.70% → 97.89% | 80.29% → 90.37% | 93.29% → 96.51% | 138 → 0 |
+| **all** | 51,458 | 79.56% → 89.38% | 93.36% → 97.93% | 96.70% → 97.90% | 80.29% → 90.37% | 93.29% → 96.51% | 138 → 0 |
 
-45,988 methods perfect instead of 40,939, and 2,849 of 2,952 classes recompile instead of
-2,754. 7,429 methods score better than Vineflower's and 198 worse (ecj 115, hsqldb 51,
+45,994 methods perfect instead of 40,939, and 2,849 of 2,952 classes recompile instead of
+2,754. 7,436 methods score better than Vineflower's and 198 worse (ecj 115, hsqldb 51,
 ojalgo 14, undertow 10, luaj 3, langchain4j 3, dsl-json 2); every method is decompiled.
 
 On ecj the structure column rises to 92.53% while bytes exact falls from the first run's
@@ -195,13 +195,13 @@ alone with `--release 21`):
 
 | | Round-trips | Code differs | Text does not compile |
 |---|--:|--:|--:|
-| kuna, `-g` | 342 | 103 | 17 |
+| kuna, `-g` | 343 | 103 | 16 |
 | Vineflower 1.12.0, `-g` | 288 | 145 | 29 |
-| kuna, `-parameters -g:none` | 312 | 123 | 27 |
+| kuna, `-parameters -g:none` | 319 | 122 | 21 |
 | Vineflower 1.12.0, `-parameters -g:none` | 245 | 158 | 59 |
 
-With debug information kuna round-trips 56 sources Vineflower does not and Vineflower two
-that kuna does not (`TestDoWhileTrue`, `TestLocalScopes`); without it, 67 and none. A source
+With debug information kuna round-trips 57 sources Vineflower does not and Vineflower two
+that kuna does not (`TestDoWhileTrue`, `TestLocalScopes`); without it, 74 and none. A source
 whose code differs is a list to read, not a defect count: javac lays out equivalent text
 differently, and without debug information it merges equal lambda bodies. Reading kuna's
 lists method by method found fifteen shapes of wrong code that no benchmark project had
@@ -212,9 +212,11 @@ by a lambda with the wrong type); each is fixed with a corpus case. Five known s
 left: four in how `try` regions are structured (`finally { throw t; }` moved into its `try`,
 code after a loop copied under a `catch`, a `return` lost from a try-with-resources whose
 `finally` returns, a lost `catch` body), and a record pattern's binding typed `Object`
-without debug information. On kuna's own corpus sources (139 compile) the same command
-gives 112 / 24 / 1 with debug information and 93 / 37 / 7 without; one more source carries a
-failure comment in both.
+without debug information. Of the text that does not compile without debug information,
+what is left is mostly types the class file states only in part: a lambda whose target is
+printed raw, and generic casts javac compiles to no instruction. On kuna's own corpus
+sources (145 compile) the same command gives 120 / 24 / 0 with debug information and
+102 / 37 / 5 without; one more source carries a failure comment in both.
 
 ## From DEX
 
