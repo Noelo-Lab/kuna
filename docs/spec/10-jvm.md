@@ -869,6 +869,11 @@ merged into one where the merge cannot change what a read sees; and local types 
 `LocalVariableTypeTable` are applied. `jvm_verify_merges` and `jvm_verify_pre_post_merges`
 are experimental, stricter merge checks: the second computes, with an extra SSA pass,
 which assignments each read can see, and refuses any merge that would change it.
+(kuna) `populate_type_bounds`, which bounds a variable a method returns by the class the method
+returns, read a method returning an array as returning the class its element descriptor names:
+`byte[]` gave a class `B`, which the merge of `bytes = null` and `bytes = s.getBytes(..)` then
+took for their type (`B var2 = null;` in a method without a LocalVariableTable); a returned array
+bounds nothing.
 
 **Source locals (kuna).**
 `decompiler/managed/kuna-jvm/src/p6_variables/kuna_source_locals.rs`
