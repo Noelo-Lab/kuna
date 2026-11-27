@@ -491,6 +491,12 @@ impl CalleeEntryDead {
         self.complete
     }
 
+    /// Can the walk answer for the body's reads: it completed and decoded every
+    /// instruction it reached?
+    pub fn answers(&self) -> bool {
+        self.complete && !self.undecodable
+    }
+
     /// [`Self::proves_dead`] without leaning on a conditionally executed write:
     /// every path writes the range by instructions that always run.
     pub fn proves_dead_firmly(&self, addr: &Address, size: int4) -> bool {

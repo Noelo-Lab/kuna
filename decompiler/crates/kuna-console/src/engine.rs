@@ -1432,6 +1432,8 @@ impl ConsoleProgram {
     /// Deliberately conservative: it only ever returns an entry the enumeration
     /// already knows, so an address that is not a discovered function start is
     /// still `None` and the caller keeps decompiling exactly where it was asked.
+    /// The cached inventory is address-ordered with one record per entry, so this
+    /// is a binary search, not a copy of the list per address (issue #1978).
     pub fn find_entry_at(&self, vma: u64) -> Option<FunctionEntry> {
         let vma = if self.is_declared_entry(vma) { vma } else {
             self.function_address_aliases.get(&vma).copied().unwrap_or(vma)
@@ -1440,9 +1442,11 @@ impl ConsoleProgram {
         if !self.anonymous_entries.is_empty() {
             return self.find_compact_entry_at(want);
         }
-        self.function_entries_canonical()
-            .into_iter()
-            .find(|e| e.addr.get_offset() == want)
+        let entries = self.function_entries_shared();
+        entries
+            .binary_search_by_key(&want, |e| e.addr.get_offset())
+            .ok()
+            .map(|at| entries[at].clone())
     }
 
     /// The address `selector` resolves to: a mapped numeric address with its

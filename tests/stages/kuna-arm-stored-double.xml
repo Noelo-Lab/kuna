@@ -1,0 +1,109 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!--
+    An ARM hard-float double parameter that the function only stores to a
+    global (kuna_armfloatreturn.rs (in_memory)).
+
+    armfloatargs_stored_{arm,thumb}.o (gcc -O2, recipe in armfloatargs_stored.c):
+    put_g is `vstr d0,[r3]; bx lr` with r3 the address of g. The store to that
+    resolved address becomes a copy of d0 into g, and nothing in the function
+    reads g again, so the copy is the only read of d0. That copy is a read of
+    the whole double: before, d0 was taken as two unread words and the C read
+    an uninitialized d0. put_gv stores to a global declared volatile (no
+    volatile range: the store is a copy too), put_two stores d0 and d1,
+    and put_gf is the float control. put_ref stores d0 to a stack slot whose
+    address it passes to use_ref; the call's effect on that slot carries the
+    stored value, which is still a copy of d0. sel stores a double that a
+    select merges (`vmovne.f64 d1,d0`) and zero_if one that an if replaces with
+    a constant: a forward merge still stores the incoming double on the path
+    that keeps it. call_put, which passes put_g the
+    double it computes, needs put_g's stated prototype, so a callee-first
+    decompile-all checks it (kuna-cli/tests/arm_float_arguments.rs).
+
+    armfloatargs_merged_store.o (authored, recipe in its .s) is glibc's
+    printf_size shape: scaled writes d5 only in a loop and stores it to a stack
+    slot only on the paths where the loop ran. The incoming d5 reaches that
+    store only through the loop's merge, on a path that never runs, so it is
+    not a parameter, and neither are d0-d4 below it. put_mmio stores d0 to an
+    address the script marks volatile, so the store is a write_volatile of the
+    incoming d0, which keeps it too.
+-->
+<bytechunk space="ram" offset="0x1000">1eff2fe1</bytechunk>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_stored_arm.o</com>
+  <com>read symbols</com>
+  <com>lo fu sel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero_if</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_ref</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_gv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_gf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_stored_thumb.o</com>
+  <com>read symbols</com>
+  <com>lo fu sel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zero_if</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_ref</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_g</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_gv</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu put_gf</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_merged_store.o</com>
+  <com>read symbols</com>
+  <com>lo fu scaled</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>volatile 0x50000000 8</com>
+  <com>lo fu put_mmio</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="arm-stored-double #1: put_g takes the double it stores" min="2" max="2">^void put_g\(float8 a0\)$</stringmatch>
+<stringmatch name="arm-stored-double #2: put_g, put_two and sel store their first double" min="6" max="6">^  g = a0;$</stringmatch>
+<stringmatch name="arm-stored-double #3: put_gv takes the double it stores to a global declared volatile" min="2" max="2">^void put_gv\(float8 a0\)$</stringmatch>
+<stringmatch name="arm-stored-double #4: put_two takes both doubles" min="2" max="2">^void put_two\(float8 a0,float8 a1\)$</stringmatch>
+<stringmatch name="arm-stored-double #5: put_two stores its second double" min="2" max="2">^  gv = a1;$</stringmatch>
+<stringmatch name="arm-stored-double #6: the float control is unchanged" min="2" max="2">^void put_gf\(float4 a0\)$</stringmatch>
+<stringmatch name="arm-stored-double #7: no function reads an uninitialized d register" min="0" max="0">// d[0-9]+$</stringmatch>
+<stringmatch name="arm-stored-double #8: put_ref takes the double whose address it passes" min="2" max="2">^void put_ref\(float8 a0\)$</stringmatch>
+<stringmatch name="arm-stored-double #9: a d5 stored only through the loop's merge is no parameter" min="1" max="1">^void scaled\(float8 \*a0,char \*a1\)$</stringmatch>
+<stringmatch name="arm-stored-double #10: scaled stores its loop's quotient only where the loop ran" min="1" max="1">^    v2 = v3;$</stringmatch>
+<stringmatch name="arm-stored-double #11: sel takes both doubles and the int" min="2" max="2">^void sel\(float8 a0,float8 a1,int4 a2\)</stringmatch>
+<stringmatch name="arm-stored-double #12: sel stores its second double when c is zero" min="2" max="2">^    g = a1;$</stringmatch>
+<stringmatch name="arm-stored-double #13: zero_if takes its double" min="2" max="2">^void zero_if\(float8 a0,int4 a1\)</stringmatch>
+<stringmatch name="arm-stored-double #14: zero_if stores the constant when c is set" min="2" max="2">^  g = 0\.5;$</stringmatch>
+<stringmatch name="arm-stored-double #15: put_mmio takes the d0 it writes to volatile memory" min="1" max="1">^void put_mmio\([a-z0-9 ]+ a0\)$</stringmatch>
+</decompilertest>
