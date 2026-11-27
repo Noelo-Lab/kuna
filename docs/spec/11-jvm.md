@@ -1190,7 +1190,9 @@ of an earlier one to a later field (`next = base + 1; base = 5;` moved as `base 
 statement before it moved and its field is declared after every field moved so far, so the
 written order is the order of `<clinit>`; the rest stays in the `static` block, a final field
 there being assigned once in it. Synthetic fields (`$assertionsDisabled`, an enum's
-`$VALUES`) are not written, so their position does not count. An interface, which cannot
+`$VALUES`) are not written, so their position does not count, and an enum's constants are
+written first whatever their field index (a class translated from DEX lists its fields by
+name), as `<clinit>` builds them first: they always move and do not bound the other fields. An interface, which cannot
 hold a `static` block, and a class written as Kotlin, whose writer places an object's or
 companion's instance and the properties that read it itself, keep Vineflower's rule. The
 first block is followed through switch expressions (`straight_line_blocks`): a switch

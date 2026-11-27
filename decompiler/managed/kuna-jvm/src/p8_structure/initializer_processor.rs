@@ -318,6 +318,8 @@ impl InitializerProcessor {
                                 &f_expr.get_descriptor().descriptor_string,
                             );
                             let fidx = cl.get_fields().get_index_by_key(&key_field) as i32;
+                            let field = cl.get_fields().get(fidx as usize);
+                            let enum_constant = field.has_modifier(ACC_ENUM);
                             let exprent_independent = Self::is_exprent_independent(
                                 f_expr,
                                 assign_expr.get_right(),
@@ -328,12 +330,14 @@ impl InitializerProcessor {
                                 &not_inlined,
                                 fidx,
                                 true,
-                            ) && (!keeps_order || (!kept && fidx > last_moved));
+                            ) && (!keeps_order
+                                || enum_constant
+                                || (!kept && fidx > last_moved));
                             if inline_initializers || exprent_independent {
                                 let initializers = wrapper.get_static_field_initializers();
                                 if !initializers.borrow().contains_key(&key_field) {
                                     if exprent_independent {
-                                        if !cl.get_fields().get(fidx as usize).is_synthetic() {
+                                        if !field.is_synthetic() && !enum_constant {
                                             last_moved = fidx;
                                         }
                                         initializers.borrow_mut().add_with_key(
@@ -358,7 +362,9 @@ impl InitializerProcessor {
                                                     non_field_assignment.get_right(),
                                                 ));
                                                 exprents_to_remove.push(non_field_assignment.0);
-                                                last_moved = last_moved.max(fidx);
+                                                if !enum_constant {
+                                                    last_moved = last_moved.max(fidx);
+                                                }
                                                 initializers.borrow_mut().add_with_key(
                                                     assign_expr.get_right(),
                                                     key_field.clone(),
