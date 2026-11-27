@@ -80,6 +80,58 @@ public class Sugar {
     private int count;
     private static int secret = 5;
 
+    /** Parameters updated in place or reassigned (d8 keeps them in their registers). */
+    static final class Params {
+        int size = 4;
+
+        int successor(int i) {
+            return ++i < size ? i : -1;
+        }
+
+        static int lastIndexOf(int[] a, int target, int from, int to) {
+            for (to--; to >= from; to--) {
+                if (a[to] == target) {
+                    return to;
+                }
+            }
+            return -1;
+        }
+
+        static long wide(long x, int k, double d) {
+            x += k;
+            x <<= 1;
+            d *= 2;
+            return x + (long) d;
+        }
+
+        static int onePath(int a, boolean c) {
+            if (c) {
+                a = a + 7;
+            }
+            return a * 3;
+        }
+
+        static int captured(int a) {
+            final int before = a;
+            a += 5;
+            java.util.function.IntSupplier s = () -> before;
+            return s.getAsInt() * 10 + a;
+        }
+
+        static int reassigned(int a, String s) {
+            int sum = a;
+            a = s.length();
+            return sum + a + 1;
+        }
+
+        static String text(String s, int n) {
+            while (n-- > 0) {
+                s = s + n;
+            }
+            return s;
+        }
+    }
+
     private int hidden() {
         return count + 1;
     }
@@ -171,5 +223,9 @@ public class Sugar {
         System.out.println(pick(true, 3, 4) + " " + pick(false, 3, 4));
         System.out.println(backports("a", 2));
         System.out.println(new Peer(2).read(new Sugar()) + " " + secret);
+        Params ps = new Params();
+        System.out.println(ps.successor(1) + " " + ps.successor(3) + " " + Params.lastIndexOf(new int[] {1, 2, 1, 3}, 1, 0, 4)
+                + " " + Params.wide(3L, 4, 1.5) + " " + Params.onePath(2, true) + " " + Params.onePath(2, false)
+                + " " + Params.captured(4) + " " + Params.reassigned(6, "abc") + " " + Params.text("x", 3));
     }
 }

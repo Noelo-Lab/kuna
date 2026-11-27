@@ -448,7 +448,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         Ok(())
     }
 
-    /// `add-int/lit` on one local becomes `iinc`.
+    /// `add-int/lit` on one local becomes `iinc` (when the value it reads is
+    /// in the local it writes).
     fn iinc(&mut self, k: usize) -> Result<bool> {
         let m = self.m;
         let o = &m.ops[k];
@@ -463,6 +464,9 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             return Ok(false);
         }
         let s = self.local(d.reg, I, d.id)?;
+        if m.param_copy(u.val).is_some() || self.local(u.reg, I, u.val)? != s {
+            return Ok(false);
+        }
         self.min_addr = self.min_addr.min(o.insn.addr);
         self.asm.iinc(s, by.expect("checked"));
         Ok(true)
