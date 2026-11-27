@@ -92,8 +92,6 @@ Three tiers:
 | class or method named like a Java keyword | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | identifiers that are not valid Java (obfuscated names) | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | many classes named a, b, c that clash | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
-| member classes of an obfuscated jar written as separate top-level classes | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
-| renamed inner classes not nested | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
 | inner and anonymous classes missing when decompiling one .class file | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
 | unrelated Name$x.class files nested into the class | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
 | nonsense generic types from a tampered Signature attribute | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
@@ -318,15 +316,6 @@ What the engine loads and infers before any class is written.
 - **Where / provenance:** p0_knowledge/fernflower, identifier_converter, converter_helper · vineflower · vineflower-option
 - **Also spelled:** `rename-members`, `ren`
 - **Example:** `kuna decompile-project obf.jar -o out --option jvm_rename_members on`
-
-### `jvm_validate_inner_classes_names` -- on | off, default `on`
-
-- **Symptoms:** member classes of an obfuscated jar written as separate top-level classes; renamed inner classes not nested.
-- **What it does:** Nest a member class only when its name is its outer class's name, $, and its simple name (Outer$Inner); a member entry with any other name is ignored and the class stays top-level.
-- **When to flip:** Turn off for renamed or obfuscated jars whose inner class names do not follow the Outer$Inner scheme, so they still nest.
-- **Where / provenance:** p1_classfile/classes_processor · vineflower · vineflower-option
-- **Also spelled:** `validate-inner-classes-names`
-- **Example:** `kuna decompile obf.jar a --option jvm_validate_inner_classes_names off`
 
 ### `jvm_siblings` -- on | off, default `on`
 

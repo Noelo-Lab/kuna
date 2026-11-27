@@ -174,8 +174,7 @@ section 10.14), and the others still give context. With `jvm_decompile_inner`
 `EnclosingMethod` names a method is local), each remembering which class declared it.
 Classes often disagree about a nested class; the record from the nested class itself
 wins over its enclosing class's, which wins over a third class's, and each disagreement
-is logged. With
-`jvm_validate_inner_classes_names`, a member entry is believed only when its name is the
+is logged. A member entry is believed only when its name is the
 outer name, `$`, and its simple name. Then, from each root, a breadth-first walk attaches
 nested classes to their enclosing class: an anonymous class loses `static` and records
 the supertype it instantiates, a local class keeps only the modifiers a local declaration

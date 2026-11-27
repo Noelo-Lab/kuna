@@ -236,9 +236,7 @@ impl ClassesProcessor {
                             if inner_name == encl_class_name {
                                 continue;
                             }
-                            if DecompilerContext::get_option(
-                                IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES,
-                            ) && rec.type_ == ClassNodeType::Member
+                            if rec.type_ == ClassNodeType::Member
                                 && inner_name
                                     != format!(
                                         "{}${}",

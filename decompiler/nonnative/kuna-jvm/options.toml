@@ -606,28 +606,6 @@ tier = "core"
 symptoms = "stack trace names lambda$main$0 or Main$1 and the matching code is hard to find|need the class file of an anonymous class"
 
 [[option]]
-option = "jvm_validate_inner_classes_names"
-vineflower = "validate-inner-classes-names"
-short = ""
-aliases = ["validate-inner-classes-names"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Nest a member class only when its name is its outer class's name, $, and its simple name (Outer$Inner); a member entry with any other name is ignored and the class stays top-level."
-use_when = "Turn off for renamed or obfuscated jars whose inner class names do not follow the Outer$Inner scheme, so they still nest."
-example = "kuna decompile obf.jar a --option jvm_validate_inner_classes_names off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.VALIDATE_INNER_CLASSES_NAMES (validate-inner-classes-names)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "member classes of an obfuscated jar written as separate top-level classes|renamed inner classes not nested"
-
-[[option]]
 option = "jvm_siblings"
 vineflower = ""
 short = ""
