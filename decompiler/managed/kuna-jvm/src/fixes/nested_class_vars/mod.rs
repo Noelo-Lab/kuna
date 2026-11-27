@@ -4,16 +4,21 @@
 //! get; `nested_param_rename` declares a nested class method's parameter by the
 //! table name its uses are written by; `refresh_printed_var_names` makes
 //! `refreshVarNames` take the clashing names first and rename only the
-//! variables without one.
+//! variables without one; `header_parameter_names` keeps a parameter the
+//! method header declares by its `MethodParameters` name under that name.
 
 pub(crate) mod captured_var_clash_name;
 pub(crate) mod captured_var_through_cast;
 
+use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::method_descriptor::MethodDescriptor;
 use crate::rt::JHashMap;
 use crate::statement::Statement;
+use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_local_variable_table_attribute::LocalVariable;
+use crate::struct_method::StructMethod;
 use crate::var_exprent::VarExprent;
 use crate::var_names_collector::VarNamesCollector;
 use crate::var_processor::VarProcessor;
@@ -56,21 +61,50 @@ pub fn table_name(varproc: VarProcessor, pair: VarVersionPair, name: Option<&str
     (Some(lvt.as_str()) != name && VarExprent::is_valid_name(&lvt)).then_some(lvt)
 }
 
+/// The parameters of `mt` its `MethodParameters` attribute names, with the
+/// name: the method header declares each by it.
+pub fn header_parameter_names(mt: StructMethod) -> Vec<(VarVersionPair, String)> {
+    if !DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
+        return Vec::new();
+    }
+    let Some(attr) = mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_METHOD_PARAMETERS) else {
+        return Vec::new();
+    };
+    let md = MethodDescriptor::parse_descriptor(&mt.get_descriptor());
+    let mut index = if mt.has_modifier(ACC_STATIC) { 0 } else { 1 };
+    let mut named = Vec::new();
+    for (param, entry) in md.params.iter().zip(attr.get_entries()) {
+        if let Some(name) = entry.my_name {
+            named.push((VarVersionPair::new(index, 0), name));
+        }
+        index += param.stack_size;
+    }
+    named
+}
+
 /// `refreshVarNames` over `names` (the method's variable names, in order),
-/// keeping the variables that print a clashing name out of the renaming.
+/// keeping out of the renaming the variables that print a clashing name and
+/// the parameters the header declares by the name they have.
 pub fn refresh(
     varproc: VarProcessor,
     vc: VarNamesCollector,
     names: JHashMap<VarVersionPair, Option<String>>,
 ) {
     let names = names.entry_vec();
-    for (key, _) in &names {
+    let declared = header_parameter_names(varproc.get_method());
+    let kept = |key: &VarVersionPair, value: &Option<String>| {
+        varproc.get_clashing_name(*key).is_some()
+            || declared.iter().any(|(pair, name)| pair == key && Some(name) == value.as_ref())
+    };
+    for (key, value) in &names {
         if let Some(clashing) = varproc.get_clashing_name(*key) {
             vc.add_name(clashing);
+        } else if let (true, Some(name)) = (kept(key, value), value) {
+            vc.add_name(name.clone());
         }
     }
     for (key, value) in names {
-        if varproc.get_clashing_name(key).is_none() {
+        if !kept(&key, &value) {
             varproc.set_var_name_opt(key, vc.get_free_name_opt(value.as_deref()));
         }
     }

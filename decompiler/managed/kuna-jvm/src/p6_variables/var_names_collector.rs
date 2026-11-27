@@ -64,6 +64,11 @@ impl VarNamesCollector {
         proposition
     }
 
+    /// Whether `name` is taken (kuna).
+    pub fn contains_name(self, name: &str) -> bool {
+        self.with(|d| d.used_names.contains(&name.to_string()))
+    }
+
     /// The unmodifiable view, as its elements in the set's iteration order.
     pub fn get_used_names(self) -> Vec<String> {
         self.with(|d| d.used_names.to_vec())

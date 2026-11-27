@@ -246,11 +246,17 @@ impl FieldExprent {
         .0
     }
 
+    /// Whether a variable in scope of the method being written may have this
+    /// field's name: one its variable table names, or (kuna) one the method
+    /// or, for a lambda body, a method around it gave that name.
     fn is_ambiguous(self) -> bool {
         if let Some(method) = DecompilerContext::get_current_method_wrapper() {
-            let method_struct = method.with(|d| d.method_struct);
+            let (method_struct, varproc) = method.with(|d| (d.method_struct, d.varproc));
+            let name = self.get_name();
+            if varproc.get_var_names_collector().contains_name(&name) {
+                return true;
+            }
             if let Some(attr) = method_struct.get_local_variable_attr() {
-                let name = self.get_name();
                 return attr.contains_name(&name);
             }
         }

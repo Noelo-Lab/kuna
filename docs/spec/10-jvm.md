@@ -923,7 +923,17 @@ variables get `varN`-style names that avoid the class's field names
 (`decompiler/managed/kuna-jvm/src/p6_variables/var_names_collector.rs`), then, with
 `jvm_use_lvt_names`, the debug names from the `LocalVariableTable` replace them wherever
 the name is a valid identifier (`VarProcessor::set_debug_var_names`). With the same
-option, a `MethodParameters` attribute names (and marks `final`) the parameters. A method without code still gets parameter names. Names that clash within a
+option, a `MethodParameters` attribute names (and marks `final`) the parameters. A method without code still gets parameter names. A parameter the header declares by its
+`MethodParameters` name keeps that name where the other variables are renamed away from
+field names and from the names of the methods around a nested body
+(`decompiler/managed/kuna-jvm/src/fixes/nested_class_vars/mod.rs`, `header_parameter_names`):
+javac's default (`-parameters` without `-g`) writes the attribute and no variable table,
+and the header and the reads must agree (`this.items = items`, not `itemsx`). A static
+field of the class being written is printed qualified when the method's variable table
+has its name or a variable of the method has it, and inside a lambda body also when a
+variable of a method around it has it, captured or not
+(`FieldExprent::is_ambiguous`): `() -> label` would read the parameter `label` of the
+method around it, not the field. Names that clash within a
 scope - two variables, a variable and a captured variable, a variable and a field it
 shadows - are renamed apart (`VarDefinitionHelper::remap_clashing_names`), once at
 processing time and again at writing time (`VarProcessor::rerun_clashing`), when nested
