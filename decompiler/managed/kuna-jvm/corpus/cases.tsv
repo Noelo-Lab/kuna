@@ -855,7 +855,7 @@ kuna	917f4f456a4c64d8
 case	default/pkg/TestSplitColorComponents	Default	classes/java8/pkg/TestSplitColorComponents
 kuna	d3ebbc3d109ab7f3
 case	default/pkg/TestStackCastParam	Default	classes/java8/pkg/TestStackCastParam
-kuna	658b1e0f4662dc2c
+kuna	347138d88642b5ca
 case	default/pkg/TestStaticBlockFinalField	Default	classes/java8/pkg/TestStaticBlockFinalField
 kuna	d540829304f031bd
 case	default/pkg/TestStaticBlockNull	Default	classes/java8/pkg/TestStaticBlockNull
@@ -2014,3 +2014,5 @@ case	kuna-fixes/pkg/TestCompoundIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestC
 case	kuna-fixes/pkg/TestIncrementBeforeCondition	Kuna Fixes	kuna-fixes/classes/pkg/TestIncrementBeforeCondition
 # kuna-fixes/src/pkg/TestStaticInitializerOrder.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestStaticInitializerOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitializerOrder
+# kuna-fixes/src/pkg/TestFieldReadAfterCall.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFieldReadAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestFieldReadAfterCall

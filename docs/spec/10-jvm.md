@@ -476,6 +476,12 @@ alternates two views of the variables:
   swept twice; the second sweep, which also inlines across the boundaries between
   expressions on the operand stack, is what
   turns chains of temporaries back into `a = b = c`, `arr[i++] = v` and chained calls.
+  A stack variable's value is copied into a use further than the next statement only when
+  it is a constant, a variable or a field read whose evaluation has no other effect
+  (kuna: Vineflower also moved a field read whose receiver calls a method, so
+  `step().sink.accept(s, count, count)` with an `int` `count` passed as `float` printed
+  `float var10002 = this.count;` before the call, reading `count` before `step()` runs;
+  `stack_var_inlining::has_effect`).
 
 Both forms are reverted (all versions back to zero) after each use, so each round
 re-derives them from the current tree. Then, once: `++`/`--` inside conditions is inlined

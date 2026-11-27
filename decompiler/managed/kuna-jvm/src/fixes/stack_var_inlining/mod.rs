@@ -3,7 +3,8 @@
 //! field read javac `dup`s for two uses in its stack variable;
 //! `kt_field_read_reuse` keeps a read of a non-final field in its variable in
 //! a Kotlin class; `kt_partial_inline` reads a variable the Kotlin inliner
-//! keeps at every one of its uses.
+//! keeps at every one of its uses; `field_read_with_call` keeps a field read
+//! whose receiver calls a method from moving past the statements after it.
 
 pub(crate) mod field_read_all_paths;
 pub(crate) mod kt_inline_evaluation_order;
@@ -19,6 +20,20 @@ use crate::rt::JList;
 use crate::struct_class::StructClass;
 use crate::var_exprent::VarExprent;
 use crate::var_version_node::VarVersionNode;
+
+/// Whether evaluating `value` has an effect other than reading: a call, an
+/// object or array creation, an assignment or an increment. Such a value may
+/// not move past the statements between its stack variable and its use, which
+/// read and write what it may change (`get().b.f(s, x)`, whose `x` is read
+/// after `get()` runs).
+pub fn has_effect(value: Exprent) -> bool {
+    value.get_all_exprents_rec_self(true, true).into_iter().any(|e| {
+        e.try_as_invocation().is_some()
+            || e.try_as_new().is_some()
+            || e.try_as_assignment().is_some()
+            || e.try_as_function().is_some_and(|f| f.get_func_type().is_ppmm())
+    })
+}
 
 /// Whether the field read `value`, assigned to a stack variable with the uses
 /// `used`, must stay in that variable: it has several uses and no statement
