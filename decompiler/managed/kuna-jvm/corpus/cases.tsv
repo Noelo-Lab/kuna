@@ -1951,6 +1951,9 @@ opt	jvm_plugins	1
 # kuna-fixes/src/pkg/TestNullableLocal.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
 case	kuna-fixes/pkg/TestNullableLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNullableLocal
 opt	jvm_plugins	1
+# kuna-fixes/src/pkg/TestObjectDefaultBridge.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestObjectDefaultBridgeKt	Kuna Fixes	kuna-fixes/classes/pkg/TestObjectDefaultBridgeKt	kuna-fixes/classes/pkg/BridgeCombiner
+opt	jvm_plugins	1
 # kuna-fixes/src/pkg/TestObjectInstance.kt, kotlinc 2.0.0 -jvm-target 17
 case	kuna-fixes/pkg/TestObjectInstance	Kuna Fixes	kuna-fixes/classes/pkg/TestObjectInstance
 opt	jvm_plugins	1

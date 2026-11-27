@@ -1669,7 +1669,12 @@ variance, nullability, `Nothing` and Kotlin's collection names, while metadata c
 parameters by ids no scope declares; `kt_class_header_metadata`,
 `kt_enclosing_type_parameter`, `kt_type_parameter_id` and `kt_supertype_type_arguments`
 write headers from the metadata when every name resolves, naming an unnamed id after the
-`Signature`'s variable at the same position. `KInvocationExprent` reads metadata only from
+`Signature`'s variable at the same position. Such a class hides the members kotlinc adds for
+a read-only collection interface that only Java's interface declares, recognised by their five
+instructions (`new`, `dup`, `ldc` of the read-only-collection message, `invokespecial` of
+`UnsupportedOperationException.<init>`, `athrow`); the constant pool is read only after the five
+opcodes match, so any other five-instruction member (a `DefaultImpls` bridge ending in a
+`checkcast`) is written instead of failing its class. `KInvocationExprent` reads metadata only from
 the class a call names; `kt_facade_call`, `kt_extension_call`, `kt_jvm_name_call` and
 `kt_synthetic_accessor_call` resolve the callee to the declaration Kotlin sees and write it
 by its Kotlin name, bare only where Kotlin would resolve the bare name to it.

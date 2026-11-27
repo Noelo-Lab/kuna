@@ -221,25 +221,22 @@ pub fn is_collection_stub(
     let pool = cl.get_pool();
     let op = |i: i32| seq.get_instr(i).opcode();
     let operand = |i: i32| seq.get_instr(i).operand(0);
-    let new_class = pool
-        .get_primitive_constant(operand(0))
-        .is_some_and(|c| &*c.get_string() == UNSUPPORTED);
-    let message = matches!(op(2), OPC_LDC | OPC_LDC_W)
+    op(0) == OPC_NEW
+        && op(1) == OPC_DUP
+        && matches!(op(2), OPC_LDC | OPC_LDC_W)
+        && op(3) == OPC_INVOKESPECIAL
+        && op(4) == OPC_ATHROW
+        && pool
+            .get_primitive_constant(operand(0))
+            .is_some_and(|c| &*c.get_string() == UNSUPPORTED)
         && pool
             .get_primitive_constant(operand(2))
-            .is_some_and(|c| &*c.get_string() == STUB_MESSAGE);
-    let init = pool.get_link_constant(operand(3)).is_some_and(|l| {
-        l.classname.as_deref() == Some(UNSUPPORTED)
-            && l.elementname == "<init>"
-            && l.descriptor == "(Ljava/lang/String;)V"
-    });
-    op(0) == OPC_NEW
-        && new_class
-        && op(1) == OPC_DUP
-        && message
-        && op(3) == OPC_INVOKESPECIAL
-        && init
-        && op(4) == OPC_ATHROW
+            .is_some_and(|c| &*c.get_string() == STUB_MESSAGE)
+        && pool.get_link_constant(operand(3)).is_some_and(|l| {
+            l.classname.as_deref() == Some(UNSUPPORTED)
+                && l.elementname == "<init>"
+                && l.descriptor == "(Ljava/lang/String;)V"
+        })
 }
 
 /// Whether every type parameter `t` refers to by id is in the open scopes
