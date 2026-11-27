@@ -1026,9 +1026,9 @@ the method's bytecode. The class around it is written normally.
 argument lists, chained calls and long operator chains at their recorded break points
 wherever a line exceeds 160 columns, and indents with three spaces (Vineflower's
 `preferred-line-length` and `indent-string`, fixed at their defaults). Offsets and widths are counted in UTF-16
-units, as Java counts them. Every reference and declaration in the text is recorded as a text token
-(Vineflower's hook for IDE consumers; kuna reads none), and kuna's zero-width span marks
-(`kuna_spans`) ride the same mechanism, following every later edit.
+units, as Java counts them. kuna's zero-width span marks (`kuna_spans`) are the buffer's
+only tokens: they follow every later edit the way Vineflower's text tokens (its hook for
+IDE consumers, which kuna does not record) do.
 
 **Line mapping.** While expressions are written, the text buffer records which bytecode
 offsets each output line came from

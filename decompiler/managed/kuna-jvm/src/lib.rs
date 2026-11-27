@@ -131,9 +131,7 @@ pub use p8_structure::{
     try_helper, try_with_resources_processor,
 };
 pub use p9_emit::{
-    class_text_token, class_writer,
-    field_text_token, import_collector, method_text_token, text_buffer, text_token,
-    variable_text_token,
+    class_writer, import_collector, text_buffer, text_token,
 };
 pub use plugins::idea_not_null_pass;
 pub use substrate::{

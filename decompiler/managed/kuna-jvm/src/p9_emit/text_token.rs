@@ -1,41 +1,14 @@
-//! Port of `org/jetbrains/java/decompiler/util/token/TextToken.java`.
-//!
-//! A token is a plain value: the base fields plus a `kind` holding the data of
-//! the concrete subclass. `copy()` is `clone()`.
+//! Port of `org/jetbrains/java/decompiler/util/token/TextToken.java`, reduced to
+//! the one kind kuna reads: a zero-width mark of `kuna_spans`, which the buffer
+//! moves through every later edit as Vineflower moves its tokens.
 
-use crate::class_text_token::ClassTextToken;
-use crate::field_text_token::FieldTextToken;
-use crate::method_text_token::MethodTextToken;
-use crate::variable_text_token::VariableTextToken;
-
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct TextToken {
     pub start: i32,
-    pub length: i32,
-    pub declaration: bool,
-    pub kind: TextTokenKind,
-}
-
-#[derive(Clone)]
-pub enum TextTokenKind {
-    Class(ClassTextToken),
-    Field(FieldTextToken),
-    Method(MethodTextToken),
-    Variable(VariableTextToken),
-    /// A zero-width position kuna records (see `kuna_spans`); never visited.
-    KunaMark(u32),
+    pub id: u32,
 }
 
 impl TextToken {
-    pub fn new(start: i32, length: i32, declaration: bool, kind: TextTokenKind) -> TextToken {
-        TextToken {
-            start,
-            length,
-            declaration,
-            kind,
-        }
-    }
-
     pub fn shift(&mut self, amount: i32) {
         self.start += amount;
     }
