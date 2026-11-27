@@ -656,6 +656,7 @@ pub struct Architecture {
     pub mapped_flow_boundary_image: bool,
     /// Android ELF with the NDK JNI type declarations installed.
     pub android_jni: bool,
+    pub android_calls: Rc<crate::kuna_androidcalls::AndroidCalls>,
     /// (kuna `overlapbranch`) Truncate a conditional branch's fall-through when the
     /// branch's own target lies strictly inside that fall-through instruction's
     /// encoding — the anti-disassembly junk-lead-byte idiom, where the fall-through
@@ -1929,6 +1930,8 @@ pub struct Architecture {
     pub analysis_itaniumrtti: bool,
     /// Recover methods registered by Android JNI libraries.
     pub analysis_jniregister: bool,
+    pub analysis_jnicalls: bool,
+    pub analysis_ndkbinder: bool,
     /// (kuna `panicloc`) Rust images only: type and name the panic `Location`
     /// records (`kuna-analysis` `strings/kuna_panicloc.rs`). Default on.
     pub analysis_panicloc: bool,
@@ -2538,6 +2541,7 @@ impl Architecture {
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             mapped_flow_boundary_image: false,
             android_jni: false,
+            android_calls: Rc::default(),
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
             vararg_save: false, // (kuna) option varargsave; reset_defaults sets the shipped default
@@ -2795,6 +2799,8 @@ impl Architecture {
             analysis_rtti: false,
             analysis_itaniumrtti: false,
             analysis_jniregister: true,
+            analysis_jnicalls: true,
+            analysis_ndkbinder: true,
             analysis_panicloc: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
@@ -3174,6 +3180,8 @@ impl Architecture {
         self.analysis_fid_strict = false;
         self.analysis_flirt = false;
         self.analysis_jniregister = true;
+        self.analysis_jnicalls = true;
+        self.analysis_ndkbinder = true;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_panicloc = true; // (kuna) default-on, Rust images only: the pass is registered for a rustc-detected image and the XML datatest path never runs an analysis pass (0/675)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
@@ -3787,6 +3795,7 @@ impl Architecture {
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
         ctx.android_jni = self.android_jni;
+        ctx.android_calls = Rc::clone(&self.android_calls);
         ctx.analysis_valuewitness = self.analysis_valuewitness; // (kuna) valuewitness
         ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
         ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr

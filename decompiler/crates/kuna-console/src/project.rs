@@ -59,6 +59,7 @@ pub fn default_fn_budget_seconds(mode: &str, whole_binary: bool) -> u64 {
 /// `error`).
 #[derive(Clone)]
 pub struct FuncResult {
+    pub android_calls: Option<Box<kuna_decomp::kuna_androidcalls::AndroidCalls>>,
     pub stack_objects: Vec<kuna_decomp::kuna_stackobjectinfo::StackObjectInfo>,
     pub name: String,
     /// User-facing address, in the target's address units for a raw image.
@@ -539,6 +540,23 @@ pub fn decompile_pulled(
     sink: &mut dyn FnMut(FuncResult),
 ) {
     crate::kuna_callwide::prepare(prog);
+    let android = prog.arch().android_calls.clone();
+    let mut sink = |mut result: FuncResult| {
+        let entry = result.byte_address;
+        let java = android.java_in(entry);
+        let binder: Vec<_> = android.binder.iter().filter(|service| {
+            [service.create, service.destroy, service.transact].contains(&entry)
+                || result.ranges.iter().any(|&(lo, hi)| (lo..hi).contains(&service.define_site))
+        }).cloned().collect();
+        if !java.is_empty() || !binder.is_empty() {
+            result.android_calls = Some(Box::new(kuna_decomp::kuna_androidcalls::AndroidCalls {
+                java: java.to_vec(),
+                binder,
+                java_limited: android.java_limited,
+            }));
+        }
+        sink(result)
+    };
     let DecompileOptions {
         no_vars,
         want_proto,
@@ -601,6 +619,7 @@ pub fn decompile_pulled(
                 callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
+                android_calls: None,
                 stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
@@ -642,6 +661,7 @@ pub fn decompile_pulled(
                 callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
+                android_calls: None,
                 stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
@@ -671,6 +691,7 @@ pub fn decompile_pulled(
                 callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
+                android_calls: None,
                 stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
@@ -1017,6 +1038,7 @@ pub fn decompile_pulled(
                         call_declarations,
                         callwide_prototypes,
                         variables,
+                        android_calls: None,
                         stack_objects,
                         types,
                         globals,
@@ -1045,6 +1067,7 @@ pub fn decompile_pulled(
                         callwide_prototypes: Vec::new(),
                         variables: Vec::new(),
                         types: Vec::new(),
+                        android_calls: None,
                         stack_objects: Vec::new(),
                         globals: Vec::new(),
                         field_calls: Vec::new(),
@@ -1073,6 +1096,7 @@ pub fn decompile_pulled(
                 callwide_prototypes: Vec::new(),
                 variables: Vec::new(),
                 types: Vec::new(),
+                android_calls: None,
                 stack_objects: Vec::new(),
                 globals: Vec::new(),
                 field_calls: Vec::new(),
@@ -2451,6 +2475,7 @@ mod tests {
                 split_piece: false,
             }],
             types: vec![],
+            android_calls: None,
             stack_objects: Vec::new(),
             globals: vec![],
             field_calls: Vec::new(),

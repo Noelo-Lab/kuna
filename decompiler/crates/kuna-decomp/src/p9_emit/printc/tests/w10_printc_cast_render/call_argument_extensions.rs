@@ -48,6 +48,33 @@ fn render(fd: &Funcdata, operation: super::super::OpId, language: &str, nocasts:
 }
 
 #[test]
+fn a_java_target_comment_preserves_the_real_c_callee_and_operands() {
+    use crate::kuna_androidcalls::{AndroidCalls, JavaCall, JavaTarget};
+    let ty = named("input", 4, type_metatype::TYPE_INT);
+    let (fd, op) = argument(ty.clone(), ty, false);
+    let mut arch = bare_arch();
+    let render = |arch: &Architecture| {
+        let mut printer = PrintC::new();
+        printer.set_output_stream();
+        printer.op_push_ir(&fd, arch, op, None);
+        printer.emit_mut().output_str().to_owned()
+    };
+    let plain = render(&arch);
+    let target = JavaTarget {
+        class: Some("test/Bridge".into()), name: "odd*/name".into(), descriptor: "(I)V".into(), lookup: 0x123,
+    };
+    arch.android_calls = Rc::new(AndroidCalls::new(vec![JavaCall {
+        owner: fd.get_address().get_offset(), site: fd.obank().get(op).unwrap().get_addr().get_offset(),
+        dispatch: "static".into(), form: "A".into(), incomplete: true,
+        targets: vec![target.clone(), JavaTarget { lookup: 0x456, ..target }],
+    }], Vec::new()));
+    let code = render(&arch);
+    let (note, rest) = code.strip_prefix("/* ").unwrap().split_once(" */").unwrap();
+    assert_eq!(note, "Ltest/Bridge;->odd*_name(I)V | unresolved target");
+    assert_eq!(rest.trim(), plain);
+}
+
+#[test]
 fn trimmed_values_zero_extend_before_entering_wider_parameters() {
     for input in [1, 2, 4] {
         for output in [2, 4, 8].into_iter().filter(|size| *size > input) {

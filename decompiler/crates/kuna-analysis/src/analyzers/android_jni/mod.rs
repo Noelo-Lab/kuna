@@ -7,12 +7,16 @@ use object::{Object, ObjectKind, ObjectSection, ObjectSymbol, SectionKind, Symbo
 
 use crate::loader::kuna_dataptrs::{data_pointers, DataPointers};
 
+mod java;
 mod trace;
+pub use java::java_calls;
 
 /// A JNI name and the C declaration justified at this implementation address.
 #[derive(Debug)]
 pub struct NativeMethod {
     pub addr: u64,
+    /// Entry including the ELF ARM/Thumb selector bit.
+    pub raw_entry: u64,
     pub name: String,
     pub declaration: Option<String>,
     pub return_known: bool,
@@ -267,6 +271,7 @@ fn exported(addr: u64, name: &str) -> Option<NativeMethod> {
         if params.iter().any(|t| reference(t)) {
             return Some(NativeMethod {
                 addr,
+                raw_entry: addr,
                 name: name.into(),
                 declaration: Some(declaration(name, &params, "void")),
                 return_known: false,
@@ -282,7 +287,7 @@ fn read_table(
     trace: &trace::Sites,
     width: u32,
     budget: &mut usize,
-) -> Option<Vec<(u64, Binding)>> {
+) -> Option<Vec<(u64, u64, Binding)>> {
     let string = |va| {
         let s = image.string(va)?;
         (!trace.modified(va, s.len() as u64 + 1)).then_some(s)
@@ -301,7 +306,8 @@ fn read_table(
         let row = site.table.checked_add(i * stride)?;
         let name = string(image.pointer(row, width)?)?;
         let desc = string(image.pointer(row.checked_add(width.into())?, width)?)?;
-        let addr = image.entry(image.pointer(row.checked_add(2 * u64::from(width))?, width)?)?;
+        let raw = image.pointer(row.checked_add(2 * u64::from(width))?, width)?;
+        let addr = image.entry(raw)?;
         if !valid_name(&name) || signature(&desc).is_none() {
             return None;
         }
@@ -312,6 +318,7 @@ fn read_table(
         }
         rows.push((
             addr,
+            raw,
             Binding {
                 class: class.clone(),
                 method: name,
@@ -341,6 +348,7 @@ pub fn registrations(
     let mut bindings: BTreeMap<u64, BTreeSet<Binding>> = BTreeMap::new();
     let width = if file.is_64() { 8 } else { 4 };
     let mut budget = 16 << 20;
+    let mut raw_entries = BTreeMap::new();
     for sym in file
         .dynamic_symbols()
         .filter(|s| s.is_definition() && !s.is_local() && s.kind() == SymbolKind::Text)
@@ -356,19 +364,30 @@ pub fn registrations(
             let trace = trace::sites(&image, arch, sym.address(), sym.size());
             for &site in &trace.found {
                 if let Some(rows) = read_table(&image, site, &trace, width, &mut budget) {
-                    for (addr, binding) in rows {
+                    for (addr, raw, binding) in rows {
+                        raw_entries.insert(addr, raw);
                         bindings.entry(addr).or_default().insert(binding);
                     }
                 }
             }
         } else {
+            raw_entries.insert(addr, sym.address());
             exports.entry(addr).or_default().insert(name);
         }
     }
     if budget == 0 {
         bindings.clear();
     }
-    bind_methods(&bindings, &exports).into_values().collect()
+    bind_methods(&bindings, &exports)
+        .into_values()
+        .map(|mut method| {
+            method.raw_entry = raw_entries
+                .get(&method.addr)
+                .copied()
+                .unwrap_or(method.addr);
+            method
+        })
+        .collect()
 }
 
 fn bind_methods(
@@ -424,6 +443,7 @@ fn bind_methods(
             addr,
             NativeMethod {
                 addr,
+                raw_entry: addr,
                 name,
                 declaration: decl,
                 return_known: true,

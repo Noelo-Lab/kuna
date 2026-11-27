@@ -815,7 +815,7 @@ fn index_line(seq: usize, r: &FuncResult, span: Option<(u64, usize)>) -> String 
         Some((offset, len)) => (num(offset), num(len as u64)),
         None => (Json::Null, Json::Null),
     };
-    let line = Json::Object(vec![
+    let mut fields = vec![
         ("seq".into(), num(seq as u64)),
         ("name".into(), Json::Str(r.name.clone())),
         ("addr".into(), Json::Str(format!("0x{:x}", r.address))),
@@ -823,8 +823,9 @@ fn index_line(seq: usize, r: &FuncResult, span: Option<(u64, usize)>) -> String 
         ("c_offset".into(), offset),
         ("c_len".into(), len),
         ("error".into(), r.error.clone().map_or(Json::Null, Json::Str)),
-    ]);
-    format!("{}\n", dumps_compact(&line))
+    ];
+    crate::android_calls::extend(&mut fields, r.android_calls.as_deref());
+    format!("{}\n", dumps_compact(&Json::Object(fields)))
 }
 
 // --- the export --------------------------------------------------------------
@@ -1389,6 +1390,7 @@ mod tests {
             callwide_prototypes: Vec::new(),
             variables: Vec::new(),
             types: Vec::new(),
+            android_calls: None,
             stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
@@ -1903,6 +1905,17 @@ mod tests {
         assert!(json.contains("\"functions_total\":12"));
         assert!(json.contains("\"error\":\"boom \\\"quoted\\\"\""));
         assert_eq!(json.lines().count(), 1, "a status file is one line");
+    }
+
+    #[test]
+    fn index_records_the_same_android_targets_with_and_without_a_final_span() {
+        let mut row = result(0x401000, Vec::new());
+        row.android_calls = Some(crate::android_calls::sample());
+        for span in [None, Some((15, 37))] {
+            let line: serde_json::Value = serde_json::from_str(&index_line(0, &row, span)).unwrap();
+            assert_eq!(line["java_calls"][0]["targets"][0]["key"], "Ltest/Bridge;->foo(I)V");
+            assert_eq!(line["binder_services"][0]["transactions"][0]["site"], "0x404014");
+        }
     }
 
     /// An index line has to slice the `.c` to exactly its own block.

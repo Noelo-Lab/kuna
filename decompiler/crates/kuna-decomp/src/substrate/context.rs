@@ -953,6 +953,7 @@ pub struct ArchContext {
     pub analysis_valuewitness: bool,
     /// Android ELF with the NDK JNI type declarations installed.
     pub android_jni: bool,
+    pub android_calls: Rc<crate::kuna_androidcalls::AndroidCalls>,
     /// (kuna `elemptr`) Declare a pointer used only as an array of one element
     /// type as that pointer; option `elemptr on|off`.  Copied from
     /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
@@ -1747,6 +1748,7 @@ impl ArchContext {
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
             android_jni: false,
+            android_calls: Rc::default(),
             analysis_valuewitness: true, // (kuna) option valuewitness
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr

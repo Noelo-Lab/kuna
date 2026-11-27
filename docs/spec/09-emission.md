@@ -18,6 +18,23 @@ Field order, optional fields, numeric spelling and the trailing newline are pres
 `scripts/bench_functions_macho.py` generates an arm64 Mach-O with a configurable
 number of one-instruction functions for reproducing inventory memory measurements.
 
+On Android, the printer attaches a comment to a JNI call expression when the
+native call instruction and owning function match a recovered Java call. The
+comment prints each distinct known Java target in the same form as the JSON
+`key` and the `xrefs --to` selector, for example `/* Ldemo/Player;->seek(I)V */`.
+Multiple candidates are separated by ` | `. The dispatch family and lookup
+instruction addresses are available in JSON and xrefs. A question mark denotes
+an unknown class and `unresolved target` denotes additional paths without a
+proved target. The call still renders its
+native callee and arguments. An NDK Binder transaction comment uses both the
+native test address and the recovered code to mark its conditional or folded
+case label. For a jump table the printer matches the numeric label and its
+native target address to the transaction. It includes the service descriptor and the method name when
+available. An entry comment carries name-map evidence without a native site.
+A note at the end covers a test which disappeared during structuring. Numeric
+tests in the callback retain their native values.
+The printer escapes comment delimiters and control bytes in image-derived text.
+
 An integer SUBPIECE of an implied struct value preserves the extracted width
 when rendered as a field access (`kuna_fieldextract.rs`). If the field is wider
 than the result, the emitter converts the field to the operation's integer type

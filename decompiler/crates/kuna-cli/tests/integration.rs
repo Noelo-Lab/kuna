@@ -8,6 +8,10 @@ mod return_branch_cli;
 #[path = "riscv_zcmp.rs"]
 mod riscv_zcmp;
 mod common;
+#[path = "android_call_refs.rs"]
+mod android_call_refs;
+#[path = "android_call_output.rs"]
+mod android_call_output;
 #[path = "android_jni.rs"]
 mod android_jni;
 #[path = "rust_signature_summary.rs"]

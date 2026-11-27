@@ -3275,6 +3275,7 @@ impl ConsoleProgram {
         // `--option` flag (now in effect). Default-off (both) ⇒ skipped ⇒ zero cost.
         // Real-object path only (the XML path stashes no image). The stash is consumed
         // once and shared by both deferred passes.
+        let mut android_calls = None;
         let want_listing = self.arch().analysis_listing;
         let want_fast_funcdisc = self.arch().analysis_fast_funcdisc;
         let want_operand_refs = self.arch().analysis_operand_refs;
@@ -3302,7 +3303,7 @@ impl ConsoleProgram {
                 let _import_proofs =
                     kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
                 if self.arch().android_jni {
-                    crate::kuna_androidjni::collect(self.arch(), &bytes, &mut merged);
+                    android_calls = crate::kuna_androidjni::collect(self.arch(), &bytes, &mut merged)?;
                 }
                 let image_path = std::path::Path::new(&path);
                 let image_path = image_path.exists().then_some(image_path);
@@ -3443,6 +3444,12 @@ impl ConsoleProgram {
         self.fid_databases = std::mem::take(&mut merged.fid_databases);
         let committed = commit_analysis_output(self, &code_space, merged, zero_size_data_names);
         self.stash_float_scan();
+        if let Some(pending) = android_calls {
+            if committed.is_ok() {
+                let facts = pending.finish(self.arch());
+                self.arch_mut().android_calls = Rc::new(facts);
+            }
+        }
         committed
     }
 

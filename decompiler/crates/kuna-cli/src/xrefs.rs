@@ -42,6 +42,8 @@
 //! code there is an answer, and one about bytes nobody decoded says so.
 
 
+mod java;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_analysis::listing::kuna_unflaggedcode::{
@@ -88,6 +90,7 @@ struct XrefArgs {
     instructions: bool,
     /// Report the data-held `pointer` rows: no `--kind`, or one naming it.
     pointers: bool,
+    java: bool,
     options: Vec<(String, String)>,
     mode: Option<String>,
     slice: Option<String>,
@@ -275,6 +278,18 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         arm: prog.description().starts_with("ARM"),
         unflagged: unflagged.iter().map(|s| (s.start, s.end)).collect(),
     };
+    let java_only = !args.instructions && !args.pointers;
+    if args.direction == Direction::To
+        && (prog.arch().android_jni || java_only)
+        && java::is_method(&args.spec)
+    {
+        let calls = if args.java { java::to(&prog.arch().android_calls.java, &args.spec) } else { Vec::new() };
+        let target = Json::Object(vec![
+            ("kind".into(), Json::Str("java-method".into())),
+            ("key".into(), Json::Str(args.spec.clone())),
+        ]);
+        return Ok(java::report(args, prog.arch(), &names, target, &calls));
+    }
     let inventory: Vec<u64> = entries.iter().map(|e| e.addr.get_offset()).collect();
     let seeds = kuna_analysis::listing::xrefs::discovery_seeds(
         &file,
@@ -306,6 +321,14 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     );
 
     let target = resolve_target(&prog, &file, &index, &names, resolution.settle(&index)?);
+    let android_calls = std::rc::Rc::clone(&prog.arch().android_calls);
+    let java_calls = if args.java && args.direction == Direction::From {
+        java::from(&android_calls, target.addr, index.is_function_entry(target.addr) || names.at(target.addr).is_some())
+    } else { Vec::new() };
+    if java_only {
+        let target = function_json(target.name.as_deref().unwrap_or(&args.spec), target.addr);
+        return Ok(java::report(args, prog.arch(), &names, target, &java_calls));
+    }
     let proof_note = add_scoped_calls(args, &mut prog, &mut index, &entries, &target);
     warn_other_entries(&index, &names, &target);
     let unwalked = unwalked_code(&file, &index, &unflagged);
@@ -346,10 +369,15 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let data = DataRefs { coverage: data.coverage, reason: data.reason, rows: pointers };
 
     Ok(if args.json {
-        let doc = result_json(args, &prog, &index, &names, &target, &rows, &data, &coverage);
+        let mut doc = result_json(args, &prog, &index, &names, &target, &rows, &data, &coverage);
+        if let Json::Object(fields) = &mut doc {
+            if !java_calls.is_empty() { fields.extend(java::fields(&java_calls, &names)); }
+        }
         format!("{}\n", dumps_indent2(&doc))
     } else {
-        render_text(args, &prog, &index, &names, &target, &rows, &data)
+        let mut text = render_text(args, &prog, &index, &names, &target, &rows, &data);
+        if !java_calls.is_empty() { text.push_str(&java::text_rows(&java_calls, &names)); }
+        text
     })
 }
 
@@ -1254,6 +1282,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
     let mut json = false;
     let mut kinds: Vec<XrefKind> = Vec::new();
     let mut pointer_kind = false;
+    let mut java_kind = false;
     let mut options: Vec<(String, String)> = Vec::new();
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
@@ -1279,6 +1308,8 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
                 for k in v.split(',').map(str::trim).filter(|s| !s.is_empty()) {
                     if k.eq_ignore_ascii_case("pointer") {
                         pointer_kind = true;
+                    } else if k.eq_ignore_ascii_case("java-call") {
+                        java_kind = true;
                     } else {
                         kinds.push(parse_kind(k)?);
                     }
@@ -1308,8 +1339,10 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
 
     let binary = binary.ok_or("xrefs requires <binary>")?;
     let (direction, spec) = spec.ok_or("xrefs requires --to <target> or --from <target>")?;
-    let pointers = pointer_kind || kinds.is_empty();
-    let instructions = !pointer_kind || !kinds.is_empty();
+    let all = !pointer_kind && !java_kind && kinds.is_empty();
+    let pointers = pointer_kind || all;
+    let instructions = !kinds.is_empty() || all;
+    let java = java_kind || all || kinds.contains(&XrefKind::Call);
     Ok(XrefArgs {
         binary,
         spec,
@@ -1318,6 +1351,7 @@ fn parse_args(argv: &[String]) -> Result<XrefArgs, String> {
         kinds,
         instructions,
         pointers,
+        java,
         options,
         mode,
         slice,
@@ -1334,14 +1368,14 @@ fn parse_kind(k: &str) -> Result<XrefKind, String> {
         "data" => Ok(XrefKind::Data),
         "read" => Ok(XrefKind::Read),
         "write" => Ok(XrefKind::Write),
-        other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write, pointer)")),
+        other => Err(format!("unknown --kind {other:?} (call, jump, data, read, write, pointer, java-call)")),
     }
 }
 
 fn usage() {
     eprintln!(
         "usage: kuna xrefs <binary> (--to <name|0xaddr> | --from <name|0xaddr>) [--json] \\\n\
-         \x20                  [--kind call,jump,data,read,write,pointer] [--mode auto|reliable|aggressive|fast] \\\n\
+         \x20                  [--kind call,jump,data,read,write,pointer,java-call] [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                  [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          --to    everything that references the target (call sites, branches, data references).\n\
@@ -1349,6 +1383,7 @@ fn usage() {
          \x20       IAT/GOT slot it jumps through -- and both answer the same; target.aliases\n\
          \x20       names the other one. A name also answers over the export's own PLT stub\n\
          \x20       when the library calls it through one.\n\
+         On Android ELF, --to 'Ldemo/Player;->seek(I)V' lists native calls to that Java lookup.\n\
          --from  everything the target references (its callees and the data it touches)\n\
          \n\
          `pointer` rows are words the image stores in its data that hold the target's\n\

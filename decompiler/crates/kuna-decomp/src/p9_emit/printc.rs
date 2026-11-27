@@ -1609,6 +1609,7 @@ pub struct PrintC {
     /// reads (`crate::kuna_lang`).  Refreshed per document alongside `rt_ctx`;
     /// `OutLang::C` until then, so an out-of-band print is never non-C.
     pub(crate) out_lang: crate::kuna_lang::OutLang,
+    binder_notes: std::collections::BTreeMap<(u64, u32), std::collections::BTreeSet<String>>,
     /// (kuna warnstyle, DIV-39) Warning slugs collected under `warn_inline` by
     /// [`emit_comment_group`](PrintC::emit_comment_group) /
     /// [`emit_comment_func_header`](PrintC::emit_comment_func_header), flushed
@@ -1711,6 +1712,7 @@ impl PrintC {
             loop_tests: Default::default(),
             rt_ctx: RealTypeCtx::OFF,
             out_lang: crate::kuna_lang::OutLang::C,
+            binder_notes: Default::default(),
             eol_warns: Vec::new(),
             warnings: Vec::new(),
             local_name_overrides: std::collections::HashMap::new(),
@@ -2908,6 +2910,7 @@ impl PrintC {
         // construct with no closer flush point onto the last body line, so no
         // warning is ever silently dropped or carried out of this function.
         self.flush_eol_warnings();
+        self.emit_remaining_binder_notes(fd);
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
@@ -3243,6 +3246,7 @@ impl PrintC {
             None => return,
         };
         let off = func_addr.get_offset();
+        self.emit_binder_transactions(arch, &space, off);
         // (kuna, Phase 3) Plain HEADER (plate) comments render first — the C++
         // emitCommentFuncHeader handles `Comment::header` through the same
         // sorter.  These come from the ghidra-mode getComments fill (Java PLATE
@@ -5645,9 +5649,15 @@ impl PrintC {
         // The case block's first op — used only for markup tagging.
         let firstop = self.case_first_op(fd, case.block);
 
-        if let Some((_, value)) = arm.guard {
+        if let Some((guard, value)) = arm.guard {
             let (_, sz, signed) = self.switch_case_label(fd, arch, blk, &case, 0);
             self.emit_numeric_case_label(value, sz, signed, None);
+            if !self.binder_notes.is_empty() {
+                let condition = fd.sblocks_ref().block(guard).get_block(0);
+                if let Some(branch) = structured_leaf_tail(fd, condition) {
+                    self.emit_binder_branch_note(fd, branch);
+                }
+            }
         } else if case.isdefault || arm.as_default {
             // default: (the label value is informational; default emits no value).
             // C++ `emit->tagCaseLabel(..., op, ...)` with op = the case's first op —
@@ -5671,9 +5681,10 @@ impl PrintC {
                     self.recurse();
                     self.emit.print(self.lang().kw_colon, SyntaxHighlight::NoColor);
                     self.emit.note_label();
-                    continue;
+                } else {
+                    self.emit_numeric_case_label(val, sz, signed, op);
                 }
-                self.emit_numeric_case_label(val, sz, signed, op);
+                self.emit_binder_case_note(fd, blk, &case, i, val);
             }
         }
     }
@@ -6764,6 +6775,7 @@ impl PrintC {
                 } else {
                     self.emit.close_group(id);
                 }
+                self.emit_binder_branch_note(fd, op);
             }
             // BRANCHIND (printc.cc:602 opBranchind): the switch header `switch(v)`.
             // The structured switch body (`{ case N: ... }`) is emitted by
@@ -8991,6 +9003,7 @@ impl PrintC {
     /// (`getHiddenThisSlot`) is the C++ method-invocation hook (always -1 here —
     /// the C++ `int4 skip = -1;` for the direct case, no C++ method format yet).
     fn op_call_ir(&mut self, fd: &Funcdata, arch: &Architecture, op: OpId) {
+        self.push_java_call_note(fd, arch, op);
         if !arch.analysis_godwarfsig {
             self.op_call_raw_ir(fd, arch, op);
             return;
@@ -14605,6 +14618,9 @@ mod kuna_rustarrayinit;
 
 #[path = "kuna_rustoption_niche.rs"]
 mod kuna_rustoption_niche;
+
+#[path = "kuna_androidcallnotes.rs"]
+mod kuna_androidcallnotes;
 
 #[cfg(test)]
 mod tests;

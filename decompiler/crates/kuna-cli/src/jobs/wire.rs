@@ -406,6 +406,9 @@ pub(crate) fn encode_result(r: &FuncResult) -> Vec<u8> {
         for signed in &contract.inputs { body.push(u8::from(*signed)); }
         body.push(u8::from(contract.definition));
     }
+    if let Some(facts) = &r.android_calls {
+        serde_json::to_writer(&mut body, facts).expect("Android call facts serialize into a Vec");
+    }
     body
 }
 
@@ -607,8 +610,13 @@ pub(crate) fn decode_result(body: &[u8]) -> Option<FuncResult> {
             name, entry, signed, inputs: words, definition,
         });
     }
-    if r.pos != body.len() { return None; }
+    let android_calls = if r.pos == body.len() {
+        None
+    } else {
+        Some(Box::new(serde_json::from_slice(&body[r.pos..]).ok()?))
+    };
     Some(FuncResult {
+        android_calls,
         name,
         address,
         byte_address,

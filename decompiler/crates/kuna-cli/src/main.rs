@@ -1,6 +1,7 @@
 //! Command dispatch for the kuna CLI.
 
 mod args;
+mod android_calls;
 mod armember;
 mod blobs;
 mod callgraph;

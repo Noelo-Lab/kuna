@@ -989,6 +989,8 @@ kuna_options! { self, p1;
     },
     "flirt" => on_off!(analysis_flirt, "FLIRT signature matcher Listing consumer"),
     "rtti" => on_off!(analysis_rtti, "MSVC RTTI / vftable class-name recovery pass"),
+    "jnicalls" => on_off!(analysis_jnicalls, "Android native-to-Java call recovery"),
+    "ndkbinder" => on_off!(analysis_ndkbinder, "Android NDK Binder service recovery"),
     "jniregister" => on_off!(analysis_jniregister, "Android JNI native registration recovery"),
     "itaniumrtti" => {
         on_off!(analysis_itaniumrtti, "Itanium (GCC/Clang) RTTI / vtable recovery pass")

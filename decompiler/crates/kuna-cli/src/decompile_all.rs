@@ -2604,6 +2604,7 @@ fn function_json(
             f.stack_objects.iter().map(stack_object_json).collect(),
         )));
     }
+    crate::android_calls::extend(&mut record, f.android_calls.as_deref());
     record.extend(declared.marker(f.byte_address));
     if let Some(inside) = interior.get(&f.byte_address) {
         record.push(("interior_to".into(), crate::interior::json(inside)));
@@ -2797,6 +2798,7 @@ mod provenance_json_tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            android_calls: None,
             stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),

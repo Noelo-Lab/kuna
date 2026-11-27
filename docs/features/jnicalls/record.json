@@ -1,0 +1,48 @@
+{
+  "opportunity": "kuna-android-java-calls::cached",
+  "test_name": "kuna-android-java-calls",
+  "binary": "tests/fixtures/android-java-calls/aarch64-linux-android.so",
+  "selector": "Java_demo_Bridge_cached__Ldemo_Player_2I",
+  "func_addr": "0x5084",
+  "option": "jnicalls",
+  "flag": "analysis_jnicalls",
+  "source_decompiler": "kuna",
+  "change_kind": "analysis-enablement",
+  "default_on": true,
+  "ablation_changed": 0,
+  "parity": "OK",
+  "speed_command": "taskset -c 30 python3 -m scripts.pipeline.timeit --option jnicalls --binary tests/fixtures/android-java-calls/aarch64-linux-android.so --selector Java_demo_Bridge_cached__Ldemo_Player_2I --func-addr 0x5084 --repeat 31",
+  "speed_off_ms": 85.6,
+  "speed_on_ms": 89.47,
+  "speed_delta_pct": 4.52,
+  "speed_samples": 31,
+  "speed_budget_pct": 5.0,
+  "speed_within_budget": true,
+  "speed_forced_off": false,
+  "decomp_dbg_sha256": "ecc2986e2985f7e4d53c82079c3f498952e0063aa7b4ba1af9a786188af2a38d",
+  "paired": {
+    "command": "taskset -c 30 python3 -m docs.features.jniregister.speed --option jnicalls",
+    "pairs": 100,
+    "warmup_pairs": 6,
+    "wall": {
+      "off_ms": 82.47,
+      "on_ms": 85.933,
+      "delta_pct": 4.2,
+      "delta_pct_ci95": [
+        -2.33,
+        10.1
+      ],
+      "within_budget": true
+    },
+    "child_cpu": {
+      "off_ms": 78.939,
+      "on_ms": 81.263,
+      "delta_pct": 2.94,
+      "delta_pct_ci95": [
+        -2.03,
+        9.35
+      ],
+      "within_budget": true
+    }
+  }
+}

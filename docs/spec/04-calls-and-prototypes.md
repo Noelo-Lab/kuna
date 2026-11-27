@@ -4417,6 +4417,15 @@ keeps the generic parameter. When another indirect call passes the same output
 address without a known JNI version, the shared location retains its generic
 type. The receiver type and field must both agree with the loaded JNI declaration (`kuna_jnigetenv.rs`).
 
+For Android native-to-Java invocations the NDK slot establishes the dispatch
+and argument form. A method reference records the class used for lookup, name,
+complete JVM descriptor and lookup instruction. Only compatible staticness,
+method-return family and constructor semantics support a named invocation.
+An unknown argument in a `jvalue` array or `va_list` does not invalidate a
+separately proven method ID. Method annotations preserve the native indirect
+call and its actual operands. Binder callback prototypes at loader-proven entries
+use the NDK service ABI, including the transaction code and input/output parcels.
+
 A prototype whose storage puts a parameter or the return value in one of its
 model's floating-point entries is forced only where the image states a
 convention that keeps such values, doubles included, in floating-point
