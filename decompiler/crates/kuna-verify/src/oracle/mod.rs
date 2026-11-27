@@ -14,11 +14,11 @@ use crate::storage::Storage;
 use crate::value::Halt;
 use crate::{abi, calls, graph, machine, program, session, state::Env};
 
-const PAGE: u64 = 4096;
-const STACK: u64 = 0x7000_0000;
-const CALLER: u64 = STACK + 3 * PAGE;
-const SP: u64 = CALLER - 8;
-const HEAP: u64 = 0x6000_0000;
+pub(crate) const PAGE: u64 = 4096;
+pub(crate) const STACK: u64 = 0x7000_0000;
+pub(crate) const CALLER: u64 = STACK + 3 * PAGE;
+pub(crate) const SP: u64 = CALLER - 8;
+pub(crate) const HEAP: u64 = 0x6000_0000;
 const RETURN: u64 = 0x7100_0000;
 const MAX_MAPPED: u64 = 16 * 1024 * 1024;
 pub(crate) const GPR: [&str; 16] = [
@@ -46,6 +46,7 @@ pub struct RunConfig<'a> {
     pub input_regs: &'a [(String, String)],
     pub external_entries: &'a BTreeMap<u64, u8>,
     pub opcode_mutant: Option<usize>,
+    pub memory: &'a BTreeMap<u64, u8>,
 }
 
 /// Run the Kuna interpreters and export the exact input for the external runner.
@@ -107,6 +108,22 @@ pub fn capture(
     if regions.iter().map(|r| r.size).sum::<u64>() > MAX_MAPPED {
         return Err("mapped pages exceed the explicit case size limit".into());
     }
+    for (&address, &value) in config.memory {
+        if (SP..SP + 8).contains(&address) {
+            return Err("initial memory override would replace the return sentinel".into());
+        }
+        let region = regions
+            .iter_mut()
+            .find(|r| r.address <= address && address < r.end() && r.permissions == "rw")
+            .ok_or_else(|| {
+                format!("initial byte override at {address:#x} is outside writable memory")
+            })?;
+        let offset = (address - region.address) as usize;
+        if region.bytes.len() <= offset {
+            region.bytes.resize(offset + 1, 0);
+        }
+        region.bytes[offset] = value;
+    }
 
     let mut result = None;
     let mut regions = Some(regions);
@@ -118,6 +135,11 @@ pub fn capture(
     })?;
     let mut capture = result.ok_or_else(|| "no decompiled function is available".to_string())??;
     capture["decompile_options"] = json!(options);
+    capture["initial_memory_overrides"] = json!(config
+        .memory
+        .iter()
+        .map(|(at, byte)| (format!("{at:#x}"), format!("{byte:#04x}")))
+        .collect::<BTreeMap<_, _>>());
     capture["provenance"]["elf_sha256"] = json!(bytes_hex(Sha256::digest(image).iter().copied()));
     Ok(capture)
 }

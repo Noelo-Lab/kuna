@@ -30,6 +30,8 @@ def replay(capture, binary, specs, verify, expected):
         command.extend(("--option", name, value))
     for address, arity in case.get("external_calls", {}).items():
         command.extend(("--external-entry", address, str(arity)))
+    for address, value in capture.get("initial_memory_overrides", {}).items():
+        command.extend(("--memory-byte", address, value))
     if mutation := capture.get("mutation"):
         command.extend(("--opcode-mutant", str(mutation["op"])))
     for register in INPUTS:

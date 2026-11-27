@@ -16,7 +16,8 @@ def replay_proof(proof, binary, specs, verify):
     if proof["version"] != 1 or proof["classification"] != "COUNTEREXAMPLE":
         raise ValueError("expected a version 1 symbolic counterexample")
     obligation = proof["obligation"]
-    for query in ("domain", "difference"):
+    queries = ("domain", "difference", "coverage") if "coverage_smt2" in obligation else ("domain", "difference")
+    for query in queries:
         encoded = obligation[f"{query}_smt2"].encode("utf-8")
         if hashlib.sha256(encoded).hexdigest() != obligation[f"{query}_sha256"]:
             raise ValueError(f"archived {query} query digest differs")
@@ -40,6 +41,16 @@ def replay_proof(proof, binary, specs, verify):
         command.extend(("--opcode-mutant", str(mutation["op"])))
     for register, value in registers.items():
         command.extend(("--input-reg", register, value))
+    memory = proof["witness"].get("memory", {})
+    windows = scope.get("memory", [])
+    expected_bytes = {
+        address for window in windows if window["mode"] != "image"
+        for address in range(int(window["start"], 16), int(window["start"], 16) + window["bytes"])
+    }
+    if {int(address, 16) for address in memory} != expected_bytes:
+        raise ValueError("witness does not fill the declared symbolic memory")
+    for address, value in memory.items():
+        command.extend(("--memory-byte", address, value))
     capture = json.loads(subprocess.check_output(command, timeout=60))
     for field in ("elf_sha256", "sla_sha256", "language"):
         if capture["provenance"][field] != proof["provenance"][field]:
@@ -50,8 +61,19 @@ def replay_proof(proof, binary, specs, verify):
     case = json.dumps(capture["case"]).encode("utf-8")
     oracle = json.loads(subprocess.check_output(invocation, input=case, timeout=15))
     report = compare(capture, oracle, expected)
+    def observed(finding):
+        if finding["observable"] in ("return", "termination"):
+            return True
+        if finding["observable"] != "memory-byte":
+            return False
+        at = int(finding["address"], 16)
+        return any(
+            window["mode"] == "symbolic"
+            and 0 <= at - int(window["start"], 16) < window["bytes"]
+            for window in windows
+        )
     confirmed = any(
-        f["observable"] in ("return", "termination")
+        observed(f)
         and set(f["values"]) == {"unicorn", "raw-pcode", "final-ir"}
         and f["values"]["unicorn"] == f["values"]["raw-pcode"] != f["values"]["final-ir"]
         for f in report["findings"]

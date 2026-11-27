@@ -19,6 +19,7 @@ pub(super) enum Verdict {
 pub(super) struct Obligation {
     pub domain: String,
     pub mismatch: String,
+    pub coverage_gap: Option<String>,
     pub input_bytes: Vec<String>,
 }
 
@@ -30,15 +31,32 @@ impl Obligation {
     pub fn difference_query(&self) -> String {
         format!(
             "{}\n(assert {})\n(check-sat)\n(get-info :reason-unknown)\n",
-            self.domain, self.mismatch,
+            self.domain,
+            self.scoped_mismatch(),
         )
+    }
+
+    pub fn coverage_query(&self) -> Option<String> {
+        self.coverage_gap.as_ref().map(|gap| {
+            format!(
+                "{}\n(assert {gap})\n(check-sat)\n(get-info :reason-unknown)\n",
+                self.domain
+            )
+        })
+    }
+
+    fn scoped_mismatch(&self) -> String {
+        match &self.coverage_gap {
+            Some(gap) => format!("(and (not {gap}) {})", self.mismatch),
+            None => self.mismatch.clone(),
+        }
     }
 
     fn witness_query(&self) -> String {
         format!(
             "{}\n(assert {})\n(check-sat)\n(get-value ({}))\n",
             self.domain,
-            self.mismatch,
+            self.scoped_mismatch(),
             self.input_bytes.join(" "),
         )
     }
@@ -50,7 +68,23 @@ impl Obligation {
             other => return unresolved("initial-domain", other),
         }
         match solver::run(command, &self.difference_query(), deadline) {
-            Ok((Status::Unsat, _)) => return Verdict::Equivalent,
+            Ok((Status::Unsat, _)) => {
+                if let Some(query) = self.coverage_query() {
+                    match solver::run(command, &query, deadline) {
+                        Ok((Status::Unsat, _)) => {}
+                        Ok((Status::Sat, _)) => {
+                            return Verdict::Unresolved {
+                                phase: "execution-coverage",
+                                reason:
+                                    "permitted input reaches an unmodeled access, target, or return stack"
+                                        .to_owned(),
+                            }
+                        }
+                        other => return unresolved("execution-coverage", other),
+                    }
+                }
+                return Verdict::Equivalent;
+            }
             Ok((Status::Sat, _)) => {}
             other => return unresolved("observation-mismatch", other),
         }
@@ -136,6 +170,7 @@ mod tests {
                     "(set-logic QF_BV)\n(declare-const b0 (_ BitVec 8))\n(assert {precondition})"
                 ),
                 mismatch: mismatch.to_owned(),
+                coverage_gap: None,
                 input_bytes: vec!["b0".to_owned()],
             }
             .solve(z3, Instant::now() + Duration::from_secs(5))

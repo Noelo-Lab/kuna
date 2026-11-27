@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
@@ -9,6 +10,7 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
         return Err("prove needs an ELF and a function".into());
     };
     let mut stop = None;
+    let mut whole = false;
     let mut output = None;
     let mut sleighpath = None;
     let mut solver = "z3";
@@ -16,15 +18,33 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     let mut timeout = 5000;
     let mut inputs = Vec::new();
     let mut bindings = Vec::new();
+    let mut ranges = Vec::new();
+    let mut memory = Vec::new();
+    let mut indirect = BTreeMap::<u64, Vec<u64>>::new();
     let mut decompile_options = Vec::new();
     let mut opcode_mutant = None;
     let mut flags = flags.iter().map(String::as_str);
     while let Some(flag) = flags.next() {
+        if flag == "--whole-function" {
+            whole = true;
+            continue;
+        }
         let value = flags
             .next()
             .ok_or_else(|| format!("{flag} needs a value"))?;
         match flag {
             "--stop-at" => stop = Some(number(value)?),
+            "--indirect-target" => {
+                let (site, target) = value
+                    .split_once(':')
+                    .ok_or("--indirect-target expects SITE:DESTINATION")?;
+                let targets = indirect.entry(number(site)?).or_default();
+                let target = number(target)?;
+                if targets.len() == 16 || targets.contains(&target) {
+                    return Err("an indirect site needs one to sixteen distinct targets".into());
+                }
+                targets.push(target);
+            }
             "--return" => {
                 let (reg, bytes) = value
                     .split_once(':')
@@ -38,6 +58,28 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
             "--bind" => {
                 let bits = flags.next().ok_or("--bind expects REGISTER VALUE")?;
                 bindings.push((value.to_owned(), number(bits)?));
+            }
+            "--range" => {
+                let low = flags.next().ok_or("--range expects REGISTER LOW HIGH")?;
+                let high = flags.next().ok_or("--range expects REGISTER LOW HIGH")?;
+                ranges.push((value.to_owned(), number(low)?, number(high)?));
+            }
+            "--memory" | "--private-memory" | "--image-memory" => {
+                let (address, size) = value
+                    .split_once(':')
+                    .ok_or("memory windows expect ADDRESS:BYTES")?;
+                let size =
+                    u32::try_from(number(size)?).map_err(|_| "memory window size is too large")?;
+                let mode = match flag {
+                    "--private-memory" => symbolic::MemoryMode::PrivateStack,
+                    "--image-memory" => symbolic::MemoryMode::Image,
+                    _ => symbolic::MemoryMode::Shared,
+                };
+                memory.push(symbolic::MemoryRange {
+                    address: number(address)?,
+                    size,
+                    mode,
+                });
             }
             "--option" => {
                 let setting = flags.next().ok_or("--option expects NAME VALUE")?;
@@ -59,10 +101,19 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
         return Err("prove requires timeout 1..60000 ms and budget 1..200000 ops".into());
     }
     let (reg, width) = output.ok_or("prove requires --return REGISTER:BYTES")?;
+    if whole == stop.is_some() {
+        return Err("prove requires exactly one of --stop-at ADDR or --whole-function".into());
+    }
+    if !whole && !indirect.is_empty() {
+        return Err("--indirect-target requires --whole-function".into());
+    }
     let opts = symbolic::Options {
         inputs: &inputs,
         bindings: &bindings,
-        stop: stop.ok_or("prove requires --stop-at ADDR")?,
+        ranges: &ranges,
+        memory: &memory,
+        stop,
+        indirect: &indirect,
         output: reg,
         output_bytes: width,
         step_limit: budget,

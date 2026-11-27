@@ -6,6 +6,9 @@ byte-addressed register and temporary storage. The IR interpreter binds its
 own SSA slots to terms. They share the user-declared input bytes and the
 strict bit-vector operation encoding.
 
+For symbolic memory and direct or declared indirect branches across machine
+instructions, use [whole-function validation](symbolic-memory.md).
+
 ## Run it
 
 Build a fixed-address x86-64 ELF as shown in the

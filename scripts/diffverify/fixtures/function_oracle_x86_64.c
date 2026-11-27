@@ -28,6 +28,37 @@ u64 select_cmov(u64 a, u64 yes, u64 no) {
     return no;
 }
 
+u64 select_branch(u64 flag, u64 yes, u64 no) {
+    return flag ? yes : no;
+}
+
+u64 store_if(u64 *p, u64 flag) {
+    if (flag & 1)
+        *p = 17;
+    return *p;
+}
+
+__attribute__((noinline, optnone)) u64 frame_add(u64 a, u64 b) {
+    return a + b;
+}
+
+u64 count_down(u64 n) {
+    __asm__("1: decq %0; jne 1b" : "+r"(n) : : "cc");
+    return n;
+}
+
+u64 dispatch(u64 selector, u64 x) {
+    switch (selector) {
+    case 0: return x + 15;
+    case 1: return x * 17;
+    case 2: return x ^ 7923;
+    case 3: return x << 4;
+    case 4: return x - 16;
+    case 5: return x | 0x13;
+    default: return x ^ 0x7fff;
+    }
+}
+
 double add_double(double a, double b) {
     return a + b;
 }

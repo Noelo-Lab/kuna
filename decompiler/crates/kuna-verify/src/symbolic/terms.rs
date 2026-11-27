@@ -19,6 +19,19 @@ pub(super) fn lower(opcode: OpCode, out: u32, operands: &[Term]) -> Result<Term,
     if !(1..=16).contains(&out) || operands.iter().any(|arg| !valid(arg)) {
         return Err(unsupported());
     }
+    let bits = out * 8;
+    if opcode == CPUI_PTRADD || opcode == CPUI_PTRSUB {
+        let term = |a: &Term| resize(Rc::clone(a), bits);
+        let (base, displacement) = match operands {
+            [base, offset] if opcode == CPUI_PTRSUB => (term(base), term(offset)),
+            [base, index, scale] if opcode == CPUI_PTRADD => (
+                term(base),
+                Rc::new(Expr::Op("bvmul", vec![term(index), term(scale)], bits)),
+            ),
+            _ => return Err("symbolic pointer arithmetic has the wrong arity".into()),
+        };
+        return Ok(Rc::new(Expr::Op("bvadd", vec![base, displacement], bits)));
+    }
     let unary = match opcode {
         CPUI_COPY | CPUI_CAST | CPUI_INT_ZEXT | CPUI_INT_SEXT | CPUI_INT_NEGATE
         | CPUI_INT_2COMP | CPUI_BOOL_NEGATE | CPUI_POPCOUNT => true,
@@ -33,7 +46,6 @@ pub(super) fn lower(opcode: OpCode, out: u32, operands: &[Term]) -> Result<Term,
     if operands.len() != if unary { 1 } else { 2 } {
         return Err(unsupported());
     }
-    let bits = out * 8;
     if opcode == CPUI_SUBPIECE {
         let Expr::Const(offset, _) = *operands[1] else {
             return Err("symbolic SUBPIECE requires a constant byte offset".to_owned());
@@ -102,7 +114,7 @@ pub(super) fn observed_terms(
     emitter: &mut Emitter,
     left: super::execute::Execution,
     right: super::execute::Execution,
-) -> Result<String, String> {
+) -> Result<(String, Option<String>), String> {
     let normalize = |side: &super::execute::Execution| {
         let zero = Rc::new(Expr::Const(0, side.value.width()));
         select(Rc::clone(&side.defined), Rc::clone(&side.value), zero)
@@ -111,7 +123,37 @@ pub(super) fn observed_terms(
     let right_value = normalize(&right)?;
     let (la, lv) = (emitter.name(&left.defined), emitter.name(&left_value));
     let (ra, rv) = (emitter.name(&right.defined), emitter.name(&right_value));
-    Ok(format!("(or (distinct {la} {ra}) (distinct {lv} {rv}))"))
+    let mut mismatch = format!("(or (distinct {la} {ra}) (distinct {lv} {rv})");
+    use std::fmt::Write as _;
+    let mut lmem = left.memory.observed_bytes();
+    let mut rmem = right.memory.observed_bytes();
+    loop {
+        match (lmem.next(), rmem.next()) {
+            (Some((lk, lvalue)), Some((rk, rvalue))) if lk == rk => {
+                if !Rc::ptr_eq(lvalue, rvalue) {
+                    let _ = write!(
+                        mismatch,
+                        " (distinct {} {})",
+                        emitter.name(lvalue),
+                        emitter.name(rvalue)
+                    );
+                }
+            }
+            (None, None) => break,
+            _ => return Err("symbolic backends disagree on the memory projection".into()),
+        }
+    }
+    mismatch.push(')');
+    let coverage_gap = (left.memory.enabled()
+        || right.memory.enabled()
+        || left.memory.needs_coverage_check()
+        || right.memory.needs_coverage_check())
+    .then(|| {
+        let left = emitter.name(&left.memory.coverage());
+        let right = emitter.name(&right.memory.coverage());
+        format!("(or (= {left} #x00) (= {right} #x00))")
+    });
+    Ok((mismatch, coverage_gap))
 }
 
 fn valid(term: &Term) -> bool {
@@ -190,11 +232,13 @@ mod tests {
         let compare = |op| super::super::execute::Execution {
             value: lower(op, 8, &inputs).unwrap(),
             defined: division_guard(op, &inputs).unwrap(),
+            memory: Default::default(),
         };
         let mismatch = observed_terms(&mut emitter, compare(signed), compare(unsigned)).unwrap();
         let proof = Obligation {
             domain: format!("(set-logic QF_BV)\n{}", emitter.definitions()),
-            mismatch,
+            mismatch: mismatch.0,
+            coverage_gap: mismatch.1,
             input_bytes: Vec::new(),
         };
         let mut z3 = Command::new("z3");

@@ -41,7 +41,8 @@ const USAGE: &str = "usage:
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
   kuna-verify oracle-case <x86-64-elf> <function|0xaddr> [--input-reg NAME HEX]... [--external-entry ADDR ARITY]... [--seed S] [--budget OPS] [--sleighpath DIR]
-  kuna-verify prove <x86-64-elf> <function|0xaddr> --stop-at ADDR --return REG:BYTES [--input REG]... [--bind REG HEX]... [--timeout-ms N] [--sleighpath DIR]
+  kuna-verify prove <x86-64-elf> <function|0xaddr> (--stop-at ADDR | --whole-function) --return REG:BYTES
+    [--input REG]... [--bind REG HEX]... [--range REG LOW HIGH]... [--memory ADDRESS:BYTES]... [--timeout-ms N] [--sleighpath DIR]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --call-reruns N (4)  --json  --trace  --sleighpath DIR";
 
@@ -67,6 +68,7 @@ struct Args {
     input_regs: Vec<(String, String)>,
     external_entries: BTreeMap<u64, u8>,
     opcode_mutant: Option<usize>,
+    initial_memory: BTreeMap<u64, u8>,
     flags: Vec<String>,
     canonical: bool,
     states: u32,
@@ -97,6 +99,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         input_regs: Vec::new(),
         external_entries: BTreeMap::new(),
         opcode_mutant: None,
+        initial_memory: BTreeMap::new(),
         flags: Vec::new(),
         canonical: false,
         states: 4,
@@ -179,6 +182,14 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--opcode-mutant" => {
                 let op = num(it.next(), "--opcode-mutant")?;
                 a.opcode_mutant = Some(usize::try_from(op).map_err(|_| "--opcode-mutant is too large")?);
+            }
+            "--memory-byte" => {
+                let addr = num(it.next(), "--memory-byte address")?;
+                let value = u8::try_from(num(it.next(), "--memory-byte value")?)
+                    .map_err(|_| "--memory-byte expects a value from 0 to 255")?;
+                if a.initial_memory.insert(addr, value).is_some() {
+                    return Err(format!("initial memory byte {addr:#x} specified twice"));
+                }
             }
             "--states" => a.states = num(it.next(), "--states")?.max(1) as u32,
             "--canonical" => a.canonical = true,
@@ -842,8 +853,8 @@ fn main() -> ExitCode {
         };
     }
     let result = parse(rest).and_then(|a| match cmd.as_str() {
-        cmd if cmd != "oracle-case" && (!a.input_regs.is_empty() || !a.external_entries.is_empty() || a.opcode_mutant.is_some()) =>
-            Err("--input-reg, --external-entry and --opcode-mutant are for oracle-case".into()),
+        cmd if cmd != "oracle-case" && (!a.input_regs.is_empty() || !a.external_entries.is_empty() || a.opcode_mutant.is_some() || !a.initial_memory.is_empty()) =>
+            Err("--input-reg, --external-entry, --opcode-mutant and --memory-byte are for oracle-case".into()),
         "check" => run_check(&a),
         "corpus" => run_corpus(&a),
         "shard" => run_shard(&a),
@@ -872,6 +883,7 @@ fn run_oracle_case(a: &Args) -> Result<ExitCode, String> {
         seed: a.opts.seed, budget: a.opts.budget, input_regs: &a.input_regs,
         external_entries: &a.external_entries,
         opcode_mutant: a.opcode_mutant,
+        memory: &a.initial_memory,
     };
     let case = kuna_verify::oracle::capture(path, function, &a.options, &roots, config)?;
     println!("{case}");

@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -34,6 +35,18 @@ def memory_at(observation, address):
     raise AssertionError(f"no observed memory at {address:#x}")
 
 
+def elf_load_bytes(elf, address, size):
+    data = elf.read_bytes()
+    phoff, = struct.unpack_from("<Q", data, 32)
+    entsize, count = struct.unpack_from("<HH", data, 54)
+    for index in range(count):
+        kind, _, offset, start, _, file_size = struct.unpack_from("<IIQQQQ", data, phoff + index * entsize)
+        if kind == 1 and start <= address and address + size <= start + file_size:
+            offset += address - start
+            return data[offset:offset + size]
+    raise AssertionError(f"no file-backed ELF bytes at {address:#x}")
+
+
 class CrossBackendTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -62,10 +75,10 @@ class CrossBackendTests(unittest.TestCase):
         data, external = self.capture(function, *options)
         return data["case"], external, data["observations"]["raw"], data["observations"]["ir"]
 
-    def prove(self, name, *options, inputs=("RDI", "RSI"), stop=None):
+    def prove(self, name, *options, inputs=("RDI", "RSI"), stop=None, whole=False):
         if not shutil.which("z3"):
             self.skipTest("install Z3 to run translation validation")
-        if stop is None:
+        if stop is None and not whole:
             symbols = subprocess.check_output([
                 os.environ.get("LLVM_NM", "llvm-nm"), "--print-size", "--format=posix", self.elf,
             ], text=True)
@@ -73,11 +86,12 @@ class CrossBackendTests(unittest.TestCase):
             stop = int(start, 16) + int(size, 16) - 1
         command = [
             self.verify, "prove", self.elf, name, "--sleighpath", ROOT / "specs",
-            "--stop-at", hex(stop), "--return", "RAX:8", *options,
+            "--return", "RAX:8", *options,
         ]
+        command.extend(("--whole-function",) if whole else ("--stop-at", hex(stop)))
         for reg in inputs:
             command.extend(("--input", reg))
-        result = subprocess.run(command, capture_output=True, check=False, timeout=20)
+        result = subprocess.run(command, capture_output=True, check=False, timeout=70)
         self.assertIn(result.returncode, (0, 1, 3), result.stderr)
         return result.returncode, json.loads(result.stdout)
 
@@ -401,6 +415,74 @@ class CrossBackendTests(unittest.TestCase):
                 self.assertEqual(proof["classification"], "INCONCLUSIVE")
                 self.assertEqual(proof["phase"], "encoding")
                 self.assertNotIn("obligation", proof)
+
+    def test_symbolic_memory_proves_in_range_aliasing_and_checks_the_entire_domain(self):
+        options = ("--memory", "0x60000100:16", "--range", "RDI", "0x60000100")
+        code, proof = self.prove("pointer_update", *options, "0x60000108")
+        self.assertEqual(code, 0, proof.get("reason"))
+        self.assertEqual(proof["classification"], "MODEL_EQUIVALENCE")
+        coverage = proof["obligation"]["coverage_smt2"].encode()
+        self.assertEqual(hashlib.sha256(coverage).hexdigest(), proof["obligation"]["coverage_sha256"])
+
+        code, proof = self.prove("pointer_update", *options, "0x60000109")
+        self.assertEqual(code, 3)
+        self.assertEqual(proof["classification"], "INCONCLUSIVE")
+        self.assertEqual(proof["phase"], "execution-coverage")
+
+    def test_symbolic_caller_memory_counterexample_replays_initial_bytes(self):
+        code, proof = self.prove("caller_write", "--memory", "0x70003000:8", inputs=("RDI",))
+        self.assertEqual(code, 1, proof.get("reason"))
+        self.assertEqual(proof["classification"], "COUNTEREXAMPLE")
+        self.assertEqual(len(proof["witness"]["memory"]), 8)
+        report = replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+        self.assertEqual(report["independent_replay"], "confirmed")
+        mismatch = report["observation_report"]["findings"][0]
+        self.assertEqual(mismatch["observable"], "memory-byte")
+        self.assertEqual(mismatch["values"]["unicorn"], mismatch["values"]["raw-pcode"])
+        self.assertNotEqual(mismatch["values"]["unicorn"], mismatch["values"]["final-ir"])
+
+    def test_whole_function_joins_direct_branches_and_conditional_memory(self):
+        code, proof = self.prove("select_branch", inputs=("RDI", "RSI", "RDX"), whole=True)
+        self.assertEqual(code, 0, proof.get("reason"))
+        self.assertGreater(proof["scope"]["ir_blocks"], 1)
+        code, proof = self.prove(
+            "store_if", "--memory", "0x60000100:16", "--range", "RDI", "0x60000100", "0x60000108",
+            whole=True,
+        )
+        self.assertEqual(code, 0, proof.get("reason"))
+        self.assertEqual(proof["scope"]["control_flow"], "acyclic-function")
+        self.assertIn("coverage_smt2", proof["obligation"])
+
+    def test_whole_function_tracks_private_stack_bytes_and_the_return_slot(self):
+        code, proof = self.prove("frame_add", "--private-memory", "0x70002fb0:72",
+                                 inputs=("RDI", "RSI", "RBP"), whole=True)
+        self.assertEqual(code, 0, proof.get("reason"))
+        self.assertEqual(proof["scope"]["stack_entry"], "0x70002ff8")
+
+    def test_whole_function_rejects_a_loop(self):
+        code, proof = self.prove("count_down", inputs=("RDI",), whole=True)
+        self.assertEqual(code, 3)
+        self.assertEqual(proof["classification"], "INCONCLUSIVE")
+        self.assertIn("raw loop", proof["reason"])
+
+    def test_whole_function_switch_requires_coverage_of_declared_indirect_targets(self):
+        text = subprocess.check_output([
+            os.environ.get("LLVM_OBJDUMP", "llvm-objdump"), "--disassemble-symbols=dispatch", self.elf,
+        ], text=True)
+        indirect = re.search(r"(?m)^\s+([0-9a-f]+):[^\n]*\bjmpq\s+\*(0x[0-9a-f]+)\(", text)
+        self.assertIsNotNone(indirect, text)
+        jump, table = (int(v, 16) for v in indirect.groups())
+        count = 6
+        size = count * 8
+        targets = struct.unpack(f"<{count}Q", elf_load_bytes(self.elf, table, size))
+        options = ("--image-memory", f"{table:#x}:{size}", "--timeout-ms", "30000")
+        entries = [arg for target in targets for arg in ("--indirect-target", f"{jump:#x}:{target:#x}")]
+        code, proof = self.prove("dispatch", *options, *entries, whole=True)
+        self.assertEqual(code, 0, proof.get("reason"))
+        self.assertEqual(proof["scope"]["raw_indirect_targets"][hex(jump)], list(map(hex, targets)))
+        code, proof = self.prove("dispatch", *options, *entries[:-2], whole=True)
+        self.assertEqual(code, 3, proof.get("reason"))
+        self.assertEqual(proof["phase"], "execution-coverage")
 
 
 if __name__ == "__main__":
