@@ -3908,6 +3908,12 @@ update the pointer and any connected X latch even when CE vetoes the
 arithmetic. Arithmetic updates its own lane's flags and preserves any
 already-set L bit.
 
+In the compact `MPYR` and short `ADDC` pairs with a disconnected right shifter,
+only the right address phase is active. It can decrement `R1` without reading
+DATA or writing a shift result. If the multiply also updates `R1`, the right
+decrement wins and the issue stops before either DATA operand is fetched.
+The non-updating peer does not reserve a DATA read.
+
 Compact signed half-register `CMP` sets Z and M from the signed comparison
 and clears V in its issue lane. It preserves the lane's other arithmetic
 bits and the other lane. CE feedback samples the incoming flags before

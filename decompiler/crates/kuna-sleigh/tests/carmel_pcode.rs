@@ -3228,6 +3228,43 @@ fn compact_shift_and_pop_use_independent_predicates() {
 }
 
 #[test]
+fn compact_inactive_shifter_updates_only_its_address_port() {
+    let packets = [
+        (0x575092, 0x3b982b), (0x575092, 0x3b9b2b), (0x1605e7, 0x3b933f), (NOP, NOP),
+    ];
+    let mut m = Machine::new(0, &packets, &[(0, 1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)], None);
+    for (pc, table, right_aen, ecfg, r1, expected) in [
+        (0, 0, 0x1000, 0, 0x4040, (0x4042, 0x0001, 0x8700004b74, 0x0008)),
+        (0, 0xffff, 0, 1, 0x4040, (0x4042, 0x0001, 0x8700014b74, 0x3000)),
+        (2, 0, 0, 0, 0x4040, (0x4042, 0x0001, 0x8700004b74, 0x0008)),
+    ] {
+        m.seed(&[("EST", 0), ("ECFG", ecfg), ("CETBL", table), ("CECFG2", right_aen),
+                 ("PACFG", 0), ("R1", r1), ("RN1", 2), ("R2", 0x8040), ("A2", 0x87b0084b74),
+                 ("X1", 0xba98)]);
+        m.seed_data(0x4040, 0x4000);
+        m.seed_data(0x8040, 1);
+        m.start(pc).unwrap();
+        assert_eq!(m.step(), 3 * (pc + 2));
+        assert_eq!((m.reg("R1"), m.reg("X1"), m.reg("A2"), m.reg("EST")), expected);
+    }
+    for (table, right_aen, ecfg, carry, expected) in [
+        (0, 0, 0, 0, (0x4047, 0x6a834cecd0, 0x0000)),
+        (0, 0x1000, 0, 0, (0x404e, 0x6a834cecd0, 0x0000)),
+        (0xffff, 0, 0, 0, (0x404e, 0x6a834cfffe, 0x3024)),
+        (0xffff, 0, 0, 1, (0x404e, 0x6a834cffff, 0x3024)),
+        (0xffff, 0, 4, 0, (0x404e, 0x6a834c7fff, 0x3024)),
+    ] {
+        m.seed(&[("EST", carry), ("ECFG", ecfg), ("CETBL", table), ("CECFG1", 0x1000),
+                 ("CECFG2", right_aen), ("R1", 0x4047), ("PACFG", 8), ("RM0", 7),
+                 ("RN7", 0x7fff), ("A3L", 0x7fff), ("A1", 0x6a834cecd0), ("A4", 0x8765432100)]);
+        m.start(4).unwrap();
+        assert_eq!(m.step(), 18);
+        assert_eq!((m.reg("R1"), m.reg("A1"), m.reg("EST")), expected);
+        assert_eq!(m.reg("A4"), 0x8765432100);
+    }
+}
+
+#[test]
 fn compact_direct_stack_checks_the_connected_high_word_and_publishes_ce() {
     let mut m = Machine::new(
         0, &[(0x303400, NOP), (0xb0378c, NOP), (NOP, 0x303000), (NOP, NOP)],

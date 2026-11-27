@@ -7531,6 +7531,36 @@ macro compact_mpy_round_word(first, second, result, flags) {
     raw_mac_finish(rounded, adder, 1:1, 1:1, 0:1, result, flags);
 }
 
+compact_mpy_inactive_shifter: is slot_0_22=0x3b982b { export 0:1; }
+compact_mpy_inactive_shifter: is slot_0_22=0x3b9b2b { export 1:1; }
+
+# The right shifter reaches the AGU but never reserves a DATA read.
+:MPYR "A2H","*R2","*R1+=RN1" "||" compact_mpy_inactive_shifter is
+    (carmel_issue=1 & slot_mode=0 & slot_0_22=0x575092); (slot_mode=0 & compact_mpy_inactive_shifter) {
+    local first:2 = R2;
+    local second:2 = R1;
+    if (compact_mpy_inactive_shifter == 0) goto <multiply>;
+    local right_on:2;
+    unary_ce(CECFG2, EST, CETBL, 1, right_on);
+    if (right_on == 0 && (CECFG2 & 0x1000) == 0) goto <multiply>;
+    modify_ptr(R1, 0:2, RM0, RL0, 2:4, 3:2);
+  <address_conflict>
+    carmel_register_write_conflict();
+    goto <address_conflict>;
+  <multiply>
+    modify_ptr(R1, RN1, RM0, RL0, 2:4, 1:2);
+    compact_pair_read_check(first, second);
+    X1 = *[data]:2 first;
+    local factor:2 = *[data]:2 second;
+    local result:8;
+    local active:2;
+    compact_mpy_round_word(X1, factor, result, active);
+    A2H = result(2);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    publish_alu_ce(flags);
+}
+
 # Three independent DATA sources share the packet's operand-fetch ports.
 # CE1/AEN control the rounded lane's reads, but only CE1 enables its result.
 :MPYR "CE1" compact_round_half,"*"^compact_round_ptr_6,"*"^pair_ptr_1 "||"
@@ -7832,6 +7862,30 @@ macro raw_mac_add(left, right, carry_in, short_result, store, result, flags) {
 
 macro raw_mac_word(value, result) {
     result = ((zext(value) ^ 0x8000) - 0x8000) << 16;
+}
+
+:ADDC "CE1" "A1L","RN7","A3L" "||" "CE2" "*R1--" is
+    (carmel_issue=1 & slot_mode=0 & slot_0_22=0x1605e7); (slot_mode=0 & slot_0_22=0x3b933f) {
+    local left_on:2;
+    local right_address_on:2;
+    unary_ce(CECFG1, EST, CETBL, 0, left_on);
+    unary_ce(CECFG2, EST, CETBL, 1, right_address_on);
+    if (right_address_on == 0 && (CECFG2 & 0x1000) == 0) goto <arithmetic>;
+    modify_ptr(R1, 0:2, RM0, RL0, 2:4, 3:2);
+  <arithmetic>
+    local flags:2 = EST & 0xcfff;
+    if (left_on == 0) goto <publish>;
+    local first:8;
+    local second:8;
+    raw_mac_word(RN7, first);
+    raw_mac_word(A3L, second);
+    local result:8;
+    local active:2;
+    raw_mac_add(first, second, zext(EST & 1) << 16, 1:1, 0:1, result, active);
+    A1L = result(2);
+    raw_mac_flags(flags, active, 0);
+  <publish>
+    publish_alu_ce(flags);
 }
 
 # Plain products have a separate result mux from accumulating MAC.
