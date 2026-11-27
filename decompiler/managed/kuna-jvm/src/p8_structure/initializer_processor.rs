@@ -14,6 +14,8 @@ use crate::field_exprent::FieldExprent;
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_logger::Severity;
 use crate::interpreter_util::InterpreterUtil;
+use crate::kotlin_options::KotlinOptions;
+use crate::kt_metadata::KotlinMetadataAnnotation;
 use crate::fixes::class_writing;
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::method_descriptor::MethodDescriptor;
@@ -25,6 +27,14 @@ use crate::struct_class::StructClass;
 use crate::var_version_pair::VarVersionPair;
 
 pub struct InitializerProcessor;
+
+/// Whether `cl` is written as Kotlin, whose writer places an object's or
+/// companion's instance and its properties itself (read without parsing the
+/// metadata, which would change what the Kotlin writer sees).
+fn written_as_kotlin(cl: StructClass) -> bool {
+    DecompilerContext::get_option(KotlinOptions::DECOMPILE_KOTLIN)
+        && KotlinMetadataAnnotation::find(cl).is_some()
+}
 
 /// The keys of the static fields of `cl` that `exprent` reads.
 fn static_reads(exprent: Exprent, cl: StructClass) -> Vec<String> {
@@ -289,9 +299,10 @@ impl InitializerProcessor {
                                 &not_inlined,
                                 fidx,
                                 true,
-                            ) && !moved_reads
-                                .iter()
-                                .any(|(m, reads)| *m > fidx && reads.contains(&key_field));
+                            ) && (written_as_kotlin(cl)
+                                || !moved_reads
+                                    .iter()
+                                    .any(|(m, reads)| *m > fidx && reads.contains(&key_field)));
                             if inline_initializers || exprent_independent {
                                 let initializers = wrapper.get_static_field_initializers();
                                 if !initializers.borrow().contains_key(&key_field) {
@@ -613,7 +624,7 @@ impl InitializerProcessor {
                             if !fexpr.is_static() {
                                 return false;
                             } else if cl.get_fields().get_index_by_key(&key) as i32 >= fidx {
-                                if whitelist.contains(&key) {
+                                if whitelist.contains(&key) && !written_as_kotlin(cl) {
                                     return false;
                                 }
                                 fexpr.force_qualified(true);

@@ -1042,7 +1042,9 @@ earlier moved assignment set and that is declared after it (`static int[] sizes 
 int[names.length];` ahead of `names = {..}` read `null`), and no earlier moved assignment to
 a field declared after it may read its field (`next = base + 1; base = 5;` moved as `base =
 5` ahead of `next = base + 1`). Such an assignment stays in the `static` block, and so does
-every later assignment that reads its field.
+every later assignment that reads its field. A class written as Kotlin is exempt: its writer
+places an object's or companion's instance (assigned first, declared last) and the
+properties that read it itself.
 
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being
