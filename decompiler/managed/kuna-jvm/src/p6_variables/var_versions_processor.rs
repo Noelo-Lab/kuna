@@ -7,6 +7,7 @@ use crate::code_type::CodeType;
 use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
 use crate::direct_graph::DirectGraph;
+use crate::fixes::numeric_types::constant_local_int;
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::method_descriptor::MethodDescriptor;
@@ -54,6 +55,8 @@ impl VarVersionsProcessor {
         Self::merge_phi_versions(&ssa, graph);
 
         type_processor.calculate_var_types(root, graph);
+
+        constant_local_int::widen(type_processor, graph, method, previous_versions_processor);
 
         Self::eliminate_non_java_types(type_processor);
 

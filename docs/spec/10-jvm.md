@@ -776,6 +776,19 @@ narrowest type that can hold them; the constant `1` (not only
 `true`/`false`. Before renumbering, the lattice's internal types become Java types: an
 integer-constant type becomes `byte`, `short` or `char`, and the null type `Object`.
 
+**Constant locals are `int` (kuna).** A JVM slot holds an `int`, and the narrow type a
+constant fits says nothing about the source's declaration, so without a LocalVariableTable
+`byte type = 15;` printed for `int type = DOUBLE;`. In a method without one,
+`constant_local_int` (`decompiler/managed/kuna-jvm/src/fixes/numeric_types/constant_local_int.rs`)
+looks at each slot all of whose stores are integer constants (parameters excluded) and at
+every read of it: a read as an operand, a condition, an index or an argument, store or
+return of `int` or wider accepts `int`; an argument, field or array store, return or array
+element of `byte`, `short` or `char` requires that type. When the reads accept `int` the
+slot's variables are `int`; when they also require one narrow type that every stored constant
+fits, they have that type (`char c = 'q'` for a `char` field store, which kept a cast
+before); reads that require two types, or a read in any other context (a conditional, a
+string concatenation, a copy to another variable), leave Vineflower's types.
+
 **Declarations.** `VarProcessor::set_var_definitions` runs
 `decompiler/managed/kuna-jvm/src/p6_variables/var_definition_helper.rs
 (VarDefinitionHelper::set_var_definitions)`: each variable is declared at the innermost

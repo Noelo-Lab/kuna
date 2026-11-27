@@ -434,7 +434,7 @@ kuna	a53d8f264af4bc07
 case	default/pkg/TestDoubleNestedClass	Default	classes/java8nodebug/pkg/TestDoubleNestedClass
 kuna	8ebf557a34789d98
 case	default/pkg/TestDoublePopAfterJump	Default	classes/jasm/pkg/TestDoublePopAfterJump
-kuna	75517c3e6b35efd3
+kuna	088133f124fe3f3c
 case	default/pkg/TestDuplicateAssignmentInSwitchExpr	Default	classes/java17/pkg/TestDuplicateAssignmentInSwitchExpr
 kuna	0d917610eac38d80
 case	default/pkg/TestDuplicateLocals	Default	classes/java8nodebug/pkg/TestDuplicateLocals
@@ -834,9 +834,9 @@ kuna	85b7d10c2fe7a81b
 case	default/pkg/TestPop2OneLongPop2	Default	classes/jasm/pkg/TestPop2OneLongPop2
 kuna	6304692c7c7bd3e7
 case	default/pkg/TestPop2TwoIntPop2	Default	classes/jasm/pkg/TestPop2TwoIntPop2
-kuna	862e1f9daa1a8b50
+kuna	1dff8b0cd5666790
 case	default/pkg/TestPop2TwoIntTwoPop	Default	classes/jasm/pkg/TestPop2TwoIntTwoPop
-kuna	23f1eee37cbdea12
+kuna	bd5df5fa281c2f29
 case	default/pkg/TestPrimitiveNarrowing	Default	classes/java8/pkg/TestPrimitiveNarrowing
 kuna	4dacddd4fe21331f
 case	default/pkg/TestPrimitiveTypeClasses	Default	classes/java8/pkg/TestPrimitiveTypeClasses
@@ -1152,7 +1152,7 @@ kuna	44e542637898ad78
 case	default/pkg/TestVarHandles	Default	classes/java9/pkg/TestVarHandles
 kuna	ecbf475329496e17
 case	default/pkg/TestVarIndex	Default	classes/java8nodebug/pkg/TestVarIndex
-kuna	a655875c2865e840
+kuna	d24877b2d4bf5beb
 case	default/pkg/TestVarMergeSupertype	Default	classes/java8/pkg/TestVarMergeSupertype
 kuna	eab2e957d1280425
 case	default/pkg/TestVarRedef	Default	classes/java17/pkg/TestVarRedef
@@ -2224,3 +2224,5 @@ case	kuna-fixes/pkg/TestSelectingCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSele
 case	kuna-fixes/pkg/TestVarargsGenericRival	Kuna Fixes	kuna-fixes/classes/pkg/TestVarargsGenericRival
 # kuna-fixes/src/pkg/TestStaticInitExit.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestStaticInitExit	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitExit
+# kuna-fixes/src/pkg/TestNarrowConstLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNarrowConstLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowConstLocal

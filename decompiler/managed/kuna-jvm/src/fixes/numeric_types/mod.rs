@@ -6,6 +6,7 @@
 
 pub(crate) mod compound_assignment_shape;
 pub(crate) mod concat_operand_type;
+pub(crate) mod constant_local_int;
 pub(crate) mod implicit_widening_arithmetic;
 pub(crate) mod ternary_numeric_arms;
 
