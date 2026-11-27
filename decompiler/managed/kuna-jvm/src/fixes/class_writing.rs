@@ -7,13 +7,14 @@
 //! outside the input from `InnerClasses` and qualifies an ambiguous name;
 //! `nonpublic_nested_import` names a non-public nested library class through
 //! its enclosing class; `override_inaccessible_method` writes `@Override`
-//! only over a supertype method the class can override;
+//! only over a supertype method the class can override (in an interface, of
+//! `Object` only a public one);
 //! `sealed_private_permits` leaves out a `permits` clause that names a private
 //! member class.
 
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
-use crate::code_constants::{ACC_ENUM, ACC_PRIVATE, ACC_PROTECTED, ACC_PUBLIC, ACC_STATIC};
+use crate::code_constants::{ACC_ENUM, ACC_INTERFACE, ACC_PRIVATE, ACC_PROTECTED, ACC_PUBLIC, ACC_STATIC};
 use crate::const_exprent::ConstValue;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
@@ -393,10 +394,12 @@ fn overridable(method: StructMethod, declaring: StructClass, origin_package: &st
 }
 
 /// Whether a supertype of `cl` declares a method that a method `name` with
-/// descriptor `md` declared in `cl` overrides.
+/// descriptor `md` declared in `cl` overrides. An interface's superclass in
+/// the class file is `Object`, of which an interface has only the public
+/// methods (JLS 9.2): it cannot override `clone` or `finalize`.
 pub fn overrides(cl: StructClass, name: &str, md: &MethodDescriptor) -> bool {
     let qualified_name = cl.qualified_name();
-    search(Some(cl), name, md, false, package(&qualified_name))
+    search(Some(cl), name, md, false, false, package(&qualified_name))
 }
 
 fn search(
@@ -404,6 +407,7 @@ fn search(
     name: &str,
     md: &MethodDescriptor,
     search_here: bool,
+    public_only: bool,
     origin_package: &str,
 ) -> bool {
     let Some(cl) = cl else {
@@ -414,20 +418,23 @@ fn search(
             md.equals(&MethodDescriptor::parse_descriptor(&method.get_descriptor()))
                 && name == method.get_name()
                 && !method.has_modifier(ACC_STATIC)
+                && (!public_only || method.has_modifier(ACC_PUBLIC))
                 && overridable(method, cl, origin_package)
         })
     {
         return true;
     }
     let context = DecompilerContext::get_struct_context();
+    let interface = cl.has_modifier(ACC_INTERFACE);
     if let Some(super_class) = cl.super_class() {
-        if search(context.get_class(&super_class.get_string()), name, md, true, origin_package) {
+        let superclass = context.get_class(&super_class.get_string());
+        if search(superclass, name, md, true, public_only || interface, origin_package) {
             return true;
         }
     }
     cl.get_interface_names()
         .into_iter()
-        .any(|iface| search(context.get_class(&iface), name, md, true, origin_package))
+        .any(|iface| search(context.get_class(&iface), name, md, true, public_only, origin_package))
 }
 
 /// Whether `node`'s `permits` clause, naming `permitted`, is left out.

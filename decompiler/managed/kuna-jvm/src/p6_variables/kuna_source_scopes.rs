@@ -336,6 +336,17 @@ impl Scopes {
 
     /// Fills in each declaration's slot, table name and entries.
     fn complete(&mut self) {
+        let mut slot_stores: JHashMap<i32, Vec<(i32, i32)>> = JHashMap::new();
+        for &index in self.occurrences.key_vec().iter() {
+            let Some(slot) = self.varproc.get_var_original_index(index) else {
+                continue;
+            };
+            for (pc, store) in self.offsets(index) {
+                if store {
+                    slot_stores.compute_if_absent(slot, Vec::new).push((pc, index));
+                }
+            }
+        }
         for i in 0..self.decls.len() {
             let var = self.decls[i].var;
             if var.is_class_def() {
@@ -371,7 +382,11 @@ impl Scopes {
                 })
                 .collect();
             let after: Vec<usize> = (0..slot_entries.len())
-                .filter(|&k| pcs.iter().any(|&(pc, store)| store && starts_after(&slot_entries[k], pc)))
+                .filter(|&k| {
+                    pcs.iter().any(|&(pc, store)| {
+                        store && starts_after(&slot_entries[k], pc, var.get_index(), slot_stores.get(&slot))
+                    })
+                })
                 .collect();
             let named = if inside.is_empty() { &after } else { &inside };
             let Some(&first) = named.first() else {
@@ -707,19 +722,22 @@ impl Scopes {
     }
 
     /// Merges declaration `j`'s variable into `target`: its occurrences become
-    /// `target`'s and its definition an assignment.
+    /// `target`'s and its definition an assignment, and every occurrence of
+    /// the merged variable carries one table entry (`target`'s, else `j`'s).
     fn merge(&self, j: usize, target: VarVersionPair) {
         let x = &self.decls[j];
-        let lvt = self
-            .occurrences
-            .get(&target.var)
-            .into_iter()
-            .flatten()
-            .find_map(|v| v.get_lvt());
-        for &var in self.occurrences.get(&x.var.get_index()).into_iter().flatten() {
+        let of = |index: i32| self.occurrences.get(&index).into_iter().flatten();
+        let own = of(target.var).find_map(|v| v.get_lvt());
+        let lvt = own.clone().or_else(|| of(x.var.get_index()).find_map(|v| v.get_lvt()));
+        for &var in of(x.var.get_index()) {
             var.set_index(target.var);
             var.set_version(target.version);
             if lvt.is_some() {
+                var.set_lvt(lvt.clone());
+            }
+        }
+        if own.is_none() && lvt.is_some() {
+            for &var in of(target.var) {
                 var.set_lvt(lvt.clone());
             }
         }
@@ -749,9 +767,14 @@ fn captures(new: crate::new_exprent::NewExprent) -> bool {
     })
 }
 
-/// Whether `lv` starts right after an instruction at `pc` (a store).
-fn starts_after(lv: &LocalVariable, pc: i32) -> bool {
-    pc < lv.get_start() && lv.get_start() - pc <= 4
+/// Whether `lv` starts right after a store at `pc` of variable `index` (the
+/// offsets an occurrence records can fall a few bytes before its store), not
+/// after a later store of another variable of the slot (`stores`).
+fn starts_after(lv: &LocalVariable, pc: i32, index: i32, stores: Option<&Vec<(i32, i32)>>) -> bool {
+    let start = lv.get_start();
+    pc < start
+        && start - pc <= 4
+        && !stores.is_some_and(|s| s.iter().any(|&(at, other)| other != index && pc < at && at < start))
 }
 
 fn overlap(a: &[LocalVariable], b: &[LocalVariable]) -> bool {

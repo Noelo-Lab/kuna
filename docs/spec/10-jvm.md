@@ -875,6 +875,18 @@ merged into that variable (Vineflower splits `it = new Wrapper(it)` or `origin =
 origin.getParent()` into a new `var3`). Every merge is refused when a read of one variable could see
 a write of the other (`fixes::var_merge::var_merge_liveness::overwrites_live`, both ways), and a variable a
 lambda or a local or anonymous class captures, or a `final` one, is neither moved nor merged.
+A merged variable carries one table entry on every occurrence, its target's or else the merged
+declaration's: a variable gets its entry from the store the entry starts after, so in a loop
+(`long acc; do { acc = ..; acc ^= ..; } while (acc < 0);`) only the first store's version has it,
+and the version declared before the loop, which the first store's declaration is merged into,
+printed `var7` beside an undeclared `acc` (and `var7 ^= ..` read the unset `var7`).
+A variable none of whose instructions an entry covers takes the name of an entry that starts
+right after one of its stores (the offsets an occurrence records can lie up to four bytes before
+its store instruction), unless another variable of the slot stores in between: javac starts a
+local's entry after the store that declares it and writes no entry for a local never read, so in
+`{ int[] counts = new int[n]; } String text = "n=";` the entry `text` starts after the second
+store, and the unread array stays a variable of its own instead of being merged into `text`
+(`int[] text = new int[n]; text = "n=";`, which javac rejects).
 `order_declarations` moves only variables the table names. `VarDefinitionHelper::merge_check`
 refuses to merge two variables the table names differently (`kuna_source_locals::named_apart`,
 `properties` and a later block's `subFields`). Increments
@@ -1011,7 +1023,10 @@ left out by policy: synthetic members (`jvm_remove_synthetic`), bridge methods
 (`jvm_remove_bridge`), a lone default constructor, and
 whatever the class-level rewrites hid. kuna adds `@Override` where an
 instance method of a Java 5+ class file overrides or implements a method of a supertype
-the engine can see;
+the engine can see (an interface's superclass in the class file is `Object`, but an interface
+has only `Object`'s public methods, so its `Object clone();` overrides nothing and gets no
+`@Override`, which javac would reject: `decompiler/managed/kuna-jvm/src/fixes/class_writing.rs
+(overrides)`);
 `jvm_mark_corresponding_synthetics` names the synthetic method behind each lambda and the
 class behind each anonymous class in a comment; `jvm_decompiler_comments` controls every `$VF:` note
 the passes above attached to a method. Lambdas are written inline at their use, without
@@ -1056,11 +1071,17 @@ error paths, `class_failed` from `invoke_processors` and the Kotlin writer's fai
 path), and every open method span records it as a nested failure, as does the innermost
 open class span when no method of it is open (a field initializer); the failing body's own
 span keeps it as its own error. A closed span also closes those a throw left open inside
-it. A method span further carries the method's `$VF:` comments when its wrapper's
+it, and a writer that catches a body's failure (`write_method`'s body, the inline and block
+lambda bodies) first drops the spans the throw left open since it started (`depth`, `unwind`),
+so a field initializer's lambda whose anonymous class fails at a method header is recorded on
+the class span, not on the dangling span of that header. A method span further carries the method's `$VF:` comments when its wrapper's
 `add_error_comment` is set, the comments Vineflower follows with its report-this note.
 
 **Failure granularity.** A method failure becomes the comment block above and the class
-survives. A class whose processing throws (section 10.11) is written as
+survives. A lambda or a method of an anonymous class that fails while it is processed (a stack
+underflow) has no statement tree; the variable naming of the enclosing method
+(`VarDefinitionHelper::iterate_clashing_exprent`) skips such a body instead of failing the
+enclosing class, so the body is written as its failure comment like any other. A class whose processing throws (section 10.11) is written as
 `// $VF: Couldn't be decompiled` followed by the exception, in place of its body. A class
 whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment
 (not at all under the corpus fixture's `dump-exception-on-error=0`). Nothing
@@ -1626,7 +1647,12 @@ bodies out in source order, and points a `tableswitch`'s gaps at the default by
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and
-`unchecked_type_pattern`.
+`unchecked_type_pattern`; the latter takes a cast to a parameterized subtype as checked (JLS
+5.1.6.2) when the operand's type arguments fix every type argument of the target, matching the
+argument the target class gives the operand's class against the operand's argument by
+structure, so `Factory<Genotype<G>> f` tested as `f instanceof Genotype<G> gt` (where
+`Genotype<G>` implements `Factory<Genotype<G>>`) stays a pattern; a bare parameter is bound
+directly, a wildcard or array argument only when it names no parameter and is equal.
 `decompiler/managed/kuna-jvm/src/p8_structure/assert_processor.rs (AssertProcessor::replace_assertion)`
 finds an assert's `throw new AssertionError` in the `if`'s body, its else or the statement
 the body breaks to, and with `assert_dead_throw` and `assert_throw_after_if` consumes it
@@ -1635,6 +1661,20 @@ only when its other incoming edges are accounted for.
 turns the index constants of a `SwitchBootstraps.typeSwitch` back into labels, one defect
 of which each of `type_switch_enum_label`, `type_switch_pattern_type` and
 `type_switch_label_lookup` corrects.
+
+**A case's own `break` (kuna).** `LabelHelper::set_explicit_edges` takes a case followed by an
+empty case that only breaks (labels whose keys jump to a `goto` past the switch, javac's `case
+'a': case 'b': break;`, or the default javac points past the switch) as running into the
+statement that empty case breaks to, so the case's own break became implicit and printed as a
+fall-through into the empty labels, or vanished with a hidden empty default. The control-flow graph
+drops every `goto`, so only the instructions tell the two apart: javac lays cases out in order, and a
+case ending with `break;` ends with a `goto` right before the instruction the empty labels' keys jump
+to, going where they go (past the switch). `decompiler/managed/kuna-jvm/src/fixes/switches.rs
+(falls_into)` keeps the edge explicit exactly when that `goto` ends one of the case's blocks, the
+empty case breaks this switch and the case's breaks to there close the switch itself (one closing a
+statement inside the case would print as a labeled block); an empty case that leaves another way
+(code of the next case that the structuring moved out of the switch, a loop's `break label`) keeps
+Vineflower's rule.
 
 **Heap reads copied into several uses.**
 `decompiler/managed/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor)`
@@ -1734,7 +1774,12 @@ variance, nullability, `Nothing` and Kotlin's collection names, while metadata c
 parameters by ids no scope declares; `kt_class_header_metadata`,
 `kt_enclosing_type_parameter`, `kt_type_parameter_id` and `kt_supertype_type_arguments`
 write headers from the metadata when every name resolves, naming an unnamed id after the
-`Signature`'s variable at the same position. `KInvocationExprent` reads metadata only from
+`Signature`'s variable at the same position. Such a class hides the members kotlinc adds for
+a read-only collection interface that only Java's interface declares, recognised by their five
+instructions (`new`, `dup`, `ldc` of the read-only-collection message, `invokespecial` of
+`UnsupportedOperationException.<init>`, `athrow`); the constant pool is read only after the five
+opcodes match, so any other five-instruction member (a `DefaultImpls` bridge ending in a
+`checkcast`) is written instead of failing its class. `KInvocationExprent` reads metadata only from
 the class a call names; `kt_facade_call`, `kt_extension_call`, `kt_jvm_name_call` and
 `kt_synthetic_accessor_call` resolve the callee to the declaration Kotlin sees and write it
 by its Kotlin name, bare only where Kotlin would resolve the bare name to it.

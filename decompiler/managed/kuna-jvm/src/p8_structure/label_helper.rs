@@ -309,6 +309,7 @@ impl LabelHelper {
                     if stnext.get_exprents().is_some_and(|e| e.is_empty())
                         && stnext.has_any_successor()
                         && !is_pattern_switch
+                        && switches::falls_into(swst, stt, i as usize + 1)
                     {
                         stnext = stnext.get_all_successor_edges()[0].get_destination();
                     }

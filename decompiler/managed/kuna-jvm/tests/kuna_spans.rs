@@ -201,3 +201,25 @@ fn failures_written_inside_a_method_are_recorded_against_it() {
         assert!(failure.error.contains("ClassCastException"), "{failure:?}");
     }
 }
+
+/// The fixture's `Broken`: a lambda and an anonymous class whose bodies fail while they are
+/// processed, and a field initializer's lambda whose anonymous class fails at a method header.
+/// Each failing body costs that body: the class is written, each enclosing method names it.
+#[test]
+fn a_failed_body_costs_only_that_body() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../decompiler/managed/kuna-jvm/fixtures/failures/classes");
+    let set = kuna_input::load(&dir, &LoadOptions::default()).unwrap();
+    let units = decompile(&set, &options(&[]));
+    let unit = units.iter().find(|u| u.qualified_name == "com/ex/fail/Broken").unwrap();
+    let root = unit.classes.iter().find(|c| c.name == unit.qualified_name).unwrap();
+    assert!(root.error.is_none(), "{:?}", root.error);
+    let method = |name: &str| unit.methods.iter().find(|m| m.name == name).unwrap();
+    let bodies = |name: &str| method(name).nested.iter().map(|f| f.body.clone()).collect::<Vec<_>>();
+    assert_eq!(bodies("lambda"), ["com.ex.fail.Broken.lambda$lambda$1()I"]);
+    assert_eq!(bodies("anonymous"), ["com.ex.fail.Broken$2.run()V"]);
+    assert!(method("plain").error.is_none() && bodies("plain").is_empty());
+    assert_eq!(root.nested.len(), 1, "the field initializer's lambda: {:?}", root.nested);
+    assert!(root.nested[0].body.starts_with("com.ex.fail.Broken.lambda$static$"), "{:?}", root.nested[0]);
+    assert!(root.nested[0].error.contains("ClassCastException"), "{:?}", root.nested[0]);
+}

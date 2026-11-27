@@ -7,18 +7,22 @@
 //! switch, and writes a switch over an enum whose cases return as `return
 //! switch`; `switch_table_fillers` leaves out the `tableswitch` keys javac
 //! adds for values without a label; `switch_yield_const_retype` lets a
-//! yielded constant keep its own type.
+//! yielded constant keep its own type; [`falls_into`] keeps the `break` of a
+//! case followed by a group of labels that only breaks.
 
 use crate::basic_block_statement::BasicBlockStatement;
-use crate::code_constants::{OPC_ACONST_NULL, OPC_ATHROW, OPC_DUP, OPC_INVOKESPECIAL, OPC_NEW, OPC_TABLESWITCH};
+use crate::code_constants::{
+    OPC_ACONST_NULL, OPC_ATHROW, OPC_DUP, OPC_GOTO, OPC_GOTO_W, OPC_INVOKESPECIAL, OPC_NEW, OPC_TABLESWITCH,
+};
 use crate::code_type::CodeType;
-use crate::const_exprent::ConstExprent;
+use crate::const_exprent::{ConstExprent, ConstValue};
 use crate::decompiler_context::DecompilerContext;
 use crate::do_statement;
 use crate::exit_exprent::{ExitExprent, Type as ExitType};
 use crate::exprent::Exprent;
 use crate::fixes::numeric_types::ternary_numeric_arms::{printed_type, promotes};
 use crate::if_statement::IfStatement;
+use crate::instruction::Instruction;
 use crate::p6_variables::kuna_source_locals;
 use crate::rt::JList;
 use crate::sequence_statement::SequenceStatement;
@@ -336,6 +340,89 @@ pub fn hides_case(switch: SwitchStatement, edges: &[StatEdge]) -> bool {
         && Some(edges[0]) == switch.get_default_edge()
         && switch.is_pattern()
         && is_javac_default(switch)
+}
+
+/// Whether the case statement `case` of `switch` reaches the next one,
+/// `group`, an empty case that breaks out of `switch` (javac's `case 'a':
+/// case 'b': break;`, or a default that jumps past the switch), without a
+/// `break` of its own. The control-flow graph drops every `goto`, so only the
+/// instructions say: javac lays the cases out in order, and a case that ends
+/// with `break;` ends with a `goto` right before the instruction the group's
+/// keys jump to, to where the group goes (past the switch). False only for that
+/// `goto`, ending one of the case's blocks; true when the empty case leaves by
+/// another edge (a case whose code the structuring moved out of the switch),
+/// the case breaks there through a statement of its own (its break would
+/// need a labeled block) or the switch instruction does not list its keys.
+pub fn falls_into(switch: SwitchStatement, case: Statement, group: usize) -> bool {
+    let Some(exit) = switch
+        .get_case_statements()
+        .get(group)
+        .get_all_successor_edges()
+        .first()
+        .filter(|e| e.get_type() == StatEdge::TYPE_BREAK && e.closure() == Some(switch.0))
+        .map(|e| e.get_destination())
+    else {
+        return true;
+    };
+    if breaks_inner(case, exit, switch.0) {
+        return true;
+    }
+    let Some(instr) = switch
+        .get_first()
+        .and_then(|f| f.try_as_basic_block())
+        .and_then(|f| f.get_block().get_last_instruction())
+        .and_then(|i| i.try_as_switch())
+    else {
+        return true;
+    };
+    let (values, destinations) = (instr.get_values(), instr.get_destinations());
+    let mut target = i32::MAX;
+    for value in switch.get_case_values().get(group).iter() {
+        let destination = match value {
+            None => Some(instr.get_default_destination()),
+            Some(e) => match e.try_as_const().and_then(|c| c.get_value()) {
+                Some(ConstValue::Int(v)) => values.iter().position(|&x| x == v).map(|k| destinations[k]),
+                _ => None,
+            },
+        };
+        let Some(destination) = destination else {
+            return true;
+        };
+        target = target.min(destination);
+    }
+    let Some(seq) = switch.0.get_top_parent().mt().get_instruction_sequence() else {
+        return true;
+    };
+    if target <= 0 || target >= seq.length() {
+        return true;
+    }
+    let destination = |i: Instruction| {
+        matches!(i.opcode(), OPC_GOTO | OPC_GOTO_W)
+            .then(|| i.try_as_jump())
+            .flatten()
+            .map(|j| j.destination())
+    };
+    let (before, at) = (seq.get_instr(target - 1), seq.get_instr(target));
+    let Some(jump) = destination(before) else {
+        return true;
+    };
+    jump != destination(at).unwrap_or(target) || !ends_at(case, before.start_offset())
+}
+
+/// Whether a break out of `stat` to `exit` closes a statement other than
+/// `switch` (an explicit one would print as `break label;` of a labeled block).
+fn breaks_inner(stat: Statement, exit: Statement, switch: Statement) -> bool {
+    stat.get_all_successor_edges().iter().any(|e| {
+        e.get_type() == StatEdge::TYPE_BREAK && e.get_destination() == exit && e.closure() != Some(switch)
+    }) || stat.get_stats().borrow().to_vec().into_iter().any(|s| breaks_inner(s, exit, switch))
+}
+
+fn ends_at(stat: Statement, offset: i32) -> bool {
+    if let Some(block) = stat.try_as_basic_block().map(|b| b.get_block()) {
+        let last = block.size() - 1;
+        return last >= 0 && block.get_old_offset(last) + block.get_instruction(last).length() == offset;
+    }
+    stat.get_stats().borrow().to_vec().into_iter().any(|s| ends_at(s, offset))
 }
 
 /// The edges of `switch`'s head that are filler keys of its `tableswitch`:

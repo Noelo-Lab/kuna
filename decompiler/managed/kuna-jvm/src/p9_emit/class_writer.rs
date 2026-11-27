@@ -586,6 +586,7 @@ impl ClassWriter {
                                 let _finally = RestoreMethodWrapper(outer_wrapper);
                                 let node_class_name =
                                     node.with(|d| d.class_struct).qualified_name();
+                                let depth = kuna_spans::depth();
                                 let result = try_catch(|| {
                                     let mut code_buffer = first_expr.to_java(indent);
 
@@ -620,6 +621,7 @@ impl ClassWriter {
                                         &ex,
                                     );
                                     mw.with_mut(|d| d.decompile_error = Some(ex));
+                                    kuna_spans::unwind(depth);
                                     kuna_spans::method_failed(mw);
                                     buffer.append(" // $VF: Couldn't be decompiled");
                                 }
@@ -1485,6 +1487,7 @@ impl ClassWriter {
         let mw = method_wrapper.expect("NullPointerException: methodWrapper");
         if mw.with(|d| d.decompile_error.is_none()) {
             if let Some(root) = root {
+                let depth = kuna_spans::depth();
                 let result = try_catch(|| {
                     let mut child_buf = root.to_java(indent);
                     child_buf.add_bytecode_mapping(root.get_dummy_exit().bytecode().as_ref());
@@ -1506,6 +1509,7 @@ impl ClassWriter {
                     );
                     DecompilerContext::get_logger().write_message_ex(&message, Severity::Warn, &t);
                     mw.with_mut(|d| d.decompile_error = Some(t));
+                    kuna_spans::unwind(depth);
                 }
             }
         }
@@ -1953,6 +1957,7 @@ impl ClassWriter {
                 if let Some(root) =
                     root.filter(|_| method_wrapper.with(|d| d.decompile_error.is_none()))
                 {
+                    let depth = kuna_spans::depth();
                     let result = try_catch(|| {
                         if RecordHelper::is_hidden_record_method(cl, mt, root) {
                             hide_method = true;
@@ -1993,6 +1998,7 @@ impl ClassWriter {
                             &t,
                         );
                         method_wrapper.with_mut(|d| d.decompile_error = Some(t));
+                        kuna_spans::unwind(depth);
                     }
                 }
 

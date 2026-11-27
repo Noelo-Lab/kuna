@@ -103,23 +103,57 @@ fn determined_by(from: &VarType, to: &GenericType) -> bool {
     let Some(map) = hierarchy.get(&from.value_str().to_string()) else {
         return false;
     };
-    let mut fixed = vec![false; to_formals.len()];
+    let mut bound = vec![None; to_formals.len()];
     for (q, b) in from_formals.iter().zip(&from_args) {
         let Some(e) = map.get(q) else {
             return false;
         };
-        match to_formals
-            .iter()
-            .position(|p| p.equals(e) && is_bare_var(e))
-        {
-            Some(i) => {
-                if !arg_equal(&to_args[i], b) {
-                    return false;
-                }
-                fixed[i] = true;
-            }
-            None => return false,
+        if !unify(e, b, &to_formals, &mut bound) {
+            return false;
         }
     }
-    to_args.iter().zip(&fixed).all(|(a, f)| *f || a.is_none())
+    to_args.iter().zip(&bound).all(|(a, b)| match b {
+        Some(b) => arg_equal(a, b),
+        None => a.is_none(),
+    })
+}
+
+/// Binds the type parameters `formals` of the target class so that `e`, the
+/// argument the target class gives the operand's class written over them, is
+/// the operand's argument `b`: a bare parameter is bound to `b`, a
+/// parameterized class (`Box<V>`) matches `b` of that class argument by
+/// argument; anything else must name no parameter and equal `b`.
+fn unify(e: &VarType, b: &Option<VarType>, formals: &[VarType], bound: &mut [Option<Option<VarType>>]) -> bool {
+    if let Some(i) = formals.iter().position(|p| p.equals(e) && is_bare_var(e)) {
+        return match &bound[i] {
+            Some(prev) => arg_equal(prev, b),
+            None => {
+                bound[i] = Some(b.clone());
+                true
+            }
+        };
+    }
+    let Some(b) = b else {
+        return false;
+    };
+    let parameterized = |t: &VarType| {
+        t.type_ == CodeType::Object
+            && t.array_dim == 0
+            && t.try_as_generic()
+                .is_some_and(|g| g.get_wildcard() == GenericType::WILDCARD_NO && g.get_parent().is_none())
+    };
+    if parameterized(e) && parameterized(b) && e.value_str() == b.value_str() {
+        let (e_args, b_args) = (args_of(e), args_of(b));
+        return e_args.len() == b_args.len()
+            && e_args.iter().zip(&b_args).all(|(x, y)| match x {
+                Some(x) => unify(x, y, formals, bound),
+                None => y.is_none(),
+            });
+    }
+    !mentions(e, formals) && arg_equal(&Some(e.clone()), &Some(b.clone()))
+}
+
+fn mentions(t: &VarType, formals: &[VarType]) -> bool {
+    (t.type_ == CodeType::Genvar && formals.iter().any(|p| p.value_str() == t.value_str()))
+        || args_of(t).iter().flatten().any(|a| mentions(a, formals))
 }
