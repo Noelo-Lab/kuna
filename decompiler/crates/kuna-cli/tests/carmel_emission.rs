@@ -2101,6 +2101,71 @@ fn carmel_reset_preserves_copy_operand_before_overlapping_writeback() {
 }
 
 #[test]
+fn carmel_reset_keeps_x1_only_with_live_early_admission() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("reset-x1.bin");
+    let source = scratch.path().join("reset-x1.c");
+    let executable = scratch.path().join("reset-x1");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let inc = [0x21, 0xac, 0x20, 0x2b, 0xec, 0];
+    let x1 = [0x10, 0xfa, 2, 0xc2, 0x7a, 0x7a];
+    let reset = [0xb4, 0xd1, 0x1d, 0xca, 0x74, 0x52];
+    let loadce = [0x8c, 0, 1, 0xcd, 0xe4, 0xb3];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut calls = String::new();
+    for (i, (lead, gap, younger, storage, cases)) in [
+        (None, 0, 2, "X1", &[
+            (0xffff, 0x0888, 1, 0x7fff, 0xffff),
+            (0xffff, 0x0888, 0x80, 0x7fff, 0x55),
+            (0xffff, 0x2000, 0xff, 0x7fff, 0x55),
+            (0xffff, 0x1000, 0, 0, 0xffff),
+        ][..]),
+        (None, 0, 2, "EST", &[(0xffff, 0x1000, 0xff, 0x7fff, 0)][..]),
+        (Some(inc), 0, 1, "X1", &[(0xffff, 0x1000, 0xff, 0, 0x55)][..]),
+        (Some(inc), 4, 2, "X1", &[
+            (0xffff, 0x0888, 1, 0, 0),
+            (0xffff, 0x0888, 0x80, 0, 0x55),
+        ][..]),
+        (Some(inc), 5, 2, "X1", &[
+            (0xffff, 0x0888, 1, 0, 0x55),
+            (0xffff, 0x0888, 0x80, 0, 0),
+        ][..]),
+        (Some(loadce), 6, 2, "X1", &[(0x8001, 0x1000, 0xffff, 0, 0x8001)][..]),
+    ].into_iter().enumerate() {
+        let mut code: Vec<_> = lead.into_iter().collect();
+        code.extend(std::iter::repeat_n(nop, gap));
+        code.push(x1);
+        code.extend(std::iter::repeat_n(nop, younger));
+        code.extend([reset, nop, nop, nop, nop, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], nop, nop]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000", "--target", "Carmel:BE:24:default:default",
+            "--json", "--assert-strict", "--assert", &format!("return %{storage} unsigned short"),
+        ]);
+        for (n, input) in ["A0L", "CECFG1", "CECFG2", "CETBL", "EST", "X1", "ECFG"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+        }
+        let out = common::process::required_output(&mut kuna);
+        let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let fun = &report["functions"][0];
+        assert!(fun["error"].is_null(), "{i} {storage}: {fun}");
+        let symbol = fun["name"].as_str().unwrap();
+        let name = format!("reset_x1_{i}");
+        writeln!(c, "#define {symbol} {name}\n{}\n#undef {symbol}", fun["code"].as_str().unwrap()).unwrap();
+        for &(a0, cfg, table, est, expected) in cases {
+            writeln!(calls, "if ({name}({a0:#x},{cfg:#x},0x1000,{table:#x},{est:#x},0x55,0) != {expected:#x}) return {};", i + 1).unwrap();
+        }
+    }
+    writeln!(c, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_indexed_word_copy_captures_addresses_before_the_late_store() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

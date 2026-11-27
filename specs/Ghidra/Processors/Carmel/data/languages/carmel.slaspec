@@ -202,6 +202,7 @@ define pcodeop carmel_operand_fetch_survives;
 define pcodeop carmel_d2_end_ex_controls;
 define pcodeop carmel_staged_wb_data;
 define pcodeop carmel_data_only_ex;
+define pcodeop carmel_address_only_ex;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -4487,6 +4488,23 @@ wide_load_execute: "LEA1","*R1:long" is wide_0_9=0x34d & wide_40_45=1 & wide_loa
     build wide_load_execute;
   <feedback>
     publish_alu_ce(EST & 0xcfff);
+}
+:LOAD "CE1" "X1","A0L",wide_load_mode is $(WIDE_LOAD_CE1_PORT)
+    & wide_0_9=0x27a & wide_40_45=0x10 & wide_load_mode
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 & reset_of_live {
+    build reset_of_live;
+    if (reset_of_live == 0) goto <canceled>;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local bypass:1 = (CECFG1 & 0x1000) != 0;
+    local initial:1 = (CECFG1 & 0x2000) == 0 && (CETBL & 1) != 0;
+    local admitted:1 = carmel_address_only_ex(enabled:1 | bypass, initial | bypass);
+    if (admitted == 0) goto <feedback>;
+    X1 = A0L;
+  <feedback>
+    publish_alu_ce(EST & 0xcfff);
+  <canceled>
+    carmel_end_unmodeled_issue();
 }
 :LOAD "CE1" "BTR1","A0L",wide_load_mode is $(WIDE_LOAD_CE1_PORT) & wide_0_9=0x31a & wide_40_45=0x10 & wide_load_mode {
     local enabled:2;

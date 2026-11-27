@@ -19,6 +19,7 @@ enum Stage {
 pub(super) enum Execute {
     Register(OpId),
     Data(OpId),
+    AddressOnly(OpId),
 }
 
 #[derive(Default)]
@@ -28,6 +29,17 @@ pub(super) struct IssueEffects {
     pub operand_fetch: Option<OpId>,
     pub staged_data: Option<OpId>,
     pub reset_ex_end: Option<OpId>,
+}
+
+pub(super) enum AddressAdmission {
+    Entry,
+    History,
+}
+
+#[derive(Default)]
+pub(super) struct Overlap {
+    pub canceled: BTreeSet<OpId>,
+    pub admission: BTreeMap<OpId, AddressAdmission>,
 }
 
 type IssueEdges<'a> = BTreeMap<u64, Option<&'a Address>>;
@@ -105,11 +117,11 @@ fn wb_after_operand_fetch(fd: &mut Funcdata, mark: OpId, ex: OpId) -> KunaResult
 }
 
 pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[OpId],
-                            effects: &BTreeMap<u64, IssueEffects>) -> KunaResult<BTreeSet<OpId>> {
+                            effects: &BTreeMap<u64, IssueEffects>) -> KunaResult<Overlap> {
     let (incoming, outgoing) = issue_edges(fd);
     let entry = fd.get_address();
     let mut reorder = Vec::new();
-    let mut canceled = BTreeSet::new();
+    let mut overlap = Overlap::default();
     for &id in resets {
         let address = fd.obank().get(id).unwrap().get_addr();
         let mut current = address;
@@ -137,7 +149,8 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
                     Stage::Ra if prior.get_offset() == 0 => {
                         // Physical RA address zero survives, but only the covered entry EX can move.
                         if prior == entry && !incoming.contains_key(&0) {
-                            if let Some(Execute::Register(_)) = issue.execute {
+                            if matches!(issue.execute, Some(Execute::Register(_) | Execute::AddressOnly(_))) {
+                                current = prior;
                                 execute = issue.execute;
                                 break true;
                             }
@@ -146,7 +159,7 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
                     }
                     Stage::Ra | Stage::Of => {
                         let Some(fetch) = issue.operand_fetch else { break false };
-                        canceled.insert(fetch);
+                        overlap.canceled.insert(fetch);
                     }
                     Stage::Ex => {
                         execute = issue.execute;
@@ -168,24 +181,28 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
             return Err(KunaError::lowlevel(format!("Unproved Carmel RESET retirement window at CODE {:#x}",
                                                   address.get_offset() / 3)));
         }
-        if let Some(execute) = execute {
-            reorder.push((id, end, execute, wb));
+        match execute {
+            Some(Execute::AddressOnly(mark)) => {
+                let sample = if current == entry && !incoming.contains_key(&entry.get_offset()) {
+                    AddressAdmission::Entry
+                } else {
+                    AddressAdmission::History
+                };
+                overlap.admission.insert(mark, sample);
+            }
+            Some(Execute::Register(ex)) => reorder.push((id, end, ex, None)),
+            Some(Execute::Data(ex)) => reorder.push((id, end, ex, wb)),
+            None => {}
         }
     }
-    for (d2, end, execute, wb) in reorder {
-        let ex = match execute {
-            Execute::Register(ex) => ex,
-            Execute::Data(ex) => {
-                if let Some(mark) = wb {
-                    wb_after_operand_fetch(fd, mark, ex)?;
-                }
-                ex
-            }
-        };
+    for (d2, end, ex, wb) in reorder {
+        if let Some(mark) = wb {
+            wb_after_operand_fetch(fd, mark, ex)?;
+        }
         d2_before_ex(fd, d2, end, ex)?;
     }
     for &id in resets {
         fd.op_destroy(id);
     }
-    Ok(canceled)
+    Ok(overlap)
 }

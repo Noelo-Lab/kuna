@@ -11,6 +11,8 @@ use crate::{
     op::PcodeOp, typeop::type_op_for,
 };
 
+use super::kuna_carmel_reset::{AddressAdmission, Execute, IssueEffects, Overlap, lower_control};
+
 const CLOCKS: usize = 5;
 const FF_UNKNOWN: u8 = 1;
 const FF_LIVE: u8 = 2;
@@ -39,6 +41,7 @@ pub(crate) struct PhaseDecode<'a> {
     reset: Option<u64>,
     register_ex: Option<u64>,
     data_ex: Option<u64>,
+    address_ex: Option<u64>,
     operand_fetch: Option<u64>,
     reset_ex_end: Option<u64>,
     staged_data: Option<u64>,
@@ -62,6 +65,7 @@ impl<'a> PhaseDecode<'a> {
         let reset = index(b"carmel_d2_reset");
         let register_ex = index(b"carmel_register_only_ex");
         let data_ex = index(b"carmel_data_only_ex");
+        let address_ex = index(b"carmel_address_only_ex");
         let operand_fetch = index(b"carmel_operand_fetch_survives");
         let reset_ex_end = index(b"carmel_d2_end_ex_controls");
         let staged_data = index(b"carmel_staged_wb_data");
@@ -79,7 +83,7 @@ impl<'a> PhaseDecode<'a> {
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
-            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, data_ex, operand_fetch, reset_ex_end,
+            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, data_ex, address_ex, operand_fetch, reset_ex_end,
             staged_data, ff })
     }
 
@@ -91,6 +95,7 @@ impl<'a> PhaseDecode<'a> {
         let mut ff_fetches = false;
         let mut reads = false;
         let mut resets = Vec::new();
+        let mut address_ex = Vec::new();
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
             if op.get_parent().is_none() { continue; }
@@ -106,6 +111,8 @@ impl<'a> PhaseDecode<'a> {
                 markers.push((op_id, offset, Mark::RegisterEx));
             } else if Some(index) == self.data_ex {
                 markers.push((op_id, offset, Mark::DataEx));
+            } else if Some(index) == self.address_ex {
+                address_ex.push((op_id, offset));
             } else if Some(index) == self.operand_fetch {
                 markers.push((op_id, offset, Mark::OperandFetch));
             } else if Some(index) == self.reset_ex_end {
@@ -132,10 +139,9 @@ impl<'a> PhaseDecode<'a> {
                 reads = true;
             }
         }
-        let canceled = if resets.is_empty() {
-            BTreeSet::new()
+        let overlap = if resets.is_empty() {
+            Overlap::default()
         } else {
-            use super::kuna_carmel_reset::{lower_control, Execute, IssueEffects};
             let mut effects = BTreeMap::<u64, IssueEffects>::new();
             for &(id, offset, kind) in &markers {
                 match kind {
@@ -148,8 +154,25 @@ impl<'a> PhaseDecode<'a> {
                     _ => {}
                 }
             }
+            for &(id, offset) in &address_ex {
+                effects.entry(offset).or_default().execute = Some(Execute::AddressOnly(id));
+            }
             lower_control(fd, visits, &resets, &effects)?
         };
+        for (mark, _) in address_ex {
+            match overlap.admission.get(&mark) {
+                None => lower_copy(fd, mark, 1),
+                Some(AddressAdmission::Entry) => lower_copy(fd, mark, 2),
+                Some(AddressAdmission::History) => {
+                    let userop = fd.new_constant(4, self.admission);
+                    let ce1 = fd.new_constant(1, 1);
+                    fd.op_remove_input(mark, 2);
+                    fd.op_set_input(mark, userop, 0)?;
+                    fd.op_set_input(mark, ce1, 1)?;
+                    reads = true;
+                }
+            }
+        }
         let mut delayed = BTreeMap::new();
         for (query, offset) in delay_queries {
             let modeled = slot_clocks.get(&offset) == Some(&1);
@@ -162,7 +185,7 @@ impl<'a> PhaseDecode<'a> {
             for (marker, _, kind) in markers {
                 match kind {
                     Mark::Copy => lower_copy(fd, marker, 1),
-                    Mark::OperandFetch => lower_operand_fetch(fd, marker, canceled.contains(&marker))?,
+                    Mark::OperandFetch => lower_operand_fetch(fd, marker, overlap.canceled.contains(&marker))?,
                     _ => fd.op_destroy(marker),
                 }
             }
@@ -174,7 +197,7 @@ impl<'a> PhaseDecode<'a> {
         for (marker, offset, kind) in markers {
             let modeled = delayed.get(&offset).copied();
             if kind == Mark::OperandFetch {
-                lower_operand_fetch(fd, marker, canceled.contains(&marker))?;
+                lower_operand_fetch(fd, marker, overlap.canceled.contains(&marker))?;
             } else if matches!(kind, Mark::RegisterEx | Mark::DataEx | Mark::ResetExEnd | Mark::StagedData)
                 || modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
                 fd.op_destroy(marker);

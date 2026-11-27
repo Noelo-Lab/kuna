@@ -4102,6 +4102,13 @@ publish its result. This suppression requires a straight-line path to
 RESET; a path bypassing RESET must keep the original operand and writes.
 Covered register-only `INC` or signed `CMP` in a canceled RA or OF slot
 leaves both the destination and its lane flags unchanged.
+A surviving `LOAD CE1,X1,A0L` at EX uses its earlier address admission
+with the forwarded accumulator word; RESET still clears the CE feedback.
+The first two issues of a proved entry window have no older flag or
+static-latch producer: the dynamic LUT selects bit zero and static
+admission is closed unless bypass is set. Otherwise the five-clock
+admission history must be proved. RESET suppresses both the X1 write
+and its feedback when it cancels RA or OF.
 An unproved window is not lifted as a serial register clear.
 
 The compact signed DATA load into `A2` postmodifies `R0` or `R1` by
