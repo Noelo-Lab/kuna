@@ -507,8 +507,10 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
     //   v8 (-O2): U8 u, v; u.q = 0x1122334455667788; v.q = 0x0102030405060708;
     //       u.b[i & 7] = j; v.b[(i >> 3) & 1] = j; U8 *p = (j & 1) ? &u : &v;
     //       return u.h[1] + v.h[3] * 3 + p->b[2];
+    // and gcc and clang -O2, with the same flags, with no mask in the binary:
+    //   s2: unsigned short v = 0x1234; ((u8 *)&v)[i] = j; return v;
     // Each entry carries the mask the caller applies to i.
-    let functions: [(&str, &[u8], u8); 13] = [
+    let functions: [(&str, &[u8], u8); 15] = [
         (
             "f_gcc",
             &[
@@ -641,6 +643,22 @@ fn word_reads_after_indexed_stores_match_the_x86_64_binary() {
                 0x00, 0xc3,
             ],
             15,
+        ),
+        (
+            "s2_gcc",
+            &[
+                0xb8, 0x34, 0x12, 0x00, 0x00, 0x89, 0xff, 0x66, 0x89, 0x44, 0x24, 0xfe, 0x40, 0x88,
+                0x74, 0x3c, 0xfe, 0x0f, 0xb7, 0x44, 0x24, 0xfe, 0xc3,
+            ],
+            1,
+        ),
+        (
+            "s2_clang",
+            &[
+                0x66, 0xc7, 0x44, 0x24, 0xfe, 0x34, 0x12, 0x89, 0xf8, 0x40, 0x88, 0x74, 0x04, 0xfe,
+                0x0f, 0xb7, 0x44, 0x24, 0xfe, 0xc3,
+            ],
+            1,
         ),
     ];
     let compilers: Vec<_> = ["gcc", "clang"]

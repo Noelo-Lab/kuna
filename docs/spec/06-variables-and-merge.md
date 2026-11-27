@@ -2622,9 +2622,12 @@ argument with `push {r0, r1, r4, lr}` above a 4-byte buffer it zeroes with a
 word store maps the buffer as `uint4 v5` below `uint4 v6`, and the walk writes
 it by byte (`v2 = &v5; ... *(uint1 *)v2 = *a0;`). An unbounded index can run
 past it as past any array that ends at the next local, and the slot check above
-withdraws the guard when anything a guard INDIRECT names lies there. When this
-check spoiled such a scalar, the unguarded analysis folded the zero into the
-byte read and deleted the test and call after the walk. Any other local is
+withdraws the guard when anything a guard INDIRECT names lies there. Spoiling
+such a scalar would print the unguarded analysis, which reads the value stored
+before the indexed store in place of the bytes it writes: the zero folds into
+the byte read and deletes the test and call after the walk, and an x86-64
+`((char *)&v1)[a0] = a1` into an `unsigned short v1 = 0x1234` returns
+`0x1234`. Any other local is
 spoiled: an array of other elements may not be indexable by byte at all (a
 16-byte SSE zero-initializer at the base types the buffer `undefined16 v1[2]`,
 printed as `v1[0][a0 % 0x18] = a1`, which does not compile). A float
