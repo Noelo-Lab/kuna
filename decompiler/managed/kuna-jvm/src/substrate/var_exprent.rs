@@ -597,8 +597,8 @@ impl VarExprent {
     /// where Vineflower's inference sees it.
     pub fn kuna_typed(self) -> Option<VarType> {
         self.kuna_declared()
+            .filter(|t| t.java || crate::fixes::kt_types::kt_raw_generic_type::visible(&t.type_))
             .map(|t| t.type_)
-            .filter(crate::fixes::kt_types::kt_raw_generic_type::visible)
     }
 
     /// Fix `kt_raw_generic_type`: the type the Kotlin plugin gave this local.

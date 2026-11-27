@@ -12,6 +12,8 @@ use crate::rt::JHashSet;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::fixes::overloads::unseen_class_overload;
+use crate::generic_type::GenericType;
+use crate::kuna_static_types::supertype_args;
 use crate::var_type::VarType;
 
 /// Whether `element`, the only element of an array of type `array_type`
@@ -40,11 +42,14 @@ pub fn spread_resolves(call: InvocationExprent, array: NewExprent) -> bool {
     }
 
     let own = &descriptor.params;
-    overloads(call).iter().all(|(md, varargs, _)| {
+    overloads(call).iter().all(|(md, varargs, desc)| {
         if same_parameters(&md.params, own) {
             return true;
         }
-        if md.params.len() == args.len() && phase(&args, &md.params).is_some() {
+        if md.params.len() == args.len()
+            && phase(&args, &md.params).is_some()
+            && !generic_inapplicable(call, desc, &args)
+        {
             return false;
         }
         !(*varargs
@@ -54,6 +59,94 @@ pub fn spread_resolves(call: InvocationExprent, array: NewExprent) -> bool {
                 &expanded(&md.params, args.len()),
             ))
     })
+}
+
+/// Whether `call`'s method of descriptor `descriptor`, which its erasure
+/// makes applicable to arguments of types `args`, provably takes none of
+/// them by its generic signature: an argument's class gives a parameterized
+/// parameter's class known type arguments, one of which the parameter's
+/// cannot contain (JLS 4.5.1).
+fn generic_inapplicable(call: InvocationExprent, descriptor: &str, args: &[VarType]) -> bool {
+    let Some(cl) = DecompilerContext::get_struct_context().get_class(&call.get_classname()) else {
+        return false;
+    };
+    let Some(sig) = candidates(cl, &call.get_name())
+        .into_iter()
+        .find(|m| m.get_descriptor() == descriptor)
+        .and_then(|m| m.get_signature())
+    else {
+        return false;
+    };
+    let params = sig.parameter_types();
+    params.len() == args.len() && params.iter().zip(args).any(|(p, a)| uncontained(p, a))
+}
+
+fn uncontained(param: &VarType, arg: &VarType) -> bool {
+    let Some(g) = param.try_as_generic() else {
+        return false;
+    };
+    if param.type_ != CodeType::Object || param.array_dim != 0 || g.get_parent().is_some() {
+        return false;
+    }
+    let wanted = g.get_arguments();
+    let Some(view) = supertype_args(arg, param.value_str()) else {
+        return false;
+    };
+    view.len() == wanted.len()
+        && wanted.iter().zip(&view).any(|(w, v)| match (w, v) {
+            (Some(w), Some(v)) => excluded(w, v),
+            _ => false,
+        })
+}
+
+/// Whether the type argument `wanted` cannot contain the type `actual`
+/// whatever its type variables stand for: `? extends B` a type whose class
+/// is not a subclass of `B`'s, `? super B` one whose class `B`'s is not a
+/// subclass of, `B` one of another class. Subtyping implies it of erasures.
+fn excluded(wanted: &VarType, actual: &VarType) -> bool {
+    if !closed_class(actual)
+        || actual
+            .try_as_generic()
+            .is_some_and(|g| g.get_wildcard() != GenericType::WILDCARD_NO)
+        || wanted.type_ != CodeType::Object
+        || wanted.array_dim != 0
+    {
+        return false;
+    }
+    match wanted
+        .try_as_generic()
+        .map_or(GenericType::WILDCARD_NO, |g| g.get_wildcard())
+    {
+        GenericType::WILDCARD_EXTENDS => !is_subclass(actual.value_str(), wanted.value_str()),
+        GenericType::WILDCARD_SUPER => {
+            closed_class(wanted) && !is_subclass(wanted.value_str(), actual.value_str())
+        }
+        GenericType::WILDCARD_NO => actual.value_str() != wanted.value_str(),
+        _ => false,
+    }
+}
+
+/// Whether `t` is a class type whose class and every supertype of it but
+/// `Object` are in the class context, so that it is a subclass of no class it
+/// is not seen to extend.
+fn closed_class(t: &VarType) -> bool {
+    if t.type_ != CodeType::Object || t.array_dim != 0 {
+        return false;
+    }
+    let ctx = DecompilerContext::get_struct_context();
+    let mut seen: JHashSet<String> = JHashSet::new();
+    let mut queue = vec![t.value_str().to_string()];
+    while let Some(name) = queue.pop() {
+        if name == "java/lang/Object" || !seen.add(name.clone()) {
+            continue;
+        }
+        let Some(c) = ctx.get_class(&name) else {
+            return false;
+        };
+        queue.extend(c.super_class().map(|s| s.get_string().to_string()));
+        queue.extend(c.get_interface_names());
+    }
+    true
 }
 
 /// Whether two methods take the same parameter types (one overrides the other).

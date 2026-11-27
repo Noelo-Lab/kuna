@@ -428,6 +428,7 @@ fn local_type(type_: VarType, mutable: bool, nullable: Vec<bool>) -> KunaLocalTy
         type_,
         mutable,
         nullable,
+        java: false,
     }
 }
 

@@ -15,6 +15,7 @@ use crate::function_exprent::FunctionType;
 use crate::i_fernflower_logger::Severity;
 use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::class_writing;
+use crate::fixes::constructor_calls::qualified_super_call;
 use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
@@ -156,7 +157,7 @@ impl InitializerProcessor {
                         break;
                     }
 
-                    if hide_super {
+                    if hide_super && !qualified_super_call::writes_qualifier(inv_expr) {
                         first_exprents.remove_at(0);
                         method.with_mut(|d| d.hidden_super = Some(inv_expr));
                     }

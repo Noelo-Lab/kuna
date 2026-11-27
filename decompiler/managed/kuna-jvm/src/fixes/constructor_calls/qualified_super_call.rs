@@ -79,6 +79,17 @@ pub fn super_outer(call: InvocationExprent) -> Option<(Option<Exprent>, bool)> {
     Some((qualifier.then_some(arg), hide))
 }
 
+/// Whether the superclass constructor call `call` is written with a
+/// qualifier (`o.super()`) the class file proves, so it is not an empty call
+/// to hide: javac's null check of the instance, which it emits only for a
+/// written qualifier, or an instance that is no class's `this`, which an
+/// unqualified call always passes.
+pub fn writes_qualifier(call: InvocationExprent) -> bool {
+    super_outer(call).is_some_and(|(outer, _)| {
+        outer.is_some_and(|o| call.is_kuna_checked_outer() || this_class(o).is_none())
+    })
+}
+
 /// `arg` written as the qualifier of `.super(..)` or `.new`.
 pub fn qualifier_text(arg: Exprent, indent: i32) -> TextBuffer {
     let mut text = arg.to_java(indent);

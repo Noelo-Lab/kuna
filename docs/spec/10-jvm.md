@@ -776,6 +776,36 @@ narrowest type that can hold them; the constant `1` (not only
 `true`/`false`. Before renumbering, the lattice's internal types become Java types: an
 integer-constant type becomes `byte`, `short` or `char`, and the null type `Object`.
 
+**Constant locals are `int` (kuna).** A JVM slot holds an `int`, and the narrow type a
+constant fits says nothing about the source's declaration, so without a LocalVariableTable
+`byte type = 15;` printed for `int type = DOUBLE;`. In a method without one,
+`constant_local_int` (`decompiler/managed/kuna-jvm/src/fixes/numeric_types/constant_local_int.rs`)
+looks at each slot all of whose stores are integer constants (parameters excluded) and at
+every read of it: a read as an operand, a condition, an index or an argument, store or
+return of `int` or wider accepts `int`; an argument, field or array store, return or array
+element of `byte`, `short` or `char` requires that type. When the reads accept `int` the
+slot's variables are `int`; when they also require one narrow type that every stored constant
+fits, they have that type (`char c = 'q'` for a `char` field store, which kept a cast
+before); reads that require two types, or a read in any other context (a conditional, a
+string concatenation, a copy to another variable), leave Vineflower's types.
+
+**Generic locals without a LocalVariableTable (kuna).** Without the table a local has its
+erased type, so `Set keys = settings.keySet(); keys.removeIf(k -> k.startsWith(p))` did not
+compile (the lambda's parameter is an `Object`) and a for-each over a raw `List` cast it.
+Before a Java class is written,
+`decompiler/managed/kuna-jvm/src/fixes/generic_casts/initializer_local_type.rs` declares a
+local of a generic class with the type of its value when the method has no
+LocalVariableTable, the local is assigned exactly once and is no parameter, that value's
+inferred type is a parameterization of the local's class whose arguments are all class
+types (no wildcard or type variable, to any depth), and every read is either the receiver
+of a call whose arguments the class's type variables do not type (a lambda or method
+reference may take one) or the iterable of a for-each whose variable's class the element
+type extends. Any other read (an argument, a store, a capture by a lambda, a call such as
+`add(x)` whose argument the type arguments would constrain) keeps the erased type, since
+the source may have declared it raw; the class file cannot tell, but the declared type is
+the value's own, so every accepted read compiles as it did. The type is the local's in
+every inference that reads it (`raw_receiver_erasure` included).
+
 **Declarations.** `VarProcessor::set_var_definitions` runs
 `decompiler/managed/kuna-jvm/src/p6_variables/var_definition_helper.rs
 (VarDefinitionHelper::set_var_definitions)`: each variable is declared at the innermost
@@ -927,6 +957,26 @@ Java 1.4 class-literal cache into `X.class`;
 canonical constructor and hides the accessors, `equals`, `hashCode` and `toString` that
 match the generated ones. A failure here writes the class as `$VF: Couldn't be decompiled`
 (section 10.12).
+
+**A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
+outer instance of an inner member superclass prints as `super()`, the outer instance being
+a synthetic argument, so `hideEmptySuper` took it for the implicit call and dropped it. It
+keeps the call, written `o.super()` by `qualified_super_call`, when the class file proves the
+qualifier: javac's null check of the instance, which it emits only for a written qualifier,
+or an instance that is no class's `this`, which is all an unqualified call ever passes. An
+enclosing `this` without the check stays implicit even where a supertype outside the input
+hides whether the call's class is a member of that enclosing class.
+
+**No `return` in a static initializer (kuna).** A `<clinit>` has one `return` at its end,
+which the structuring may place inside the last statement: a loop that leaves only through
+that block ends in `return;`, which Java rejects in an initializer. Before the class is
+written, `initializer_return_break` (in `decompiler/managed/kuna-jvm/src/fixes/control_flow.rs`)
+turns each `return;` that is not at the end of the body into a `break` out of the innermost
+enclosing statement that is the last of a sequence ending the body (through the last
+statements of sequences and both branches of an `if`), into an empty block placed after it;
+the `break` is labeled unless that statement is a loop or switch with none in between. It
+jumps where the `return` did, so the class compiles to the same instructions; a `return` with
+no such statement stays.
 
 Two class-level facts come from outside the class. **Varargs (kuna).**
 `decompiler/managed/kuna-jvm/src/substrate/invocation_exprent.rs` needs to know
@@ -1505,6 +1555,48 @@ javac resolves the written call afresh (JLS 15.12.2): `vararg_array_length`,
 as wherever javac would otherwise pick another overload, box to another type, or keep a box
 or an identity comparison the bytecode lacks. For a class outside the input, the
 descriptors the input calls stand in for its methods.
+
+**Casts that select an overload (kuna).** `getAmbiguousParameters` finds no ambiguity when
+no overload takes the argument types exactly, so `f(m)` for a `Member` that is both a `Decl`
+and a `Named`, with `f(Decl)` and `f(Named)` declared, or `put(d, null)` beside `put(Decl,
+String)` and `put(Decl, Integer)`, printed without the cast that picks the invoked method,
+and javac reports the call ambiguous. For a method of a class in the input,
+`selecting_cast` resolves the written call as javac does (JLS 15.12.2): the candidates are
+the methods of that name of the class and its known supertypes the current class can
+access, less bridges and synthetic methods; when the invoked method is applicable by strict
+invocation to the written argument types and some other candidate also is but is not less
+specific, each argument whose type differs from its parameter's at a position where such a
+candidate's parameter differs is cast to its parameter type. Every candidate still
+applicable then takes a supertype of each parameter, so the invoked method is the most
+specific. A call whose candidates have generic parameter types, whose arguments include a
+lambda or a type kuna cannot resolve, or whose method is varargs or not strictly
+applicable keeps Vineflower's casts.
+
+**A callee's unbound class variable (kuna).** `appendParamList` writes each argument
+against its parameter's generic type, remapped through the type arguments the receiver's
+type and the class hierarchy give the callee's class. When neither binds a type variable of
+that class (a receiver whose parameterization kuna does not see, such as a local an
+enclosing method declares and a lambda captures), the remapped type kept the variable's
+name, and a cast to it named whatever variable of that name is in scope at the call:
+`bag.add(check(t))` printed as `bag.add((E)((Task)check((E)t)))` inside a method declaring
+its own `E`. `raw_receiver_erasure` writes such an argument of a method call (a constructor's
+class variables are inferred from its arguments) against the parameter's erasure,
+the type the descriptor passes it as, so no cast names a variable of another declaration; a
+class whose variables are in scope at the call (the current class or an enclosing one) keeps
+the remapped type.
+
+**A varargs spread beside a generic overload (kuna).** `vararg_spread_resolution` keeps a
+varargs array written as an array when another overload is applicable to the spread
+arguments, judged by erasure, so `of(c)` for `of(Chromosome<G>, Chromosome<G>...)` printed
+as `of(c, new Chromosome[0])` beside `of(Iterable<? extends Chromosome<G>>)`, whose erasure
+takes any `Iterable`; the raw array then makes the call unchecked. Such an overload is not a
+rival when its generic signature provably rejects an argument: the argument's class gives
+the parameter's class known type arguments (through the class signatures of its supertypes),
+and one of them is not contained by the parameter's (JLS 4.5.1): for `? extends B` a class
+that is not a subclass of `B`'s, for `? super B` one `B`'s class is not a subclass of, for
+`B` another class. Subtyping implies these relations of the erasures, so the test is sound
+only when the classes compared have every supertype but `Object` in the class context; when
+one is missing the array stays.
 
 **Expression types.** A switch expression's or conditional's type is the join of its arms
 (their nearest common ancestor, or `Object` when the class universe knows none). Writing

@@ -50,6 +50,7 @@ use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::lambdas::lambda_return_type_argument;
 use crate::fixes::overloads::vararg_spread_resolution;
 use crate::fixes::overloads::unseen_class_overload;
+use crate::fixes::overloads::selecting_cast;
 use crate::fixes::numeric_types;
 use crate::fixes::overloads::ambiguous_type_variable_argument;
 use crate::fixes::constructor_calls::synthetic_null_check_shape;
@@ -1798,6 +1799,8 @@ impl InvocationExprent {
 
         if !writing_kotlin() && struct_context.get_class(&classname).is_none() {
             unseen_class_overload::mark(self, &mut set_ambiguous_parameters);
+        } else if !writing_kotlin() {
+            selecting_cast::mark(self, &mut set_ambiguous_parameters);
         }
 
         if lst_parameters.len() == descriptor.params.len()
@@ -1989,6 +1992,13 @@ impl InvocationExprent {
                 }
                 if erased.contains(&x) {
                     types[x] = descriptor.params[x].clone();
+                    continue;
+                }
+                if self.get_functype() == Type::General
+                    && raw_receiver_erasure::unbound_class_variable(&desc_class, &parameter_type, &|f| {
+                        hierarchy_map.contains_key(f) || self.gm_contains(f)
+                    })
+                {
                     continue;
                 }
                 if let Some(type_) = type_ {

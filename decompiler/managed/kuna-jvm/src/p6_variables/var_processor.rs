@@ -53,6 +53,8 @@ pub struct KunaLocalType {
     pub type_: VarType,
     pub mutable: bool,
     pub nullable: Vec<bool>,
+    /// Given by fix `initializer_local_type` for Java output, always visible.
+    pub java: bool,
 }
 
 arena_object!(pub VarProcessor => VarProcessorData, Class);
