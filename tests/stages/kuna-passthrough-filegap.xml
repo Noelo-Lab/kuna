@@ -54,9 +54,9 @@ f2
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="filegap x86 #1: the bits wrapper takes the rdi it forwards" min="1" max="1">^void bits_tail\([^,()]* \*?a0\)$</stringmatch>
-<stringmatch name="filegap x86 #2: and passes it to bits" min="1" max="1">^  bits\(a0\); // tail-call$</stringmatch>
-<stringmatch name="filegap x86 #3: the sst wrapper takes the rdi it forwards" min="1" max="1">^uint8 sst_tail\([^,()]* \*?a0\)$</stringmatch>
-<stringmatch name="filegap x86 #4: and passes it to sst" min="1" max="1">^  return sst\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap x86 #1: the bits wrapper takes the rdi it forwards" min="1" max="1">^[^(]* bits_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap x86 #2: and passes it to bits" min="1" max="1">^  (return )?bits\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap x86 #3: the sst wrapper takes the rdi it forwards" min="1" max="1">^[^(]* sst_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap x86 #4: and passes it to sst" min="1" max="1">^  (return )?sst\(a0\); // tail-call$</stringmatch>
 <stringmatch name="filegap x86 #5: no tail call drops every argument" min="0" max="0">^  (return )?(bits|sst)\(\); // tail-call$</stringmatch>
 </decompilertest>

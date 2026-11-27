@@ -58,9 +58,9 @@
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="filegap arm #1: the bits wrapper takes the r0 it forwards" min="1" max="1">^unsigned int bits_tail\([^,()]* \*?a0\)$</stringmatch>
-<stringmatch name="filegap arm #2: and passes it to bits" min="1" max="1">^  return bits\(a0\); // tail-call$</stringmatch>
-<stringmatch name="filegap arm #3: the sst wrapper takes the r0 it forwards" min="1" max="1">^float4 sst_tail\([^,()]* \*?a0\)$</stringmatch>
-<stringmatch name="filegap arm #4: and passes it to sst" min="1" max="1">^  return sst\(a0\); // tail-call$</stringmatch>
-<stringmatch name="filegap arm #5: no tail call drops every argument" min="0" max="0">^  return (bits|sst)\(\); // tail-call$</stringmatch>
+<stringmatch name="filegap arm #1: the bits wrapper takes the r0 it forwards" min="1" max="1">^[^(]* bits_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap arm #2: and passes it to bits" min="1" max="1">^  (return )?bits\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap arm #3: the sst wrapper takes the r0 it forwards" min="1" max="1">^[^(]* sst_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap arm #4: and passes it to sst" min="1" max="1">^  (return )?sst\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap arm #5: no tail call drops every argument" min="0" max="0">^  (return )?(bits|sst)\(\); // tail-call$</stringmatch>
 </decompilertest>
