@@ -746,9 +746,7 @@ pub fn reorder_last(ifstat: IfStatement) -> Option<Reorder> {
     if recorded(ifstat) {
         return None;
     }
-    if ifstat.get_ifstat().is_none() {
-        return continue_before_exit(ifstat).then_some(Reorder::Swap);
-    }
+    ifstat.get_ifstat()?;
     if loop_head(ifstat) || in_ecj_string_switch(ifstat.0) {
         return None;
     }
@@ -963,37 +961,6 @@ pub fn separate_test(first: IfStatement) -> bool {
                 goto_at(after_jump).map(|(length, target)| target != after_jump + length)
             })
             .unwrap_or(false)
-}
-
-/// Whether `ifstat`, an if without a body ending the body of its loop, whose
-/// jump leaves the loop and whose code after continues it, is javac's `if (c)
-/// continue;` before the code that leaves the loop: its condition jumps
-/// forward over a `goto` to the loop's start ([`not_do_while`]).
-fn continue_before_exit(ifstat: IfStatement) -> bool {
-    let (Some(loop_), Some(if_edge)) = (enclosing_loop(ifstat.0), ifstat.get_if_edge()) else {
-        return false;
-    };
-    let next = ifstat.get_all_successor_edges().first().copied();
-    if_edge.get_type() == StatEdge::TYPE_BREAK
-        && next.is_some_and(|e| {
-            e.get_type() == StatEdge::TYPE_CONTINUE && e.get_destination() == loop_.0
-        })
-        && !in_pattern_switch(ifstat.0)
-        && not_do_while(ifstat, loop_)
-}
-
-/// Whether `lastif`, the last if of the body of `loop_`, which
-/// `MergeHelper.matchDoWhile` would make the loop's `do`-`while` condition,
-/// is not one: javac compiles that condition to a conditional jump back to
-/// the loop's start, and this one's condition jumps forward over a `goto`
-/// there (javac's `if (c) continue;` before the code that leaves the loop).
-pub fn not_do_while(lastif: IfStatement, loop_: DoStatement) -> bool {
-    let (Some(after_jump), Some(loop_start)) = (fall_through(lastif), first_offset(loop_.0))
-    else {
-        return false;
-    };
-    goto_at(after_jump).is_some_and(|(_, target)| target == loop_start)
-        && cond_jump_target(after_jump).is_some_and(|target| target > after_jump)
 }
 
 /// Whether an `instanceof` pattern's binding (`aload; checkcast; astore`)
