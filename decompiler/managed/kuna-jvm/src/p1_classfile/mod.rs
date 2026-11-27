@@ -5,6 +5,7 @@ pub mod class_wrapper;
 pub mod classes_processor;
 pub mod code_constants;
 pub mod constant_pool;
+pub mod kuna_compiler;
 pub mod link_constant;
 pub mod method_wrapper;
 pub mod pooled_constant;

@@ -533,13 +533,11 @@ impl VarDefinitionHelper {
                                 target = Some(field.get_classname());
                             } else if let Some(exit) = exp.try_as_exit() {
                                 if exit.get_exit_type() == crate::exit_exprent::Type::Return {
-                                    instance = exit.get_value();
-                                    target = exit
-                                        .get_ret_type()
-                                        .expect("NullPointerException: retType")
-                                        .value
-                                        .as_deref()
-                                        .map(str::to_string);
+                                    let ret = exit.get_ret_type().expect("NullPointerException: retType");
+                                    if ret.array_dim == 0 {
+                                        instance = exit.get_value();
+                                        target = ret.value.as_deref().map(str::to_string);
+                                    }
                                 }
                             }
 

@@ -9,10 +9,13 @@ use crate::classes_processor::ClassNodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::new_exprent::NewExprent;
+use crate::rt::JList;
 
 /// After javac's outer-instance null check of `target` was removed before
-/// `next`: marks every creation in `next` whose first argument is `target`.
-pub fn mark_checked(target: Exprent, next: Exprent) {
+/// `next`: marks every creation in `next` whose first argument is `target`,
+/// or the stack variable holding it that `same` accepts (the value javac's
+/// check left on the stack, not yet inlined there).
+pub fn mark_checked(target: Exprent, next: Exprent, same: &dyn Fn(&JList<Exprent>) -> bool) {
     let mut queue: VecDeque<Exprent> = VecDeque::new();
     queue.push_back(next);
     while let Some(expr) = queue.pop_front() {
@@ -24,7 +27,11 @@ pub fn mark_checked(target: Exprent, next: Exprent) {
             continue;
         };
         let parameters = constructor.get_lst_parameters();
-        if !parameters.is_empty() && parameters.get(0).equals(target) {
+        if !parameters.is_empty()
+            && (parameters.get(0).equals(target)
+                || (parameters.get(0).try_as_var().is_some_and(|v| v.is_stack())
+                    && same(&parameters)))
+        {
             new_expr.set_outer_checked();
         }
     }

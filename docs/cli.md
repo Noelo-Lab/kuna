@@ -194,7 +194,7 @@ mismatch prints both digests; `decompiler/managed/kuna-jvm/corpus/README.md`, "R
 red one", has the commands. The datatest flags (`--all`, `--unittests`,
 `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`) are refused next to it, and
 `--jobs`, `--manifest`, `--out` and `--save-digests` without it (exit `2`). The summary line reads
-`jvm: 909/909 cases matched (0 mismatch, 0 error) in 5.2 s`. `--all`
+`jvm: 916/916 cases matched (0 mismatch, 0 error) in 5.2 s`. `--all`
 stays unit tests plus datatests.
 
 `kuna test` parses the harness's two streams separately (unit results on **stderr**,

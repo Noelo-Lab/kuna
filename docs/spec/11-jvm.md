@@ -236,6 +236,24 @@ Java 6, lambdas from Java 8, `invokedynamic` string concatenation from Java 9, `
 patterns and switch expressions from Java 16, sealed classes from Java 17, record
 patterns from Java 21; preview versions count from the release that previewed them.
 
+Which compiler wrote a class (kuna). The rules that read javac's code shapes (sections 11.9
+and 11.10) also read the Eclipse compiler's code, which lays a few constructs out its own way, so
+a class records whether ECJ wrote it, decided once from the raw constant pool when the class is
+read (`decompiler/managed/kuna-jvm/src/p1_classfile/kuna_compiler.rs (written_by_ecj)`). ECJ's
+`ClassFile` enters the class's own name first and its superclass's second, each
+`CONSTANT_Class` right before the `CONSTANT_Utf8` it names, then the names and descriptors of the
+fields and methods in member order, a method's `Code` attribute name before any constant its
+code uses. javac generates all method code before it writes the class, so the member references
+of that code come before `Code` (javac 8 to 12 put them at the start of the pool, javac 13 and
+later as the code uses them, the class itself included); ASM and `kuna-dex` enter a name's
+`CONSTANT_Utf8` before the `CONSTANT_Class` that names it. A class is ECJ's when entries 1 to 4
+are that header (entries 3 and 4 only when it has a superclass) and the first `Code` comes before
+the first field or method reference; a pool without either decides nothing, and the class is
+treated as javac's. On classes compiled from the same sources by javac 8, 11, 17, 21 and 25 and
+by ECJ 3.46 (`-1.8`, `-17`), every ECJ class with code and member references is recognised and
+no javac class is. ECJ's other marks (a `$SWITCH_TABLE$` method for an enum switch, one
+`hashCode` switch for a string) are not read.
+
 Two lifetimes coexist (kuna). Classes, members, attributes and the class-node forest live
 for the whole session; the IR a class's decompilation builds lives only until that root
 class is finished. Method bodies are therefore kept as raw bytes and expanded on demand
@@ -686,7 +704,10 @@ if-else, and an if-else the graph builder made of it (both branches continue the
 split into the `if` and the statements after it (`splits_else`, `split_else`).
 `collapse_if_if`, `collapse_if_else` and `collapse_else` do not join two `if`s that each jump
 on their own into one condition: the first one's condition is followed by a `goto` (a
-then-branch the source wrote as a jump, `separate_test`), or the first is the head of an
+then-branch the source wrote as a jump, `separate_test`; not when the condition ends with an
+`instanceof` pattern's binding, whose `goto` goes over the then-branch or, in `a || b`, to the
+code the condition guards: `while (o instanceof String x || o.hashCode() < 0)` printed as a
+`while (true)` around nested ifs, which javac compiles to other code), or the first is the head of an
 infinite loop, a bare condition, and jumps where the `goto` of the second one's then-branch
 goes (javac's loop condition and an `if (..) break;` after it, `separate_jumps`; `if (a || b)
 break;` jumps there the same way and is not the loop condition either). `if (c) continue;` is
@@ -766,6 +787,42 @@ was moved out has, so it leaves an `if` whose other path continues the loop (`el
 empty `while (cmp(++i, v) < 0) {}` sharing the start of a `for (;;)` became `if (cmp(++i, v) < 0)
 return;`; the same guard corrects Vineflower's inverted exit of that shape in an infinite loop
 that already had a successor).
+
+**An else-branch that held a loop's update (kuna).** `MergeHelper::match_for` takes a loop's
+update from the last statement of its body, which can end the else-branch of an if-else that ends
+the body (`if (a[i] != 0) { .. } else { i++; }`, as the rules above make it);
+`remove_last_empty_statement` then removed the emptied branch but left the statement an if-else,
+and `IfNode` failed on it (`called Option::unwrap() on a None value`, the one method kuna failed
+on the second held-out benchmark).
+`decompiler/managed/kuna-jvm/src/p8_structure/merge_helper.rs (MergeHelper::drop_else_edge)`
+makes it an if: the head's edge into the branch, which now continues the loop, leaves the if, or
+is dropped when the if already has a successor, which goes where the branch went.
+
+**ECJ's layout (kuna).** In a class the Eclipse compiler wrote (section 11.3) the rules above
+read ECJ's code, which places an `if`'s branches, its exits and its `continue` and `break`
+jumps as javac does, with two differences.
+*A returned condition*: ECJ compiles `return x <= y;` (a comparison, `&&` or `||`) as the
+condition's jumps, `iconst_1; ireturn` where it holds and `iconst_0; ireturn` at their target
+(or the reverse), where javac pushes the value and returns once, and the source's `if (c)
+return true; return false;` is the same code. ECJ starts a LineNumberTable entry at each
+statement on a line of its own and none at the second return of a returned condition, so
+`decompiler/managed/kuna-jvm/src/p8_structure/kuna_javac_layout.rs (ecj_returned_condition)`
+takes two returns of boolean constants for one statement when no entry starts at the second:
+`reorder` makes them the if-else Vineflower makes and `same_return` lets `build_iff` merge it
+(`return c ? true : false`, which secondary functions fold to `return c;`); with an entry they
+stay two statements, and without a LineNumberTable the code is either form and Vineflower's one
+return stands. The block of the merged return holds no instructions, so an `if` around it reads
+where its body starts from the instructions of its expressions (`ecj_merged_return`, which knows
+the merged return by the conditional jump of its condition).
+*A switch on a string*: ECJ switches once on the string's `hashCode()`, each case testing
+`equals` and jumping to the code of its case, which ECJ places after all the tests, so the last
+case's test is followed by the first case's code, the shape of javac's `if (c) break;`.
+`ecj_string_switch` (the switch instruction follows `invokevirtual String.hashCode()`) puts such a
+switch with the pattern switches, inside which no rule applies, and `reorder_last` leaves its
+ifs: the `if (!equals) break;` it made of a case was then turned by `ExitHelper.integrate_exits`
+(written for this switch) into a return that dropped the other cases' returns, which is wrong code.
+Each other decision above was measured off for ECJ's classes alone, one at a time, on the ECJ
+project of the second held-out benchmark, and none was better off.
 
 ## 11.10 Variables, types, declarations and names
 
@@ -854,6 +911,11 @@ merged into one where the merge cannot change what a read sees; and local types 
 `LocalVariableTypeTable` are applied. `jvm_verify_merges` and `jvm_verify_pre_post_merges`
 are experimental, stricter merge checks: the second computes, with an extra SSA pass,
 which assignments each read can see, and refuses any merge that would change it.
+(kuna) `populate_type_bounds`, which bounds a variable a method returns by the class the method
+returns, read a method returning an array as returning the class its element descriptor names:
+`byte[]` gave a class `B`, which the merge of `bytes = null` and `bytes = s.getBytes(..)` then
+took for their type (`B var2 = null;` in a method without a LocalVariableTable); a returned array
+bounds nothing.
 
 **Source locals (kuna).**
 `decompiler/managed/kuna-jvm/src/p6_variables/kuna_source_locals.rs`
@@ -1675,6 +1737,25 @@ the type the descriptor passes it as, so no cast names a variable of another dec
 class whose variables are in scope at the call (the current class or an enclosing one) keeps
 the remapped type.
 
+**A field of a raw receiver (kuna).** A field read through a receiver whose static type is raw has
+the erasure of its declared type (JLS 4.8), as the result of a call on one has, but its inferred
+type kept its class's type variable; where the reading class has a variable of that name, the
+argument looked like the parameter's type and lost the cast it needs:
+`fill(into.data, ((UnitStore)from).data)` for `fill(N[], N[])`, which javac rejects. Such a field
+read passed for a parameter of a method whose type is a type variable or an array of one (the
+erasure converts to a parameterized type unchecked, not to these) is written with the cast to the
+parameter's type
+(`decompiler/managed/kuna-jvm/src/fixes/generic_casts/raw_receiver_erasure.rs (has_raw_field_receiver)`,
+read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
+inferred type stays, since a constructor infers its class's type arguments from it (a diamond
+inferred from the erasure would not compile).
+The declared type of a call looks past a bridge (`desc_of`): javac gives a public class a public
+forwarder, without a signature, for each public method it inherits from a superclass that is not
+public, and its erased result made a for-each over the call one over a raw iterable, cast to its
+class parameterized by the loop variable, which javac rejects for a wildcard receiver
+(`(Set<Entry<K, ? extends Comparable<?>>>)series.entrySet()`); the superclass's method it
+forwards to has the same name and descriptor and the signature.
+
 **A varargs spread beside a generic overload (kuna).** `vararg_spread_resolution` keeps a
 varargs array written as an array when another overload is applicable to the spread
 arguments, judged by erasure, so `of(c)` for `of(Chromosome<G>, Chromosome<G>...)` printed
@@ -1719,6 +1800,11 @@ check of `x` and then loads the constant: removing the check alone printed `retu
 the offset of the loaded constant, and `restore_field_read` writes the constant at that
 offset as the read of the first instance field of `x`'s class (or a superclass) that holds
 its value; where it finds no such constant, the check stays written.
+(kuna) A creation `Outer.this.new Inner(..)` whose outer instance javac checks with a
+`requireNonNull` the creation's next argument follows keeps its qualifier also when the check
+already reads the outer instance and the creation still the stack variable holding it
+(`implicit_outer_instance::mark_checked`, which matched only an equal argument): it printed
+`new Base.Inner(..)`, which javac compiles without the check.
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and

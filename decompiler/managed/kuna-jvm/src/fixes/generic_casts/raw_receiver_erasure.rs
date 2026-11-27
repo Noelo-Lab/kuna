@@ -1,11 +1,13 @@
-//! Fix `raw_receiver_erasure`: a call on a receiver of raw static type has its
-//! erased result type, and a for-each over a raw iterable casts the iterable to
-//! its class parameterized by the loop variable's type.
+//! Fix `raw_receiver_erasure`: a call or field read on a receiver of raw static
+//! type has its erased type (a field read passed for a parameter of a
+//! type-variable type is cast to it), and a for-each over a raw iterable
+//! casts the iterable to its class parameterized by the loop variable's type.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::field_exprent::FieldExprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::fixes::generic_casts;
 use crate::generic_type::GenericType;
@@ -48,6 +50,29 @@ pub fn has_raw_receiver(inv: InvocationExprent) -> bool {
         return false;
     }
     inv.get_instance().is_some_and(is_raw)
+}
+
+/// Whether `field` is an instance field read through a receiver whose static
+/// type is a raw type, so that its type is the erasure of the declared one
+/// (JLS 4.8), not the declared type with its class's type variables: passed
+/// for a method's parameter whose type is a type variable (or an array of
+/// one), which the erasure does not convert to as it converts to a
+/// parameterized type, it is written with the cast to the parameter's type.
+pub fn has_raw_field_receiver(field: FieldExprent) -> bool {
+    !field.0.is_kotlin() && field.get_instance().is_some_and(is_raw)
+}
+
+/// Whether the argument `arg` is such a field read ([`has_raw_field_receiver`]),
+/// under the casts of its erasure javac added.
+pub fn raw_field_argument(arg: Exprent) -> bool {
+    let mut arg = arg;
+    while let Some(cast) = arg
+        .try_as_function()
+        .filter(|f| f.get_func_type() == FunctionType::Cast)
+    {
+        arg = cast.get_lst_operands().get(0);
+    }
+    arg.try_as_field().is_some_and(has_raw_field_receiver)
 }
 
 /// Whether the static type of `e`, as the decompiled program declares it, is
@@ -160,12 +185,28 @@ fn is_written_cast(func: FunctionExprent) -> Option<bool> {
     })
 }
 
+/// The method `inv` calls; past a bridge (javac's public forwarder, in a
+/// public class, to a method of a superclass that is not public: same name
+/// and descriptor, no signature) to the superclass's method it forwards to.
 fn desc_of(inv: InvocationExprent) -> Option<StructMethod> {
-    inv.get_desc().or_else(|| {
-        DecompilerContext::get_struct_context()
-            .get_class(&inv.get_classname())?
-            .get_method_recursive(&inv.get_name(), &inv.get_string_descriptor())
-    })
+    let context = DecompilerContext::get_struct_context();
+    let (name, descriptor) = (inv.get_name(), inv.get_string_descriptor());
+    let desc = inv.get_desc().or_else(|| {
+        context.get_class(&inv.get_classname())?.get_method_recursive(&name, &descriptor)
+    })?;
+    if !desc.has_modifier(CodeConstants::ACC_BRIDGE) {
+        return Some(desc);
+    }
+    let mut cls = context.get_class(&inv.get_classname());
+    while let Some(c) = cls {
+        if let Some(m) = c.get_method(&name, &descriptor) {
+            if !m.has_modifier(CodeConstants::ACC_BRIDGE) {
+                return Some(m);
+            }
+        }
+        cls = c.super_class().and_then(|s| s.get_string_opt()).and_then(|s| context.get_class(&s));
+    }
+    Some(desc)
 }
 
 /// The cast a for-each over the raw `iterable` needs for a loop variable of

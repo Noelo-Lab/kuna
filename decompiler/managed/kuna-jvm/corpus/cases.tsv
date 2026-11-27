@@ -715,11 +715,11 @@ kuna	d909a417f5a39383
 case	default/pkg/TestPatternMatching17Fake	Default	classes/java17/pkg/TestPatternMatching17Fake
 kuna	5c3be00d675f6620
 case	default/pkg/TestPatternMatching17FakeLoops	Default	classes/java17/pkg/TestPatternMatching17FakeLoops
-kuna	a3ce28fe6f9e11e8
+kuna	3c126362298bebcf
 case	default/pkg/TestPatternMatching17FakeLoopsInverted	Default	classes/java17/pkg/TestPatternMatching17FakeLoopsInverted
-kuna	6c66664feaf232b2
+kuna	7828cc5b461fc127
 case	default/pkg/TestPatternMatching17FakeNew	Default	classes/java17/pkg/TestPatternMatching17FakeNew
-kuna	38775f46a6925334
+kuna	41b7cece839a9be1
 case	default/pkg/TestPatternMatchingAssign	Default	classes/java16nodebug/pkg/TestPatternMatchingAssign
 kuna	37a41afecfc73eea
 case	default/pkg/TestPatternMatchingCompoundBool	Default	classes/java16/pkg/TestPatternMatchingCompoundBool
@@ -727,11 +727,11 @@ kuna	0779598050b1a4a7
 case	default/pkg/TestPatternMatchingFake	Default	classes/java16/pkg/TestPatternMatchingFake
 kuna	f165823509bde1a9
 case	default/pkg/TestPatternMatchingFakeLoops	Default	classes/java16/pkg/TestPatternMatchingFakeLoops
-kuna	13dd16691829e9c9
+kuna	82a4138e4e60ab74
 case	default/pkg/TestPatternMatchingFakeLoopsInverted	Default	classes/java16/pkg/TestPatternMatchingFakeLoopsInverted
-kuna	44dff70433a0c651
+kuna	df20ea129e51bca2
 case	default/pkg/TestPatternMatchingFakeNew	Default	classes/java16/pkg/TestPatternMatchingFakeNew
-kuna	76cda68c9776c851
+kuna	6e1666eedc00ffbe
 case	default/pkg/TestPatternMatchingInline	Default	classes/java16/pkg/TestPatternMatchingInline
 kuna	29327bb18e7abf21
 case	default/pkg/TestPatternMatchingInteger	Default	classes/java17/pkg/TestPatternMatchingInteger
@@ -2028,3 +2028,17 @@ case	kuna-fixes/pkg/TestBoxedIncrementOperand	Kuna Fixes	kuna-fixes/classes/pkg/
 case	kuna-fixes/pkg/TestNullLocalType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullLocalType
 # kuna-fixes/src/pkg/TestLambdaReceiver.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestLambdaReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaReceiver
+# kuna-fixes/src/pkg/TestEcjReturnedCondition.java, ECJ 3.46.100 (-g -17)
+case	kuna-fixes/pkg/TestEcjReturnedCondition	Kuna Fixes	kuna-fixes/classes/pkg/TestEcjReturnedCondition
+# kuna-fixes/src/pkg/TestEcjStringSwitch.java, ECJ 3.46.100 (-g -17)
+case	kuna-fixes/pkg/TestEcjStringSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEcjStringSwitch
+# kuna-fixes/src/pkg/TestForUpdateInElse.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForUpdateInElse	Kuna Fixes	kuna-fixes/classes/pkg/TestForUpdateInElse
+# kuna-fixes/src/pkg/TestRawFieldErasure.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestRawFieldErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestRawFieldErasure
+# kuna-fixes/src/pkg/TestBridgeEntryLoop.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBridgeEntryLoop	Kuna Fixes	kuna-fixes/classes/pkg/TestBridgeEntryLoop	kuna-fixes/classes/pkg/TestBridgeEntryLoopBase
+# kuna-fixes/src/pkg/TestNullArrayLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullArrayLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNullArrayLocal
+# kuna-fixes/src/pkg/TestQualifiedInheritedInner.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestQualifiedInheritedInner	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedInheritedInner	kuna-fixes/classes/pkg/TestQualifiedInheritedInnerBase
