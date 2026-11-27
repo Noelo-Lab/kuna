@@ -2342,8 +2342,9 @@ mod tests {
         // and kuna-sparc-trap-resume / a branch after a delay-slot trap is the trap's resume
         // and kuna-ptrfromuse-faroffset / a parameter read only at field offsets of 0x1000 or more is a pointer
         // and kuna-homespill-win64 / a Windows x64 argument register spilled to its home slot is a parameter
+        // and gh1883-quotientreturn-x64 / a div quotient beside a float computed from its remainder is no return
         // and kuna-bytemap-noguard / a two-stage table with no bound on its map's index ends at the map
-        assert_eq!(count, 941, "corpus file count drifted");
+        assert_eq!(count, 942, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
