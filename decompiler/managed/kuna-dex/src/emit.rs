@@ -210,8 +210,9 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     }
 
     /// Whether op `k`'s value can stay on the stack for its one reader (a
-    /// lambda's capture only when it is a field read: a captured value is a
-    /// variable in source, or an outer class's captured variable).
+    /// lambda body's capture only when it is a field read: a captured value
+    /// is a variable in source, or an outer class's captured variable; a
+    /// method reference's receiver is an expression).
     fn candidate(&self, k: usize) -> bool {
         let m = self.m;
         let o = &m.ops[k];
@@ -222,7 +223,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         let (n, phi) = m.web_uses.get(&m.root(d.id)).copied().unwrap_or((0, false));
         let u = self.user[d.id as usize];
         let captured = |u: &Op| match u.kind {
-            Kind::NewObject { ty } => !self.sh.verifiable && m.dex.lambda_in(ty, self.sh.peers).is_some(),
+            Kind::NewObject { ty } => !self.sh.verifiable && m.dex.lambda_in(ty, self.sh.peers).is_some_and(|(d, l)| d.synthetic_method(l.method)),
             _ => false,
         };
         let read = matches!(o.insn.op, 0x52..=0x58 | 0x60..=0x66);

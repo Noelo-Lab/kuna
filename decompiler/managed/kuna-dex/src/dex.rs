@@ -395,6 +395,15 @@ impl<'a> Dex<'a> {
             .copied()
     }
 
+    /// Whether method `idx` is defined in this file and synthetic.
+    pub(crate) fn synthetic_method(&self, idx: u32) -> bool {
+        let Some(def) = self.method(idx).ok().and_then(|m| self.class_def(self.class_of_type(m.class)?).ok()) else {
+            return false;
+        };
+        let Ok(data) = self.class_data(def.class_data_off) else { return false };
+        data.direct_methods.iter().chain(&data.virtual_methods).any(|e| e.method == idx && e.access & 0x1000 != 0)
+    }
+
     /// The d8 lambda class of type `ty`, defined here or in a peer file, with
     /// the file it is in.
     pub(crate) fn lambda_in<'s>(&'s self, ty: u32, peers: &'s [Dex<'s>]) -> Option<(&'s Dex<'s>, &'s crate::lambda::Lambda)> {

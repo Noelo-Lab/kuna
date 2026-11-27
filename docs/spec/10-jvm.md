@@ -1793,8 +1793,9 @@ lines were written as such and stay. And it reads `Collections.EMPTY_LIST`, `EMP
 is written as the call. In a method without debug locals, references of different types
 that d8 put in one register get one local per type (the type inferred for each value's web),
 so the engine does not type them as one variable of their common supertype. And a value
-captured by a lambda stays in a local unless it is a field read (a capture is a variable in
-source; folded into the `invokedynamic`, the engine drops the computation). Blocks are laid
+captured by a lambda body (a synthetic implementation method) stays in a local unless it is a
+field read (a capture is a variable in source; folded into the `invokedynamic`, the engine
+drops the computation); a method reference's bound receiver is an expression and folds. Blocks are laid
 out in address order, a fall-through successor right after its block, and a block whose
 only predecessor jumps to it unconditionally right after that predecessor, with the `goto`
 dropped (so a handler's code is contiguous, as javac writes it); the regions below then
