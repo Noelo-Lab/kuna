@@ -829,7 +829,8 @@ impl SwitchHelper {
     /// kuna: javac compiles `switch (e) {}` on an enum of another class to a read of the
     /// synthetic switch map at `e.ordinal()` whose value it pops, which Vineflower wrote as an
     /// assignment to an unused stack variable from a field of a class it cannot name. The read
-    /// becomes the `e.ordinal()` call it indexes with, which runs the same check of `e`.
+    /// becomes the head of a switch on `e`, which `ExprProcessor::list_to_java` writes with an
+    /// empty body.
     fn empty_enum_switches(exprents: &JList<Exprent>, root: RootStatement) -> bool {
         let mut reads: Vec<(usize, VarExprent, Exprent)> = Vec::new();
         for i in 0..exprents.len() {
@@ -841,23 +842,30 @@ impl SwitchHelper {
             else {
                 continue;
             };
-            let index = arr.get_index();
+            let Some(value) = arr
+                .get_index()
+                .try_as_invocation()
+                .filter(|i| i.get_name() == "ordinal" && i.get_lst_parameters().is_empty())
+                .and_then(|i| i.get_instance())
+            else {
+                continue;
+            };
             if var.is_stack()
-                && index.try_as_invocation().is_some_and(|i| i.get_name() == "ordinal")
                 && arr
                     .get_array()
                     .try_as_field()
                     .is_some_and(|f| f.get_name().starts_with("$SwitchMap"))
                 && Self::is_enum_array(arr.0)
             {
-                reads.push((i, var, index));
+                reads.push((i, var, value));
             }
         }
         let targets: Vec<VarExprent> = reads.iter().map(|r| r.1).collect();
         let mut ret = false;
-        for (i, var, index) in reads {
+        for (i, var, value) in reads {
             if !var.is_var_referenced(root.0, &targets) {
-                exprents.set(i, index);
+                let bytecode = exprents.get(i).get_bytecode();
+                exprents.set(i, SwitchHeadExprent::new(value, bytecode.as_ref()).0);
                 ret = true;
             }
         }

@@ -627,9 +627,9 @@ When a full pass of the loop changes nothing, the tail runs once, in this order:
   discards, with no switch instruction, which Vineflower wrote as
   `int var10000 = <unrepresentable>.$SwitchMap$..[e.ordinal()];`; such a read
   (`empty_enum_switches`: a stack variable nothing reads, set from an array of a
-  `$SwitchMap` field indexed by `ordinal()`) is written as the call `e.ordinal();`, which
-  checks `e` the same way. The source's `switch (e) {}` would also bring back the synthetic
-  map class; it is not written.
+  `$SwitchMap` field indexed by `ordinal()`) becomes the head of a switch on `e` in the
+  block's expression list, and `ExprProcessor::list_to_java` writes a switch head there
+  with an empty body: `switch (e) {` `}`, which javac compiles back to the same read.
 - `ExitHelper::adjust_return_type` and `ExitHelper::remove_redundant_returns` (a trailing
   `return;` of a `void` method is dropped).
 - secondary functions once more, then

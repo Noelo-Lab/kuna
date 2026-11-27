@@ -1273,6 +1273,9 @@ impl ExprProcessor {
                 {
                     buf.append("{} // $VF: monitorenter ");
                 }
+                if expr.is_switch_head() {
+                    buf.append(" {").append_line_separator().append_indent(indent).append("}");
+                }
                 if let Some(spec) = &spec {
                     if spec.writer.ends_with_semicolon(expr) {
                         buf.append_char(';');

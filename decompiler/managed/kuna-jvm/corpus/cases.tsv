@@ -375,7 +375,7 @@ kuna	30edca3a144f43e9
 case	default/pkg/TestEnumStaticField2	Default	classes/jasm/pkg/TestEnumStaticField2
 kuna	d24cf424007e0535
 case	default/pkg/TestEnumSwitchEmpty	Default	classes/java8/pkg/TestEnumSwitchEmpty
-kuna	8b87869ff230aabc
+kuna	f727efc46aad8917
 case	default/pkg/TestExceptionElse	Default	classes/java8/pkg/TestExceptionElse
 kuna	f8472b8b72c062aa
 case	default/pkg/TestExtendingSubclass	Default	classes/java8/pkg/TestExtendingSubclass
