@@ -677,7 +677,7 @@ kuna	c5fa9e1738cc4db6
 case	default/pkg/TestOldECJInner	Default	classes/jasm/pkg/TestOldECJInner
 kuna	7e4779737eb93a33
 case	default/pkg/TestOperatorPrecedence	Default	classes/java8/pkg/TestOperatorPrecedence
-kuna	cd668806872a1584
+kuna	d28054e8e1a5afdd
 case	default/pkg/TestOverloadedNull	Default	classes/java8/pkg/TestOverloadedNull
 kuna	4f632a5878762411
 case	default/pkg/TestOverrideIndirect	Default	classes/java8/pkg/TestOverrideIndirect
@@ -2022,3 +2022,5 @@ case	kuna-fixes/pkg/TestRecordPatternNestedType	Kuna Fixes	kuna-fixes/classes/pk
 case	kuna-fixes/pkg/TestSerializableLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestSerializableLambda
 # kuna-fixes/src/pkg/TestConstantCapture.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestConstantCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestConstantCapture
+# kuna-fixes/src/pkg/TestBoxedIncrementOperand.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBoxedIncrementOperand	Kuna Fixes	kuna-fixes/classes/pkg/TestBoxedIncrementOperand

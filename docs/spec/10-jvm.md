@@ -1628,7 +1628,11 @@ javac resolves the written call afresh (JLS 15.12.2): `vararg_array_length`,
 `unboxed_argument_type` and `reference_unboxing` correct the type each argument is written
 as wherever javac would otherwise pick another overload, box to another type, or keep a box
 or an identity comparison the bytecode lacks. For a class outside the input, the
-descriptors the input calls stand in for its methods.
+descriptors the input calls stand in for its methods. An unboxing call left unwritten
+whose instance is an assignment (`++a` on an `Integer` is `(a = a + 1).intValue()`) has the
+assignment's precedence (kuna, `numeric_types::bare_unboxed_assignment`), so an operator
+around it parenthesizes it: `++a + ++a` printed `a = a + 1 + Integer.valueOf(a + 1)`,
+which assigns the whole sum, and `--b * 2` printed `b = b - 1 * 2`.
 
 **Casts that select an overload (kuna).** `getAmbiguousParameters` finds no ambiguity when
 no overload takes the argument types exactly, so `f(m)` for a `Member` that is both a `Decl`

@@ -2,7 +2,9 @@
 //! operands, widening and boxing. In this file, `mixed_type_reassociation`
 //! keeps the parentheses of `a op (b op c)` where regrouping changes the type a
 //! step computes in; `reference_unboxing` writes an unboxing call where leaving
-//! it out hands the box to a context that takes a reference.
+//! it out hands the box to a context that takes a reference;
+//! `unboxed_assignment_precedence` gives an unwritten unboxing of an assignment
+//! the assignment's precedence.
 
 pub(crate) mod compound_assignment_shape;
 pub(crate) mod concat_operand_type;
@@ -10,6 +12,7 @@ pub(crate) mod constant_local_int;
 pub(crate) mod implicit_widening_arithmetic;
 pub(crate) mod ternary_numeric_arms;
 
+use crate::assignment_exprent::AssignmentExprent;
 use crate::exprent::Exprent;
 use crate::fixes::numeric_types::implicit_widening_arithmetic::{own_type, written_type};
 use crate::fixes::util::promoted;
@@ -45,6 +48,13 @@ fn unwritten_unboxing(expr: Exprent) -> Option<InvocationExprent> {
     }
     expr.try_as_invocation()
         .filter(|inv| inv.is_unboxing_call() && !inv.should_force_unboxing())
+}
+
+/// The assignment an unboxing call `inv` is written as when the call is left
+/// unwritten (`++a` on an `Integer` is `(a = a + 1).intValue()`): the call then
+/// has the assignment's precedence, so an operator around it parenthesizes it.
+pub fn bare_unboxed_assignment(inv: InvocationExprent) -> Option<AssignmentExprent> {
+    unwritten_unboxing(inv.0)?.get_instance()?.try_as_assignment()
 }
 
 /// `argument`, the argument of a boxing call left unwritten: its unboxing
