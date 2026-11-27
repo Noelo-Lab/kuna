@@ -136,7 +136,7 @@ fn a_call_forwards_what_its_target_takes() {
     let forwarder = |written: Vec<(int4, u64)>| {
         CalleeEntryDead::from_parts(3, Vec::new(), vec![written.clone()], true).with_named_cut(target.clone(), written)
     };
-    let through = |d: &CalleeEntryDead, t: Option<Rc<Vec<RegRead>>>| match add_reads_through(d, |_| t.clone()) {
+    let through = |d: &CalleeEntryDead, t: Option<Rc<Vec<RegRead>>>| match add_reads_through(d, |_, _| t.clone()) {
         Some(reads_live) => CalleeEntryDead { reads_live, ..d.clone() },
         None => d.clone(),
     };
@@ -162,14 +162,14 @@ fn a_call_forwards_what_its_target_takes() {
     assert_eq!(t.live_input_width(&rsi, 8), Some(4));
 
     // A target that takes nothing, or an indirect call, adds nothing.
-    assert!(add_reads_through(&fwd, |_| Some(Rc::new(Vec::new()))).is_none());
+    assert!(add_reads_through(&fwd, |_, _| Some(Rc::new(Vec::new()))).is_none());
     let opaque = CalleeEntryDead::from_parts(3, Vec::new(), vec![Vec::new()], true).with_opaque_cut(Vec::new());
-    assert!(add_reads_through(&opaque, |_| Some(Rc::clone(&narrow))).is_none());
+    assert!(add_reads_through(&opaque, |_, _| Some(Rc::clone(&narrow))).is_none());
 
     // An incomplete forwarder proves nothing whatever its targets take.
     let mut broken = forwarder(Vec::new());
     broken.complete = false;
-    assert!(add_reads_through(&broken, |_| Some(Rc::clone(&narrow))).is_none());
+    assert!(add_reads_through(&broken, |_, _| Some(Rc::clone(&narrow))).is_none());
 }
 
 /// A target's read counts only for a parameter its own statement takes: a
@@ -410,4 +410,53 @@ fn a_forward_transfer_reads_its_cuts_as_one_meet() {
     let fwd = fold_node(&through, 3, |_| TargetAnswer::Through(fold_node(&both, 3, |_| TargetAnswer::Accounted)));
     assert!(fwd.transfer_free(&rcx, 8));
     assert!(fwd.transfer_free(&rdx, 8), "the call site wrote rdx before the call");
+}
+
+/// The x86-64 shapes the stack-argument record has to tell apart, as raw
+/// p-code: a push of a computed value or a forwarded argument register in the
+/// first stack-argument slot is an argument; a pushed callee-saved register
+/// is a save, a register stored as it stands is a spill, and a slot the stack
+/// pointer moved away from is no argument.
+#[test]
+fn a_store_in_the_first_stack_slot_is_a_stack_argument() {
+    let space = |tp: spacetype, name: &str, idx: i32| {
+        Rc::new(kuna_base::space::AddrSpace::new(tp, name, false, 8, 1, idx, kuna_base::space::addrspace_flags::hasphysical, 1, 1))
+    };
+    let (reg, uniq, cspace) =
+        (space(spacetype::IPTR_PROCESSOR, "register", 3), space(spacetype::IPTR_INTERNAL, "unique", 4), space(spacetype::IPTR_CONSTANT, "const", 0));
+    let vd = |sp: &Rc<kuna_base::space::AddrSpace>, offset: u64, size: u32| VarnodeData { space: Some(Rc::clone(sp)), offset, size };
+    let rsp = vd(&reg, 0x20, 8);
+    let args: ByteSet = [0x38u64, 0x30, 0x10, 8, 0x80, 0x88].iter().flat_map(|&r| (r..r + 8).map(|b| (3, b))).collect();
+    let first = FirstStackArg { sp: (0x20, 8), offset: 8, args };
+    let push = |value: VarnodeData| {
+        vec![
+            RawOp { opc: OpCode::CPUI_COPY, out: Some(vd(&uniq, 0x100, 8)), ins: vec![value] },
+            RawOp { opc: OpCode::CPUI_INT_SUB, out: Some(rsp.clone()), ins: vec![rsp.clone(), vd(&cspace, 8, 8)] },
+            RawOp { opc: OpCode::CPUI_STORE, out: None, ins: vec![vd(&cspace, 1, 8), rsp.clone(), vd(&uniq, 0x100, 8)] },
+        ]
+    };
+    let sub_rsp = |n: u64| vec![RawOp { opc: OpCode::CPUI_INT_SUB, out: Some(rsp.clone()), ins: vec![rsp.clone(), vd(&cspace, n, 8)] }];
+    let at_call = |insns: Vec<Vec<RawOp>>, written: ByteSet| {
+        let mut stored = Stored::default();
+        for ops in insns.into_iter().chain([push(vd(&cspace, 0x1000, 8))]) {
+            let mut temps = Temps::default();
+            for op in &ops {
+                stored.track(op, &first, 3, &written, &mut temps);
+            }
+        }
+        stored.passes_stack_argument(&first)
+    };
+    let rax_written: ByteSet = (0u64..8).map(|b| (3, b)).collect();
+    assert!(at_call(vec![push(vd(&reg, 0, 8))], rax_written.clone()), "push %rax of a value the body loaded");
+    assert!(at_call(vec![push(vd(&cspace, 0, 8))], ByteSet::new()), "push $0");
+    assert!(at_call(vec![push(vd(&reg, 0x88, 8))], ByteSet::new()), "push %r9, a forwarded argument");
+    assert!(!at_call(vec![push(vd(&reg, 0x18, 8))], ByteSet::new()), "push %rbx is a save");
+    assert!(!at_call(vec![push(vd(&reg, 0, 8))], ByteSet::new()), "push %rax of nothing is a pad");
+    assert!(!at_call(vec![push(vd(&cspace, 0, 8)), sub_rsp(8)], ByteSet::new()), "the push is no longer at the slot");
+    let spill = vec![
+        RawOp { opc: OpCode::CPUI_INT_SUB, out: Some(rsp.clone()), ins: vec![rsp.clone(), vd(&cspace, 8, 8)] },
+        RawOp { opc: OpCode::CPUI_STORE, out: None, ins: vec![vd(&cspace, 1, 8), rsp.clone(), vd(&reg, 0, 8)] },
+    ];
+    assert!(!at_call(vec![spill], rax_written.clone()), "mov %rax,(%rsp) stores a register as it stands");
+    assert!(!at_call(Vec::new(), ByteSet::new()), "nothing stored");
 }
