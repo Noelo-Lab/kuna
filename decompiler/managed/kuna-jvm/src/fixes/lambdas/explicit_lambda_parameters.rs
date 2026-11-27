@@ -63,6 +63,9 @@ pub fn mark_assigned(target: &VarType, value: Exprent) {
     let Some(lambda) = value.try_as_new().filter(|n| n.is_lambda() && !n.is_method_reference()) else {
         return;
     };
+    if super::raw_target_cast::erases_parameters(target, lambda) {
+        lambda.set_kuna_erased_params();
+    }
     if needs_explicit_types(lambda, target, &|_| None) {
         lambda.set_explicit_lambda_params();
     }

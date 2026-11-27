@@ -10,6 +10,7 @@ use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::fixes::generic_casts;
+use crate::fixes::lambdas::raw_target_cast;
 use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationType};
 use crate::kuna_static_types::{field_declared, formals, is_bare_var, is_raw_type, param_type};
@@ -116,7 +117,8 @@ fn declared_type(e: Exprent) -> Option<VarType> {
 
 /// The type `var` is declared with: a parameter's from its method's
 /// signature or descriptor, a local's from the local variable table, or the
-/// variable's own type in a method compiled without one. A variable of an
+/// variable's own type in a method compiled without one; a lambda's
+/// parameter where `raw_target_cast` declares it. A variable of an
 /// enclosing method, which a lambda or a nested class captures, is not
 /// known.
 fn declared_var_type(var: VarExprent) -> Option<VarType> {
@@ -133,7 +135,11 @@ fn declared_var_type(var: VarExprent) -> Option<VarType> {
     }
     let method = processor.get_method();
     if let Some(param) = param_type(var) {
-        return param.filter(|_| !method.get_name().starts_with("lambda$"));
+        if method.get_name().starts_with("lambda$") {
+            let slot = processor.get_var_original_index(var.get_index()).unwrap_or(var.get_index());
+            return raw_target_cast::declared_parameter(method, slot);
+        }
+        return param;
     }
     if var.get_lvt().is_some() {
         return Some(var.get_inferred_expr_type(None));

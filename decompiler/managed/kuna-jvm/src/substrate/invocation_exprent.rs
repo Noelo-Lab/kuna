@@ -29,6 +29,7 @@ use crate::fixes::lambdas::explicit_lambda_parameters;
 use crate::fixes::lambdas::lambda_argument_overload;
 use crate::fixes::lambdas::lambda_pertinence;
 use crate::fixes::lambdas::lambda_type_variable_target;
+use crate::fixes::lambdas::raw_target_cast;
 use crate::fixes::generic_casts::raw_receiver_erasure;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
@@ -2074,21 +2075,28 @@ impl InvocationExprent {
                 break;
             }
 
-            ExprProcessor::get_casted_argument(
-                lst_parameters.get(i),
-                &types[i],
-                &mut buff,
-                indent,
-                if ambiguous {
-                    NullCastType::Cast
-                } else {
-                    NullCastType::DontCastAtAll
-                },
-                ambiguous || raw_field,
-                true,
-                true,
-                kuna_formals.get(i).cloned().flatten(),
-            );
+            let raw_target = (!ambiguous && !raw_field && mask.is_none())
+                .then(|| raw_target_cast::argument_cast(self, i))
+                .flatten();
+            if let Some(cast) = raw_target {
+                raw_target_cast::write(&mut buff, lst_parameters.get(i), &cast, indent);
+            } else {
+                ExprProcessor::get_casted_argument(
+                    lst_parameters.get(i),
+                    &types[i],
+                    &mut buff,
+                    indent,
+                    if ambiguous {
+                        NullCastType::Cast
+                    } else {
+                        NullCastType::DontCastAtAll
+                    },
+                    ambiguous || raw_field,
+                    true,
+                    true,
+                    kuna_formals.get(i).cloned().flatten(),
+                );
+            }
 
             if let Some(name) = arg_name.filter(|name| !name.is_empty()) {
                 buff.prepend(&format!("{name} = "));

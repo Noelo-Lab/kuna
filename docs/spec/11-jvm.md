@@ -1158,7 +1158,34 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    accepts for these targets. A parameter whose target type argument is a class with type
    arguments, or whose type in the interface method is generic, leaves the lambda as it
    was: a declared type must equal the target's exactly, and the class file holds only its
-   erasure.
+   erasure. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
+   writes the call, is a raw functional interface has the raw type's function type, whose
+   parameters are the erasures of the interface's (JLS 4.8, 9.9): that holds for a call on
+   a receiver whose written type is raw (`raw_receiver_erasure::has_raw_receiver`), for a
+   `new` of a generic class written without type arguments, and for a parameter the method
+   declares raw. Without a LocalVariableTable this is common (`ArrayList list = new
+   ArrayList(); list.removeIf(s -> s.length() > k)` does not compile), and an explicitly
+   typed lambda cannot help, since its parameter types must equal the raw function type's.
+   When the `invokedynamic` instantiates a parameter more specifically than the raw method's
+   descriptor, `lambdas::raw_target_cast` writes the lambda cast to the parameterization it
+   instantiates (`instantiated_parameterization`): `list.removeIf((Predicate<String>) (s ->
+   s.length() > k))`, `stream.map((Function<String, Integer>) (String::length))`. The raw
+   parameter accepts the cast by widening, and the call's result does not depend on it: a
+   raw member's type is erased, and a raw parameter mentions no type variable to infer. The
+   cast makes the argument pertinent to applicability (JLS 15.12.2.2), so it is written only
+   when the named class and every class it extends or implements are known and declare no
+   other method of that name and arity (`Object`'s members are fixed by JLS 4.3.2), and only
+   when each type argument is within its type parameter's bounds as far as bounds that are
+   classes decide and names a class the writing class can name (not anonymous; accessible
+   by its `InnerClasses` entry or class file). A `new` of a class outside the input is left
+   as it was: its other constructors are unknown. A lambda written for such a raw parameter
+   (when it needs no cast) or under this cast, and one assigned where the written type is
+   its raw interface or the instantiated parameterization, declares its own parameters with
+   their erased types, its implementation method's; `raw_target_cast::declare_parameters`
+   gives them to `raw_receiver_erasure` while the body is written, so a call on such a
+   parameter of a generic class is a call on a raw receiver: in `BiConsumer<List, Integer> f
+   = (l, i) -> { Character[] a = (Character[]) l.stream().map(..).toArray(Character[]::new);
+   }` the cast of the `Object[]` result is kept and the inner lambda is cast in turn.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.

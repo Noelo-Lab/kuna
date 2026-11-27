@@ -45,6 +45,7 @@ use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::asserts;
+use crate::fixes::lambdas::raw_target_cast;
 use crate::fixes::control_flow;
 use crate::fixes::nested_class_vars::captured_var_clash_name;
 use crate::kuna_spans;
@@ -375,6 +376,7 @@ impl ClassWriter {
         method_object: Option<Exprent>,
         indent: i32,
         explicit_params: bool,
+        erased_params: bool,
     ) {
         let Some(wrapper) = node.get_wrapper() else {
             return;
@@ -437,6 +439,8 @@ impl ClassWriter {
                     wrapper.get_method_wrapper(&mt.get_name(), &mt.get_descriptor());
                 let md_content = MethodDescriptor::parse_descriptor(&li.content_method_descriptor);
                 let md_lambda = MethodDescriptor::parse_descriptor(&li.method_descriptor);
+                let _declared = (explicit_params || erased_params)
+                    .then(|| raw_target_cast::declare_parameters(mt, md_lambda.params.len()));
 
                 let mut simple_lambda = false;
                 let mut written = false;
