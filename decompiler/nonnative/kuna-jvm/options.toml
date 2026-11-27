@@ -78,94 +78,6 @@ tier = "analysis"
 symptoms = "Outer$Inner written as a separate class instead of nested|anonymous class body lands in the wrong method|need each class file decompiled on its own"
 
 [[option]]
-option = "jvm_decompile_java4"
-vineflower = "decompile-java4"
-short = "dc4"
-aliases = ["decompile-java4", "dc4"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p3_dataflow"
-subphase = "simplify_exprents_helper, class_writer"
-strength = "HARD"
-rewind = "p3_dataflow"
-issue = ""
-summary = "Turn the pre-Java-5 class-literal idiom (a synthetic static class$(String) helper, a cached Class field and Class.forName) back into Foo.class."
-use_when = "Turn off to see the literal class$ helper calls and cache fields in Java 1.4-and-older class files, e.g. when the helper was tampered with."
-example = "kuna decompile legacy.jar com.ex.Old --option jvm_decompile_java4 off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILE_CLASS_1_4 (decompile-java4, -dc4)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "class$(\"java.lang.String\") calls instead of String.class|static Class class$java$lang$String fields in old class files|need the raw Class.forName cache logic"
-
-[[option]]
-option = "jvm_decompile_assert"
-vineflower = "decompile-assert"
-short = "das"
-aliases = ["decompile-assert", "das"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p8_structure"
-subphase = "assert_processor"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "Rebuild assert statements from the $assertionsDisabled check and the throw new AssertionError(..) javac compiles them to."
-use_when = "Turn off to see the explicit $assertionsDisabled test and throw, e.g. when the static initializer computing the flag was changed."
-example = "kuna decompile app.jar com.ex.Checks --option jvm_decompile_assert off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILE_ASSERTIONS (decompile-assert, -das)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond|$assertionsDisabled field visible|assert hides a check that must be read literally"
-
-[[option]]
-option = "jvm_hide_empty_super"
-vineflower = "hide-empty-super"
-short = "hes"
-aliases = ["hide-empty-super", "hes"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p8_structure"
-subphase = "initializer_processor"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "Drop a constructor's leading super() call when it passes no arguments, as source code leaves it implicit."
-use_when = "Turn off to show every super() call, e.g. to check which superclass constructor runs first."
-example = "kuna decompile app.jar com.ex.Child --option jvm_hide_empty_super off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.HIDE_EMPTY_SUPER (hide-empty-super, -hes)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "constructor shows no super() call|need to see the implicit superclass constructor invocation"
-
-[[option]]
-option = "jvm_hide_default_constructor"
-vineflower = "hide-default-constructor"
-short = "hdc"
-aliases = ["hide-default-constructor", "hdc"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Leave out a class's only constructor when it takes no parameters, throws nothing, has an empty body and the class's own access (the one javac adds)."
-use_when = "Turn off to list every constructor the class file declares, e.g. when counting entry points."
-example = "kuna decompile app.jar com.ex.Util --option jvm_hide_default_constructor off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.HIDE_DEFAULT_CONSTRUCTOR (hide-default-constructor, -hdc)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "public Foo() {} constructor missing from the output|class seems to have no constructor"
-
-[[option]]
 option = "jvm_decompile_generics"
 vineflower = "decompile-generics"
 short = "dgs"
@@ -188,94 +100,6 @@ tier = "core"
 symptoms = "nonsense generic types from a tampered Signature attribute|need erased types that match the method descriptors|raw List where List<String> was expected (option is off)"
 
 [[option]]
-option = "jvm_incorporate_returns"
-vineflower = "incorporate-returns"
-short = "ner"
-aliases = ["incorporate-returns", "ner"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "infra"
-subphase = "method_processor"
-strength = "HARD"
-rewind = "infra"
-issue = ""
-summary = "Move value returns into the try and catch blocks they follow, instead of storing the value in a temporary and returning after the try."
-use_when = "Turn off to see the return placement the bytecode literally has, e.g. when a return-inside-try reading looks wrong."
-example = "kuna decompile app.jar com.ex.Io --option jvm_incorporate_returns off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.INCORPORATE_RETURNS (incorporate-returns, -ner)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "var = x; inside try followed by return var after the catch|return inside try reads differently from the bytecode"
-
-[[option]]
-option = "jvm_ensure_synchronized_monitors"
-vineflower = "ensure-synchronized-monitors"
-short = "esm"
-aliases = ["ensure-synchronized-monitors", "esm"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "infra"
-subphase = "method_processor"
-strength = "HARD"
-rewind = "infra"
-issue = ""
-summary = "When a monitorenter has no matching monitorexit on some path, extend the synchronized range to where the exit should be so the block still becomes synchronized (..) { }."
-use_when = "Turn off when the inferred extent of a synchronized block looks wrong and the raw monitor operations are wanted."
-example = "kuna decompile app.jar com.ex.Lock --option jvm_ensure_synchronized_monitors off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.ENSURE_SYNCHRONIZED_MONITOR (ensure-synchronized-monitors, -esm)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "synchronized block covers more code than expected|MonitorEnter/MonitorExit pseudo-calls instead of synchronized|unbalanced monitor in handwritten bytecode"
-
-[[option]]
-option = "jvm_decompile_enums"
-vineflower = "decompile-enums"
-short = "den"
-aliases = ["decompile-enums", "den"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer, invocation_exprent, method_descriptor"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Write enum classes as enum declarations: constants with their arguments and bodies, no $VALUES, values() or valueOf(), and no hidden name/ordinal constructor parameters."
-use_when = "Turn off to see an enum as the plain class javac generates, e.g. when the generated values()/valueOf() or the constant initializers were modified."
-example = "kuna decompile app.jar com.ex.Color --option jvm_decompile_enums off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILE_ENUM (decompile-enums, -den)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "enum written as class extends Enum with $VALUES|need the generated values()/valueOf() bodies|enum constant initializers hide tampered code"
-
-[[option]]
-option = "jvm_remove_getclass"
-vineflower = "remove-getclass"
-short = "rgn"
-aliases = ["remove-getclass", "rgn"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p3_dataflow"
-subphase = "simplify_exprents_helper"
-strength = "HARD"
-rewind = "p3_dataflow"
-issue = ""
-summary = "Drop the outer.getClass() null check javac inserts before a qualified inner-class creation (outer.new Inner())."
-use_when = "Turn off to keep the synthetic getClass() call, e.g. when the null check itself matters to the analysis."
-example = "kuna decompile app.jar com.ex.Outer --option jvm_remove_getclass off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.REMOVE_GET_CLASS_NEW (remove-getclass, -rgn)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "stray outer.getClass(); before outer.new Inner()|Objects.requireNonNull-like check before an inner class instantiation"
-
-[[option]]
 option = "jvm_keep_literals"
 vineflower = "keep-literals"
 short = "lit"
@@ -296,28 +120,6 @@ inspiration = "Vineflower 1.12.0 IFernflowerPreferences.LITERALS_AS_IS (keep-lit
 change_kind = "vineflower-option"
 tier = "core"
 symptoms = "Math.PI where the source had a numeric literal|Long.MAX_VALUE or Double.MAX_VALUE instead of the number|need raw digits of a float constant"
-
-[[option]]
-option = "jvm_boolean_as_int"
-vineflower = "boolean-as-int"
-short = "bto"
-aliases = ["boolean-as-int", "bto"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "substrate"
-subphase = "const_exprent"
-strength = "HARD"
-rewind = "substrate"
-issue = ""
-summary = "Let the int constant 1, not only 0, take boolean type during type inference, so flags stored with iconst_1/iconst_0 print as true and false."
-use_when = "Turn off when booleans are being inferred where the code really works with the ints 0 and 1 (handwritten or non-Java bytecode)."
-example = "kuna decompile app.jar com.ex.Flags --option jvm_boolean_as_int off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.BOOLEAN_TRUE_ONE (boolean-as-int, -bto)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "int variable printed as boolean true/false|1 and 0 where true and false were expected (option is off)"
 
 [[option]]
 option = "jvm_ascii_strings"
@@ -364,28 +166,6 @@ tier = "transform"
 symptoms = "access$000(this) calls left in the output|this$0 or val$name fields printed in inner classes|class$ helper calls remain in old class files"
 
 [[option]]
-option = "jvm_undefined_as_object"
-vineflower = "undefined-as-object"
-short = "uto"
-aliases = ["undefined-as-object", "uto"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Print a lambda or method parameter whose type could not be inferred as Object instead of <undefinedtype>."
-use_when = "Turn off to see exactly where type inference gave up (the <undefinedtype> marker)."
-example = "kuna decompile app.jar com.ex.Streams --option jvm_undefined_as_object off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.UNDEFINED_PARAM_TYPE_OBJECT (undefined-as-object, -uto)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "<undefinedtype> in a parameter list (option is off)|lambda parameter typed Object where a type is expected"
-
-[[option]]
 option = "jvm_use_lvt_names"
 vineflower = "use-lvt-names"
 short = "udv"
@@ -394,62 +174,18 @@ values = "on|off"
 default = "on"
 destructive = false
 phase = "p1_classfile"
-subphase = "class_wrapper, var_exprent"
+subphase = "class_wrapper, var_exprent, var_definition_helper, class_writer"
 strength = "HARD"
 rewind = "p1_classfile"
 issue = ""
-summary = "Name parameters and locals from the LocalVariableTable (debug info) and take local generic types from it, instead of var1/var2-style names."
-use_when = "Turn off when the debug names are misleading (obfuscated or forged LocalVariableTable) or clash with keywords."
+summary = "Name parameters and locals from the LocalVariableTable (debug info), take local generic types from it, and name parameters (and mark them final) from the MethodParameters attribute (javac -parameters, records), instead of var1/var2-style names."
+use_when = "Turn off when the debug names are misleading (obfuscated or forged LocalVariableTable or MethodParameters) or clash with keywords: off trusts no name the class file carries."
 example = "kuna decompile obf.jar a.b --option jvm_use_lvt_names off"
 source_decompiler = "vineflower"
 inspiration = "Vineflower 1.12.0 IFernflowerPreferences.USE_DEBUG_VAR_NAMES (use-lvt-names, -udv)"
 change_kind = "vineflower-option"
 tier = "core"
-symptoms = "variables named like keywords or with misleading names from debug info|LocalVariableTable names contradict their use|var1 var2 names although debug info exists (option is off)"
-
-[[option]]
-option = "jvm_use_method_parameters"
-vineflower = "use-method-parameters"
-short = "ump"
-aliases = ["use-method-parameters", "ump"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer, var_definition_helper"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Name parameters, and mark them final, from the MethodParameters attribute (javac -parameters, records) when a method has one."
-use_when = "Turn off when the MethodParameters names are forged or worse than the LocalVariableTable ones."
-example = "kuna decompile app.jar com.ex.Api --option jvm_use_method_parameters off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.USE_METHOD_PARAMETERS (use-method-parameters, -ump)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "parameter names differ from the debug-info names|unexpected final on parameters"
-
-[[option]]
-option = "jvm_remove_empty_try_catch"
-vineflower = "remove-empty-try-catch"
-short = "rer"
-aliases = ["remove-empty-try-catch", "rer"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "infra"
-subphase = "method_processor, dead_code_helper"
-strength = "HARD"
-rewind = "infra"
-issue = ""
-summary = "Drop exception-table ranges that protect no instructions (and the handlers they alone reach) before the control flow is structured."
-use_when = "Turn off to keep every exception range of the class file, e.g. when an obfuscator uses empty ranges and their handlers to hide code."
-example = "kuna decompile obf.jar a.b --option jvm_remove_empty_try_catch off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.REMOVE_EMPTY_RANGES (remove-empty-try-catch, -rer)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "exception handler code missing from the output|empty try { } catch blocks wanted for inspection"
+symptoms = "variables named like keywords or with misleading names from debug info|LocalVariableTable or MethodParameters names contradict their use|unexpected final on parameters|var1 var2 names although debug info exists (option is off)"
 
 [[option]]
 option = "jvm_decompile_finally"
@@ -472,28 +208,6 @@ inspiration = "Vineflower 1.12.0 IFernflowerPreferences.FINALLY_DEINLINE (decomp
 change_kind = "vineflower-option"
 tier = "transform"
 symptoms = "\"Could not verify finally blocks\" comment with a semaphore variable|cleanup code duplicated after every return|catch (Throwable var) { ...; throw var; } instead of finally (option is off)"
-
-[[option]]
-option = "jvm_lambda_to_anonymous_class"
-vineflower = "lambda-to-anonymous-class"
-short = "lac"
-aliases = ["lambda-to-anonymous-class", "lac"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p8_structure"
-subphase = "nested_class_processor, new_exprent, class_writer"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "Write each lambda and method reference as an anonymous class implementing its functional interface (new Runnable() { public void run() { .. } }) instead of -> or :: syntax."
-use_when = "Turn on when the functional interface and method a lambda implements matter, or for Java 7-style output."
-example = "kuna decompile app.jar com.ex.Handlers --option jvm_lambda_to_anonymous_class on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.LAMBDA_TO_ANONYMOUS_CLASS (lambda-to-anonymous-class, -lac)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "need the interface method a lambda implements|output must compile with Java 7|x -> ... where an anonymous class is wanted"
 
 [[option]]
 option = "jvm_ignore_invalid_bytecode"
@@ -540,28 +254,6 @@ tier = "analysis"
 symptoms = "anonymous class body inlined at the wrong new expression|class used twice printed as an anonymous class|\"Inconsistent anonymous class\" warnings wanted"
 
 [[option]]
-option = "jvm_ternary_constant_simplification"
-vineflower = "ternary-constant-simplification"
-short = "tcs"
-aliases = ["ternary-constant-simplification", "tcs"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p3_dataflow"
-subphase = "secondary_functions_helper"
-strength = "HARD"
-rewind = "p3_dataflow"
-issue = ""
-summary = "Fold ternaries with a boolean constant branch into logic: c ? true : x to c || x, c ? x : false to c && x, c ? false : true to !c."
-use_when = "Turn on to read compiled boolean logic as && and || instead of nested ternaries."
-example = "kuna decompile app.jar com.ex.Rules --option jvm_ternary_constant_simplification on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.TERNARY_CONSTANT_SIMPLIFICATION (ternary-constant-simplification, -tcs)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "a ? true : b where a logical or was written|nested ternaries with true and false branches|x ? false : true instead of !x"
-
-[[option]]
 option = "jvm_pattern_matching"
 vineflower = "pattern-matching"
 short = "pam"
@@ -584,50 +276,6 @@ tier = "transform"
 symptoms = "String s = (String)o; after an instanceof test (option is off)|typeSwitch bootstrap call instead of a pattern switch|pattern variable reconstructed wrongly"
 
 [[option]]
-option = "jvm_try_loop_fix"
-vineflower = "try-loop-fix"
-short = "tlf"
-aliases = ["try-loop-fix", "tlf"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p7_regions"
-subphase = "dec_helper"
-strength = "HARD"
-rewind = "p7_regions"
-issue = ""
-summary = "Refuse a loop-head merge that would pull an if statement into a try block nested in a while loop, which otherwise produces malformed loops around try/catch."
-use_when = "Turn off only to reproduce older Fernflower structuring when comparing outputs."
-example = "kuna decompile app.jar com.ex.Retry --option jvm_try_loop_fix off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.TRY_LOOP_FIX (try-loop-fix, -tlf)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "while (true) with a try inside that does not match the bytecode|loop condition moved into a try block"
-
-[[option]]
-option = "jvm_ternary_in_if"
-vineflower = "ternary-in-if"
-short = "tco"
-aliases = ["ternary-in-if", "tco"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p8_structure"
-subphase = "if_helper"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "Collapse nested if statements that a ternary inside a condition compiles to (if (a ? b : c)) back into one if with the ternary condition."
-use_when = "Turn off when a collapsed condition reads wrong; the nested ifs are what the branches really are."
-example = "kuna decompile app.jar com.ex.Rules --option jvm_ternary_in_if off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.TERNARY_CONDITIONS (ternary-in-if, -tco)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "if (a ? b : c) condition hard to read|duplicated if bodies where a ternary condition was compiled (option is off)"
-
-[[option]]
 option = "jvm_decompile_switch_expressions"
 vineflower = "decompile-switch-expressions"
 short = "swe"
@@ -648,50 +296,6 @@ inspiration = "Vineflower 1.12.0 IFernflowerPreferences.SWITCH_EXPRESSIONS (deco
 change_kind = "vineflower-option"
 tier = "transform"
 symptoms = "switch statement assigning a temporary in every case where a switch expression was written|yield statements misplaced"
-
-[[option]]
-option = "jvm_override_annotation"
-vineflower = "override-annotation"
-short = "ovr"
-aliases = ["override-annotation", "ovr"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Add @Override to instance methods (Java 5+ class files) that override or implement a method found in a superclass or interface the decompiler can see."
-use_when = "Turn off for output without inferred annotations; leave on and give a runtime or libraries so supertypes are known."
-example = "kuna decompile app.jar com.ex.Impl --option jvm_override_annotation off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.OVERRIDE_ANNOTATION (override-annotation, -ovr)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "@Override missing on toString or interface methods (supertype not loaded)|@Override that javac did not write is unwanted"
-
-[[option]]
-option = "jvm_simplify_stack"
-vineflower = "simplify-stack"
-short = "ssp"
-aliases = ["simplify-stack", "ssp"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p3_dataflow"
-subphase = "stack_vars_processor"
-strength = "HARD"
-rewind = "p3_dataflow"
-issue = ""
-summary = "Run the second stack-variable stage, which inlines stack temporaries across statement boundaries and resugars compound expressions (a = b = c, arr[i++] = v, chained calls)."
-use_when = "Turn off when a merged expression is wrong or reorders side effects, to see each stack temporary as a var assignment."
-example = "kuna decompile app.jar com.ex.Parser --option jvm_simplify_stack off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.SIMPLIFY_STACK_SECOND_PASS (simplify-stack, -ssp)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "var10000 temporaries everywhere (option is off)|compound assignment merges side effects in the wrong order|arr[i++] = v reads differently from the bytecode"
 
 [[option]]
 option = "jvm_verify_merges"
@@ -782,28 +386,6 @@ tier = "analysis"
 symptoms = "extra casts on calls into java.util or java.lang|@Override missing on JDK interface methods|generic arguments of JDK types erased|output differs between machines with different JDKs|no JDK found note on stderr"
 
 [[option]]
-option = "jvm_explicit_generics"
-vineflower = "explicit-generics"
-short = "ega"
-aliases = ["explicit-generics", "ega"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "substrate"
-subphase = "invocation_exprent"
-strength = "HARD"
-rewind = "substrate"
-issue = ""
-summary = "Write the type arguments of generic method calls explicitly (Collections.<String>emptyList(), this.<T>cast(x)) even where javac would infer them."
-use_when = "Turn on when the decompiled code fails to compile on type inference, or to see which type a generic call was instantiated with."
-example = "kuna decompile app.jar com.ex.Repo --option jvm_explicit_generics on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.EXPLICIT_GENERIC_ARGUMENTS (explicit-generics, -ega)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "decompiled code fails to recompile with an inference error|need the type argument of a generic method call"
-
-[[option]]
 option = "jvm_rename_members"
 vineflower = "rename-members"
 short = "ren"
@@ -846,28 +428,6 @@ inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILER_COMMENTS (dec
 change_kind = "vineflower-option"
 tier = "core"
 symptoms = "/* $VF: ... */ and // $VF: comments clutter the output|need to know where the decompiler approximated (option is off)"
-
-[[option]]
-option = "jvm_decompile_complex_constant_dynamic"
-vineflower = "decompile-complex-constant-dynamic"
-short = "dcc"
-aliases = ["decompile-complex-constant-dynamic", "dcc"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p4_calls"
-subphase = "condy_helper"
-strength = "HARD"
-rewind = "p4_calls"
-issue = ""
-summary = "Write constant-dynamic VarHandle constants (fieldVarHandle, staticFieldVarHandle, arrayVarHandle) as the equivalent MethodHandles lookup expression, marked with a comment because it runs eagerly; off keeps the raw condy form."
-use_when = "Turn on to read code using condy VarHandles in plain Java terms, accepting that the expression is not lazily evaluated."
-example = "kuna decompile app.jar com.ex.Atomic --option jvm_decompile_complex_constant_dynamic on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILE_COMPLEX_CONDYS (decompile-complex-constant-dynamic, -dcc)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output|VarHandle constant shown as an unresolved dynamic constant"
 
 [[option]]
 option = "jvm_force_jsr_inline"
@@ -914,50 +474,6 @@ tier = "core"
 symptoms = "stack trace names lambda$main$0 or Main$1 and the matching code is hard to find|need the class file of an anonymous class"
 
 [[option]]
-option = "jvm_validate_inner_classes_names"
-vineflower = "validate-inner-classes-names"
-short = ""
-aliases = ["validate-inner-classes-names"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p1_classfile"
-subphase = "classes_processor"
-strength = "HARD"
-rewind = "p1_classfile"
-issue = ""
-summary = "Nest a member class only when its name is its outer class's name, $, and its simple name (Outer$Inner); a member entry with any other name is ignored and the class stays top-level."
-use_when = "Turn off for renamed or obfuscated jars whose inner class names do not follow the Outer$Inner scheme, so they still nest."
-example = "kuna decompile obf.jar a --option jvm_validate_inner_classes_names off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.VALIDATE_INNER_CLASSES_NAMES (validate-inner-classes-names)"
-change_kind = "vineflower-option"
-tier = "analysis"
-symptoms = "member classes of an obfuscated jar written as separate top-level classes|renamed inner classes not nested"
-
-[[option]]
-option = "jvm_prettify_ifs"
-vineflower = "prettify-ifs"
-short = ""
-aliases = ["prettify-ifs"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer, if_helper"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Before writing, turn if (c) { ..; return; } else { rest } into the if followed by rest: the else after a branch that always returns or throws is dropped (unless the else exits too)."
-use_when = "Turn off to keep the if/else pairs as structured from the control flow, e.g. when comparing with older Fernflower output."
-example = "kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.PRETTIFY_IFS (prettify-ifs)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "else branch missing after an if that returns|deep else chains after returns (option is off)"
-
-[[option]]
 option = "jvm_siblings"
 vineflower = ""
 short = ""
@@ -980,138 +496,6 @@ tier = "analysis"
 symptoms = "inner and anonymous classes missing when decompiling one .class file|unrelated Name$x.class files nested into the class"
 
 [[option]]
-option = "jvm_source_patterns"
-vineflower = ""
-short = ""
-aliases = []
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p8_structure"
-subphase = "kuna_source_patterns, if_pattern_match_processor"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "In classes javac compiled (no kotlin.Metadata), keep an instanceof test and the cast after it, if (x instanceof T) { T v = (T) x; ..}, as the source wrote them where the LineNumberTable gives the cast a source line of its own, instead of the type pattern if (x instanceof T v). javac compiles both forms of a local x to the same instructions; a pattern whose multi-line condition puts its binding on a later line without more of the condition on that line reads the same way and is then printed as a test and a cast (the program is the same). Vineflower makes the pattern."
-use_when = "Leave on to read instanceof tests the way the source wrote them; turn off for Vineflower's type patterns, e.g. to compare with Vineflower's output or where the pattern reads better."
-example = "kuna decompile app.jar com.ex.Main --option jvm_source_patterns off"
-source_decompiler = "kuna"
-inspiration = "javac's LineNumberTable (an entry where each statement starts, none inside a condition unless it continues on another line) and its identical code for a type pattern and a test-and-cast of a local"
-change_kind = "kuna-form"
-tier = "transform"
-symptoms = "instanceof pattern where the source has an instanceof test and a cast|x instanceof T v printed for if (x instanceof T) { T v = (T) x;|want Vineflower's type patterns"
-
-[[option]]
-option = "jvm_source_locals"
-vineflower = ""
-short = ""
-aliases = []
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p6_variables"
-subphase = "kuna_source_locals, kuna_source_scopes, kuna_source_increments, simplify_exprents_helper, p_pand_mm_helper, merge_helper, var_definition_helper"
-strength = "HARD"
-rewind = "p6_variables"
-issue = ""
-summary = "Keep the local variables the class file records for the source. A local the LocalVariableTable names is not folded into its one use: x = e; return x; stays two statements, a named array keeps its element stores instead of becoming new T[]{..}, and a named iterable, iterator or index is not folded into a for-each. In Java output, a declaration without an initializer moves up, or a declaration is split into T v; and v = e;, so that javac numbers the locals' slots as the class file does: also out of a loop, branch, try or synchronized block Vineflower narrowed it into, where the slots prove the source declared it outside; one local the table names that Vineflower split in two (x and var3) is one variable again, and two locals it names differently are not merged. An x++, x-- or x = x + 1 the bytecode shows as a statement of its own stays one (a[i] = i; i++; not a[i] = i++;, m--; f(m); not f(--m);). Vineflower folds such locals, declares each variable at its first use and folds increments into the next expression."
-use_when = "Leave on to read a method with the locals its author wrote and to recompile it to the same bytecode; turn off for Vineflower's shorter form (return e; for x = e; return x;)."
-example = "kuna decompile app.jar com.ex.Main --option jvm_source_locals off"
-source_decompiler = "kuna"
-inspiration = "javac's LocalVariableTable (one entry per source local, none for its own temporaries), its slot allocation in declaration order (a block's slots freed at its end, a catch parameter's the first after the try's locals) and its statement order and LineNumberTable for an increment"
-change_kind = "kuna-form"
-tier = "transform"
-symptoms = "a local variable of the source is missing|x = e; return x; printed as return e;|declarations reordered against the source|recompiled bytecode uses other local slots|a declaration inside a loop or try where the source has it before|a local printed as var3 next to the source's name|a[i] = i++ where the source has a[i] = i; i++;|want Vineflower's folded form of locals"
-
-[[option]]
-option = "jvm_javac_layout"
-vineflower = ""
-short = ""
-aliases = []
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p8_structure"
-subphase = "kuna_javac_layout, if_helper, simplify_exprents_helper, kuna_javac_boolean_compare, secondary_functions_helper"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). A comparison with a boolean literal whose bytecode is its own stays a comparison: false == x (the literal on the left), x == true, (a || b) == false (javac compiles x == false like !x, which stays !x). Off gives Vineflower's structuring."
-use_when = "Turn off to get Vineflower's if/else orientation, nested ifs instead of early exits and ternary returns, !x for false == x, e.g. to compare with Vineflower's output on Java classes, or where the condensed form reads better."
-example = "kuna decompile app.jar com.ex.Main --option jvm_javac_layout off"
-source_decompiler = "kuna"
-inspiration = "javac's code shape for if, else, return, break and continue (the then-branch falls through from the condition; a source ternary is one return reached by a goto), measured on the JVM benchmark's five Java projects"
-change_kind = "kuna-form"
-tier = "transform"
-symptoms = "if condition negated against the source with the branches swapped|early return or continue missing and the rest of the method nested in an if|return c ? a : b where the source has two returns|return c; where the source has if (c) return true; return false;|else branch after an if that returns|!x where the source has false == x|a negated condition (!a && !b) where the source compares the condition with false"
-
-[[option]]
-option = "jvm_variable_renaming"
-vineflower = "variable-renaming"
-short = ""
-aliases = ["variable-renaming"]
-values = "jad|tiny|<name>"
-default = ""
-destructive = false
-phase = "plugins"
-subphase = "variable_renaming_plugin, renamers, jad_name_provider, tiny_name_provider"
-strength = "HARD"
-rewind = "plugins"
-issue = ""
-summary = "Rename locals with a renamer of the VariableRenaming plugin: jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names."
-use_when = "Set jad or tiny on obfuscated or debug-info-free code whose var1, var2 or forged names say nothing about the variables, or to match a Vineflower run that used the same renamer."
-example = "kuna decompile obf.jar a.b --option jvm_variable_renaming jad"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 VariableRenaming plugin: VariableRenamingOptions.VARIABLE_RENAMER (variable-renaming), JADNameProvider, TinyNameProvider"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "locals named var1 var2 var3 with no hint of their type|obfuscated or meaningless local names from a forged LocalVariableTable|names differ from a Vineflower run with --variable-renaming=jad or tiny"
-
-[[option]]
-option = "jvm_rename_parameters"
-vineflower = "rename-parameters"
-short = ""
-aliases = ["rename-parameters"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "plugins"
-subphase = "jad_name_provider, tiny_name_provider"
-strength = "HARD"
-rewind = "plugins"
-issue = ""
-summary = "With a jvm_variable_renaming renamer, rename method and lambda parameters too, not only locals."
-use_when = "Turn on with jvm_variable_renaming when the parameter names are as meaningless as the locals (obfuscated code, no MethodParameters or LocalVariableTable)."
-example = "kuna decompile obf.jar a.b --option jvm_variable_renaming tiny --option jvm_rename_parameters on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 VariableRenaming plugin: VariableRenamingOptions.RENAME_PARAMETERS (rename-parameters)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "locals renamed but parameters still named var1 or paramN|parameter names do not follow the renamer's scheme"
-
-[[option]]
-option = "jvm_resugar_idea_notnull"
-vineflower = "resugar-idea-notnull"
-short = "inn"
-aliases = ["resugar-idea-notnull", "inn"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "plugins"
-subphase = "idea_not_null_pass, idea_not_null_plugin"
-strength = "HARD"
-rewind = "plugins"
-issue = ""
-summary = "Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin)."
-use_when = "Turn off to see the checks IDEA instrumented into a method, e.g. to confirm which parameters are checked at run time."
-example = "kuna decompile app.jar com.ex.Service --option jvm_resugar_idea_notnull off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IdeaNotNull plugin: IdeaNotNullOptions.IDEA_NOT_NULL_ANNOTATION (resugar-idea-notnull, -inn)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "if (x == null) { $$$reportNull$$$0(0); } at the top of methods|explicit null checks on @NotNull parameters or before returns (option is off)"
-
-[[option]]
 option = "jvm_kt_enable"
 vineflower = "kt-enable"
 short = ""
@@ -1132,50 +516,6 @@ inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.DECOMPILE_KOTLIN (
 change_kind = "vineflower-option"
 tier = "core"
 symptoms = "Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...)|a Kotlin class is written as .kt but Java output is wanted|Kotlin output of a class is wrong or failed"
-
-[[option]]
-option = "jvm_kt_collapse_string_concat"
-vineflower = "kt-collapse-string-concat"
-short = ""
-aliases = ["kt-collapse-string-concat"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "kotlin"
-subphase = "collapse_string_concat_pass"
-strength = "HARD"
-rewind = "kotlin"
-issue = ""
-summary = "Kotlin plugin: turn string concatenations (StringBuilder chains, + chains, invokedynamic makeConcatWithConstants) in Kotlin methods into string templates \"a $b ${c.d}\"."
-use_when = "Turn off to see the concatenation exactly as compiled, for example to check which values are converted with toString or how a template was built."
-example = "kuna decompile app.jar com.ex.FormatKt --option jvm_kt_collapse_string_concat off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.COLLAPSE_STRING_CONCATENATION (kt-collapse-string-concat)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "\"a\" + b + \"c\" in Kotlin output where a template was written|string templates hide the concatenation order"
-
-[[option]]
-option = "jvm_kt_decompile_facades"
-vineflower = "kt-decompile-facades"
-short = ""
-aliases = ["kt-decompile-facades"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "kotlin"
-subphase = "kotlin_writer"
-strength = "HARD"
-rewind = "kotlin"
-issue = ""
-summary = "Kotlin plugin: also write the wrapper functions of a multifile facade class (@file:JvmMultifileClass); off writes only the comment that lists the part classes holding the real implementations."
-use_when = "Turn on to see a facade's forwarding functions, for example when callers in Java code call the facade and you need its exact signatures."
-example = "kuna decompile app.jar com.ex.UtilsKt --option jvm_kt_decompile_facades on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.DECOMPILE_FACADES (kt-decompile-facades)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "a facade class prints only This is a multifile facade and a list of files|functions of a @JvmMultifileClass facade are missing"
 
 [[driver_owned]]
 vineflower = "thread-count"

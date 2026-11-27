@@ -136,8 +136,7 @@ impl MethodDescriptor {
             });
             if let Some(sig_fields) = &sig_fields {
                 actual_params = sig_fields.iter().filter(|&&is_null| is_null).count() as i64;
-            } else if init && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
-            {
+            } else if init {
                 let mut class_name = struct_.get_class_qualified_name();
                 if DecompilerContext::get_option(IFernflowerPreferences::RENAME_ENTITIES) {
                     class_name = DecompilerContext::get_pool_interceptor()

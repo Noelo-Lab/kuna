@@ -236,9 +236,7 @@ impl ClassesProcessor {
                             if inner_name == encl_class_name {
                                 continue;
                             }
-                            if DecompilerContext::get_option(
-                                IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES,
-                            ) && rec.type_ == ClassNodeType::Member
+                            if rec.type_ == ClassNodeType::Member
                                 && inner_name
                                     != format!(
                                         "{}${}",
@@ -769,10 +767,6 @@ impl ClassesProcessor {
             d.class_struct
         });
         class_struct.release_resources();
-        let methods = class_struct.get_methods().to_vec();
-        for m in methods {
-            m.clear_variable_namer();
-        }
     }
 
     pub fn get_map_root_classes(self) -> Shared<JHashMap<String, ClassNode>> {

@@ -3,7 +3,7 @@
 `kuna-jvm` (`decompiler/nonnative/kuna-jvm`) decompiles JVM class files, jars and
 directories of classes to Java, and the classes the Kotlin compiler emitted to Kotlin. It
 began as a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 with
-the three plugins Vineflower bundles (Kotlin, variable renaming, IDEA not-null) and has
+two of the plugins Vineflower bundles (Kotlin, IDEA not-null) and has
 since diverged: it decompiles the methods Vineflower fails on, corrects code Vineflower
 prints wrong, and lays code out as javac compiled it (*Provenance*, below). It is reached
 through the ordinary `kuna` CLI: give a command a `.class`, a jar or a directory where it
@@ -78,14 +78,8 @@ long and three-letter names. The ones a user reaches for:
 |---|---|---|
 | `jvm_include_runtime` | `on` | the JDK read as context (above) |
 | `jvm_kt_enable` | `on` | Kotlin classes as Kotlin; `--language java` is `off` (below) |
-| `jvm_javac_layout` | `on` | ifs, exits, loops and boolean comparisons laid out as javac laid out the bytecode (spec section 10.9) |
-| `jvm_source_locals` | `on` | locals as the class file names them, declared in slot order and in the source's scopes (spec section 10.10) |
-| `jvm_source_patterns` | `on` | a test and a cast where the source wrote them, not an `instanceof` pattern (spec section 10.10) |
-| `jvm_resugar_idea_notnull` | `on` | removes the null checks IntelliJ's compiler adds for `@NotNull`; `off` shows them |
-| `jvm_variable_renaming` | off | `jad` names locals after their type the way JAD did (`i`, `s`, `flag`), `tiny` the way tiny-remapper does; `jvm_rename_parameters on` renames parameters too. It overrides the LocalVariableTable's names, so it is for obfuscated or debug-info-free code |
 
-`tiny` with `jvm_rename_parameters on` fails every method that has a LocalVariableTable
-(`NullPointerException: type`). `--lib PATH` adds class files or jars as context without
+`--lib PATH` adds class files or jars as context without
 decompiling them.
 
 ## Kotlin
@@ -169,8 +163,6 @@ each also answers to Vineflower's name (`kt-enable`, ...):
 | Option | Default | Effect |
 |---|---|---|
 | `jvm_kt_enable` | `on` | write Kotlin classes as Kotlin; `off` writes them as Java with the `@Metadata` annotation |
-| `jvm_kt_collapse_string_concat` | `on` | write string concatenations as string templates (`"count=${c.count}"`); `off` keeps `"count=" + c.count` |
-| `jvm_kt_decompile_facades` | `off` | also write the forwarding functions of a multifile facade (`@file:JvmMultifileClass`), not only the comment listing its parts |
 
 **Known limits.** The plugin rewrites syntax, not semantics, so whatever the compiler
 lowered stays lowered (above). A `suspend` function the metadata declares is written with
@@ -194,55 +186,18 @@ the plugin cannot write is a `/* $VF: Unable to decompile class
 reported*, below). A class whose metadata cannot be decoded is still written as
 Kotlin, from its class file alone, under `// $VF: Class flags could not be determined`.
 
-## The other bundled plugins
+## IDEA not-null
 
-**IDEA not-null.** IntelliJ IDEA's compiler instruments `@NotNull` parameters and return
-values with checks that call a synthetic `$$$reportNull$$$0`. The plugin removes them
-(`jvm_resugar_idea_notnull`, on by default) and keeps the annotations; `off` shows them:
+IntelliJ IDEA's compiler instruments `@NotNull` parameters and return values with checks
+that call a synthetic `$$$reportNull$$$0`. The engine removes them and keeps the
+annotations:
 
 ```
 $ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1
 public void test1(@NotNull String s) {
    System.out.println(s);
 }
-$ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1 --option jvm_resugar_idea_notnull off
-public void test1(@NotNull String s) {
-   if (s == null) {
-      $$$reportNull$$$0(2);
-   }
-
-   System.out.println(s);
-}
 ```
-
-**Variable renaming.** Off unless asked for: `--option jvm_variable_renaming jad` names
-locals after their type the way JAD did (`i`, `j`, `s`, `flag`, `file1`), `tiny` the way
-tiny-remapper does, and `jvm_rename_parameters on` renames parameters too. It overrides
-the LocalVariableTable's names, so it is for obfuscated or debug-info-free code:
-
-```
-$ kuna decompile tests/fixtures/jvm/app.jar com.ex.util.Helper.loop --option jvm_variable_renaming jad
-public static int loop(int n) {
-   int i = 0;
-
-   while (n > 0) {
-      if (n % 3 == 0) {
-         i += n;
-      } else {
-         i--;
-      }
-
-      n--;
-   }
-
-   return i;
-}
-```
-
-`tiny` with `jvm_rename_parameters on` fails every method that has a LocalVariableTable
-(`NullPointerException: type`), as Vineflower's provider does. Vineflower's deprecated
-`jad-style-variable-naming` and `jad-style-parameter-naming` flags are not options:
-`jvm_variable_renaming jad` and `jvm_rename_parameters` cover them.
 
 ## Android: DEX and APK input
 
@@ -450,7 +405,7 @@ commands for adding a case and for investigating a red one. `kuna decompile <cla
   JetBrains' Fernflower through ForgeFlower, FabricMC's fork and Quiltflower. The
   attribution is in the repo's `NOTICE`.
 - **What was ported.** 242 of the 273 Java files under `org/jetbrains/java/decompiler/` in
-  Vineflower's `src/`, and the three plugins its release jar bundles (`src/kotlin/`,
+  Vineflower's `src/`, and its bundled Kotlin and IDEA not-null plugins (`src/kotlin/`,
   `src/plugins/`), were ported one to one; each names its original in its first line, so
   `grep -r '^//! Port of' decompiler/nonnative/kuna-jvm/src` is the manifest. The rest
   needed a JVM and is replaced by kuna's own code: the jar, directory and `jrt:` sources
@@ -459,6 +414,5 @@ commands for adding a case and for investigating a red one. `kuna decompile <cla
   (the parallel driver) and the watchdog (the cooperative deadline). A user renamer class,
   `include-classpath` and third-party plugin jars are not supported.
 - **Since the port.** kuna's own code is in the `kuna_*` modules, in `src/fixes/` (the
-  corrections of Vineflower's defects, one module per family) and in the options of form
-  (`jvm_javac_layout`, `jvm_source_locals`, `jvm_source_patterns`). The regression corpus
+  corrections of Vineflower's defects, one module per family). The regression corpus
   (`tests/jvm/`) began as Vineflower's own test suite and pins kuna's text, not Vineflower's.

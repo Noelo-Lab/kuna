@@ -15,7 +15,6 @@ use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::generic_method_descriptor::GenericMethodDescriptor;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_logger::Severity;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
@@ -597,34 +596,27 @@ impl NewExprent {
                     .expect("NullPointerException: anonymousClassType")
             };
 
-            if !enum_const
-                && (!lambda
-                    || DecompilerContext::get_option(
-                        IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS,
-                    ))
-            {
+            if !enum_const && !lambda {
                 let mut enclosing: Option<TextBuffer> = None;
 
-                if !lambda {
-                    if let Some(constructor) = constructor {
-                        let qualifier = child.and_then(|child| {
-                            qualified_super_call::anonymous_qualifier(child, constructor)
-                        });
-                        constructor.set_kuna_skip_arg(qualifier);
-                        enclosing = match qualifier {
-                            Some(arg) => Some(qualified_super_call::qualifier_text(
-                                constructor.get_lst_parameters().get(arg),
-                                indent,
-                            )),
-                            None => NewExprent::get_qualified_new_instance_opt(
-                                anonymous_class_type().value.as_deref(),
-                                &constructor.get_lst_parameters().to_vec(),
-                                indent,
-                            ),
-                        };
-                        if let Some(enclosing) = &enclosing {
-                            buf.append_buffer(enclosing).append_char('.');
-                        }
+                if let Some(constructor) = constructor {
+                    let qualifier = child.and_then(|child| {
+                        qualified_super_call::anonymous_qualifier(child, constructor)
+                    });
+                    constructor.set_kuna_skip_arg(qualifier);
+                    enclosing = match qualifier {
+                        Some(arg) => Some(qualified_super_call::qualifier_text(
+                            constructor.get_lst_parameters().get(arg),
+                            indent,
+                        )),
+                        None => NewExprent::get_qualified_new_instance_opt(
+                            anonymous_class_type().value.as_deref(),
+                            &constructor.get_lst_parameters().to_vec(),
+                            indent,
+                        ),
+                    };
+                    if let Some(enclosing) = &enclosing {
+                        buf.append_buffer(enclosing).append_char('.');
                     }
                 }
 
@@ -653,7 +645,7 @@ impl NewExprent {
                             if superinterfaces.is_empty() {
                                 buf.append_cast_type_name(&descriptor.superclass());
                             } else {
-                                if superinterfaces.len() > 1 && !lambda {
+                                if superinterfaces.len() > 1 {
                                     let qualified_name =
                                         child_node.with(|d| d.class_struct).qualified_name();
                                     DecompilerContext::get_logger().write_message(
@@ -700,10 +692,7 @@ impl NewExprent {
             }
 
             if lambda {
-                if !DecompilerContext::get_option(IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS)
-                {
-                    buf.set_length(0);
-                }
+                buf.set_length(0);
                 self.set_lambda_generic_types();
                 let method_object = constructor.and_then(|c| c.get_instance());
                 ClassWriter::new().class_lambda_to_java(

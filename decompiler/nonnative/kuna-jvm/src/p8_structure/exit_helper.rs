@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/ExitHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): an if without a body
+//! kuna (`kuna_javac_layout`): an if without a body
 //! outside a switch keeps its if-edge in `integrate_exits` (the exit after
 //! the code that follows it is not the if's).
 

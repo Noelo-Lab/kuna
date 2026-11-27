@@ -2,10 +2,11 @@
 //! (not a catalog option) that turns them on or off. Vineflower finds plugins
 //! on the JVM class path (`PluginSources`: plugin jars and `ServiceLoader`);
 //! `java -jar vineflower.jar` carries VariableRenaming, Kotlin and IdeaNotNull
-//! that way, its test fixture none. Here the bundled list is the one plugin
-//! source, on by default as in `java -jar`; the corpus fixture runner turns it
-//! off. Off is what `jvm_kt_enable off` and `jvm_resugar_idea_notnull off` give
-//! with no `jvm_variable_renaming`: each plugin's effect is gated by its option.
+//! that way, its test fixture none. Here the bundled list (Kotlin and
+//! IdeaNotNull; kuna drops VariableRenaming's JAD and tiny namers) is the one
+//! plugin source, on by default as in `java -jar`; the corpus fixture runner
+//! turns it off. Off is what `jvm_kt_enable off` gives, without the IdeaNotNull
+//! pass.
 
 use std::rc::Rc;
 
@@ -15,16 +16,14 @@ use crate::idea_not_null_plugin::IdeaNotNullPlugin;
 use crate::kotlin_plugin::KotlinPlugin;
 use crate::plugin::Plugin;
 use crate::plugin_source::PluginSource;
-use crate::variable_renaming_plugin::VariableRenamingPlugin;
 
 /// The custom property that selects the bundled plugins (`1`/`on`, the
 /// default, or `0`/`off`). `Fernflower::new` takes it off the property list.
 pub const JVM_PLUGINS: &str = "jvm_plugins";
 
 /// The bundled plugins, in the order `java -jar vineflower.jar` registers
-/// them (`--list-plugins`): VariableRenaming, Kotlin, IdeaNotNull.
+/// them (`--list-plugins`): Kotlin, IdeaNotNull.
 const BUNDLED: &[fn() -> Rc<dyn Plugin>] = &[
-    || Rc::new(VariableRenamingPlugin::new()),
     || Rc::new(KotlinPlugin::new()),
     || Rc::new(IdeaNotNullPlugin::new()),
 ];

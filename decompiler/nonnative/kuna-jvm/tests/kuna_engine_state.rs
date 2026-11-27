@@ -138,8 +138,8 @@ fn a_batch_leaves_no_marks_for_the_next_one() {
 }
 
 /// `KtSource.java` compiled by javac 17, and the same class naming a `.kt`
-/// source file with no `kotlin.Metadata`, which every option that reads
-/// javac's code shapes takes for kotlinc's (`jvm_javac_layout` keeps
+/// source file with no `kotlin.Metadata`, which every rule that reads
+/// javac's code shapes takes for kotlinc's (`kuna_javac_layout` keeps
 /// Vineflower's `return c ? 1 : 2` there).
 #[test]
 fn a_class_named_after_a_kotlin_source_keeps_vineflower_layout() {

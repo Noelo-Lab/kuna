@@ -19,7 +19,6 @@ use crate::full_instruction_sequence::FullInstructionSequence;
 use crate::generic_main::GenericMain;
 use crate::generic_method_descriptor::GenericMethodDescriptor;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::i_variable_name_provider::IVariableNameProvider;
 use crate::instruction::Instruction;
 use crate::java_subclass;
 use crate::method_descriptor::MethodDescriptor;
@@ -44,7 +43,6 @@ pub struct StructMethodData {
     pub expanded: bool,
     pub class_qualified_name: String,
     pub signature: Option<GenericMethodDescriptor>,
-    pub renamer: Option<Rc<dyn IVariableNameProvider>>,
 }
 
 java_subclass!(pub StructMethod: StructMember, StructMemberKind::Method(StructMethodData), is_method, as_method, try_as_method);
@@ -138,7 +136,6 @@ impl StructMethod {
                 expanded: false,
                 class_qualified_name,
                 signature,
-                renamer: None,
             }),
         ))
     }
@@ -435,19 +432,6 @@ impl StructMethod {
 
     pub fn get_version(self) -> BytecodeVersion {
         self.get_bytecode_version()
-    }
-
-    pub fn get_variable_namer(self) -> Rc<dyn IVariableNameProvider> {
-        if let Some(renamer) = self.d(|d| d.renamer.clone()) {
-            return renamer;
-        }
-        let renamer = DecompilerContext::get_naming_factory().create_factory(self);
-        self.d_mut(|d| d.renamer = Some(renamer.clone()));
-        renamer
-    }
-
-    pub fn clear_variable_namer(self) {
-        self.d_mut(|d| d.renamer = None)
     }
 
     pub fn get_local_variable_attr(self) -> Option<StructLocalVariableTableAttribute> {

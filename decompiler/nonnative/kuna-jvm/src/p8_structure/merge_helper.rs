@@ -1,15 +1,15 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/MergeHelper.java`.
 //!
-//! kuna option `jvm_source_locals` (`kuna_source_locals`): `match_for_each`
+//! kuna (`kuna_source_locals`): `match_for_each`
 //! does not turn a loop whose iterator or index is a local of the source into
 //! a for-each, nor fold a local of the source into the for-each's iterable.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `condense_loop`
+//! kuna (`kuna_javac_layout`): `condense_loop`
 //! leaves a loop whose body has more than its first `if` before the
 //! statements it would move out (that `if` becomes the whole body, so the
 //! others would be lost): javac's layout keeps `if (c) { ..; continue; }`
 //! statements that Vineflower nests in else-branches.
-//! In `match_for` the option decides a `for` header from the
+//! In `match_for` kuna decides a `for` header from the
 //! LocalVariableTable and the LineNumberTable (`kuna_javac_layout::for_header`).
 
 use std::collections::VecDeque;

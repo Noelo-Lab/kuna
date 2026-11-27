@@ -19,7 +19,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::import_collector::ImportCollector;
 use crate::interpreter_util::InterpreterUtil;
 use crate::method_descriptor::MethodDescriptor;
@@ -142,7 +141,6 @@ impl EnumBodySeparator {
             access
         };
         let pending = type_ != ClassNodeType::Anonymous
-            && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
             && (flags & ACC_ENUM) != 0;
         EnumBodySeparator {
             pending,

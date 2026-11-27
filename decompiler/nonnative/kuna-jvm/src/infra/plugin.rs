@@ -2,7 +2,6 @@
 
 use std::rc::Rc;
 
-use crate::i_variable_naming_factory::IVariableNamingFactory;
 use crate::java_pass_registrar::JavaPassRegistrar;
 use crate::language_spec::LanguageSpec;
 use crate::plugin_options::PluginOptions;
@@ -25,10 +24,6 @@ pub trait Plugin {
     }
 
     fn get_plugin_options(&self) -> Option<Rc<dyn PluginOptions>> {
-        None
-    }
-
-    fn get_renaming_factory(&self) -> Option<Rc<dyn IVariableNamingFactory>> {
         None
     }
 }

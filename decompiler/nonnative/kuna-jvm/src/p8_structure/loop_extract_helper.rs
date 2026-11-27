@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/LoopExtractHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the body of a
+//! kuna (`kuna_javac_layout`): the body of a
 //! loop's first or last if stays in the loop when javac placed it there, an
 //! if of the body whose body javac placed after the loop is moved after it,
 //! and a first if whose other path continues the loop is not made its exit.
@@ -104,7 +104,7 @@ impl LoopExtractHelper {
         }
     }
 
-    /// kuna option `jvm_javac_layout`: moves after `stat` the body of an if
+    /// kuna (`kuna_javac_layout`): moves after `stat` the body of an if
     /// of its body that javac placed after the loop's code, and that leaves
     /// the loop without coming back: the code after the loop that the
     /// source's `break` reaches.
@@ -254,7 +254,7 @@ impl LoopExtractHelper {
         false
     }
 
-    /// kuna option `jvm_javac_layout`: whether the path past `ifstat`, the
+    /// kuna (`kuna_javac_layout`): whether the path past `ifstat`, the
     /// first if of `loop_`, goes back to the loop's start. Making the if a
     /// `break` out of the loop (`extract_if_block_into_loop`) would end the
     /// loop where it goes on (an empty `while` sharing its start, javac's
@@ -269,7 +269,7 @@ impl LoopExtractHelper {
                 .any(|e| e.get_type() == StatEdge::TYPE_CONTINUE && e.get_destination() == loop_.0)
     }
 
-    /// kuna option `jvm_javac_layout`: whether javac placed the body of
+    /// kuna (`kuna_javac_layout`): whether javac placed the body of
     /// `ifstat` inside `loop_`, so it is not moved after the loop.
     fn kept_inside(loop_: DoStatement, ifstat: IfStatement) -> bool {
         kuna_javac_layout::active() && kuna_javac_layout::inside_loop(loop_, ifstat)

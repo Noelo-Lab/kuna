@@ -6,7 +6,7 @@
 //! [`MethodProcessor::code_to_java`] directly, as Vineflower itself does when
 //! the limit is 0 or in unit-test mode.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): the Java schedule
+//! kuna (`kuna_javac_layout`): the Java schedule
 //! names its method to the layout decisions, which apply only there.
 
 use std::cell::Cell;
@@ -253,17 +253,11 @@ impl MethodProcessor {
 
         ExceptionDeobfuscator::restore_pop_ranges(graph);
 
-        if DecompilerContext::get_option(IFernflowerPreferences::REMOVE_EMPTY_RANGES) {
-            ExceptionDeobfuscator::remove_empty_ranges(graph);
-        }
+        ExceptionDeobfuscator::remove_empty_ranges(graph);
 
-        if DecompilerContext::get_option(IFernflowerPreferences::ENSURE_SYNCHRONIZED_MONITOR) {
-            DeadCodeHelper::extend_synchronized_range_to_monitorexit(graph);
-        }
+        DeadCodeHelper::extend_synchronized_range_to_monitorexit(graph);
 
-        if DecompilerContext::get_option(IFernflowerPreferences::INCORPORATE_RETURNS) {
-            DeadCodeHelper::incorporate_value_returns(graph);
-        }
+        DeadCodeHelper::incorporate_value_returns(graph);
 
         ExceptionDeobfuscator::insert_empty_exception_handler_blocks(graph);
 

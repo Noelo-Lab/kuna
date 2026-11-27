@@ -1,5 +1,4 @@
-//! The kuna option `jvm_source_patterns` (`kuna_options::SOURCE_PATTERNS`):
-//! an `instanceof` and a cast of a class javac compiled stay a test and a
+//! kuna's source patterns: an `instanceof` and a cast of a class javac compiled stay a test and a
 //! cast where the LineNumberTable shows the cast as a statement of its own.
 //!
 //! javac compiles `if (x instanceof T v)` and `if (x instanceof T) { T v =
@@ -18,12 +17,11 @@
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionExprent;
 use crate::p6_variables::kuna_source_locals;
-use crate::kuna_options::{self, SOURCE_PATTERNS};
 use crate::rt::BitSet;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
 
-/// Whether the option is on and keeps the cast `binding`, the store into
+/// Whether kuna keeps the cast `binding`, the store into
 /// `left` of the value `iof` tests in `source`, in method `mt` of a class
 /// kotlinc did not compile.
 pub fn keeps_cast(
@@ -33,8 +31,7 @@ pub fn keeps_cast(
     left: Exprent,
     binding: Exprent,
 ) -> bool {
-    if !kuna_options::form_enabled(SOURCE_PATTERNS)
-        || kuna_source_locals::compiled_by_kotlinc()
+    if kuna_source_locals::compiled_by_kotlinc()
         || javac_temporary(source, left)
     {
         return false;

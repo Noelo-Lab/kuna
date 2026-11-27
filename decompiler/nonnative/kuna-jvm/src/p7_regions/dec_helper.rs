@@ -1,8 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/DecHelper.java`.
 
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::rt::JHashSet;
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, LastBasicType, Statement, StatementType};
@@ -200,14 +198,12 @@ impl DecHelper {
     }
 
     pub fn invalid_head_merge(head: Statement) -> bool {
-        if DecompilerContext::get_option(IFernflowerPreferences::TRY_LOOP_FIX) {
-            let ifhead = Self::find_if_head(head);
+        let ifhead = Self::find_if_head(head);
 
-            if let Some(ifhead) = ifhead {
-                if let Some(first) = ifhead.get_first() {
-                    if head.get_continue_set().borrow().contains(&first) {
-                        return true;
-                    }
+        if let Some(ifhead) = ifhead {
+            if let Some(first) = ifhead.get_first() {
+                if head.get_continue_set().borrow().contains(&first) {
+                    return true;
                 }
             }
         }

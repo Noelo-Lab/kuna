@@ -42,54 +42,19 @@ Three tiers:
 | code javap shows is missing from the decompiled class | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | lambda$main$0 or access$000 body needed but hidden | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
 | obfuscator flagged real methods synthetic and they disappeared | [`jvm_remove_synthetic`](#jvm_remove_synthetic----on--off-default-on) |
-| class$("java.lang.String") calls instead of String.class | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
-| static Class class$java$lang$String fields in old class files | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
-| need the raw Class.forName cache logic | [`jvm_decompile_java4`](#jvm_decompile_java4----on--off-default-on) |
-| if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
-| $assertionsDisabled field visible | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
-| assert hides a check that must be read literally | [`jvm_decompile_assert`](#jvm_decompile_assert----on--off-default-on) |
-| constructor shows no super() call | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
-| need to see the implicit superclass constructor invocation | [`jvm_hide_empty_super`](#jvm_hide_empty_super----on--off-default-on) |
-| public Foo() {} constructor missing from the output | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
-| class seems to have no constructor | [`jvm_hide_default_constructor`](#jvm_hide_default_constructor----on--off-default-on) |
-| var = x; inside try followed by return var after the catch | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
-| return inside try reads differently from the bytecode | [`jvm_incorporate_returns`](#jvm_incorporate_returns----on--off-default-on) |
-| synchronized block covers more code than expected | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
-| MonitorEnter/MonitorExit pseudo-calls instead of synchronized | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
-| unbalanced monitor in handwritten bytecode | [`jvm_ensure_synchronized_monitors`](#jvm_ensure_synchronized_monitors----on--off-default-on) |
-| enum written as class extends Enum with $VALUES | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
-| need the generated values()/valueOf() bodies | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
-| enum constant initializers hide tampered code | [`jvm_decompile_enums`](#jvm_decompile_enums----on--off-default-on) |
-| stray outer.getClass(); before outer.new Inner() | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
-| Objects.requireNonNull-like check before an inner class instantiation | [`jvm_remove_getclass`](#jvm_remove_getclass----on--off-default-on) |
 | access$000(this) calls left in the output | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
 | this$0 or val$name fields printed in inner classes | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
 | class$ helper calls remain in old class files | [`jvm_synthetic_not_set`](#jvm_synthetic_not_set----on--off-default-off) |
-| exception handler code missing from the output | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch----on--off-default-on) |
-| empty try { } catch blocks wanted for inspection | [`jvm_remove_empty_try_catch`](#jvm_remove_empty_try_catch----on--off-default-on) |
 | "Could not verify finally blocks" comment with a semaphore variable | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
 | cleanup code duplicated after every return | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
 | catch (Throwable var) { ...; throw var; } instead of finally (option is off) | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
-| need the interface method a lambda implements | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
-| output must compile with Java 7 | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
-| x -> ... where an anonymous class is wanted | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
 | $VF: Couldn't be decompiled with RuntimeException: Constructor ... not found | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
 | method fails on a new expression in a patched class | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
-| a ? true : b where a logical or was written | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
-| nested ternaries with true and false branches | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
-| x ? false : true instead of !x | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
 | String s = (String)o; after an instanceof test (option is off) | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
 | typeSwitch bootstrap call instead of a pattern switch | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
 | pattern variable reconstructed wrongly | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
-| while (true) with a try inside that does not match the bytecode | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
-| loop condition moved into a try block | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
-| if (a ? b : c) condition hard to read | [`jvm_ternary_in_if`](#jvm_ternary_in_if----on--off-default-on) |
-| duplicated if bodies where a ternary condition was compiled (option is off) | [`jvm_ternary_in_if`](#jvm_ternary_in_if----on--off-default-on) |
 | switch statement assigning a temporary in every case where a switch expression was written | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
 | yield statements misplaced | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
-| var10000 temporaries everywhere (option is off) | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
-| compound assignment merges side effects in the wrong order | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
-| arr[i++] = v reads differently from the bytecode | [`jvm_simplify_stack`](#jvm_simplify_stack----on--off-default-on) |
 | one variable reused for two unrelated values | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
 | variable read before its assignment in the output | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
 | decompiled code does not recompile because of variable scoping | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
@@ -97,41 +62,8 @@ Three tiers:
 | loop counter merged with another variable | [`jvm_verify_pre_post_merges`](#jvm_verify_pre_post_merges----on--off-default-off) |
 | "Could not handle exception ranges with multiple entries" comment | [`jvm_old_try_dedup`](#jvm_old_try_dedup----on--off-default-off) |
 | duplicated try blocks in an obfuscated method | [`jvm_old_try_dedup`](#jvm_old_try_dedup----on--off-default-off) |
-| condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
-| VarHandle constant shown as an unresolved dynamic constant | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
 | method with jsr/ret fails to decompile in a modern class file | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
-| else branch missing after an if that returns | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
-| deep else chains after returns (option is off) | [`jvm_prettify_ifs`](#jvm_prettify_ifs----on--off-default-on) |
-| instanceof pattern where the source has an instanceof test and a cast | [`jvm_source_patterns`](#jvm_source_patterns----on--off-default-on) |
-| x instanceof T v printed for if (x instanceof T) { T v = (T) x; | [`jvm_source_patterns`](#jvm_source_patterns----on--off-default-on) |
-| want Vineflower's type patterns | [`jvm_source_patterns`](#jvm_source_patterns----on--off-default-on) |
-| a local variable of the source is missing | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| x = e; return x; printed as return e; | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| declarations reordered against the source | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| recompiled bytecode uses other local slots | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| a declaration inside a loop or try where the source has it before | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| a local printed as var3 next to the source's name | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| a[i] = i++ where the source has a[i] = i; i++; | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| want Vineflower's folded form of locals | [`jvm_source_locals`](#jvm_source_locals----on--off-default-on) |
-| if condition negated against the source with the branches swapped | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
-| early return or continue missing and the rest of the method nested in an if | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
-| return c ? a : b where the source has two returns | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
-| return c; where the source has if (c) return true; return false; | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
-| else branch after an if that returns | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
-| !x where the source has false == x | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
-| a negated condition (!a && !b) where the source compares the condition with false | [`jvm_javac_layout`](#jvm_javac_layout----on--off-default-on) |
-| locals named var1 var2 var3 with no hint of their type | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
-| obfuscated or meaningless local names from a forged LocalVariableTable | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
-| names differ from a Vineflower run with --variable-renaming=jad or tiny | [`jvm_variable_renaming`](#jvm_variable_renaming----jad--tiny---default-) |
-| locals renamed but parameters still named var1 or paramN | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
-| parameter names do not follow the renamer's scheme | [`jvm_rename_parameters`](#jvm_rename_parameters----on--off-default-off) |
-| if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
-| explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
-| "a" + b + "c" in Kotlin output where a template was written | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
-| string templates hide the concatenation order | [`jvm_kt_collapse_string_concat`](#jvm_kt_collapse_string_concat----on--off-default-on) |
-| a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
-| functions of a @JvmMultifileClass facade are missing | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
 | Outer$Inner written as a separate class instead of nested | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
 | anonymous class body lands in the wrong method | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
 | need each class file decompiled on its own | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
@@ -146,8 +78,6 @@ Three tiers:
 | class or method named like a Java keyword | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | identifiers that are not valid Java (obfuscated names) | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
 | many classes named a, b, c that clash | [`jvm_rename_members`](#jvm_rename_members----on--off-default-off) |
-| member classes of an obfuscated jar written as separate top-level classes | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
-| renamed inner classes not nested | [`jvm_validate_inner_classes_names`](#jvm_validate_inner_classes_names----on--off-default-on) |
 | inner and anonymous classes missing when decompiling one .class file | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
 | unrelated Name$x.class files nested into the class | [`jvm_siblings`](#jvm_siblings----on--off-default-on) |
 | nonsense generic types from a tampered Signature attribute | [`jvm_decompile_generics`](#jvm_decompile_generics----on--off-default-on) |
@@ -156,22 +86,13 @@ Three tiers:
 | Math.PI where the source had a numeric literal | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
 | Long.MAX_VALUE or Double.MAX_VALUE instead of the number | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
 | need raw digits of a float constant | [`jvm_keep_literals`](#jvm_keep_literals----on--off-default-off) |
-| int variable printed as boolean true/false | [`jvm_boolean_as_int`](#jvm_boolean_as_int----on--off-default-on) |
-| 1 and 0 where true and false were expected (option is off) | [`jvm_boolean_as_int`](#jvm_boolean_as_int----on--off-default-on) |
 | string literal shows odd or invisible characters | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | homoglyphs in a compared string | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | terminal mangles non-ASCII text in decompiled strings | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
-| <undefinedtype> in a parameter list (option is off) | [`jvm_undefined_as_object`](#jvm_undefined_as_object----on--off-default-on) |
-| lambda parameter typed Object where a type is expected | [`jvm_undefined_as_object`](#jvm_undefined_as_object----on--off-default-on) |
 | variables named like keywords or with misleading names from debug info | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
-| LocalVariableTable names contradict their use | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
+| LocalVariableTable or MethodParameters names contradict their use | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
+| unexpected final on parameters | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
 | var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
-| parameter names differ from the debug-info names | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
-| unexpected final on parameters | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
-| @Override missing on toString or interface methods (supertype not loaded) | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
-| @Override that javac did not write is unwanted | [`jvm_override_annotation`](#jvm_override_annotation----on--off-default-on) |
-| decompiled code fails to recompile with an inference error | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
-| need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
@@ -202,78 +123,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Also spelled:** `remove-synthetic`, `rsy`
 - **Example:** `kuna decompile app.jar com.ex.Main --option jvm_remove_synthetic off`
 
-### `jvm_decompile_java4` -- on | off, default `on`
-
-- **Symptoms:** class$("java.lang.String") calls instead of String.class; static Class class$java$lang$String fields in old class files; need the raw Class.forName cache logic.
-- **What it does:** Turn the pre-Java-5 class-literal idiom (a synthetic static class$(String) helper, a cached Class field and Class.forName) back into Foo.class.
-- **When to flip:** Turn off to see the literal class$ helper calls and cache fields in Java 1.4-and-older class files, e.g. when the helper was tampered with.
-- **Where / provenance:** p3_dataflow/simplify_exprents_helper, class_writer · vineflower · vineflower-option
-- **Also spelled:** `decompile-java4`, `dc4`
-- **Example:** `kuna decompile legacy.jar com.ex.Old --option jvm_decompile_java4 off`
-
-### `jvm_decompile_assert` -- on | off, default `on`
-
-- **Symptoms:** if (!$assertionsDisabled && !cond) throw new AssertionError() instead of assert cond; $assertionsDisabled field visible; assert hides a check that must be read literally.
-- **What it does:** Rebuild assert statements from the $assertionsDisabled check and the throw new AssertionError(..) javac compiles them to.
-- **When to flip:** Turn off to see the explicit $assertionsDisabled test and throw, e.g. when the static initializer computing the flag was changed.
-- **Where / provenance:** p8_structure/assert_processor · vineflower · vineflower-option
-- **Also spelled:** `decompile-assert`, `das`
-- **Example:** `kuna decompile app.jar com.ex.Checks --option jvm_decompile_assert off`
-
-### `jvm_hide_empty_super` -- on | off, default `on`
-
-- **Symptoms:** constructor shows no super() call; need to see the implicit superclass constructor invocation.
-- **What it does:** Drop a constructor's leading super() call when it passes no arguments, as source code leaves it implicit.
-- **When to flip:** Turn off to show every super() call, e.g. to check which superclass constructor runs first.
-- **Where / provenance:** p8_structure/initializer_processor · vineflower · vineflower-option
-- **Also spelled:** `hide-empty-super`, `hes`
-- **Example:** `kuna decompile app.jar com.ex.Child --option jvm_hide_empty_super off`
-
-### `jvm_hide_default_constructor` -- on | off, default `on`
-
-- **Symptoms:** public Foo() {} constructor missing from the output; class seems to have no constructor.
-- **What it does:** Leave out a class's only constructor when it takes no parameters, throws nothing, has an empty body and the class's own access (the one javac adds).
-- **When to flip:** Turn off to list every constructor the class file declares, e.g. when counting entry points.
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `hide-default-constructor`, `hdc`
-- **Example:** `kuna decompile app.jar com.ex.Util --option jvm_hide_default_constructor off`
-
-### `jvm_incorporate_returns` -- on | off, default `on`
-
-- **Symptoms:** var = x; inside try followed by return var after the catch; return inside try reads differently from the bytecode.
-- **What it does:** Move value returns into the try and catch blocks they follow, instead of storing the value in a temporary and returning after the try.
-- **When to flip:** Turn off to see the return placement the bytecode literally has, e.g. when a return-inside-try reading looks wrong.
-- **Where / provenance:** infra/method_processor · vineflower · vineflower-option
-- **Also spelled:** `incorporate-returns`, `ner`
-- **Example:** `kuna decompile app.jar com.ex.Io --option jvm_incorporate_returns off`
-
-### `jvm_ensure_synchronized_monitors` -- on | off, default `on`
-
-- **Symptoms:** synchronized block covers more code than expected; MonitorEnter/MonitorExit pseudo-calls instead of synchronized; unbalanced monitor in handwritten bytecode.
-- **What it does:** When a monitorenter has no matching monitorexit on some path, extend the synchronized range to where the exit should be so the block still becomes synchronized (..) { }.
-- **When to flip:** Turn off when the inferred extent of a synchronized block looks wrong and the raw monitor operations are wanted.
-- **Where / provenance:** infra/method_processor · vineflower · vineflower-option
-- **Also spelled:** `ensure-synchronized-monitors`, `esm`
-- **Example:** `kuna decompile app.jar com.ex.Lock --option jvm_ensure_synchronized_monitors off`
-
-### `jvm_decompile_enums` -- on | off, default `on`
-
-- **Symptoms:** enum written as class extends Enum with $VALUES; need the generated values()/valueOf() bodies; enum constant initializers hide tampered code.
-- **What it does:** Write enum classes as enum declarations: constants with their arguments and bodies, no $VALUES, values() or valueOf(), and no hidden name/ordinal constructor parameters.
-- **When to flip:** Turn off to see an enum as the plain class javac generates, e.g. when the generated values()/valueOf() or the constant initializers were modified.
-- **Where / provenance:** p9_emit/class_writer, invocation_exprent, method_descriptor · vineflower · vineflower-option
-- **Also spelled:** `decompile-enums`, `den`
-- **Example:** `kuna decompile app.jar com.ex.Color --option jvm_decompile_enums off`
-
-### `jvm_remove_getclass` -- on | off, default `on`
-
-- **Symptoms:** stray outer.getClass(); before outer.new Inner(); Objects.requireNonNull-like check before an inner class instantiation.
-- **What it does:** Drop the outer.getClass() null check javac inserts before a qualified inner-class creation (outer.new Inner()).
-- **When to flip:** Turn off to keep the synthetic getClass() call, e.g. when the null check itself matters to the analysis.
-- **Where / provenance:** p3_dataflow/simplify_exprents_helper · vineflower · vineflower-option
-- **Also spelled:** `remove-getclass`, `rgn`
-- **Example:** `kuna decompile app.jar com.ex.Outer --option jvm_remove_getclass off`
-
 ### `jvm_synthetic_not_set` -- on | off, default `off`
 
 - **Symptoms:** access$000(this) calls left in the output; this$0 or val$name fields printed in inner classes; class$ helper calls remain in old class files.
@@ -282,15 +131,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p8_structure/nested_class_processor, nested_member_access, class_reference14_processor · vineflower · vineflower-option
 - **Also spelled:** `synthetic-not-set`, `nns`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_synthetic_not_set on`
-
-### `jvm_remove_empty_try_catch` -- on | off, default `on`
-
-- **Symptoms:** exception handler code missing from the output; empty try { } catch blocks wanted for inspection.
-- **What it does:** Drop exception-table ranges that protect no instructions (and the handlers they alone reach) before the control flow is structured.
-- **When to flip:** Turn off to keep every exception range of the class file, e.g. when an obfuscator uses empty ranges and their handlers to hide code.
-- **Where / provenance:** infra/method_processor, dead_code_helper · vineflower · vineflower-option
-- **Also spelled:** `remove-empty-try-catch`, `rer`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_remove_empty_try_catch off`
 
 ### `jvm_decompile_finally` -- on | off, default `on`
 
@@ -301,15 +141,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Also spelled:** `decompile-finally`, `fdi`
 - **Example:** `kuna decompile app.jar com.ex.Io --option jvm_decompile_finally off`
 
-### `jvm_lambda_to_anonymous_class` -- on | off, default `off`
-
-- **Symptoms:** need the interface method a lambda implements; output must compile with Java 7; x -> ... where an anonymous class is wanted.
-- **What it does:** Write each lambda and method reference as an anonymous class implementing its functional interface (new Runnable() { public void run() { .. } }) instead of -> or :: syntax.
-- **When to flip:** Turn on when the functional interface and method a lambda implements matter, or for Java 7-style output.
-- **Where / provenance:** p8_structure/nested_class_processor, new_exprent, class_writer · vineflower · vineflower-option
-- **Also spelled:** `lambda-to-anonymous-class`, `lac`
-- **Example:** `kuna decompile app.jar com.ex.Handlers --option jvm_lambda_to_anonymous_class on`
-
 ### `jvm_ignore_invalid_bytecode` -- on | off, default `off`
 
 - **Symptoms:** $VF: Couldn't be decompiled with RuntimeException: Constructor ... not found; method fails on a new expression in a patched class.
@@ -318,15 +149,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** substrate/expr_util · vineflower · vineflower-option
 - **Also spelled:** `ignore-invalid-bytecode`, `iib`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_ignore_invalid_bytecode on`
-
-### `jvm_ternary_constant_simplification` -- on | off, default `off`
-
-- **Symptoms:** a ? true : b where a logical or was written; nested ternaries with true and false branches; x ? false : true instead of !x.
-- **What it does:** Fold ternaries with a boolean constant branch into logic: c ? true : x to c || x, c ? x : false to c && x, c ? false : true to !c.
-- **When to flip:** Turn on to read compiled boolean logic as && and || instead of nested ternaries.
-- **Where / provenance:** p3_dataflow/secondary_functions_helper · vineflower · vineflower-option
-- **Also spelled:** `ternary-constant-simplification`, `tcs`
-- **Example:** `kuna decompile app.jar com.ex.Rules --option jvm_ternary_constant_simplification on`
 
 ### `jvm_pattern_matching` -- on | off, default `on`
 
@@ -337,24 +159,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Also spelled:** `pattern-matching`, `pam`
 - **Example:** `kuna decompile app.jar com.ex.Shapes --option jvm_pattern_matching off`
 
-### `jvm_try_loop_fix` -- on | off, default `on`
-
-- **Symptoms:** while (true) with a try inside that does not match the bytecode; loop condition moved into a try block.
-- **What it does:** Refuse a loop-head merge that would pull an if statement into a try block nested in a while loop, which otherwise produces malformed loops around try/catch.
-- **When to flip:** Turn off only to reproduce older Fernflower structuring when comparing outputs.
-- **Where / provenance:** p7_regions/dec_helper · vineflower · vineflower-option
-- **Also spelled:** `try-loop-fix`, `tlf`
-- **Example:** `kuna decompile app.jar com.ex.Retry --option jvm_try_loop_fix off`
-
-### `jvm_ternary_in_if` -- on | off, default `on`
-
-- **Symptoms:** if (a ? b : c) condition hard to read; duplicated if bodies where a ternary condition was compiled (option is off).
-- **What it does:** Collapse nested if statements that a ternary inside a condition compiles to (if (a ? b : c)) back into one if with the ternary condition.
-- **When to flip:** Turn off when a collapsed condition reads wrong; the nested ifs are what the branches really are.
-- **Where / provenance:** p8_structure/if_helper · vineflower · vineflower-option
-- **Also spelled:** `ternary-in-if`, `tco`
-- **Example:** `kuna decompile app.jar com.ex.Rules --option jvm_ternary_in_if off`
-
 ### `jvm_decompile_switch_expressions` -- on | off, default `on`
 
 - **Symptoms:** switch statement assigning a temporary in every case where a switch expression was written; yield statements misplaced.
@@ -363,15 +167,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p8_structure/switch_expression_helper · vineflower · vineflower-option
 - **Also spelled:** `decompile-switch-expressions`, `swe`
 - **Example:** `kuna decompile app.jar com.ex.Codes --option jvm_decompile_switch_expressions off`
-
-### `jvm_simplify_stack` -- on | off, default `on`
-
-- **Symptoms:** var10000 temporaries everywhere (option is off); compound assignment merges side effects in the wrong order; arr[i++] = v reads differently from the bytecode.
-- **What it does:** Run the second stack-variable stage, which inlines stack temporaries across statement boundaries and resugars compound expressions (a = b = c, arr[i++] = v, chained calls).
-- **When to flip:** Turn off when a merged expression is wrong or reorders side effects, to see each stack temporary as a var assignment.
-- **Where / provenance:** p3_dataflow/stack_vars_processor · vineflower · vineflower-option
-- **Also spelled:** `simplify-stack`, `ssp`
-- **Example:** `kuna decompile app.jar com.ex.Parser --option jvm_simplify_stack off`
 
 ### `jvm_verify_merges` -- on | off, default `off`
 
@@ -400,15 +195,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Also spelled:** `old-try-dedup`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_old_try_dedup on`
 
-### `jvm_decompile_complex_constant_dynamic` -- on | off, default `off`
-
-- **Symptoms:** condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output; VarHandle constant shown as an unresolved dynamic constant.
-- **What it does:** Write constant-dynamic VarHandle constants (fieldVarHandle, staticFieldVarHandle, arrayVarHandle) as the equivalent MethodHandles lookup expression, marked with a comment because it runs eagerly; off keeps the raw condy form.
-- **When to flip:** Turn on to read code using condy VarHandles in plain Java terms, accepting that the expression is not lazily evaluated.
-- **Where / provenance:** p4_calls/condy_helper · vineflower · vineflower-option
-- **Also spelled:** `decompile-complex-constant-dynamic`, `dcc`
-- **Example:** `kuna decompile app.jar com.ex.Atomic --option jvm_decompile_complex_constant_dynamic on`
-
 ### `jvm_force_jsr_inline` -- on | off, default `off`
 
 - **Symptoms:** method with jsr/ret fails to decompile in a modern class file; finally logic of a modern class built from subroutines.
@@ -417,84 +203,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** infra/method_processor · vineflower · vineflower-option
 - **Also spelled:** `force-jsr-inline`, `fji`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_force_jsr_inline on`
-
-### `jvm_prettify_ifs` -- on | off, default `on`
-
-- **Symptoms:** else branch missing after an if that returns; deep else chains after returns (option is off).
-- **What it does:** Before writing, turn if (c) { ..; return; } else { rest } into the if followed by rest: the else after a branch that always returns or throws is dropped (unless the else exits too).
-- **When to flip:** Turn off to keep the if/else pairs as structured from the control flow, e.g. when comparing with older Fernflower output.
-- **Where / provenance:** p9_emit/class_writer, if_helper · vineflower · vineflower-option
-- **Also spelled:** `prettify-ifs`
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_prettify_ifs off`
-
-### `jvm_source_patterns` -- on | off, default `on`
-
-- **Symptoms:** instanceof pattern where the source has an instanceof test and a cast; x instanceof T v printed for if (x instanceof T) { T v = (T) x;; want Vineflower's type patterns.
-- **What it does:** In classes javac compiled (no kotlin.Metadata), keep an instanceof test and the cast after it, if (x instanceof T) { T v = (T) x; ..}, as the source wrote them where the LineNumberTable gives the cast a source line of its own, instead of the type pattern if (x instanceof T v). javac compiles both forms of a local x to the same instructions; a pattern whose multi-line condition puts its binding on a later line without more of the condition on that line reads the same way and is then printed as a test and a cast (the program is the same). Vineflower makes the pattern.
-- **When to flip:** Leave on to read instanceof tests the way the source wrote them; turn off for Vineflower's type patterns, e.g. to compare with Vineflower's output or where the pattern reads better.
-- **Where / provenance:** p8_structure/kuna_source_patterns, if_pattern_match_processor · kuna · kuna-form
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_source_patterns off`
-
-### `jvm_source_locals` -- on | off, default `on`
-
-- **Symptoms:** a local variable of the source is missing; x = e; return x; printed as return e;; declarations reordered against the source; recompiled bytecode uses other local slots; a declaration inside a loop or try where the source has it before; a local printed as var3 next to the source's name; a[i] = i++ where the source has a[i] = i; i++;; want Vineflower's folded form of locals.
-- **What it does:** Keep the local variables the class file records for the source. A local the LocalVariableTable names is not folded into its one use: x = e; return x; stays two statements, a named array keeps its element stores instead of becoming new T[]{..}, and a named iterable, iterator or index is not folded into a for-each. In Java output, a declaration without an initializer moves up, or a declaration is split into T v; and v = e;, so that javac numbers the locals' slots as the class file does: also out of a loop, branch, try or synchronized block Vineflower narrowed it into, where the slots prove the source declared it outside; one local the table names that Vineflower split in two (x and var3) is one variable again, and two locals it names differently are not merged. An x++, x-- or x = x + 1 the bytecode shows as a statement of its own stays one (a[i] = i; i++; not a[i] = i++;, m--; f(m); not f(--m);). Vineflower folds such locals, declares each variable at its first use and folds increments into the next expression.
-- **When to flip:** Leave on to read a method with the locals its author wrote and to recompile it to the same bytecode; turn off for Vineflower's shorter form (return e; for x = e; return x;).
-- **Where / provenance:** p6_variables/kuna_source_locals, kuna_source_scopes, kuna_source_increments, simplify_exprents_helper, p_pand_mm_helper, merge_helper, var_definition_helper · kuna · kuna-form
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_source_locals off`
-
-### `jvm_javac_layout` -- on | off, default `on`
-
-- **Symptoms:** if condition negated against the source with the branches swapped; early return or continue missing and the rest of the method nested in an if; return c ? a : b where the source has two returns; return c; where the source has if (c) return true; return false;; else branch after an if that returns; !x where the source has false == x; a negated condition (!a && !b) where the source compares the condition with false.
-- **What it does:** Structure ifs and exits of classes javac compiled (no kotlin.Metadata), written as Java, the way javac laid out the bytecode: an if's then-branch is the code javac placed right after the condition, so its condition keeps the source's polarity; an early return, throw, break or continue that the bytecode has stays where it is instead of the rest of the code being nested in a negated if; and two return instructions stay two returns instead of becoming one return of a ternary (if (c) return true; return false; is not folded to return c;). A comparison with a boolean literal whose bytecode is its own stays a comparison: false == x (the literal on the left), x == true, (a || b) == false (javac compiles x == false like !x, which stays !x). Off gives Vineflower's structuring.
-- **When to flip:** Turn off to get Vineflower's if/else orientation, nested ifs instead of early exits and ternary returns, !x for false == x, e.g. to compare with Vineflower's output on Java classes, or where the condensed form reads better.
-- **Where / provenance:** p8_structure/kuna_javac_layout, if_helper, simplify_exprents_helper, kuna_javac_boolean_compare, secondary_functions_helper · kuna · kuna-form
-- **Example:** `kuna decompile app.jar com.ex.Main --option jvm_javac_layout off`
-
-### `jvm_variable_renaming` -- jad | tiny | <name>, default ``
-
-- **Symptoms:** locals named var1 var2 var3 with no hint of their type; obfuscated or meaningless local names from a forged LocalVariableTable; names differ from a Vineflower run with --variable-renaming=jad or tiny.
-- **What it does:** Rename locals with a renamer of the VariableRenaming plugin: jad names them after their type JAD-style (i, j, k, l, s, flag, file1, aobject), tiny the way tiny-remapper does (i, l, bl, the class name lowercased, plural for arrays); unset or an unknown name keeps the LocalVariableTable or var names.
-- **When to flip:** Set jad or tiny on obfuscated or debug-info-free code whose var1, var2 or forged names say nothing about the variables, or to match a Vineflower run that used the same renamer.
-- **Where / provenance:** plugins/variable_renaming_plugin, renamers, jad_name_provider, tiny_name_provider · vineflower · vineflower-option
-- **Also spelled:** `variable-renaming`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming jad`
-
-### `jvm_rename_parameters` -- on | off, default `off`
-
-- **Symptoms:** locals renamed but parameters still named var1 or paramN; parameter names do not follow the renamer's scheme.
-- **What it does:** With a jvm_variable_renaming renamer, rename method and lambda parameters too, not only locals.
-- **When to flip:** Turn on with jvm_variable_renaming when the parameter names are as meaningless as the locals (obfuscated code, no MethodParameters or LocalVariableTable).
-- **Where / provenance:** plugins/jad_name_provider, tiny_name_provider · vineflower · vineflower-option
-- **Also spelled:** `rename-parameters`
-- **Example:** `kuna decompile obf.jar a.b --option jvm_variable_renaming tiny --option jvm_rename_parameters on`
-
-### `jvm_resugar_idea_notnull` -- on | off, default `on`
-
-- **Symptoms:** if (x == null) { $$$reportNull$$$0(0); } at the top of methods; explicit null checks on @NotNull parameters or before returns (option is off).
-- **What it does:** Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin).
-- **When to flip:** Turn off to see the checks IDEA instrumented into a method, e.g. to confirm which parameters are checked at run time.
-- **Where / provenance:** plugins/idea_not_null_pass, idea_not_null_plugin · vineflower · vineflower-option
-- **Also spelled:** `resugar-idea-notnull`, `inn`
-- **Example:** `kuna decompile app.jar com.ex.Service --option jvm_resugar_idea_notnull off`
-
-### `jvm_kt_collapse_string_concat` -- on | off, default `on`
-
-- **Symptoms:** "a" + b + "c" in Kotlin output where a template was written; string templates hide the concatenation order.
-- **What it does:** Kotlin plugin: turn string concatenations (StringBuilder chains, + chains, invokedynamic makeConcatWithConstants) in Kotlin methods into string templates "a $b ${c.d}".
-- **When to flip:** Turn off to see the concatenation exactly as compiled, for example to check which values are converted with toString or how a template was built.
-- **Where / provenance:** kotlin/collapse_string_concat_pass · vineflower · vineflower-option
-- **Also spelled:** `kt-collapse-string-concat`
-- **Example:** `kuna decompile app.jar com.ex.FormatKt --option jvm_kt_collapse_string_concat off`
-
-### `jvm_kt_decompile_facades` -- on | off, default `off`
-
-- **Symptoms:** a facade class prints only This is a multifile facade and a list of files; functions of a @JvmMultifileClass facade are missing.
-- **What it does:** Kotlin plugin: also write the wrapper functions of a multifile facade class (@file:JvmMultifileClass); off writes only the comment that lists the part classes holding the real implementations.
-- **When to flip:** Turn on to see a facade's forwarding functions, for example when callers in Java code call the facade and you need its exact signatures.
-- **Where / provenance:** kotlin/kotlin_writer · vineflower · vineflower-option
-- **Also spelled:** `kt-decompile-facades`
-- **Example:** `kuna decompile app.jar com.ex.UtilsKt --option jvm_kt_decompile_facades on`
 
 ## Input & analysis
 
@@ -536,15 +244,6 @@ What the engine loads and infers before any class is written.
 - **Also spelled:** `rename-members`, `ren`
 - **Example:** `kuna decompile-project obf.jar -o out --option jvm_rename_members on`
 
-### `jvm_validate_inner_classes_names` -- on | off, default `on`
-
-- **Symptoms:** member classes of an obfuscated jar written as separate top-level classes; renamed inner classes not nested.
-- **What it does:** Nest a member class only when its name is its outer class's name, $, and its simple name (Outer$Inner); a member entry with any other name is ignored and the class stays top-level.
-- **When to flip:** Turn off for renamed or obfuscated jars whose inner class names do not follow the Outer$Inner scheme, so they still nest.
-- **Where / provenance:** p1_classfile/classes_processor · vineflower · vineflower-option
-- **Also spelled:** `validate-inner-classes-names`
-- **Example:** `kuna decompile obf.jar a --option jvm_validate_inner_classes_names off`
-
 ### `jvm_siblings` -- on | off, default `on`
 
 - **Symptoms:** inner and anonymous classes missing when decompiling one .class file; unrelated Name$x.class files nested into the class.
@@ -575,15 +274,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Also spelled:** `keep-literals`, `lit`
 - **Example:** `kuna decompile app.jar com.ex.Math2 --option jvm_keep_literals on`
 
-### `jvm_boolean_as_int` -- on | off, default `on`
-
-- **Symptoms:** int variable printed as boolean true/false; 1 and 0 where true and false were expected (option is off).
-- **What it does:** Let the int constant 1, not only 0, take boolean type during type inference, so flags stored with iconst_1/iconst_0 print as true and false.
-- **When to flip:** Turn off when booleans are being inferred where the code really works with the ints 0 and 1 (handwritten or non-Java bytecode).
-- **Where / provenance:** substrate/const_exprent · vineflower · vineflower-option
-- **Also spelled:** `boolean-as-int`, `bto`
-- **Example:** `kuna decompile app.jar com.ex.Flags --option jvm_boolean_as_int off`
-
 ### `jvm_ascii_strings` -- on | off, default `off`
 
 - **Symptoms:** string literal shows odd or invisible characters; homoglyphs in a compared string; terminal mangles non-ASCII text in decompiled strings.
@@ -593,50 +283,14 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Also spelled:** `ascii-strings`, `asc`
 - **Example:** `kuna decompile app.jar com.ex.Keys --option jvm_ascii_strings on`
 
-### `jvm_undefined_as_object` -- on | off, default `on`
-
-- **Symptoms:** <undefinedtype> in a parameter list (option is off); lambda parameter typed Object where a type is expected.
-- **What it does:** Print a lambda or method parameter whose type could not be inferred as Object instead of <undefinedtype>.
-- **When to flip:** Turn off to see exactly where type inference gave up (the <undefinedtype> marker).
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `undefined-as-object`, `uto`
-- **Example:** `kuna decompile app.jar com.ex.Streams --option jvm_undefined_as_object off`
-
 ### `jvm_use_lvt_names` -- on | off, default `on`
 
-- **Symptoms:** variables named like keywords or with misleading names from debug info; LocalVariableTable names contradict their use; var1 var2 names although debug info exists (option is off).
-- **What it does:** Name parameters and locals from the LocalVariableTable (debug info) and take local generic types from it, instead of var1/var2-style names.
-- **When to flip:** Turn off when the debug names are misleading (obfuscated or forged LocalVariableTable) or clash with keywords.
-- **Where / provenance:** p1_classfile/class_wrapper, var_exprent · vineflower · vineflower-option
+- **Symptoms:** variables named like keywords or with misleading names from debug info; LocalVariableTable or MethodParameters names contradict their use; unexpected final on parameters; var1 var2 names although debug info exists (option is off).
+- **What it does:** Name parameters and locals from the LocalVariableTable (debug info), take local generic types from it, and name parameters (and mark them final) from the MethodParameters attribute (javac -parameters, records), instead of var1/var2-style names.
+- **When to flip:** Turn off when the debug names are misleading (obfuscated or forged LocalVariableTable or MethodParameters) or clash with keywords: off trusts no name the class file carries.
+- **Where / provenance:** p1_classfile/class_wrapper, var_exprent, var_definition_helper, class_writer · vineflower · vineflower-option
 - **Also spelled:** `use-lvt-names`, `udv`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_use_lvt_names off`
-
-### `jvm_use_method_parameters` -- on | off, default `on`
-
-- **Symptoms:** parameter names differ from the debug-info names; unexpected final on parameters.
-- **What it does:** Name parameters, and mark them final, from the MethodParameters attribute (javac -parameters, records) when a method has one.
-- **When to flip:** Turn off when the MethodParameters names are forged or worse than the LocalVariableTable ones.
-- **Where / provenance:** p9_emit/class_writer, var_definition_helper · vineflower · vineflower-option
-- **Also spelled:** `use-method-parameters`, `ump`
-- **Example:** `kuna decompile app.jar com.ex.Api --option jvm_use_method_parameters off`
-
-### `jvm_override_annotation` -- on | off, default `on`
-
-- **Symptoms:** @Override missing on toString or interface methods (supertype not loaded); @Override that javac did not write is unwanted.
-- **What it does:** Add @Override to instance methods (Java 5+ class files) that override or implement a method found in a superclass or interface the decompiler can see.
-- **When to flip:** Turn off for output without inferred annotations; leave on and give a runtime or libraries so supertypes are known.
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `override-annotation`, `ovr`
-- **Example:** `kuna decompile app.jar com.ex.Impl --option jvm_override_annotation off`
-
-### `jvm_explicit_generics` -- on | off, default `off`
-
-- **Symptoms:** decompiled code fails to recompile with an inference error; need the type argument of a generic method call.
-- **What it does:** Write the type arguments of generic method calls explicitly (Collections.<String>emptyList(), this.<T>cast(x)) even where javac would infer them.
-- **When to flip:** Turn on when the decompiled code fails to compile on type inference, or to see which type a generic call was instantiated with.
-- **Where / provenance:** substrate/invocation_exprent · vineflower · vineflower-option
-- **Also spelled:** `explicit-generics`, `ega`
-- **Example:** `kuna decompile app.jar com.ex.Repo --option jvm_explicit_generics on`
 
 ### `jvm_decompiler_comments` -- on | off, default `on`
 

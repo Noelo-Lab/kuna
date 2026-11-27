@@ -7,7 +7,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::default_args_map::{DefaultArgsMap, DefaultArgsSupplier};
 use crate::direct_node::DirectNode;
 use crate::i_fernflower_logger::Severity;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::k_element::KElement;
 use crate::k_function::{self, MethodSupplier};
@@ -247,7 +246,6 @@ impl KConstructor {
     fn should_hide_constructor(&self) -> bool {
         if !self.is_primary
             || !self.parameters.is_empty()
-            || !DecompilerContext::get_option(IFernflowerPreferences::HIDE_DEFAULT_CONSTRUCTOR)
         {
             return false;
         }

@@ -241,15 +241,13 @@ impl Engine for Jvm {
             Target::Members { name, .. } if language == "kotlin" => format!(
                 "{owner}.{name} has no declaration of its own in the Kotlin source of {owner}: the Kotlin writer \
                  puts a primary constructor in the class header and folds lambda bodies, $default \
-                 methods and @JvmStatic forwarders into the declarations they serve (--option \
-                 jvm_kt_decompile_facades on writes a multifile facade's functions); --language java \
+                 methods and @JvmStatic forwarders into the declarations they serve; --language java \
                  (jvm_kt_enable off) writes the class as Java, method by method, and --option \
                  jvm_remove_synthetic off adds its synthetic methods"
             ),
             Target::Members { name, .. } if name == "<init>" => format!(
                 "{owner}.<init> is not in the decompiled source of {owner} (the engine leaves out default \
-                 constructors, and always an anonymous class's; --option jvm_hide_default_constructor off \
-                 prints the default ones)"
+                 constructors, and always an anonymous class's)"
             ),
             Target::Members { name, .. } => format!(
                 "{owner}.{name} is not in the decompiled source of {owner} (the engine folds synthetic and bridge \

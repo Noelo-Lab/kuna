@@ -1,11 +1,9 @@
 //! Port of `org/vineflower/kotlin/pass/CollapseStringConcatPass.java`.
 
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
 use crate::jthrow;
 use crate::k_function_exprent::{AnyFunctionType, KFunctionExprent, KFunctionType};
-use crate::kotlin_options::KotlinOptions;
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
 use crate::statement::Statement;
@@ -21,10 +19,6 @@ impl Pass for CollapseStringConcatPass {
 impl CollapseStringConcatPass {
     /// Java: run(Statement)
     fn run_stat(stat: Statement) -> bool {
-        if !DecompilerContext::get_option(KotlinOptions::COLLAPSE_STRING_CONCATENATION) {
-            return false;
-        }
-
         let mut res = false;
 
         let stats = stat.get_stats().borrow().to_vec();

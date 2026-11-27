@@ -17,7 +17,6 @@ use crate::do_statement::Type as DoType;
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::method_descriptor::MethodDescriptor;
@@ -247,12 +246,6 @@ impl StackVarsProcessor {
 
             let mut stack_stage = 0;
             while stack_stage < 2 {
-                if !DecompilerContext::get_option(
-                    IFernflowerPreferences::SIMPLIFY_STACK_SECOND_PASS,
-                ) {
-                    stack_stage = 2;
-                }
-
                 for i in 0..lst_lists.len() {
                     let lst = lst_lists[i].clone();
 

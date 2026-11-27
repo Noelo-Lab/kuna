@@ -680,7 +680,6 @@ impl Marker {
                     is_qualifier: _,
                     boxing: _,
                     is_synthetic_null_check: _,
-                    was_lazy_condy: _,
                     kuna_arg_names: _,
                     kuna_needs_type_args: _,
                     kuna_target: _,

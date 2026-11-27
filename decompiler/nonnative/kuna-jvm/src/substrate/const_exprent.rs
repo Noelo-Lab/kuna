@@ -1140,9 +1140,7 @@ impl ConstExprent {
             | CodeType::Shortchar
             | CodeType::Int => {
                 let value = self.value_or_npe().as_int();
-                value == 0
-                    || (DecompilerContext::get_option(IFernflowerPreferences::BOOLEAN_TRUE_ONE)
-                        && value == 1)
+                value == 0 || value == 1
             }
             _ => false,
         }

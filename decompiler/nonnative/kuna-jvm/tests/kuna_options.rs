@@ -1,18 +1,10 @@
-//! The JVM option table: one to one with Vineflower's options, resolution, aliases, and the
-//! kuna form options.
+//! The JVM option table: one to one with Vineflower's options, resolution and aliases.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use kuna_jvm::decompiler_context::DecompilerContext;
-use kuna_jvm::fernflower::Fernflower;
-use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
-use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
-use kuna_jvm::kuna_options::{
-    self, driver_owned, find, form_enabled, resolve, rows, take_form_options, ValueKind,
-    JAVAC_LAYOUT, KUNA_FORM, SOURCE_LOCALS, SOURCE_PATTERNS,
-};
+use kuna_jvm::kuna_options::{self, driver_owned, find, resolve, rows, ValueKind};
 use kuna_jvm::kuna_plugins;
 
 #[test]
@@ -218,51 +210,4 @@ fn resolution_errors() {
         kuna_options::suggest("jvm_remove-bridge"),
         Some("jvm_remove_bridge")
     );
-}
-
-fn pairs(items: &[(&str, &str)]) -> Vec<(String, String)> {
-    items
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect()
-}
-
-#[test]
-fn form_options_are_kuna_rows_on_by_default() {
-    for name in [JAVAC_LAYOUT, SOURCE_LOCALS, SOURCE_PATTERNS] {
-        let row = find(name).unwrap();
-        assert!(row.is_kuna());
-        assert_eq!(
-            (row.values, row.default, row.change_kind),
-            ("on|off", "on", KUNA_FORM)
-        );
-        assert_eq!(resolve(name, "off").unwrap(), (name, "0".to_string()));
-        let (forms, rest) = take_form_options(&pairs(&[(name, "off"), ("a", "1")]));
-        assert!(!forms.contains(name));
-        assert_eq!(rest, pairs(&[("a", "1")]));
-        assert!(take_form_options(&[]).0.contains(name));
-        assert!(take_form_options(&pairs(&[(name, "0"), (name, "on")])).0.contains(name));
-    }
-}
-
-/// Whether the context `Fernflower::new` installs for `options` has `jvm_source_locals` on.
-fn engine_has_source_locals(options: &[(&str, &str)]) -> bool {
-    let options = pairs(options);
-    with_engine_stack(move || {
-        reset_engine_thread();
-        let mut fernflower = Fernflower::new(&options, <dyn IFernflowerLogger>::NO_OP());
-        let on = form_enabled(SOURCE_LOCALS);
-        let leaked = DecompilerContext::get_property(SOURCE_LOCALS).is_some();
-        assert!(!leaked, "the option stays out of Vineflower's option map");
-        fernflower.clear_context();
-        reset_engine_thread();
-        on
-    })
-}
-
-#[test]
-fn the_engine_installs_the_form_options() {
-    assert!(engine_has_source_locals(&[]));
-    assert!(engine_has_source_locals(&[(SOURCE_LOCALS, "1")]));
-    assert!(!engine_has_source_locals(&[(SOURCE_LOCALS, "0")]));
 }

@@ -11,7 +11,6 @@ use crate::class_pass::ClassPass;
 use crate::class_pass_location::ClassPassLocation;
 use crate::classes_processor::ClassNode;
 use crate::decompiler_context::DecompilerContext;
-use crate::i_variable_naming_factory::IVariableNamingFactory;
 use crate::java_pass_location::JavaPassLocation;
 use crate::java_pass_registrar::JavaPassRegistrar;
 use crate::named_pass::NamedPass;
@@ -171,18 +170,6 @@ impl PluginContext {
             }
         })?;
         specs.into_iter().find(|spec| spec.chooser.is_language(cl))
-    }
-
-    pub fn get_variable_renamer(self) -> Option<Rc<dyn IVariableNamingFactory>> {
-        let plugins = self.with(|d| d.plugins.clone());
-        for plugin in plugins {
-            let factory = plugin.get_renaming_factory();
-            if factory.is_some() {
-                return factory;
-            }
-        }
-
-        None
     }
 
     pub fn get_plugins(self) -> Vec<Rc<dyn Plugin>> {

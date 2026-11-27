@@ -1,24 +1,5 @@
 # kuna-jvm corpus manifest; format, layout and how to add a case: tests/jvm/README.md
 kuna-jvm-corpus	1
-set	Complex Condys	complex-condys
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	verify-anonymous-classes	1
-opt	include-classpath	0
-opt	decompile-complex-constant-dynamic	1
-opt	preferred-line-length	250
-opt	verify-pre-post-merges	1
 set	Default	default
 opt	log-level	warn
 opt	decompile-generics	1
@@ -35,7 +16,6 @@ opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	include-classpath	0
-opt	ternary-in-if	1
 opt	force-jsr-inline	1
 opt	verify-pre-post-merges	1
 set	Javadoc	javadoc
@@ -49,26 +29,6 @@ opt	new-line-separator	1
 opt	error-message	
 opt	include-runtime	
 javadoc	plain
-set	Lambda to Anonymous Class	lambda-to-anonymous-class
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	verify-anonymous-classes	1
-opt	include-classpath	0
-opt	ternary-in-if	1
-opt	force-jsr-inline	1
-opt	lambda-to-anonymous-class	1
-opt	verify-pre-post-merges	1
 set	Literals	literals
 opt	log-level	warn
 opt	decompile-generics	1
@@ -161,23 +121,6 @@ opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	mark-corresponding-synthetics	1
 opt	verify-pre-post-merges	1
-set	Ternary Constant Simplification	ternary-constant-simplification
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	0
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	verify-anonymous-classes	1
-opt	ternary-constant-simplification	1
-opt	verify-pre-post-merges	1
 set	With Idea Not Null	with-idea-not-null
 opt	log-level	warn
 opt	decompile-generics	1
@@ -195,38 +138,7 @@ opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	include-classpath	0
-opt	ternary-in-if	1
 opt	force-jsr-inline	1
-set	JAD Naming	jad-naming
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	jvm_plugins	1
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	variable-renaming	jad
-set	Tiny Naming	tiny-naming
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	jvm_plugins	1
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	variable-renaming	tiny
 set	Plugin Defaults	plugin-defaults
 opt	jvm_plugins	1
 set	Kotlin Core Default	kotlin-core-default
@@ -246,7 +158,6 @@ opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
 opt	include-classpath	0
-opt	ternary-in-if	1
 opt	force-jsr-inline	1
 opt	verify-pre-post-merges	1
 set	Kotlin Entire Classpath	kotlin-entire-classpath
@@ -265,22 +176,6 @@ opt	__dump_original_lines__	1
 opt	dump-exception-on-error	0
 opt	ignore-invalid-bytecode	1
 opt	verify-anonymous-classes	1
-set	Kotlin Multifile Facade	kotlin-multifile-facade
-opt	jvm_plugins	1
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	0
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	kt-decompile-facades	1
 set	Kuna Fixes	kuna-fixes	kuna-fixes/expected
 opt	log-level	warn
 opt	decompile-generics	1
@@ -292,8 +187,6 @@ opt	new-line-separator	1
 opt	error-message	
 opt	include-runtime	
 opt	dump-exception-on-error	0
-case	complex-condys/pkg/TestComplexCondy	Complex Condys	classes/jasm/pkg/TestComplexCondy
-kuna	b97b68c11520e1ea
 case	default/InvalidMethodSignature	Default	classes/custom/InvalidMethodSignature
 kuna	45d5e7c4bdc10547
 compare	i.java
@@ -1308,10 +1201,6 @@ case	default/v11/TestInnerClassConstructor	Default	classes/custom/v11/TestInnerC
 kuna	ca99a4bfd62046c0
 case	javadoc/pkg/TestJavadoc	Javadoc	classes/java8/pkg/TestJavadoc
 kuna	537f34ce29395ab0
-case	lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass	Lambda to Anonymous Class	classes/java8/pkg/TestLambdaToAnonymousClass
-kuna	9da7c75fa552c8d7
-case	lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass2	Lambda to Anonymous Class	classes/java8/pkg/TestLambdaToAnonymousClass2
-kuna	201ce6fb43ac2cb7
 case	literals/pkg/TestConstantUninlining	Literals	classes/java8/pkg/TestConstantUninlining
 kuna	03cd8a10da9954a3
 case	literals/pkg/TestFloatPrecision	Literals	classes/java8/pkg/TestFloatPrecision
@@ -1342,20 +1231,8 @@ case	synthetics-marking/pkg/TestLambdaNaming	Synthetics Marking	classes/java8/pk
 kuna	cc139e1c402db370
 case	synthetics-marking/pkg/TestLocalClassNaming	Synthetics Marking	classes/java8/pkg/TestLocalClassNaming
 kuna	d1804b486d3fcbfd
-case	ternary-constant-simplification/pkg/TestAssignmentTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestAssignmentTernaryConstantSimplification
-kuna	8225055d31930e25
-case	ternary-constant-simplification/pkg/TestReturnTernaryConstantSimplification	Ternary Constant Simplification	classes/java8/pkg/TestReturnTernaryConstantSimplification
-kuna	4c118e72f071b2e9
-case	jad-naming/TestJadLvtCollision	JAD Naming	classes/plugins/variable-renaming/custom/TestJadLvtCollision
-kuna	2bd0a2858284dcf5
-case	jad-naming/pkg/TestJADLocalClasses	JAD Naming	classes/plugins/variable-renaming/java8/pkg/TestJADLocalClasses
-kuna	44896e58761901b7
-case	jad-naming/pkg/TestJADNaming	JAD Naming	classes/plugins/variable-renaming/java8/pkg/TestJADNaming
-kuna	5325912d4f0db671
 case	plugin-defaults/TestIdeaNotNull	Plugin Defaults	classes/custom/TestIdeaNotNull
 kuna	3e749b4c51b4b14f
-case	tiny-naming/pkg/TestTinyNaming	Tiny Naming	classes/plugins/variable-renaming/java8/pkg/TestTinyNaming
-kuna	380c56bac908f7e2
 case	with-idea-not-null/TestIdeaNotNull	With Idea Not Null	classes/custom/TestIdeaNotNull
 kuna	4b82def0117798ab
 case	kotlin-core-default/pkg/TestIllegalVarName	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestIllegalVarName
@@ -1562,15 +1439,6 @@ compare	TestWhenBoolean.kt	TestWhenBoolean.java
 case	kotlin-entire-classpath/pkg/TestWhenControlFlow	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhenControlFlow
 kuna	7914e0adc2eca726
 compare	TestWhenControlFlow.kt	TestWhenControlFlow.java
-case	kotlin-multifile-facade/pkg/TestMultifile	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile
-kuna	d52c295002f45e96
-compare	TestMultifile.kt	TestMultifile.java
-case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileA	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile__TestMultifileAKt
-kuna	af2a31fa448e9763
-compare	TestMultifile__TestMultifileAKt.kt	TestMultifile__TestMultifileAKt.java
-case	kotlin-multifile-facade/pkg/TestMultifile__TestMultifileB	Kotlin Multifile Facade	classes/kotlin/kt/pkg/TestMultifile__TestMultifileBKt
-kuna	b4654466634d8f12
-compare	TestMultifile__TestMultifileBKt.kt	TestMultifile__TestMultifileBKt.java
 # kuna-fixes/src/pkg/TestMembersWithoutMetadata.kt, kotlinc 2.0.0 -jvm-target 17
 case	kuna-fixes/pkg/NoMetaBag	Kuna Fixes	kuna-fixes/classes/pkg/NoMetaBag	kuna-fixes/classes/pkg/NoMetaReader
 opt	jvm_plugins	1

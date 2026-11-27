@@ -1,15 +1,13 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/IfHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `reorderIf` takes
+//! kuna (`kuna_javac_layout`): `reorderIf` takes
 //! javac's branch order from the bytecode offsets and splits an if-else
 //! whose then-branch javac ended with a `continue` or `break`; the collapses
 //! leave two tests that jump on their own apart.
 
 use crate::assert_processor::AssertProcessor;
-use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_node::{EdgeType, IfNode};
 use crate::if_statement::IfStatement;
 use crate::jthrow;
@@ -101,9 +99,7 @@ impl IfHelper {
                             continue 'loop_;
                         }
 
-                        if DecompilerContext::get_option(IFernflowerPreferences::TERNARY_CONDITIONS)
-                            && Self::collapse_ternary(&rtnode)
-                        {
+                        if Self::collapse_ternary(&rtnode) {
                             res = true;
                             ValidationHelper::validate_statement(stat.get_top_parent());
                             continue 'loop_;
@@ -404,7 +400,7 @@ impl IfHelper {
         false
     }
 
-    /// kuna option `jvm_javac_layout`: whether javac wrote `first` as an if
+    /// kuna (`kuna_javac_layout`): whether javac wrote `first` as an if
     /// of its own, not a test of the compound condition the collapse builds.
     fn separate_tests(first: IfStatement) -> bool {
         kuna_javac_layout::active() && kuna_javac_layout::separate_test(first)

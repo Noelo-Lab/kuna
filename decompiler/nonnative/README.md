@@ -9,7 +9,7 @@ source language rather than over p-code.
 
 | Crate | Input | Output | Origin |
 |---|---|---|---|
-| `kuna-jvm` | JVM class files, jars, directories of classes; DEX files and APKs (through `kuna-dex`) | Java; Kotlin for classes compiled from Kotlin | Rust port of Vineflower 1.12.0 and its bundled Kotlin, variable-renaming and IDEA not-null plugins (Apache-2.0) |
+| `kuna-jvm` | JVM class files, jars, directories of classes; DEX files and APKs (through `kuna-dex`) | Java; Kotlin for classes compiled from Kotlin | Rust port of Vineflower 1.12.0 and its bundled Kotlin and IDEA not-null plugins (Apache-2.0) |
 | `kuna-managed` | - | - | kuna: the contract between the CLI and a managed engine (no dependencies) |
 | `kuna-dex` | DEX files, APKs | JVM class files, in memory, for `kuna-jvm` | kuna: DEX to class-file translation (no dependencies) |
 

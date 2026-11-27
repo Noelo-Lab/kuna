@@ -1,10 +1,10 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SimplifyExprentsHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout`): `buildIff` merges two
+//! kuna (`kuna_javac_layout`): `buildIff` merges two
 //! returns into a ternary only when they are one bytecode instruction.
-//! kuna option `jvm_source_locals` (`kuna_source_increments`): `isIPPorIMM` and
+//! kuna (`kuna_source_increments`): `isIPPorIMM` and
 //! `inlinePPIandMMI` keep an increment the source wrote as a statement.
-//! kuna option `jvm_source_locals` (`kuna_source_locals`): `isAssignmentReturn`,
+//! kuna (`kuna_source_locals`): `isAssignmentReturn`,
 //! `isArrayInitializer` and `addArrayInitializer` leave a local of the source
 //! (one the LocalVariableTable names) as the source wrote it.
 
@@ -21,7 +21,6 @@ use crate::expr_processor::ExprProcessor;
 use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_helper::IfHelper;
 use crate::if_statement::IfStatement;
 use crate::interpreter_util::InterpreterUtil;
@@ -134,9 +133,6 @@ impl SimplifyExprentsHelper {
         let expressions = stat.get_exprents();
         match expressions {
             None => {
-                let process_class14 =
-                    DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_CLASS_1_4);
-
                 loop {
                     let mut changed = false;
 
@@ -152,7 +148,7 @@ impl SimplifyExprentsHelper {
 
                         changed = IfHelper::merge_ifs(st, set_reordered_ifs)
                             || Self::build_iff(st, ssa)
-                            || process_class14 && Self::collapse_inlined_class14(st);
+                            || Self::collapse_inlined_class14(st);
 
                         if changed {
                             break;
@@ -255,9 +251,7 @@ impl SimplifyExprentsHelper {
                 continue;
             }
 
-            if DecompilerContext::get_option(IFernflowerPreferences::REMOVE_GET_CLASS_NEW)
-                && Self::is_qualified_new_get_class(current, next)
-            {
+            if Self::is_qualified_new_get_class(current, next) {
                 list.remove_at(index);
                 res = true;
                 continue;
@@ -474,7 +468,7 @@ impl SimplifyExprentsHelper {
     }
 
     /// Whether `store` writes an element of `arr_var`, a local of the source
-    /// (`jvm_source_locals`).
+    /// (`kuna_source_locals`).
     fn stores_source_local(store: Exprent, arr_var: VarExprent) -> bool {
         array_store(store, arr_var).is_some_and(|(aas, _)| {
             aas.get_left()

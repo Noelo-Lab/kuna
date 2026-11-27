@@ -21,7 +21,7 @@ use kuna_jvm::sequence_statement::SequenceStatement;
 use kuna_jvm::stat_edge::StatEdge;
 use kuna_jvm::statement::Statement;
 
-use crate::common::{fixture_method, oracle_context, start_method};
+use crate::common::{fixture_method, install_default_context, start_method};
 
 fn pairs(list: &[(&'static str, &'static str)]) -> Vec<(String, String)> {
     list.iter()
@@ -112,7 +112,7 @@ fn denest_shape() -> (bool, Statement, Statement, Statement, Statement) {
 
 #[test]
 fn if_denest_leaves_an_if_whose_body_reaches_the_moved_code() {
-    let _context = oracle_context();
+    let _context = install_default_context();
 
     let (changed, outer, body, z, e) = denest_shape();
     assert!(!changed);
@@ -131,7 +131,7 @@ mod catch_loop_back_successor {
     use kuna_jvm::statement::Statement;
     use kuna_jvm::struct_method::StructMethod;
 
-    use crate::common::{fixture_method, oracle_context, start_method};
+    use crate::common::{fixture_method, install_default_context, start_method};
 
     fn bb() -> Statement {
         BasicBlockStatement::create().0
@@ -172,7 +172,7 @@ mod catch_loop_back_successor {
 
     #[test]
     fn a_catch_is_not_built_with_its_own_try_block_as_successor() {
-        let _context = oracle_context();
+        let _context = install_default_context();
         let mt = fixture_method();
 
         for handlers in [2, 3] {

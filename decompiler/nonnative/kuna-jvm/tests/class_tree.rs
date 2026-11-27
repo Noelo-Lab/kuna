@@ -140,7 +140,7 @@ fn load_classes_matches_vineflower() {
     let mut reversed = inconsistent.clone();
     reversed.reverse();
 
-    let runs: [(&str, &[PathBuf], &[(&str, &str)]); 6] = [
+    let runs: [(&str, &[PathBuf], &[(&str, &str)]); 5] = [
         ("default", &own, &[]),
         (
             "verify-anonymous",
@@ -151,11 +151,6 @@ fn load_classes_matches_vineflower() {
             "no-inner",
             &own,
             &[(IFernflowerPreferences::DECOMPILE_INNER, "0")],
-        ),
-        (
-            "no-name-check",
-            &own,
-            &[(IFernflowerPreferences::VALIDATE_INNER_CLASSES_NAMES, "0")],
         ),
         ("inconsistent", &inconsistent, &[]),
         ("inconsistent-reversed", &reversed, &[]),

@@ -1,10 +1,8 @@
 //! Port of `org/jetbrains/java/decompiler/main/Fernflower.java`, adapted to
 //! kuna: finished classes are handed to a callback instead of an
 //! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
-//! by the custom property `jvm_plugins`) instead of the class path; the
-//! `kuna-form` options (`kuna_options`) are taken off the property list and
-//! their set stored in the context, and an `error-message` the caller did not
-//! set names kuna's tracker; renamer
+//! by the custom property `jvm_plugins`) instead of the class path; an
+//! `error-message` the caller did not set names kuna's tracker; renamer
 //! class loading has no Rust counterpart, and `include-classpath` adds the
 //! current JDK runtime (the system-module half of `ClasspathScanner`; the
 //! JVM's own class path has no analogue here).
@@ -32,9 +30,7 @@ use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
-use crate::identity_renamer_factory::IdentityRenamerFactory;
 use crate::jdk_runtime::JdkRuntime;
-use crate::kuna_options;
 use crate::kuna_partition::RootSelection;
 use crate::kuna_plugins;
 use crate::plugin_context::PluginContext;
@@ -110,7 +106,6 @@ impl Fernflower {
         plugin_sources: Vec<Rc<dyn PluginSource>>,
     ) -> Fernflower {
         let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
-        let (forms, custom_properties) = kuna_options::take_form_options(&custom_properties);
         let custom_properties = &custom_properties[..];
         let mut properties = IFernflowerPreferences::DEFAULTS();
         properties.put(
@@ -172,7 +167,6 @@ impl Fernflower {
             class_processor,
             interceptor,
         );
-        context.with_mut(|d| d.kuna_forms = forms);
         DecompilerContext::set_current_context(Some(context.clone()));
 
         let plugins = struct_context.get_plugin_context();
@@ -182,12 +176,6 @@ impl Fernflower {
         logger.write_message(&format!("Loaded {plugin_count} plugins"), Severity::Info);
 
         plugins.initialize();
-
-        let renamer = plugins
-            .get_variable_renamer()
-            .unwrap_or_else(|| Rc::new(IdentityRenamerFactory));
-
-        context.with_mut(|d| d.renamer_factory = Some(renamer));
 
         logger.write_message(
             &format!(

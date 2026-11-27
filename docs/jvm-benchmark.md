@@ -66,11 +66,10 @@ limits".
 
 ### kuna against Vineflower
 
-kuna with default flags against the same Vineflower runs: its fixes, and the three options
-that are on by default, `jvm_javac_layout` (ifs, loops, exits and boolean comparisons laid out as
-javac laid out the bytecode), `jvm_source_locals` (the locals the class file names kept,
-declared in slot order and in the source's scopes) and `jvm_source_patterns` (a test and a cast where the source wrote
-them, not an `instanceof` pattern). Each cell is Vineflower's score, then kuna's where it differs; *structure perfect*
+kuna with default flags against the same Vineflower runs: its fixes, and its three choices of
+form: ifs, loops, exits and boolean comparisons laid out as javac laid out the bytecode; the
+locals the class file names kept, declared in slot order and in the source's scopes; and a test
+and a cast where the source wrote them, not an `instanceof` pattern. Each cell is Vineflower's score, then kuna's where it differs; *structure perfect*
 is GED 0, *types perfect* is every declared type of the method exact, *bytes exact* is an
 identical recompiled listing, *classes recompile* is the share of decompiled classes javac
 accepts as written, and *methods lost* counts methods the decompiler failed on or whose
@@ -87,7 +86,7 @@ text does not parse.
 Over all five projects, 109,006 methods are perfect on every metric instead of 94,106
 (98.88% instead of 85.37%), every method is decompiled, and 380 more classes recompile
 (7,988 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
-`jvm_javac_layout`: Vineflower writes two returns as one `return c ? a : b`, negates ifs
+the javac layout: Vineflower writes two returns as one `return c ? a : b`, negates ifs
 and swaps their branches against the bytecode's order, and folds an early `return;` or
 `continue;` into a negated `if` around the rest, all of which recompile to equivalent code
 laid out differently from the original. Most of the gain in classes that recompile comes

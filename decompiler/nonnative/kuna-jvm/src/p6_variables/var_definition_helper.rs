@@ -7,7 +7,7 @@
 //! clash-renaming maps key statements by `Option<Statement>` (a root's parent)
 //! and hold `Option<String>` names (an unnamed parameter).
 //!
-//! kuna option `jvm_source_locals` (`kuna_source_locals`): `setVarDefinitions`
+//! kuna (`kuna_source_locals`): `setVarDefinitions`
 //! moves declarations without an initializer to where javac gives their
 //! variables the class file's slots, hoisting them out of the blocks
 //! Vineflower narrowed them into (`kuna_source_scopes`); `mergeVars` does not
@@ -36,7 +36,6 @@ use crate::fixes::var_merge;
 use crate::p6_variables::kuna_source_locals;
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::var_merge::var_merge_narrowing::{self, Merge};
-use crate::pair::Pair;
 use crate::root_statement::RootStatement;
 use crate::rt::{
     objects_equals, objects_hash, rethrow, try_catch, JHashMap, JHashSet, JLinkedHashMap, JList,
@@ -134,7 +133,7 @@ impl VarDefinitionHelper {
         paramcount += md.params.len() as i32;
 
         let mut method_parameters: Option<Vec<MethodParameter>> = None;
-        if DecompilerContext::get_option(IFernflowerPreferences::USE_METHOD_PARAMETERS) {
+        if DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
             let attr = mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_METHOD_PARAMETERS);
             if let Some(attr) = attr {
                 method_parameters = Some(attr.get_entries());
@@ -1361,14 +1360,6 @@ impl VarDefinitionHelper {
 
         self.find_types(Some(stat), &mut types);
 
-        let mut type_names: JLinkedHashMap<VarVersionPair, Pair<Option<VarType>, Option<String>>> =
-            JLinkedHashMap::new();
-        for (key, info) in types.iter() {
-            type_names.put(*key, Pair::of(info.get_type(), Some(info.get_cast())));
-        }
-
-        let renames = mt.get_variable_namer().rename(&type_names);
-
         let mut methods: JHashSet<Option<StructMethod>> = JHashSet::new();
 
         StatementIterator::iterate(root.0, &mut |exprent: Exprent| {
@@ -1414,10 +1405,7 @@ impl VarDefinitionHelper {
         }
 
         for meth in methods.to_vec() {
-            let namer = meth
-                .expect("NullPointerException: method")
-                .get_variable_namer();
-            namer.add_parent_context(mt.get_variable_namer());
+            meth.expect("NullPointerException: method");
         }
 
         let mut lvts: JHashMap<VarVersionPair, LocalVariable> = JHashMap::new();
@@ -1426,17 +1414,7 @@ impl VarDefinitionHelper {
             if idx.var == 0 && !mt.has_modifier(ACC_STATIC) {
                 continue;
             }
-            let lvt = info.get_lvt();
-            let rename = renames.as_ref().and_then(|r| r.get_cloned(&idx));
-
-            if let Some(rename) = &rename {
-                varproc.set_var_name(idx, rename.clone());
-            }
-
-            if let Some(mut lvt) = lvt {
-                if let Some(rename) = &rename {
-                    lvt = lvt.rename(rename.clone());
-                }
+            if let Some(lvt) = info.get_lvt() {
                 varproc.set_var_lvt(idx, lvt.clone());
                 lvts.put(idx, lvt);
             }
@@ -2600,31 +2578,33 @@ impl DerefMut for VPPEntry {
 #[derive(Clone)]
 pub struct VarInfo {
     lvt: Option<LocalVariable>,
-    cast: String,
     type_: Option<VarType>,
 }
 
 impl VarInfo {
+    /// Names the variable's cast type as Vineflower's constructor does, for
+    /// its effect alone: a generic type's classes are registered with the
+    /// import collector (and a malformed signature fails the method).
     fn new(lvt: Option<LocalVariable>, type_: Option<VarType>) -> VarInfo {
-        let cast = match (&lvt, &type_) {
+        match (&lvt, &type_) {
             (Some(lvt), _) => match lvt.get_signature() {
                 Some(signature) => {
-                    ExprProcessor::get_cast_type_name_short(&GenericType::parse(&signature), false)
+                    ExprProcessor::get_cast_type_name_short(&GenericType::parse(&signature), false);
                 }
-                None => ExprProcessor::get_cast_type_name_short(&lvt.get_var_type(), false),
+                None => {
+                    ExprProcessor::get_cast_type_name_short(&lvt.get_var_type(), false);
+                }
             },
-            (None, Some(type_)) => ExprProcessor::get_cast_type_name_short(type_, false),
-            (None, None) => "this".to_string(),
-        };
-        VarInfo { lvt, cast, type_ }
+            (None, Some(type_)) => {
+                ExprProcessor::get_cast_type_name_short(type_, false);
+            }
+            (None, None) => {}
+        }
+        VarInfo { lvt, type_ }
     }
 
     pub fn get_lvt(&self) -> Option<LocalVariable> {
         self.lvt.clone()
-    }
-
-    pub fn get_cast(&self) -> String {
-        self.cast.clone()
     }
 
     pub fn get_type(&self) -> Option<VarType> {

@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/SecondaryFunctionsHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_boolean_compare`): a comparison
+//! kuna (`kuna_javac_boolean_compare`): a comparison
 //! with a boolean literal that javac's bytecode shows is not folded.
 
 use crate::assignment_exprent::AssignmentExprent;
@@ -11,7 +11,6 @@ use crate::counter_container::CounterContainer;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::if_statement::IfStatement;
 use crate::p3_dataflow::kuna_javac_boolean_compare;
 use crate::fixes::numeric_types::{compound_assignment_shape, implicit_widening_arithmetic};
@@ -461,10 +460,7 @@ impl SecondaryFunctionsHelper {
                             }
                         }
 
-                        if DecompilerContext::get_option(
-                            IFernflowerPreferences::TERNARY_CONSTANT_SIMPLIFICATION,
-                        ) || options.force_ternary_simplification
-                        {
+                        if options.force_ternary_simplification {
                             if expr1.is_const() && expr1.get_expr_type().type_ == CodeType::Boolean
                             {
                                 let cexpr1 = expr1.as_const();

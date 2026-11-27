@@ -57,7 +57,6 @@ use crate::fixes::kt_initializers;
 use crate::kotlin_chooser::KotlinChooser;
 use crate::kotlin_import_collector::KotlinImportCollector;
 use crate::kotlin_object_processors::KotlinObjectProcessors;
-use crate::kotlin_options::KotlinOptions;
 use crate::kt_attrs::KtAttrs;
 use crate::kt_flags::Flags;
 use crate::kt_proto::{ClassKind, Modality};
@@ -301,14 +300,11 @@ impl KotlinWriter {
 
             if node.with(|d| d.type_) == ClassNodeType::Root
                 && cl.get_version().has14_class_references()
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_CLASS_1_4)
             {
                 ClassReference14Processor::process_class_references(node);
             }
 
-            if cl.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
-            {
+            if cl.has_modifier(ACC_ENUM) {
                 KEnumProcessor::clear_enum(wrapper);
             }
 
@@ -518,9 +514,7 @@ impl KotlinWriter {
 
             buffer.append(" */").append_line_separator();
 
-            if !DecompilerContext::get_option(KotlinOptions::DECOMPILE_FACADES) {
-                return true;
-            }
+            return true;
         }
 
         let synthetic_object = !matches!(kt_data, Some(KElement::Class(_)))
@@ -576,8 +570,7 @@ impl KotlinWriter {
 
         let fields = cl.get_fields().to_vec();
         for &fd in &fields {
-            let is_enum = fd.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+            let is_enum = fd.has_modifier(ACC_ENUM);
             if is_enum {
                 enum_fields.push(fd);
             }
@@ -1401,8 +1394,7 @@ impl KotlinWriter {
             node.with(|d| d.access)
         };
         let is_deprecated = cl.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
-        let is_enum = DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM)
-            && (flags & ACC_ENUM) != 0;
+        let is_enum = (flags & ACC_ENUM) != 0;
         let is_interface = (flags & ACC_INTERFACE) != 0;
         let is_annotation = (flags & ACC_ANNOTATION) != 0;
 
@@ -1657,8 +1649,7 @@ impl KotlinWriter {
     ) {
         let is_interface = cl.has_modifier(ACC_INTERFACE);
         let is_deprecated = fd.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
-        let is_enum = fd.has_modifier(ACC_ENUM)
-            && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+        let is_enum = fd.has_modifier(ACC_ENUM);
 
         if is_deprecated && !KotlinWriter::contains_deprecated_annotation(fd.0) {
             KotlinWriter::append_deprecation(buffer, indent);
@@ -1870,8 +1861,7 @@ impl KotlinWriter {
 
             let is_interface = cl.has_modifier(ACC_INTERFACE);
             let is_annotation = cl.has_modifier(ACC_ANNOTATION);
-            let is_enum = cl.has_modifier(ACC_ENUM)
-                && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+            let is_enum = cl.has_modifier(ACC_ENUM);
             let is_deprecated = mt.has_attribute(StructGeneralAttribute::ATTRIBUTE_DEPRECATED);
             let mut cl_init = false;
             let mut init = false;
@@ -2185,7 +2175,7 @@ impl KotlinWriter {
                 }
 
                 let mut method_parameters = None;
-                if DecompilerContext::get_option(IFernflowerPreferences::USE_METHOD_PARAMETERS) {
+                if DecompilerContext::get_option(IFernflowerPreferences::USE_DEBUG_VAR_NAMES) {
                     let attr =
                         mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_METHOD_PARAMETERS);
                     if let Some(attr) = attr {
@@ -2232,23 +2222,17 @@ impl KotlinWriter {
                         };
 
                         if (flags & (ACC_ABSTRACT | ACC_NATIVE)) != 0 {
-                            let new_parameter_name = method_struct
-                                .get_variable_namer()
-                                .rename_abstract_parameter(parameter_name.as_deref(), index)
+                            parameter_name
+                                .as_ref()
                                 .expect("NullPointerException: renameAbstractParameter");
-                            parameter_name = if parameter_name.as_deref()
-                                != Some(new_parameter_name.as_str())
-                            {
-                                Some(new_parameter_name)
-                            } else {
+                            parameter_name =
                                 DecompilerContext::get_struct_context().rename_abstract_parameter(
                                     &method_struct.get_class_qualified_name(),
                                     &mt.get_name(),
                                     &mt.get_descriptor(),
                                     index - if (flags & ACC_STATIC) == 0 { 1 } else { 0 },
                                     parameter_name.as_deref(),
-                                )
-                            };
+                                );
                         }
 
                         let parameter_name = parameter_name
@@ -2642,7 +2626,6 @@ impl KotlinWriter {
         if !init
             || throws_exceptions
             || param_count > 0
-            || !DecompilerContext::get_option(IFernflowerPreferences::HIDE_DEFAULT_CONSTRUCTOR)
         {
             return false;
         }
@@ -2655,8 +2638,7 @@ impl KotlinWriter {
         } else {
             node.with(|d| d.access)
         };
-        let is_enum = cl.has_modifier(ACC_ENUM)
-            && DecompilerContext::get_option(IFernflowerPreferences::DECOMPILE_ENUM);
+        let is_enum = cl.has_modifier(ACC_ENUM);
 
         if !is_enum
             && ((class_access_flags & KotlinWriter::ACCESSIBILITY_FLAGS)
@@ -2754,9 +2736,7 @@ impl KotlinWriter {
 
     fn get_type_print_out(type_: &VarType) -> String {
         let mut type_text = ExprProcessor::get_cast_type_name_short(type_, false);
-        if ExprProcessor::UNDEFINED_TYPE_STRING == type_text
-            && DecompilerContext::get_option(IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT)
-        {
+        if ExprProcessor::UNDEFINED_TYPE_STRING == type_text {
             type_text = ExprProcessor::get_cast_type_name_short(&VarType::VARTYPE_OBJECT(), false);
         }
         type_text

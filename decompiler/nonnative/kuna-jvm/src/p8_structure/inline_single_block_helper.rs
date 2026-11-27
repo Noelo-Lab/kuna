@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InlineSingleBlockHelper.java`.
 //!
-//! kuna option `jvm_javac_layout` (`kuna_javac_layout::keeps_tail`): code javac
+//! kuna (`kuna_javac_layout::keeps_tail`): code javac
 //! placed after a loop or switch and reached by a `break` stays there.
 
 use crate::if_statement::IfStatement;

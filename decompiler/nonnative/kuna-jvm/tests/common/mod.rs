@@ -14,7 +14,6 @@ use kuna_jvm::decompiler_context::DecompilerContext;
 use kuna_jvm::i_decompiled_data::IDecompiledData;
 use kuna_jvm::i_fernflower_logger::{CollectingLogger, IFernflowerLogger, Severity};
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
-use kuna_jvm::identity_renamer_factory::IdentityRenamerFactory;
 use kuna_jvm::pool_interceptor::PoolInterceptor;
 use kuna_jvm::struct_class::StructClass;
 use kuna_jvm::struct_context::StructContext;
@@ -95,10 +94,6 @@ pub fn install_context_with(options: &[(&str, &str)]) -> ContextGuard {
     let plugins = struct_context.get_plugin_context();
     plugins.find_plugins();
     plugins.initialize();
-    let renamer = plugins
-        .get_variable_renamer()
-        .unwrap_or_else(|| Rc::new(IdentityRenamerFactory));
-    context.with_mut(|d| d.renamer_factory = Some(renamer));
 
     ContextGuard { context, logger }
 }
@@ -136,9 +131,4 @@ pub fn fixture_method() -> StructMethod {
 /// `ClassWrapper.init`'s per-method setup: a fresh var processor and counter container.
 pub fn start_method(mt: StructMethod) {
     DecompilerContext::start_method(VarProcessor::new(mt, &mt.method_descriptor()));
-}
-
-/// Vineflower's options with `TRY_LOOP_FIX`, the one these hand-built graphs reach, off.
-pub fn oracle_context() -> ContextGuard {
-    install_context_with(&[(IFernflowerPreferences::TRY_LOOP_FIX, "0")])
 }

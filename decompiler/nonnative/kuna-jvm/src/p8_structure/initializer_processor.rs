@@ -13,7 +13,6 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_logger::Severity;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::class_writing;
 use crate::method_descriptor::MethodDescriptor;
@@ -58,9 +57,7 @@ impl InitializerProcessor {
 
         Self::lift_constructor(wrapper);
 
-        if DecompilerContext::get_option(IFernflowerPreferences::HIDE_EMPTY_SUPER) {
-            Self::hide_empty_super(wrapper);
-        }
+        Self::hide_empty_super(wrapper);
     }
 
     fn lift_constructor(wrapper: ClassWrapper) {

@@ -11,7 +11,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
-use crate::idea_not_null_options::IdeaNotNullOptions;
 use crate::if_statement::IfStatement;
 use crate::method_descriptor::MethodDescriptor;
 use crate::pass::Pass;
@@ -32,10 +31,6 @@ pub struct IdeaNotNullPass;
 
 impl Pass for IdeaNotNullPass {
     fn run(&self, ctx: &mut PassContext) -> bool {
-        if !DecompilerContext::get_option(IdeaNotNullOptions::IDEA_NOT_NULL_ANNOTATION) {
-            return false;
-        }
-
         IdeaNotNullPass::remove_hardcoded_checks(
             ctx.get_root().expect("NullPointerException: ctx.getRoot()"),
             ctx.get_method(),
