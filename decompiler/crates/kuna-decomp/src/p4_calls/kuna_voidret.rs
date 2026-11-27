@@ -1109,9 +1109,56 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
             .is_some_and(|(addr, size)| register(addr) && !overlaps(addr, *size, &read.0, read.1))
 }
 
+/// Per function whose return a redo changed, the stamp of that redo and the
+/// functions decompiled before it that read the function or called it while it
+/// was in `float_bits`, each kept until it is decompiled again: the only
+/// functions [`stale_readers`] can name for that change. A function is filed as
+/// a reader or caller only by its own decompile, which stamps it later, so no
+/// function joins the list once it is made.
+#[derive(Debug, Default, Clone)]
+pub struct Owed(BTreeMap<(int4, uintb), (usize, Vec<Debt>)>);
+
+/// One function [`Owed`] keeps for a changed callee: whether it reads the
+/// callee, and whether it called the callee while it was in `float_bits`.
+#[derive(Debug, Clone, Copy)]
+struct Debt {
+    owner: (int4, uintb),
+    reads: bool,
+    bits_caller: bool,
+}
+
+impl Owed {
+    /// File that the redo stamped `at` changed the return of `callee`, given
+    /// when each function was last decompiled (`stamp_of`).
+    pub fn changed(&mut self, arch: &Architecture, callee: (int4, uintb), at: usize, stamp_of: &BTreeMap<(int4, uintb), usize>) {
+        let ledger = &arch.kuna_voidret;
+        let readers = ledger.readers.get(&callee);
+        let callers = ledger.bits_callers.get(&callee);
+        let before = |c: &(int4, uintb)| *c != callee && stamp_of.get(c).is_some_and(|&s| s < at);
+        let mut owners: Vec<(int4, uintb)> =
+            readers.into_iter().flatten().chain(callers.into_iter().flatten()).copied().filter(before).collect();
+        owners.sort_unstable();
+        owners.dedup();
+        let debts: Vec<Debt> = owners
+            .into_iter()
+            .map(|owner| Debt {
+                owner,
+                reads: readers.is_some_and(|r| r.contains(&owner)),
+                bits_caller: callers.is_some_and(|c| c.contains(&owner)),
+            })
+            .collect();
+        if debts.is_empty() {
+            self.0.remove(&callee);
+        } else {
+            self.0.insert(callee, (at, debts));
+        }
+    }
+}
+
 /// The functions that read a function whose return a redo changed after they
 /// were decompiled, given when each function was last decompiled (`stamp_of`)
-/// and when each changed function's return last changed (`changed`): the type
+/// and what each change left owed (`owed`, which drops every function
+/// decompiled since): the type
 /// that callee now states reaches them only in another decompile.  Such a
 /// reader typed the result itself, against a callee it saw return nothing, and
 /// its text no longer agrees with the callee's declaration: `unsigned long v10
@@ -1149,11 +1196,16 @@ fn displaced(ledger: &Ledger, callee: &(int4, uintb), read: &(Address, int4)) ->
 pub fn stale_readers(
     arch: &Architecture,
     stamp_of: &BTreeMap<(int4, uintb), usize>,
-    changed: &BTreeMap<(int4, uintb), usize>,
+    owed: &mut Owed,
 ) -> BTreeSet<(int4, uintb)> {
     let vfp = crate::kuna_armfloatreturn::applies(arch);
     let mut out = BTreeSet::new();
-    for (callee, &at) in changed {
+    for (callee, (at, debts)) in owed.0.iter_mut() {
+        let at = *at;
+        debts.retain(|d| stamp_of.get(&d.owner).is_some_and(|&s| s < at));
+        if debts.is_empty() {
+            continue;
+        }
         let float = arch.kuna_voidret.returns.get(callee) == Some(&Returns::Float);
         let withdrawn = arch.kuna_voidret.withdrawn.contains(callee);
         let widened = arch.kuna_voidret.wide.contains_key(callee);
@@ -1168,13 +1220,9 @@ pub fn stale_readers(
                 })
         });
         if arch.kuna_voidret.bits_withdrawn.contains(callee) {
-            let callers = arch.kuna_voidret.bits_callers.get(callee).into_iter().flatten();
-            out.extend(callers.filter(|c| *c != callee && stamp_of.get(*c).is_some_and(|&s| s < at)));
+            out.extend(debts.iter().filter(|d| d.bits_caller).map(|d| d.owner));
         }
-        for reader in arch.kuna_voidret.readers.get(callee).into_iter().flatten() {
-            if reader == callee || stamp_of.get(reader).is_none_or(|&s| s >= at) {
-                continue;
-            }
+        for reader in debts.iter().filter(|d| d.reads).map(|d| &d.owner) {
             let waiting = arch.kuna_voidret.forced.contains_key(reader)
                 && arch.kuna_voidret.returns.get(reader) == Some(&Returns::Void);
             if !states && !waiting && !widened {
@@ -1196,6 +1244,7 @@ pub fn stale_readers(
             }
         }
     }
+    owed.0.retain(|_, (_, debts)| !debts.is_empty());
     out
 }
 
