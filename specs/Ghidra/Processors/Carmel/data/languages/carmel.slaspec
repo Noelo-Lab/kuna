@@ -433,6 +433,7 @@ define token slot (24)
     compact_square_lo = (8,10)
     compact_square_hi = (8,10)
     compact_square_guard = (8,10)
+    slot_8_10 = (8,10)
     compact_mac_left = (4,8)
     compact_mac_right = (1,3)
     compact_msu_left = (4,8)
@@ -7640,6 +7641,77 @@ macro compact_pair_read_check(first, second) {
     goto <stopped>;
   <fetch>
 }
+
+macro compact_mixed_square_commit(lo, hi, guard, incoming, flags) {
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <done>;
+    write_accumulator40(lo, hi, guard, 0:8);
+    raw_mac_flags(flags, 8:2, 0:4);
+  <done>
+}
+
+macro compact_peer_or(dst, left, right, flags) {
+    local word:2 = left | right;
+    dst = word;
+    flags = (flags & 0xf1ff) | (zext(word == 0) << 9);
+}
+
+@define MIXED_SQUARE_PACKET "carmel_issue=1 & slot_mode=0 & slot_0_0=1 & slot_11_11=0 & slot_6_7=1 & compact_square_acc & compact_square_lo & compact_square_hi & compact_square_guard & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
+:MPYUS "CE1" compact_square_acc,"OP3",pair_rn_1 "||" "OR" "A3H","*R5","*R0" is
+    ($(MIXED_SQUARE_PACKET) & slot_12_22=0x495 & slot_8_10!=3 & slot_4_5=1 & pair_rn_1);
+    (slot_mode=0 & slot_16_22=0x69 & slot_14_15=3 & slot_11_13=3 & slot_6_10=5 & slot_1_5=0 & slot_0_0=0) {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    compact_pair_read_check(R5, R0);
+    local first:2 = *[data]:2 R5;
+    local second:2 = *[data]:2 R0;
+    compact_peer_or(A3H, first, second, flags);
+    if (admitted == 0) goto <publish>;
+    compact_mixed_square_commit(compact_square_lo, compact_square_hi, compact_square_guard, incoming, flags);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+    carmel_end_unmodeled_issue();
+}
+
+:MPYSU "CE1" compact_square_acc,"OP3","*"^pair_ptr_1^"--" "||" "OR" "CE2" "A5H",pair_ptr_6,"*R4++" is
+    ($(MIXED_SQUARE_PACKET) & slot_12_22=0x45d & slot_8_10!=5 & slot_4_5=3 & slot_1_5!=28 &
+     pair_ptr_1 & pair_rm_1 & pair_rl_1 & pair_bank_1);
+    (slot_mode=0 & slot_16_22=0x68 & slot_14_15=3 & slot_11_13=5 & slot_6_10<8 &
+     pair_ptr_6 & slot_1_5=20 & slot_0_0=1) {
+    local admit_left:1 = carmel_read_address_admission(1:1);
+    local admit_right:1 = carmel_read_address_admission(2:1);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    local first:2 = pair_ptr_1;
+    local second:2 = R4;
+    local peer_reg:2 = pair_ptr_6;
+    if (admit_left == 0) goto <right_address>;
+    modify_ptr(pair_ptr_1, 0:2, pair_rm_1, pair_rl_1, pair_bank_1, 3:2);
+  <right_address>
+    if (admit_right == 0) goto <fetch_left>;
+    modify_ptr(R4, 0:2, RM4, RL4, 8:4, 2:2);
+    if (admit_left == 0) goto <fetch_left>;
+    compact_pair_read_check(first, second);
+  <fetch_left>
+    if (admit_left == 0) goto <fetch_right>;
+    local discarded:2 = *[data]:2 first;
+  <fetch_right>
+    if (admit_right == 0) goto <commit_left>;
+    local word:2 = *[data]:2 second;
+    local enabled:2;
+    unary_ce(CECFG2, incoming, CETBL, 1:2, enabled);
+    if (enabled == 0) goto <commit_left>;
+    compact_peer_or(A5H, peer_reg, word, flags);
+  <commit_left>
+    if (admit_left == 0) goto <publish>;
+    compact_mixed_square_commit(compact_square_lo, compact_square_hi, compact_square_guard, incoming, flags);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+    carmel_end_unmodeled_issue();
+}
+@undef MIXED_SQUARE_PACKET
 
 macro wide_insert_bits(original, source, result) {
     local count:4 = zext(FF2 & 31);

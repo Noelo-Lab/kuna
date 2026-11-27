@@ -1632,6 +1632,77 @@ int main(void) {
 }
 
 #[test]
+fn carmel_mixed_square_keeps_admission_separate_from_result_enable() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("square.bin");
+    let source = scratch.path().join("square.c");
+    let executable = scratch.path().join("square");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let loadce = |bypass, table| [0x80, 0, table, 0xcd, 0xe4, if bypass { 0x40 } else { 0 }];
+    let rows = [
+        (false, false, 0, 0xff, [0x2345, 12, 0xc048, 0xc04c, 0x3000]),
+        (true, false, 0xff, 0, [0x3456, 0xbbbb, 0xc047, 0xc04d, 0]),
+        (true, false, 0, 0xff, [0x3456, 0xbbbb, 0xc048, 0xc04c, 0x3000]),
+        (true, true, 0, 0xff, [0, 0xc04f, 0xc047, 0xc04d, 0x3008]),
+    ];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         volatile unsigned short mem0 = 4, mem5 = 8, mem2 = 0x8000, mem4 = 0xf;\n",
+    );
+    let mut calls = String::new();
+    for (i, (data, bypass, early, late, expected)) in rows.into_iter().enumerate() {
+        let mut code = vec![
+            [0x80, 0xc0, 0x40, 0xc6, 0x42, 0x80], // R0
+            [0x80, 0xc0, 0x44, 0xc6, 0x42, 0x94], // R5
+            [0x80, 0xc0, 0x48, 0xc6, 0x42, 0x88], // R2
+            [0x80, 0xc0, 0x4c, 0xc6, 0x42, 0x90], // R4
+            loadce(bypass, early),
+        ];
+        code.extend([nop; 6]);
+        code.push(loadce(false, late));
+        code.extend([nop; 3]);
+        code.push(if data { [0x45, 0xd4, 0x75, 0x68, 0xe8, 0xa9] } else { [0x49, 0x52, 0x59, 0x69, 0xd9, 0x40] });
+        code.extend([nop; 4]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([nop; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let (left, right) = if data { ("A4L", "A5H") } else { ("A2L", "A3H") };
+        for (j, (reg, value)) in [left, right, "R2", "R4", "EST"].into_iter().zip(expected).enumerate() {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+                "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+                "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "data [data,0xc040] volatile unsigned short mem0",
+                "--assert", "data [data,0xc044] volatile unsigned short mem5",
+                "--assert", "data [data,0xc048] volatile unsigned short mem2",
+                "--assert", "data [data,0xc04c] volatile unsigned short mem4",
+            ]);
+            for (n, input) in [left, right, "EST", "PACFG", "RM2", "RL2", "RM4", "RL4", "CECFG1", "CECFG2", "CETBL"]
+                .into_iter().enumerate()
+            {
+                kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let fun = &json["functions"][0];
+            assert!(fun["error"].is_null(), "{fun}");
+            let text = fun["code"].as_str().unwrap();
+            let name = format!("square_{i}_{j}");
+            writeln!(generated, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+            let (initial_left, initial_right) = if data { (0x3456, 0xbbbb) } else { (0x2345, 0xaaaa) };
+            writeln!(calls, "if ({name}({initial_left:#x},{initial_right:#x},0,0,0,0,0,0,0,0,0) != {value:#x}) return {};", i * 5 + j + 1).unwrap();
+        }
+    }
+    writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+}
+
+#[test]
 fn carmel_rounded_ff_store_uses_early_address_and_of_samples() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

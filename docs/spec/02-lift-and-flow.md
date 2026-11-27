@@ -4306,6 +4306,15 @@ does not clamp it. In the mixed-sign primary forms with first-position
 input is disconnected. The whole destination becomes zero, the primary
 `Z` flag is set, and the `X1` latch is unchanged.
 
+The covered CE-qualified mixed squares paired with a right `OR` keep
+address admission distinct from result publication. An admitted
+disconnected DATA input still advances its pointer and reserves a read
+port. Read-port contention is checked after both address updates, but before
+either result. The right `OR` uses the old register value if the left
+address lane also modifies that register. It zero-extends its word inputs,
+so bit 15 alone cannot set the secondary negative flag. The two result
+gates and flag updates are independent.
+
 The covered compact register-half `MPY` forms select signedness separately
 for their DATA input and `RN` factor. The DATA input uses the address before
 postmodify and fills `X1` or `X2` according to the physical slot. The result
