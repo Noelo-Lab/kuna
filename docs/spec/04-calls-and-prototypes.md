@@ -7436,7 +7436,9 @@ the stack pointer or a temporary computed from it
 (Stored)`), and at a direct call whose first stack-argument slot of the
 default model the path stored into, the target's run stands whole for the
 reads `reads_through_calls` takes from it. The store is told apart on the
-terms above: a register stored as it stands is a spill, a pushed register the
+terms above: a register stored as it stands is a spill, whether the store
+names the register or the temporary a 64-bit move copies it into, so of a
+register's value only a push passes an argument; a pushed register the
 path never wrote that is no argument register of the model is a save or an
 alignment pad, and a format call the resolver says reads no stack argument
 has none. gcc -O2's tar
@@ -7448,7 +7450,11 @@ so the forwarder took nothing through its call and a single-function
 decompile printed `return rpl_getopt_internal();`, while `decompile-all`,
 which states the callees first, printed all seven arguments. A forwarder
 whose pushed `%rbx` sits in that slot (`pid_plus` above, called through
-`twice_pid`) still takes only its own `rdi`. A body the walk cannot finish --
+`twice_pid`) still takes only its own `rdi`, and so does one that stores
+clang's stack canary there (`push %rax; mov %fs:0x28,%rax; mov %rax,(%rsp)`
+before the call): were the canary a stack argument, the forwarder's run would
+be the whole register file, which its caller declines, and `twice_cnt` would
+call `cnt_plus()`. A body the walk cannot finish --
 an import, a thunk, a body past the budget -- states nothing, as before. The argument is as wide as the body reads
 it on a little-endian register file; on a big-endian one it is the whole
 register. All of the evidence above applies unchanged, with two additions,

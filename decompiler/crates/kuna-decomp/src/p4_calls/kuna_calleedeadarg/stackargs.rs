@@ -11,9 +11,11 @@
 //! says whether the call has one. The stores are told apart on the terms the
 //! decompiled function's own call is (`kuna_passthrough`'s
 //! `stores_first_stack_arg`): a constant or a pushed value is an argument, a
-//! register stored as it stands (`mov %rbx,(%rsp)`, a spill) is not, and
-//! neither is a pushed register the path never wrote that is no argument
-//! register (gcc's `push %rbx`, clang's aligning `push %rax`).
+//! register stored as it stands (`mov %rbx,(%rsp)`, a spill, or clang's stack
+//! canary `mov %rax,(%rsp)`) is not, whether the store names the register or
+//! the temporary a 64-bit move copies it into, and neither is a pushed register
+//! the path never wrote that is no argument register (gcc's `push %rbx`,
+//! clang's aligning `push %rax`).
 
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
@@ -43,12 +45,15 @@ pub(super) struct Stored {
 }
 
 /// Per-instruction state for [`Stored::track`], by temporary offset: the stack
-/// offset each temporary computed from the stack pointer holds, and the
-/// temporaries holding a copy of a register that is a save or a pad.
+/// offset each temporary computed from the stack pointer holds, the
+/// temporaries holding a copy of a register, those of them that are a save or
+/// a pad, and whether the instruction has moved the stack pointer (a push).
 #[derive(Default)]
 pub(super) struct Temps {
     at: Vec<(u64, i64)>,
+    copies: Vec<u64>,
     saves: Vec<u64>,
+    pushing: bool,
 }
 
 impl Temps {
@@ -56,11 +61,15 @@ impl Temps {
         self.at.iter().find(|(o, _)| *o == t).map(|(_, d)| *d)
     }
 
-    fn set(&mut self, t: u64, at: Option<i64>, save: bool) {
+    fn set(&mut self, t: u64, at: Option<i64>, copy: bool, save: bool) {
         self.at.retain(|(o, _)| *o != t);
+        self.copies.retain(|o| *o != t);
         self.saves.retain(|o| *o != t);
         if let Some(d) = at {
             self.at.push((t, d));
+        }
+        if copy {
+            self.copies.push(t);
         }
         if save {
             self.saves.push(t);
@@ -94,7 +103,10 @@ impl Stored {
         if opc == OpCode::CPUI_STORE {
             let (Some(off), Some(value)) = (ins.get(1).and_then(at), ins.get(2)) else { return };
             let size = value.size as i64;
-            let passes = !in_regs(value) && !(unique(value) && temps.saves.contains(&value.offset));
+            let copied = unique(value) && temps.copies.contains(&value.offset);
+            let passes = !in_regs(value)
+                && !(copied && !temps.pushing)
+                && !(unique(value) && temps.saves.contains(&value.offset));
             self.slots.retain(|(o, w, _)| !(*o < off + size && off < *o + *w));
             self.slots.push((off, size, passes));
             return;
@@ -110,15 +122,21 @@ impl Stored {
                 }
                 None => self.slots.clear(),
             }
+            temps.pushing = true;
         } else if unique(o) {
-            let save = match (opc, ins) {
-                (OpCode::CPUI_COPY, [src]) if in_regs(src) => (src.offset..src.offset + src.size as u64)
-                    .map(|b| (reg_idx, b))
-                    .any(|b| !written.contains(&b) && !first.args.contains(&b)),
-                (OpCode::CPUI_COPY, [src]) if unique(src) => temps.saves.contains(&src.offset),
-                _ => false,
+            let (copy, save) = match (opc, ins) {
+                (OpCode::CPUI_COPY, [src]) if in_regs(src) => (
+                    true,
+                    (src.offset..src.offset + src.size as u64)
+                        .map(|b| (reg_idx, b))
+                        .any(|b| !written.contains(&b) && !first.args.contains(&b)),
+                ),
+                (OpCode::CPUI_COPY, [src]) if unique(src) => {
+                    (temps.copies.contains(&src.offset), temps.saves.contains(&src.offset))
+                }
+                _ => (false, false),
             };
-            temps.set(o.offset, displaced(), save);
+            temps.set(o.offset, displaced(), copy, save);
         }
     }
 

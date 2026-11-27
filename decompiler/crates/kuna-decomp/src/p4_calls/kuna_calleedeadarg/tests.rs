@@ -415,8 +415,9 @@ fn a_forward_transfer_reads_its_cuts_as_one_meet() {
 /// The x86-64 shapes the stack-argument record has to tell apart, as raw
 /// p-code: a push of a computed value or a forwarded argument register in the
 /// first stack-argument slot is an argument; a pushed callee-saved register
-/// is a save, a register stored as it stands is a spill, and a slot the stack
-/// pointer moved away from is no argument.
+/// is a save, a register stored as it stands is a spill (also through the
+/// temporary a 64-bit move copies it into), and a slot the stack pointer moved
+/// away from is no argument.
 #[test]
 fn a_store_in_the_first_stack_slot_is_a_stack_argument() {
     let space = |tp: spacetype, name: &str, idx: i32| {
@@ -458,5 +459,13 @@ fn a_store_in_the_first_stack_slot_is_a_stack_argument() {
         RawOp { opc: OpCode::CPUI_STORE, out: None, ins: vec![vd(&cspace, 1, 8), rsp.clone(), vd(&reg, 0, 8)] },
     ];
     assert!(!at_call(vec![spill], rax_written.clone()), "mov %rax,(%rsp) stores a register as it stands");
+    let mov64 = |value: VarnodeData| {
+        vec![
+            RawOp { opc: OpCode::CPUI_COPY, out: Some(vd(&uniq, 0x100, 8)), ins: vec![value] },
+            RawOp { opc: OpCode::CPUI_STORE, out: None, ins: vec![vd(&cspace, 1, 8), rsp.clone(), vd(&uniq, 0x100, 8)] },
+        ]
+    };
+    assert!(!at_call(vec![sub_rsp(8), mov64(vd(&reg, 0, 8))], rax_written.clone()), "clang's canary, mov %rax,(%rsp) through a temporary");
+    assert!(!at_call(vec![sub_rsp(8), mov64(vd(&reg, 0x38, 8))], ByteSet::new()), "mov %rdi,(%rsp) through a temporary");
     assert!(!at_call(Vec::new(), ByteSet::new()), "nothing stored");
 }

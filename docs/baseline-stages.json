@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5711,
-    5711
+    5712,
+    5712
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4852,6 +4852,7 @@
     "data:passthroughfwdstack #2: getopt_long passes the five registers internal forwards to internal_r, and its own r9d and stack argument",
     "data:passthroughfwdstack #3: internal_np pushes an immediate as internal_r_np's first stack argument",
     "data:passthroughfwdstack #4: pid_plus's pushed rbx is a save in sys1's first stack-argument slot, so pid_plus takes only rdi",
+    "data:passthroughfwdstack #5: cnt_plus stores clang's stack canary in sys1's first stack-argument slot, a register as it stands, so cnt_plus takes only rdi",
     "data:passthroughslot #1: only with passthrough off does a call lose every argument",
     "data:passthroughslot #2: getopt_long forwards its five parameters and loads r9d and the stack argument",
     "data:passthroughslot #3: w5 forwards four parameters and loads the fifth",

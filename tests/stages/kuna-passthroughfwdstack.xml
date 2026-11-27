@@ -33,6 +33,13 @@
     every argument register: the pushed rbx is a save in the slot of sys1's
     first stack argument, no argument, so pid_plus takes only its own rdi.
 
+    twice_cnt is `sub $8,%rsp; call cnt_plus` and cnt_plus, hand-assembled in
+    the shape clang -fstack-protector gives a small frame, is `push %rax; mov
+    %fs:0x28,%rax; mov %rax,(%rsp); lea (%rdi,%rdi,2),%eax; add
+    %eax,0x405000; xor %eax,%eax; call sys1`: the canary is a register stored
+    as it stands (through the temporary a 64-bit move copies it into) in
+    sys1's first stack-argument slot, no argument, so cnt_plus takes only rdi.
+
     Stage: P4 active input-trial scoring (kuna_passthrough.rs, option
     passthrough, on by default) on the callee probe's through-call reads
     (kuna_calleedeadarg.rs, stackargs.rs).  Pass 1 is the default; pass 2 sets
@@ -53,7 +60,9 @@
 008b15a11e00008915b31e00005a59c34883ec08e8170000004883c4084801c0
 c3662e0f1f8400000000000f1f440000534889fbbf27000000e8120000004801
 d85bc3662e0f1f8400000000000f1f004889f84889f74889d64889ca4d89c24d
-89c84c8b4c24080f05c3
+89c84c8b4c24080f05c3660f1f4400005064488b042528000000488904248d04
+7f0104250050400031c0e8c1ffffff59c366662e0f1f8400000000000f1f4000
+4883ec08e8c7ffffff4883c4084801c0c3
 </bytechunk>
 <symbol space="ram" offset="0x403000" name="getopt_long"/>
 <symbol space="ram" offset="0x403020" name="getopt_long_only"/>
@@ -64,6 +73,8 @@ d85bc3662e0f1f8400000000000f1f004889f84889f74889d64889ca4d89c24d
 <symbol space="ram" offset="0x403170" name="twice_pid"/>
 <symbol space="ram" offset="0x403190" name="pid_plus"/>
 <symbol space="ram" offset="0x4031b0" name="sys1"/>
+<symbol space="ram" offset="0x4031d0" name="cnt_plus"/>
+<symbol space="ram" offset="0x403200" name="twice_cnt"/>
 </binaryimage>
 <script>
   <com>lo fu getopt_long</com>
@@ -73,6 +84,9 @@ d85bc3662e0f1f8400000000000f1f004889f84889f74889d64889ca4d89c24d
   <com>decompile</com>
   <com>print C</com>
   <com>lo fu twice_pid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu twice_cnt</com>
   <com>decompile</com>
   <com>print C</com>
   <com>option passthrough off</com>
@@ -85,4 +99,5 @@ d85bc3662e0f1f8400000000000f1f004889f84889f74889d64889ca4d89c24d
 <stringmatch name="passthroughfwdstack #2: getopt_long passes the five registers internal forwards to internal_r, and its own r9d and stack argument" min="1" max="1">internal\(a0,a1,a2,a3,a4,0,0\);</stringmatch>
 <stringmatch name="passthroughfwdstack #3: internal_np pushes an immediate as internal_r_np's first stack argument" min="1" max="1">internal_np\(a0,a1,a2,a3,a4,1,0\);</stringmatch>
 <stringmatch name="passthroughfwdstack #4: pid_plus's pushed rbx is a save in sys1's first stack-argument slot, so pid_plus takes only rdi" min="1" max="1">return pid_plus\(a0\) \* 2;</stringmatch>
+<stringmatch name="passthroughfwdstack #5: cnt_plus stores clang's stack canary in sys1's first stack-argument slot, a register as it stands, so cnt_plus takes only rdi" min="1" max="1">return cnt_plus\(a0\) \* 2;</stringmatch>
 </decompilertest>
