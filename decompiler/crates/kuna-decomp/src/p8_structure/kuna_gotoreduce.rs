@@ -76,6 +76,10 @@ pub enum GotoReduceMode {
     /// `return`, and a return tail that contains a call
     /// ([`crate::p8_structure::kuna_taildup::ActionTailDup`]).
     On,
+    /// `on`, except that in an unoptimized function a goto to a label the
+    /// author's own `goto` statements jump to stays a goto
+    /// ([`crate::p8_structure::kuna_o0gotos`]).
+    Auto,
 }
 
 impl GotoReduceMode {
@@ -85,6 +89,7 @@ impl GotoReduceMode {
             GotoReduceMode::Off => "off",
             GotoReduceMode::Return => "return",
             GotoReduceMode::On => "on",
+            GotoReduceMode::Auto => "auto",
         }
     }
 
@@ -95,7 +100,7 @@ impl GotoReduceMode {
 
     /// Does [`crate::p8_structure::kuna_taildup::ActionTailDup`] run?
     pub fn call_tails(self) -> bool {
-        self == GotoReduceMode::On
+        matches!(self, GotoReduceMode::On | GotoReduceMode::Auto)
     }
 }
 
@@ -158,7 +163,11 @@ impl Action for ActionGotoReduce {
                 Some(b) => b,
                 None => continue,
             };
+            if crate::p8_structure::kuna_o0gotos::keeps(data, bb0) {
+                continue;
+            }
             if let Some(chain) = return_tail_chain(data, bb0) {
+                crate::p8_structure::kuna_o0gotos::dump(data, "gr", n, false, &chain);
                 conversions.push((n, chain, target));
             }
         }
@@ -269,9 +278,10 @@ impl OptionGotoReduce {
             "off" => GotoReduceMode::Off,
             "return" => GotoReduceMode::Return,
             "on" => GotoReduceMode::On,
+            "auto" => GotoReduceMode::Auto,
             _ => {
                 return Err(KunaError::parse(
-                    "Must specify gotoreduce as 'off', 'return' or 'on'",
+                    "Must specify gotoreduce as 'off', 'return', 'on' or 'auto'",
                 ))
             }
         };

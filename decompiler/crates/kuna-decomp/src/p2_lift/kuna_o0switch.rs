@@ -101,6 +101,12 @@ pub fn verdict(fd: &Funcdata, addrs: impl IntoIterator<Item = u64>) -> Option<Fo
     form(addrs.into_iter().map(|a| rec.tests.get(&a).map(|t| (a, *t))).collect::<Option<Vec<_>>>()?)
 }
 
+/// Whether the recorded conditional branch at `addr` is an equality test
+/// taken on its match.
+pub(crate) fn jumps_on_match_at(fd: &Funcdata, addr: u64) -> Option<bool> {
+    fd.kuna_o0switch.as_deref()?.tests.get(&addr)?.jumps_on_match
+}
+
 fn form(tests: Vec<(u64, Test)>) -> Option<Form> {
     let mut eqs: Vec<(u64, bool)> = tests.iter().filter_map(|(a, t)| t.jumps_on_match.map(|j| (*a, j))).collect();
     eqs.sort_unstable();
