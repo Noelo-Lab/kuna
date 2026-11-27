@@ -96,6 +96,7 @@ pub fn scan(file: &object::File, listing: &Listing, arch: &Architecture, transla
         settled: true,
         named: Some(&named),
         next_table: arch.switch_extent.then_some(&next_table),
+        entered: None,
     };
     let arm = object::Object::architecture(file) == object::Architecture::Arm;
     let mut calls: BTreeSet<u64> = BTreeSet::new();
