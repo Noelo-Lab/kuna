@@ -2739,9 +2739,7 @@ impl KotlinWriter {
 
     fn get_type_print_out(type_: &VarType) -> String {
         let mut type_text = ExprProcessor::get_cast_type_name_short(type_, false);
-        if ExprProcessor::UNDEFINED_TYPE_STRING == type_text
-            && DecompilerContext::get_option(IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT)
-        {
+        if ExprProcessor::UNDEFINED_TYPE_STRING == type_text {
             type_text = ExprProcessor::get_cast_type_name_short(&VarType::VARTYPE_OBJECT(), false);
         }
         type_text

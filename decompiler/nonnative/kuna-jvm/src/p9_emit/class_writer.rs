@@ -1498,11 +1498,7 @@ impl ClassWriter {
 
                     let type_ = &md_content.params[i];
                     let mut type_name = ExprProcessor::get_cast_type_name(type_);
-                    if ExprProcessor::UNDEFINED_TYPE_STRING == type_name
-                        && DecompilerContext::get_option(
-                            IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT,
-                        )
-                    {
+                    if ExprProcessor::UNDEFINED_TYPE_STRING == type_name {
                         type_name = ExprProcessor::get_cast_type_name(&VarType::VARTYPE_OBJECT());
                     }
 
@@ -2174,11 +2170,7 @@ impl ClassWriter {
                 }
                 let mut type_name = ExprProcessor::get_cast_type_name(&parameter_type);
 
-                if ExprProcessor::UNDEFINED_TYPE_STRING == type_name
-                    && DecompilerContext::get_option(
-                        IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT,
-                    )
-                {
+                if ExprProcessor::UNDEFINED_TYPE_STRING == type_name {
                     type_name = ExprProcessor::get_cast_type_name(&VarType::VARTYPE_OBJECT());
                 }
                 let mut annos = ClassWriter::get_type_annotations(
@@ -2625,9 +2617,7 @@ impl ClassWriter {
 
     fn get_type_print_out(type_: &VarType) -> String {
         let mut type_text = ExprProcessor::get_cast_type_name_short(type_, false);
-        if ExprProcessor::UNDEFINED_TYPE_STRING == type_text
-            && DecompilerContext::get_option(IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT)
-        {
+        if ExprProcessor::UNDEFINED_TYPE_STRING == type_text {
             type_text = ExprProcessor::get_cast_type_name_short(&VarType::VARTYPE_OBJECT(), false);
         }
         type_text

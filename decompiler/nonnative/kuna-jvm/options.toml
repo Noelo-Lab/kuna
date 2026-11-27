@@ -166,28 +166,6 @@ tier = "transform"
 symptoms = "access$000(this) calls left in the output|this$0 or val$name fields printed in inner classes|class$ helper calls remain in old class files"
 
 [[option]]
-option = "jvm_undefined_as_object"
-vineflower = "undefined-as-object"
-short = "uto"
-aliases = ["undefined-as-object", "uto"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p9_emit"
-subphase = "class_writer"
-strength = "HARD"
-rewind = "p9_emit"
-issue = ""
-summary = "Print a lambda or method parameter whose type could not be inferred as Object instead of <undefinedtype>."
-use_when = "Turn off to see exactly where type inference gave up (the <undefinedtype> marker)."
-example = "kuna decompile app.jar com.ex.Streams --option jvm_undefined_as_object off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.UNDEFINED_PARAM_TYPE_OBJECT (undefined-as-object, -uto)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "<undefinedtype> in a parameter list (option is off)|lambda parameter typed Object where a type is expected"
-
-[[option]]
 option = "jvm_use_lvt_names"
 vineflower = "use-lvt-names"
 short = "udv"

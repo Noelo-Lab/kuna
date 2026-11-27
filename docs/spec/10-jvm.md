@@ -843,8 +843,7 @@ scope - two variables, a variable and a captured variable, a variable and a fiel
 shadows - are renamed apart (`VarDefinitionHelper::remap_clashing_names`), once at
 processing time and again at writing time (`VarProcessor::rerun_clashing`), when nested
 classes and lambdas have been processed. A parameter or lambda argument whose type stays
-undetermined prints as `Object` under `jvm_undefined_as_object` and as `<undefinedtype>`
-without it.
+undetermined prints as `Object`.
 
 ## 10.11 Class-level processing
 

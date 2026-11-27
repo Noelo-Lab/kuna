@@ -18,7 +18,6 @@ impl IFernflowerPreferences {
     pub const LITERALS_AS_IS: &str = "keep-literals";
     pub const ASCII_STRING_CHARACTERS: &str = "ascii-strings";
     pub const SYNTHETIC_NOT_SET: &str = "synthetic-not-set";
-    pub const UNDEFINED_PARAM_TYPE_OBJECT: &str = "undefined-as-object";
     pub const USE_DEBUG_VAR_NAMES: &str = "use-lvt-names";
     pub const USE_METHOD_PARAMETERS: &str = "use-method-parameters";
     pub const FINALLY_DEINLINE: &str = "decompile-finally";
@@ -87,7 +86,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::LITERALS_AS_IS, "0".to_string()),
             (IFernflowerPreferences::ASCII_STRING_CHARACTERS, "0".to_string()),
             (IFernflowerPreferences::SYNTHETIC_NOT_SET, "0".to_string()),
-            (IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT, "1".to_string()),
             (IFernflowerPreferences::USE_DEBUG_VAR_NAMES, "1".to_string()),
             (IFernflowerPreferences::USE_METHOD_PARAMETERS, "1".to_string()),
             (IFernflowerPreferences::FINALLY_DEINLINE, "1".to_string()),
@@ -180,7 +178,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "LITERALS_AS_IS", key: IFernflowerPreferences::LITERALS_AS_IS, short_name: Some("lit"), name: Some("Keep Literals As Is"), description: Some("Keep NaN, infinities, and pi values as is without resugaring them."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "ASCII_STRING_CHARACTERS", key: IFernflowerPreferences::ASCII_STRING_CHARACTERS, short_name: Some("asc"), name: Some("ASCII String Characters"), description: Some("Encode non-ASCII characters in string and character literals as Unicode escapes."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "SYNTHETIC_NOT_SET", key: IFernflowerPreferences::SYNTHETIC_NOT_SET, short_name: Some("nns"), name: Some("Synthetic Not Set"), description: Some("Treat some known structures as synthetic even when not explicitly set."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "UNDEFINED_PARAM_TYPE_OBJECT", key: IFernflowerPreferences::UNDEFINED_PARAM_TYPE_OBJECT, short_name: Some("uto"), name: Some("Treat Undefined Param Type As Object"), description: Some("Treat nameless types as java.lang.Object."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "USE_DEBUG_VAR_NAMES", key: IFernflowerPreferences::USE_DEBUG_VAR_NAMES, short_name: Some("udv"), name: Some("Use LVT Names"), description: Some("Use LVT names for local variables and parameters instead of var<index>_<version>."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "USE_METHOD_PARAMETERS", key: IFernflowerPreferences::USE_METHOD_PARAMETERS, short_name: Some("ump"), name: Some("Use Method Parameters"), description: Some("Use method parameter names, as given in the MethodParameters attribute."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "FINALLY_DEINLINE", key: IFernflowerPreferences::FINALLY_DEINLINE, short_name: Some("fdi"), name: Some("Decompile Finally"), description: Some("Decompile finally blocks."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

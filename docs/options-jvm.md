@@ -103,8 +103,6 @@ Three tiers:
 | string literal shows odd or invisible characters | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | homoglyphs in a compared string | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
 | terminal mangles non-ASCII text in decompiled strings | [`jvm_ascii_strings`](#jvm_ascii_strings----on--off-default-off) |
-| <undefinedtype> in a parameter list (option is off) | [`jvm_undefined_as_object`](#jvm_undefined_as_object----on--off-default-on) |
-| lambda parameter typed Object where a type is expected | [`jvm_undefined_as_object`](#jvm_undefined_as_object----on--off-default-on) |
 | variables named like keywords or with misleading names from debug info | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
 | LocalVariableTable names contradict their use | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
 | var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
@@ -355,15 +353,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** substrate/const_exprent · vineflower · vineflower-option
 - **Also spelled:** `ascii-strings`, `asc`
 - **Example:** `kuna decompile app.jar com.ex.Keys --option jvm_ascii_strings on`
-
-### `jvm_undefined_as_object` -- on | off, default `on`
-
-- **Symptoms:** <undefinedtype> in a parameter list (option is off); lambda parameter typed Object where a type is expected.
-- **What it does:** Print a lambda or method parameter whose type could not be inferred as Object instead of <undefinedtype>.
-- **When to flip:** Turn off to see exactly where type inference gave up (the <undefinedtype> marker).
-- **Where / provenance:** p9_emit/class_writer · vineflower · vineflower-option
-- **Also spelled:** `undefined-as-object`, `uto`
-- **Example:** `kuna decompile app.jar com.ex.Streams --option jvm_undefined_as_object off`
 
 ### `jvm_use_lvt_names` -- on | off, default `on`
 
