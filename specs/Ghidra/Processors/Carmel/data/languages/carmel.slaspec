@@ -197,6 +197,8 @@ define pcodeop carmel_record_idle_admission;
 define pcodeop carmel_d2_reset;
 define pcodeop carmel_register_only_ex;
 define pcodeop carmel_operand_fetch_survives;
+define pcodeop carmel_d2_end_ex_controls;
+define pcodeop carmel_staged_wb_data;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -3284,18 +3286,17 @@ reset_of_live: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=
     export live;
 }
 
-:"MOVE" "A2","*R1++RN1" "||" nop_right is
-    (carmel_issue=1 & slot_mode=0 & slot_0_22=0x31dc92 & reset_of_live); (slot_mode=0 & nop_right) {
-    local address:2 = R1;
-    modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+:"MOVE" "A2","*"^pair_ptr_1^"++"^pair_rn_1 "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_6_22=0xc772 & slot_2_5=4 & slot_0_0=0
+     & pair_ptr_1 & pair_rn_1 & pair_rm_1 & pair_rl_1 & pair_bank_1 & reset_of_live); (slot_mode=0 & nop_right) {
+    local address:2 = pair_ptr_1;
+    modify_ptr(pair_ptr_1, pair_rn_1, pair_rm_1, pair_rl_1, pair_bank_1, 1:2);
     build reset_of_live;
     if (reset_of_live == 0) goto <canceled>;
     local value:2 = *[data]:2 address;
     local negative:1 = value s< 0;
-    A2L = value;
-    A2H = 0 - zext(negative);
-    GB2 = 0 - negative;
-    local flags:2 = (EST & 0x3000) | (zext(value == 0) << 3) | (zext(negative) << 4);
+    A2 = sext(value);
+    local flags:2 = (EST & 0x3fc4) | (zext(value == 0) << 3) | (zext(negative) << 4);
     local first:2;
     local second:2;
     unary_ce(CECFG1, flags, CETBL, 0, first);
@@ -4155,17 +4156,20 @@ macro load_ce_ports(prefix, config, truth, low, high, invert) {
     load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 1:1, 1:1, 0xff:2);
 }
 
-macro reset_control_fields() {
+macro reset_ex_controls() {
     EST = 0;
-    ESTS = 0;
     ECFG = ECFG & 0x3fc0;
+    CECFG1 = (CECFG1 & 0xc000) | 0x1000;
+    CECFG2 = (CECFG2 & 0xc000) | 0x1000;
+    CETBL = 0;
+}
+
+macro reset_other_controls() {
+    ESTS = 0;
     ECFGS = 0;
     INTBASE = INTBASE & 0xe000;
     USER_IO = USER_IO & 0xfff0;
     PSTATUS = (PSTATUS & 0xfff0) | 0x10;
-    CECFG1 = (CECFG1 & 0xc000) | 0x1000;
-    CECFG2 = (CECFG2 & 0xc000) | 0x1000;
-    CETBL = 0;
     PACFG = 0;
     ASTATUS = 0;
     LSA = 0;
@@ -4181,7 +4185,9 @@ macro reset_control_fields() {
 :RESET is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x129
     & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
     carmel_d2_reset();
-    reset_control_fields();
+    reset_ex_controls();
+    carmel_d2_end_ex_controls();
+    reset_other_controls();
     carmel_end_unmodeled_issue();
 }
 
@@ -13515,7 +13521,18 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
     RN7 = literal_word;
     publish_alu_ce(EST & 0xcfff);
 }
-:MOVE "*R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word { local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
+staged_wb_data: is epsilon { }
+staged_wb_data: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    carmel_staged_wb_data();
+}
+
+:MOVE "*R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_2_11=0x0 & wide_14_22=0x119 & literal_word & staged_wb_data {
+    local address:2 = R0;
+    local value:2 = literal_word s>> ((ECFG >> 5) & 1);
+    *[data]:2 address = value;
+    build staged_wb_data;
+}
 :MOVE "*R0",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
 :MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 :MOVE "*R0++",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }

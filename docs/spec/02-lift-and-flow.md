@@ -4086,14 +4086,21 @@ sequential fetch are separate issues. It proves the four older issues,
 or traces their contents back to a function entry. At a nonzero entry
 at least two older issues are required to exclude the startup alias. The
 physical CODE-zero issue can survive in RA when it immediately precedes
-RESET. For a single register-only compact `INC` with an inactive peer, Kuna applies the D2
-control effects before its EX computation. The surviving increment uses
-the reset ECFG and can publish fresh lane flags after the EST clear.
+RESET. A covered register-only compact `INC` at CODE zero in RA or
+already in EX runs after the execution-control reset. It uses the new
+ECFG and publishes fresh lane flags after the EST clear.
+An older literal DATA write already in WB still retires with the old
+shift configuration. These execution effects do not move the PACFG
+clear ahead of address updates.
 An older unqualified indexed DATA copy or signed DATA load in RA or OF
 retains its address updates under the old PACFG but does not read DATA or
 publish its result. This suppression requires a straight-line path to
 RESET; a path bypassing RESET must keep the original operand and writes.
 An unproved window is not lifted as a serial register clear.
+
+The compact signed DATA load into `A2` postmodifies `R0` or `R1` by
+its corresponding `RNn`. Its sign-extended result updates the active
+lane's flags without clearing sticky L or the other lane's flags.
 
 The compact signed DATA `MOVE` with indexed destination and fixed
 source postincrement captures both old addresses. The address stage

@@ -39,6 +39,8 @@ pub(crate) struct PhaseDecode<'a> {
     reset: Option<u64>,
     register_ex: Option<u64>,
     operand_fetch: Option<u64>,
+    reset_ex_end: Option<u64>,
+    staged_data: Option<u64>,
     ff: Option<FfOps>,
 }
 
@@ -59,6 +61,8 @@ impl<'a> PhaseDecode<'a> {
         let reset = index(b"carmel_d2_reset");
         let register_ex = index(b"carmel_register_only_ex");
         let operand_fetch = index(b"carmel_operand_fetch_survives");
+        let reset_ex_end = index(b"carmel_d2_end_ex_controls");
+        let staged_data = index(b"carmel_staged_wb_data");
         let ff = (|| Some(FfOps {
             capture: index(b"carmel_capture_ff_before_ex")?,
             fetch: index(b"carmel_sample_ff_at_of")?,
@@ -73,7 +77,8 @@ impl<'a> PhaseDecode<'a> {
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
-            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, operand_fetch, ff })
+            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, operand_fetch, reset_ex_end,
+            staged_data, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -99,6 +104,10 @@ impl<'a> PhaseDecode<'a> {
                 markers.push((op_id, offset, Mark::RegisterEx));
             } else if Some(index) == self.operand_fetch {
                 markers.push((op_id, offset, Mark::OperandFetch));
+            } else if Some(index) == self.reset_ex_end {
+                markers.push((op_id, offset, Mark::ResetExEnd));
+            } else if Some(index) == self.staged_data {
+                markers.push((op_id, offset, Mark::StagedData));
             } else if self.ff.is_some_and(|ff| index == ff.late_tick) {
                 dual_reads.insert(offset);
                 markers.push((op_id, offset, Mark::Tick));
@@ -122,14 +131,19 @@ impl<'a> PhaseDecode<'a> {
         let canceled = if resets.is_empty() {
             BTreeSet::new()
         } else {
-            let at = |offset, kind| markers.iter().find_map(|&(id, pc, tag)|
-                (pc == offset && kind == tag).then_some(id));
-            let idle: BTreeSet<_> = markers.iter().filter_map(|&(_, offset, kind)|
-                (kind == Mark::Idle).then_some(offset)).collect();
-            super::kuna_carmel_reset::lower_control(fd, visits, &resets,
-                |offset| idle.contains(&offset), at(0, Mark::RegisterEx),
-                |offset| at(offset, Mark::EndUnmodeled),
-                |offset| at(offset, Mark::OperandFetch))?
+            use super::kuna_carmel_reset::{lower_control, IssueEffects};
+            let mut effects = BTreeMap::<u64, IssueEffects>::new();
+            for &(id, offset, kind) in &markers {
+                match kind {
+                    Mark::Idle => effects.entry(offset).or_default().idle = true,
+                    Mark::RegisterEx => effects.entry(offset).or_default().register_ex = Some(id),
+                    Mark::OperandFetch => effects.entry(offset).or_default().operand_fetch = Some(id),
+                    Mark::ResetExEnd => effects.entry(offset).or_default().reset_ex_end = Some(id),
+                    Mark::StagedData => effects.entry(offset).or_default().staged_data = true,
+                    _ => {}
+                }
+            }
+            lower_control(fd, visits, &resets, &effects)?
         };
         let mut delayed = BTreeMap::new();
         for (query, offset) in delay_queries {
@@ -156,7 +170,8 @@ impl<'a> PhaseDecode<'a> {
             let modeled = delayed.get(&offset).copied();
             if kind == Mark::OperandFetch {
                 lower_operand_fetch(fd, marker, canceled.contains(&marker))?;
-            } else if kind == Mark::RegisterEx || modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
+            } else if matches!(kind, Mark::RegisterEx | Mark::ResetExEnd | Mark::StagedData)
+                || modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
                 fd.op_destroy(marker);
             } else if kind == Mark::Copy {
                 copies.push(marker);
@@ -361,6 +376,8 @@ enum Mark {
     Idle,
     RegisterEx,
     OperandFetch,
+    ResetExEnd,
+    StagedData,
     Slot,
     Redirect,
     EndUnmodeled,
