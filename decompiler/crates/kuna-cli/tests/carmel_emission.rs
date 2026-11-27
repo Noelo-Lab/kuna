@@ -1711,6 +1711,66 @@ fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
 }
 
 #[test]
+fn carmel_reset_cancels_data_results_but_keeps_older_address_updates() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("reset-agu.bin");
+    let source = scratch.path().join("reset-agu.c");
+    let executable = scratch.path().join("reset-agu");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let load = [0x31, 0xdc, 0x92, 0x2b, 0xec, 0];
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(&specs,
+        &[("R1", 0x0130), ("R6", 0x8049), ("R7", 0xc04b), ("RN1", 1), ("RN6", 2), ("PACFG", 0)],
+        0x1000, 0);
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short to, from, pre, post;\n",
+    );
+    let mut calls = String::new();
+    for (i, (storage, after, expected)) in [
+        ("R6", false, 0x804b), ("R7", false, 0xc04c), ("R1", false, 0x0131),
+        ("A2L", false, 0xaaaa), ("A2L", true, 0x9abc), ("R1", true, 0x0132),
+    ].into_iter().enumerate() {
+        let mut code = vec![
+            [0x31, 0x4b, 0xae, 0x2b, 0xec, 0], load,
+            [0xb4, 0xd1, 0x1d, 0xca, 0x74, 0x52],
+        ];
+        if after {
+            code.push(load);
+        }
+        code.extend([nop; 6]);
+        code.extend([[0x2b, 0xd8, 0, 0x2b, 0xec, 0], nop, nop]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs);
+        kuna.arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000", "--target", "Carmel:BE:24:default:default",
+            "--json", "--assert-strict", "--assert", &format!("return %{storage} unsigned short"),
+            "--assert", "data [data,0x8049] volatile unsigned short to",
+            "--assert", "data [data,0xc04b] volatile unsigned short from",
+            "--assert", "data [data,0x0130] volatile unsigned short pre",
+            "--assert", "data [data,0x0131] volatile unsigned short post",
+        ]);
+        for (n, input) in ["ECFG", "EST", "CECFG1", "CECFG2", "CETBL", "A2L"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let fun = &report["functions"][0];
+        assert!(fun["error"].is_null(), "{storage}: {fun}");
+        let name = format!("reset_agu_{i}");
+        let text = fun["code"].as_str().unwrap();
+        writeln!(generated, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+        writeln!(calls, "to=0xcd01; from=0xd202; pre=0x5678; post=0x9abc; if ({name}(0x20,0,0,0,0,0xaaaa) != {expected:#x} || to != 0xcd01 || from != 0xd202 || pre != 0x5678 || post != 0x9abc) return {};", i + 1).unwrap();
+    }
+    writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+}
+
+#[test]
 fn carmel_indexed_word_copy_captures_addresses_before_the_late_store() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

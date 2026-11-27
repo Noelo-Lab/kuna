@@ -38,6 +38,7 @@ pub(crate) struct PhaseDecode<'a> {
     idle_tick: Option<u64>,
     reset: Option<u64>,
     register_ex: Option<u64>,
+    operand_fetch: Option<u64>,
     ff: Option<FfOps>,
 }
 
@@ -57,6 +58,7 @@ impl<'a> PhaseDecode<'a> {
         let idle_tick = index(b"carmel_record_idle_admission");
         let reset = index(b"carmel_d2_reset");
         let register_ex = index(b"carmel_register_only_ex");
+        let operand_fetch = index(b"carmel_operand_fetch_survives");
         let ff = (|| Some(FfOps {
             capture: index(b"carmel_capture_ff_before_ex")?,
             fetch: index(b"carmel_sample_ff_at_of")?,
@@ -71,7 +73,7 @@ impl<'a> PhaseDecode<'a> {
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
-            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, ff })
+            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, operand_fetch, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -95,6 +97,8 @@ impl<'a> PhaseDecode<'a> {
                 resets.push(op_id);
             } else if Some(index) == self.register_ex {
                 markers.push((op_id, offset, Mark::RegisterEx));
+            } else if Some(index) == self.operand_fetch {
+                markers.push((op_id, offset, Mark::OperandFetch));
             } else if self.ff.is_some_and(|ff| index == ff.late_tick) {
                 dual_reads.insert(offset);
                 markers.push((op_id, offset, Mark::Tick));
@@ -115,15 +119,18 @@ impl<'a> PhaseDecode<'a> {
                 reads = true;
             }
         }
-        if !resets.is_empty() {
+        let canceled = if resets.is_empty() {
+            BTreeSet::new()
+        } else {
             let at = |offset, kind| markers.iter().find_map(|&(id, pc, tag)|
                 (pc == offset && kind == tag).then_some(id));
             let idle: BTreeSet<_> = markers.iter().filter_map(|&(_, offset, kind)|
                 (kind == Mark::Idle).then_some(offset)).collect();
             super::kuna_carmel_reset::lower_control(fd, visits, &resets,
                 |offset| idle.contains(&offset), at(0, Mark::RegisterEx),
-                |offset| at(offset, Mark::EndUnmodeled))?;
-        }
+                |offset| at(offset, Mark::EndUnmodeled),
+                |offset| at(offset, Mark::OperandFetch))?
+        };
         let mut delayed = BTreeMap::new();
         for (query, offset) in delay_queries {
             let modeled = slot_clocks.get(&offset) == Some(&1);
@@ -134,10 +141,10 @@ impl<'a> PhaseDecode<'a> {
         }
         if !reads && !ff_fetches && dual_reads.is_empty() {
             for (marker, _, kind) in markers {
-                if kind == Mark::Copy {
-                    lower_copy(fd, marker, 1);
-                } else {
-                    fd.op_destroy(marker);
+                match kind {
+                    Mark::Copy => lower_copy(fd, marker, 1),
+                    Mark::OperandFetch => lower_operand_fetch(fd, marker, canceled.contains(&marker))?,
+                    _ => fd.op_destroy(marker),
                 }
             }
             return Ok(());
@@ -147,7 +154,9 @@ impl<'a> PhaseDecode<'a> {
         let mut copies = Vec::new();
         for (marker, offset, kind) in markers {
             let modeled = delayed.get(&offset).copied();
-            if kind == Mark::RegisterEx || modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
+            if kind == Mark::OperandFetch {
+                lower_operand_fetch(fd, marker, canceled.contains(&marker))?;
+            } else if kind == Mark::RegisterEx || modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
                 fd.op_destroy(marker);
             } else if kind == Mark::Copy {
                 copies.push(marker);
@@ -332,6 +341,15 @@ fn lower_copy(fd: &mut Funcdata, op: OpId, input: i32) {
     fd.op_set_opcode(op, type_op_for(OpCode::CPUI_COPY));
 }
 
+fn lower_operand_fetch(fd: &mut Funcdata, op: OpId, canceled: bool) -> KunaResult<()> {
+    if canceled {
+        let veto = fd.new_constant(1, 0);
+        fd.op_set_input(op, veto, 1)?;
+    }
+    lower_copy(fd, op, 1);
+    Ok(())
+}
+
 fn sample_error(fd: &Funcdata, op: OpId, sample: &str) -> KunaError {
     let addr = fd.obank().get(op).unwrap().get_addr();
     KunaError::lowlevel(format!("Unproved Carmel {sample} at CODE {:#x}", addr.get_offset() / 3))
@@ -342,6 +360,7 @@ enum Mark {
     Tick,
     Idle,
     RegisterEx,
+    OperandFetch,
     Slot,
     Redirect,
     EndUnmodeled,

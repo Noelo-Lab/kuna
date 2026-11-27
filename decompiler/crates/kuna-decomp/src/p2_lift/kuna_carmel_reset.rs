@@ -1,6 +1,6 @@
 //! Prove which older issue slots can overlap a Carmel D2 reset.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kuna_base::{address::Address, error::{KunaError, KunaResult}};
 
@@ -8,22 +8,30 @@ use crate::{context::OpId, flow::VisitedMap, funcdata::Funcdata};
 
 const OVERLAP: usize = 4;
 
-fn add_edge<'a>(incoming: &mut BTreeMap<u64, Option<&'a Address>>, to: &Address,
-                from: Option<&'a Address>) {
-    if from == Some(to) {
+type IssueEdges<'a> = BTreeMap<u64, Option<&'a Address>>;
+
+fn add_edge<'a>(edges: &mut IssueEdges<'a>, from: &Address, to: Option<&'a Address>) {
+    if to == Some(from) {
         return;
     }
-    incoming.entry(to.get_offset()).and_modify(|prior| {
-        if *prior != from {
-            *prior = None;
+    edges.entry(from.get_offset()).and_modify(|other| {
+        if *other != to {
+            *other = None;
         }
-    }).or_insert(from);
+    }).or_insert(to);
 }
 
 /// Visit logical issue edges, ignoring the internal branches of one p-code expansion.
-fn issue_predecessors(fd: &Funcdata) -> BTreeMap<u64, Option<&Address>> {
+fn issue_edges(fd: &Funcdata) -> (IssueEdges<'_>, IssueEdges<'_>) {
     let address = |id| fd.obank().get(id).unwrap().get_addr();
     let mut incoming = BTreeMap::new();
+    let mut outgoing = BTreeMap::new();
+    let mut link = |from, to| {
+        add_edge(&mut incoming, to, from);
+        if let Some(from) = from {
+            add_edge(&mut outgoing, from, Some(to));
+        }
+    };
     let graph = fd.bblocks_ref();
     for index in 0..fd.bblocks_get_size() {
         let block = fd.bblocks_get_block(index);
@@ -33,19 +41,19 @@ fn issue_predecessors(fd: &Funcdata) -> BTreeMap<u64, Option<&Address>> {
             let edges = graph.block(block);
             for edge in 0..edges.size_in() {
                 let from = fd.bb_op_tail(edges.get_in(edge)).map(address);
-                add_edge(&mut incoming, address(head), from);
+                link(from, address(head));
             }
         }
         while let Some(id) = op {
             let addr = address(id);
             if let Some(from) = prior {
-                add_edge(&mut incoming, addr, Some(from));
+                link(Some(from), addr);
             }
             prior = Some(addr);
             op = fd.bb_op_next(id);
         }
     }
-    incoming
+    (incoming, outgoing)
 }
 
 /// Move only the straight-line control effects, not the physical issue marker.
@@ -67,10 +75,12 @@ fn d2_before_ex(fd: &mut Funcdata, d2: OpId, end: OpId, ex: OpId) -> KunaResult<
 
 pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[OpId],
                             idle: impl Fn(u64) -> bool, cold_ex: Option<OpId>,
-                            end: impl Fn(u64) -> Option<OpId>) -> KunaResult<()> {
-    let incoming = issue_predecessors(fd);
+                            end: impl Fn(u64) -> Option<OpId>,
+                            operand_fetch: impl Fn(u64) -> Option<OpId>) -> KunaResult<BTreeSet<OpId>> {
+    let (incoming, outgoing) = issue_edges(fd);
     let entry = fd.get_address();
     let mut reorder = None;
+    let mut canceled = BTreeSet::new();
     for &id in resets {
         let address = fd.obank().get(id).unwrap().get_addr();
         let mut current = address;
@@ -81,24 +91,33 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
                 break;
             }
             match incoming.get(&current.get_offset()) {
-                Some(Some(prior)) if visits.get(*prior).is_some_and(|visit|
-                    *prior + i64::from(visit.size) == *current) => {
+                Some(Some(prior)) if outgoing.get(&prior.get_offset()) == Some(&Some(current))
+                    && visits.get(*prior).is_some_and(|visit|
+                        *prior + i64::from(visit.size) == *current) => {
                     if idle(prior.get_offset()) {
                         current = prior;
                         continue;
                     }
-                    if age == 0 && *prior == entry && prior.get_offset() == 0 && !incoming.contains_key(&0) {
+                    if age == 0 && prior.get_offset() == 0 {
                         // RA address zero survives; the register-only EX has no RA effects to preserve.
-                        if let (Some(ex), Some(end)) = (cold_ex, end(address.get_offset())) {
-                            reorder = Some((id, end, ex));
-                            proved = true;
+                        if *prior == entry && !incoming.contains_key(&0) {
+                            if let (Some(ex), Some(end)) = (cold_ex, end(address.get_offset())) {
+                                reorder = Some((id, end, ex));
+                                proved = true;
+                            }
+                        }
+                    } else if age < 2 {
+                        if let Some(fetch) = operand_fetch(prior.get_offset()) {
+                            canceled.insert(fetch);
+                            current = prior;
+                            continue;
                         }
                     }
                     break;
                 }
                 None if current == entry => {
-                    // Only CODE zero is the physical empty-pipeline entry.
-                    proved = entry.get_offset() == 0;
+                    // At nonzero entry, D2 needs occupied RA/OF history to avoid the startup alias.
+                    proved = entry.get_offset() == 0 || age >= 2;
                     break;
                 }
                 _ => break,
@@ -115,5 +134,5 @@ pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[Op
     for &id in resets {
         fd.op_destroy(id);
     }
-    Ok(())
+    Ok(canceled)
 }

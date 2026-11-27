@@ -4080,15 +4080,19 @@ still publishes flags. CE-qualified writes to `A0L` and `A1L` use the
 retired result predicate, not AEN. An immediate write to `EST` changes
 only the transient EX view.
 
-Unqualified wide `RESET` applies control-field masks at D2. For a
-quiescent reset, Kuna proves that the earlier issue slots are either
-empty at physical CODE zero or already filled by four inert issues.
-It follows decoded issue boundaries, not a fixed byte count: the two
-slots of a sequential fetch are separate issues. The physical CODE-zero
-issue can survive in RA when it immediately precedes RESET. For a single
-register-only compact `INC` with an inactive peer, Kuna applies the D2
+Unqualified wide `RESET` applies control-field masks at D2. The
+retirement check follows decoded issue boundaries; the two slots of a
+sequential fetch are separate issues. It proves the four older issues,
+or traces their contents back to a function entry. At a nonzero entry
+at least two older issues are required to exclude the startup alias. The
+physical CODE-zero issue can survive in RA when it immediately precedes
+RESET. For a single register-only compact `INC` with an inactive peer, Kuna applies the D2
 control effects before its EX computation. The surviving increment uses
 the reset ECFG and can publish fresh lane flags after the EST clear.
+An older unqualified indexed DATA copy or signed DATA load in RA or OF
+retains its address updates under the old PACFG but does not read DATA or
+publish its result. This suppression requires a straight-line path to
+RESET; a path bypassing RESET must keep the original operand and writes.
 An unproved window is not lifted as a serial register clear.
 
 The compact signed DATA `MOVE` with indexed destination and fixed

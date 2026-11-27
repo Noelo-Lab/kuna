@@ -196,6 +196,7 @@ define pcodeop carmel_record_ff_late_admission;
 define pcodeop carmel_record_idle_admission;
 define pcodeop carmel_d2_reset;
 define pcodeop carmel_register_only_ex;
+define pcodeop carmel_operand_fetch_survives;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -3277,9 +3278,18 @@ macro move_address_literal(dst, immediate, cfg, bank) {
 :"MOVE CE1" address_literal_dst,address_literal_value "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(ADDRESS_LITERAL)); (slot_mode=0 & nop_right) { move_address_literal(address_literal_dst, address_literal_value, CECFG1, 0); }
 :^nop_left "||" "MOVE CE2" address_literal_dst,address_literal_value is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(ADDRESS_LITERAL)) { move_address_literal(address_literal_dst, address_literal_value, CECFG2, 1); }
 
-:"MOVE" "A2","*R1++RN1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x31dc92); (slot_mode=0 & nop_right) {
+reset_of_live: enabled is epsilon [ enabled = 1; ] { export *[const]:1 enabled; }
+reset_of_live: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    local live:1 = carmel_operand_fetch_survives(1:1);
+    export live;
+}
+
+:"MOVE" "A2","*R1++RN1" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_0_22=0x31dc92 & reset_of_live); (slot_mode=0 & nop_right) {
     local address:2 = R1;
     modify_ptr(R1, RN1, RM0, RL0, 2, 1);
+    build reset_of_live;
+    if (reset_of_live == 0) goto <canceled>;
     local value:2 = *[data]:2 address;
     local negative:1 = value s< 0;
     A2L = value;
@@ -3291,6 +3301,7 @@ macro move_address_literal(dst, immediate, cfg, bank) {
     unary_ce(CECFG1, flags, CETBL, 0, first);
     unary_ce(CECFG2, flags, CETBL, 1, second);
     EST = (flags & 0xfff) | (first << 12) | (second << 13);
+  <canceled>
 }
 
 @define COMPACT_INDEXED_COPY_SAFE "((slot_1_3=0 & slot_6_8!=0) | (slot_1_3=1 & slot_6_8!=1) | (slot_1_3=2 & slot_6_8!=2) | (slot_1_3=3 & slot_6_8!=3) | (slot_1_3=4 & slot_6_8!=4) | (slot_1_3=5 & slot_6_8!=5) | (slot_1_3=6 & slot_6_8!=6) | (slot_1_3=7 & slot_6_8!=7))"
@@ -3303,34 +3314,46 @@ compact_indexed_copy_ports: "*"^pair_ptr_6^"+="^pair_rn_6,"*"^pair_ptr_1^"++" is
     local source:2 = pair_ptr_1;
     modify_ptr(pair_ptr_6, pair_rn_6, pair_rm_6, pair_rl_6, pair_bank_6, 1:2);
     modify_ptr(pair_ptr_1, 0:2, pair_rm_1, pair_rl_1, pair_bank_1, 2:2);
-    local value:2 = *[data]:2 source;
-    local ports:4 = zext(destination) | (zext(value) << 16);
+    local ports:4 = zext(destination) | (zext(source) << 16);
     export ports;
 }
 
-macro compact_indexed_copy_store(ports) {
+macro compact_indexed_copy_read(ports, value) {
+    local address:2 = ports(2);
+    value = *[data]:2 address;
+}
+
+macro compact_indexed_copy_store(ports, value) {
     local addr:2 = ports:2;
-    local value:2 = ports(2);
     *[data]:2 addr = value s>> ((ECFG >> 5) & 1);
 }
 
-:MOVE compact_indexed_copy_ports is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))
-    & slot_0_0=0 & compact_indexed_copy_ports {
-    build compact_indexed_copy_ports;
-    compact_indexed_copy_store(compact_indexed_copy_ports);
+macro unqualified_indexed_copy(ports, live) {
+    if (live == 0) goto <canceled>;
+    local value:2;
+    compact_indexed_copy_read(ports, value);
+    compact_indexed_copy_store(ports, value);
     clock_ce();
+  <canceled>
+}
+
+:MOVE compact_indexed_copy_ports is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))
+    & slot_0_0=0 & compact_indexed_copy_ports & reset_of_live {
+    build compact_indexed_copy_ports;
+    build reset_of_live;
+    unqualified_indexed_copy(compact_indexed_copy_ports, reset_of_live);
 }
 :MOVE compact_indexed_copy_ports "||" nop_right is
-    (carmel_issue=1 & slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports); (slot_mode=0 & nop_right) {
+    (carmel_issue=1 & slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports & reset_of_live); (slot_mode=0 & nop_right) {
     build compact_indexed_copy_ports;
-    compact_indexed_copy_store(compact_indexed_copy_ports);
-    clock_ce();
+    build reset_of_live;
+    unqualified_indexed_copy(compact_indexed_copy_ports, reset_of_live);
 }
 :^nop_left "||" "MOVE" compact_indexed_copy_ports is
-    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports) {
+    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_0=0 & compact_indexed_copy_ports & reset_of_live) {
     build compact_indexed_copy_ports;
-    compact_indexed_copy_store(compact_indexed_copy_ports);
-    clock_ce();
+    build reset_of_live;
+    unqualified_indexed_copy(compact_indexed_copy_ports, reset_of_live);
 }
 
 @define COMPACT_INDEXED_COPY_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
@@ -3342,10 +3365,12 @@ macro compact_indexed_copy_store(ports) {
     local incoming:2 = EST;
     if (admitted == 0) goto <publish>;
     build compact_indexed_copy_ports;
+    local value:2;
+    compact_indexed_copy_read(compact_indexed_copy_ports, value);
     local enabled:2;
     unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
     if (enabled == 0) goto <publish>;
-    compact_indexed_copy_store(compact_indexed_copy_ports);
+    compact_indexed_copy_store(compact_indexed_copy_ports, value);
   <publish>
     publish_ce_feedback(incoming & 0xcfff, incoming);
     carmel_end_unmodeled_issue();
@@ -3356,10 +3381,12 @@ macro compact_indexed_copy_store(ports) {
     local incoming:2 = EST;
     if (admitted == 0) goto <publish>;
     build compact_indexed_copy_ports;
+    local value:2;
+    compact_indexed_copy_read(compact_indexed_copy_ports, value);
     local enabled:2;
     unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
     if (enabled == 0) goto <publish>;
-    compact_indexed_copy_store(compact_indexed_copy_ports);
+    compact_indexed_copy_store(compact_indexed_copy_ports, value);
   <publish>
     publish_ce_feedback(incoming & 0xcfff, incoming);
     carmel_end_unmodeled_issue();
@@ -3370,10 +3397,12 @@ macro compact_indexed_copy_store(ports) {
     local incoming:2 = EST;
     if (admitted == 0) goto <publish>;
     build compact_indexed_copy_ports;
+    local value:2;
+    compact_indexed_copy_read(compact_indexed_copy_ports, value);
     local enabled:2;
     unary_ce(CECFG2, incoming, CETBL, 1:2, enabled);
     if (enabled == 0) goto <publish>;
-    compact_indexed_copy_store(compact_indexed_copy_ports);
+    compact_indexed_copy_store(compact_indexed_copy_ports, value);
   <publish>
     publish_ce_feedback(incoming & 0xcfff, incoming);
     carmel_end_unmodeled_issue();
