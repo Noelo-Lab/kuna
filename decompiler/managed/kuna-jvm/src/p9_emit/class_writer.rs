@@ -325,6 +325,7 @@ impl ClassWriter {
                     }
                     initializer_local_type::type_locals(
                         root,
+                        cl,
                         mw.with(|d| d.method_struct),
                         mw.with(|d| d.varproc),
                     );

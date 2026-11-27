@@ -935,7 +935,22 @@ type extends. Any other read (an argument, a store, a capture by a lambda, a cal
 `add(x)` whose argument the type arguments would constrain) keeps the erased type, since
 the source may have declared it raw; the class file cannot tell, but the declared type is
 the value's own, so every accepted read compiles as it did. The type is the local's in
-every inference that reads it (`raw_receiver_erasure` included).
+every inference that reads it (`raw_receiver_erasure` included). A local (not compounded)
+every value of which has one type variable's type (or is `null`, the local itself or a
+conditional of such), and the variable of a for-each whose iterable's element type is a
+type variable, is declared with that variable when it is in scope (the method's or, for an
+instance method, the class's) and erases to the local's type: `for (N item : source)
+map.put(item.toString(), item)` for a `List<N> source` and a `Map<String, N> map` printed
+`for (Number var3 : var1)`, which does not compile. A variable of a type variable accepts
+every read its erasure did, its bound's members and conversions included, so no read is
+checked. A value's type counts only where declarations fix it (`generic_type`): a
+parameter's from the method's signature, `this`, an element of such an array, a field's
+signature, a variable this pass typed, and a call on one of these whose result is a type
+variable of the method's class, given by the receiver's type arguments, when no argument
+is of a raw type for a parameter with type arguments (that unchecked conversion erases the
+result, JLS 15.12.2.6: `V v = this.operate(k, v, rawDecisionMaker)` does not compile);
+javac's `checkcast` of such a value to its erasure is a value of the variable
+(`U u = (U)io.mutate(t)`).
 The pass, like every fix that asks which method a call names before the call is written,
 looks the method up without recording it (`InvocationExprent::find_desc`). The ported
 `get_desc` records what it finds, and a call with a recorded method is written without the
