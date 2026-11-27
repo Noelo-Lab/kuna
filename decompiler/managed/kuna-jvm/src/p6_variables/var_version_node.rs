@@ -7,7 +7,6 @@ use crate::i_graph_node::IGraphNode;
 use crate::rt::{JLinkedHashSet, JavaEq, JavaHash, Shared};
 use crate::s_forms_fast_map_direct::SFormsFastMapDirect;
 use crate::struct_local_variable_table_attribute::LocalVariable;
-use crate::validation_helper::ValidationHelper;
 use crate::var_version_pair::VarVersionPair;
 use crate::{arena_identity, arena_object};
 
@@ -107,19 +106,11 @@ impl VarVersionNode {
         self.with_mut(|d| d.predecessors.remove(&node));
     }
 
-    pub fn has_single_predecessor(self) -> bool {
-        self.with(|d| d.predecessors.len() == 1)
-    }
-
     pub fn has_any_successors(self) -> bool {
         self.with(|d| !d.successors.is_empty())
     }
 
     pub fn get_single_predecessor(self) -> VarVersionNode {
-        ValidationHelper::validate_true(
-            self.has_single_predecessor(),
-            "Expected only a single predecessor",
-        );
         self.with(|d| d.predecessors.iter().next().copied())
             .expect("NoSuchElementException")
     }

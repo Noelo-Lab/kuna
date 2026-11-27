@@ -17,7 +17,6 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::text_buffer::TextBuffer;
-use crate::validation_helper::ValidationHelper;
 use crate::var_type::VarType;
 
 /// Java `ExitExprent.Type`.
@@ -86,7 +85,6 @@ impl ExitExprent {
         );
         e.add_bytecode_offsets(bytecode_offsets);
         let exit = ExitExprent(e);
-        ValidationHelper::validate_exit_exprent(exit);
         exit
     }
 

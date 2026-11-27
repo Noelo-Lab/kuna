@@ -7,17 +7,12 @@ use crate::rt::JList;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, Statement, StatementType};
-use crate::validation_helper::ValidationHelper;
 
 pub struct SequenceHelper;
 
 impl SequenceHelper {
     pub fn condense_sequences(root: Statement) {
-        ValidationHelper::validate_statement(root.get_top_parent());
-
         Self::condense_sequences_rec(root);
-
-        ValidationHelper::validate_statement(root.get_top_parent());
     }
 
     fn condense_sequences_rec(stat: Statement) {
@@ -114,8 +109,6 @@ impl SequenceHelper {
                     .replace_statement(stat, sequence.0);
 
                 stat = sequence.0;
-
-                ValidationHelper::validate_statement(stat.get_top_parent());
             }
         }
 
@@ -211,7 +204,6 @@ impl SequenceHelper {
         }
 
         Self::merge_flat_statements(sequence);
-        ValidationHelper::validate_statement(sequence.get_top_parent());
 
         loop {
             let mut found = false;

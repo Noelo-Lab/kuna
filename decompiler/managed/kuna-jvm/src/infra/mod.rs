@@ -1,4 +1,4 @@
-//! Orchestration: the per-method pass schedule, pass hooks and debugging aids.
+//! Orchestration: the per-method pass schedule and the pass types it runs.
 
 pub mod cancelation_manager;
 pub mod class_pass;

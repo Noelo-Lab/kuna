@@ -18,7 +18,6 @@ use crate::statement::{
 };
 use crate::text_buffer::TextBuffer;
 use crate::text_util::TextUtil;
-use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 
 pub struct IfStatementData {
@@ -574,11 +573,6 @@ impl IfStatement {
             let next_edge = else_stat.get_first_successor();
             next_edge.change_source(self.0);
         } else {
-            ValidationHelper::validate_true(
-                self.get_first_successor().get_destination()
-                    == else_stat.get_first_successor().get_destination(),
-                "Expected the empty elseStat of the if statement to have the same destination as the if statement",
-            );
             else_stat.get_first_successor().remove();
         }
     }
@@ -615,11 +609,6 @@ impl IfStatement {
             let next_edge = if_stat.get_first_successor();
             next_edge.change_source(self.0);
         } else {
-            ValidationHelper::validate_true(
-                self.get_first_successor().get_destination()
-                    == if_stat.get_first_successor().get_destination(),
-                "Expected the empty ifStat of the if statement to have the same destination as the if statement",
-            );
             if_stat.get_first_successor().remove();
         }
 

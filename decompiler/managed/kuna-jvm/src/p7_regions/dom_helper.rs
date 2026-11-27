@@ -35,7 +35,6 @@ use crate::strong_connectivity_helper::StrongConnectivityHelper;
 use crate::struct_method::StructMethod;
 use crate::switch_statement::SwitchStatement;
 use crate::synchronized_statement::SynchronizedStatement;
-use crate::validation_helper::ValidationHelper;
 use crate::vb_style_collection::VBStyleCollection;
 
 /// `HashMap<Integer, Set<Integer>> mapExtPost`, whose runtime class is a
@@ -885,10 +884,6 @@ impl DomHelper {
     /// `st`: the statement whose postdominance is checked; `s`: the candidate.
     fn does_finally_exit_match(st: Statement, s: Statement) -> bool {
         let finally_exits = s.get_successor_edge_view(StatEdge::TYPE_FINALLYEXIT);
-        ValidationHelper::validate_true(
-            finally_exits.len() == 1,
-            "Must have just one exit from a finally end block",
-        );
         for edge in finally_exits.iter() {
             let finally_end = edge.get_source();
 

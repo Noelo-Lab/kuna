@@ -38,7 +38,6 @@ use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_local_variable_table_attribute::LocalVariable;
 use crate::struct_method::StructMethod;
-use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
 use crate::var_version_node::VarVersionNode;
@@ -111,14 +110,12 @@ impl StackVarsProcessor {
                 cl,
                 first,
             ) {
-                ValidationHelper::validate_statement(root);
                 found = true;
             }
 
             Self::set_versions_to_null(root.0);
 
             SequenceHelper::condense_sequences(root.0);
-            ValidationHelper::validate_statement(root);
 
             scratch.checkpoint();
             let current = ssau.insert(SSAUConstructorSparseEx::new());
@@ -127,11 +124,9 @@ impl StackVarsProcessor {
 
             if first {
                 Self::set_effectively_final_vars(root.0, current, &mut JHashMap::new());
-                ValidationHelper::validate_statement(root);
             }
 
             if Self::iterate_statements(root, current, options) {
-                ValidationHelper::validate_statement(root);
                 found = true;
             }
 
@@ -146,7 +141,6 @@ impl StackVarsProcessor {
         let mut ssau = SSAUConstructorSparseEx::new();
         ssau.field_reads_all_paths = Self::field_reads_all_paths(options);
         ssau.split_variables(root, mt);
-        ValidationHelper::validate_statement(root);
 
         Self::iterate_statements(root, &mut ssau, options);
 
@@ -737,7 +731,6 @@ impl StackVarsProcessor {
                     let preds = Self::predecessors(nd, versions, ssau.get_var_assignment_map());
                     for pred in preds.to_vec() {
                         let Some(pred) = pred else {
-                            ValidationHelper::validate_true(false, "Predecessor is null!");
                             continue;
                         };
 

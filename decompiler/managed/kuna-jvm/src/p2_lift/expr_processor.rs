@@ -236,8 +236,6 @@ impl ExprProcessor {
         let mut flat_helper = FlattenStatementsHelper::new();
         let dgraph = flat_helper.build_direct_graph(root);
 
-        ValidationHelper::validate_d_graph(dgraph, root);
-
         let mut map_catch: JHashMap<String, VarExprent> = JHashMap::new();
         Self::collect_catch_vars(root.0, &flat_helper, &mut map_catch);
 

@@ -25,7 +25,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::do_statement::Type as DoType;
 use crate::expr_processor::ExprProcessor;
 use crate::exprent::{Exprent, ExprentType};
-use crate::flatten_statements_helper::FlattenStatementsHelper;
 use crate::function_exprent::FunctionType;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
@@ -204,15 +203,6 @@ impl VarDefinitionHelper {
         }
 
         helper.init_statement(root.0);
-
-        let mut flatten_helper = FlattenStatementsHelper::new();
-        let graph = flatten_helper.build_direct_graph(root);
-        ValidationHelper::validate_vars(
-            graph,
-            root,
-            |var| !var.get_var_type().ptr_eq(&VarType::VARTYPE_UNKNOWN()),
-            "Var type not set!",
-        );
 
         helper
     }

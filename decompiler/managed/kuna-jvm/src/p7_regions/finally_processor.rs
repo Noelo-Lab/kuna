@@ -33,7 +33,7 @@ use crate::fixes::exception_ranges::handler_copy_shared_body::HandlerCopySharedB
 use crate::fixes::exception_ranges::overlapping_ranges::OverlappingRanges;
 use crate::fixes::finally_sync;
 use crate::root_statement::RootStatement;
-use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet, JavaEq};
+use crate::rt::{JHashMap, JHashSet, JLinkedHashMap, JLinkedHashSet};
 use crate::simple_ssa_reassign::SimpleSSAReassign;
 use crate::ssa_constructor_sparse_ex::SSAConstructorSparseEx;
 use crate::ssau_constructor_sparse_ex::SSAUConstructorSparseEx;
@@ -42,7 +42,6 @@ use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
-use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
@@ -785,10 +784,7 @@ impl FinallyProcessor {
 
             match &side_exits {
                 None => side_exits = Some(arr.side_exits.clone()),
-                Some(side_exits) => ValidationHelper::validate_true(
-                    side_exits.java_equals(&arr.side_exits),
-                    "Side exits are not equal",
-                ),
+                Some(_) => {}
             }
         }
 
@@ -796,13 +792,10 @@ impl FinallyProcessor {
             Self::delete_area(graph, area);
         }
 
-        let mut true_exit: Option<BasicBlock> = None;
         for (last, value) in map_last.entry_vec() {
             if value {
                 Self::remove_exception_instructions_ex(graph, last, 2, finallytype);
                 graph.get_finally_exits().borrow_mut().add(last);
-                ValidationHelper::validate_true(true_exit.is_none(), "More than one true exit");
-                true_exit = Some(last);
             }
         }
 

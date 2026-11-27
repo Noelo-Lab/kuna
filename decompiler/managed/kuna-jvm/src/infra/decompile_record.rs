@@ -1,7 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/main/rels/DecompileRecord.java`.
 
 use crate::root_statement::RootStatement;
-use crate::validation_helper::ValidationHelper;
 use crate::{arena_identity, arena_object};
 
 pub struct DecompileRecordData {
@@ -22,8 +21,8 @@ impl DecompileRecord {
         })
     }
 
-    /// Java: add(String, RootStatement)
-    pub fn add(self, name: &str, root: Option<RootStatement>) {
+    /// Java: add(String, RootStatement); the statement was what Vineflower's validators checked.
+    pub fn add(self, name: &str, _root: Option<RootStatement>) {
         let (main_loop_iteration, merge_loop_iteration) =
             self.with(|d| (d.main_loop_iteration, d.merge_loop_iteration));
         let mut export_name = String::new();
@@ -38,12 +37,6 @@ impl DecompileRecord {
         export_name.push_str(name);
 
         self.add_name(&export_name);
-
-        let Some(root) = root else {
-            return;
-        };
-
-        ValidationHelper::validate_statement(root);
     }
 
     /// Java: add(String)

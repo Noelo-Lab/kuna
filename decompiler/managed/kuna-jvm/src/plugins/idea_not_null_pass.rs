@@ -21,7 +21,6 @@ use crate::sequence_helper::SequenceHelper;
 use crate::statement::Statement;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
-use crate::validation_helper::ValidationHelper;
 
 const NOT_NULL: &str = "org/jetbrains/annotations/NotNull";
 const REPORT_NULL: &str = "$$$reportNull$$$0";
@@ -65,14 +64,10 @@ impl IdeaNotNullPass {
 
         while IdeaNotNullPass::find_and_remove_parameter_check(root.0, mt) {
             checks_removed = true;
-
-            ValidationHelper::validate_statement(root);
         }
 
         while IdeaNotNullPass::find_and_remove_return_check(root.0, mt) {
             checks_removed = true;
-
-            ValidationHelper::validate_statement(root);
         }
 
         checks_removed

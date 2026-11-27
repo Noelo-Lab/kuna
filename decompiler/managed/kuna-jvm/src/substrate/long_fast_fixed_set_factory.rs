@@ -139,10 +139,6 @@ impl<E: JavaHash + JavaEq + Clone> LongFastFixedSet<E> {
     }
 
     fn get_data<'a>(&self, set: &'a LongFastFixedSet<E>) -> &'a [i64] {
-        crate::validation_helper::ValidationHelper::validate_true(
-            set.factory.ptr_eq(&self.factory),
-            "Incompatible set factories",
-        );
         &set.data
     }
 

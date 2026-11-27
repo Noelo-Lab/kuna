@@ -1057,7 +1057,6 @@ impl Statement {
     }
 
     pub fn get_first_successor(self) -> StatEdge {
-        ValidationHelper::successors_exist(self);
         if let Some(edge) = self
             .edge_list(EdgeDirection::Forward, Statement::STATEDGE_ALL)
             .and_then(|res| res.first())
@@ -1068,7 +1067,6 @@ impl Statement {
     }
 
     pub fn get_first_direct_successor(self) -> StatEdge {
-        ValidationHelper::successors_exist(self);
         if let Some(edge) = self
             .edge_list(EdgeDirection::Forward, Statement::STATEDGE_DIRECT_ALL)
             .and_then(|res| res.first())
