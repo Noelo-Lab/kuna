@@ -437,6 +437,9 @@ struct RegionStructurer<'a> {
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
     /// (kuna, `option loopcondhoist`) set when a loop's condition exit was kept.
     cond_used: std::cell::Cell<bool>,
+    /// Test only: run every round, as if [`cannot_converge`](Self::cannot_converge) never held.
+    #[cfg(test)]
+    no_early_stop: bool,
 }
 
 impl<'a> RegionStructurer<'a> {
@@ -459,6 +462,8 @@ impl<'a> RegionStructurer<'a> {
             pending_body_addrs: std::collections::BTreeMap::new(),
             loop_cond: None,
             cond_used: std::cell::Cell::new(false),
+            #[cfg(test)]
+            no_early_stop: false,
         }
     }
 
@@ -751,6 +756,10 @@ impl<'a> RegionStructurer<'a> {
     /// is pending and [`components_stay_apart`] holds.  With no live switch none
     /// can be queued later.
     fn cannot_converge(&self) -> bool {
+        #[cfg(test)]
+        if self.no_early_stop {
+            return false;
+        }
         self.pending_inf_loops.is_empty() && components_stay_apart(self.graph, self.graph_id)
     }
 
@@ -1680,9 +1689,11 @@ impl<'a> RegionStructurer<'a> {
         // EXIT edge (the head's `c != -1` decision out) so the head collapses INTO
         // the switch body, fold the switch with its case→head back-edges as the
         // single (continue) exit, then the body self-loops and `try_fold_loop`'s
-        // inf-loop rule folds it.  See `try_fold_switch_loop`.
-        if self.loop_refine {
-            let ordered = self.order_loop_heads_innermost_first(&heads);
+        // inf-loop rule folds it.  See `try_fold_switch_loop`.  The heads are
+        // ordered once for both passes: a declined fold changes nothing.
+        let ordered = if self.loop_refine { self.order_loop_heads_innermost_first(&heads) } else { Vec::new() };
+        let switches = self.loop_refine && self.any_live_switch();
+        if switches {
             for &head in ordered.iter() {
                 if self.try_fold_switch_loop(head)? {
                     if dbg {
@@ -1716,7 +1727,6 @@ impl<'a> RegionStructurer<'a> {
             // matches CollapseStructure.  Refining one head per round (returning
             // true) lets the acyclic schemas re-collapse the freed body before the
             // next loop is considered.
-            let ordered = self.order_loop_heads_innermost_first(&heads);
             for &head in ordered.iter() {
                 // A switch-bodied loop is owned by `try_fold_switch_loop` (above):
                 // its case→head **continue** back-edges must stay structural so the
@@ -1724,7 +1734,7 @@ impl<'a> RegionStructurer<'a> {
                 // would virtualize all-but-one of those latches to gotos, destroying
                 // the `is_continue_case` shape and shattering the switch — so we skip
                 // such heads here and let the switch-loop path drive them.
-                if self.is_switch_bodied_loop_head(head) {
+                if switches && self.is_switch_bodied_loop_head(head) {
                     continue;
                 }
                 match self.refine_loop_edges(head)? {
@@ -1739,6 +1749,12 @@ impl<'a> RegionStructurer<'a> {
             }
         }
         Ok(false)
+    }
+
+    /// Whether some live component ends in a switch; without one no loop body
+    /// holds a switch.
+    fn any_live_switch(&self) -> bool {
+        (0..self.size()).any(|i| self.graph.block(self.component(i)).is_switch_out())
     }
 
     /// Is `head` the head of a *switch-bodied* natural loop — its structural body
@@ -2940,7 +2956,7 @@ impl<'a> RegionStructurer<'a> {
         // so this is parity-safe (the protected set is empty without such a loop).
         let mut protected: std::collections::BTreeSet<BlockId> =
             std::collections::BTreeSet::new();
-        if self.loop_refine {
+        if self.loop_refine && self.any_live_switch() {
             for &h in self.collect_loop_heads().iter() {
                 if self.is_switch_bodied_loop_head(h) {
                     for bl in self.natural_loop_body(h) {
@@ -3613,6 +3629,78 @@ mod tests {
         let mut st = RegionStructurer::new(&mut g, root);
         assert!(!st.structure(Some(std::time::Instant::now())).unwrap());
         assert_eq!(g.block(root).get_size(), 3);
+    }
+
+    #[test]
+    fn components_that_stay_apart_never_structure() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move |m: u64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed % m
+        };
+        let back = crate::block::edge_flags::f_back_edge | crate::block::edge_flags::f_loop_edge;
+        let (mut apart, mut stopped_later, mut folded) = (0, 0, 0);
+        for round in 0..8000 {
+            let n = 2 + next(7) as usize;
+            let mut edges: Vec<(usize, usize)> = Vec::new();
+            let add = |e: (usize, usize), edges: &mut Vec<(usize, usize)>| {
+                if !edges.contains(&e) && edges.iter().filter(|x| x.0 == e.0).count() < 2 {
+                    edges.push(e);
+                }
+            };
+            for s in 0..n {
+                if round % 2 == 0 {
+                    for _ in 0..next(3) {
+                        add((s, next(n as u64) as usize), &mut edges);
+                    }
+                } else if s + 1 < n {
+                    add((next(s as u64 + 1) as usize, s + 1), &mut edges);
+                    if next(3) == 0 {
+                        add((s, s + 1 + next((n - s - 1) as u64) as usize), &mut edges);
+                    }
+                    if next(6) == 0 {
+                        add((s, next(s as u64 + 1) as usize), &mut edges);
+                    }
+                }
+            }
+            if round % 2 == 1 {
+                for s in 0..n - 1 {
+                    if !edges.iter().any(|e| e.0 == s) {
+                        add((s, n - 1), &mut edges);
+                    }
+                }
+            }
+            let refine = next(2) == 1;
+            let run = |stop: bool| {
+                let (mut g, root, b) = graph(n, &edges);
+                for (s, &bl) in b.iter().enumerate() {
+                    for j in 0..g.block(bl).size_out() {
+                        let d = b.iter().position(|&x| x == g.block(bl).get_out(j)).unwrap();
+                        if d <= s {
+                            g.set_out_edge_flag(bl, j, back);
+                        }
+                    }
+                }
+                let at_start = components_stay_apart(&g, root);
+                let mut st = RegionStructurer::new(&mut g, root).with_loop_refine(refine, None, Default::default());
+                st.no_early_stop = !stop;
+                (at_start, matches!(st.structure(None), Ok(true)))
+            };
+            let (at_start, with) = run(true);
+            let (_, without) = run(false);
+            assert_eq!(with, without, "{n} {edges:?} refine={refine}");
+            if at_start {
+                apart += 1;
+                assert!(!without, "{n} {edges:?}");
+            } else if !with {
+                stopped_later += 1;
+            } else {
+                folded += 1;
+            }
+        }
+        assert!(apart > 500 && stopped_later > 100 && folded > 500, "{apart} {stopped_later} {folded}");
     }
 
     #[test]
