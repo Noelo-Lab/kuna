@@ -289,7 +289,7 @@ kuna	a8e71f5a39e9d179
 case	default/pkg/TestClashName	Default	classes/java8/pkg/TestClashName	classes/java8/pkg/SharedName1	classes/java8/pkg/SharedName2	classes/java8/pkg/SharedName3	classes/java8/pkg/SharedName4	classes/java8/pkg/NonSharedName	classes/java8/pkg/TestClashNameParent	classes/java8/ext/TestClashNameParent	classes/java8/pkg/TestClashNameIface	classes/java8/ext/TestClashNameIface
 kuna	7fdc0118e81cb17f
 case	default/pkg/TestClassFields	Default	classes/java8/pkg/TestClassFields
-kuna	c63fd07a1e7e3201
+kuna	c43112e14c556522
 case	default/pkg/TestClassLambda	Default	classes/java8/pkg/TestClassLambda
 kuna	b1c65d1fdf0c4d43
 case	default/pkg/TestClassLoop	Default	classes/java8/pkg/TestClassLoop
@@ -1166,7 +1166,7 @@ case	kotlin-core-default/pkg/TestRunSuspend	Kotlin Core Default	classes/kotlin/c
 kuna	bcd68dcb78c7e579
 compare	TestRunSuspend.kt	TestRunSuspend.java
 case	kotlin-core-default/pkg/TestSuspendLambdaKt	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSuspendLambdaKt
-kuna	bf455d10a1be24f0
+kuna	9f6fcd5d56b6a1af
 compare	TestSuspendLambdaKt.kt	TestSuspendLambdaKt.java
 case	kotlin-core-default/pkg/TestSynchronizedUnprotected	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSynchronizedUnprotected
 kuna	bfc00870a7c1d629
@@ -2056,3 +2056,5 @@ case	kuna-fixes/pkg/TestForEachArrayIncrement	Kuna Fixes	kuna-fixes/classes/pkg/
 case	kuna-fixes/pkg/TestExitCopiedIntoTry	Kuna Fixes	kuna-fixes/classes/pkg/TestExitCopiedIntoTry
 # kuna-fixes/src/pkg/TestRecordPatternInstanceofType.java, javac 21.0.13.1 (-g:none --release 21)
 case	kuna-fixes/pkg/TestRecordPatternInstanceofType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternInstanceofType
+# kuna-fixes/src/pkg/TestStaticInitAfterCall.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitAfterCall

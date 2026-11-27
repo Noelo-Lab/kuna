@@ -36,17 +36,6 @@ fn written_as_kotlin(cl: StructClass) -> bool {
         && KotlinMetadataAnnotation::find(cl).is_some()
 }
 
-/// The keys of the static fields of `cl` that `exprent` reads.
-fn static_reads(exprent: Exprent, cl: StructClass) -> Vec<String> {
-    exprent
-        .get_all_exprents_rec_self(true, true)
-        .into_iter()
-        .filter_map(|e| e.try_as_field())
-        .filter(|f| f.is_static() && f.get_classname() == cl.qualified_name())
-        .map(|f| InterpreterUtil::make_unique_key(&f.get_name(), &f.get_descriptor().descriptor_string))
-        .collect()
-}
-
 fn root_class_node(name: Option<&str>) -> Option<ClassNode> {
     let map = DecompilerContext::get_class_processor().get_map_root_classes();
     let node = name.and_then(|n| map.borrow().get_cloned(&n.to_string()));
@@ -268,12 +257,15 @@ impl InitializerProcessor {
             );
 
             let mut not_inlined: Vec<FieldExprent> = Vec::new();
-            let mut moved_reads: Vec<(i32, Vec<String>)> = Vec::new();
+            let keeps_order = !written_as_kotlin(cl) && !cl.has_modifier(ACC_INTERFACE);
+            let mut last_moved: i32 = -1;
+            let mut kept = false;
 
             let mut itr = 0;
             while itr < first_exprents.len() {
                 let exprent = first_exprents.get(itr);
                 let mut remove = false;
+                let mut pending_local = false;
 
                 if let Some(assign_expr) = exprent.try_as_assignment() {
                     if let Some(f_expr) = assign_expr.get_left().try_as_field() {
@@ -299,15 +291,14 @@ impl InitializerProcessor {
                                 &not_inlined,
                                 fidx,
                                 true,
-                            ) && (written_as_kotlin(cl)
-                                || !moved_reads
-                                    .iter()
-                                    .any(|(m, reads)| *m > fidx && reads.contains(&key_field)));
+                            ) && (!keeps_order || (!kept && fidx > last_moved));
                             if inline_initializers || exprent_independent {
                                 let initializers = wrapper.get_static_field_initializers();
                                 if !initializers.borrow().contains_key(&key_field) {
                                     if exprent_independent {
-                                        moved_reads.push((fidx, static_reads(assign_expr.get_right(), cl)));
+                                        if !cl.get_fields().get(fidx as usize).is_synthetic() {
+                                            last_moved = fidx;
+                                        }
                                         initializers.borrow_mut().add_with_key(
                                             assign_expr.get_right(),
                                             key_field.clone(),
@@ -330,6 +321,7 @@ impl InitializerProcessor {
                                                     non_field_assignment.get_right(),
                                                 ));
                                                 exprents_to_remove.push(non_field_assignment.0);
+                                                last_moved = last_moved.max(fidx);
                                                 initializers.borrow_mut().add_with_key(
                                                     assign_expr.get_right(),
                                                     key_field.clone(),
@@ -347,6 +339,7 @@ impl InitializerProcessor {
                     } else if inline_initializers {
                         if let Some(left) = assign_expr.get_left().try_as_var() {
                             non_field_assigns.put(left.get_index(), assign_expr);
+                            pending_local = true;
                         }
                     }
                 }
@@ -354,6 +347,7 @@ impl InitializerProcessor {
                 if remove {
                     first_exprents.remove_at(itr);
                 } else {
+                    kept |= !pending_local;
                     itr += 1;
                 }
             }

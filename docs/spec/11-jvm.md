@@ -1153,17 +1153,21 @@ match the generated ones. A failure here writes the class as `$VF: Couldn't be d
 (section 11.12).
 
 **Static initializers keep their order (kuna).** Field initializers and `static` blocks run
-in the order the source declares them, and the fields are written in class-file order, so
-moving a `<clinit>` assignment into its field's declaration changes when it runs relative to
-the other moved assignments. `extract_static_initializers` moves an assignment only when
-that keeps every value it reads: its value may not read a field of the class that an
-earlier moved assignment set and that is declared after it (`static int[] sizes = new
-int[names.length];` ahead of `names = {..}` read `null`), and no earlier moved assignment to
-a field declared after it may read its field (`next = base + 1; base = 5;` moved as `base =
-5` ahead of `next = base + 1`). Such an assignment stays in the `static` block, and so does
-every later assignment that reads its field. A class written as Kotlin is exempt: its writer
-places an object's or companion's instance (assigned first, declared last) and the
-properties that read it itself.
+in the order the source declares them, and `<clinit>` runs them in that order. The class is
+written with its fields, in class-file order, before the `static` block that holds what was
+not moved, so a moved assignment runs before every statement that stays in the block and
+before the moved assignments to the fields declared after its own. Vineflower moved any
+assignment whose value reads no local: past a call (`static { init(); b = a + 1; }` became
+`static int b = a + 1;`, run before `init()` set `a`), past an assignment that stayed
+(`sizes = new int[names.length]` ahead of `names = {..}`, which then read `null`), and ahead
+of an earlier one to a later field (`next = base + 1; base = 5;` moved as `base = 5` first).
+`extract_static_initializers` now moves an assignment of the first block only while every
+statement before it moved and its field is declared after every field moved so far, so the
+written order is the order of `<clinit>`; the rest stays in the `static` block, a final field
+there being assigned once in it. Synthetic fields (`$assertionsDisabled`, an enum's
+`$VALUES`) are not written, so their position does not count. An interface, which cannot
+hold a `static` block, and a class written as Kotlin, whose writer places an object's or
+companion's instance and the properties that read it itself, keep Vineflower's rule.
 
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being
