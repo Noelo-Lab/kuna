@@ -1762,33 +1762,37 @@ its reads and writes printed as a separate, never-assigned variable,
 `fill(a0,0,0x10,&Stack0000000000000038); v1 = *(code **)(*v2 + 8);`. Once
 `ActionInputPrototype` has fixed the prototype, `name_local_highs_angr` maps
 each such slot as a local, right after `link_proto_params` and before any high
-is named. A slot qualifies when a stack `PTRSUB` resolves to it and every use
-of every such address hands it on whole, as a call argument or as a stored
-value (an address that feeds arithmetic or a comparison indexes an object whose
-extent the slot's own accesses do not show, such as an `fd_set` walked a word
-at a time). The slot must lie in the parameter range and in the local scope's
-window, no symbol (a parameter's included) may overlap it, and some Varnode
-starting there must be defined or read by an op other than an `INDIRECT`, so
-the body prints it. Every variable holding such a Varnode must take its name
-from the slot: its name representative is stored there, so the naming walk
-binds it to the new symbol rather than to a register it was merged with. And
-the slot must be one scalar: no Varnode straddles either end of it, and no other
-Varnode or other referenced address starts inside it. Two `int`s initialized
-by one 8-byte store and passed as `&optval, &optlen` therefore stay unmapped
-rather than becoming one 8-byte local with a reference into its middle. The
-symbol is as wide as the widest Varnode starting there and takes the type of the one
-variable stored there when that type has the same width (otherwise it is an
-`undefined<N>`), so the reference and the accesses bind to one name, `&v2` and
-`*v2`, and `variables` reports the slot. A variadic prototype maps nothing: its
-unclaimed slots are the variadic arguments, and `va_start` takes the address of
-the first one as the start of the overflow area (printed from the CFA on System V
-x86-64), not of a scratch local. The decision waits for the final
-prototype because during `mainloop` the parameter list is not yet known, and
-mapping the slot then would claim a stack parameter's storage as a local. A
-reference to the start of an object whose accesses all lie past its first byte
-(the callee fills a record, the body reads only a later field) maps nothing:
-there the reference keeps its storage name, as an open range in the local frame
-keeps its own.
+is named. A slot qualifies when a stack `PTRSUB` resolves to it and every use of
+every such address hands it on whole, as a call argument or as a stored value
+(an address that feeds arithmetic or a comparison indexes an object whose extent
+the slot's own accesses do not show, such as an `fd_set` walked a word at a
+time). The slot must lie in the parameter range and in the local scope's window,
+no symbol (a parameter's included) may overlap it, and some Varnode starting
+there must be defined or read by an op other than an `INDIRECT`, so the body
+prints it. Every variable holding such a Varnode must take its name from the
+slot: its name representative is stored there, so the naming walk binds it to
+the new symbol rather than to a register it was merged with. It must also keep
+its declared type: a variable with no symbol is declared at its merged type
+representative's type, a mapped one at its first address-tied member's, and a
+slot whose variable would switch between the two (a register-merged value that
+holds a string in one place and a `re_pattern_buffer *` in another) stays
+unmapped. And the slot must be one scalar: no Varnode straddles either end of
+it, and no other Varnode or other referenced address starts inside it. Two
+`int`s initialized by one 8-byte store and passed as `&optval, &optlen`
+therefore stay unmapped rather than becoming one 8-byte local with a reference
+into its middle. The symbol is as wide as the widest Varnode starting there and
+takes the declared type of the one variable stored there when that type has the
+same width (otherwise it is an `undefined<N>`), so the reference and the
+accesses bind to one name, `&v2` and `*v2`, and `variables` reports the slot. A
+variadic prototype maps nothing: its unclaimed slots are the variadic arguments,
+and `va_start` takes the address of the first one as the start of the overflow
+area (printed from the CFA on System V x86-64), not of a scratch local. The
+decision waits for the final prototype because during `mainloop` the parameter
+list is not yet known, and mapping the slot then would claim a stack parameter's
+storage as a local. A reference to the start of an object whose accesses all lie
+past its first byte (the callee fills a record, the body reads only a later
+field) maps nothing: there the reference keeps its storage name, as an open
+range in the local frame keeps its own.
 
 **RangeHint gathering.** Each `mainloop` pass,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs

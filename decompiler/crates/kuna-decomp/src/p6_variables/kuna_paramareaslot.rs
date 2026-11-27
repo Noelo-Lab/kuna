@@ -12,7 +12,7 @@ use kuna_base::address::Address;
 use kuna_num::opcodes::OpCode;
 
 use crate::context::{HighVariableId, VarnodeId};
-use crate::dtype::TypeFactory;
+use crate::dtype::{Datatype, TypeFactory};
 use crate::funcdata::Funcdata;
 
 /// Whether the emitted program reads or writes this varnode as a value.
@@ -120,11 +120,27 @@ fn slot_object(fd: &Funcdata, addr: &Address) -> Option<(i32, Vec<HighVariableId
     (!inside).then_some((width, highs))
 }
 
+/// The type `high` is declared with, when giving it a symbol keeps that declaration.
+///
+/// A symbol-less variable is declared at its type representative's type and a mapped
+/// one at its first address-tied member's, so the two must agree.
+fn declared_type(fd: &Funcdata, high: HighVariableId) -> Option<Rc<Datatype>> {
+    let h = fd.high_bank().get(high)?;
+    let instances = || (0..h.num_instances()).map(|i| h.get_instance(i));
+    let tied = instances()
+        .find(|&vn| fd.vbank().get(vn).is_some_and(|v| v.is_addr_tied()))
+        .or_else(|| instances().next())?;
+    let merged = crate::kuna_declhightype::type_representative(fd, high)?;
+    let tied = Rc::clone(fd.vbank().get(tied)?.get_type());
+    Rc::ptr_eq(&tied, fd.vbank().get(merged)?.get_type()).then_some(tied)
+}
+
 /// Map each unclaimed parameter-area slot whose address is only passed on whole and
-/// which the body reads or writes as one scalar as a local of the width and type those
-/// accesses use, when every variable printing it is named from the slot. A variadic
-/// function's unclaimed slots are its variadic arguments, not scratch, and stay
-/// unmapped. Run after the prototype is final and its parameter symbols are linked.
+/// which the body reads or writes as one scalar as a local of the width those accesses
+/// use and the type its variable is declared with, when every variable printing it is
+/// named from the slot and keeps its declared type. A variadic function's unclaimed
+/// slots are its variadic arguments, not scratch, and stay unmapped. Run after the
+/// prototype is final and its parameter symbols are linked.
 pub(crate) fn map(fd: &mut Funcdata) {
     if fd.get_func_proto().is_dotdotdot() {
         return;
@@ -172,15 +188,25 @@ pub(crate) fn map(fd: &mut Funcdata) {
         }
         let mut reps = Vec::with_capacity(highs.len());
         for high in highs {
-            match fd.high_name_representative(high).and_then(|rep| fd.vbank().get(rep)) {
-                Some(rep) if rep.get_addr() == &addr => reps.push(Rc::clone(rep.get_type())),
+            match fd.high_name_representative(high) {
+                Some(rep) if fd.vbank().get(rep).is_some_and(|v| v.get_addr() == &addr) => reps.push(rep),
                 _ => break,
             }
         }
         if reps.len() != highs_len {
             continue;
         }
-        let declared = match reps.as_slice() {
+        let mut kept = Vec::with_capacity(reps.len());
+        for &rep in &reps {
+            match fd.vbank().get(rep).and_then(|v| v.get_high()).and_then(|high| declared_type(fd, high)) {
+                Some(ty) => kept.push(ty),
+                None => break,
+            }
+        }
+        if kept.len() != reps.len() {
+            continue;
+        }
+        let declared = match kept.as_slice() {
             [only] if only.get_size() == width => types.concretize(Rc::clone(only)).ok(),
             _ => None,
         };
