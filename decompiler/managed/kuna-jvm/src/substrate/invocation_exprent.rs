@@ -1994,6 +1994,11 @@ impl InvocationExprent {
                     types[x] = descriptor.params[x].clone();
                     continue;
                 }
+                if raw_receiver_erasure::unbound_class_variable(&desc_class, &parameter_type, &|f| {
+                    hierarchy_map.contains_key(f) || self.gm_contains(f)
+                }) {
+                    continue;
+                }
                 if let Some(type_) = type_ {
                     if !(type_.is_generic()
                         && type_.as_generic().has_unknown_generic_type(&named_gens))

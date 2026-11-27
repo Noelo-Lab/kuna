@@ -1555,6 +1555,18 @@ specific. A call whose candidates have generic parameter types, whose arguments 
 lambda or a type kuna cannot resolve, or whose method is varargs or not strictly
 applicable keeps Vineflower's casts.
 
+**A callee's unbound class variable (kuna).** `appendParamList` writes each argument
+against its parameter's generic type, remapped through the type arguments the receiver's
+type and the class hierarchy give the callee's class. When neither binds a type variable of
+that class (a receiver whose parameterization kuna does not see, such as a local an
+enclosing method declares and a lambda captures), the remapped type kept the variable's
+name, and a cast to it named whatever variable of that name is in scope at the call:
+`bag.add(check(t))` printed as `bag.add((E)((Task)check((E)t)))` inside a method declaring
+its own `E`. `raw_receiver_erasure` writes such an argument against the parameter's erasure,
+the type the descriptor passes it as, so no cast names a variable of another declaration; a
+class whose variables are in scope at the call (the current class or an enclosing one) keeps
+the remapped type.
+
 **A varargs spread beside a generic overload (kuna).** `vararg_spread_resolution` keeps a
 varargs array written as an array when another overload is applicable to the spread
 arguments, judged by erasure, so `of(c)` for `of(Chromosome<G>, Chromosome<G>...)` printed

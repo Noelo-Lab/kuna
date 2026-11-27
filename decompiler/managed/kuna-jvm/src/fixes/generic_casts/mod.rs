@@ -19,7 +19,7 @@ use crate::rt::JHashMap;
 use crate::var_type::{get_class, VarType};
 
 /// Whether the type variable `var` occurs in `t`.
-fn mentions(t: &VarType, var: &str) -> bool {
+pub(crate) fn mentions(t: &VarType, var: &str) -> bool {
     if t.type_ == CodeType::Genvar {
         return t.value_str() == var;
     }

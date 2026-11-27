@@ -7,6 +7,7 @@ use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
+use crate::fixes::generic_casts;
 use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationType};
 use crate::kuna_static_types::{field_declared, formals, is_bare_var, is_raw_type, param_type};
@@ -14,6 +15,27 @@ use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
 use crate::var_type::{get_class, instance_of, VarType};
+
+/// Whether `param`, a parameter type of a method of `class`, names a type
+/// variable of `class` that `bound` says the call does not bind and that is
+/// not in scope at the call (neither the current class nor an enclosing one
+/// is `class`): the receiver's type leaves it unknown, so the argument is
+/// written against the parameter's erasure, not a variable of another
+/// declaration.
+pub fn unbound_class_variable(class: &str, param: &VarType, bound: &dyn Fn(&VarType) -> bool) -> bool {
+    let mut scope = DecompilerContext::get_current_class_node();
+    while let Some(node) = scope {
+        let (name, parent) = node.with(|d| (d.class_struct.qualified_name(), d.parent));
+        if name == class {
+            return false;
+        }
+        scope = parent;
+    }
+    formals(class).is_some_and(|fs| {
+        fs.iter()
+            .any(|f| !bound(f) && generic_casts::mentions(param, f.value_str()))
+    })
+}
 
 /// Whether `inv` is an instance method call whose receiver's static type is
 /// a raw type, so that its result type is the erasure of the declared one.
