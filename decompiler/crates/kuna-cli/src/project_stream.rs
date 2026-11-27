@@ -48,7 +48,7 @@ use kuna_console::project::{
     render_readme_streaming, deferred_callwide_header, validate_callwide_header, AsmPhase, BatchOutcome, DecompileOptions, FuncResult, ReadmeCounts,
     GlobalAliasNames, ReadmeFacts, ReadmeLayout, StreamPhase, StreamProgress,
 };
-use kuna_console::kuna_asmscope::{referenced_names, selection_spans};
+use kuna_console::kuna_asmscope::{referenced_names, selection_spans, TailScope};
 use kuna_console::project_stream::{
     asm_header_lines, asm_labels_from_entries, render_data_tail, render_selection_data_tail,
     render_variables_section, AsmSweep,
@@ -1012,12 +1012,14 @@ fn export(
     run.lock().status.phase = StreamPhase::Finalizing;
     run.publish_progress(false);
     jobs::warn_about_streamed_anomalies(&writer.errors, args.max_fn_seconds, retries);
-    if sweep.is_none() {
+    let mut tail_scope = writer.names.take().map(|names| TailScope { names, ..TailScope::default() });
+    if let Some(scope) = tail_scope.as_mut() {
         let labels = asm_labels_from_entries(&prog, &targets);
         let spans = selection_spans(&prog, &writer.records);
         let mut selected = AsmSweep::over(&prog, &layout.file_name, labels, spans);
         sweep_to_end(&prog, &mut selected, &mut asm, run)
             .map_err(|e| format!("cannot write {}.asm: {e}", layout.file_name))?;
+        scope.operands = selected.take_operands();
     }
 
     // The parent is one more type shard: its own factory holds whatever the load
@@ -1027,8 +1029,8 @@ fn export(
     writer.write_header(Some(&types))?;
     asm.write_all(render_variables_section(&writer.records).as_bytes())
         .and_then(|()| {
-            let tail = match &writer.names {
-                Some(names) => render_selection_data_tail(&prog, &writer.dat, names),
+            let tail = match &tail_scope {
+                Some(scope) => render_selection_data_tail(&prog, &writer.dat, scope),
                 None => render_data_tail(&prog, &writer.dat),
             };
             asm.write_all(tail.as_bytes())

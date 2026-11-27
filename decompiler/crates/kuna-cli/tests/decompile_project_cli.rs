@@ -575,9 +575,10 @@ fn a_global_larger_than_the_load_window_is_dumped_whole() {
 /// string. `tests/bug-repro/sort` carries a 604-byte usage string at `0x16600`,
 /// and reading it took the export down before `create_dir_all` ran, so the run
 /// wrote nothing at all -- the same failure `/bin/ls` and 52 of the 219 ELF
-/// binaries in `/usr/bin` hit. The read happens in the `.asm` data tail, which
-/// labels every named global of a whole-image export (a selected one keeps only
-/// those its `.c` names, and the C prints this string as a literal).
+/// binaries in `/usr/bin` hit. The read happens in the `.asm` data tail.
+/// `--addr` selects `usage` (`sub_be50`), whose C prints the string as a
+/// literal; a selected tail still labels it because the swept `lea` points at
+/// it.
 #[test]
 fn a_binary_with_a_string_over_the_load_window_still_exports() {
     let bin = repo_root().join("tests/bug-repro/sort");
@@ -587,6 +588,8 @@ fn a_binary_with_a_string_over_the_load_window_still_exports() {
         bin.to_str().unwrap(),
         "-o",
         dir.to_str().unwrap(),
+        "--addr",
+        "0xbe50",
         "--sleighpath",
         &specs(),
     ]);
@@ -1978,7 +1981,8 @@ fn tail_labels(dir: &std::path::Path, file_name: &str) -> Vec<String> {
 /// but its `.asm` was the disassembly of every code section and a label for
 /// every named global: four bodies out of a 120 MB image cost 1.66 GB of
 /// `.asm`. It now sweeps the selected code, where it reads as the whole-image
-/// sweep does, and labels the globals that code names.
+/// sweep does, and labels the globals that code names or points at: `main`'s
+/// prompts are C literals, but its `mov edi` operands are their addresses.
 #[test]
 fn a_selected_project_disassembles_only_the_selection() {
     let bin = fixture("fauxware");
@@ -2008,8 +2012,19 @@ fn a_selected_project_disassembles_only_the_selection() {
     for label in ["main", "authenticate"] {
         assert_eq!(block(&sweep, label), block(&whole_sweep, label), "{label} moved");
     }
-    assert_eq!(tail_labels(&selected, "fauxware"), ["sneaky"], "authenticate names `sneaky`");
+    assert_eq!(
+        tail_labels(&selected, "fauxware"),
+        ["s_400915", "s_400920", "sneaky"],
+        "authenticate names `sneaky`; main's operands point at the prompts"
+    );
     assert!(tail_labels(&whole, "fauxware").contains(&"s_400238".to_string()));
+    let tail = |dir: &std::path::Path| {
+        let asm = std::fs::read_to_string(dir.join("fauxware.asm")).unwrap();
+        asm.split_once("\n; --- data ---\n").unwrap().1.to_string()
+    };
+    for label in ["s_400915", "s_400920", "sneaky"] {
+        assert_eq!(block(&tail(&selected), label), block(&tail(&whole), label), "{label} reads differently");
+    }
     let readme = std::fs::read_to_string(selected.join("README.md")).unwrap();
     assert!(readme.contains("labeled linear disassembly of the selected functions' code"), "{readme}");
     let readme = std::fs::read_to_string(whole.join("README.md")).unwrap();

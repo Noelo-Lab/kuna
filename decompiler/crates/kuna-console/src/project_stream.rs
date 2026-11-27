@@ -110,6 +110,9 @@ pub struct AsmSweep {
     block: usize,
     addr: u64,
     in_block: bool,
+    /// (kuna #1978) The constants a narrowed sweep's operands print, which its
+    /// data tail keeps a label for; `None` for a whole-image sweep.
+    operands: Option<BTreeSet<u64>>,
     scratch: AssemblyScratch,
     pending: String,
     done: bool,
@@ -122,7 +125,7 @@ impl AsmSweep {
             .map(|(vma, size)| (vma, vma.saturating_add(size)))
             .collect();
         sections.sort_unstable();
-        Self::sweeping(prog, file_name, labels, sections, "code section")
+        Self::sweeping(prog, file_name, labels, sections, "code section", None)
     }
 
     /// The sweep of a narrowed export: only `spans`, ascending disjoint byte
@@ -134,7 +137,7 @@ impl AsmSweep {
         labels: Vec<AsmLabel>,
         spans: Vec<(u64, u64)>,
     ) -> Self {
-        Self::sweeping(prog, file_name, labels, spans, "code range")
+        Self::sweeping(prog, file_name, labels, spans, "code range", Some(BTreeSet::new()))
     }
 
     fn sweeping(
@@ -143,6 +146,7 @@ impl AsmSweep {
         labels: Vec<AsmLabel>,
         blocks: Vec<(u64, u64)>,
         kind: &'static str,
+        operands: Option<BTreeSet<u64>>,
     ) -> Self {
         let arm = is_arm(prog);
         let ends = flow_ends(prog, &labels);
@@ -160,6 +164,7 @@ impl AsmSweep {
             block: 0,
             addr: 0,
             in_block: false,
+            operands,
             scratch: AssemblyScratch::new(),
             pending: String::new(),
             done,
@@ -175,6 +180,13 @@ impl AsmSweep {
 
     pub fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// (kuna #1978) The constants a narrowed sweep's operands printed so far
+    /// ([`crate::kuna_asmscope::TailScope::operands`]); empty for a
+    /// whole-image sweep.
+    pub fn take_operands(&mut self) -> BTreeSet<u64> {
+        self.operands.take().unwrap_or_default()
     }
 
     /// Sweep at most `byte_budget` bytes of code, writing whole lines to `out`,
@@ -218,6 +230,7 @@ impl AsmSweep {
                     end,
                     &mut self.scratch,
                     &mut self.pending,
+                    self.operands.as_mut(),
                 );
                 self.addr = self.addr.saturating_add(consumed);
                 remaining = remaining.saturating_sub(consumed);
@@ -252,6 +265,7 @@ fn sweep_one(
     end: u64,
     scratch: &mut AssemblyScratch,
     out: &mut String,
+    operands: Option<&mut BTreeSet<u64>>,
 ) -> u64 {
     if let Some(anchored) = labels.get(&addr) {
         scratch.flush_db(out);
@@ -276,6 +290,9 @@ fn sweep_one(
             scratch.flush_db(out);
             prog.read_bytes_into(addr, len as usize, &mut scratch.raw);
             scratch.emit_instruction(prog.output_code_offset(addr), out);
+            if let Some(operands) = operands {
+                crate::kuna_asmscope::operand_constants(&scratch.body, operands);
+            }
             len as u64
         }
         _ => {
@@ -325,15 +342,16 @@ pub fn render_data_tail(prog: &ConsoleProgram, dat_addrs: &BTreeSet<u64>) -> Str
 }
 
 /// (kuna #1978) The data tail of a narrowed export, identical to the one
-/// [`crate::project::build_selection_asm`] appends when `names` is what
-/// [`crate::kuna_asmscope::referenced_names`] collected from its results.
+/// [`crate::project::build_selection_asm`] appends when `scope` holds the names
+/// [`crate::kuna_asmscope::referenced_names`] collected from its results and the
+/// operands its sweep printed ([`AsmSweep::take_operands`]).
 pub fn render_selection_data_tail(
     prog: &ConsoleProgram,
     dat_addrs: &BTreeSet<u64>,
-    names: &BTreeSet<String>,
+    scope: &crate::kuna_asmscope::TailScope,
 ) -> String {
     let mut out = String::new();
-    project::emit_data_tail(prog, &prog.sections(), dat_addrs, Some(names), &mut out);
+    project::emit_data_tail(prog, &prog.sections(), dat_addrs, Some(scope), &mut out);
     out
 }
 

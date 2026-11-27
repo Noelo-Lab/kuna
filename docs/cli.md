@@ -4371,10 +4371,15 @@ binary and attempt recompilation:
   would run past the stretch's end, which becomes `db` lines. A function with no
   extent and nothing decoded inside a CODE section gets no stretch and no label. The
   data tail labels the `dat_<hex>` addresses the `.c` references, as a whole-image
-  tail does, but of the image's named globals only those the `.c` names: a global the
-  `.h` declares, or a name the C text spells, split at `.` and `:` so `obj.field` and
-  `ns::obj` name `obj`. A string the C prints as a literal is not named, so its
-  symbol is not in a narrowed tail. The README's file inventory says the `.asm`
+  tail does, but of the image's named globals only those the `.c` names or the swept
+  code points into. The `.c` names a global the `.h` declares, or a name the C text
+  spells, split at `.` and `:` so `obj.field` and `ns::obj` name `obj`. The code
+  points into a global when a `0x<hex>` constant in a swept instruction's operands
+  falls inside it, so a string the C prints as a literal keeps its `s_<hex>` label
+  when an instruction loads its address. A small constant can keep a label at a low
+  address as well, such as an ARM vector name. The globals left out still end a bare
+  `dat_<hex>` label's dump, so every label reads as it does in a tail that keeps
+  them all. The README's file inventory says the `.asm`
   covers the selected functions' code; the `.c`, the `.h` and the rest of the README
   are what they were. Four functions of `libLLVM-15.so.1` (117 MB) selected with
   `--addr` export in 7 s with a 15 KB `.asm`, where the whole-image `.asm` was

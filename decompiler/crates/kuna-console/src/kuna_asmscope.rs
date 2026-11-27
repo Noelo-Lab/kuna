@@ -6,7 +6,8 @@
 //! (its `ranges`), which reach past that extent when the flow does. The spans
 //! are clipped to the CODE sections a whole-image sweep walks, so a narrowed
 //! `.asm` never disassembles bytes the whole-image one would not. Its data tail
-//! labels the named globals that `.c` names, not every one in the image.
+//! labels the named globals that `.c` names or that the swept code's operands
+//! point into, not every one in the image.
 
 use std::collections::BTreeSet;
 
@@ -70,5 +71,70 @@ pub fn referenced_names(results: &[FuncResult], names: &mut BTreeSet<String>) {
                 names.insert(token.to_string());
             }
         }
+    }
+}
+
+/// What a narrowed data tail keeps besides its `dat_<hex>` labels.
+#[derive(Debug, Default, Clone)]
+pub struct TailScope {
+    /// The names the selected functions' C spells ([`referenced_names`]).
+    pub names: BTreeSet<String>,
+    /// Every constant the swept code's operands print ([`operand_constants`]).
+    pub operands: BTreeSet<u64>,
+}
+
+impl TailScope {
+    /// How a narrowed tail keeps the named global `name`, `size` bytes from
+    /// `starts` (its displayed and its byte coordinate): 2 when the C names it,
+    /// 1 when an operand of the swept code points into it, 0 when it is left out.
+    pub(crate) fn rank(&self, name: &str, starts: [u64; 2], size: u64) -> u8 {
+        if self.names.contains(name) {
+            return 2;
+        }
+        let end = |start: u64| start.saturating_add(size.max(1));
+        u8::from(starts.into_iter().any(|start| self.operands.range(start..end(start)).next().is_some()))
+    }
+}
+
+/// Add every `0x<hex>` constant one instruction's operand text spells to `out`:
+/// the addresses a reader of the `.asm` follows into its data tail.
+pub(crate) fn operand_constants(operands: &str, out: &mut BTreeSet<u64>) {
+    let mut rest = operands;
+    while let Some(at) = rest.find("0x") {
+        rest = &rest[at + 2..];
+        let digits = rest.bytes().take_while(u8::is_ascii_hexdigit).count();
+        if let Ok(value) = u64::from_str_radix(&rest[..digits], 16) {
+            out.insert(value);
+        }
+        rest = &rest[digits..];
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn operand_constants_are_every_hex_number_the_text_spells() {
+        let mut found = BTreeSet::new();
+        operand_constants("RDX,qword ptr [0x601048]", &mut found);
+        operand_constants("r0,[pc,#0x20] ; 0x0", &mut found);
+        operand_constants("byte ptr [RBP + -0x18],0x0 0x", &mut found);
+        operand_constants("EAX,0x10000000000000000", &mut found);
+        assert_eq!(found.into_iter().collect::<Vec<_>>(), [0x0, 0x18, 0x20, 0x601048]);
+    }
+
+    #[test]
+    fn a_tail_keeps_what_the_c_names_first_and_what_an_operand_points_into() {
+        let scope = TailScope {
+            names: BTreeSet::from(["sneaky".to_string()]),
+            operands: BTreeSet::from([0x400915, 0x601054]),
+        };
+        assert_eq!(scope.rank("sneaky", [0x9000, 0x9000], 8), 2);
+        assert_eq!(scope.rank("s_400915", [0x400915, 0x400915], 11), 1);
+        assert_eq!(scope.rank("table", [0x601050, 0x601050], 8), 1);
+        assert_eq!(scope.rank("table", [0x601050, 0x601050], 4), 0);
+        assert_eq!(scope.rank("unsized", [0x400915, 0x400915], 0), 1);
+        assert_eq!(scope.rank("elsewhere", [0x1000, 0x400915], 1), 1);
     }
 }

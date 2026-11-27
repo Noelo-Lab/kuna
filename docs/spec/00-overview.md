@@ -2310,9 +2310,16 @@ The data tail is cut down the same way. A whole-image tail labels every named gl
 in the image, which on an unstripped image is most of the file: 61 MB of the
 `.asm` for four functions of `libLLVM-15.so.1`, whose code is 14 KB of it. A
 selected tail keeps a named global only when the `.c` names it
-(`kuna_asmscope.rs (referenced_names)`). That is a global the `.h` declares, or a
-token of the C text, found the way the `dat_<hex>` labels already are. A streamed
-export gathers those names as each body is written, before it drops the text.
+(`kuna_asmscope.rs (referenced_names)`) or the swept code points into it
+(`kuna_asmscope.rs (TailScope)`). The `.c` names a global the `.h` declares, or a
+token of the C text, found the way the `dat_<hex>` labels already are. The code
+points into a global when a `0x<hex>` constant in an operand of a swept
+instruction falls inside it: that is the address a reader follows from the
+disassembly, and it keeps the label of a string the C prints as a literal. The
+globals a selected tail leaves out still bound a bare `dat_<hex>` label's dump, so
+a label it prints reads as it does in a tail that keeps them all. A streamed
+export gathers the names as each body is written, before it drops the text, and
+the operands as its sweep runs.
 The ranges exist only once the decompile has run, so a selected streamed export
 sweeps during finalization instead of alongside the decompile. Its sweep is still
 the non-stream one without the variable comments, and its `.streaming` reads `asm:
