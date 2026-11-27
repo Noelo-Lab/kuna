@@ -1082,6 +1082,7 @@ const POLICY: BodyPolicy = BodyPolicy {
     inputs_by_dataflow: true,
     restructure_after_deadcode: true,
     residue_rules: true,
+    loads_before_frame_writes: true,
 };
 
 impl DevirtProgram {

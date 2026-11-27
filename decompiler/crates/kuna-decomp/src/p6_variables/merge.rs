@@ -388,6 +388,10 @@ pub trait MergeContext: HighContext {
     fn op_insert_end_pred(&mut self, copyop: OpId, op: OpId, slot: int4);
     /// `data.opMarkNonPrinting(op)`.  STUB(W7-funcdata): not yet on Funcdata.
     fn op_mark_non_printing(&mut self, op: OpId);
+    /// (kuna) Is `op` marked non-printing?
+    fn op_not_printed(&self, _op: OpId) -> bool {
+        false
+    }
 
     // --- Block reads -------------------------------------------------------
     /// `data.getBasicBlocks().getSize()`.
@@ -2266,6 +2270,12 @@ impl Merge {
                 return false; // intervening; subOp not redundant
             }
         }
+        for op in super::kuna_overlapwrites::overlapping_writes(ctx, high) {
+            let (blk, point) = ctx.op_cover_point(op);
+            if range.contain(blk, point, 1) {
+                return false;
+            }
+        }
         true
     }
 
@@ -2298,6 +2308,9 @@ impl Merge {
         pos: int4,
         size: int4,
     ) {
+        if let Some(piece) = ctx.high_piece(high) {
+            ctx.bank_update_piece_intersections(piece);
+        }
         for sub_op in ctx.redundant_copies(high, &copy[pos as usize..(pos + size) as usize]) {
             ctx.op_mark_non_printing(sub_op);
         }

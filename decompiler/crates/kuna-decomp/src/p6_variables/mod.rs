@@ -18,6 +18,7 @@ pub(crate) mod kuna_savedregisterspills;
 pub(crate) mod kuna_stackvaluecopies;
 pub(crate) mod kuna_stackvalueorder;
 pub(crate) mod kuna_stackvalueviews;
+pub(crate) mod kuna_overlapwrites;
 pub(crate) mod kuna_stackloadcover;
 pub mod kuna_stackobjectasserts;
 pub mod kuna_stackobjectalias;

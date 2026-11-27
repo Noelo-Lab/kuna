@@ -2349,9 +2349,10 @@ mod tests {
         // and kuna-devirtualize / a VM-protected entry stub devirtualized (deobfuscate devirtualize)
         // and kuna-devirtualize-sound / a devirtualized body says nothing false about its program
         // and kuna-devirtualize-interp / an in-function bytecode interpreter devirtualized (deobfuscate devirtualize)
+        // and kuna-devirtualize-frame / a read through a computed frame address stays ahead of a direct write it may read
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
-        assert_eq!(count, 953, "corpus file count drifted");
+        assert_eq!(count, 954, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

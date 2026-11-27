@@ -2149,6 +2149,18 @@ bodies at `-O0` and `-O2` with strict aliasing and UBSan, including unaligned
 transfers, overlapping stores, signed reads, const sources, both ARM endian
 variants and an unchanged named-struct control.
 
+**A member read keeps the value's signedness.** A variable that is one
+element or field of a larger symbol prints as the member, and in C the member
+has the type the symbol declares for it. The casts were set against the
+variable's own type, which differs when a temporary of the other signedness was
+merged into it: an unsigned byte kept in a `char` array printed
+`buf[5] >> 4` for a logical shift, which C evaluates as an arithmetic one.
+When the walk ends on a member whose declared type is an integer of the same
+size and the other signedness than the Varnode read
+(`kuna_piecesign.rs (changes_sign)`), the read is cast to the Varnode's type,
+`(unsigned char)buf[5] >> 4`, through the same `finalcast` the truncating read
+of a member uses. A write is not cast: the assignment converts.
+
 **Partial accesses as C (kuna `partialaccess`, default `on`).** Everywhere
 else the walk ends on the artificial member, which is Ghidra's notation and not
 C: `v1._4_2_ == 2`. `option partialaccess off` keeps that notation, and the

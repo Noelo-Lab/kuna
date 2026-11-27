@@ -5592,216 +5592,230 @@ impl Heritage {
         let mut path: Vec<StackNode> = Vec::new();
         let mut unknown_stack_storage = false;
         let mut spills: Vec<(uintb, int4, uintb, uint4)> = Vec::new();
+        let mut states = super::kuna_spillstate::SpillStates::default();
+        let found = (self.load_guard.len(), self.pointer_spills.len(), self.direct_spills.len());
 
         let num_sb = spc.num_spacebase();
-        for i in 0..num_sb {
-            let stack_pointer = match spc.get_spacebase(i) {
-                Ok(sp) => sp,
-                Err(_) => continue,
-            };
-            let sp_addr = Address::new(
-                stack_pointer.space.clone().expect("spacebase has space"),
-                stack_pointer.offset,
-            );
-            let sp_input = match fd.find_varnode_input(stack_pointer.size as int4, &sp_addr) {
-                Some(v) => v,
-                None => continue,
-            };
-            let descend: Vec<crate::context::OpId> =
-                fd.vbank().get(sp_input).expect("sp_input vn").descend_iter().collect();
-            path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0, spilled: false });
+        loop {
+            for i in 0..num_sb {
+                let stack_pointer = match spc.get_spacebase(i) {
+                    Ok(sp) => sp,
+                    Err(_) => continue,
+                };
+                let sp_addr = Address::new(
+                    stack_pointer.space.clone().expect("spacebase has space"),
+                    stack_pointer.offset,
+                );
+                let sp_input = match fd.find_varnode_input(stack_pointer.size as int4, &sp_addr) {
+                    Some(v) => v,
+                    None => continue,
+                };
+                let descend: Vec<crate::context::OpId> =
+                    fd.vbank().get(sp_input).expect("sp_input vn").descend_iter().collect();
+                path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0, spilled: false });
 
-            while let Some(cur) = path.last_mut() {
-                if cur.iter >= cur.descend.len() {
-                    path.pop();
-                    while path.is_empty() {
-                        let Some((slot, size, offset, traversals)) = spills.pop() else { break };
-                        if self.pointer_spills.contains(&(slot, size)) {
-                            continue;
-                        }
-                        self.pointer_spills.push((slot, size));
-                        let at = Address::new(Rc::clone(spc), slot);
-                        let reads: Vec<crate::context::VarnodeId> = fd
-                            .vbank()
-                            .iter_loc_size_addr(size, &at)
-                            .filter(|&r| fd.vbank().get(r).is_some_and(|v| !v.is_written() && !v.is_mark() && !v.has_no_descend()))
-                            .collect();
-                        for r in reads {
-                            let descend = fd.vbank().get(r).expect("spill read").descend_iter().collect();
-                            fd.vbank_mut().get_mut(r).expect("spill read").set_mark();
-                            marked_vn.push(r);
-                            path.push(StackNode { vn: r, offset, traversals, descend, iter: 0, spilled: true });
-                        }
-                    }
-                    continue;
-                }
-                let op = cur.descend[cur.iter];
-                cur.iter += 1;
-                let cur_vn = cur.vn;
-                let cur_offset = cur.offset;
-                let cur_traversals = cur.traversals;
-                let cur_spilled = cur.spilled;
-
-                let out_vn = fd.obank().get(op).and_then(|o| o.get_out());
-                if let Some(ov) = out_vn {
-                    let marked = fd.vbank().get(ov).map(|v| v.is_mark()).unwrap_or(false);
-                    if marked {
-                        continue; // Don't revisit Varnodes
-                    }
-                }
-                let code = fd.obank().get(op).expect("discover: stale op").code();
-
-                // Helper to push the next node onto the path (or flag unknown
-                // stack storage if the output has no further descendants but
-                // lands in a spacebase space).
-                macro_rules! descend_into {
-                    ($outvn:expr, $newoff:expr, $newtrav:expr) => {{
-                        let ov = $outvn;
-                        let d: Vec<crate::context::OpId> =
-                            fd.vbank().get(ov).expect("descend_into: stale outvn").descend_iter().collect();
-                        if !d.is_empty() {
-                            fd.vbank_mut().get_mut(ov).expect("descend_into: mark outvn").set_mark();
-                            path.push(StackNode {
-                                vn: ov,
-                                offset: $newoff,
-                                traversals: $newtrav,
-                                descend: d,
-                                iter: 0,
-                                spilled: cur_spilled,
-                            });
-                            marked_vn.push(ov);
-                        } else if fd.vbank().get(ov).map(|v| v.get_space().get_type()).unwrap_or(spacetype::IPTR_CONSTANT)
-                            == spacetype::IPTR_SPACEBASE
-                        {
-                            unknown_stack_storage = true;
-                            if let Some(v) = fd.vbank().get(ov).filter(|v| Rc::ptr_eq(v.get_space(), spc)) {
-                                spills.push((v.get_offset(), v.get_size(), $newoff, $newtrav));
-                                if !cur_spilled {
-                                    self.direct_spills.push(v.get_offset());
-                                }
+                while let Some(cur) = path.last_mut() {
+                    if cur.iter >= cur.descend.len() {
+                        path.pop();
+                        while path.is_empty() {
+                            let Some((slot, size, offset, traversals)) = spills.pop() else { break };
+                            if self.pointer_spills.contains(&(slot, size)) {
+                                continue;
+                            }
+                            self.pointer_spills.push((slot, size));
+                            let (offset, traversals) = states.walk((slot, size), (offset, traversals));
+                            let at = Address::new(Rc::clone(spc), slot);
+                            let reads: Vec<crate::context::VarnodeId> = fd
+                                .vbank()
+                                .iter_loc_size_addr(size, &at)
+                                .filter(|&r| fd.vbank().get(r).is_some_and(|v| !v.is_written() && !v.is_mark() && !v.has_no_descend()))
+                                .collect();
+                            for r in reads {
+                                let descend = fd.vbank().get(r).expect("spill read").descend_iter().collect();
+                                fd.vbank_mut().get_mut(r).expect("spill read").set_mark();
+                                marked_vn.push(r);
+                                path.push(StackNode { vn: r, offset, traversals, descend, iter: 0, spilled: true });
                             }
                         }
-                    }};
-                }
+                        continue;
+                    }
+                    let op = cur.descend[cur.iter];
+                    cur.iter += 1;
+                    let cur_vn = cur.vn;
+                    let cur_offset = cur.offset;
+                    let cur_traversals = cur.traversals;
+                    let cur_spilled = cur.spilled;
 
-                match code {
-                    OpCode::CPUI_INT_ADD => {
-                        let slot = fd.obank().get(op).expect("discover: stale op").get_slot(cur_vn);
-                        let other_vn = fd
-                            .obank()
-                            .get(op)
-                            .and_then(|o| o.get_in(1 - slot))
-                            .expect("INT_ADD other input");
-                        let other_is_const =
-                            fd.vbank().get(other_vn).map(|v| v.is_constant()).unwrap_or(false);
-                        let ov = match out_vn {
-                            Some(v) => v,
-                            None => continue,
-                        };
-                        if other_is_const {
-                            let other_off =
-                                fd.vbank().get(other_vn).expect("INT_ADD const").get_offset();
-                            let new_offset = spc.wrap_offset(cur_offset.wrapping_add(other_off));
-                            descend_into!(ov, new_offset, cur_traversals);
-                        } else {
-                            let moves_sp = fd.vbank().get(ov).is_some_and(|v| {
-                                *v.get_addr() == sp_addr && v.get_size() == stack_pointer.size as int4
-                            });
-                            let dynamic = if moves_sp { stacknode_flags::dynamic_stack } else { 0 };
-                            descend_into!(
-                                ov,
-                                cur_offset,
-                                cur_traversals | stacknode_flags::nonconstant_index | dynamic
-                            );
+                    let out_vn = fd.obank().get(op).and_then(|o| o.get_out());
+                    if let Some(ov) = out_vn {
+                        let marked = fd.vbank().get(ov).map(|v| v.is_mark()).unwrap_or(false);
+                        if marked {
+                            continue; // Don't revisit Varnodes
                         }
                     }
-                    OpCode::CPUI_INT_OR => {
-                        // (kuna) `p | c` with constant `c` lies in `[p, p+c]` (absent
-                        // wraparound): GCC reads a spilled int's low byte through
-                        // `(fp+off)|3` on SPARC64. Which byte depends on the runtime low
-                        // bits of `p`, so it is an indexed access at `p`'s offset, and the
-                        // LOAD/STORE it reaches needs a guard. An unrefined guard covers
-                        // `[p, p+0x1000)` (`LoadGuard::establish_range`), so a larger `c`
-                        // could only guard slots it cannot reach.
-                        let small_const = fd
-                            .obank()
-                            .get(op)
-                            .and_then(|o| o.get_in(1 - o.get_slot(cur_vn)))
-                            .and_then(|v| fd.vbank().get(v))
-                            .is_some_and(|v| v.is_constant() && v.get_offset() < 0x1000);
-                        let ov = match out_vn {
-                            Some(v) if small_const => v,
-                            _ => continue,
-                        };
-                        descend_into!(ov, cur_offset, cur_traversals | stacknode_flags::nonconstant_index);
-                    }
-                    OpCode::CPUI_SEGMENTOP => {
-                        // Check that the stackpointer comes in as the inner pointer.
-                        let in2 = fd.obank().get(op).and_then(|o| o.get_in(2));
-                        if in2 != Some(cur_vn) {
-                            continue;
-                        }
-                        // Treat output as having the same offset (fallthru to COPY).
-                        let ov = match out_vn {
-                            Some(v) => v,
-                            None => continue,
-                        };
-                        descend_into!(ov, cur_offset, cur_traversals);
-                    }
-                    OpCode::CPUI_INDIRECT | OpCode::CPUI_COPY => {
-                        let ov = match out_vn {
-                            Some(v) => v,
-                            None => continue,
-                        };
-                        descend_into!(ov, cur_offset, cur_traversals);
-                    }
-                    OpCode::CPUI_MULTIEQUAL => {
-                        let ov = match out_vn {
-                            Some(v) => v,
-                            None => continue,
-                        };
-                        descend_into!(ov, cur_offset, cur_traversals | stacknode_flags::multiequal);
-                    }
-                    OpCode::CPUI_LOAD => {
-                        // If ANY path had a traversal (non-constant ADD or MULTIEQUAL),
-                        // THIS path must too (the other elements have one path through).
-                        if cur_traversals != 0 {
-                            let before = self.load_guard.len();
-                            self.generate_load_guard(fd, cur_offset, op, spc);
-                            if self.load_guard.len() > before {
-                                if let Some(guard) = self.load_guard.last_mut() {
-                                    guard.through_spill = cur_spilled;
+                    let code = fd.obank().get(op).expect("discover: stale op").code();
+
+                    // Helper to push the next node onto the path (or flag unknown
+                    // stack storage if the output has no further descendants but
+                    // lands in a spacebase space).
+                    macro_rules! descend_into {
+                        ($outvn:expr, $newoff:expr, $newtrav:expr) => {{
+                            let ov = $outvn;
+                            let d: Vec<crate::context::OpId> =
+                                fd.vbank().get(ov).expect("descend_into: stale outvn").descend_iter().collect();
+                            if !d.is_empty() {
+                                fd.vbank_mut().get_mut(ov).expect("descend_into: mark outvn").set_mark();
+                                path.push(StackNode {
+                                    vn: ov,
+                                    offset: $newoff,
+                                    traversals: $newtrav,
+                                    descend: d,
+                                    iter: 0,
+                                    spilled: cur_spilled,
+                                });
+                                marked_vn.push(ov);
+                            } else if fd.vbank().get(ov).map(|v| v.get_space().get_type()).unwrap_or(spacetype::IPTR_CONSTANT)
+                                == spacetype::IPTR_SPACEBASE
+                            {
+                                unknown_stack_storage = true;
+                                if let Some(v) = fd.vbank().get(ov).filter(|v| Rc::ptr_eq(v.get_space(), spc)) {
+                                    spills.push((v.get_offset(), v.get_size(), $newoff, $newtrav));
+                                    states.meet((v.get_offset(), v.get_size()), ($newoff, $newtrav));
+                                    if !cur_spilled {
+                                        self.direct_spills.push(v.get_offset());
+                                    }
                                 }
                             }
-                        }
+                        }};
                     }
-                    OpCode::CPUI_STORE => {
-                        // Make sure the STORE pointer comes from our path.
-                        let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
-                        if in1 == Some(cur_vn) && !cur_spilled {
-                            if cur_traversals != 0 {
-                                self.generate_store_guard(fd, cur_offset, op, spc);
-                                if let Some(guard) = self.store_guard.last_mut().filter(|g| g.op == op) {
-                                    guard.dynamic_stack =
-                                        cur_traversals & stacknode_flags::dynamic_stack != 0;
-                                }
+
+                    match code {
+                        OpCode::CPUI_INT_ADD => {
+                            let slot = fd.obank().get(op).expect("discover: stale op").get_slot(cur_vn);
+                            let other_vn = fd
+                                .obank()
+                                .get(op)
+                                .and_then(|o| o.get_in(1 - slot))
+                                .expect("INT_ADD other input");
+                            let other_is_const =
+                                fd.vbank().get(other_vn).map(|v| v.is_constant()).unwrap_or(false);
+                            let ov = match out_vn {
+                                Some(v) => v,
+                                None => continue,
+                            };
+                            if other_is_const {
+                                let other_off =
+                                    fd.vbank().get(other_vn).expect("INT_ADD const").get_offset();
+                                let new_offset = spc.wrap_offset(cur_offset.wrapping_add(other_off));
+                                descend_into!(ov, new_offset, cur_traversals);
                             } else {
-                                // No traversals: the pointer is the stackpointer plus
-                                // a constant (possibly through an indirect).  Likely
-                                // resolved next heritage pass; keep the spacebaseptr
-                                // mark so the indirects don't get removed.
-                                fd.op_mark_spacebase_ptr(op);
+                                let moves_sp = fd.vbank().get(ov).is_some_and(|v| {
+                                    *v.get_addr() == sp_addr && v.get_size() == stack_pointer.size as int4
+                                });
+                                let dynamic = if moves_sp { stacknode_flags::dynamic_stack } else { 0 };
+                                descend_into!(
+                                    ov,
+                                    cur_offset,
+                                    cur_traversals | stacknode_flags::nonconstant_index | dynamic
+                                );
                             }
                         }
+                        OpCode::CPUI_INT_OR => {
+                            // (kuna) `p | c` with constant `c` lies in `[p, p+c]` (absent
+                            // wraparound): GCC reads a spilled int's low byte through
+                            // `(fp+off)|3` on SPARC64. Which byte depends on the runtime low
+                            // bits of `p`, so it is an indexed access at `p`'s offset, and the
+                            // LOAD/STORE it reaches needs a guard. An unrefined guard covers
+                            // `[p, p+0x1000)` (`LoadGuard::establish_range`), so a larger `c`
+                            // could only guard slots it cannot reach.
+                            let small_const = fd
+                                .obank()
+                                .get(op)
+                                .and_then(|o| o.get_in(1 - o.get_slot(cur_vn)))
+                                .and_then(|v| fd.vbank().get(v))
+                                .is_some_and(|v| v.is_constant() && v.get_offset() < 0x1000);
+                            let ov = match out_vn {
+                                Some(v) if small_const => v,
+                                _ => continue,
+                            };
+                            descend_into!(ov, cur_offset, cur_traversals | stacknode_flags::nonconstant_index);
+                        }
+                        OpCode::CPUI_SEGMENTOP => {
+                            // Check that the stackpointer comes in as the inner pointer.
+                            let in2 = fd.obank().get(op).and_then(|o| o.get_in(2));
+                            if in2 != Some(cur_vn) {
+                                continue;
+                            }
+                            // Treat output as having the same offset (fallthru to COPY).
+                            let ov = match out_vn {
+                                Some(v) => v,
+                                None => continue,
+                            };
+                            descend_into!(ov, cur_offset, cur_traversals);
+                        }
+                        OpCode::CPUI_INDIRECT | OpCode::CPUI_COPY => {
+                            let ov = match out_vn {
+                                Some(v) => v,
+                                None => continue,
+                            };
+                            descend_into!(ov, cur_offset, cur_traversals);
+                        }
+                        OpCode::CPUI_MULTIEQUAL => {
+                            let ov = match out_vn {
+                                Some(v) => v,
+                                None => continue,
+                            };
+                            descend_into!(ov, cur_offset, cur_traversals | stacknode_flags::multiequal);
+                        }
+                        OpCode::CPUI_LOAD => {
+                            // If ANY path had a traversal (non-constant ADD or MULTIEQUAL),
+                            // THIS path must too (the other elements have one path through).
+                            if cur_traversals != 0 {
+                                let before = self.load_guard.len();
+                                self.generate_load_guard(fd, cur_offset, op, spc);
+                                if self.load_guard.len() > before {
+                                    if let Some(guard) = self.load_guard.last_mut() {
+                                        guard.through_spill = cur_spilled;
+                                    }
+                                }
+                            }
+                        }
+                        OpCode::CPUI_STORE => {
+                            // Make sure the STORE pointer comes from our path.
+                            let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
+                            if in1 == Some(cur_vn) && !cur_spilled {
+                                if cur_traversals != 0 {
+                                    self.generate_store_guard(fd, cur_offset, op, spc);
+                                    if let Some(guard) = self.store_guard.last_mut().filter(|g| g.op == op) {
+                                        guard.dynamic_stack =
+                                            cur_traversals & stacknode_flags::dynamic_stack != 0;
+                                    }
+                                } else {
+                                    // No traversals: the pointer is the stackpointer plus
+                                    // a constant (possibly through an indirect).  Likely
+                                    // resolved next heritage pass; keep the spacebaseptr
+                                    // mark so the indirects don't get removed.
+                                    fd.op_mark_spacebase_ptr(op);
+                                }
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
                 }
             }
-        }
-        for vn in marked_vn {
-            if let Some(v) = fd.vbank_mut().get_mut(vn) {
-                v.clear_mark();
+            for vn in marked_vn.drain(..) {
+                if let Some(v) = fd.vbank_mut().get_mut(vn) {
+                    v.clear_mark();
+                }
             }
+            if !states.repeat() {
+                break;
+            }
+            for guard in self.load_guard.split_off(found.0) {
+                fd.op_clear_spacebase_ptr(guard.op);
+            }
+            self.pointer_spills.truncate(found.1);
+            self.direct_spills.truncate(found.2);
         }
         if unknown_stack_storage && check_free_stores {
             return self.protect_free_stores(fd, spc, free_stores);

@@ -126,8 +126,8 @@ the recovery assumed, such as bytecode in writable memory being what the file ho
 - `devirtualize: incomplete: ...` in the header means the recovery was cut short or still
   holds protector state. Treat that body as a lead, not as the program.
 - A recovered body is not the function's instructions: `kuna disassemble` shows the stub
-  or interpreter and cannot confirm it. A body can also be wrong with no warning (lost
-  stack-array accesses are the known case), so confirm answer-critical logic by execution.
+  or interpreter and cannot confirm it. A body can also be wrong with no warning, so
+  confirm answer-critical logic by execution.
 - `--deobfuscate off` prints the protected code as it is, for studying the VM itself.
 - A recovery can take minutes and several GiB for one function, and `--max-fn-seconds`
   does not count it (`--max-fn-memory` stops it). In a `--jobs` run a slow one can end as

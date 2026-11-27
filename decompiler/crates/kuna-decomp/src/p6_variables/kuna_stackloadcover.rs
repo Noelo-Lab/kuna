@@ -4,7 +4,8 @@ use crate::context::VarnodeId;
 use crate::funcdata::Funcdata;
 
 pub(crate) fn crosses_write(fd: &Funcdata, id: VarnodeId) -> bool {
-    if !crate::kuna_stackviews::enabled(fd) {
+    let direct = fd.kuna_body().policy.loads_before_frame_writes;
+    if !direct && !crate::kuna_stackviews::enabled(fd) {
         return false;
     }
     let Some(value) = fd.vbank().get(id) else {
@@ -56,7 +57,9 @@ pub(crate) fn crosses_write(fd: &Funcdata, id: VarnodeId) -> bool {
             let Some(written) = op.get_out().and_then(|id| fd.vbank().get(id)) else {
                 continue;
             };
-            if !written.is_stack_store() || written.get_space().get_index() != stack.get_index() {
+            if !(written.is_stack_store() || direct && written.is_addr_tied())
+                || written.get_space().get_index() != stack.get_index()
+            {
                 continue;
             }
             let overlaps = extent.map_or(!written.has_no_local_alias(), |(start, size)| {

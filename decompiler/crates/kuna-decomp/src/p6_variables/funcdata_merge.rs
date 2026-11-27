@@ -372,6 +372,10 @@ fn copy_pair_writes(
         let (blk, point) = MergeContext::op_cover_point(data, op);
         writes.entry(blk).or_default().push(point);
     }
+    for op in super::kuna_overlapwrites::overlapping_writes(data, high) {
+        let (blk, point) = MergeContext::op_cover_point(data, op);
+        writes.entry(blk).or_default().push(point);
+    }
     writes
 }
 
@@ -963,6 +967,9 @@ impl MergeContext for Funcdata {
         let parent = self.obank().get(op).and_then(|o| o.get_parent()).expect("op_insert_end_pred: no parent");
         let pred = self.bblocks_ref().block(parent).get_in(slot);
         Funcdata::op_insert_end(self, copyop, pred);
+    }
+    fn op_not_printed(&self, op: OpId) -> bool {
+        self.obank().get(op).is_some_and(|o| o.not_printed())
     }
     fn op_mark_non_printing(&mut self, op: OpId) {
         self.op_mark_non_printing_pub(op);
