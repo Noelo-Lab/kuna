@@ -288,7 +288,7 @@ impl PPandMMHelper {
 
         let mut found = false;
         let mut old: Option<VarExprent> = None;
-        for ex in if_func.get_all_exprents_rec(true) {
+        for ex in if_func.get_all_exprents_rec(true).into_iter().chain([if_func.0]) {
             if let Some(var) = ex.try_as_var() {
                 if var.get_index() == inner_var.get_index() {
                     if found {
@@ -299,9 +299,10 @@ impl PPandMMHelper {
                     found = true;
                 }
             } else if let Some(func_ex) = ex.try_as_function() {
-                if func_ex.get_func_type() == FunctionType::BooleanAnd
-                    || func_ex.get_func_type() == FunctionType::BooleanOr
-                {
+                if matches!(
+                    func_ex.get_func_type(),
+                    FunctionType::BooleanAnd | FunctionType::BooleanOr | FunctionType::Ternary
+                ) {
                     return false;
                 }
             }

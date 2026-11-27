@@ -479,7 +479,11 @@ alternates two views of the variables:
 
 Both forms are reverted (all versions back to zero) after each use, so each round
 re-derives them from the current tree. Then, once: `++`/`--` inside conditions is inlined
-(`PPandMMHelper::inline_pp_iand_mmi_if`); for Java 9+ class files,
+(`PPandMMHelper::inline_pp_iand_mmi_if`), but never into a condition whose evaluation of the
+variable is conditional: the check for `&&`, `||` and `?:` covers the condition's own top
+operator too (kuna; Vineflower looked only below it, so without a LineNumberTable `j -= 1;
+if (i > 3) { if (j == -2) .. }` became `if (i > 3 && --j == -2)`, which decrements only when
+`i > 3`); for Java 9+ class files,
 `decompiler/managed/kuna-jvm/src/p3_dataflow/concatenation_helper.rs` turns
 `invokedynamic` string concatenation back into `+`; and
 `decompiler/managed/kuna-jvm/src/p8_structure/assert_processor.rs` rebuilds `assert`
