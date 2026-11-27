@@ -2,8 +2,10 @@
 
 A DecBench-style benchmark that scores **Java decompilers against original
 source**, per method, on the five most-starred real Java projects on GitHub
-(the default set, `insample`) and on eleven held-out projects (`--project heldout`;
-`docs/dataset.md` has the rule that chose them).
+(the default set, `insample`) and on two held-out sets, each chosen by a rule
+written before any decompiler ran on it: eleven projects (`--project heldout1`;
+fixes were later developed against them) and ten more (`--project heldout2`,
+measured once); `docs/dataset.md` has both rules.
 It compares kuna's JVM engine with **Vineflower 1.12.0**; the results and how
 they were measured are in `docs/jvm-benchmark.md`.
 
@@ -23,7 +25,7 @@ categories, decompiler failures, wall-clock, CPU time and peak RSS.
 
 ```
 scripts/javabench/     python package (python3 -m scripts.javabench ..., from the repo root)
-  projects.py          pinned dataset definition (5 projects, javac per project), workspace paths
+  projects.py          pinned dataset definition (the five, both held-out sets, javac per project), workspace paths
   fetch.py             reproducible fetch (coursier + checksums), never deletes
   classfile.py         class-file reader (cp, Code, LNT, LVT/LVTT, InnerClasses, EnclosingMethod)
   javasrc.py           tree-sitter-java indexer (types, methods, anon/local classes, scopes)
@@ -92,7 +94,7 @@ python3 -m scripts.javabench run --decompiler vineflower --jobs 12 --run-name vf
 python3 -m scripts.javabench run --decompiler kuna --kuna-bin decompiler/target/release/kuna \
     --jobs 12 --run-name kuna-sample
 #     fast inner loop (no recompilation): add --skip-bytes; one project: --project guava
-#     --project takes project names and the sets insample (default), heldout and all
+#     --project takes project names and the sets insample (default), heldout1, heldout2 and all
 
 # (c) compare two runs: methods perfect in A but not B (and vice versa)
 python3 -m scripts.javabench compare vf-sample kuna-sample [--project guava] \

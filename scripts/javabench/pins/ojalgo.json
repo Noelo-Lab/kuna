@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "org.ojalgo:ojalgo:58.0.0": {
+   "sha256": "c4325923fbeaf1324227c949850cf03dbba14c59e11268494acb8b969e605dbd",
+   "url": "https://repo1.maven.org/maven2/org/ojalgo/ojalgo/58.0.0/ojalgo-58.0.0.jar"
+  },
+  "org.ojalgo:ojalgo:58.0.0:sources": {
+   "sha256": "aa92cc9a5740164793fac7cec95a244a30e9409fb761e8590b61322311851b3d",
+   "url": "https://repo1.maven.org/maven2/org/ojalgo/ojalgo/58.0.0/ojalgo-58.0.0-sources.jar"
+  }
+ },
+ "deps": []
+}

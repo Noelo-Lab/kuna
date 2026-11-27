@@ -1,0 +1,34 @@
+{
+ "artifacts": {
+  "org.parboiled:parboiled-java:1.4.1": {
+   "sha256": "f21b6baab93a16f812b939fcb18b42edd83a9d8019c0a6d14449636fdeb22d1e",
+   "url": "https://repo1.maven.org/maven2/org/parboiled/parboiled-java/1.4.1/parboiled-java-1.4.1.jar"
+  },
+  "org.parboiled:parboiled-java:1.4.1:sources": {
+   "sha256": "5b0995f9aa2a24676cca9502ba22c3afd9750de2698e13a9b0f266c3c9ba82b2",
+   "url": "https://repo1.maven.org/maven2/org/parboiled/parboiled-java/1.4.1/parboiled-java-1.4.1-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "org.ow2.asm:asm-analysis:9.2",
+   "sha256": "878fbe521731c072d14d2d65b983b1beae6ad06fda0007b6a8bae81f73f433c4"
+  },
+  {
+   "coord": "org.ow2.asm:asm-tree:9.2",
+   "sha256": "aabf9bd23091a4ebfc109c1f3ee7cf3e4b89f6ba2d3f51c5243f16b3cffae011"
+  },
+  {
+   "coord": "org.ow2.asm:asm-util:9.2",
+   "sha256": "ff5b3cd331ae8a9a804768280da98f50f424fef23dd3c788bb320e08c94ee598"
+  },
+  {
+   "coord": "org.ow2.asm:asm:9.2",
+   "sha256": "b9d4fe4d71938df38839f0eca42aaaa64cf8b313d678da036f0cb3ca199b47f5"
+  },
+  {
+   "coord": "org.parboiled:parboiled-core:1.4.1",
+   "sha256": "71fadab3044387df87ce502aee0bd81835778df50f3689b743518e886a5865e4"
+  }
+ ]
+}

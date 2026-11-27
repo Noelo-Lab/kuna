@@ -82,10 +82,15 @@ class ProjectSetTests(unittest.TestCase):
         names = lambda sel: [p.name for p in projects.selected(sel)]
         self.assertEqual(names(None), list(projects.PROJECTS))
         self.assertEqual(names(["insample"]), list(projects.PROJECTS))
-        self.assertEqual(names(["heldout"]), list(projects.HELDOUT))
-        self.assertEqual(len(names(["all"])), 16)
-        self.assertEqual(names(["guava", "heldout", "antlr4"])[:2], ["guava", "antlr4"])
-        self.assertFalse(set(projects.PROJECTS) & set(projects.HELDOUT))
+        self.assertEqual(names(["heldout1"]), list(projects.HELDOUT1))
+        self.assertEqual(names(["heldout2"]), list(projects.HELDOUT2))
+        self.assertEqual((len(projects.PROJECTS), len(projects.HELDOUT1), len(projects.HELDOUT2)), (5, 11, 10))
+        self.assertEqual(len(names(["all"])), 26)
+        self.assertEqual(names(["guava", "heldout1", "antlr4"])[:2], ["guava", "antlr4"])
+        sets = (set(projects.PROJECTS), set(projects.HELDOUT1), set(projects.HELDOUT2))
+        self.assertFalse(sets[0] & sets[1] or sets[0] & sets[2] or sets[1] & sets[2])
+        with self.assertRaises(SystemExit):
+            projects.selected(["heldout"])
         with self.assertRaises(SystemExit):
             projects.selected(["no-such-project"])
 
