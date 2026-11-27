@@ -452,28 +452,6 @@ tier = "core"
 symptoms = "/* $VF: ... */ and // $VF: comments clutter the output|need to know where the decompiler approximated (option is off)"
 
 [[option]]
-option = "jvm_decompile_complex_constant_dynamic"
-vineflower = "decompile-complex-constant-dynamic"
-short = "dcc"
-aliases = ["decompile-complex-constant-dynamic", "dcc"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p4_calls"
-subphase = "condy_helper"
-strength = "HARD"
-rewind = "p4_calls"
-issue = ""
-summary = "Write constant-dynamic VarHandle constants (fieldVarHandle, staticFieldVarHandle, arrayVarHandle) as the equivalent MethodHandles lookup expression, marked with a comment because it runs eagerly; off keeps the raw condy form."
-use_when = "Turn on to read code using condy VarHandles in plain Java terms, accepting that the expression is not lazily evaluated."
-example = "kuna decompile app.jar com.ex.Atomic --option jvm_decompile_complex_constant_dynamic on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.DECOMPILE_COMPLEX_CONDYS (decompile-complex-constant-dynamic, -dcc)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output|VarHandle constant shown as an unresolved dynamic constant"
-
-[[option]]
 option = "jvm_force_jsr_inline"
 vineflower = "force-jsr-inline"
 short = "fji"

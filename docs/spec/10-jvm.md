@@ -892,10 +892,11 @@ Vineflower uses reflection on the JVM it runs on, which kuna cannot.
 answers from an embedded table, `classpath_helper_jdk.txt` in the same folder: every
 varargs method of OpenJDK 21 such a lookup can find, so the answer is the same whether or
 not a JDK runtime is loaded. **Dynamic constants.**
-`decompiler/nonnative/kuna-jvm/src/p4_calls/condy_helper.rs` writes constant-dynamic
-`VarHandle` constants as the equivalent `MethodHandles` lookup expression under
-`jvm_decompile_complex_constant_dynamic`, with a comment because the expression runs
-eagerly; otherwise the raw constant-dynamic form is kept.
+`decompiler/nonnative/kuna-jvm/src/p4_calls/condy_helper.rs` writes the
+`ConstantBootstraps` constants `nullConstant`, `primitiveClass`, `enumConstant` and
+`getStaticFinal` as source expressions; a `VarHandle` constant
+keeps its raw constant-dynamic form (Vineflower's `decompile-complex-constant-dynamic`
+lookup expression runs eagerly, which the constant does not, and is not ported).
 
 ## 10.12 Emission
 

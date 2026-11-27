@@ -62,8 +62,6 @@ Three tiers:
 | loop counter merged with another variable | [`jvm_verify_pre_post_merges`](#jvm_verify_pre_post_merges----on--off-default-off) |
 | "Could not handle exception ranges with multiple entries" comment | [`jvm_old_try_dedup`](#jvm_old_try_dedup----on--off-default-off) |
 | duplicated try blocks in an obfuscated method | [`jvm_old_try_dedup`](#jvm_old_try_dedup----on--off-default-off) |
-| condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
-| VarHandle constant shown as an unresolved dynamic constant | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
 | method with jsr/ret fails to decompile in a modern class file | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
 | a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
@@ -199,15 +197,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p2_lift/exception_deobfuscator · vineflower · vineflower-option
 - **Also spelled:** `old-try-dedup`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_old_try_dedup on`
-
-### `jvm_decompile_complex_constant_dynamic` -- on | off, default `off`
-
-- **Symptoms:** condy bootstrap call with ConstantBootstraps.fieldVarHandle in the output; VarHandle constant shown as an unresolved dynamic constant.
-- **What it does:** Write constant-dynamic VarHandle constants (fieldVarHandle, staticFieldVarHandle, arrayVarHandle) as the equivalent MethodHandles lookup expression, marked with a comment because it runs eagerly; off keeps the raw condy form.
-- **When to flip:** Turn on to read code using condy VarHandles in plain Java terms, accepting that the expression is not lazily evaluated.
-- **Where / provenance:** p4_calls/condy_helper · vineflower · vineflower-option
-- **Also spelled:** `decompile-complex-constant-dynamic`, `dcc`
-- **Example:** `kuna decompile app.jar com.ex.Atomic --option jvm_decompile_complex_constant_dynamic on`
 
 ### `jvm_force_jsr_inline` -- on | off, default `off`
 

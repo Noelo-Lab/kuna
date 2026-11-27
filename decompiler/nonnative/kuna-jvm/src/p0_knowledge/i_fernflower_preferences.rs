@@ -49,7 +49,6 @@ impl IFernflowerPreferences {
     pub const DUMP_BYTECODE_ON_ERROR: &str = "dump-bytecode-on-error";
     pub const DUMP_EXCEPTION_ON_ERROR: &str = "dump-exception-on-error";
     pub const DECOMPILER_COMMENTS: &str = "decompiler-comments";
-    pub const DECOMPILE_COMPLEX_CONDYS: &str = "decompile-complex-constant-dynamic";
     pub const FORCE_JSR_INLINE: &str = "force-jsr-inline";
     pub const MARK_CORRESPONDING_SYNTHETICS: &str = "mark-corresponding-synthetics";
     pub const METHOD_TO_DECOMPILE: &str = "method-to-decompile";
@@ -112,7 +111,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, "1".to_string()),
             (IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, "1".to_string()),
             (IFernflowerPreferences::DECOMPILER_COMMENTS, "1".to_string()),
-            (IFernflowerPreferences::DECOMPILE_COMPLEX_CONDYS, "0".to_string()),
             (IFernflowerPreferences::FORCE_JSR_INLINE, "0".to_string()),
             (IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, "0".to_string()),
             (IFernflowerPreferences::METHOD_TO_DECOMPILE, "".to_string()),
@@ -201,7 +199,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "DUMP_BYTECODE_ON_ERROR", key: IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, short_name: Some("dbe"), name: Some("Dump Bytecode On Error"), description: Some("Put the bytecode in the method body when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_EXCEPTION_ON_ERROR", key: IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, short_name: Some("dee"), name: Some("Dump Exceptions On Error"), description: Some("Put the exception message in the method body or source file when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DECOMPILER_COMMENTS", key: IFernflowerPreferences::DECOMPILER_COMMENTS, short_name: Some("dec"), name: Some("Decompiler Comments"), description: Some("Sometimes, odd behavior of the bytecode or unfixable problems occur. This enables or disables the adding of those to the decompiled output."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "DECOMPILE_COMPLEX_CONDYS", key: IFernflowerPreferences::DECOMPILE_COMPLEX_CONDYS, short_name: Some("dcc"), name: Some("Decompile complex constant-dynamic expressions"), description: Some("Some constant-dynamic expressions can't be converted to a single Java expression with identical run-time behaviour. This decompiles them to a similar non-lazy expression, marked with a comment."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "FORCE_JSR_INLINE", key: IFernflowerPreferences::FORCE_JSR_INLINE, short_name: Some("fji"), name: Some("Force JSR inline"), description: Some("Forces the processing of JSR instructions even if the class files shouldn't contain it (Java 7+)"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "MARK_CORRESPONDING_SYNTHETICS", key: IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS, short_name: Some("mcs"), name: Some("Mark Corresponding Synthetics"), description: Some("Mark lambdas and anonymous and local classes with their respective synthetic constructs"), type_: None, dynamic_default_value: None },
     PreferenceOption { field: "METHOD_TO_DECOMPILE", key: IFernflowerPreferences::METHOD_TO_DECOMPILE, short_name: None, name: Some("Method to decompile"), description: Some("Option to decompile a single method. Set to owner + \".\" + name + descriptor, e.g. foo/Bar.baz()V, or simply name + descriptor if you're only decompiling a single file and the method belongs to the root class."), type_: Some(OptionType::String), dynamic_default_value: None },

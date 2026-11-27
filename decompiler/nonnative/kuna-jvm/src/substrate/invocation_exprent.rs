@@ -144,7 +144,6 @@ pub struct InvocationExprentData {
     pub is_qualifier: bool,
     pub boxing: BoxState,
     pub is_synthetic_null_check: bool,
-    pub was_lazy_condy: bool,
     /// kuna fix `kt_default_args_super_call`: per argument, the name it is
     /// written with (`name = arg`; empty: positionally), or `None` to leave
     /// it out.
@@ -234,7 +233,6 @@ impl InvocationExprentData {
             is_qualifier: false,
             boxing: BoxState::default(),
             is_synthetic_null_check: false,
-            was_lazy_condy: false,
             kuna_arg_names: None,
         }
     }
@@ -426,7 +424,6 @@ impl InvocationExprent {
             data.kuna_checked_outer = s.kuna_checked_outer;
             data.kuna_skip_arg = s.kuna_skip_arg;
             data.kuna_continuation_arg = s.kuna_continuation_arg;
-            data.was_lazy_condy = s.was_lazy_condy;
             data.kuna_arg_names = s.kuna_arg_names.clone();
             data.kuna_inlined = s.kuna_inlined;
             data.kuna_inline_class = s.kuna_inline_class.clone();
@@ -1260,10 +1257,6 @@ impl InvocationExprent {
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
         let mut buf = TextBuffer::new();
-
-        if self.d(|d| d.was_lazy_condy) {
-            buf.append("/* $VF: constant dynamic replaced with non-lazy method call */ ");
-        }
 
         let mut super_qualifier: Option<String> = None;
         let mut is_instance_this = false;
@@ -3102,11 +3095,6 @@ impl InvocationExprent {
         Exprent::measure_bytecode_list(values.as_deref_mut(), &lst_parameters);
         Exprent::measure_bytecode_exprent(values.as_deref_mut(), instance);
         self.measure_bytecode(values);
-    }
-
-    pub fn mark_was_lazy_condy(self) -> InvocationExprent {
-        self.d_mut(|d| d.was_lazy_condy = true);
-        self
     }
 
     pub fn process_sforms(
