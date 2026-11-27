@@ -28,9 +28,23 @@
     with the double they return still in d0. None of those is a double
     argument, and each function keeps its own prototype.
 
+    armfloatargs_opaque_o0_{arm,thumb}.o (gcc -O0, recipes in
+    armfloatargs_opaque_o0.c) pass a float in s0 and doubles from d1 after
+    computing them in scratch registers that still hold values at the call.
+    Those inactive trials (s13, s15, d7 and the like) are no later VFP
+    arguments, so s1 stays the back-fill slot: o0_fd, o0_fp and o0_fdd pass no
+    s1 and gain no float parameter for it.
+
+    armfloatargs_opaque_noreturn.o (authored, recipe in its .s) is glibc
+    strtod's round_and_return shape: guard_shared and tail_shared share one
+    call to __stack_chk_fail between a path that leaves the entry d0 and one
+    that leaves the result they return, so d0 there merges the two. A call
+    that does not return takes no double.
+
     Stage / sub-stage: P4 "input-prototype", option armfloatargs. Pass 1
     (ARM object, armfloatargs off) pins the dropped arguments; passes 2 (ARM
-    object), 3 (Thumb object), 4 (linked ARM shared object) and 5 (authored
+    object), 3 (Thumb object), 4 (linked ARM shared object), 5 (authored
+    object), 6 and 7 (-O0 ARM and Thumb objects) and 8 (authored no-return
     object) run the default.
 -->
 <bytechunk space="ram" offset="0x1000">1eff2fe1</bytechunk>
@@ -205,6 +219,39 @@
   <com>lo fu guard_spin</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque_o0_arm.o</com>
+  <com>read symbols</com>
+  <com>lo fu o0_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o0_fp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o0_fdd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque_o0_thumb.o</com>
+  <com>read symbols</com>
+  <com>lo fu o0_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o0_fp</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu o0_fdd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque_noreturn.o</com>
+  <com>read symbols</com>
+  <com>lo fu guard_shared</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu tail_shared</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="arm-opaque-double #1: off, scale_d loses the double it computes" min="1" max="1">^void scale_d\(void\)$</stringmatch>
@@ -229,4 +276,13 @@
 <stringmatch name="arm-opaque-double #20: guard_d keeps returning its double" min="1" max="1">^float8 guard_d\(float8 a0,int4 a1\)$</stringmatch>
 <stringmatch name="arm-opaque-double #21: __stack_chk_fail gets no pending result" min="1" max="1">^    __stack_chk_fail\(\); // tail-call, no-return$</stringmatch>
 <stringmatch name="arm-opaque-double #22: guard_spin keeps returning its double" min="1" max="1">^float8 guard_spin\(float8 a0,int4 a1\)$</stringmatch>
+<stringmatch name="arm-opaque-double #23: -O0 o0_fd takes its float and double, no back-fill float" min="2" max="2">^void o0_fd\(float4 a0,float8 a1\)$</stringmatch>
+<stringmatch name="arm-opaque-double #24: -O0 sink_fd gets the float and the double, not s1" min="2" max="2">^  sink_fd\(a0 \+ a0,a1 \+ a1\);$</stringmatch>
+<stringmatch name="arm-opaque-double #25: -O0 o0_fp takes only its float" min="2" max="2">^void o0_fp\(float4 a0\)$</stringmatch>
+<stringmatch name="arm-opaque-double #26: -O0 the indirect call gets the float and the double, not s1" min="2" max="2">^  \(\*dat_[0-9a-f]+\)\(a0 \+ a0,[^,]+\);$</stringmatch>
+<stringmatch name="arm-opaque-double #27: -O0 o0_fdd takes its float and two doubles" min="2" max="2">^void o0_fdd\(float4 a0,float8 a1,float8 a2\)$</stringmatch>
+<stringmatch name="arm-opaque-double #28: -O0 sink_fdd gets the float and both doubles, not s1" min="2" max="2">^  sink_fdd\(a0 \+ a0,a1 \+ a1,a2 \+ a2\);$</stringmatch>
+<stringmatch name="arm-opaque-double #29: guard_shared keeps returning its double" min="1" max="1">^float8 guard_shared\(float8 a0,int4 a1,int4 a2\)$</stringmatch>
+<stringmatch name="arm-opaque-double #30: tail_shared keeps returning its double" min="1" max="1">^float8 tail_shared\(float8 a0,int4 a1,int4 a2\)$</stringmatch>
+<stringmatch name="arm-opaque-double #31: the shared __stack_chk_fail gets no merged d0" min="2" max="2">^  __stack_chk_fail\(\); // (tail-call, )?no-return$</stringmatch>
 </decompilertest>

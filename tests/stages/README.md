@@ -469,7 +469,12 @@ entry `d0` the caller only forwards and a stored double are not passed, as for
 `s0` and `r0`, and a callee whose body never reads `d0` receives nothing. Authored
 glibc shapes keep their prototypes: a float computed into `s0` beside the
 caller's `s1` is no double, and a double the function returns is no argument of
-the no-return call it makes on another path.
+the no-return call it makes on another path. gcc -O0 objects compute their
+arguments in scratch registers that still hold values at the call, and those
+leave `s1` the back-fill slot, so no call takes it and no caller gains a float
+for it. Authored glibc strtod shapes share one `__stack_chk_fail` call between a
+path that leaves the entry `d0` and one that leaves the result; a call that does
+not return takes no double.
 
 `kuna-calleefloatreads.xml` checks calls to callees with no prototype that
 read a float argument register: an x86-64 `xmm0` written after a `pxor`, an

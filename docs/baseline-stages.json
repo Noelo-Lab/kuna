@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5719,
-    5719
+    5728,
+    5728
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -3489,7 +3489,16 @@
     "data:arm-opaque-double #20: guard_d keeps returning its double",
     "data:arm-opaque-double #21: __stack_chk_fail gets no pending result",
     "data:arm-opaque-double #22: guard_spin keeps returning its double",
+    "data:arm-opaque-double #23: -O0 o0_fd takes its float and double, no back-fill float",
+    "data:arm-opaque-double #24: -O0 sink_fd gets the float and the double, not s1",
+    "data:arm-opaque-double #25: -O0 o0_fp takes only its float",
+    "data:arm-opaque-double #26: -O0 the indirect call gets the float and the double, not s1",
+    "data:arm-opaque-double #27: -O0 o0_fdd takes its float and two doubles",
+    "data:arm-opaque-double #28: -O0 sink_fdd gets the float and both doubles, not s1",
+    "data:arm-opaque-double #29: guard_shared keeps returning its double",
     "data:arm-opaque-double #2: off, scale_d, load_d and conv_d pass nothing; forward_d passes no entry d0 in any pass",
+    "data:arm-opaque-double #30: tail_shared keeps returning its double",
+    "data:arm-opaque-double #31: the shared __stack_chk_fail gets no merged d0",
     "data:arm-opaque-double #3: off, the pair is dropped",
     "data:arm-opaque-double #4: scale_d passes the double it computes",
     "data:arm-opaque-double #5: load_d passes the double it loads, also through the GOT",
