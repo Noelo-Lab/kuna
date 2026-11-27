@@ -794,6 +794,16 @@ gives the conditional the type of what it can yield: without a LocalVariableTabl
 `int result = logical != 0 ? logical : sum` after a loop printed `byte var4 = (byte)(..)`,
 truncating a result the class file stores and returns with no `i2b`.
 
+**A compound assignment to an `int` local (kuna).** javac stores an integer operation's
+result into a `byte`, `short` or `char` only through `i2b`, `i2s` or `i2c`, and `x op= y` on
+such a local keeps that conversion; on an `int` it has none. Folding `x = x op y` into
+`x op= y` (`SecondaryFunctionsHelper`) drops the store's shape, so without a
+LocalVariableTable a local initialised with a small constant and then only updated by
+compound assignments was typed by the constant: `int res = 0; ... res += sz;` printed `byte
+var2 = 0; ... var2 += var3;`, which truncates. The fold now marks an assignment it makes
+from an operation stored with no narrowing conversion (`AssignmentExprent::mark_int_result`),
+and the type pass gives such a variable `int` as its lower bound.
+
 **Generic locals without a LocalVariableTable (kuna).** Without the table a local has its
 erased type, so `Set keys = settings.keySet(); keys.removeIf(k -> k.startsWith(p))` did not
 compile (the lambda's parameter is an `Object`) and a for-each over a raw `List` cast it.

@@ -617,6 +617,7 @@ impl Marker {
                 left,
                 right,
                 cond_type: _,
+                kuna_int_result: _,
             }) => {
                 self.exprent(*left);
                 self.exprent(*right);

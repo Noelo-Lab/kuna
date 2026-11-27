@@ -13,7 +13,7 @@ use crate::fixes::kt_operators::kt_compound_bitwise_assignment;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_util::writing_kotlin;
-use crate::fixes::numeric_types::ternary_numeric_arms;
+use crate::fixes::numeric_types::{implicit_widening_arithmetic, ternary_numeric_arms};
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
@@ -29,6 +29,9 @@ pub struct AssignmentExprentData {
     pub right: Exprent,
     /// The compound operator of `x op= y`; `None` for a plain `=`.
     pub cond_type: Option<FunctionType>,
+    /// A compound `x op= y` folded from a store of an integer operation with no
+    /// narrowing conversion: `x` is at least an `int`.
+    pub kuna_int_result: bool,
 }
 
 java_subclass!(pub AssignmentExprent: Exprent, ExprentKind::Assignment(AssignmentExprentData),
@@ -70,6 +73,7 @@ impl AssignmentExprent {
                 left,
                 right,
                 cond_type,
+                kuna_int_result: false,
             }),
         );
         e.add_bytecode_offsets(bytecode_offsets);
@@ -103,6 +107,10 @@ impl AssignmentExprent {
         let (Some(type_left), Some(mut type_right)) = (type_left, type_right) else {
             jthrow!(NullPointerException; "typeFamily of null");
         };
+
+        if type_left.type_family == TypeFamily::Integer && self.d(|d| d.kuna_int_result) {
+            result.add_expr_lower_bound(left, &VarType::VARTYPE_INT());
+        }
 
         let shift = matches!(
             self.d(|d| d.cond_type),
@@ -146,9 +154,12 @@ impl AssignmentExprent {
     }
 
     pub fn copy(self) -> Exprent {
-        let (left, right, cond_type) = self.d(|d| (d.left, d.right, d.cond_type));
+        let (left, right, cond_type, int_result) =
+            self.d(|d| (d.left, d.right, d.cond_type, d.kuna_int_result));
         let bytecode = self.get_bytecode();
-        AssignmentExprent::new_cond(left.copy(), right.copy(), cond_type, bytecode.as_ref()).0
+        let copy = AssignmentExprent::new_cond(left.copy(), right.copy(), cond_type, bytecode.as_ref());
+        copy.d_mut(|d| d.kuna_int_result = int_result);
+        copy.0
     }
 
     pub fn get_precedence(self) -> i32 {
@@ -509,5 +520,13 @@ impl AssignmentExprent {
 
     pub fn set_cond_type(self, cond_type: Option<FunctionType>) {
         self.d_mut(|d| d.cond_type = cond_type)
+    }
+
+    /// Records that this compound assignment stores an integer operation's
+    /// result with no narrowing conversion, when `op` is one.
+    pub fn mark_int_result(self, op: Exprent) {
+        if implicit_widening_arithmetic::computes_int(op) {
+            self.d_mut(|d| d.kuna_int_result = true)
+        }
     }
 }

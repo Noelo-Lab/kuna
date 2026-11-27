@@ -2008,3 +2008,5 @@ case	kuna-fixes/pkg/TestStaticFieldBehindLambda	Kuna Fixes	kuna-fixes/classes/pk
 case	kuna-fixes/pkg/TestNarrowLocalIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowLocalIncrement
 # kuna-fixes/src/pkg/TestTernaryIntLocal.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestTernaryIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTernaryIntLocal
+# kuna-fixes/src/pkg/TestCompoundIntLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCompoundIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundIntLocal
