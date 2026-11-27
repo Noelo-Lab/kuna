@@ -9881,7 +9881,12 @@ callee-first plan, not once the plan is done: a wrapper is redone as soon as its
 first reader is decompiled, so every later reader reads the wrapper's return
 the first time it is decompiled. A reader decompiled later that reads the
 wrapper wider forces it again at that width, and one that reads another
-register withdraws it: it returns nothing again, as before.
+register withdraws it: it returns nothing again, as before. Settling after
+every function does not walk every callee's claims each time: `due` looks only
+at the callees left unsettled since its last look, those whose claims, recovered
+return, return storage, forced storage or withdrawal changed, and those it last
+forced or withdrew. A callee's verdict reads nothing else, and one that acts
+leaves nothing to do the next time, so every other callee would come out empty.
 
 Callers that read a register pair and callers that read only its least
 significant register agree on that register (`kuna_voidret.rs
