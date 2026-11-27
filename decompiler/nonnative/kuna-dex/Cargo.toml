@@ -1,0 +1,16 @@
+[package]
+autotests = false
+name = "kuna-dex"
+description = "kuna non-native plane: Android DEX to JVM class-file translation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

@@ -39,6 +39,7 @@ use crate::infra::kuna_reclaim::ReclaimScope;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::intersection_cast_processor::IntersectionCastProcessor;
 use crate::java_pass_location::JavaPassLocation;
+use crate::jthrow;
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
 use crate::loop_extract_helper::LoopExtractHelper;
@@ -56,6 +57,7 @@ use crate::secondary_functions_helper::SecondaryFunctionsHelper;
 use crate::sequence_helper::SequenceHelper;
 use crate::stack_vars_processor::StackVarsProcessor;
 use crate::struct_class::StructClass;
+use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
 use crate::switch_expression_helper::SwitchExpressionHelper;
 use crate::switch_helper::SwitchHelper;
@@ -204,6 +206,9 @@ impl MethodProcessor {
         let is_initializer = CLINIT_NAME == mt.get_name();
         let plugin_context = PluginContext::get_current_context();
 
+        if let Some(e) = mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_KUNA_DEX_ERROR) {
+            jthrow!(IllegalStateException; "DEX code not translated: {}", e.get_source_file(cl.get_pool()));
+        }
         mt.expand_data(cl);
         let seq = mt
             .get_instruction_sequence()

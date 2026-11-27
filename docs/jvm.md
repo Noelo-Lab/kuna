@@ -194,6 +194,139 @@ the plugin cannot write is a `/* $VF: Unable to decompile class
 reported*, below). A class whose metadata cannot be decoded is still written as
 Kotlin, from its class file alone, under `// $VF: Class flags could not be determined`.
 
+## The other bundled plugins
+
+**IDEA not-null.** IntelliJ IDEA's compiler instruments `@NotNull` parameters and return
+values with checks that call a synthetic `$$$reportNull$$$0`. The plugin removes them
+(`jvm_resugar_idea_notnull`, on by default) and keeps the annotations; `off` shows them:
+
+```
+$ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1
+public void test1(@NotNull String s) {
+   System.out.println(s);
+}
+$ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1 --option jvm_resugar_idea_notnull off
+public void test1(@NotNull String s) {
+   if (s == null) {
+      $$$reportNull$$$0(2);
+   }
+
+   System.out.println(s);
+}
+```
+
+**Variable renaming.** Off unless asked for: `--option jvm_variable_renaming jad` names
+locals after their type the way JAD did (`i`, `j`, `s`, `flag`, `file1`), `tiny` the way
+tiny-remapper does, and `jvm_rename_parameters on` renames parameters too. It overrides
+the LocalVariableTable's names, so it is for obfuscated or debug-info-free code:
+
+```
+$ kuna decompile tests/fixtures/jvm/app.jar com.ex.util.Helper.loop --option jvm_variable_renaming jad
+public static int loop(int n) {
+   int i = 0;
+
+   while (n > 0) {
+      if (n % 3 == 0) {
+         i += n;
+      } else {
+         i--;
+      }
+
+      n--;
+   }
+
+   return i;
+}
+```
+
+`tiny` with `jvm_rename_parameters on` fails every method that has a LocalVariableTable
+(`NullPointerException: type`), as Vineflower's provider does. Vineflower's deprecated
+`jad-style-variable-naming` and `jad-style-parameter-naming` flags are not options:
+`jvm_variable_renaming jad` and `jvm_rename_parameters` cover them.
+
+## Android: DEX and APK input
+
+A DEX file (`classes.dex`) or an APK (any zip whose root holds `classes.dex`,
+`classes2.dex`, ... and no class files) is an input like a jar: `kuna decompile app.apk
+com.ex.Main`, `functions`, `decompile-all`, `decompile-project`, selection, spans, JSON and
+Kotlin output work unchanged. The engine never sees Dalvik bytecode. When the input is
+loaded, `decompiler/nonnative/kuna-dex` translates each DEX class into a JVM class file in
+memory and `src/p0_knowledge/kuna_input.rs` (`dex_unit`) registers the bytes exactly as it
+registers a jar's entries: every `classes*.dex` of an APK in order, the first definition of
+a class winning, on up to eight threads. A zip with both class files and DEX is a jar (the
+DEX is ignored). DEX versions 035 to 039 are read; a container (041) or any other version,
+and a malformed file, is `error: PATH: unreadable DEX file: REASON`.
+
+**What is translated.** Every class definition with its fields, methods and code, and the
+attributes the engine reads, rebuilt from the system annotations: `Signature`,
+`Exceptions` (`Throws`), `InnerClasses` and `EnclosingMethod` (`InnerClass`,
+`EnclosingClass`, `EnclosingMethod`, `MemberClasses`; a class lists the classes nested in it,
+anonymous and local ones included, as javac does), `AnnotationDefault`,
+`MethodParameters`, `ConstantValue` from static values, `SourceFile`, `LineNumberTable`,
+`LocalVariableTable` and `LocalVariableTypeTable` from debug info, and `BootstrapMethods`
+for `invoke-custom` and method-handle constants. Every other annotation becomes a runtime
+visible or invisible (parameter) annotation, so `kotlin.Metadata` reaches the Kotlin
+plugin and Kotlin classes print as Kotlin. Code is translated so that the engine sees what
+javac would have written: registers are typed by dataflow, each (register, type category)
+becomes one local, a value defined once and read once in a block stays on the operand stack
+as an expression, constants are written at each use, `new-instance` and its constructor call
+become `new T(...)`, a value that only joins constants (`boolean b = x > 3`) is carried on
+the stack across the join, d8's lambda classes are turned back into the `invokedynamic`
+javac wrote (so lambdas and method references print as such), and a block reached only by a
+`goto` follows its predecessor (`docs/spec/10-jvm.md` 10.17 has the algorithm). A method whose code cannot be translated
+fails alone, with the engine's usual failure comment naming the reason
+(`DEX code not translated: ...`).
+
+**What is lost relative to class files.** Except for lambdas, d8's own work is not
+undone: register reuse and copy propagation, comparisons and constants shared between uses,
+code moved or merged across branches, default and static interface methods moved into
+`$-CC` classes below min-api 24, the lambda classes themselves (still listed and printed),
+string concatenation, records and nest-access bridges, and a `synchronized` method's lock written as an explicit `synchronized (this)`
+block. Local names and types exist only in debug builds (a release build keeps lines and
+maybe parameter names). A value that crosses blocks is a variable unless only constants
+join (a `?:` with computed arms prints as an `if`). DEX does not say
+whether a library class is an interface, so a static or `super` call into one is an
+interface call only for a short list of JDK interfaces. Class files are written at version
+50 (52 for interfaces with code, lambdas and `invoke-custom`, 51 for method-handle constants), so
+version-gated sugar the engine reconstructs from newer javac output does not apply.
+
+**How it is checked.** `tests/fixtures/jvm/dex/src` holds small Java and Kotlin programs
+that together execute every Dalvik instruction family; `regen.sh` compiles them with javac,
+kotlinc and d8 (versions in `TOOLCHAIN.txt`) and records their output. Translated to
+class files at version 50 (the `verifiable` option), all six run under `java -Xverify:all`
+(the JVM's type-inferring verifier checks every method) and print exactly what the
+javac-compiled programs print, from debug and release d8 at min-api 21; in the default mode
+(lambdas as `invokedynamic`, version 52, which does not verify without stack maps) and at
+min-api 26 and 30 they match unverified.
+d8-compiled Guava 33.8 (min-api 21, release and debug) verifies in full: 16,417 of 16,417
+methods. The crate's own tests (`cargo test -p kuna-dex`) need no JDK or d8: parser,
+structural and garbled-file tests over the committed fixtures.
+
+**Measured.** The JVM benchmark (`docs/jvm-benchmark.md`, all 110,238 scored methods),
+with each project's jar compiled by d8 8.13.25 (`--debug --min-api 26`) and scored against
+the same sources, methods perfect on all metrics:
+
+| project | from the jar | from DEX, kuna | from DEX, jadx 1.5.3 |
+|---|---|---|---|
+| Guava | 98.78% | 79.35% | 42.65% |
+| spring-boot | 99.29% | 51.93% | 57.40% |
+| spring-framework | 99.03% | 54.33% | 62.92% |
+| Ghidra | 98.71% | 64.16% | 56.59% |
+| Elasticsearch | 98.89% | 34.36% | 36.05% |
+| all | 98.88% | 47.38% | 44.31% |
+
+Most of the loss is d8's: calls into classes the sources do not have (API backports
+`$$ExternalSyntheticBackport`, record desugaring onto `com.android.tools.r8.RecordTag`), code
+d8 moved before a `super(...)` or `this(...)` call, and code shapes that differ from
+javac's (shared comparisons and constants, merged returns); kuna's engine also fails 709
+methods on d8's `try`/`finally` and `synchronized` layouts (`FinallyProcessor`). Loading is
+cheap: on Elasticsearch's APK (21,939 classes in three DEX files, 19.8 MB) `functions` takes
+1.6 s (0.5 s for the jar) and `decompile-all --jobs 8` 92 s at 6.4 GB peak (63 s and 5.0 GB
+for the jar's 10,371 classes; d8 adds a class per lambda).
+
+Not read yet: the binary manifest and resources, ODEX/VDEX/OAT/CDEX, native libraries
+inside an APK, and protected (packed or encrypted) APKs.
+
 ## How failures are reported
 
 The engine never stops on a method or class it cannot decompile: it writes the failure as

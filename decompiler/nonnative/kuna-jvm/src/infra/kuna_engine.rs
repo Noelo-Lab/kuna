@@ -61,7 +61,7 @@ impl Engine for Jvm {
     }
 
     fn inputs(&self) -> &'static str {
-        "class files, jars, directories"
+        "class files, jars, directories, DEX files, APKs"
     }
 
     fn extension(&self) -> &'static str {
@@ -229,8 +229,8 @@ impl Engine for Jvm {
             _ => "kuna decompile|decompile-all|decompile-project|functions <class|jar|dir> ..",
         };
         format!(
-            "usage: {body}\n\nThis is the JVM engine's form (class files, jars, directories of classes;\n\
-             Java and Kotlin output).\n\
+            "usage: {body}\n\nThis is the JVM engine's form (class files, jars, directories of classes,\n\
+             DEX files and APKs; Java and Kotlin output).\n\
              Options: `kuna catalog --engine jvm`; manual: `{DOCS_POINTER}`."
         )
     }

@@ -453,13 +453,52 @@ fn the_other_subcommands_answer_with_capability_errors() {
     assert!(stderr(&out).contains("no call graph yet"), "{}", stderr(&out));
 }
 
+/// `tests/fixtures/jvm/dex`: the `src/` programs compiled by d8 (see `regen.sh`).
+fn dex(name: &str) -> String {
+    fixtures().join("dex").join(name).display().to_string()
+}
+
 #[test]
-fn dex_bytecode_is_refused_cleanly() {
-    let dex = common::scratch_file("classes", "dex");
-    std::fs::write(&dex, b"dex\n035\0\0\0\0\0\0\0\0\0").unwrap();
-    let out = kuna(&["decompile-all", dex.to_str().unwrap()]);
+fn a_dex_file_decompiles_like_a_jar() {
+    let out = ok(&jvm(&["decompile", &dex("release.dex"), "dx.Arith"]));
+    assert!(out.contains("public class Arith {"), "{out}");
+    assert!(out.contains("static int ternary(int"), "{out}");
+    assert!(!out.contains("$VF: Couldn't be decompiled"), "{out}");
+    let method = ok(&jvm(&["decompile", &dex("debug.dex"), "dx.Wide.fib(I)J"]));
+    assert!(method.contains("long a = 0L;") && method.contains("return a;"), "{method}");
+}
+
+#[test]
+fn an_apk_reads_every_classes_dex() {
+    let v = json(&jvm(&["functions", &dex("app.apk"), "--json"]));
+    let names: Vec<&str> = v["functions"]
+        .as_array()
+        .expect("functions")
+        .iter()
+        .map(|f| f["name"].as_str().expect("name"))
+        .collect();
+    assert_eq!(v["count"].as_u64(), Some(names.len() as u64));
+    assert!(names.contains(&"dx.Flow.packed") && names.contains(&"kx.Point.plus"), "{names:?}");
+    let flow = ok(&jvm(&["decompile", &dex("app.apk"), "dx.Flow"]));
+    assert!(flow.contains("switch (") && flow.contains("synchronized"), "{flow}");
+}
+
+#[test]
+fn a_kotlin_class_from_dex_prints_as_kotlin() {
+    let out = ok(&jvm(&["decompile", &dex("kotlin.dex"), "kx.Point"]));
+    assert!(out.contains("data class Point(") && out.contains("operator fun plus"), "{out}");
+}
+
+#[test]
+fn a_garbled_dex_is_refused_cleanly() {
+    let bad = common::scratch_file("garbled", "dex");
+    let mut bytes = std::fs::read(dex("release.dex")).expect("fixture");
+    bytes.truncate(2000);
+    std::fs::write(&bad, &bytes).unwrap();
+    let out = kuna(&["decompile-all", bad.to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(1));
-    assert!(stderr(&out).contains("DEX bytecode is not JVM bytecode"), "{}", stderr(&out));
+    assert!(stderr(&out).contains("unreadable DEX file"), "{}", stderr(&out));
+    assert!(out.stdout.is_empty());
 }
 
 #[test]

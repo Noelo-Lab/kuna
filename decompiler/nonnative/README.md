@@ -9,8 +9,9 @@ source language rather than over p-code.
 
 | Crate | Input | Output | Origin |
 |---|---|---|---|
-| `kuna-jvm` | JVM class files, jars, directories of classes | Java; Kotlin for classes compiled from Kotlin | Rust port of Vineflower 1.12.0 and its bundled Kotlin, variable-renaming and IDEA not-null plugins (Apache-2.0) |
+| `kuna-jvm` | JVM class files, jars, directories of classes; DEX files and APKs (through `kuna-dex`) | Java; Kotlin for classes compiled from Kotlin | Rust port of Vineflower 1.12.0 and its bundled Kotlin, variable-renaming and IDEA not-null plugins (Apache-2.0) |
 | `kuna-managed` | - | - | kuna: the contract between the CLI and a managed engine (no dependencies) |
+| `kuna-dex` | DEX files, APKs | JVM class files, in memory, for `kuna-jvm` | kuna: DEX to class-file translation (no dependencies) |
 
 What the engines do share with the native side is the front door: the `kuna` CLI, its option
 catalog and its output formats. `kuna-cli` picks the engine from the input file: the dispatch
@@ -20,6 +21,14 @@ lines, output shapes and catalog rows every managed engine shares are under
 selection grammar, the JDK a run reads, its messages) is
 `decompiler/nonnative/kuna-jvm/src/infra/kuna_engine.rs`; its documentation is `docs/jvm.md`
 (`kuna docs jvm`), its algorithm `docs/spec/10-jvm.md`.
+
+`kuna-dex` is not an engine: it is how the JVM engine reads Android input. Given DEX bytes it
+returns one JVM class file per class definition, translating each class independently of
+the others (the loader runs them in parallel); `kuna-jvm`'s loader
+(`src/p0_knowledge/kuna_input.rs`) hands the bytes to the engine as it would a jar's
+entries, so nothing downstream knows the input was DEX. It is written from the published DEX
+and Dalvik bytecode specifications and depends on nothing; `docs/jvm.md` (*Android: DEX and
+APK input*) says what it translates and loses, `docs/spec/10-jvm.md` 10.17 how.
 
 ## Adding an engine
 

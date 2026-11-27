@@ -330,6 +330,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-dex"
+version = "0.1.0"
+
+[[package]]
 name = "kuna-ghidra"
 version = "0.1.0"
 dependencies = [
@@ -358,6 +362,7 @@ name = "kuna-jvm"
 version = "0.1.0"
 dependencies = [
  "flate2",
+ "kuna-dex",
  "kuna-managed",
  "serde",
  "sha2",
