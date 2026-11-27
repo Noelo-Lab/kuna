@@ -4082,6 +4082,13 @@ or 17 bits with `ECFG.SR1`, and rounds ties upward.
 This store can consume a proved incoming address sample, but does not
 contribute to the proof of a later sample.
 
+Parallel compact `MOVE` from two high accumulator halves to DATA samples
+each address gate separately from its EX result predicate. Admitted
+addresses reserve their ports even when a store is vetoed. Two enabled
+stores to the same word, or two reservations on the same interleaved
+port, stop before either write commits. Unqualified lanes bypass both
+gates; enabled lanes apply the signed `ECFG.SR1` shift before writeback.
+
 The mixed signed/unsigned compact multiply fetches a signed word at
 old `R7` and an unsigned word at `R2+RN2`. Address admission advances
 `R7`, but the later predicate alone writes the product's high word
