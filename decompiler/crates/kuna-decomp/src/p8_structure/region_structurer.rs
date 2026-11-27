@@ -150,6 +150,11 @@ pub fn run_region_structurer(
     deadline: Option<std::time::Instant>,
     loop_cond: Option<crate::p8_structure::kuna_loopcond::Rule>,
 ) -> KunaResult<(bool, Vec<BlockId>, bool)> {
+    // A graph whose components cannot all join is not structured; the attempt
+    // matters only for the fold refusals its pre-pass counts for recorded jumps.
+    if data.kuna_o0jumps.is_none() && components_stay_apart(data.sblocks_ref(), data.sblocks_root()) {
+        return Ok((false, Vec::new(), false));
+    }
 
     // ---- 1b. Precompute the switch/jump-table maps over bblocks (Inc 4) -------
     // The switch-case schema (`match_acyclic_switch_cases`) needs the same two maps
@@ -208,16 +213,14 @@ pub fn run_region_structurer(
     // misses) and exit frontier, so the refinement virtualizes exactly the
     // secondary exits.  Empty (and skipped) when refinement is off.
     // Region identification over the real CFG supplies the loops' bodies and
-    // exits (`regionlooprefine`); only its cyclic regions are read.  A failure to
-    // identify regions is non-fatal: the structurer still runs on the sblocks
-    // topology (honest-partial).
-    let cyclic_loops = if loop_refine {
+    // exits (`regionlooprefine`); only its cyclic regions are read, and only
+    // once a loop needs refining.  A failure to identify regions is non-fatal:
+    // the structurer still runs on the sblocks topology (honest-partial).
+    let region_id = loop_refine.then(|| {
         let mut ri = crate::p7_regions::kuna_regionid::KunaRegionIdentifier::new();
-        let _ = ri.build_from_block_graph(data).and_then(|()| ri.compute_cyclic());
-        ri.cyclic_loops()
-    } else {
-        Vec::new()
-    };
+        let built = ri.build_from_block_graph(data).is_ok();
+        (ri, built)
+    });
 
     // The `cyclic_loops` are keyed by basic-block start ADDRESS, but the structuring
     // graph's `BlockCopy` leaves carry only the bblocks `BlockId` they copy (their
@@ -244,7 +247,7 @@ pub fn run_region_structurer(
         .with_switch_maps(switch_blocks, switch_case_edges)
         .with_complex_blocks(complex_blocks)
         .with_condfold_sets(condfold_sets)
-        .with_loop_refine(loop_refine, cyclic_loops, bb_addr)
+        .with_loop_refine(loop_refine, region_id, bb_addr)
         .with_edge_order(edge_order)
         .with_loop_cond(loop_cond);
     let ok = st.structure(deadline)?;
@@ -322,6 +325,28 @@ fn compute_complex_blocks(data: &Funcdata) -> std::collections::BTreeSet<BlockId
     complex_blocks
 }
 
+/// Whether the components of the structuring graph `root` can never all fold
+/// into one: none ends in a switch, and two have no out-edge or two have no
+/// in-edge.  Without a switch, every fold takes one entry component plus
+/// members reached only from inside, gives the result the out-edges of its
+/// members (a sequence those of its last), and no fold adds an edge; so a
+/// component without in-edges stays one, as does one without out-edges, and
+/// two of either kind never join.  Only a switch absorbs cases without
+/// successors, and only a pending switch-loop absorb merges by address.
+fn components_stay_apart(graph: &BlockGraph, root: BlockId) -> bool {
+    let (mut exits, mut entries) = (0, 0);
+    let g = graph.block(root);
+    for i in 0..g.get_size() {
+        let b = graph.block(g.get_block(i));
+        if b.is_switch_out() {
+            return false;
+        }
+        exits += (b.size_out() == 0) as int4;
+        entries += (b.size_in() == 0) as int4;
+    }
+    exits > 1 || entries > 1
+}
+
 /// The acyclic sequence + virtualize structuring engine, operating on the
 /// seeded `sblocks` [`BlockGraph`] (the `BlockCopy` mirror of `bblocks`).
 struct RegionStructurer<'a> {
@@ -375,8 +400,11 @@ struct RegionStructurer<'a> {
     /// onto basic-block addresses).  Populated only when `loop_refine` is on; used
     /// by `refine_loop_edges` to pick the loop body / single normal exit grounded
     /// in the region identifier's analysis rather than the narrower structural
-    /// natural-loop walk.
+    /// natural-loop walk.  Filled from `region_id` on first use.
     cyclic_loops: std::collections::BTreeMap<uintb, crate::p7_regions::kuna_regionid::KunaCyclicLoop>,
+    /// The region identifier built over the basic blocks, and whether that
+    /// succeeded, until [`cyclic_loops`](Self::cyclic_loops) runs it.
+    region_id: Option<(crate::p7_regions::kuna_regionid::KunaRegionIdentifier, bool)>,
     /// bblocks `BlockBasic` id → start offset, so a live `sblocks` component's
     /// front-leaf `BlockCopy` (whose `copy` is a bblocks id) resolves to its
     /// address — the key the `cyclic_loops` body/exit sets use.  Populated only
@@ -424,6 +452,7 @@ impl<'a> RegionStructurer<'a> {
             pending_flips: Vec::new(),
             loop_refine: false,
             cyclic_loops: std::collections::BTreeMap::new(),
+            region_id: None,
             bb_addr: std::collections::BTreeMap::new(),
             edge_order: false,
             pending_inf_loops: std::collections::BTreeSet::new(),
@@ -446,19 +475,33 @@ impl<'a> RegionStructurer<'a> {
     }
 
     /// Attach the cyclic loop-successor refinement gate (`regionlooprefine`) plus
-    /// the region identifier's cyclic loop projection (keyed by head address) and
-    /// the bblocks-id → address map used to resolve live components to addresses.
+    /// the region identifier built over the basic blocks and the bblocks-id →
+    /// address map used to resolve live components to addresses.
     fn with_loop_refine(
         mut self,
         loop_refine: bool,
-        cyclic_loops: Vec<crate::p7_regions::kuna_regionid::KunaCyclicLoop>,
+        region_id: Option<(crate::p7_regions::kuna_regionid::KunaRegionIdentifier, bool)>,
         bb_addr: std::collections::BTreeMap<BlockId, uintb>,
     ) -> Self {
         self.loop_refine = loop_refine;
-        self.cyclic_loops =
-            cyclic_loops.into_iter().map(|l| (l.head_addr, l)).collect();
+        self.region_id = region_id;
         self.bb_addr = bb_addr;
         self
+    }
+
+    /// The region identifier's cyclic loops by head address.  The identifier
+    /// reads only the basic blocks, which structuring leaves alone, so it runs
+    /// on first use.
+    fn cyclic_loops(
+        &mut self,
+    ) -> &std::collections::BTreeMap<uintb, crate::p7_regions::kuna_regionid::KunaCyclicLoop> {
+        if let Some((mut ri, built)) = self.region_id.take() {
+            if built {
+                let _ = ri.compute_cyclic();
+            }
+            self.cyclic_loops = ri.cyclic_loops().into_iter().map(|l| (l.head_addr, l)).collect();
+        }
+        &self.cyclic_loops
     }
 
     /// Resolve a live structuring component to its front-leaf basic-block start
@@ -704,6 +747,13 @@ impl<'a> RegionStructurer<'a> {
             })
     }
 
+    /// Whether the components can never fold to one root: no switch-loop absorb
+    /// is pending and [`components_stay_apart`] holds.  With no live switch none
+    /// can be queued later.
+    fn cannot_converge(&self) -> bool {
+        self.pending_inf_loops.is_empty() && components_stay_apart(self.graph, self.graph_id)
+    }
+
     /// Whether an address-keyed absorb could reach `bl`: its address is in a
     /// pending switch-loop body, or another live component shares it (a later
     /// body set could then name it).
@@ -761,7 +811,7 @@ impl<'a> RegionStructurer<'a> {
                 // Hang-guard: report non-convergence so the caller falls back.
                 return Ok(false);
             }
-            if self.has_stranded_component() {
+            if self.has_stranded_component() || self.cannot_converge() {
                 if std::env::var_os("KUNA_RS_DEBUG").is_some() {
                     eprintln!("[rs] STRANDED: {} components remain (round {rounds})", self.size());
                 }
@@ -1572,7 +1622,7 @@ impl<'a> RegionStructurer<'a> {
             static DUMPED: std::sync::atomic::AtomicBool =
                 std::sync::atomic::AtomicBool::new(false);
             if !DUMPED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                for (head, l) in self.cyclic_loops.iter() {
+                for (head, l) in self.cyclic_loops().iter() {
                     eprintln!(
                         "[rs] RI loop head=0x{:x} body={} exits=[{}]",
                         head,
@@ -2411,7 +2461,7 @@ impl<'a> RegionStructurer<'a> {
         // dominated switch-case successors a structural natural-loop walk misses).
         // The loop is keyed by its head's basic-block start address.
         let head_addr = self.component_addr(head);
-        let ri_loop = head_addr.and_then(|a| self.cyclic_loops.get(&a).cloned());
+        let ri_loop = head_addr.and_then(|a| self.cyclic_loops().get(&a).cloned());
 
         // Build the live loop-body component set + exit-address set, either from the
         // RI projection (preferred) or the structural natural-loop walk (fallback,
@@ -3573,7 +3623,7 @@ mod tests {
         *g.block_mut(leaf).kind_mut() = BlockKind::Copy { copy: Some(bb) };
         let mut st = RegionStructurer::new(&mut g, root).with_loop_refine(
             true,
-            Vec::new(),
+            None,
             [(bb, 0x1000)].into_iter().collect(),
         );
         assert!(st.has_stranded_component());
