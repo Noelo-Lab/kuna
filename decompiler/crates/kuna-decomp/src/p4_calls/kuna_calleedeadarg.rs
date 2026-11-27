@@ -1049,7 +1049,8 @@ fn takes(stated: &crate::kuna_protoorder::RecoveredTypes, &(ridx, off, sz): &Reg
 
 /// Where the default model passes a call's first stack argument, for the probe
 /// to record the calls a body hands one ([`stackargs`]). `None` without a stack
-/// pointer in the register space or a stack parameter in the model.
+/// pointer in the register space, a stack parameter in the model, or a
+/// general-purpose argument register for a whole run to fill (i386 cdecl).
 fn first_stack_arg(arch: &crate::architecture::Architecture, reg_idx: int4) -> Option<FirstStackArg> {
     let stack = arch.manage().get_stack_space()?;
     if stack.num_spacebase() < 1 {
@@ -1065,14 +1066,14 @@ fn first_stack_arg(arch: &crate::architecture::Architecture, reg_idx: int4) -> O
         .get_entry()
         .iter()
         .find_map(|e| (e.get_space().get_type() == spacetype::IPTR_SPACEBASE).then(|| e.get_base() as i64))?;
-    let args = crate::p4_calls::kuna_passthrough::general_arg_registers(model)
+    let args: ByteSet = crate::p4_calls::kuna_passthrough::general_arg_registers(model)
         .iter()
         .flat_map(|(a, size)| {
             let idx = a.get_space().map_or(-1, |s| s.get_index());
             (a.get_offset()..a.get_offset() + (*size).max(0) as u64).map(move |b| (idx, b))
         })
         .collect();
-    Some(FirstStackArg { sp: (sp.offset, sp.size), offset, args })
+    (args.len() > 0).then(|| FirstStackArg { sp: (sp.offset, sp.size), offset, args })
 }
 
 /// The entry-liveness probe of `entry`, from the run's cache or taken now.
