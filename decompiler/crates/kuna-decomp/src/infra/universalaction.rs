@@ -484,6 +484,11 @@ pub fn universal_sched(
         rrow!("doublein", "doubleprecis", crate::double::RuleDoubleIn::new("doubleprecis")),
         rrow!("doubleout", "doubleprecis", crate::double::RuleDoubleOut::new("doubleprecis")),
         rrow!("stackprobeloop", "analysis", crate::kuna_stackprobeloop::RuleStackProbeLoop::new("analysis")),
+        // (kuna deobf) residue rules, inert unless the body's policy asks for them.
+        rrow!("residuelogic", "analysis", crate::kuna_residuerules::RuleResidueLogic::new("analysis")),
+        rrow!("residuearith", "analysis", crate::kuna_residuerules::RuleResidueArith::new("analysis")),
+        rrow!("residuepiece", "analysis", crate::kuna_residuerules::RuleResiduePiece::new("analysis")),
+        rrow!("residuecarry", "analysis", crate::kuna_residuerules::RuleResidueCarry::new("analysis")),
     ];
     oppool1_rules.extend(extra_pool_rules);
 

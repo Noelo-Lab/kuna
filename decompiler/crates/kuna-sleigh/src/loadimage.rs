@@ -237,6 +237,14 @@ pub trait LoadImage {
         Vec::new()
     }
 
+    /// (kuna) `(vma, size, name)` of each named section, for a reader that
+    /// tells a toolchain's sections (`.plt`, `.text.unlikely`, `__stubs`) from
+    /// ones a protector added. Not a C++ method; empty by default, for a
+    /// loader whose format names no sections.
+    fn kuna_section_names(&self) -> Vec<(u64, u64, String)> {
+        Vec::new()
+    }
+
     /// (kuna) `(vma, size)` of each load segment the image declares
     /// inaccessible -- a Mach-O segment with no initial protection, such as
     /// `__PAGEZERO`. The byte map still serves its RAM footprint as zero fill;

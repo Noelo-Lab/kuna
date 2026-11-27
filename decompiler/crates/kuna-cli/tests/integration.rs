@@ -61,6 +61,9 @@ mod assert_named_data;
 #[path = "stated_jump_targets.rs"]
 mod stated_jump_targets;
 
+#[path = "assert_import.rs"]
+mod assert_import;
+
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
 

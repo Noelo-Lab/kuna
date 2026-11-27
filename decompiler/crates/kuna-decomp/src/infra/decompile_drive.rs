@@ -122,6 +122,12 @@ impl FlowEnvironment for ArchFlowEnv {
     /// target the walk is about to queue.  A loader already borrowed elsewhere
     /// reports `true` (queue it), which is the behaviour that predates the probe.
     fn code_bytes_mapped(&self, addr: &Address) -> bool {
+        // (kuna deobf) A recovered body's instruction has no bytes but is lifted.
+        if let Some(ov) = self.arch().translate().as_sleigh().and_then(|s| s.pcode_overlay()) {
+            if ov.contains(addr) {
+                return true;
+            }
+        }
         let loader_rc = self.arch().translate().loader_rc();
         let Ok(mut loader) = loader_rc.try_borrow_mut() else {
             return true;
@@ -905,10 +911,12 @@ pub fn build_and_follow_flow_within_budget(
     flow_overrides: &[(Address, kuna_base::types::uint4)],
 ) -> KunaResult<Funcdata> {
     let started = std::time::Instant::now();
+    let uncharged = FN_UNCHARGED.with(std::cell::Cell::get);
     let mut fd = within_flow_budget(arch, |arch| {
         build_and_follow_flow_with_override(arch, name, entry, size, flow_overrides)
     })?;
-    fd.set_flow_spent(started.elapsed());
+    let uncharged = FN_UNCHARGED.with(std::cell::Cell::get).saturating_sub(uncharged);
+    fd.set_flow_spent(started.elapsed().saturating_sub(uncharged));
     Ok(fd)
 }
 
@@ -1089,9 +1097,32 @@ fn generate_flow(
     ppc32_lr: Option<crate::kuna_ppc32lrflow::Key>,
     lr_branches: Option<&crate::kuna_ppc32lrflow::BranchPlans>,
 ) -> KunaResult<Funcdata> {
+    let comments = fd.pending_comment_count();
+    let mut data = generate_flow_once(arch, fd, ppc32_lr, lr_branches)?;
+    // (kuna deobf) Obfuscation only the plain flow shows: the flow is
+    // followed again from the body a deobfuscator recovered.
+    if crate::kuna_deobf::after_flow(arch, &data) {
+        data.clear();
+        data.truncate_pending_comments(comments);
+        data = generate_flow_once(arch, data, ppc32_lr, lr_branches)?;
+    }
+    Ok(data)
+}
+
+#[allow(clippy::mutable_key_type)]
+fn generate_flow_once(
+    arch: &mut Architecture,
+    fd: Funcdata,
+    ppc32_lr: Option<crate::kuna_ppc32lrflow::Key>,
+    lr_branches: Option<&crate::kuna_ppc32lrflow::BranchPlans>,
+) -> KunaResult<Funcdata> {
     let _load = arch.load_scope();
     crate::kuna_mipsunaligned::paint(arch);
     crate::kuna_memtag::paint(arch, fd.get_address());
+    let mut fd = fd;
+    // (kuna deobf) The front of the deobfuscation plane: a function a
+    // deobfuscator recovers a body for is lifted from it instead of its bytes.
+    let recovered = crate::kuna_deobf::front(arch, &mut fd);
     // C++ Funcdata::followFlow(baddr, eaddr): a function carrying a declared byte
     // extent restricts flow to it; size 0 keeps the unbounded default the whole
     // engine has used until now (`kuna_console::engine::UNBOUNDED_SIZE`), so this
@@ -1105,7 +1136,7 @@ fn generate_flow(
     });
     let env = ArchFlowEnv {
         ppc32_lr,
-        mapped_image: if arch.mapped_flow_boundary_image {
+        mapped_image: if recovered.is_none() && arch.mapped_flow_boundary_image {
             arch.translate().loader_rc().borrow().shared_bytes()
         } else {
             None
@@ -1113,6 +1144,9 @@ fn generate_flow(
         arch: arch as *const Architecture,
         return_discard_memo: Default::default(),
     };
+    for line in recovered.iter().flat_map(|body| &body.header) {
+        fd.warning_header(line);
+    }
     let mut flow = FlowInfo::new(fd, &env);
     flow.set_lr_branches(lr_branches);
     if let Some((baddr, eaddr)) = range {
@@ -1126,7 +1160,11 @@ fn generate_flow(
     // options `maxinstruction` / `errortoomanyinstructions` / `unimplemented` /
     // `jumpload` mutate them (options.cc ports in `p0_knowledge/options.rs`).
     flow.set_flags(arch.flowoptions);
-    flow.set_maximum_instructions(arch.max_instructions);
+    flow.set_maximum_instructions(if recovered.is_some() {
+        arch.max_instructions.max(crate::kuna_deobf::RECOVERED_MAX_INSTRUCTIONS)
+    } else {
+        arch.max_instructions
+    });
     // C++ followFlow: generateOps() then generateBlocks().  The jump-table
     // recovery loop runs inside generateOps (via the action sub-pipeline).
     // A panic in one recovery is the function's error, as it is in the main
@@ -1155,6 +1193,9 @@ fn generate_flow(
         generated?;
     }
     flow.generate_blocks()?;
+    if recovered.is_some() {
+        crate::kuna_body::mark_incidental_copies(&mut flow.data);
+    }
     // C++ followFlow: switchOverJumpTables(flow) — map each recovered table's
     // addresses to the basic-block out-edges (the `target` surface is
     // `FlowInfo::target`).  Drive it before the FlowInfo is consumed.
@@ -1434,6 +1475,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         // (kuna `bejoin evidence`) A call resolved mid-pass to a proven
         // callee read it unproven: run the pass again with its verdict.
         if !(reflow_requested && fd.has_restart_pending()) && !crate::kuna_bejoin::wide_callee_missed(arch, fd) {
+            crate::kuna_deobf::audit(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -1443,6 +1485,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
             // analyzed to print, so keep it and say more restarts were pending.
             fd.warning_header("Exceeded maximum restarts with more pending");
             fd.set_restart_pending(false);
+            crate::kuna_deobf::audit(arch, fd);
             drain_pipeline_comments(arch, fd);
             return Ok(total);
         }
@@ -3721,6 +3764,7 @@ thread_local! {
     static FN_TABLE_AT: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
     static FN_PROBES: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     static FN_SPENT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static FN_UNCHARGED: std::cell::Cell<std::time::Duration> = const { std::cell::Cell::new(std::time::Duration::ZERO) };
 }
 
 /// How many [`budget_probe`] calls between clock reads.
@@ -3751,6 +3795,17 @@ fn fn_budget(arch: &Architecture) -> Option<std::time::Duration> {
 /// boundary interrupts, to give up early.
 pub(crate) fn deadline_passed() -> bool {
     FN_DEADLINE.with(|d| d.get().is_some_and(budget_spent))
+}
+
+/// (kuna deobf) Take `spent` off the running drive's clock. A deobfuscator
+/// that recovers a body runs under its own work budget, so the per-function
+/// budget covers only the decompilation that follows it.
+pub(crate) fn uncharge(arch: &mut Architecture, spent: std::time::Duration) {
+    if let Some(deadline) = arch.kuna_fn_deadline.as_mut() {
+        *deadline += spent;
+    }
+    FN_DEADLINE.with(|d| d.set(d.get().map(|at| at + spent)));
+    FN_UNCHARGED.with(|u| u.set(u.get() + spent));
 }
 
 /// (kuna decompile-all watchdog) [`deadline_passed`] for a walk that recurses

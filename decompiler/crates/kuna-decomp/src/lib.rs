@@ -68,6 +68,7 @@ mod p6_variables;
 mod p7_regions;
 mod p8_structure;
 mod p9_emit;
+mod deobf;
 mod infra;
 
 pub use substrate::*;
@@ -81,6 +82,7 @@ pub use p6_variables::*;
 pub use p7_regions::*;
 pub use p8_structure::*;
 pub use p9_emit::*;
+pub use deobf::*;
 pub use infra::*;
 
 pub(crate) use p9_emit::kuna_indirectargs;
