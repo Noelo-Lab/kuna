@@ -605,6 +605,30 @@ fn direct_repeat_zero_skips_only_the_first_of_the_selected_issues() {
 }
 
 #[test]
+fn direct_repeat_zero_publishes_ce_without_running_the_annulled_issue() {
+    for (delay, body, empty, once) in [(0u32, 0, 0x1000, 0x1009), (3, 1, 0x1000, 0x1009), (5, 3, 0x2000, 0x3009)] {
+        for (literal, count) in [(false, 0u32), (false, 1), (true, 0), (true, 1)] {
+            let branch = if literal { (0xb80000 | count, 0xcf0400) } else { (0xb84100, 0xcf0000) };
+            let mut fetches = [(NOP, NOP); 9];
+            fetches[0] = (branch.0, branch.1 | delay << 11);
+            fetches[4] = (INC_A0, NOP);
+            let mut m = Machine::with_root_context(
+                0, &fetches,
+                &[(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6),
+                  (10, 1, 6), (12, 1, 6), (14, 1, 6), (16, 1, 0)],
+                None, &[(b"carmel_direct_repeat", body + 1)],
+            );
+            m.seed(&[("A0L", 0xffff), ("CECFG1", 0x08ed), ("CECFG2", 0x08cd), ("CETBL", 0xe132)]);
+            m.seed_data(0x4100, u64::from(count));
+            m.start(0).unwrap();
+            assert_eq!(m.step(), 6 * u64::from(4 + body.max(1)));
+            let expected = if count == 0 { (empty, 0xffff) } else { (once, 0) };
+            assert_eq!((m.reg("EST"), m.reg("A0L")), expected, "{delay}, {count}, {literal}");
+        }
+    }
+}
+
+#[test]
 fn wide_data_store_uses_the_old_word_address_and_postincrements_r0() {
     for (low, expected_r0) in [(0xc64000, 0x4100), (0xc64040, 0x4101)] {
         let mut m = Machine::new(0, &[(0x808e4c, low), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);

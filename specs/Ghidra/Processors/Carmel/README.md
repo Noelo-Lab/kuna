@@ -93,10 +93,11 @@ repeats. For wide CE1
 REPEAT, a veto with address enable clear executes that issue once; otherwise
 the immediate count applies. REPEAT does not lift a transfer or DATA access
 in the repeated issue.
-Selected dynamic REPEAT forms sample `A0L`, a postmodified `R1`, or an
-absolute DATA word before three setup issues. A zero count skips only the
-first body issue. The wide DATA encoding can replay a range of up to five
-issues. Setup and body must be register-only and contain no transfers.
+Selected dynamic REPEAT forms sample `A0L`, a postmodified `R1`, an absolute
+DATA word, or a literal before three setup issues. A zero count skips only
+the first body issue. The direct DATA and literal forms publish condition
+feedback on that idle clock and may replay a range on a positive count.
+Setup and body must be register-only and contain no transfers.
 An explicit post-CALL branch to the encoded resume word remains part of
 the caller's control flow, even if analysis found a function entry there.
 Unconditional wide relative CALL retires at most three following issues.

@@ -12442,9 +12442,12 @@ direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
     & carmel_direct_repeat=1 [ carmel_counted_delay=1; carmel_split_delay=1; ] {
     build direct_rep_count;
     local count:2 = direct_rep_count;
-    publish_alu_ce(EST & 0xcfff);
+    clock_ce();
     build repeat_setup;
-    if (count == 0) goto <exit>;
+    if (count != 0) goto <first>;
+    clock_ce();
+    goto <exit>;
+  <first>
     delayslot(1);
   <exit>
 }
@@ -12453,9 +12456,11 @@ direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
     & carmel_direct_repeat=2 [ carmel_counted_delay=1; carmel_split_delay=1; ] {
     build direct_rep_count;
     local count:2 = direct_rep_count;
-    publish_alu_ce(EST & 0xcfff);
+    clock_ce();
     build repeat_setup;
-    if (count == 0) goto <exit>;
+    if (count != 0) goto <again>;
+    clock_ce();
+    goto <exit>;
   <again>
     delayslot(1);
     count = count - 1;
@@ -12467,9 +12472,11 @@ direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
     & repeat_first & repeat_tail [ carmel_counted_delay=1; carmel_split_delay=1; ] {
     build direct_rep_count;
     local count:2 = direct_rep_count;
-    publish_alu_ce(EST & 0xcfff);
+    clock_ce();
     build repeat_setup;
-    if (count == 0) goto <tail>;
+    if (count != 0) goto <again>;
+    clock_ce();
+    goto <tail>;
   <again>
     build repeat_first;
   <tail>
