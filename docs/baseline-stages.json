@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5613,
-    5613
+    5624,
+    5624
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -4714,6 +4714,17 @@
     "data:outline-proto #4: the call AFTER the region keeps exactly one argument in both passes - defect 1 gave it stack junk (off plus on = 2)",
     "data:outline-proto #5: no raw stack pointer leaks into the C in either pass - defect 1 emitted `&Stack...`",
     "data:outline-proto #6: no rsp-typed local is introduced in either pass - defect 1 emitted `// rsp`",
+    "data:outparam-argslot #10: outindex is decompiled",
+    "data:outparam-argslot #11: the indexed slot is not indexed as a scalar",
+    "data:outparam-argslot #1: the out-parameter never prints as raw storage",
+    "data:outparam-argslot #2: the call fills the variable the body reads",
+    "data:outparam-argslot #3: the load after the call reads that variable",
+    "data:outparam-argslot #4: the variable is the entry+0x38 slot",
+    "data:outparam-argslot #5: the cleared slot is the one the call fills",
+    "data:outparam-argslot #6: the loop sums the slot it passes",
+    "data:outparam-argslot #7: a parameter slot keeps its parameter",
+    "data:outparam-argslot #8: outpair is decompiled",
+    "data:outparam-argslot #9: no reference lands inside a mapped slot",
     "data:oxidizer-SecurityCheck #1: the panic helper call is emitted only with the option off",
     "data:oxidizer-SecurityCheck #2: the bounds guard is emitted only with the option off",
     "data:oxidizer-SecurityCheck #3: the guarded load itself is untouched (emitted by both passes)",
