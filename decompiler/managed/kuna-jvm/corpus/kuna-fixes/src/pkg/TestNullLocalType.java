@@ -26,6 +26,11 @@ public class TestNullLocalType {
       return length(values);
    }
 
+   static String cast() {
+      Object value = null;
+      return take((Source) value);
+   }
+
    Source field;
 
    void store() {

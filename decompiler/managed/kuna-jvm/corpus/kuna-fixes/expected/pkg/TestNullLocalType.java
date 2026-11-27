@@ -24,6 +24,11 @@ public class TestNullLocalType {
       return length(var0);
    }
 
+   static String cast() {
+      Object var0 = null;
+      return take((TestNullLocalType.Source)var0);
+   }
+
    void store() {
       Object var1 = null;
       this.field = (TestNullLocalType.Source)var1;
