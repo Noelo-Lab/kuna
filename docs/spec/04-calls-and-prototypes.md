@@ -9966,7 +9966,12 @@ callee-first plan, not once the plan is done: a wrapper is redone as soon as its
 first reader is decompiled, so every later reader reads the wrapper's return
 the first time it is decompiled. A reader decompiled later that reads the
 wrapper wider forces it again at that width, and one that reads another
-register withdraws it: it returns nothing again, as before.
+register withdraws it: it returns nothing again, as before. Settling after
+every function does not walk every callee's claims each time: `due` looks only
+at the callees left unsettled since its last look, those whose claims, recovered
+return, return storage, forced storage or withdrawal changed, and those it last
+forced or withdrew. A callee's verdict reads nothing else, and one that acts
+leaves nothing to do the next time, so every other callee would come out empty.
 
 Callers that read a register pair and callers that read only its least
 significant register agree on that register (`kuna_voidret.rs
@@ -10158,7 +10163,11 @@ function whose redo changed either has every reader decompiled before that redo
 decompiled again (`kuna_voidret.rs (stale_readers)`) when it now states a return
 to `callrettype`, returns a float, or had its float return withdrawn; a callee
 that states nothing has nothing to hand a reader, and only a wrapper still
-waiting on it is redone. Such a reader typed the
+waiting on it is redone. The readers and callers a change can name are listed
+when the redo makes it (`kuna_voidret.rs (Owed)`): a function is filed as one
+only by its own decompile, which comes after, so the list never grows, and each
+settling drops the functions decompiled since and forgets a change with none
+left. Such a reader typed the
 call's result itself, against a callee it saw return nothing, and kept that
 text: cp's callers printed `unsigned long v10 = sub_18a0f(4,a1)` beside `void
 *sub_18a0f(..)`, which is not C, and find's printed `*(unsigned int
