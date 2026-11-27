@@ -21,8 +21,10 @@
 //! a `continue` or `break` javac wrote ([`splits_else`]), two tests with
 //! their own jumps apart ([`separate_test`], [`separate_jumps`]), a loop's
 //! first or last if in the loop ([`inside_loop`]), and a try body's or
-//! then-branch's last statement after it ([`place_tails`]). Docs:
-//! `docs/spec/10-jvm.md` section 10.9.
+//! then-branch's last statement after it ([`place_tails`]). In a class ECJ
+//! wrote, two returns of ECJ's returned condition are one
+//! ([`ecj_returned_condition`]), and no rule applies inside its switch on a
+//! string ([`ecj_string_switch`]). Docs: `docs/spec/10-jvm.md` section 10.9.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -30,10 +32,11 @@ use std::collections::BTreeMap;
 use crate::basic_block::BasicBlock;
 use crate::code_constants::{
     GROUP_RETURN, OPC_ALOAD, OPC_ASTORE, OPC_ATHROW, OPC_CHECKCAST, OPC_DSTORE, OPC_FSTORE,
-    OPC_GOTO, OPC_GOTO_W, OPC_IFEQ, OPC_IFNONNULL, OPC_IFNULL, OPC_IF_ACMPNE, OPC_IRETURN,
-    OPC_ISTORE, OPC_JSR, OPC_JSR_W, OPC_LOOKUPSWITCH, OPC_LSTORE, OPC_RET, OPC_RETURN,
-    OPC_TABLESWITCH,
+    OPC_GOTO, OPC_GOTO_W, OPC_IFEQ, OPC_IFNONNULL, OPC_IFNULL, OPC_IF_ACMPNE, OPC_INVOKEVIRTUAL,
+    OPC_IRETURN, OPC_ISTORE, OPC_JSR, OPC_JSR_W, OPC_LOOKUPSWITCH, OPC_LSTORE, OPC_RET,
+    OPC_RETURN, OPC_TABLESWITCH,
 };
+use crate::decompiler_context::DecompilerContext;
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
@@ -76,6 +79,11 @@ struct Method {
     code: Option<Vec<(i32, i32, i32, i32)>>,
     /// How often [`record`] was told about each if.
     done: BTreeMap<i32, u32>,
+    /// Whether ECJ wrote the class (`kuna_compiler::written_by_ecj`).
+    ecj: bool,
+    /// The offsets of the last jumps of ECJ's returned conditions
+    /// ([`ecj_returned_condition`]), whose two returns `buildIff` merges.
+    merged: Vec<i32>,
 }
 
 thread_local! {
@@ -101,6 +109,8 @@ pub fn enter(mt: StructMethod, cl: StructClass) -> MethodScope {
             loops_built: false,
             code: None,
             done: BTreeMap::new(),
+            ecj: cl.written_by_ecj(),
+            merged: Vec::new(),
         });
     MethodScope(METHOD.with(|m| std::mem::replace(&mut *m.borrow_mut(), method)))
 }
@@ -108,6 +118,11 @@ pub fn enter(mt: StructMethod, cl: StructClass) -> MethodScope {
 /// Whether a method javac compiled is being structured as Java.
 pub fn active() -> bool {
     METHOD.with(|m| m.borrow().is_some())
+}
+
+/// Whether the method being structured is of a class ECJ wrote.
+fn ecj() -> bool {
+    METHOD.with(|m| m.borrow().as_ref().is_some_and(|m| m.ecj))
 }
 
 /// Whether javac reached `next`, a successor of `block`, by a `goto` over
@@ -182,13 +197,55 @@ fn pattern_switch_loop(loop_: Statement) -> bool {
     first.is_some_and(pattern_switch)
 }
 
+/// Whether `stat` is a pattern `switch`, or ECJ's `switch` on a string
+/// (on its `hashCode()`, each case testing `equals` and jumping to the
+/// case's code, which ECJ places after all the tests).
 fn pattern_switch(stat: Statement) -> bool {
-    stat.try_as_switch()
-        .and_then(|sw| sw.get_headexprent().try_as_switch_head())
-        .and_then(|head| head.get_value().try_as_invocation())
-        .is_some_and(|invoc| {
-            invoc.get_invocation_type() == InvocationType::Dynamic
-                && matches!(invoc.get_name().as_str(), "typeSwitch" | "enumSwitch")
+    ecj_string_switch(stat)
+        || stat
+            .try_as_switch()
+            .and_then(|sw| sw.get_headexprent().try_as_switch_head())
+            .and_then(|head| head.get_value().try_as_invocation())
+            .is_some_and(|invoc| {
+                invoc.get_invocation_type() == InvocationType::Dynamic
+                    && matches!(invoc.get_name().as_str(), "typeSwitch" | "enumSwitch")
+            })
+}
+
+/// Whether `stat` is inside ECJ's `switch` on a string ([`ecj_string_switch`]).
+fn in_ecj_string_switch(stat: Statement) -> bool {
+    let mut parent = stat.get_parent();
+    while let Some(p) = parent {
+        if ecj_string_switch(p) {
+            return true;
+        }
+        parent = p.get_parent();
+    }
+    false
+}
+
+/// Whether `stat` is a `switch` of a method ECJ compiled whose instruction
+/// switches on the `String.hashCode()` called right before it.
+fn ecj_string_switch(stat: Statement) -> bool {
+    let Some(head) = stat
+        .try_as_switch()
+        .filter(|_| ecj())
+        .and_then(|sw| sw.get_first())
+        .and_then(|f| f.try_as_basic_block())
+    else {
+        return false;
+    };
+    let Some(at) = head.get_block().get_last_instruction().map(|i| i.with(|d| d.start_offset))
+    else {
+        return false;
+    };
+    let Some((_, OPC_INVOKEVIRTUAL, _, index)) = instr_before(at) else {
+        return false;
+    };
+    DecompilerContext::get_current_class()
+        .and_then(|cl| cl.get_pool().get_link_constant(index))
+        .is_some_and(|c| {
+            c.classname.as_deref() == Some("java/lang/String") && c.elementname == "hashCode"
         })
 }
 
@@ -366,6 +423,14 @@ fn starts_else(ifstat: IfStatement) -> bool {
     false
 }
 
+/// The exprent of `stat` when it is a basic block holding one.
+fn lone_exprent(stat: Statement) -> Vec<Exprent> {
+    match stat.try_as_basic_block().and_then(|_| stat.get_exprents()) {
+        Some(exprents) if exprents.len() == 1 => exprents.to_vec(),
+        _ => Vec::new(),
+    }
+}
+
 /// Whether `then` (where the then-branch javac wrote is) is a `goto` at
 /// `after_jump` that jumps away, not to `next`, the code right after it.
 fn goto_away(after_jump: i32, next: i32) -> bool {
@@ -373,12 +438,89 @@ fn goto_away(after_jump: i32, next: i32) -> bool {
         .is_some_and(|(length, target)| after_jump + length == next && target != next)
 }
 
-/// Whether two exits `buildIff` would merge are one bytecode instruction.
+/// Whether two exits `buildIff` would merge are one bytecode instruction,
+/// or ECJ's two returns of one returned condition ([`ecj_returned_condition`]).
 pub fn same_return(a: Exprent, b: Exprent) -> bool {
     match (a.get_bytecode(), b.get_bytecode()) {
-        (Some(x), Some(y)) => x.intersects(&y),
+        (Some(x), Some(y)) => x.intersects(&y) || ecj_returned_condition(a, b),
         _ => false,
     }
+}
+
+/// Whether `a` and `b`, two returns of a method ECJ compiled, are its code
+/// for one `return` of a condition (`return x <= y;`, `return p && q;`):
+/// ECJ compiles that as the condition's jumps, `iconst_1; ireturn` where it
+/// holds and `iconst_0; ireturn` at their target (or the reverse), where
+/// javac pushes the value and returns once. The source's `if (c) return
+/// true; return false;` is the same code; a statement on a line of its own
+/// starts a LineNumberTable entry, and ECJ writes none for the second return
+/// of a returned condition, so the second return starting a line decides
+/// for the two statements. Without that entry the code is either form and
+/// Vineflower's one return stands.
+fn ecj_returned_condition(a: Exprent, b: Exprent) -> bool {
+    let ecj = METHOD.with(|m| {
+        m.borrow()
+            .as_ref()
+            .is_some_and(|m| m.ecj && m.mt.get_descriptor().ends_with(")Z"))
+    });
+    if !ecj {
+        return false;
+    }
+    let constant = |e: Exprent| {
+        let exit = e.try_as_exit()?;
+        let value = exit.get_value()?.try_as_const()?;
+        (exit.get_exit_type() == ExitType::Return && value.has_boolean_value())
+            .then(|| (value.get_int_value(), exprent_start(e)))
+    };
+    let (Some((x, Some(at_x))), Some((y, Some(at_y)))) = (constant(a), constant(b)) else {
+        return false;
+    };
+    let one = x != y && !line_starts_at(at_x.max(at_y));
+    if let Some((jump, ..)) = instr_before(at_x.min(at_y)).filter(|_| one) {
+        METHOD.with(|m| {
+            if let Some(m) = m.borrow_mut().as_mut() {
+                m.merged.push(jump);
+            }
+        });
+    }
+    one
+}
+
+/// Where the code of `body` starts when it holds the one return `buildIff`
+/// made of ECJ's returned condition ([`ecj_returned_condition`]), whose
+/// blocks no longer hold instructions: at the instructions of its
+/// expressions.
+fn ecj_merged_return(body: Statement) -> Option<i32> {
+    let merged = METHOD.with(|m| m.borrow().as_ref().map(|m| m.merged.clone()))?;
+    if merged.is_empty() {
+        return None;
+    }
+    let mut todo = vec![body];
+    while let Some(stat) = todo.pop() {
+        for exprent in stat.get_exprents().map(|e| e.to_vec()).unwrap_or_default() {
+            let holds = exprent.get_all_exprents_rec_self(true, true).into_iter().any(|e| {
+                e.get_bytecode().is_some_and(|b| merged.iter().any(|&o| b.get(o as usize)))
+            });
+            if holds {
+                return code_start(body);
+            }
+        }
+        todo.extend(stat.get_stats().borrow().to_vec());
+    }
+    None
+}
+
+/// Whether a LineNumberTable entry of the method being structured starts at
+/// `pc`.
+fn line_starts_at(pc: i32) -> bool {
+    METHOD.with(|m| {
+        let m = m.borrow();
+        m.as_ref()
+            .and_then(|m| {
+                m.mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_LINE_NUMBER_TABLE)
+            })
+            .is_some_and(|table| table.get_raw_data().chunks(2).any(|e| e[0] == pc))
+    })
 }
 
 /// javac's choice for `ifstat`, an if without an else followed by `rest` in
@@ -402,8 +544,17 @@ pub fn reorder(
     let Some(body) = ifstat.get_ifstat() else {
         return keeps_jump(ifstat, &rest).then_some(Reorder::Keep);
     };
+    if ecj() {
+        if let ([exit], [after]) = (&lone_exprent(body)[..], &rest[..]) {
+            if lone_exprent(*after).first().is_some_and(|e| ecj_returned_condition(*exit, *e)) {
+                return Some(Reorder::Else);
+            }
+        }
+    }
     let (mut body_start, mut rest_start) = (
-        start(&[body]).or_else(|| copied_exit_start(body))?,
+        start(&[body])
+            .or_else(|| copied_exit_start(body))
+            .or_else(|| ecj_merged_return(body))?,
         start(&rest).or_else(|| {
             copied_exit_start(body)?;
             rest.iter().filter_map(|s| code_start(*s)).min()
@@ -596,7 +747,7 @@ pub fn reorder_last(ifstat: IfStatement) -> Option<Reorder> {
         return None;
     }
     ifstat.get_ifstat()?;
-    if loop_head(ifstat) {
+    if loop_head(ifstat) || in_ecj_string_switch(ifstat.0) {
         return None;
     }
     let edge = ifstat.get_all_successor_edges().first().copied()?;

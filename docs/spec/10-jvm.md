@@ -243,6 +243,24 @@ Java 6, lambdas from Java 8, `invokedynamic` string concatenation from Java 9, `
 patterns and switch expressions from Java 16, sealed classes from Java 17, record
 patterns from Java 21; preview versions count from the release that previewed them.
 
+Which compiler wrote a class (kuna). The rules that read javac's code shapes (sections 10.9
+and 10.10) also read the Eclipse compiler's code, which lays a few constructs out its own way, so
+a class records whether ECJ wrote it, decided once from the raw constant pool when the class is
+read (`decompiler/managed/kuna-jvm/src/p1_classfile/kuna_compiler.rs (written_by_ecj)`). ECJ's
+`ClassFile` enters the class's own name first and its superclass's second, each
+`CONSTANT_Class` right before the `CONSTANT_Utf8` it names, then the names and descriptors of the
+fields and methods in member order, a method's `Code` attribute name before any constant its
+code uses. javac generates all method code before it writes the class, so the member references
+of that code come before `Code` (javac 8 to 12 put them at the start of the pool, javac 13 and
+later as the code uses them, the class itself included); ASM and `kuna-dex` enter a name's
+`CONSTANT_Utf8` before the `CONSTANT_Class` that names it. A class is ECJ's when entries 1 to 4
+are that header (entries 3 and 4 only when it has a superclass) and the first `Code` comes before
+the first field or method reference; a pool without either decides nothing, and the class is
+treated as javac's. On classes compiled from the same sources by javac 8, 11, 17, 21 and 25 and
+by ECJ 3.46 (`-1.8`, `-17`), every ECJ class with code and member references is recognised and
+no javac class is. ECJ's other marks (a `$SWITCH_TABLE$` method for an enum switch, one
+`hashCode` switch for a string) are not read.
+
 Two lifetimes coexist (kuna). Classes, members, attributes and the class-node forest live
 for the whole session; the IR a class's decompilation builds lives only until that root
 class is finished. Method bodies are therefore kept as raw bytes and expanded on demand
@@ -757,6 +775,32 @@ was moved out has, so it leaves an `if` whose other path continues the loop (`el
 empty `while (cmp(++i, v) < 0) {}` sharing the start of a `for (;;)` became `if (cmp(++i, v) < 0)
 return;`; the same guard corrects Vineflower's inverted exit of that shape in an infinite loop
 that already had a successor).
+
+**ECJ's layout (kuna).** In a class the Eclipse compiler wrote (section 10.3) the rules above
+read ECJ's code, which places an `if`'s branches, its exits and its `continue` and `break`
+jumps as javac does, with two differences.
+*A returned condition*: ECJ compiles `return x <= y;` (a comparison, `&&` or `||`) as the
+condition's jumps, `iconst_1; ireturn` where it holds and `iconst_0; ireturn` at their target
+(or the reverse), where javac pushes the value and returns once, and the source's `if (c)
+return true; return false;` is the same code. ECJ starts a LineNumberTable entry at each
+statement on a line of its own and none at the second return of a returned condition, so
+`decompiler/managed/kuna-jvm/src/p8_structure/kuna_javac_layout.rs (ecj_returned_condition)`
+takes two returns of boolean constants for one statement when no entry starts at the second:
+`reorder` makes them the if-else Vineflower makes and `same_return` lets `build_iff` merge it
+(`return c ? true : false`, which secondary functions fold to `return c;`); with an entry they
+stay two statements, and without a LineNumberTable the code is either form and Vineflower's one
+return stands. The block of the merged return holds no instructions, so an `if` around it reads
+where its body starts from the instructions of its expressions (`ecj_merged_return`, which knows
+the merged return by the conditional jump of its condition).
+*A switch on a string*: ECJ switches once on the string's `hashCode()`, each case testing
+`equals` and jumping to the code of its case, which ECJ places after all the tests, so the last
+case's test is followed by the first case's code, the shape of javac's `if (c) break;`.
+`ecj_string_switch` (the switch instruction follows `invokevirtual String.hashCode()`) puts such a
+switch with the pattern switches, inside which no rule applies, and `reorder_last` leaves its
+ifs: the `if (!equals) break;` it made of a case was then turned by `ExitHelper.integrate_exits`
+(written for this switch) into a return that dropped the other cases' returns, which is wrong code.
+Each other decision above was measured off for ECJ's classes alone, one at a time, on the ECJ
+project of the second held-out benchmark, and none was better off.
 
 ## 10.10 Variables, types, declarations and names
 

@@ -9,6 +9,7 @@ use std::rc::Rc;
 use crate::byte_cursor::ByteCursor;
 use crate::bytecode_version::BytecodeVersion;
 use crate::constant_pool::ConstantPool;
+use crate::p1_classfile::kuna_compiler;
 use crate::decompiler_context::DecompilerContext;
 use crate::generic_class_descriptor::GenericClassDescriptor;
 use crate::generic_main::GenericMain;
@@ -44,6 +45,8 @@ pub struct StructClassData {
     pub generic_hiarachy: Option<Rc<JHashMap<String, GenericMap>>>,
     /// Where the fields begin, while they and the methods are unread.
     members: Option<ByteCursor>,
+    /// Whether ECJ wrote the class (`kuna_compiler::written_by_ecj`).
+    ecj: bool,
 }
 
 type Fields = VBStyleCollection<StructField, String>;
@@ -70,11 +73,13 @@ impl StructClass {
         let major_version = in_.read_unsigned_short();
         let bytecode_version = BytecodeVersion::new(major_version, minor_version);
 
+        let pool_at = in_.position();
         let pool = ConstantPool::new(in_);
 
         let access_flags = in_.read_unsigned_short();
         let this_class_idx = in_.read_unsigned_short();
         let super_class_idx = in_.read_unsigned_short();
+        let ecj = kuna_compiler::written_by_ecj(in_.data(), pool_at, this_class_idx, super_class_idx);
         let qualified_name = pool
             .get_primitive_constant(this_class_idx)
             .expect("this_class")
@@ -139,6 +144,7 @@ impl StructClass {
         );
         cl.d_mut(|d| {
             d.pool = Some(pool);
+            d.ecj = ecj;
             if lazy {
                 d.members = Some(in_.share_at(members_at));
             }
@@ -255,8 +261,14 @@ impl StructClass {
                 pool: None,
                 generic_hiarachy: None,
                 members: None,
+                ecj: false,
             }),
         ))
+    }
+
+    /// Whether ECJ wrote the class (`kuna_compiler::written_by_ecj`).
+    pub fn written_by_ecj(self) -> bool {
+        self.d(|d| d.ecj)
     }
 
     /// The public field `qualifiedName`.
