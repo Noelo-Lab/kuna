@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5707,
-    5707
+    5720,
+    5720
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1838,6 +1838,19 @@
     "data:LANEFANOUT #1: sub_e87b0 decompiles despite the shared unique IMUL temporary",
     "data:LANEFANOUT #2: the body reaches the ERANGE error path",
     "data:LANEFANOUT #3: no decompilation failure is reported",
+    "data:LANEGLUE #10: a stored float leaves the function void",
+    "data:LANEGLUE #11: a compared float is no return value",
+    "data:LANEGLUE #12: movd from memory then cvtdq2ps returns the float",
+    "data:LANEGLUE #13: cvt_mem converts the loaded int",
+    "data:LANEGLUE #1: movd then cvtdq2ps returns the float",
+    "data:LANEGLUE #2: the float is the converted parameter",
+    "data:LANEGLUE #3: cvtdq2pd still returns the double",
+    "data:LANEGLUE #4: the quotient and remainder sum returns as a float",
+    "data:LANEGLUE #5: quot_rem converts the sum",
+    "data:LANEGLUE #6: a function with two RETs returns the float",
+    "data:LANEGLUE #7: its other RET returns 0.0f",
+    "data:LANEGLUE #8: paths that join at the RET return the float",
+    "data:LANEGLUE #9: the converting arm of two_ret and merged",
     "data:LATCHJOIN #1: visit is one while loop with the if inside and the step after it (pass 1)",
     "data:LATCHJOIN #2: count is one while loop; the sum stays in the if, the step after it (pass 1)",
     "data:LATCHJOIN #3: sendall keeps its busy-wait inside the outer loop (passes 1 and 2)",

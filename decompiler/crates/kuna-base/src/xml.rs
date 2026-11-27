@@ -2354,7 +2354,8 @@ mod tests {
         // and kuna-regionedgeorder-preset / mode aggressive leaves regionedgeorder off
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
         // and kuna-narrow-word-compare / a 16-bit sum keeps its wrap before == on a two-byte-int target
-        assert_eq!(count, 956, "corpus file count drifted");
+        // and gh1883-laneglue-x64 / a float cvtdq2ps leaves in xmm0's low lane is the return
+        assert_eq!(count, 957, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

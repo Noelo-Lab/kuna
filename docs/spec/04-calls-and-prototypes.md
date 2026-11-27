@@ -9647,15 +9647,77 @@ now returns the `double` member where it returned the `long` one. In
 storage, so the `long` member stays the return there, as before. `void f(int
 a, int b, float *o) { *o = a % b; }` has the same code as the stored-float case
 above and still returns the quotient. MSVC converts an `int` with `movd xmm0,r32; cvtdq2ps
-xmm0,xmm0`, which rebuilds `xmm0` as four 4-byte lanes after a 16-byte write.
-Return recovery does not score `xmm0` as returned there at all, so no floating
-trial is active and those functions keep their quotient (or `void`) return.
+xmm0,xmm0`, which rebuilds `xmm0` as four 4-byte lanes after a 16-byte write;
+the trial walks follow those lanes (`kuna_laneglue.rs`, below), so the floating
+trial is active there as well and the quotient is retired the same way.
 32-bit x86 returns a float in `ST0`, loaded with `fild` from the stack slot the
 remainder is stored to, and is unchanged: `float f(int a, int b) { return a %
 b; }` built with `gcc -m32 -O2` still prints `return a0 / a1;`. A divide that
 writes one register (AArch64 `sdiv` and `msub`) leaves no quotient beside the
 remainder, so those targets are unchanged too. The stage test
 `tests/stages/gh1883-quotientreturn-x64.xml` covers the shapes above.
+
+### (kuna) A trial under heritage's lane joins (`kuna_laneglue.rs`)
+
+x86-64 returns a `float` or `double` in `xmm0`. The floating output entry of
+both x86-64 compiler specs is `XMM0_Qa`, the register's low eight bytes, and
+heritage guards the 16-byte register at each RETURN with a SUBPIECE of it
+(`guard_returns_overlapping`, chapter 03). SLEIGH lifts a packed instruction
+lane by lane. MSVC converts an `int` to a `float` with `movd xmm0,ecx;
+cvtdq2ps xmm0,xmm0`: `movd` writes all sixteen bytes and `cvtdq2ps` then writes
+each 4-byte lane. Heritage joins each lane write into the 16-byte value with a
+PIECE of the new lane and SUBPIECEs of the previous value, so after the last
+lane the eight bytes the RETURN reads sit under `PIECE(lane3, SUB(xmm0,0)[12])`,
+four joins above the first lane. Upstream's `AncestorRealistic` follows a PIECE
+only into an input no wider than the trial, or into the high input when the
+trial starts exactly at it, and fails the trial otherwise, so the 12-byte low
+piece failed it. `ancestorOpUse` spends one of its `trim_recurse_max` levels on
+each SUBPIECE and each PIECE and ran out before it reached a lane. `xmm0` was
+never scored as returned: `int_to_float_cvtdq2ps` and `quot_and_rem_float` of
+kuna #1883 printed `void f(void) { return; }`, and a function whose other path
+returns a `float` lost the converting path's value.
+
+The rule (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_laneglue.rs`, always
+on) changes the two walks in
+`decompiler/crates/kuna-decomp/src/substrate/funcdata_varnode.rs`. Both now step
+into the input of a PIECE that holds all of the trial's bytes, at their offset in
+that input (`piece_holding`), when upstream's two cases do not apply. In
+`ancestor_op_use` that step, and a SUBPIECE on the same storage whose input is a
+PIECE, cost no level (`free_step`): neither moves the trial's bytes. A PIECE
+input on other storage, a PIECE that the walk truncates to its low input (the
+upstream case) and every other op still cost one, and one walk takes at most 64
+free steps. The changes only let a walk go on where it used to stop, so a trial
+they make active has a realistic value that only the RETURN reads: a float that
+is stored (`movss [rdx],xmm0`) or compared (`comiss xmm0,xmm1`) after the
+conversion still fails `onlyOpUse`, and paths that join before the RET are
+walked through the MULTIEQUAL input by input.
+
+The same joins hold the zeros `vzeroall` writes into every vector register as
+8-byte lanes (`avx_manual.sinc`). OpenSSL's hand-written AVX routines (ChaCha20,
+AES-GCM) end with it to wipe the registers, and the walks, now reaching its
+lanes, scored them returned: `double f(..) { ..; return 0.0; }` on a `void`
+routine. `ancestor_op_use` finds no use in a COPY of zero made by an instruction
+that clears the register bank (`clears_bank`: at least 32 COPYs of zero at one
+address, into registers or SLEIGH temporaries, and nothing else there but
+heritage's joins), so such a zero is no return value and no argument. A function that is only `vzeroall;
+ret`, which returned `double` before, is now `void` too.
+
+The 8-byte trial holds the converted lane and lane 1, the conversion of the
+zero `movd` extended into it, which constant folding turns into 0. The
+dead-code trim then narrows the return to the 4-byte lane, as it already did
+for `cvtdq2ps` followed by `addss`: `float f(int a0) { return (float)a0; }`,
+`return (float)(int)(a0 % (a1 + 1U) + a0 / (a1 + 1U));` for
+`quot_and_rem_float`, and, with the quotient rule above, `return (float)(int)(a0
+% (a1 + 1U));` where MSVC converts a remainder this way. `cvtdq2pd` writes two
+8-byte lanes, which upstream already followed. Where lane 1 is not known to be
+zero, the return keeps all eight bytes: `movdqu xmm0,[rcx]; cvtdq2ps xmm0,xmm0`
+now returns `CONCAT44((float)a0[1],(float)*a0)` where it returned nothing, as
+`movups xmm0,[rcx]; mulps xmm0,xmm1` already did, since the low half of a
+`__m128` result, a SysV pair of floats and a `float` above which the function
+left a stray lane have the same code. A Windows `float` whose sign an `xorps`
+with a 16-byte mask flips keeps the mask's second lane the same way, as it does
+without a lane write. The stage test
+`tests/stages/gh1883-laneglue-x64.xml` covers the shapes above.
 
 ### (kuna) The registers a zeroing epilogue clears (`kuna_zerocallregs.rs`)
 

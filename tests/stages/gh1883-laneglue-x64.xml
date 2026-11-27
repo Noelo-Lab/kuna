@@ -1,0 +1,117 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!--
+    kuna #1883: MSVC x64 converts an int to a float with movd xmm0,r32;
+    cvtdq2ps xmm0,xmm0. movd writes all of xmm0, and SLEIGH lifts cvtdq2ps
+    as four 4-byte lane writes, so heritage joins each lane into the 16-byte
+    register with a PIECE. The return trial (the low 8 bytes of xmm0) sat
+    under a 12-byte low piece four joins down: ancestor realism failed at
+    the first PIECE and the use walk ran out of levels, and every such
+    function returned void.
+
+        1000  66 0f 6e c1        MOVD     XMM0,ECX
+        1004  0f 5b c0           CVTDQ2PS XMM0,XMM0
+        1007  c3                 RET
+
+        1010  66 0f 6e c1        MOVD     XMM0,ECX
+        1014  f3 0f e6 c0        CVTDQ2PD XMM0,XMM0     ; 8-byte lanes
+        1018  c3                 RET
+
+        1020  44 8d 42 01        LEA      R8D,[RDX+0x1]
+        1024  89 c8              MOV      EAX,ECX
+        1026  31 d2              XOR      EDX,EDX
+        1028  41 f7 f0           DIV      R8D
+        102b  8d 0c 02           LEA      ECX,[RDX+RAX]
+        102e  66 0f 6e c1        MOVD     XMM0,ECX
+        1032  0f 5b c0           CVTDQ2PS XMM0,XMM0
+        1035  c3                 RET
+
+        1040  85 d2              TEST     EDX,EDX
+        1042  74 08              JZ       0x104c
+        1044  66 0f 6e c1        MOVD     XMM0,ECX
+        1048  0f 5b c0           CVTDQ2PS XMM0,XMM0
+        104b  c3                 RET
+        104c  0f 57 c0           XORPS    XMM0,XMM0
+        104f  c3                 RET
+
+        1060  85 d2              TEST     EDX,EDX
+        1062  74 09              JZ       0x106d
+        1064  66 0f 6e c1        MOVD     XMM0,ECX
+        1068  0f 5b c0           CVTDQ2PS XMM0,XMM0
+        106b  eb 08              JMP      0x1075          ; joins at the RET
+        106d  f3 0f 10 05 3b 00 00 00  MOVSS XMM0,[0x10b0]
+        1075  c3                 RET
+
+        1080  66 0f 6e c1        MOVD     XMM0,ECX
+        1084  0f 5b c0           CVTDQ2PS XMM0,XMM0
+        1087  f3 0f 11 02        MOVSS    [RDX],XMM0      ; stored, not returned
+        108b  c3                 RET
+
+        1090  66 0f 6e c1        MOVD     XMM0,ECX
+        1094  0f 5b c0           CVTDQ2PS XMM0,XMM0
+        1097  0f 2f c1           COMISS   XMM0,XMM1       ; compared, not returned
+        109a  0f 97 c0           SETA     AL
+        109d  c3                 RET
+
+        10a0  66 0f 6e 01        MOVD     XMM0,[RCX]
+        10a4  0f 5b c0           CVTDQ2PS XMM0,XMM0
+        10a7  c3                 RET
+
+    Stage: P4 return recovery. cvt_float, quot_rem (the issue's
+    quot_and_rem_float), two_ret, merged and cvt_mem return the float;
+    cvt_double already did; store and compare leave xmm0 to the op that
+    reads it.
+-->
+<bytechunk space="ram" offset="0x1000">
+660f6ec10f5bc0c30000000000000000660f6ec1f30fe6c0c300000000000000448d420189c831d241f7f08d0c02660f6ec10f5bc0c30000000000000000000085d27408660f6ec10f5bc0c30f57c0c30000000000000000000000000000000085d27409660f6ec10f5bc0eb08f30f10053b000000c300000000000000000000660f6ec10f5bc0f30f1102c300000000660f6ec10f5bc00f2fc10f97c0c30000660f6e010f5bc0c3000000000000000000000040000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="cvt_float"/>
+<symbol space="ram" offset="0x1010" name="cvt_double"/>
+<symbol space="ram" offset="0x1020" name="quot_rem"/>
+<symbol space="ram" offset="0x1040" name="two_ret"/>
+<symbol space="ram" offset="0x1060" name="merged"/>
+<symbol space="ram" offset="0x1080" name="store"/>
+<symbol space="ram" offset="0x1090" name="compare"/>
+<symbol space="ram" offset="0x10a0" name="cvt_mem"/>
+</binaryimage>
+<script>
+  <com>lo fu cvt_float</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvt_double</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu quot_rem</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_ret</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu merged</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu compare</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu cvt_mem</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="LANEGLUE #1: movd then cvtdq2ps returns the float" min="1" max="1">^float4 cvt_float\(int4 a0\)</stringmatch>
+<stringmatch name="LANEGLUE #2: the float is the converted parameter" min="1" max="1">^  return \(float4\)a0;</stringmatch>
+<stringmatch name="LANEGLUE #3: cvtdq2pd still returns the double" min="1" max="1">^float8 cvt_double\(int4 a0\)</stringmatch>
+<stringmatch name="LANEGLUE #4: the quotient and remainder sum returns as a float" min="1" max="1">^float4 quot_rem\(uint4 a0,int4 a1\)</stringmatch>
+<stringmatch name="LANEGLUE #5: quot_rem converts the sum" min="1" max="1">^  return \(float4\)\(int4\)\(a0 % \(a1 \+ 1U\) \+ a0 / \(a1 \+ 1U\)\);</stringmatch>
+<stringmatch name="LANEGLUE #6: a function with two RETs returns the float" min="1" max="1">^float4 two_ret\(int4 a0,int4 a1\)</stringmatch>
+<stringmatch name="LANEGLUE #7: its other RET returns 0.0f" min="1" max="1">^  return 0\.0f;</stringmatch>
+<stringmatch name="LANEGLUE #8: paths that join at the RET return the float" min="1" max="1">^float4 merged\(int4 a0,int4 a1\)</stringmatch>
+<stringmatch name="LANEGLUE #9: the converting arm of two_ret and merged" min="2" max="2">^    return \(float4\)a0;</stringmatch>
+<stringmatch name="LANEGLUE #10: a stored float leaves the function void" min="1" max="1">^void store\(int4 a0,float4 \*a1\)</stringmatch>
+<stringmatch name="LANEGLUE #11: a compared float is no return value" min="1" max="1">^bool compare\(int4 a0,float4 a1\)</stringmatch>
+<stringmatch name="LANEGLUE #12: movd from memory then cvtdq2ps returns the float" min="1" max="1">^float4 cvt_mem\(int4 \*a0\)</stringmatch>
+<stringmatch name="LANEGLUE #13: cvt_mem converts the loaded int" min="1" max="1">^  return \(float4\)\*a0;</stringmatch>
+</decompilertest>
