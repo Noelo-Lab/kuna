@@ -24,6 +24,14 @@ keeps its bare return and `if (c) return a; return b;` returns each
 parameter. Under `option returndup on` both guard clauses print wrapped by the
 size rule and the two parameter returns merge into one variable.
 
+`kuna-gotoreduce-auto.xml` checks option `gotoreduce` (default `auto`) on gcc
+-O0 x86-64: a `goto out;` from inside a loop that skips `r = 0;` stays a goto
+into its `out:` label, a `break` out of a `for (;;)` whose last statement is
+`if (c) { S; break; }` returns through a copy of the tail as under `on`, the
+inner loop's `break` stays a `break`, and a function with early `return`s
+prints them as written. Under `option gotoreduce on` the goto out of the loop
+becomes a second release and return.
+
 `kuna-iteregion-auto.xml` checks option `iteregion` (default `auto`) on gcc
 -O0 x86-64: a conditional value that each arm loads into a register before one
 store after the join prints as `?:`, also when one arm is computed, and an

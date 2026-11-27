@@ -41,10 +41,13 @@
 //! [`MAX_TAIL_OPS`] ops, no `CALL`/`STORE` in the tail), so duplication stays
 //! cheap and side-effect-safe.
 //!
-//! `option gotoreduce off|return|on` ([`GotoReduceMode`]) selects which return
-//! tails are duplicated: `return` runs this pass alone, `on` (the default) also
-//! runs [`crate::p8_structure::kuna_taildup`] for a return tail that contains a
-//! call, and `off` runs neither, leaving the upstream goto/label rendering.
+//! `option gotoreduce off|return|on|auto` ([`GotoReduceMode`]) selects which
+//! return tails are duplicated: `return` runs this pass alone, `on` also runs
+//! [`crate::p8_structure::kuna_taildup`] for a return tail that contains a call,
+//! `auto` (the default) is `on` except that an unoptimized function keeps its
+//! gotos to a label the author's `goto` statements jump to
+//! ([`crate::p8_structure::kuna_o0gotos`]), and `off` runs neither, leaving the
+//! upstream goto/label rendering.
 
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::types::int4;
@@ -167,7 +170,6 @@ impl Action for ActionGotoReduce {
                 continue;
             }
             if let Some(chain) = return_tail_chain(data, bb0) {
-                crate::p8_structure::kuna_o0gotos::dump(data, "gr", n, false, &chain);
                 conversions.push((n, chain, target));
             }
         }
@@ -262,17 +264,17 @@ fn return_tail_chain(data: &Funcdata, bb0: BlockId) -> Option<Vec<BlockId>> {
 }
 
 //===========================================================================
-// Option parse (`gotoreduce off|return|on`).
+// Option parse (`gotoreduce off|return|on|auto`).
 //===========================================================================
 
-/// The `gotoreduce off|return|on` ArchOption (angr SAILR goto-reduction).
+/// The `gotoreduce off|return|on|auto` ArchOption (angr SAILR goto-reduction).
 pub struct OptionGotoReduce;
 
 impl OptionGotoReduce {
     /// The option name.
     pub const NAME: &'static str = "gotoreduce";
 
-    /// Parse `off`/`return`/`on`, returning the mode + a confirmation message.
+    /// Parse `off`/`return`/`on`/`auto`, returning the mode + a confirmation message.
     pub fn apply(&self, p1: &str) -> KunaResult<(GotoReduceMode, String)> {
         let mode = match p1 {
             "off" => GotoReduceMode::Off,

@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5707,
-    5707
+    5715,
+    5715
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1420,6 +1420,14 @@
     "data:GOMORESTACK #4: one body return per pass, never a second arm",
     "data:GOTIMPORTPROTO: the declared import receives the passed argument",
     "data:GOTIMPORTPROTO: the import call never keeps only the arguments its trials recover",
+    "data:GOTOREDUCE AUTO #1: find keeps the goto out of its loop (pass 1)",
+    "data:GOTOREDUCE AUTO #2: find keeps its out: label (pass 1)",
+    "data:GOTOREDUCE AUTO #3: with gotoreduce on find's loop goto is a second release (pass 2)",
+    "data:GOTOREDUCE AUTO #4: with gotoreduce on find's loop test takes the copied tail (pass 2)",
+    "data:GOTOREDUCE AUTO #5: drain's break out of its loop returns as under on (both passes)",
+    "data:GOTOREDUCE AUTO #6: drain's inner break stays a break (both passes)",
+    "data:GOTOREDUCE AUTO #7: early returns from inside its loop (both passes)",
+    "data:GOTOREDUCE AUTO #8: early keeps its guard return (both passes)",
     "data:GOTTAILCALL #1: the jump through ext's slot is never lost to halt_missing",
     "data:GOTTAILCALL #2: it is a tail call that keeps the argument",
     "data:GOTTAILCALL #3: a slot naming unmapped memory that is no function stays a jump",
