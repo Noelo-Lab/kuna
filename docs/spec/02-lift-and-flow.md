@@ -3892,6 +3892,9 @@ lane. These register results do not apply the DATA store's `SR1` shift.
 The shifted MAC reads the signed upper 24 bits of the 40-bit FF
 backing, including the guard above `FF2`. Full-width FF writes replace
 the guard; a write to either 16-bit FF register leaves it unchanged.
+Compact `NEG` and `ABS` to DATA use the signed 40-bit input. The word
+form tests zero above the discarded low word; all forms limit before
+applying the store's `SR1` shift.
 In the qualified sequential form, the two operand captures can update
 `X1` even when their later result gates veto the FF or accumulator
 write. The following word `MOVE` samples only `FF2` at execution.

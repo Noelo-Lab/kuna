@@ -6026,7 +6026,8 @@ fn carmel_compact_ff12_data_and_stack_select_physical_words() {
     for cell in cells {
         writeln!(emitted, "volatile unsigned short cell_{cell:x};").unwrap();
     }
-    let rows: [([u32; 2], u16, [u16; 4], &[(&str, u16)]); 16] = [
+    type Case = ([u32; 2], u16, [u16; 4], &'static [(&'static str, u16)]);
+    let rows: [Case; 16] = [
         ([0x20d80c, nop], 0, [0, 0x3344, 0xc103, 0xc104], &[("EST", 0x34)]),
         ([0x20dc0c, nop], 0, [0x7fff, 0, 0xc103, 0xc104], &[("EST", 0x34)]),
         ([0x20fc0c, nop], 0, [0x8001, 0xffff, 0xc103, 0xc104], &[("EST", 0x24)]),
@@ -6049,8 +6050,17 @@ fn carmel_compact_ff12_data_and_stack_select_physical_words() {
         ([0x20fc0c, nop], 0x04, [0xffff, 0x7fff, 0xc103, 0xc104], &[("EST", 0x24)]),
         ([0x20dc0c, nop], 0x08, [0, 0x8000, 0xc103, 0xc104], &[("EST", 0x34)]),
     ];
+    let guard_rows: [(Case, u8, u16); 5] = [
+        (([0x20d80c, nop], 32, [0, 0x3344, 0xc103, 0xc104], &[("EST", 8)]), 0xff, 1),
+        (([0x20dc0c, nop], 4, [0xffff, 0, 0xc103, 0xc104], &[("EST", 0)]), 0xff, 1),
+        (([0x20fc0c, nop], 0, [0xffff, 0, 0xc103, 0xc104], &[("EST", 0)]), 0xff, 1),
+        (([0x20fc0c, nop], 32, [0x7fff, 0, 0xc103, 0xc104], &[("EST", 0)]), 0xff, 1),
+        (([0x20fc0c, nop], 0, [1, 0xffff, 0xc103, 0xc104], &[("EST", 0x24)]), 0, 1),
+    ];
     let mut check = 0;
-    for (row, (packet, config, changed, outputs)) in rows.into_iter().enumerate() {
+    for (row, ((packet, config, changed, outputs), guard, ff1)) in rows.into_iter()
+        .map(|case| (case, 0, 0x8001)).chain(guard_rows).enumerate()
+    {
         let words = [
             0x804104, 0xc64298, // MOVE R6,0x4104
             0x800000, 0xc04cec, // TRANSFER SP,R6
@@ -6076,6 +6086,7 @@ fn carmel_compact_ff12_data_and_stack_select_physical_words() {
             for (i, input) in ["EST", "ECFG", "FF1", "FF2", "R4", "ASTATUS"].into_iter().enumerate() {
                 kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
             }
+            kuna.args(["--assert", "param 6 %FFG unsigned char in_ffg"]);
             for cell in cells {
                 kuna.args(["--assert", &format!("data [data,{cell:#x}] volatile unsigned short cell_{cell:x}")]);
             }
@@ -6088,7 +6099,7 @@ fn carmel_compact_ff12_data_and_stack_select_physical_words() {
             for (cell, value) in cells.into_iter().zip(initial) {
                 writeln!(main, "cell_{cell:x} = {value:#x};").unwrap();
             }
-            writeln!(main, "value = {name}(0,{config},0x8001,0xffff,0x4321,1);").unwrap();
+            writeln!(main, "value = {name}(0,{config},{ff1},0xffff,0x4321,1,{guard});").unwrap();
             if reg == "R7" && cells.contains(&u32::from(expected)) {
                 writeln!(main, "if (value == (unsigned short)(uintptr_t)&cell_{expected:x}) value = {expected:#x};").unwrap();
             }
