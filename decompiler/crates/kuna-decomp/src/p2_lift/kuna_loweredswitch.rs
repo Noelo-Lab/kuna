@@ -107,6 +107,7 @@ use crate::p2_lift::kuna_loweredswitchexact::{self, record_is_exact};
 use crate::p2_lift::kuna_loweredswitchpath;
 use crate::p2_lift::kuna_o0switch::{self, Form};
 use crate::p2_lift::kuna_loweredswitchheads::{case_body_entered_elsewhere, cascade_heads};
+use crate::p2_lift::kuna_switchrestart::{install_declines, RawSnapshot};
 
 use kuna_base::marshal::ElementId;
 
@@ -209,6 +210,13 @@ pub fn key_for_func(fd: &Funcdata) -> KunaLsKey {
 #[derive(Clone, Debug, Default)]
 pub struct KunaLoweredSwitchStore {
     table: BTreeMap<KunaLsKey, Vec<KunaLoweredSwitchRecord>>,
+    /// (kuna) The raw p-code of the pass now running, kept at the install's slot
+    /// of a pass with no record for its function, with the number of detection
+    /// calls the pass has made ([`kuna_switchrestart`](crate::p2_lift::kuna_switchrestart)).
+    raw: Option<(KunaLsKey, u32, Rc<RawSnapshot>)>,
+    /// (kuna) The record this pass took without a restart because the install
+    /// declines it, until the pass ends.
+    decided: Option<(KunaLsKey, usize)>,
 }
 
 impl KunaLoweredSwitchStore {
@@ -244,6 +252,62 @@ impl KunaLoweredSwitchStore {
     /// The `idx`-th record of `fd`.
     pub fn record_mut(&mut self, fd: &Funcdata, idx: usize) -> Option<&mut KunaLoweredSwitchRecord> {
         self.table.get_mut(&key_for_func(fd)).and_then(|v| v.get_mut(idx))
+    }
+
+    /// At the install's slot: keep `fd`'s raw p-code for this pass when it has no
+    /// record and could hold a cascade, and end a decision taken without a
+    /// restart, since a restarted pass installs for itself.
+    pub(crate) fn begin_pass(&mut self, fd: &Funcdata) {
+        let key = key_for_func(fd);
+        if self.decided.as_ref().is_some_and(|(k, _)| *k == key) {
+            self.decided = None;
+        }
+        self.raw = (!self.has_record(fd) && crate::p2_lift::kuna_switchrestart::worth_capturing(fd))
+            .then(|| (key, 0, Rc::new(RawSnapshot::capture(fd))));
+    }
+
+    /// Count a detection call of `fd`'s pass.
+    pub(crate) fn count_detect(&mut self, fd: &Funcdata) {
+        if let Some((key, calls, _)) = self.raw.as_mut() {
+            if *key == key_for_func(fd) {
+                *calls += 1;
+            }
+        }
+    }
+
+    /// Take `fd`'s kept raw p-code with the number of detection calls its pass made.
+    pub(crate) fn take_raw(&mut self, fd: &Funcdata) -> Option<(u32, Rc<RawSnapshot>)> {
+        match self.raw.take() {
+            Some((key, calls, snap)) if key == key_for_func(fd) => Some((calls, snap)),
+            other => {
+                self.raw = other;
+                None
+            }
+        }
+    }
+
+    /// The record of `fd` this pass took without a restart.
+    pub(crate) fn decided(&self, fd: &Funcdata) -> Option<usize> {
+        match &self.decided {
+            Some((key, idx)) if *key == key_for_func(fd) => Some(*idx),
+            _ => None,
+        }
+    }
+
+    /// End the pass's decision for `fd`: a final pass leaves the record as the
+    /// restarted pass's install would have left it, a pass that restarts anyway
+    /// leaves it to that install.
+    pub(crate) fn settle_decided(&mut self, fd: &Funcdata, restarting: bool) {
+        let Some(idx) = self.decided(fd) else { return };
+        self.decided = None;
+        if restarting {
+            return;
+        }
+        if let Some(rec) = self.record_mut(fd, idx) {
+            if !rec.base_shape && !rec.retry {
+                rec.value.state = ValueState::Withdrawn;
+            }
+        }
     }
 }
 
@@ -1316,6 +1380,7 @@ impl ActionLowerSwitchDetect {
         if data.is_jumptable_recovery_on() {
             return 0;
         }
+        self.store.borrow_mut().count_detect(data);
         // already discovered (sticky); a withdrawn cascade the previous
         // recogniser would not have chosen is retried as that recogniser would.
         let mut skip: Vec<Address> = Vec::new();
@@ -1324,10 +1389,31 @@ impl ActionLowerSwitchDetect {
             let store = self.store.borrow();
             let recs = store.records(data);
             if !recs.iter().all(|r| r.value.state == ValueState::Withdrawn && !r.base_shape && !r.retry) {
+                // A record taken without a restart that the install would have
+                // withdrawn: the restarted pass would retry here.
+                if store.decided(data).is_some_and(|i| !recs[i].base_shape) && !data.has_restart_pending() {
+                    let skip: Vec<Address> = recs.iter().map(|r| r.branch_addr.clone()).collect();
+                    drop(store);
+                    if self.search(data, &skip).is_some() {
+                        data.set_restart_pending(true);
+                    }
+                }
                 return 0;
             }
             skip = recs.iter().map(|r| r.branch_addr.clone()).collect();
         }
+        match self.search(data, &skip) {
+            Some(rec) => {
+                self.record(data, rec);
+                1 // a record was added (the C++ returns 0 to quiesce; see apply note)
+            }
+            None => 0,
+        }
+    }
+
+    /// The first cascade the recogniser takes on `data`, passing over the heads
+    /// at `skip`; a non-empty `skip` is the retry after a withdrawal.
+    fn search(&self, data: &Funcdata, skip: &[Address]) -> Option<KunaLoweredSwitchRecord> {
         let retry = !skip.is_empty();
 
         // Collect comparison-on-constant cascade nodes, grouped by switch variable.
@@ -1377,96 +1463,116 @@ impl ActionLowerSwitchDetect {
             tied.sort_unstable();
             for (_, swvar) in tied {
                 tried.insert(swvar);
-                if self.record_cascade(data, &cmpmap, swvar, &pure_count, &skip) {
-                    return 1; // a record was added (the C++ returns 0 to quiesce; see apply note)
+                if let Some(rec) = find_cascade(data, &cmpmap, swvar, &pure_count, skip) {
+                    return Some(rec);
                 }
             }
         }
-        0
+        None
     }
 
-    /// Record the first cascade on `swvar` that recovers, and request a restart.
-    fn record_cascade(
-        &mut self,
-        data: &mut Funcdata,
-        cmpmap: &BTreeMap<BlockId, CmpNode>,
-        swvar: VarnodeId,
-        pure_count: &BTreeMap<VarnodeId, int4>,
-        skip: &[Address],
-    ) -> bool {
-        let retry = !skip.is_empty();
-        // Find the head: a cascade node for swvar that no other cascade node
-        // continues into.
-        let mut is_child: BTreeSet<BlockId> = BTreeSet::new();
-        let mut is_pure_child: BTreeSet<BlockId> = BTreeSet::new();
-        for (_, cn) in cmpmap.iter() {
-            if cn.var != Some(swvar) {
-                continue;
-            }
-            let succ = [cn.match_out, cn.cont_a, cn.cont_b];
-            for s in succ {
-                let s = match s {
-                    Some(b) if block_type(data, b) == BlockType::Basic => b,
-                    _ => continue,
-                };
-                if let Some(sc) = cmpmap.get(&s) {
-                    if sc.var == Some(swvar) && sc.pure {
-                        is_child.insert(s);
-                        if cn.pure {
-                            is_pure_child.insert(s);
-                        }
+    /// Store `rec` and request the restart that installs it, unless the install
+    /// is known to decline it ([`kuna_switchrestart`](crate::p2_lift::kuna_switchrestart)):
+    /// on the first record of a pass whose raw p-code was kept, a switch the
+    /// install's checks decline on that p-code is stored as the restarted pass
+    /// would leave it, and the function restarts only if the restarted pass's
+    /// retry would find another cascade.
+    fn record(&mut self, data: &mut Funcdata, rec: KunaLoweredSwitchRecord) {
+        let raw = self.store.borrow_mut().take_raw(data);
+        let decided = !rec.retry
+            && raw.is_some_and(|(calls, snap)| (rec.base_shape || calls == 1) && install_declines(&*snap, &rec));
+        let retries = decided && !rec.base_shape;
+        let mut store = self.store.borrow_mut();
+        store.push(data, rec);
+        if decided {
+            store.decided = Some((key_for_func(data), store.records(data).len() - 1));
+        }
+        let skip: Vec<Address> = store.records(data).iter().map(|r| r.branch_addr.clone()).collect();
+        drop(store);
+        if !decided || (retries && self.search(data, &skip).is_some()) {
+            data.set_restart_pending(true);
+        }
+        // STUB(W7): no &mut RestartLog in the Action::apply signature yet (the
+        //   heritage port threads it explicitly); the restart-pending flag is realized.
+    }
+}
+
+/// The first cascade on `swvar` that recovers, passing over the heads at `skip`.
+fn find_cascade(
+    data: &Funcdata,
+    cmpmap: &BTreeMap<BlockId, CmpNode>,
+    swvar: VarnodeId,
+    pure_count: &BTreeMap<VarnodeId, int4>,
+    skip: &[Address],
+) -> Option<KunaLoweredSwitchRecord> {
+    let retry = !skip.is_empty();
+    // Find the head: a cascade node for swvar that no other cascade node
+    // continues into.
+    let mut is_child: BTreeSet<BlockId> = BTreeSet::new();
+    let mut is_pure_child: BTreeSet<BlockId> = BTreeSet::new();
+    for (_, cn) in cmpmap.iter() {
+        if cn.var != Some(swvar) {
+            continue;
+        }
+        let succ = [cn.match_out, cn.cont_a, cn.cont_b];
+        for s in succ {
+            let s = match s {
+                Some(b) if block_type(data, b) == BlockType::Basic => b,
+                _ => continue,
+            };
+            if let Some(sc) = cmpmap.get(&s) {
+                if sc.var == Some(swvar) && sc.pure {
+                    is_child.insert(s);
+                    if cn.pure {
+                        is_pure_child.insert(s);
                     }
                 }
             }
         }
-        let spine: BTreeSet<BlockId> =
-            cmpmap.iter().filter(|(_, cn)| cn.var == Some(swvar)).map(|(bl, _)| *bl).collect();
-        // The variable a recogniser counting only compare-only blocks would pick.
-        let pure_best = pure_count.values().copied().max().unwrap_or(0);
-        let picked_by_pure = pure_count.get(&swvar).copied().unwrap_or(0) == pure_best && pure_best >= 2;
-        // The heads of the whole spine, then the heads of its compare-only part
-        // that a head holding other code ran into.
-        let mut heads = if retry { Vec::new() } else { cascade_heads(&spine, &is_child) };
-        let pure_spine: BTreeSet<BlockId> =
-            spine.iter().copied().filter(|bl| cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
-        for h in cascade_heads(&pure_spine, &is_pure_child) {
-            if !heads.contains(&h) {
-                heads.push(h);
-            }
-        }
-        // A later head must not be entered from elsewhere; heads holding other
-        // code are ranked apart, so they never demote a compare-only head.
-        let mut earlier = [0usize; 2];
-        for root in heads {
-            let pure = cmpmap.get(&root).is_some_and(|cn| cn.pure);
-            let i = earlier[pure as usize];
-            earlier[pure as usize] += 1;
-            let head = advance_past_guards(data, root, cmpmap, swvar);
-            let spine: BTreeSet<BlockId> =
-                spine.iter().copied().filter(|bl| *bl == head || cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
-            let mut rec = match recover_cascade(data, head, cmpmap, swvar, !retry) {
-                Some(r) => r,
-                None => continue,
-            };
-            rec.base_shape &= picked_by_pure;
-            rec.retry = retry;
-            if skip.contains(&rec.branch_addr) {
-                continue;
-            }
-            if rec.spine.is_empty() && !record_is_exact(data, head, &spine, swvar, &rec) {
-                continue;
-            }
-            if i > 0 && (data.bblocks_ref().block(head).size_in() > 1 || case_body_entered_elsewhere(data, head, &rec)) {
-                continue;
-            }
-            self.store.borrow_mut().push(data, rec);
-            data.set_restart_pending(true);
-            // STUB(W7): no &mut RestartLog in the Action::apply signature yet (the
-            //   heritage port threads it explicitly); the restart-pending flag is realized.
-            return true;
-        }
-        false
     }
+    let spine: BTreeSet<BlockId> =
+        cmpmap.iter().filter(|(_, cn)| cn.var == Some(swvar)).map(|(bl, _)| *bl).collect();
+    // The variable a recogniser counting only compare-only blocks would pick.
+    let pure_best = pure_count.values().copied().max().unwrap_or(0);
+    let picked_by_pure = pure_count.get(&swvar).copied().unwrap_or(0) == pure_best && pure_best >= 2;
+    // The heads of the whole spine, then the heads of its compare-only part
+    // that a head holding other code ran into.
+    let mut heads = if retry { Vec::new() } else { cascade_heads(&spine, &is_child) };
+    let pure_spine: BTreeSet<BlockId> =
+        spine.iter().copied().filter(|bl| cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
+    for h in cascade_heads(&pure_spine, &is_pure_child) {
+        if !heads.contains(&h) {
+            heads.push(h);
+        }
+    }
+    // A later head must not be entered from elsewhere; heads holding other
+    // code are ranked apart, so they never demote a compare-only head.
+    let mut earlier = [0usize; 2];
+    for root in heads {
+        let pure = cmpmap.get(&root).is_some_and(|cn| cn.pure);
+        let i = earlier[pure as usize];
+        earlier[pure as usize] += 1;
+        let head = advance_past_guards(data, root, cmpmap, swvar);
+        let spine: BTreeSet<BlockId> =
+            spine.iter().copied().filter(|bl| *bl == head || cmpmap.get(bl).is_some_and(|cn| cn.pure)).collect();
+        let mut rec = match recover_cascade(data, head, cmpmap, swvar, !retry) {
+            Some(r) => r,
+            None => continue,
+        };
+        rec.base_shape &= picked_by_pure;
+        rec.retry = retry;
+        if skip.contains(&rec.branch_addr) {
+            continue;
+        }
+        if rec.spine.is_empty() && !record_is_exact(data, head, &spine, swvar, &rec) {
+            continue;
+        }
+        if i > 0 && (data.bblocks_ref().block(head).size_in() > 1 || case_body_entered_elsewhere(data, head, &rec)) {
+            continue;
+        }
+        return Some(rec);
+    }
+    None
 }
 
 impl Action for ActionLowerSwitchDetect {
@@ -1615,6 +1721,9 @@ impl ActionLowerSwitchInstall {
         // ActionHeritage rebuilds SSA over the corrected CFG.
         if data.get_heritage_pass() != 0 {
             return 0;
+        }
+        if !data.is_jumptable_recovery_on() {
+            self.store.borrow_mut().begin_pass(data);
         }
         let store = self.store.borrow();
         if !store.has_record(data) {

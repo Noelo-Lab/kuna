@@ -339,6 +339,12 @@ impl RawSnapshot {
     }
 }
 
+impl std::fmt::Debug for RawSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RawSnapshot").field("blocks", &self.order.len()).field("ops", &self.ops.len()).finish()
+    }
+}
+
 impl RawIr for RawSnapshot {
     type Op = SnapOp;
     type Vn = SnapVn;
@@ -396,6 +402,9 @@ impl RawIr for RawSnapshot {
 /// Whether the function's raw p-code has the two conditional branches a cascade
 /// needs, so a snapshot of it can matter.
 pub(crate) fn worth_capturing(data: &Funcdata) -> bool {
+    if data.bblocks_ref().root.is_none() {
+        return false;
+    }
     let mut cbranches = 0;
     for i in 0..data.bblocks_get_size() {
         let tail = data.bb_op_tail(data.bblocks_get_block(i));

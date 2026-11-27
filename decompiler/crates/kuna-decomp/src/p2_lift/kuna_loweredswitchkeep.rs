@@ -208,6 +208,7 @@ impl ActionLowerSwitchKeep {
         if withdrawn {
             data.set_restart_pending(true);
         }
+        self.store.borrow_mut().settle_decided(data, data.has_restart_pending());
         withdrawn
     }
 }

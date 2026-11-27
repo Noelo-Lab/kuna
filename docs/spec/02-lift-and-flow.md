@@ -3595,6 +3595,43 @@ A chain compared against the addresses of symbols (readline's
 print the symbols' names, which no case label can spell
 (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_loweredswitch.rs (case_vals_name_symbols)`).
 
+### Deciding the install before restarting for it (part of `loweredswitch`)
+
+Detection restarts the function so that the install can edit the raw p-code
+before heritage. When the install then declines (a target is not the start of a
+raw block, a deleted compare block writes a value the raw p-code reads again, a
+case body is shared on the raw graph, the head compare does not read the load the
+selector came from), the restarted pass prints exactly what the first pass
+printed, and the restart only doubled the function's cost: on bash at `-O2` that
+was more than half of what `loweredswitch` costs. Everything the install decides
+before it edits reads the raw p-code at its slot in the first mainloop iteration,
+and a restart lifts the same p-code again (it follows the same flow; only the ids
+of call specifications differ, and no check reads them).
+
+So the install's slot of a pass with no record for its function keeps a flat copy
+of that p-code, when the function has two conditional branches: the basic blocks
+in order with their edges and ops, every varnode an op reads or writes, the
+prototype and the jump tables
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchrestart.rs (RawSnapshot)`).
+The install's checks take a read-only view that the function and the copy both
+implement (`kuna_switchrestart.rs (RawIr)`), and for the first record of the pass
+detection runs them on the copy (`kuna_switchrestart.rs (install_declines)`) when
+the switch would go straight to its case bodies; an install along the raw paths
+of the tree edits the graph before its last checks and always restarts.
+
+A cascade the checks decline is recorded without a restart, as the restarted
+pass would have left it. The binary-search tree the recogniser always took stays
+a pending record, as a declined install leaves it. Any other record the
+restarted install would withdraw, and the restarted detection would then look,
+at every fullloop iteration, for the cascade the previous recogniser would have
+chosen. Such a record is taken this way only at the pass's first detection call,
+and detection runs that search, without recording, at each call of the pass;
+when it finds a cascade the function restarts after all, and the restarted pass
+declines and retries as it always did. At the end of a pass that does not
+restart, `kuna_loweredswitchkeep.rs (ActionLowerSwitchKeep)` withdraws that
+record, as the install would have; a pass that restarts for any other reason
+leaves it to the restarted pass's install. The output does not change.
+
 ### Bound extensions: rescuing an unboundable table
 
 Four gated extensions run, in this order, only when JumpBasic's range exceeds
