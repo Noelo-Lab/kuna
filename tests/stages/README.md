@@ -533,6 +533,7 @@ writeup, not here.
 | `kuna-rex-before-prefix.xml` | Authored x86-64 prefix order | S1 decode-table (x86 spec-fix, no option) | a REX prefix that a legacy prefix follows is ignored, as the CPU ignores it (`f3 48 67 ab` is `rep stos` of dwords with a 32-bit address; `48 67 f3 48 a5` keeps the last REX.W), instead of the legacy prefix decoding as a bad opcode |
 
 | `gh1674-subpiece-shadow-wide-const.xml` | [Kuna #1674](https://github.com/Noelo-Lab/kuna/issues/1674) | P6 merge (cover intersection, partial copy shadow; no option) | a constant truncated by 8 or more bytes reads 0 instead of shifting a 64-bit offset by 64 or more bits, so the function decompiles in a build with overflow checks |
+| `gh1793-outparam-argslot.xml` | [Kuna #1793](https://github.com/Noelo-Lab/kuna/issues/1793) | P6 variable naming (an address-taken incoming stack slot that the final prototype does not claim is mapped as a local before naming, `kuna_paramareaslot.rs`; correctness fix, no option) | default, single pass on hand-assembled Win64: the out-parameter `&slot` and the loads after the call print as one `v2`, including a slot cleared before the call and one refilled in a loop; a slot the prototype takes as a parameter keeps `&a4`, and two ints set by one store or a slot whose address is indexed are not mapped as one scalar |
 
 | `gh9184-x86-fma-ymm256.xml` | [GH-9184](https://github.com/NationalSecurityAgency/ghidra/issues/9184) | S1/S2 decode + pcode-semantics (x86 spec-fix, no option) | SLEIGH YMM FMA uses 256-bit `local tmp:32` (was `tmp:16`) |
 
