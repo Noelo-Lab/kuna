@@ -1531,6 +1531,19 @@ specific. A call whose candidates have generic parameter types, whose arguments 
 lambda or a type kuna cannot resolve, or whose method is varargs or not strictly
 applicable keeps Vineflower's casts.
 
+**A varargs spread beside a generic overload (kuna).** `vararg_spread_resolution` keeps a
+varargs array written as an array when another overload is applicable to the spread
+arguments, judged by erasure, so `of(c)` for `of(Chromosome<G>, Chromosome<G>...)` printed
+as `of(c, new Chromosome[0])` beside `of(Iterable<? extends Chromosome<G>>)`, whose erasure
+takes any `Iterable`; the raw array then makes the call unchecked. Such an overload is not a
+rival when its generic signature provably rejects an argument: the argument's class gives
+the parameter's class known type arguments (through the class signatures of its supertypes),
+and one of them is not contained by the parameter's (JLS 4.5.1): for `? extends B` a class
+that is not a subclass of `B`'s, for `? super B` one `B`'s class is not a subclass of, for
+`B` another class. Subtyping implies these relations of the erasures, so the test is sound
+only when the classes compared have every supertype but `Object` in the class context; when
+one is missing the array stays.
+
 **Expression types.** A switch expression's or conditional's type is the join of its arms
 (their nearest common ancestor, or `Object` when the class universe knows none). Writing
 the arms or a cast against that join breaks Java's typing: a literal cannot have the join

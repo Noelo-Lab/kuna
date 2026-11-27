@@ -2220,3 +2220,5 @@ case	kuna-fixes/pkg/TestWildcardArrayBound	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestQualifiedSuperEmpty	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedSuperEmpty
 # kuna-fixes/src/pkg/TestSelectingCast.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestSelectingCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSelectingCast
+# kuna-fixes/src/pkg/TestVarargsGenericRival.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestVarargsGenericRival	Kuna Fixes	kuna-fixes/classes/pkg/TestVarargsGenericRival
