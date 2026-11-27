@@ -1263,7 +1263,7 @@ Kotlin declaration. `resugar_kotlin_methods_pass.rs` matches calls of the Kotlin
 the `Intrinsics.checkNotNull...` checks the compiler inserts for non-null parameters and
 values are removed, `Intrinsics.areEqual(a, b)` becomes `a == b`, `x != null ? x : y`
 (with `x` a variable) becomes `x ?: y`, and `Reflection.getOrCreateKotlinClass(C.class)`
-becomes `C::class`. `collapse_string_concat_pass.rs`, under `jvm_kt_collapse_string_concat`,
+becomes `C::class`. `collapse_string_concat_pass.rs`
 flattens nested string concatenations into one string template (`"count=${c.count}"`), and
 the last pass replaces `continue` with `break` where Java's tail does.
 

@@ -9,7 +9,6 @@ pub struct KotlinOptions;
 impl KotlinOptions {
     pub const DECOMPILE_KOTLIN: &'static str = "kt-enable";
     pub const UNKNOWN_DEFAULT_ARG_STRING: &'static str = "kt-unknown-defaults";
-    pub const COLLAPSE_STRING_CONCATENATION: &'static str = "kt-collapse-string-concat";
     pub const DECOMPILE_FACADES: &'static str = "kt-decompile-facades";
 
     /// The option fields, in declaration order.
@@ -35,15 +34,6 @@ impl KotlinOptions {
             dynamic_default_value: None,
         },
         PreferenceOption {
-            field: "COLLAPSE_STRING_CONCATENATION",
-            key: KotlinOptions::COLLAPSE_STRING_CONCATENATION,
-            short_name: None,
-            name: Some("Collapse string concatenation"),
-            description: Some("Convert string concatenations to Kotlin string templates."),
-            type_: Some(OptionType::Boolean),
-            dynamic_default_value: None,
-        },
-        PreferenceOption {
             field: "DECOMPILE_FACADES",
             key: KotlinOptions::DECOMPILE_FACADES,
             short_name: None,
@@ -59,7 +49,6 @@ impl KotlinOptions {
     pub fn add_defaults(cons: &mut dyn AddDefaults) {
         cons.add_default(KotlinOptions::DECOMPILE_KOTLIN, "1");
         cons.add_default(KotlinOptions::UNKNOWN_DEFAULT_ARG_STRING, "...");
-        cons.add_default(KotlinOptions::COLLAPSE_STRING_CONCATENATION, "1");
         cons.add_default(KotlinOptions::DECOMPILE_FACADES, "0");
     }
 }

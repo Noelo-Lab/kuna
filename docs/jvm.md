@@ -799,7 +799,6 @@ each also answers to Vineflower's name (`kt-enable`, ...):
 | Option | Default | Effect |
 |---|---|---|
 | `jvm_kt_enable` | `on` | write Kotlin classes as Kotlin; `off` writes them as Java with the `@Metadata` annotation |
-| `jvm_kt_collapse_string_concat` | `on` | write string concatenations as string templates (`"count=${c.count}"`); `off` keeps `"count=" + c.count` |
 | `jvm_kt_decompile_facades` | `off` | also write the forwarding functions of a multifile facade (`@file:JvmMultifileClass`), not only the comment listing its parts |
 
 **Known limits.** The Kotlin output is Vineflower's, so it has Vineflower's gaps, apart
