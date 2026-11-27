@@ -754,7 +754,8 @@ analysis recovers evidence for that function. A Java call records its native
 `owner` and `site`, dispatch and argument form, and a list of targets with
 class, name, JVM descriptor and native `lookup` instruction. A known class
 also supplies a JVM `key` such as `Ltest/Bridge;->count(I)I`. A null class
-leaves the key null. `incomplete` means some paths have an unresolved target.
+leaves the key null. `incomplete` means some paths have an unresolved target;
+an ID read from a cache, or a call inside a helper, is always incomplete.
 A Binder service records its interface `descriptor`, the `define_site`
 instruction and the `create`, `destroy` and `transact` callbacks. Each
 transaction carries its numeric `code`, a nullable method `name` and a

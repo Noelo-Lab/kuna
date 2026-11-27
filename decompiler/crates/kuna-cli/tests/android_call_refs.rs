@@ -61,7 +61,7 @@ fn method_ids_survive_helpers_and_caches_on_all_android_abis() {
         assert_eq!(cached.len(), 1, "{abi}: {cached:?}");
         let call = &cached[0];
         assert_eq!(keys(call), BTreeSet::from([key]), "{abi}");
-        assert_eq!(call["incomplete"], false);
+        assert_eq!(call["incomplete"], true, "{abi}: a cached ID can be replaced by unwalked code");
         assert_eq!(call["dispatch"], "virtual");
         assert_ne!(call["site"], call["targets"][0]["lookup"]);
         let by_pc = json(&[
@@ -145,11 +145,11 @@ fn method_ids_survive_helpers_and_caches_on_all_android_abis() {
 #[test]
 fn distinct_dispatch_families_and_uncertain_handles_remain_distinguishable() {
     let lib = image("android-java-calls", ABIS[0]);
-    for (key, dispatch, form) in [
-        ("Ldemo/Player;->reset(I)V", "static", "A"),
-        ("Ldemo/Player;-><init>(I)V", "constructor", "A"),
-        ("Ldemo/Player;->step(I)V", "nonvirtual", "variadic"),
-        ("Ldemo/Player;->step(I)V", "virtual", "V"),
+    for (key, dispatch, form, complete) in [
+        ("Ldemo/Player;->reset(I)V", "static", "A", true),
+        ("Ldemo/Player;-><init>(I)V", "constructor", "A", true),
+        ("Ldemo/Player;->step(I)V", "nonvirtual", "variadic", true),
+        ("Ldemo/Player;->step(I)V", "virtual", "V", false),
     ] {
         let reverse = json(&["xrefs", &lib, "--to", key, "--kind", "java-call", "--json"]);
         assert!(
@@ -159,7 +159,7 @@ fn distinct_dispatch_families_and_uncertain_handles_remain_distinguishable() {
                 .iter()
                 .any(|r| r["dispatch"] == dispatch
                     && r["form"] == form
-                    && r["incomplete"] == false),
+                    && r["incomplete"] == !complete),
             "{reverse}"
         );
     }
@@ -174,7 +174,7 @@ fn distinct_dispatch_families_and_uncertain_handles_remain_distinguishable() {
     let rows = refs(&lib, "references");
     assert!(rows
         .iter()
-        .any(|r| r["incomplete"] == false && keys(r).contains("Ldemo/Player;->fromGlobal()V")));
+        .any(|r| r["incomplete"] == true && keys(r).contains("Ldemo/Player;->fromGlobal()V")));
     for name in ["fromLocal", "fromWeak"] {
         assert!(
             rows.iter().any(|r| r["incomplete"] == true

@@ -20,5 +20,5 @@
   <com>quit</com>
 </script>
 <stringmatch name="both runs call through the JNI environment" min="2" max="2">CallVoidMethod</stringmatch>
-<stringmatch name="the default annotates the cached Java lookup" min="1" max="1">/\* Ldemo/Player;-&gt;seek\(I\)V \*/</stringmatch>
+<stringmatch name="the default annotates the cached Java lookup" min="1" max="1">/\* Ldemo/Player;-&gt;seek\(I\)V \| unresolved target \*/</stringmatch>
 </decompilertest>

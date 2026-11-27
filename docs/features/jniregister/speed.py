@@ -19,7 +19,7 @@ from scripts import decompile, paths
 
 CASES = {
     "jniregister": ("android-jni", "0x48c0", "countBytes"),
-    "jnicalls": ("android-java-calls", "Java_demo_Bridge_cached__Ldemo_Player_2I", "/* Ldemo/Player;->seek(I)V */"),
+    "jnicalls": ("android-java-calls", "Java_demo_Bridge_cached__Ldemo_Player_2I", "/* Ldemo/Player;->seek(I)V | unresolved target */"),
     "ndkbinder": ("android-binder", "0x4ac4", "readLevel"),
 }
 

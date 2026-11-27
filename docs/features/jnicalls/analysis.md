@@ -12,10 +12,13 @@ kuna xrefs tests/fixtures/android-java-calls/aarch64-linux-android.so \
 
 Both rows have a native call address and a separate lookup instruction. A
 lookup class identifies the class used to resolve the ID. The VM chooses
-the implementation for virtual dispatch at runtime. The same mock has a
-conditional choice of two IDs, a global overwritten through another function,
-and a primitive native entry that calls through an unrelated table. Only the
-first two produce Java call records; the overwritten ID remains incomplete.
+the implementation for virtual dispatch at runtime. The cached row is
+incomplete: code the walk does not reach, such as a function called only
+through a pointer, could store another ID in the cache. A call inside a
+helper is incomplete for the same reason. The same mock has a conditional
+choice of two IDs, a global overwritten through another function, and a
+primitive native entry that calls through an unrelated table. Only the
+first two produce Java call records.
 
 The option's speed record times single-function decompilation of the cached
 caller. Each measured run loads the ELF in a fresh release console and checks

@@ -232,7 +232,6 @@ struct Flow<'a, 'd> {
     calls: BTreeMap<(u64, u64), JavaCall>,
     instructions: BTreeMap<u64, Instruction>,
     writes: Writes,
-    escaped: BTreeSet<Slot>,
     cap: usize,
     limited: bool,
     local_hypothesis: bool,
@@ -462,7 +461,6 @@ impl Flow<'_, '_> {
                 continue;
             };
             if slot.0 == Place::Data && self.writable(slot.1) {
-                self.escaped.insert(slot);
                 self.store(st, slot, None);
             } else if slot.0 == Place::Stack {
                 st.write(slot, Some(Value::Unknown));
@@ -927,6 +925,8 @@ fn roots(
 }
 
 /// Recover proven JNI call sites and indicate whether a resource or decoding limit cut the search short.
+/// An ID read from a cache, or a call inside a helper, stays incomplete: code the walk does not reach
+/// can store another ID or call the helper with one.
 pub fn java_calls<'d>(
     file: &'d object::File<'d>,
     bytes: &'d [u8],
@@ -965,11 +965,11 @@ pub fn java_calls<'d>(
         calls: BTreeMap::new(),
         instructions: BTreeMap::new(),
         writes: BTreeMap::new(),
-        escaped: BTreeSet::new(),
         cap: 65536,
         limited: false,
         local_hypothesis: false,
     };
+    let hook_entries = hooks.clone();
     let mut initialized = State::default();
     for hook in hooks {
         let exits = flow.root(
@@ -1000,11 +1000,6 @@ pub fn java_calls<'d>(
     let mut converged = false;
     let mut inspect_external = true;
     let mut unbounded_writers = false;
-    let public_slots: Vec<_> = file
-        .dynamic_symbols()
-        .filter(|s| s.is_definition() && !s.is_local() && s.kind() == SymbolKind::Data)
-        .map(|s| s.address()..s.address().saturating_add(s.size().max(1)))
-        .collect();
     for _ in 0..4 {
         flow.calls = initial_calls.clone();
         for (&raw, args) in &roots {
@@ -1052,19 +1047,7 @@ pub fn java_calls<'d>(
                 continue;
             }
             let mut candidates = values.clone();
-            if unbounded_writers
-                || public_slots.iter().any(|r| r.contains(&slot.1))
-                || initialized.read(slot).is_none()
-                || flow.escaped.contains(&slot)
-                || flow.writes.keys().any(|&other| {
-                    other != slot
-                        && other.0 == slot.0
-                        && other.1.saturating_sub(slot.1) < u64::from(slot.2)
-                        && slot.1.saturating_sub(other.1) < u64::from(other.2)
-                })
-            {
-                candidates.insert(Value::Unknown);
-            }
+            candidates.insert(Value::Unknown);
             next.write(slot, Some(flow.handles.join(candidates)));
         }
         if next == cache {
@@ -1077,6 +1060,14 @@ pub fn java_calls<'d>(
         cache = next;
     }
     let mut proven = std::mem::take(&mut flow.calls);
+    let entries: BTreeSet<u64> = roots
+        .keys()
+        .chain(&hook_entries)
+        .map(|&raw| flow.image.pc(raw))
+        .collect();
+    for c in proven.values_mut() {
+        c.incomplete |= !entries.contains(&c.owner);
+    }
     if flow.limited || !converged {
         for c in proven.values_mut() {
             c.incomplete = true;

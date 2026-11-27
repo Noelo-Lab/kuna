@@ -3400,7 +3400,11 @@ lookups and their raw JVM descriptors through register copies, spills, helper
 arguments and returns, and fixed cache fields. Initialization and cache writes
 are analyzed for the image before a function is selected. Writes that can
 conflict, an address passed to an unknown writer, and control-flow alternatives
-limit the result to candidates or an unknown lookup. A class name identifies the
+limit the result to candidates or an unknown lookup. A cached value is always
+a candidate set that includes an unknown lookup, and a call inside a helper is
+always incomplete, because code the walk does not reach can store another ID
+or call the helper with one. A call is complete only when the JNI entry, or
+JNI_OnLoad, looks up its ID itself on every path. A class name identifies the
 class used for lookup; class loaders, inheritance and virtual dispatch can change
 the runtime implementation. A native address identifies each invocation and its
 lookup evidence. Exact keys can be queried in either direction in `xrefs`.
