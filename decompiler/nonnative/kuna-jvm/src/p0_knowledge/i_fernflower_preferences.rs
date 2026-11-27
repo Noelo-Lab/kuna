@@ -32,7 +32,6 @@ impl IFernflowerPreferences {
     pub const OLD_TRY_DEDUP: &str = "old-try-dedup";
     pub const INCLUDE_ENTIRE_CLASSPATH: &str = "include-classpath";
     pub const INCLUDE_JAVA_RUNTIME: &str = "include-runtime";
-    pub const EXPLICIT_GENERIC_ARGUMENTS: &str = "explicit-generics";
     pub const LOG_LEVEL: &str = "log-level";
     pub const MAX_PROCESSING_METHOD: &str = "max-time-per-method";
     pub const RENAME_ENTITIES: &str = "rename-members";
@@ -99,7 +98,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::DECOMPILE_PREVIEW, "1".to_string()),
             (IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH, "0".to_string()),
             (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "1".to_string()),
-            (IFernflowerPreferences::EXPLICIT_GENERIC_ARGUMENTS, "0".to_string()),
             (IFernflowerPreferences::LOG_LEVEL, Severity::Info.name().to_string()),
             (IFernflowerPreferences::MAX_PROCESSING_METHOD, "0".to_string()),
             (IFernflowerPreferences::RENAME_ENTITIES, "0".to_string()),
@@ -188,7 +186,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "OLD_TRY_DEDUP", key: IFernflowerPreferences::OLD_TRY_DEDUP, short_name: None, name: Some("[Experimental] Use old try deduplication"), description: Some("Use the old try deduplication algorithm for methods with obfuscated exceptions, which inserts dummy exception handlers instead of duplicating blocks"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "INCLUDE_ENTIRE_CLASSPATH", key: IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH, short_name: Some("iec"), name: Some("Include Entire Classpath"), description: Some("Give the decompiler information about every jar on the classpath."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "INCLUDE_JAVA_RUNTIME", key: IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, short_name: Some("jrt"), name: Some("Include Java Runtime"), description: Some("Give the decompiler information about the Java runtime, either 1 or current for the current runtime, or a path to another runtime"), type_: Some(OptionType::String), dynamic_default_value: None },
-    PreferenceOption { field: "EXPLICIT_GENERIC_ARGUMENTS", key: IFernflowerPreferences::EXPLICIT_GENERIC_ARGUMENTS, short_name: Some("ega"), name: Some("Explicit Generic Arguments"), description: Some("Put explicit diamond generic arguments on method calls."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "LOG_LEVEL", key: IFernflowerPreferences::LOG_LEVEL, short_name: Some("log"), name: Some("Logging Level"), description: Some("Logging level. Must be one of: 'info', 'debug', 'warn', 'error'."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "MAX_PROCESSING_METHOD", key: IFernflowerPreferences::MAX_PROCESSING_METHOD, short_name: Some("mpm"), name: Some("[DEPRECATED] Max time to process method"), description: Some("Maximum time in seconds to process a method. This is deprecated, do not use."), type_: Some(OptionType::Integer), dynamic_default_value: None },
     PreferenceOption { field: "RENAME_ENTITIES", key: IFernflowerPreferences::RENAME_ENTITIES, short_name: Some("ren"), name: Some("Rename Members"), description: Some("Rename classes, fields, and methods with a number suffix to help in deobfuscation."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

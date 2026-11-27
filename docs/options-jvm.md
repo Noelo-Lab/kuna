@@ -98,8 +98,6 @@ Three tiers:
 | var1 var2 names although debug info exists (option is off) | [`jvm_use_lvt_names`](#jvm_use_lvt_names----on--off-default-on) |
 | parameter names differ from the debug-info names | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
 | unexpected final on parameters | [`jvm_use_method_parameters`](#jvm_use_method_parameters----on--off-default-on) |
-| decompiled code fails to recompile with an inference error | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
-| need the type argument of a generic method call | [`jvm_explicit_generics`](#jvm_explicit_generics----on--off-default-off) |
 | /* $VF: ... */ and // $VF: comments clutter the output | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | need to know where the decompiler approximated (option is off) | [`jvm_decompiler_comments`](#jvm_decompiler_comments----on--off-default-on) |
 | stack trace names lambda$main$0 or Main$1 and the matching code is hard to find | [`jvm_mark_corresponding_synthetics`](#jvm_mark_corresponding_synthetics----on--off-default-off) |
@@ -325,15 +323,6 @@ How the text is written: its language (Java, or Kotlin for Kotlin classes), form
 - **Where / provenance:** p9_emit/class_writer, var_definition_helper · vineflower · vineflower-option
 - **Also spelled:** `use-method-parameters`, `ump`
 - **Example:** `kuna decompile app.jar com.ex.Api --option jvm_use_method_parameters off`
-
-### `jvm_explicit_generics` -- on | off, default `off`
-
-- **Symptoms:** decompiled code fails to recompile with an inference error; need the type argument of a generic method call.
-- **What it does:** Write the type arguments of generic method calls explicitly (Collections.<String>emptyList(), this.<T>cast(x)) even where javac would infer them.
-- **When to flip:** Turn on when the decompiled code fails to compile on type inference, or to see which type a generic call was instantiated with.
-- **Where / provenance:** substrate/invocation_exprent · vineflower · vineflower-option
-- **Also spelled:** `explicit-generics`, `ega`
-- **Example:** `kuna decompile app.jar com.ex.Repo --option jvm_explicit_generics on`
 
 ### `jvm_decompiler_comments` -- on | off, default `on`
 

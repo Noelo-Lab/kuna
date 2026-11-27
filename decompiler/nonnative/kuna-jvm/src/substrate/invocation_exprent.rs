@@ -1063,11 +1063,7 @@ impl InvocationExprent {
                             suppress = false;
                         }
 
-                        if !suppress
-                            || DecompilerContext::get_option(
-                                IFernflowerPreferences::EXPLICIT_GENERIC_ARGUMENTS,
-                            )
-                        {
+                        if !suppress {
                             let generics_map = self.d(|d| d.generics_map.clone());
                             let mut generic_args =
                                 self.d_mut(|d| std::mem::take(&mut d.generic_args));

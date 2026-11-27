@@ -919,8 +919,8 @@ the engine can see;
 `jvm_mark_corresponding_synthetics` names the synthetic method behind each lambda and the
 class behind each anonymous class in a comment; `jvm_decompiler_comments` controls every `$VF:` note
 the passes above attached to a method. Lambdas are written inline at their use, without
-braces when the body is one expression. Generic method calls
-carry explicit type arguments under `jvm_explicit_generics`. Constants print as source
+braces when the body is one expression. A generic method call carries explicit type
+arguments only where inference needs them. Constants print as source
 does: `Double.NaN`, `Long.MAX_VALUE` and `Math.PI` rather than their values unless
 `jvm_keep_literals` is on, and non-ASCII characters escaped only under
 `jvm_ascii_strings` (`decompiler/nonnative/kuna-jvm/src/substrate/const_exprent.rs`).

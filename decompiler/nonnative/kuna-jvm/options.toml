@@ -408,28 +408,6 @@ tier = "analysis"
 symptoms = "extra casts on calls into java.util or java.lang|@Override missing on JDK interface methods|generic arguments of JDK types erased|output differs between machines with different JDKs|no JDK found note on stderr"
 
 [[option]]
-option = "jvm_explicit_generics"
-vineflower = "explicit-generics"
-short = "ega"
-aliases = ["explicit-generics", "ega"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "substrate"
-subphase = "invocation_exprent"
-strength = "HARD"
-rewind = "substrate"
-issue = ""
-summary = "Write the type arguments of generic method calls explicitly (Collections.<String>emptyList(), this.<T>cast(x)) even where javac would infer them."
-use_when = "Turn on when the decompiled code fails to compile on type inference, or to see which type a generic call was instantiated with."
-example = "kuna decompile app.jar com.ex.Repo --option jvm_explicit_generics on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.EXPLICIT_GENERIC_ARGUMENTS (explicit-generics, -ega)"
-change_kind = "vineflower-option"
-tier = "core"
-symptoms = "decompiled code fails to recompile with an inference error|need the type argument of a generic method call"
-
-[[option]]
 option = "jvm_rename_members"
 vineflower = "rename-members"
 short = "ren"
