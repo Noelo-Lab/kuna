@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5592,
-    5592
+    5603,
+    5603
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2470,6 +2470,17 @@
     "data:Pool fall-through #2",
     "data:Pool fall-through #3",
     "data:Pool fall-through #4",
+    "data:QUOTIENTRETURN #10: the double is the remainder",
+    "data:QUOTIENTRETURN #11: xmm1 alone leaves the quotient the return",
+    "data:QUOTIENTRETURN #1: idiv then cvtsi2ss returns the float",
+    "data:QUOTIENTRETURN #2: the float is the remainder",
+    "data:QUOTIENTRETURN #3: a path that never writes rax returns the float",
+    "data:QUOTIENTRETURN #4: the other paths of pick and scale convert the parameter",
+    "data:QUOTIENTRETURN #5: a path that converts rax returns the float",
+    "data:QUOTIENTRETURN #6: the div path returns its remainder",
+    "data:QUOTIENTRETURN #7: only the stored float leaves the quotient the return",
+    "data:QUOTIENTRETURN #8: the stored float is kept",
+    "data:QUOTIENTRETURN #9: div rsi then cvtsi2sd returns the double",
     "data:RANGETEST #10: merged keeps the unsigned char test",
     "data:RANGETEST #11: merged keeps the int test",
     "data:RANGETEST #12: merged keeps the returned test",

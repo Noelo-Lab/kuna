@@ -497,6 +497,7 @@ fn switch_targets(
             settled: false,
             named: None,
             next_table: None,
+            entered: None,
         },
     );
     if read.unbounded {
