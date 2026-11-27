@@ -1033,7 +1033,7 @@ kuna	f278332b5b439da3
 case	default/pkg/TestTryCatchFinally	Default	classes/java8/pkg/TestTryCatchFinally
 kuna	c812acabba592b5d
 case	default/pkg/TestTryCatchNested	Default	classes/java8/pkg/TestTryCatchNested
-kuna	def18eb23a88430a
+kuna	24a96cf5552f40d5
 case	default/pkg/TestTryFinally	Default	classes/java8/pkg/TestTryFinally
 kuna	403ca25862ad9a2a
 case	default/pkg/TestTryLoop	Default	classes/java8/pkg/TestTryLoop
@@ -2058,3 +2058,5 @@ case	kuna-fixes/pkg/TestExitCopiedIntoTry	Kuna Fixes	kuna-fixes/classes/pkg/Test
 case	kuna-fixes/pkg/TestRecordPatternInstanceofType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternInstanceofType
 # kuna-fixes/src/pkg/TestStaticInitAfterCall.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestStaticInitAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitAfterCall
+# kuna-fixes/src/pkg/TestNestedAlreadyCaught.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestNestedAlreadyCaught	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedAlreadyCaught

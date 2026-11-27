@@ -332,7 +332,15 @@ and `DeadCodeHelper`:
    that protects the same code. When a range's handler starts that way and another range
    covers its protected blocks, that instruction is split into a block of its own and put
    back into the outer range, so a nested `try` stays inside the outer one. Ranges with
-   the same handler and exception types are considered together.
+   the same handler and exception types are considered together. Vineflower takes a range
+   for the outer one only when it protects more blocks: over the same blocks two handlers
+   are as often the `catch` clauses of one `try`. (kuna) The class file decides it when the
+   later handler catches a type the earlier one already catches (the same class or a
+   subclass): javac rejects that as a second `catch` of one `try` (`exception Exception has
+   already been caught`), and compiles `try { try { A } catch (E e) {} } catch (E f) { B }`
+   with both ranges over `A` alone, so the later range is the outer one
+   (`decompiler/managed/kuna-jvm/src/fixes/exception_ranges/already_caught.rs`). Without the
+   classes in the input or the runtime, only the same class is decided.
 3. `remove_empty_ranges` - a range that protects no
    instructions is dropped together with its exception edges, and the method gets a
    `$VF: Removed empty exception range` comment.
