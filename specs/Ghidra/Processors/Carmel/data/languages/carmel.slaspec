@@ -75,6 +75,7 @@ define register offset=0x0fc size=2 [ RL2 ];
 define register offset=0x100 size=2 [ RL4 ];
 define register offset=0x104 size=2 [ RL6 ];
 define register offset=0x108 size=2 [ RM0 ];
+define register offset=0x10a size=2 [ RM0_ALIGN ];
 define register offset=0x10c size=2 [ RM2 ];
 define register offset=0x110 size=2 [ RM4 ];
 define register offset=0x114 size=2 [ RM6 ];
@@ -551,7 +552,7 @@ define token slot (24)
     slot_13_22 = (13,22)
     address_literal_dst = (9,12)
     address_literal_value = (1,8) signed
-    compact_rm6_literal = (1,8)
+    compact_rm_literal = (1,8)
     rel_words = (3,12) signed
     slot_0_2 = (0,2)
     conditional_words = (2,8) signed
@@ -1832,27 +1833,29 @@ macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
     modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, 1:2);
 }
 
-macro refresh_rm6_alignment() {
-    local bits:2 = RM6;
+macro refresh_modulo_alignment(word, alignment) {
+    local bits:2 = word;
     bits = bits | (bits >> 1);
     bits = bits | (bits >> 2);
     bits = bits | (bits >> 4);
     bits = bits | (bits >> 8);
-    RM6_ALIGN = ~bits;
+    alignment = ~bits;
 }
 
-macro modify_indexed_r6() {
-    if ((PACFG & 0x3000) == 0x2000) goto <implicit>;
-    modify_ptr_scaled_window(R6, RN6, RM6, RL6, 12, 1, 1, 0xffff);
+macro modify_native_agu(pointer, delta, modulo, bound, alignment, shift, modifier) {
+    local mode_shift:4 = shift;
+    local mode:2 = (PACFG >> mode_shift) & 3;
+    if (mode == 2) goto <implicit>;
+    modify_ptr_scaled_window(pointer, delta, modulo, bound, mode_shift, modifier, 1, 0xffff);
     goto <done>;
   <implicit>
-    local lower:4 = sext(R6 & RM6_ALIGN);
-    local size:4 = zext(RM6 & 0xfff) + 1;
-    local candidate:4 = sext(R6) + sext(RN6);
+    local lower:4 = sext(pointer & alignment);
+    local size:4 = zext(modulo & 0xfff) + 1;
+    local candidate:4 = sext(pointer) + sext(delta);
     if (candidate s>= lower && candidate s< lower + size) goto <publish>;
-    candidate = candidate + size * (2 * zext(RN6 s< 0) - 1);
+    candidate = candidate + size * (2 * zext(delta s< 0) - 1);
   <publish>
-    R6 = candidate:2;
+    pointer = candidate:2;
   <done>
 }
 
@@ -2606,6 +2609,7 @@ macro compact_bank_ports(selected) {
     if ((mask & 0x100) == 0) goto <rm2>;
     swap16(RM0, RM0S);
     swap16(RL0, RL0S);
+    refresh_modulo_alignment(RM0, RM0_ALIGN);
   <rm2>
     if ((mask & 0x200) == 0) goto <rm4>;
     swap16(RM2, RM2S);
@@ -2618,7 +2622,7 @@ macro compact_bank_ports(selected) {
     if ((mask & 0x800) == 0) goto <done>;
     swap16(RM6, RM6S);
     swap16(RL6, RL6S);
-    refresh_rm6_alignment();
+    refresh_modulo_alignment(RM6, RM6_ALIGN);
   <done>
 }
 
@@ -2891,7 +2895,7 @@ wide_lim8_result: "RMW1" is wide_2_9=0x86 { export RM6; }
 wide_lim8_result: "FF12" is wide_2_9=0xbe { export FF1; }
 wide_lim8_result: "LC" is wide_2_9=0xd4 { export LC1; }
 wide_lim8_rm_update: is epsilon { }
-wide_lim8_rm_update: is wide_2_9=0x86 { refresh_rm6_alignment(); }
+wide_lim8_rm_update: is wide_2_9=0x86 { refresh_modulo_alignment(RM6, RM6_ALIGN); }
 
 # L1 is sticky and its driver is independent of the register result port.
 macro wide_lim8_status(input, enabled) {
@@ -3409,11 +3413,16 @@ macro compact_move_write_ff(port) {
     compact_move_write_ff(FF2);
 }
 
-:MOVU "RM6",compact_rm6_literal "||" nop_right is
-    (carmel_issue=1 & slot_mode=0 & slot_9_22=0x1847 & slot_0_0=0 & compact_rm6_literal & ce_single_tick);
+compact_rm_destination: "RM0" is slot_9_22=0x1842 { export RM0; }
+compact_rm_destination: "RM6" is slot_9_22=0x1847 { export RM6; }
+compact_rm_alignment: is slot_9_22=0x1842 { export RM0_ALIGN; }
+compact_rm_alignment: is slot_9_22=0x1847 { export RM6_ALIGN; }
+
+:MOVU compact_rm_destination,compact_rm_literal "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_0_0=0 & compact_rm_destination & compact_rm_alignment & compact_rm_literal & ce_single_tick);
     (slot_mode=0 & nop_right) {
-    RM6 = compact_rm6_literal;
-    refresh_rm6_alignment();
+    compact_rm_destination = compact_rm_literal;
+    refresh_modulo_alignment(compact_rm_destination, compact_rm_alignment);
     clock_ce();
     build ce_single_tick;
 }
@@ -3423,7 +3432,7 @@ macro compact_move_write_ff(port) {
     local admitted:1 = carmel_read_address_admission(1:1);
     if (admitted == 0) goto <feedback>;
     local address:2 = R6;
-    modify_indexed_r6();
+    modify_native_agu(R6, RN6, RM6, RL6, RM6_ALIGN, 12:4, 1:2);
     local word:2 = carmel_sample_ff_at_of(FF2, __FF2_BEFORE_EX);
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0, enabled);
@@ -4368,7 +4377,13 @@ wide_load_literal: "#"^wide_load_literal_bits is wide_load_literal_bits { export
 :LOAD "R2","A0L",wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x28a & wide_13_22=0x213 & wide_40_45=0x10 & wide_load_mode { local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xffcf) | (new_mode << 4); local low:2 = A0L; R2 = low; }
 :LOAD "RN2","R2",wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x2aa & wide_13_22=0x213 & wide_40_45=0x22 & wide_load_mode { local low:2 = R2; RN2 = low; }
 :LOAD "RL0",wide_load_literal,wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x2c2 & wide_13_22=0x213 & wide_40_45=0xf & wide_load_mode & wide_load_literal { local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xfffc) | (new_mode << 0); R0 = wide_load_literal; }
-:LOAD "RM0","A0L",wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x2ca & wide_13_22=0x213 & wide_40_45=0x10 & wide_load_mode { local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xffcf) | (new_mode << 4); local low:2 = A0L; RM0 = low & 0xfff; }
+:LOAD "RM0","A0L",wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_0_9=0x2ca & wide_13_22=0x213 & wide_40_45=0x10 & wide_load_mode {
+    local new_mode:2 = wide_load_mode;
+    PACFG = (PACFG & 0xffcf) | (new_mode << 4);
+    RM0 = A0L & 0xfff;
+    refresh_modulo_alignment(RM0, RM0_ALIGN);
+}
 :LOAD "A1",wide_load_literal,wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x226 & wide_13_22=0x213 & wide_40_45=0xf & wide_load_mode & wide_load_literal { local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xfff3) | (new_mode << 2); R1 = wide_load_literal; local low:2 = wide_load_literal; A1L = low; A1H = 0 - (low >> 15); GB1 = (A1H >= 0x8000) * 0xff; wide_load_flags(low == 0, low >= 0x8000, 0:1, 0:1); }
 :LOAD "A2H",wide_load_literal,wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x26a & wide_13_22=0x213 & wide_40_45=0xf & wide_load_mode & wide_load_literal { RN2 = wide_load_literal; local low:2 = wide_load_literal; A2H = low; wide_load_flags(low == 0, low >= 0x8000, 0:1, 0:1); }
 :LOAD "selector_8e","A0L",wide_load_mode is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x23a & wide_13_22=0x213 & wide_40_45=0x10 & wide_load_mode { local new_mode:2 = wide_load_mode; PACFG = (PACFG & 0xcfff) | (new_mode << 12); local low:2 = A0L; wide_load_flags(low == 0, low >= 0x8000, 0:1, 0:1); }
@@ -6104,7 +6119,7 @@ macro limit_acc_value(raw, word_result, value) {
     local carry_set:1 = (EST & 0x40) != 0;
     wide_routed_arithmetic(left, right, carry_set, 0:1, 1:1, 0:1, result);
     RM6 = result(2);
-    refresh_rm6_alignment();
+    refresh_modulo_alignment(RM6, RM6_ALIGN);
 }
 
 :SUBC1 "*"^absolute_data_addr,"*R4++",alias_of_word is $(WIDE_ROUTED_ALU) & logic_ce_bank=1 & wide_alias_add_op=2 & wide_alias_add_dst=0x3a & wide_alias_add_lhs=0xfa & wide_40_45=0x14 & wide_0_0=0 & absolute_data_addr & carmel_of_route=2 & alias_of_word {
@@ -11052,7 +11067,7 @@ wide_discard_shift_count: "*(R0+"^wide_shift_dst_disp^")" is
 }
 wide_discard_shift_count: "*R1++" is wide_40_45=0x11 & (wide_shift_source_tail=0x1c0 | wide_shift_source_tail=0x1ee) {
     local address:2 = R1;
-    modify_ptr_scaled_window(R1, 0:2, RM0, RL0, 2:4, 2:2, 1:2, 0xffff:2);
+    modify_native_agu(R1, 1:2, RM0, RL0, RM0_ALIGN, 2:4, 4:2);
     export address;
 }
 :LSHIFT "discard",bitfield_descriptor,wide_discard_shift_count is
@@ -11942,7 +11957,11 @@ macro wide_frame_link_open_ce(displacement, config, bank) {
 :LINK "RN0",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xa8 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { wide_frame_link(RN0, frame_displacement); }
 :LINK "CE1" "RN0",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=0 & wide_2_9=0xa8 & wide_14_22=0x118 & (link_qualifier=0 | link_qualifier=2) & frame_displacement { wide_frame_link_ce(RN0, frame_displacement, CECFG1, 0:2); }
 :LINK "CE2" "RN0",frame_displacement is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & stack_ce_bank=1 & wide_2_9=0xa8 & wide_14_22=0x118 & (link_qualifier=0 | link_qualifier=2) & frame_displacement { wide_frame_link_ce(RN0, frame_displacement, CECFG2, 1:2); }
-:LINK "RM0",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xb2 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { wide_frame_link(RM0, frame_displacement); }
+:LINK "RM0",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_2_9=0xb2 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement {
+    wide_frame_link(RM0, frame_displacement);
+    refresh_modulo_alignment(RM0, RM0_ALIGN);
+}
 :LINK "ASTATUS",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xb9 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { wide_frame_link(ASTATUS, frame_displacement); }
 :LINK "FF1",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xbe & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { wide_frame_link(FF1, frame_displacement); }
 :LINK "LSA1L",frame_displacement is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0xd2 & wide_14_22=0x118 & link_qualifier=0 & frame_displacement { wide_frame_link(LSA1L, frame_displacement); }
@@ -11982,11 +12001,10 @@ macro single_push_word(prefix, source) {
     publish_alu_ce(EST & 0xcfff);
 }
 
-macro single_pop_word(prefix, destination, mask) {
+macro single_pop_word(prefix, destination, mask, admitted) {
     local enabled:2;
-    local agu:2;
-    wide_issue_enable(prefix, enabled, agu);
-    if (agu == 0) goto <publish>;
+    wide_issue_enable(prefix, enabled, admitted);
+    if (admitted == 0) goto <publish>;
     local address:2 = SP + 1;
     SP = address;
     local word:2 = *[data]:2 address;
@@ -12005,13 +12023,19 @@ macro single_pop_word(prefix, destination, mask) {
     single_push_word(wide_ce_prefix, 0:2);
 }
 :POP wide_ce_prefix stack_single_reg is $(STACK_SINGLE) & wide_0_2=0x2 & stack_single_bank=4 & stack_single_reg {
-    single_pop_word(wide_ce_prefix, stack_single_reg, 0xffff:2);
+    local admitted:2;
+    single_pop_word(wide_ce_prefix, stack_single_reg, 0xffff:2, admitted);
 }
 :POP wide_ce_prefix "RM0" is $(STACK_SINGLE) & wide_0_2=0x2 & wide_40_45=0x32 {
-    single_pop_word(wide_ce_prefix, RM0, 0x0fff:2);
+    local admitted:2;
+    single_pop_word(wide_ce_prefix, RM0, 0x0fff:2, admitted);
+    if (admitted == 0) goto <done>;
+    refresh_modulo_alignment(RM0, RM0_ALIGN);
+  <done>
 }
 :POP wide_ce_prefix "ASTATUS" is $(STACK_SINGLE) & wide_0_2=0x2 & wide_40_45=0x39 {
-    single_pop_word(wide_ce_prefix, ASTATUS, 3:2);
+    local admitted:2;
+    single_pop_word(wide_ce_prefix, ASTATUS, 3:2, admitted);
 }
 @undef STACK_SINGLE
 

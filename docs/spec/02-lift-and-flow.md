@@ -5107,6 +5107,9 @@ followed by its configured one-word postincrement. A veto suppresses
 the read and the address update. Only carry can change, and only when
 the later CE2 predicate executes the shift; count zero holds carry.
 Neither route writes DATA.
+Implicit modulo uses the saved alignment mask of `RM0` and a signed sum
+before truncation. An admitted guest write to `RM0` refreshes the mask
+using the value actually written, after any narrowing.
 
 Covered compact word shifts align their input to the upper word of the
 40-bit shifter. They publish the selected word but set `Z`, `M`, and `E`

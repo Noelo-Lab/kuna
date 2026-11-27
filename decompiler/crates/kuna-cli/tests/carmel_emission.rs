@@ -1039,6 +1039,13 @@ fn carmel_wide_discarded_literal_shift_still_reads_its_count() {
         0,
         0,
     );
+    let implicit = scratch.path().join("specs-implicit");
+    tracked_carmel_entry_specs(
+        &implicit,
+        &[("R1", 0x4044), ("RM0", 7), ("RL0", 0), ("RM0_ALIGN", 0), ("PACFG", 8), ("A0L", 0x1007), ("ECFG", 0)],
+        0,
+        0,
+    );
     let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
     let mut c = String::from(
         "#include <stdbool.h>\n#include <stdint.h>\nstatic volatile unsigned short value;\nstatic unsigned reads;\n\
@@ -1046,17 +1053,28 @@ fn carmel_wide_discarded_literal_shift_still_reads_its_count() {
          #define count_word (*count_port())\n",
     );
     let mut calls = String::new();
-    for (row, (packet, address, profile, reg)) in [
-        ([0x60, 0xd5, 0xb7, 0xf1, 0x1f, 0xdc], 0xfff7, &specs, "EST"),
-        ([0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xc0], 0x4040, &specs, "EST"),
-        ([0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xee], 0x4040, &specs, "EST"),
-        ([0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xc0], 0x4005, &explicit, "R1"),
+    let indexed = [0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xc0];
+    for (row, (packet, address, profile, advanced, writer)) in [
+        ([0x60, 0xd5, 0xb7, 0xf1, 0x1f, 0xdc], 0xfff7, &specs, None, None),
+        (indexed, 0x4040, &specs, None, None),
+        ([0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xee], 0x4040, &specs, None, None),
+        (indexed, 0x4005, &explicit, Some(0x2ffe), None),
+        (indexed, 0x4044, &implicit, Some(0x403d), None),
+        (indexed, 0x4044, &implicit, Some(0x4045), Some([0x30, 0x84, 0x0e, 0x2b, 0xec, 0])),
+        (indexed, 0x4044, &implicit, Some(0x4045), Some([0x90, 0, 0, 0xc2, 0x62, 0xca])),
     ].into_iter().enumerate() {
-        let first = if reg == "R1" { [0x21, 0xac, 0x20, 0x2b, 0xec, 0] } else { nop };
-        fs::write(
-            &binary,
-            [first, nop, nop, nop, nop, packet, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], nop].as_flattened(),
-        ).unwrap();
+        let (reg, first) = if advanced.is_some() {
+            ("R1", [0x21, 0xac, 0x20, 0x2b, 0xec, 0])
+        } else {
+            ("EST", nop)
+        };
+        let mut code = Vec::new();
+        if let Some(writer) = writer {
+            code.push(writer);
+            code.extend([nop; 6]);
+        }
+        code.extend([first, nop, nop, nop, nop, packet, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], nop]);
+        fs::write(&binary, code.as_flattened()).unwrap();
         let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
         kuna.env("KUNA_SPECS", profile).arg("decompile").arg(&binary).args([
             "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
@@ -1083,9 +1101,11 @@ fn carmel_wide_discarded_literal_shift_still_reads_its_count() {
             (0xffff, 0, 1, 0x6f, 0x269, 0),
             (0xffff, 0, 1, 0x40, 0x269, 0),
         ].into_iter().enumerate() {
-            let expected = if reg == "EST" {
-                0x268 | carry | ((table & 1) << 12) | ((table & 0x100) << 5)
-            } else if reads == 0 { 0x4005 } else { 0x2ffe };
+            let expected = match advanced {
+                Some(next) if reads != 0 => next,
+                Some(_) => address,
+                None => 0x268 | carry | ((table & 1) << 12) | ((table & 0x100) << 5),
+            };
             writeln!(calls, "value = {count:#x}; reads = 0; \
                              if (discard_{row}({incoming:#x}, 0, {cfg:#x}, {table:#x}) != {expected:#x} \
                                  || reads != {reads} || value != {count:#x}) return {};", row * 10 + arm + 1).unwrap();
