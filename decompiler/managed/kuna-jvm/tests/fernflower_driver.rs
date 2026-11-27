@@ -1,14 +1,13 @@
-//! The `Fernflower` driver over `data/fernflower_driver/`: option overlay (long and
-//! three-letter names), runtime registration, renamer loading, per-class
+//! The `Fernflower` driver over `data/fernflower_driver/`: option overlay,
+//! runtime registration, the renamer, per-class
 //! failure handling in `ContextUnit.save` (pre-processing and writing errors,
-//! duplicate classes) and in `getClassContent`, a root context that stays
-//! usable whatever the engine does, and the bytecode-to-source line mapping.
+//! duplicate classes) and in `getClassContent`, and a root context that stays
+//! usable whatever the engine does.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use kuna_jvm::byte_cursor::ByteCursor;
-use kuna_jvm::bytecode_mapping_tracer::BytecodeMappingTracer;
 use kuna_jvm::classes_processor::ClassesProcessor;
 use kuna_jvm::context_source::{Entries, Entry, IContextSource};
 use kuna_jvm::counter_container::CounterContainer;
@@ -116,20 +115,15 @@ fn record(logger: &CollectingLogger, message: &str) -> Option<LogRecord> {
 }
 
 #[test]
-fn options_overlay_defaults_by_long_and_short_name() {
+fn options_overlay_the_defaults() {
     let logger = Rc::new(CollectingLogger::new());
+    logger.set_severity(Severity::Warn);
     let fernflower = Fernflower::new(
         &options(&[
             (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("log", "warn"),
-            ("ind", "\t"),
+            (IFernflowerPreferences::INDENT_STRING, "\t"),
         ]),
         logger.clone(),
-    );
-    assert_eq!(logger.severity().get(), Severity::Warn);
-    assert_eq!(
-        DecompilerContext::get_property(IFernflowerPreferences::LOG_LEVEL).as_deref(),
-        Some("warn")
     );
     assert_eq!(
         DecompilerContext::get_property(IFernflowerPreferences::INDENT_STRING).as_deref(),
@@ -144,26 +138,16 @@ fn options_overlay_defaults_by_long_and_short_name() {
 }
 
 #[test]
-fn constructor_logs_plugins_jvm_and_renamer() {
+fn constructor_logs_the_jvm_and_installs_the_renamer() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
         &options(&[
             (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
             (IFernflowerPreferences::RENAME_ENTITIES, "1"),
-            (
-                IFernflowerPreferences::USER_RENAMER_CLASS,
-                "no.such.Renamer",
-            ),
         ]),
         logger.clone(),
     );
     assert!(DecompilerContext::get_pool_interceptor().is_some());
-    let renamer = record(&logger, "Cannot load renamer 'no.such.Renamer'").unwrap();
-    assert_eq!(renamer.severity, Severity::Warn);
-    assert!(renamer
-        .throwable
-        .unwrap()
-        .contains("ClassNotFoundException"));
     let info: Vec<String> = logger
         .records()
         .borrow()
@@ -173,13 +157,7 @@ fn constructor_logs_plugins_jvm_and_renamer() {
         .collect();
     assert_eq!(
         info,
-        vec![
-            format!(
-                "Loaded {} plugins",
-                kuna_jvm::kuna_plugins::bundled_plugins().len()
-            ),
-            "JVM info: missing vendor - missing java version - missing jvm version".to_string(),
-        ]
+        vec!["JVM info: missing vendor - missing java version - missing jvm version".to_string()]
     );
     fernflower.clear_context();
 }
@@ -203,23 +181,13 @@ fn runtime_option_registers_the_current_jdk() {
     }
     let lib = Some((false, "java/lang/Object".to_string()));
     assert_eq!(object(&[]), lib);
-    assert_eq!(
-        object(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            (IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH, "1"),
-        ]),
-        lib
-    );
 }
 
 #[test]
 fn a_failing_engine_leaves_the_root_context_usable() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("dee", "0"),
-        ]),
+        &options(&[(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0")]),
         logger.clone(),
     );
     let root = DecompilerContext::get_current_context().unwrap();
@@ -254,10 +222,7 @@ fn a_failing_engine_leaves_the_root_context_usable() {
 fn class_content_failure_is_logged_and_skipped() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("dee", "0"),
-        ]),
+        &options(&[(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0")]),
         logger.clone(),
     );
     let root = DecompilerContext::get_current_context().unwrap();
@@ -268,7 +233,9 @@ fn class_content_failure_is_logged_and_skipped() {
         .unwrap();
 
     assert!(try_catch(|| fernflower.process_class(a)).is_err());
-    assert_eq!(fernflower.get_class_content(a), None);
+    assert!(fernflower
+        .get_class_content(a)
+        .is_some_and(|c| c.starts_with("/*\n$VF: Unable to decompile class\n")));
     let failure = record(&logger, "Class p/A couldn't be fully decompiled.").unwrap();
     assert_eq!(failure.severity, Severity::Error);
     assert!(failure.throwable.is_some());
@@ -338,17 +305,12 @@ impl IDecompiledData for ScriptedData {
     }
 }
 
-fn save_scripted(dee: &str) -> (Vec<DecompiledClass>, Rc<CollectingLogger>) {
+fn save_scripted() -> (Vec<DecompiledClass>, Rc<CollectingLogger>) {
     let logger = Rc::new(CollectingLogger::new());
     let data = Rc::new(ScriptedData::default());
     let sc = StructContext::new(data.clone());
-    let mut properties = IFernflowerPreferences::DEFAULTS();
-    properties.put(
-        IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR.to_string(),
-        dee.to_string(),
-    );
     let root = DecompilerContext::new(
-        properties,
+        IFernflowerPreferences::DEFAULTS(),
         logger.clone(),
         sc,
         ClassesProcessor::new(sc),
@@ -380,14 +342,13 @@ fn save_scripted(dee: &str) -> (Vec<DecompiledClass>, Rc<CollectingLogger>) {
 
 #[test]
 fn unit_save_reports_failing_classes_and_keeps_going() {
-    let (out, logger) = save_scripted("0");
+    let (out, logger) = save_scripted();
     let names: Vec<&str> = out.iter().map(|c| c.qualified_name.as_str()).collect();
     assert_eq!(names, ["p/A", "p/B", "p/C"]);
     assert_eq!(out[0].path, "p/A.java");
     assert_eq!(out[0].content, "class p/A same-context true counter 2");
-    assert_eq!(out[0].mapping, None);
-    assert_eq!(out[1].content, "// $VF: Couldn't be decompiled\n");
-    assert_eq!(out[2].content, "// $VF: Couldn't be decompiled\n");
+    assert!(out[1].content.starts_with("// $VF: Couldn't be decompiled\n"));
+    assert!(out[2].content.starts_with("// $VF: Couldn't be decompiled\n"));
 
     let boom = record(&logger, "Class p/B couldn't be fully decompiled.").unwrap();
     assert_eq!(boom.severity, Severity::Error);
@@ -401,7 +362,7 @@ fn unit_save_reports_failing_classes_and_keeps_going() {
 
 #[test]
 fn unit_save_dumps_the_pre_processing_exception() {
-    let (out, _) = save_scripted("1");
+    let (out, _) = save_scripted();
     assert_eq!(out.len(), 3);
     assert!(out[1]
         .content
@@ -427,7 +388,6 @@ fn delivers_each_root_class_in_entry_order() {
         assert_eq!(class.path, format!("{}.java", class.qualified_name));
         let simple = class.qualified_name.rsplit('/').next().unwrap();
         assert!(class.content.contains(simple), "{}", class.content);
-        assert_eq!(class.mapping, None);
     }
 
     let counters = DecompilerContext::get_counter_container();
@@ -447,55 +407,4 @@ fn delivers_each_root_class_in_entry_order() {
 
     fernflower.clear_context();
     assert!(DecompilerContext::get_current_context().is_none());
-}
-
-#[test]
-fn line_mapping_follows_the_option() {
-    let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("bsm", "true"),
-            ("log-level", "error"),
-        ]),
-        Rc::new(CollectingLogger::new()),
-    );
-    assert!(DecompilerContext::get_option(
-        IFernflowerPreferences::BYTECODE_SOURCE_MAPPING
-    ));
-    let (own, lib) = sources();
-    fernflower.add_source(Rc::new(own));
-    fernflower.add_library(Rc::new(lib));
-    let classes = decompile(&mut fernflower);
-    assert_eq!(classes.len(), OWN.len());
-    assert!(classes.iter().all(|c| c.mapping.is_some()));
-    fernflower.clear_context();
-}
-
-#[test]
-fn unknown_log_level_keeps_the_logger_severity() {
-    let logger: Rc<dyn IFernflowerLogger> = Rc::new(CollectingLogger::new());
-    logger.set_severity(Severity::Error);
-    let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("log-level", "debug"),
-        ]),
-        logger.clone(),
-    );
-    assert_eq!(logger.severity().get(), Severity::Error);
-    fernflower.clear_context();
-}
-
-#[test]
-fn mapping_tracer_keeps_the_first_line_per_offset() {
-    let tracer = BytecodeMappingTracer::new_line(10);
-    tracer.add_mapping(4);
-    tracer.set_current_source_line(11);
-    tracer.add_mapping(4);
-    tracer.add_mapping(7);
-    assert_eq!(
-        tracer.get_mapping().borrow().entry_vec(),
-        vec![(4, 10), (7, 11)]
-    );
-    assert!(tracer.get_original_lines_mapping().is_empty());
 }

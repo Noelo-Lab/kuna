@@ -22,7 +22,6 @@ use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_record_component::StructRecordComponent;
-use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 use crate::var_type::VarType;
 use crate::var_version_pair::VarVersionPair;
@@ -34,8 +33,6 @@ impl IfPatternMatchProcessor {
         let res = Self::match_instanceof_rec(root.0, root);
 
         if res {
-            ValidationHelper::validate_statement(root);
-
             SequenceHelper::condense_sequences(root.0);
 
             if IfHelper::merge_all_ifs(root) {

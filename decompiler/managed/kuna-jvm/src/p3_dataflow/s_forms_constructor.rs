@@ -119,13 +119,6 @@ impl SFormsConstructor {
         let mut flatthelper = FlattenStatementsHelper::new();
         let dgraph = flatthelper.build_direct_graph(root);
         self.dgraph = Some(dgraph);
-        ValidationHelper::validate_d_graph(dgraph, root);
-        ValidationHelper::validate_vars(
-            dgraph,
-            root,
-            |var: VarExprent| var.get_version() == 0,
-            "Var version is not zero",
-        );
 
         self.factory = Some(INITIAL_FACTORY.with(FastSparseSetFactory::duplicate));
 
@@ -254,11 +247,6 @@ impl SFormsConstructor {
         match cardinality {
             0 => {
                 self.update_var_exprent(var_exprent, stat, &varmap, calc_live_vars);
-                let message = format!(
-                    "Variable read before assignment: {}",
-                    var_exprent.to_string()
-                );
-                ValidationHelper::validate_true(false, &message);
             }
             1 => {
                 let versions = versions.expect("versions");

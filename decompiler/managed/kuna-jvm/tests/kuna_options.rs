@@ -1,94 +1,9 @@
-//! The JVM option table: one to one with Vineflower's options, resolution and aliases.
+//! The JVM option table: its rows and their resolution.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::Path;
 
-use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
-use kuna_jvm::kuna_options::{self, driver_owned, find, resolve, rows, ValueKind};
-use kuna_jvm::kuna_plugins;
-
-#[test]
-fn table_is_one_to_one_with_vineflower_options() {
-    let defaults = IFernflowerPreferences::DEFAULTS();
-    let plugin_options = kuna_plugins::bundled_plugin_options();
-    let mut claimed: BTreeMap<&str, &str> = BTreeMap::new();
-    for row in rows() {
-        if row.is_kuna() {
-            assert_eq!(row.source_decompiler, "kuna", "{}", row.option);
-            continue;
-        }
-        assert_eq!(row.source_decompiler, "vineflower", "{}", row.option);
-        assert_eq!(row.change_kind, "vineflower-option", "{}", row.option);
-        assert!(
-            claimed.insert(row.vineflower, row.option).is_none(),
-            "{} has two rows",
-            row.vineflower
-        );
-    }
-    for owned in driver_owned() {
-        assert!(
-            claimed.insert(owned.vineflower, "driver").is_none(),
-            "{} is both a row and driver-owned",
-            owned.vineflower
-        );
-    }
-    let core: BTreeSet<&str> = IFernflowerPreferences::all_options()
-        .iter()
-        .map(|o| o.key)
-        .collect();
-    let mut all = core.clone();
-    for plugin_option in &plugin_options {
-        assert!(
-            !core.contains(plugin_option.option.key),
-            "{} of plugin {} is also a core option",
-            plugin_option.option.key,
-            plugin_option.plugin
-        );
-        assert!(
-            all.insert(plugin_option.option.key),
-            "{} declared twice",
-            plugin_option.option.key
-        );
-    }
-    let covered: BTreeSet<&str> = claimed.keys().copied().collect();
-    assert_eq!(
-        covered, all,
-        "rows + driver-owned must be exactly all_options() and the bundled plugins' options"
-    );
-
-    for row in rows().iter().filter(|r| !r.is_kuna()) {
-        let (option, default) = match IFernflowerPreferences::find_option(row.vineflower) {
-            Some(option) => (option, defaults.get_cloned(&row.vineflower.to_string())),
-            None => {
-                let plugin_option = plugin_options
-                    .iter()
-                    .find(|o| o.option.key == row.vineflower)
-                    .unwrap_or_else(|| panic!("{}: no such option", row.option));
-                (plugin_option.option, plugin_option.default.clone())
-            }
-        };
-        assert_eq!(row.short, option.short_name.unwrap_or(""), "{}", row.option);
-        let (key, value) = resolve(row.option, row.default).unwrap();
-        assert_eq!(key, row.vineflower);
-        if default.is_none() {
-            assert_eq!(row.default, "", "{}: Vineflower has no default", row.option);
-        } else {
-            assert_eq!(
-                Some(&value),
-                default.as_ref(),
-                "{}: default {:?} disagrees with Vineflower's",
-                row.option,
-                row.default
-            );
-        }
-        assert!(
-            row.inspiration.contains(option.field),
-            "{}: inspiration must name IFernflowerPreferences.{}",
-            row.option,
-            option.field
-        );
-    }
-}
+use kuna_jvm::kuna_options::{self, find, resolve, rows, ValueKind};
 
 #[test]
 fn rows_are_complete_and_point_at_real_modules() {
@@ -140,32 +55,33 @@ fn rows_are_complete_and_point_at_real_modules() {
 }
 
 #[test]
-fn resolution_and_aliases() {
-    for name in ["jvm_decompile_finally", "decompile-finally", "fdi"] {
-        assert_eq!(
-            resolve(name, "off").unwrap(),
-            ("decompile-finally", "0".to_string())
-        );
-        assert_eq!(
-            resolve(name, "ON").unwrap(),
-            ("decompile-finally", "1".to_string())
-        );
-        assert_eq!(
-            resolve(name, "true").unwrap(),
-            ("decompile-finally", "1".to_string())
-        );
-        assert_eq!(
-            resolve(name, "0").unwrap(),
-            ("decompile-finally", "0".to_string())
-        );
-    }
-    assert_eq!(find("rbr").unwrap().option, "jvm_remove_bridge");
+fn resolution() {
+    let name = "jvm_decompile_finally";
     assert_eq!(
-        resolve("jrt", "off").unwrap(),
+        resolve(name, "off").unwrap(),
+        ("decompile-finally", "0".to_string())
+    );
+    assert_eq!(
+        resolve(name, "ON").unwrap(),
+        ("decompile-finally", "1".to_string())
+    );
+    assert_eq!(
+        resolve(name, "true").unwrap(),
+        ("decompile-finally", "1".to_string())
+    );
+    assert_eq!(
+        resolve(name, "0").unwrap(),
+        ("decompile-finally", "0".to_string())
+    );
+    for alias in ["decompile-finally", "fdi", "rbr", "jrt"] {
+        assert!(find(alias).is_none(), "{alias}");
+    }
+    assert_eq!(
+        resolve("jvm_include_runtime", "off").unwrap(),
         ("include-runtime", "0".to_string())
     );
     assert_eq!(
-        resolve("jrt", "on").unwrap(),
+        resolve("jvm_include_runtime", "on").unwrap(),
         ("include-runtime", "1".to_string())
     );
     assert_eq!(
@@ -180,30 +96,19 @@ fn resolution_and_aliases() {
         resolve("jvm_siblings", "off").unwrap(),
         ("jvm_siblings", "0".to_string())
     );
-    assert_eq!(resolve("old-try-dedup", "1").unwrap().0, "old-try-dedup");
+    assert_eq!(resolve("jvm_old_try_dedup", "1").unwrap().0, "old-try-dedup");
 }
 
 #[test]
 fn resolution_errors() {
     let err = resolve("jvm_decompile_finaly", "on").unwrap_err();
     assert!(err.contains("did you mean jvm_decompile_finally"), "{err}");
-    let err = resolve("decompile-finaly", "on").unwrap_err();
-    assert!(err.contains("did you mean decompile-finally"), "{err}");
-    let err = resolve("jvm_nothing_like_this_at_all", "on").unwrap_err();
-    assert!(err.contains("unknown JVM option"), "{err}");
-    let err = resolve(kuna_plugins::JVM_PLUGINS, "off").unwrap_err();
-    assert!(err.contains("unknown JVM option"), "{err}");
-    for name in [
-        "thread-count",
-        "jvm_thread_count",
-        "max-time-per-method",
-        "jvm_indent_string",
-        "jvm_preferred_line_length",
-    ] {
-        let err = resolve(name, "4").unwrap_err();
-        assert!(err.contains("set by kuna itself"), "{err}");
+    let err = resolve("decompile-finally", "on").unwrap_err();
+    assert!(err.contains("did you mean jvm_decompile_finally"), "{err}");
+    for name in ["jvm_nothing_like_this_at_all", "thread-count", "jvm_thread_count"] {
+        let err = resolve(name, "on").unwrap_err();
+        assert!(err.contains("unknown JVM option"), "{err}");
     }
-    assert!(resolve("thread-count", "4").unwrap_err().contains("--jobs"));
     let err = resolve("jvm_remove_bridge", "maybe").unwrap_err();
     assert!(err.contains("expected on|off"), "{err}");
     assert_eq!(

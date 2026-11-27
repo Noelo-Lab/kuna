@@ -23,9 +23,11 @@ Vineflower's suite, whose text is not stored), or by an expected file (the 307 k
 - Vineflower 1.12.0 (`b8273988`) `testData`, Apache-2.0 (see `LICENSE`/`NOTICE` at the repo
   root): the sources and registrations of core's `SingleClassesTest` (526 Java cases, sets
   *Default* to *Ternary Constant Simplification*), of its bundled plugins' tests (6 cases, sets
-  *With Idea Not Null* to *Plugin Defaults*, run with `jvm_plugins` on) and of its Kotlin tests
-  (71 cases, sets *Kotlin ...*). Each set's option pairs are those of the Vineflower test fixture
-  that registered it.
+  *With Idea Not Null* to *Plugin Defaults*) and of its Kotlin tests (71 cases, sets
+  *Kotlin ...*). Each set's option pairs are the real options the Vineflower test fixture that
+  registered it sets; its test-only keys are left out, so every case runs as the product does,
+  Kotlin and IDEA not-null passes included (*Kotlin Core Default* writes its Kotlin classes as
+  Java with `kt-enable` off).
 - Class files compiled per source set the way Vineflower's Gradle build does (`-g`,
   `-source N -target N`, set-specific flags such as `-g:none` and `--enable-preview`):
   `java8`/`java8nodebug` javac 1.8.0_512, `java9` 9.0.4, `java11` 11.0.33,
@@ -42,8 +44,8 @@ Vineflower's suite, whose text is not stored), or by an expected file (the 307 k
 An id `<set-slug>/<name>`, its set, the ordered option pairs (the set's, overlaid by the case's),
 the class files in order (the case's stems, each `STEM.class` then its `STEM$*.class` siblings
 in name order, then its `class` records), and the output file it compares. The runner
-(`kuna_jvm::kuna_corpus`) hands the pairs to `Fernflower` (which overlays them on the defaults;
-no plugin is loaded unless the pairs turn `jvm_plugins` on), adds each class file as a source,
+(`kuna_jvm::kuna_corpus`) hands the pairs to `Fernflower` (which overlays them on the defaults),
+adds each class file as a source,
 decompiles, takes the last delivered unit whose file name is the compared one, normalizes its
 text (`\r\n` -> `\n`, then trims), and compares it with the pinned digest or expected text.
 
@@ -93,7 +95,7 @@ javac -g --release 17 -d decompiler/managed/kuna-jvm/corpus/kuna-fixes/classes d
 ```
 
 Append its records to `cases.tsv` after the last `kuna-fixes/` case, with the comment that
-records its source and compiler (a Kotlin case also gets `opt	jvm_plugins	1`; a case that needs
+records its source and compiler (a Kotlin class decompiled as Java gets `opt	kt-enable	0`; a case that needs
 other classes lists their stems after its own):
 
 ```

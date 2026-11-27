@@ -16,7 +16,6 @@ use crate::direct_node_type::DirectNodeType;
 use crate::exprent::Exprent;
 use crate::rt::{objects_hash, JList, JavaEq, JavaHash};
 use crate::statement::Statement;
-use crate::validation_helper::ValidationHelper;
 
 pub struct DirectNodeData {
     pub type_: DirectNodeType,
@@ -116,7 +115,6 @@ impl DirectNode {
     }
 
     pub fn add_successor(self, edge: DirectEdge) {
-        ValidationHelper::validate_true(edge.get_source() == self, "Source node mismatch");
         if !self.get_successors(edge.get_type()).contains(&edge) {
             self.get_successors(edge.get_type()).add(edge);
         }

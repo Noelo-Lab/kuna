@@ -1,11 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/main/Fernflower.java`, adapted to
 //! kuna: finished classes are handed to a callback instead of an
-//! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
-//! by the custom property `jvm_plugins`) instead of the class path; an
-//! `error-message` the caller did not set names kuna's tracker; renamer
-//! class loading has no Rust counterpart, and `include-classpath` adds the
-//! current JDK runtime (the system-module half of `ClasspathScanner`; the
-//! JVM's own class path has no analogue here).
+//! `IResultSaver`; Vineflower's bundled Kotlin and IdeaNotNull plugins are part
+//! of the pipeline (the Kotlin `LanguageSpec` is installed here, IdeaNotNull
+//! runs in the method schedule), so nothing is loaded; renamer class loading
+//! and the class path (`include-classpath`) have no Rust counterpart.
 //!
 //! Class-scope arenas are reset at the end of [`Fernflower::decompile_context`],
 //! once every class of every unit has been delivered: Vineflower emits all
@@ -28,15 +26,14 @@ use crate::decompiler_context::DecompilerContext;
 use crate::i_decompiled_data::IDecompiledData;
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
 use crate::jdk_runtime::JdkRuntime;
+use crate::kotlin_options::KotlinOptions;
+use crate::kotlin_plugin::KotlinPlugin;
 use crate::kuna_partition::RootSelection;
-use crate::kuna_plugins;
-use crate::plugin_context::PluginContext;
-use crate::plugin_source::PluginSource;
+use crate::language_spec::LanguageSpec;
 use crate::pool_interceptor::PoolInterceptor;
-use crate::rt::{try_catch, Caught, JHashMap, JavaException, JavaStr};
+use crate::rt::{try_catch, JavaStr};
 use crate::struct_class::StructClass;
 use crate::struct_context::{qualified_name_of, StructContext};
 use crate::text_buffer::TextBuffer;
@@ -49,8 +46,6 @@ pub struct DecompiledClass {
     /// The output entry, e.g. `a/b/C.java`.
     pub path: String,
     pub content: String,
-    /// The original line mapping when `bytecode-source-mapping` is on.
-    pub mapping: Option<Vec<i32>>,
     /// Why the class could not be written normally (`content` is then the
     /// error comment Vineflower writes in its place).
     pub error: Option<String>,
@@ -63,13 +58,13 @@ pub struct DecompiledClass {
 /// `JrtFinder.CURRENT`.
 const JRT_CURRENT: &str = "current";
 
-/// The `error-message` default (kuna).
+/// The note under a failure comment (kuna; Vineflower names its own tracker).
 pub const KUNA_ERROR_MESSAGE: &str = "Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)";
 
 pub struct Fernflower {
     struct_context: StructContext,
     class_processor: ClassesProcessor,
-    helper: Option<Rc<dyn IIdentifierRenamer>>,
+    helper: Option<Rc<ConverterHelper>>,
     converter: Option<IdentifierConverter>,
     data: Rc<FernflowerDecompiledData>,
     loaded: bool,
@@ -84,47 +79,14 @@ struct FernflowerDecompiledData {
 
 impl Fernflower {
     /// Java: Fernflower(IResultSaver, Map<String, Object>, IFernflowerLogger).
-    /// `custom_properties` overlay the defaults in order; three-letter keys are short names.
-    /// The bundled plugins are loaded unless `jvm_plugins` is `0`.
+    /// `custom_properties` overlay the defaults in order.
     pub fn new(
         custom_properties: &[(String, String)],
         logger: Rc<dyn IFernflowerLogger>,
     ) -> Fernflower {
-        let (plugins, custom_properties) = kuna_plugins::take_switch(custom_properties);
-        Fernflower::new_with_plugin_sources(
-            &custom_properties,
-            logger,
-            kuna_plugins::plugin_sources(plugins),
-        )
-    }
-
-    /// [`Fernflower::new`] with `plugin_sources` as `PluginSources.PLUGIN_SOURCES`
-    /// (`jvm_plugins` is ignored).
-    pub fn new_with_plugin_sources(
-        custom_properties: &[(String, String)],
-        logger: Rc<dyn IFernflowerLogger>,
-        plugin_sources: Vec<Rc<dyn PluginSource>>,
-    ) -> Fernflower {
-        let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
-        let custom_properties = &custom_properties[..];
         let mut properties = IFernflowerPreferences::DEFAULTS();
-        properties.put(
-            IFernflowerPreferences::ERROR_MESSAGE.to_string(),
-            KUNA_ERROR_MESSAGE.to_string(),
-        );
         for (key, value) in custom_properties {
-            if key.jlen() == 3 {
-                OptionParser::parse_short(&format!("-{key}={value}"), &mut properties);
-            } else {
-                properties.put(key.clone(), value.clone());
-            }
-        }
-
-        let level = properties.get_cloned(&IFernflowerPreferences::LOG_LEVEL.to_string());
-        if let Some(level) = level {
-            if let Some(severity) = Severity::value_of(&level.to_uppercase()) {
-                logger.set_severity(severity);
-            }
+            properties.put(key.clone(), value.clone());
         }
 
         let data = Rc::new(FernflowerDecompiledData {
@@ -143,9 +105,7 @@ impl Fernflower {
             .map(String::as_str)
             == Some("1")
         {
-            let user_renamer =
-                properties.get_cloned(&IFernflowerPreferences::USER_RENAMER_CLASS.to_string());
-            let renamer = Self::load_helper(user_renamer.as_deref(), &*logger);
+            let renamer = Rc::new(ConverterHelper::new());
             let pool_interceptor = PoolInterceptor::new();
             interceptor = Some(pool_interceptor);
             converter = Some(IdentifierConverter::new(
@@ -169,13 +129,13 @@ impl Fernflower {
         );
         DecompilerContext::set_current_context(Some(context.clone()));
 
-        let plugins = struct_context.get_plugin_context();
-        plugins.set_plugin_sources(plugin_sources);
-        let plugin_count = plugins.find_plugins();
-
-        logger.write_message(&format!("Loaded {plugin_count} plugins"), Severity::Info);
-
-        plugins.initialize();
+        context.with_mut(|d| {
+            for (key, value) in KotlinOptions::DEFAULTS {
+                d.properties.put_if_absent(key.to_string(), value.to_string());
+            }
+        });
+        let kotlin = Rc::new(KotlinPlugin::language_spec());
+        struct_context.with_mut(|d| d.language_spec = Some(kotlin));
 
         logger.write_message(
             &format!(
@@ -185,18 +145,14 @@ impl Fernflower {
             Severity::Info,
         );
 
-        if DecompilerContext::get_option(IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH) {
-            JdkRuntime::add_runtime(struct_context, JRT_CURRENT);
-        } else {
-            let java_runtime =
-                DecompilerContext::get_property(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME)
-                    .expect("getProperty(INCLUDE_JAVA_RUNTIME)");
-            if !java_runtime.is_empty() {
-                let current = equals_ignore_case(&java_runtime, JRT_CURRENT)
-                    || equals_ignore_case(&java_runtime, "1");
-                if current || !equals_ignore_case(&java_runtime, "0") {
-                    JdkRuntime::add_runtime(struct_context, &java_runtime);
-                }
+        let java_runtime =
+            DecompilerContext::get_property(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME)
+                .expect("getProperty(INCLUDE_JAVA_RUNTIME)");
+        if !java_runtime.is_empty() {
+            let current = equals_ignore_case(&java_runtime, JRT_CURRENT)
+                || equals_ignore_case(&java_runtime, "1");
+            if current || !equals_ignore_case(&java_runtime, "0") {
+                JdkRuntime::add_runtime(struct_context, &java_runtime);
             }
         }
 
@@ -208,32 +164,6 @@ impl Fernflower {
             data,
             loaded: false,
         }
-    }
-
-    /// No renamer class can be loaded by name, so a named one is reported as
-    /// missing and the default renamer is used, as on a failed load in Java.
-    fn load_helper(
-        class_name: Option<&str>,
-        logger: &dyn IFernflowerLogger,
-    ) -> Rc<dyn IIdentifierRenamer> {
-        if let Some(class_name) = class_name {
-            let exception = JavaException {
-                class: "ClassNotFoundException",
-                message: class_name.to_string(),
-            };
-            let caught = Caught {
-                message: exception.to_string(),
-                exception: Some(exception),
-                location: String::new(),
-            };
-            logger.write_message_ex(
-                &format!("Cannot load renamer '{class_name}'"),
-                Severity::Warn,
-                &caught,
-            );
-        }
-
-        Rc::new(ConverterHelper::new())
     }
 
     /// Java: addSource(IContextSource)
@@ -267,17 +197,13 @@ impl Fernflower {
         self.loaded = false;
     }
 
-    /// Tells the plugins decompilation starts, renames (when enabled, once
-    /// per engine, as Vineflower renames once per instance) and loads every
+    /// Renames (when enabled, once per engine, as Vineflower renames once
+    /// per instance) and loads every
     /// own class into class nodes, once per run;
     /// [`Fernflower::decompile_context`] does it itself when needed.
     pub fn load(&mut self) {
         if self.loaded {
             return;
-        }
-
-        for plugin in self.struct_context.get_plugin_context().get_plugins() {
-            plugin.before_decompile();
         }
 
         if let Some(mut converter) = self.converter.take() {
@@ -396,7 +322,7 @@ impl FernflowerDecompiledData {
 
 impl IDecompiledData for FernflowerDecompiledData {
     fn get_class_entry_name(&self, cl: StructClass, entry_name: &str) -> Option<String> {
-        let spec = PluginContext::get_current_context().get_language_spec(cl);
+        let spec = LanguageSpec::of(cl);
         let extension = spec.as_ref().map_or("java", |spec| spec.extension.as_str());
 
         let qualified_name = qualified_name_of(cl);
@@ -442,18 +368,14 @@ impl IDecompiledData for FernflowerDecompiledData {
                     ),
                     &t,
                 );
-                if DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR) {
-                    let mut lines = vec![
-                        "/*".to_string(),
-                        "$VF: Unable to decompile class".to_string(),
-                    ];
-                    lines.extend(ClassWriter::get_error_comment());
-                    ClassWriter::collect_error_lines(&t, &mut lines);
-                    lines.push("*/".to_string());
-                    Some(lines.join(DecompilerContext::get_new_line_separator()))
-                } else {
-                    None
-                }
+                let mut lines = vec![
+                    "/*".to_string(),
+                    "$VF: Unable to decompile class".to_string(),
+                ];
+                lines.extend(ClassWriter::get_error_comment());
+                ClassWriter::collect_error_lines(&t, &mut lines);
+                lines.push("*/".to_string());
+                Some(lines.join(DecompilerContext::get_new_line_separator()))
             }
         }
     }
@@ -493,82 +415,13 @@ fn equals_ignore_case(a: &str, b: &str) -> bool {
         })
 }
 
-/// The option a custom property `(key, value)` sets once the constructor has
-/// read it: a three-letter name becomes its long name (`mpm` is
-/// `max-time-per-method`), with `true`/`false` read as `1`/`0`.
-pub fn canonical_option(key: &str, value: &str) -> (String, String) {
-    if key.jlen() != 3 {
-        return (key.to_string(), value.to_string());
-    }
-    let mut parsed = JHashMap::new();
-    OptionParser::parse_short(&format!("-{key}={value}"), &mut parsed);
-    let canonical = parsed.iter().next().map(|(k, v)| (k.clone(), v.clone()));
-    canonical.unwrap_or_else(|| (key.to_string(), value.to_string()))
-}
-
-/// The part of `main/decompiler/OptionParser.java` the constructor uses to
-/// expand three-letter option names.
-struct OptionParser;
-
-impl OptionParser {
-    const CUSTOM_CHECKS: [&'static str; 6] = [
-        "-e=",
-        "--add-external=",
-        "-only=",
-        "--only=",
-        "-s",
-        "--silent",
-    ];
-
-    fn parse(arg: &str, options: &mut JHashMap<String, String>) -> bool {
-        for check in Self::CUSTOM_CHECKS {
-            if arg.starts_with(check) {
-                return false;
-            }
+impl DecompiledClass {
+    /// The language the class was written in: `kotlin` when the Kotlin
+    /// pipeline claimed it (its `path` then ends in `.kt`), else `java`.
+    pub fn language(&self) -> &'static str {
+        match self.path.rsplit_once('.') {
+            Some((_, "kt")) => "kotlin",
+            _ => "java",
         }
-
-        if !arg.starts_with("--") {
-            Self::parse_short(arg, options);
-            return true;
-        }
-
-        let arg = &arg[2..];
-        match arg.find('=') {
-            None => {
-                if let Some(rest) = arg.strip_prefix("no-") {
-                    options.put(rest.to_string(), "0".to_string());
-                } else {
-                    options.put(arg.to_string(), "1".to_string());
-                }
-            }
-            Some(index) => {
-                let key = &arg[..index];
-                let mut value = &arg[index + 1..];
-                if equals_ignore_case(value, "true") {
-                    value = "1";
-                } else if equals_ignore_case(value, "false") {
-                    value = "0";
-                }
-
-                options.put(key.to_string(), value.to_string());
-            }
-        }
-        true
-    }
-
-    fn parse_short(arg: &str, options: &mut JHashMap<String, String>) {
-        let short_name = arg.jsubstring(1, 4);
-        let value = arg.jsubstring_from(5);
-        let long_name = Self::short_to_long_name(&short_name).unwrap_or(short_name);
-        Self::parse(&format!("--{long_name}={value}"), options);
-    }
-
-    /// `SHORT_TO_LONG_NAME_MAP.get(shortName)`.
-    fn short_to_long_name(short_name: &str) -> Option<String> {
-        IFernflowerPreferences::all_options()
-            .iter()
-            .rev()
-            .find(|o| o.short_name == Some(short_name))
-            .map(|o| o.key.to_string())
     }
 }

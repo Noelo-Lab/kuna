@@ -29,20 +29,6 @@ impl Severity {
     pub fn ordinal(self) -> i32 {
         self as i32
     }
-
-    pub fn values() -> [Severity; 4] {
-        [
-            Severity::Trace,
-            Severity::Info,
-            Severity::Warn,
-            Severity::Error,
-        ]
-    }
-
-    /// `Severity.valueOf(name)`; `None` where Java throws `IllegalArgumentException`.
-    pub fn value_of(name: &str) -> Option<Severity> {
-        Severity::values().into_iter().find(|s| s.name() == name)
-    }
 }
 
 pub trait IFernflowerLogger {

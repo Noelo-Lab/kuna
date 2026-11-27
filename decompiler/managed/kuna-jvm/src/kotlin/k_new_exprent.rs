@@ -9,7 +9,6 @@ use crate::exit_exprent::Type as ExitType;
 use crate::exprent::{Exprent, ExprentType};
 use crate::generic_type::GenericType;
 use crate::i_fernflower_logger::Severity;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::jthrow;
 use crate::k_dispatch::KExprentExt;
@@ -296,12 +295,8 @@ impl KNewExprent {
                 if let Some(decompile_error) = wrapper.with(|d| d.decompile_error.clone()) {
                     crate::kuna_spans::method_failed(wrapper);
                     let mut lines: Vec<String> = Vec::new();
-                    if DecompilerContext::get_option(
-                        IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR,
-                    ) {
-                        lines.extend(ClassWriter::get_error_comment());
-                        ClassWriter::collect_error_lines(&decompile_error, &mut lines);
-                    }
+                    lines.extend(ClassWriter::get_error_comment());
+                    ClassWriter::collect_error_lines(&decompile_error, &mut lines);
 
                     for line in &lines {
                         buf.append_indent(indent + 1)

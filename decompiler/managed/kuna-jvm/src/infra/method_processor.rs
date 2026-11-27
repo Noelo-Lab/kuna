@@ -4,7 +4,7 @@
 //! runs that schedule on a watchdog thread (`run`, `lock`, `getResult`,
 //! `isFinished`) to enforce `MAX_PROCESSING_METHOD`; kuna calls
 //! [`MethodProcessor::code_to_java`] directly, as Vineflower itself does when
-//! the limit is 0 or in unit-test mode.
+//! the limit is 0.
 //!
 //! kuna (`kuna_javac_layout`): the Java schedule
 //! names its method to the layout decisions, which apply only there.
@@ -33,12 +33,12 @@ use crate::finally_processor::FinallyProcessor;
 use crate::generics_processor::GenericsProcessor;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
+use crate::idea_not_null_pass::IdeaNotNullPass;
 use crate::if_helper::IfHelper;
 use crate::if_pattern_match_processor::IfPatternMatchProcessor;
 use crate::infra::kuna_reclaim::ReclaimScope;
 use crate::inline_single_block_helper::InlineSingleBlockHelper;
 use crate::intersection_cast_processor::IntersectionCastProcessor;
-use crate::java_pass_location::JavaPassLocation;
 use crate::jthrow;
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
@@ -50,8 +50,8 @@ use crate::fixes::exception_ranges::overlapping_ranges::OverlappingRanges;
 use crate::fixes::constructor_calls::split_constructor_call;
 use crate::p8_structure::kuna_javac_layout;
 use crate::p_pand_mm_helper::PPandMMHelper;
+use crate::pass::Pass;
 use crate::pass_context::PassContext;
-use crate::plugin_context::PluginContext;
 use crate::root_statement::RootStatement;
 use crate::secondary_functions_helper::SecondaryFunctionsHelper;
 use crate::sequence_helper::SequenceHelper;
@@ -204,7 +204,6 @@ impl MethodProcessor {
         Self::set_debug_currently_decompiling(None);
 
         let is_initializer = CLINIT_NAME == mt.get_name();
-        let plugin_context = PluginContext::get_current_context();
 
         if let Some(e) = mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_KUNA_DEX_ERROR) {
             jthrow!(IllegalStateException; "DEX code not translated: {}", e.get_source_file(cl.get_pool()));
@@ -245,10 +244,6 @@ impl MethodProcessor {
             return Self::pass_root(&pctx);
         }
 
-        let mut pctx = PassContext::new(None, Some(graph), mt, cl, var_proc, decompile_record);
-
-        plugin_context.run_passes(JavaPassLocation::CfgConstruction, &mut pctx);
-
         ExceptionDeobfuscator::remove_circular_ranges(graph);
 
         ExceptionDeobfuscator::restore_pop_ranges(graph);
@@ -280,8 +275,6 @@ impl MethodProcessor {
                 mt.get_bytecode_version(),
             );
         }
-
-        plugin_context.run_passes(JavaPassLocation::CfgPreStatement, &mut pctx);
 
         let mut root = DomHelper::parse_graph(graph, mt, 0);
 
@@ -362,7 +355,7 @@ impl MethodProcessor {
             }
         }
 
-        pctx = PassContext::new(Some(root), Some(graph), mt, cl, var_proc, decompile_record);
+        let mut pctx = PassContext::new(Some(root), Some(graph), mt, cl, var_proc, decompile_record);
 
         if PPandMMHelper::inline_pp_iand_mmi_if(root) {
             decompile_record.add("InlinePPIandMMI", Some(root));
@@ -377,8 +370,6 @@ impl MethodProcessor {
             decompile_record.add("BuildAsserts", Some(root));
         }
 
-        plugin_context.run_passes(JavaPassLocation::BeforeMain, &mut pctx);
-        root = Self::pass_root(&pctx);
         Self::set_debug_currently_decompiling(Some(root));
 
         kuna_javac_layout::loops_built();
@@ -417,14 +408,6 @@ impl MethodProcessor {
                         decompile_record.add("ExtractLoops", Some(root));
                         continue;
                     }
-
-                    if plugin_context.run_passes(JavaPassLocation::InLoopDecomp, &mut pctx) {
-                        root = Self::pass_root(&pctx);
-                        Self::set_debug_currently_decompiling(Some(root));
-                        continue;
-                    }
-                    root = Self::pass_root(&pctx);
-                    Self::set_debug_currently_decompiling(Some(root));
 
                     if IfHelper::merge_all_ifs(root) {
                         decompile_record.add("MergeAllIfs", Some(root));
@@ -505,13 +488,10 @@ impl MethodProcessor {
                 continue;
             }
 
-            if plugin_context.run_passes(JavaPassLocation::MainLoop, &mut pctx) {
-                root = Self::pass_root(&pctx);
-                Self::set_debug_currently_decompiling(Some(root));
+            if IdeaNotNullPass.run(&mut pctx) {
+                decompile_record.add("IdeaNotNull", Some(root));
                 continue;
             }
-            root = Self::pass_root(&pctx);
-            Self::set_debug_currently_decompiling(Some(root));
 
             if !is_initializer && ExitHelper::condense_exits(root) {
                 decompile_record.add("CondenseExits", Some(root));
@@ -565,10 +545,6 @@ impl MethodProcessor {
             decompile_record.add("InsertSynchronizedAssignments", Some(root));
         }
 
-        plugin_context.run_passes(JavaPassLocation::AfterMain, &mut pctx);
-        root = Self::pass_root(&pctx);
-        Self::set_debug_currently_decompiling(Some(root));
-
         var_proc.set_var_definitions(root);
         decompile_record.add("SetVarDefinitions", Some(root));
 
@@ -588,10 +564,6 @@ impl MethodProcessor {
             decompile_record.add("CanonicalizeCasts", Some(root));
         }
 
-        plugin_context.run_passes(JavaPassLocation::AtEnd, &mut pctx);
-        root = Self::pass_root(&pctx);
-        Self::set_debug_currently_decompiling(Some(root));
-
         if LabelHelper::replace_continue_with_break(root.0) {
             decompile_record.add("ReplaceContinues", Some(root));
         }
@@ -603,7 +575,7 @@ impl MethodProcessor {
         root
     }
 
-    /// `pctx.getRoot()` after a plugin location; a pass never clears it.
+    /// `pctx.getRoot()` after the Kotlin pass; a pass never clears it.
     fn pass_root(pctx: &PassContext) -> RootStatement {
         pctx.get_root().expect("PassContext.getRoot()")
     }

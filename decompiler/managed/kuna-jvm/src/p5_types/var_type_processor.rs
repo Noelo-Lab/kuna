@@ -83,33 +83,6 @@ impl VarTypeProcessor {
         Self::reset_exprent_types(graph);
 
         while !self.process_var_types(graph) {}
-
-        let (lower_bounds, upper_bounds) =
-            self.with(|d| (d.lower_bounds.clone(), d.upper_bounds.clone()));
-        let keys = lower_bounds.borrow().key_vec();
-        for p in keys {
-            let lower = lower_bounds
-                .borrow()
-                .get_cloned(&p)
-                .expect("lowerBounds.get(p)");
-            let upper = upper_bounds.borrow().get_cloned(&p);
-
-            if let Some(upper) = upper {
-                if lower.type_family != TypeFamily::Object && lower.higher_in_lattice_than(&upper) {
-                    ValidationHelper::validate_true(
-                        false,
-                        &format!("lower bound {lower} > upper bound {upper} for var {p}"),
-                    );
-                }
-            }
-        }
-
-        ValidationHelper::validate_vars(
-            graph,
-            root,
-            |var| !var.get_var_type().ptr_eq(&VarType::VARTYPE_UNKNOWN()),
-            "Var type not set!",
-        );
     }
 
     fn set_init_vars(self, root: RootStatement) {

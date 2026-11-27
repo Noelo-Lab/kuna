@@ -14,7 +14,6 @@ use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, Statement};
-use crate::validation_helper::ValidationHelper;
 
 pub struct LoopExtractHelper;
 
@@ -53,7 +52,6 @@ impl LoopExtractHelper {
 
         if let Some(dostat) = stat.try_as_do() {
             if Self::extract_loop(dostat) {
-                ValidationHelper::validate_statement(stat.get_top_parent());
                 return 2;
             }
         }

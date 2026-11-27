@@ -20,7 +20,6 @@ use crate::kt_attrs::KtAttrs;
 use crate::kt_metadata::{KotlinMetadataAnnotation, KtMetadata};
 use crate::kt_proto;
 use crate::fixes::kt_types::kt_type_parameter_id;
-use crate::language_chooser::LanguageChooser;
 use crate::metadata_name_resolver::MetadataNameResolver;
 use crate::rt::{rethrow, try_catch, Caught};
 use crate::struct_annotation_attribute::{AnnotationElement, StructAnnotationAttribute};
@@ -290,10 +289,4 @@ fn is_java_error(caught: &Caught) -> bool {
         .exception
         .as_ref()
         .is_some_and(|e| e.class.ends_with("Error"))
-}
-
-impl LanguageChooser for KotlinChooser {
-    fn is_language(&self, cl: StructClass) -> bool {
-        KotlinChooser::is_language(self, cl)
-    }
 }

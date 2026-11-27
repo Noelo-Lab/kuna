@@ -39,11 +39,10 @@ pub fn copy_classes(dir: &Path, files: &[&str]) {
     }
 }
 
-/// Options for machine-independent runs: no JDK runtime, quiet log.
+/// Options for machine-independent runs: no JDK runtime.
 pub fn options(extra: &[(&str, &str)]) -> Vec<(String, String)> {
     let mut options = vec![
         ("include-runtime".to_string(), "0".to_string()),
-        ("log-level".to_string(), "error".to_string()),
     ];
     options.extend(extra.iter().map(|(k, v)| (k.to_string(), v.to_string())));
     options

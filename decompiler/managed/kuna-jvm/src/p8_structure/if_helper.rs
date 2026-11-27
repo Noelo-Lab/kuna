@@ -19,7 +19,6 @@ use crate::sequence_helper::SequenceHelper;
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{Statement, StatementType};
-use crate::validation_helper::ValidationHelper;
 
 pub struct IfHelper;
 
@@ -82,39 +81,33 @@ impl IfHelper {
 
                     if Self::collapse_if_if(&rtnode) {
                         res = true;
-                        ValidationHelper::validate_statement(stat.get_top_parent());
                         continue 'loop_;
                     }
 
                     if !set_reordered_ifs.contains(&stat.id()) {
                         if Self::collapse_if_else(&rtnode) {
                             res = true;
-                            ValidationHelper::validate_statement(stat.get_top_parent());
                             continue 'loop_;
                         }
 
                         if Self::collapse_else(&rtnode) {
                             res = true;
-                            ValidationHelper::validate_statement(stat.get_top_parent());
                             continue 'loop_;
                         }
 
                         if Self::collapse_ternary(&rtnode) {
                             res = true;
-                            ValidationHelper::validate_statement(stat.get_top_parent());
                             continue 'loop_;
                         }
 
                         if Self::if_else_chain_denesting(&rtnode) {
                             res = true;
-                            ValidationHelper::validate_statement(stat.get_top_parent());
                             continue 'loop_;
                         }
                     }
 
                     if Self::reorder_if(ifstat) {
                         res = true;
-                        ValidationHelper::validate_statement(stat.get_top_parent());
                         set_reordered_ifs.add(stat.id());
                         continue 'loop_;
                     }
@@ -814,10 +807,6 @@ impl IfHelper {
     }
 
     fn swap_branches(ifstat: IfStatement, noifstat: bool, parent: SequenceStatement) {
-        ValidationHelper::validate_true(
-            ifstat.iftype() == IfStatement::IFTYPE_IF,
-            "This method is meant for swapping the branches of non if-else IfStatements",
-        );
         let mut lst: Vec<Statement> = Vec::new();
         let mut i = parent.get_stats().borrow().len() as i32 - 1;
         while i >= 0 {

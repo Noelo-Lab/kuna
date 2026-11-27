@@ -16,7 +16,6 @@ use crate::root_statement::RootStatement;
 use crate::rt::{objects_hash, JHashMap, JList, JavaEq, JavaHash};
 use crate::stat_edge::StatEdge;
 use crate::statement::{LastBasicType, Statement, StatementType};
-use crate::validation_helper::ValidationHelper;
 
 pub struct FlattenStatementsHelper {
     map_regular_destination_nodes: JHashMap<Statement, DirectNode>,
@@ -216,11 +215,7 @@ impl FlattenStatementsHelper {
                 let try_block = self.flatten_statement(stat.get_first().expect("first"));
                 node.add_successor(DirectEdge::of(node, try_block));
 
-                let popped = self.try_nodes_stack.pop();
-                ValidationHelper::validate_true(
-                    try_nodes.ptr_eq(&popped),
-                    "tryNodesStack is broken",
-                );
+                self.try_nodes_stack.pop();
                 if !self.try_nodes_stack.is_empty() {
                     self.try_nodes_stack.peek().add_all(try_nodes.to_vec());
                 }
@@ -249,11 +244,6 @@ impl FlattenStatementsHelper {
                 if is_finally {
                     let st = stats.borrow().get(end_catch_index);
                     let finally_node = self.finally_nodes_stack.pop();
-                    ValidationHelper::validate_true(
-                        finally_node.statement() == stat
-                            && finally_node.type_() == DirectNodeType::Finally,
-                        "stackFinally is broken",
-                    );
                     combined_catch_node
                         .add_successor(DirectEdge::of(combined_catch_node, finally_node));
 
@@ -263,12 +253,7 @@ impl FlattenStatementsHelper {
                     let finally_block_node = self.flatten_statement(st);
                     finally_node.add_successor(DirectEdge::of(finally_node, finally_block_node));
 
-                    let finally_end_node = self.finally_nodes_stack.pop();
-                    ValidationHelper::validate_true(
-                        finally_end_node.statement() == stat
-                            && finally_end_node.type_() == DirectNodeType::FinallyEnd,
-                        "stackFinally is broken",
-                    );
+                    self.finally_nodes_stack.pop();
                 }
 
                 node

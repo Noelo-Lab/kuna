@@ -8,34 +8,26 @@
 //! and Java `assert`s (disabled at run time) are not either.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
-use crate::bytecode_mapping_tracer::BytecodeMappingTracer;
-use crate::class_text_token::ClassTextToken;
-use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::ExprProcessor;
 use crate::field_descriptor::FieldDescriptor;
-use crate::field_text_token::FieldTextToken;
-use crate::generic_main::GenericMain;
-use crate::generic_type::GenericType;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::jthrow;
 use crate::method_descriptor::MethodDescriptor;
-use crate::method_text_token::MethodTextToken;
 use crate::pair::Pair;
 use crate::rt::jstring::from_utf16;
 use crate::rt::{
-    exception, jchar, objects_hash, BitSet, JHashMap, JHashSet, JLinkedHashMap, JavaEq, JavaHash,
+    exception, objects_hash, BitSet, JHashSet, JLinkedHashMap, JavaEq, JavaHash,
     JavaStr,
 };
-use crate::text_token::{TextToken, TextTokenKind};
+use crate::text_token::TextToken;
 use crate::type_annotation::{PathValue, TypeAnnotation};
 use crate::var_type::VarType;
-use crate::variable_text_token::VariableTextToken;
 
 /// `Boolean.getBoolean("decompiler.allow.text.buffer.to.string")`: never set.
 const ALLOW_TO_STRING: bool = false;
@@ -102,48 +94,6 @@ fn last_index_of(hay: &[u16], pat: &[u16], from: i32) -> i32 {
         i -= 1;
     }
     -1
-}
-
-/// `String.split(separator)` for a literal separator: trailing empty strings dropped.
-fn split(s: &[u16], sep: &[u16]) -> Vec<Vec<u16>> {
-    let mut out = Vec::new();
-    let mut start = 0usize;
-    loop {
-        let at = index_of(s, sep, start as i32);
-        if at < 0 || sep.is_empty() {
-            break;
-        }
-        out.push(s[start..at as usize].to_vec());
-        start = at as usize + sep.len();
-    }
-    if out.is_empty() {
-        return vec![s.to_vec()];
-    }
-    out.push(s[start..].to_vec());
-    while out.last().is_some_and(|l| l.is_empty()) {
-        out.pop();
-    }
-    out
-}
-
-/// `String.trim()`.
-fn trim(s: &[u16]) -> &[u16] {
-    let start = s.iter().position(|&c| c > 0x20).unwrap_or(s.len());
-    let end = s.iter().rposition(|&c| c > 0x20).map_or(start, |e| e + 1);
-    &s[start..end.max(start)]
-}
-
-/// `String.isBlank()`.
-fn is_blank(s: &str) -> bool {
-    s.utf16().iter().all(|&c| jchar::is_whitespace(c))
-}
-
-/// The UTF-16 index of the first `c` in `s`, or -1.
-fn jindex_of_char(s: &str, c: char) -> i32 {
-    match s.find(c) {
-        Some(b) => s[..b].jlen() as i32,
-        None => -1,
-    }
 }
 
 type FormatCache = Option<(String, String, Rc<[u16]>, Rc<[u16]>)>;
@@ -250,7 +200,7 @@ impl std::fmt::Display for BytecodeMappingKey {
     }
 }
 
-/// Java source text under construction, with its line, token and bytecode mappings.
+/// Java source text under construction, with its span marks and bytecode mapping.
 #[derive(Clone)]
 pub struct TextBuffer {
     my_line_separator: Rc<[u16]>,
@@ -260,9 +210,7 @@ pub struct TextBuffer {
     my_current_group: usize,
     my_has_reformatted: bool,
     my_string_builder: Vec<u16>,
-    my_line_to_offset_mapping: Option<JHashMap<i32, i32>>,
     my_bytecode_offset_mapping: JLinkedHashMap<BytecodeMappingKey, i32>,
-    my_line_mapping: Option<JHashMap<i32, BTreeSet<i32>>>,
 }
 
 impl Default for TextBuffer {
@@ -289,9 +237,7 @@ impl TextBuffer {
             my_current_group: ROOT,
             my_has_reformatted: false,
             my_string_builder: string_builder,
-            my_line_to_offset_mapping: None,
             my_bytecode_offset_mapping: JLinkedHashMap::new(),
-            my_line_mapping: None,
         }
     }
 
@@ -384,153 +330,32 @@ impl TextBuffer {
     /// Java: `appendCastTypeName(VarType)`.
     pub fn append_cast_type_name(&mut self, type_: &VarType) -> &mut Self {
         let cast_name = ExprProcessor::get_cast_type_name(type_);
-        self.append_cast_type_name_str(&cast_name, type_)
+        self.append(&cast_name)
     }
 
     /// Java: `appendCastTypeName(String castName, VarType)`.
-    pub fn append_cast_type_name_str(&mut self, cast_name: &str, type_: &VarType) -> &mut Self {
-        if type_.type_ == CodeType::Object {
-            if type_.array_dim > 0 {
-                let cut = cast_name.jlen() - (type_.array_dim * 2) as usize;
-                let name = cast_name.jsubstring(0, cut);
-                self.append_all_classes(&name, type_.value.as_deref());
-                let at = self.length() - name.jlen() as i32;
-                self.add_generic_type_tokens(at, &name, type_);
-                self.append(&cast_name.jsubstring_from(cut));
-            } else {
-                self.append_all_classes(cast_name, type_.value.as_deref());
-                let at = self.length() - cast_name.jlen() as i32;
-                self.add_generic_type_tokens(at, cast_name, type_);
-            }
-            return self;
-        }
+    pub fn append_cast_type_name_str(&mut self, cast_name: &str, _type: &VarType) -> &mut Self {
         self.append(cast_name)
     }
 
     /// Java: `appendTypeName(VarType)`.
     pub fn append_type_name(&mut self, type_: &VarType) -> &mut Self {
         let name = ExprProcessor::get_type_name(type_);
-        self.append_type_name_str(&name, type_)
+        self.append(&name)
     }
 
     /// Java: `appendTypeName(String name, VarType)`.
-    pub fn append_type_name_str(&mut self, name: &str, type_: &VarType) -> &mut Self {
-        if type_.type_ == CodeType::Object {
-            self.append_all_classes(name, type_.value.as_deref());
-            let at = self.length() - name.jlen() as i32;
-            self.add_generic_type_tokens(at, name, type_);
-            return self;
-        }
+    pub fn append_type_name_str(&mut self, name: &str, _type: &VarType) -> &mut Self {
         self.append(name)
     }
 
-    pub fn add_type_name_token(&mut self, type_: &VarType, index: i32) -> &mut Self {
-        if type_.type_ == CodeType::Object {
-            let name = ExprProcessor::get_type_name(type_);
-            self.add_all_class_tokens(index, &name, type_.value.as_deref());
-            self.add_generic_type_tokens(index, &name, type_);
-        }
-        self
-    }
-
-    pub fn append_all_classes(&mut self, text: &str, qualified_name: Option<&str>) -> &mut Self {
-        let at = self.length();
-        self.add_all_class_tokens(at, text, qualified_name);
+    /// Java: `appendAllClasses`.
+    pub fn append_all_classes(&mut self, text: &str, _qualified_name: Option<&str>) -> &mut Self {
         self.append(text)
     }
 
-    pub fn add_all_class_tokens(
-        &mut self,
-        index: i32,
-        text: &str,
-        qualified_name: Option<&str>,
-    ) -> &mut Self {
-        let mut index = index;
-        let mut text = text;
-        if let Some(lt) = text.find('<') {
-            text = &text[..lt];
-        }
-        let mut pos = 0usize;
-        while text.contains('.') {
-            let qualified_name = qualified_name.expect("NullPointerException");
-            if !qualified_name[pos..].contains('$') {
-                break;
-            }
-            let dot = text.find('.').expect("contains '.'");
-            let length = text[..dot].jlen() as i32;
-            let dollar = pos + qualified_name[pos..].find('$').expect("contains '$'");
-            self.add_class_token(index, length, &qualified_name[..dollar]);
-            pos = dollar + 1;
-            text = &text[dot + 1..];
-            index += length + 1;
-        }
-        if !is_blank(text) {
-            self.add_class_token(index, text.jlen() as i32, qualified_name.unwrap_or("null"));
-        }
-        self
-    }
-
-    pub fn add_generic_type_tokens(
-        &mut self,
-        index: i32,
-        text: &str,
-        type_: &VarType,
-    ) -> &mut Self {
-        if !type_.is_generic() {
-            return self;
-        }
-        let gen_type: GenericType = type_.as_generic();
-        let index = index + jindex_of_char(text, '<') + 1;
-        let mut offset = 0;
-        let arguments = gen_type.get_arguments();
-        for argument in arguments.iter() {
-            match argument.clone() {
-                None => offset += 1,
-                Some(t) if t.is_generic() => {
-                    let gt: GenericType = t.as_generic();
-                    let wildcard = gt.get_wildcard();
-                    if wildcard == GenericType::WILDCARD_EXTENDS {
-                        offset += 10;
-                    } else if wildcard == GenericType::WILDCARD_SUPER {
-                        offset += 8;
-                    }
-                    let name = GenericMain::get_generic_cast_type_name(&gt);
-                    if gt.type_ == CodeType::Object {
-                        self.add_all_class_tokens(index + offset, &name, gt.value.as_deref());
-                    }
-                    self.add_generic_type_tokens(index + offset, &name, &gt);
-                    offset += name.jlen() as i32;
-                }
-                Some(t) => {
-                    if t.type_ == CodeType::Object {
-                        self.add_type_name_token(&t, index + offset);
-                    }
-                    offset += ExprProcessor::get_cast_type_name(&t).jlen() as i32;
-                }
-            }
-            offset += 2;
-        }
-        self
-    }
-
-    pub fn add_class_token(&mut self, index: i32, length: i32, name: &str) -> &mut Self {
-        self.add_token(ClassTextToken::new(index, length, false, name.to_string()));
-        self
-    }
-
-    pub fn append_class(
-        &mut self,
-        value: &str,
-        declaration: bool,
-        qualified_name: &str,
-    ) -> &mut Self {
-        let at = self.length();
-        self.add_token(ClassTextToken::new(
-            at,
-            value.jlen() as i32,
-            declaration,
-            qualified_name.to_string(),
-        ));
+    /// Java: `appendClass`.
+    pub fn append_class(&mut self, value: &str, _declaration: bool, _qualified_name: &str) -> &mut Self {
         self.append(value)
     }
 
@@ -538,33 +363,23 @@ impl TextBuffer {
     pub fn append_field(
         &mut self,
         value: &str,
-        declaration: bool,
-        class_name: &str,
-        name: &str,
-        descriptor: &str,
+        _declaration: bool,
+        _class_name: &str,
+        _name: &str,
+        _descriptor: &str,
     ) -> &mut Self {
-        let descriptor = FieldDescriptor::parse_descriptor(descriptor);
-        self.append_field_descriptor(value, declaration, class_name, name, &descriptor)
+        self.append(value)
     }
 
     /// Java: `appendField(String, boolean, String, String, FieldDescriptor)`.
     pub fn append_field_descriptor(
         &mut self,
         value: &str,
-        declaration: bool,
-        class_name: &str,
-        name: &str,
-        descriptor: &FieldDescriptor,
+        _declaration: bool,
+        _class_name: &str,
+        _name: &str,
+        _descriptor: &FieldDescriptor,
     ) -> &mut Self {
-        let at = self.length();
-        self.add_token(FieldTextToken::new(
-            at,
-            value.jlen() as i32,
-            declaration,
-            class_name.to_string(),
-            name.to_string(),
-            descriptor.clone(),
-        ));
         self.append(value)
     }
 
@@ -572,33 +387,23 @@ impl TextBuffer {
     pub fn append_method(
         &mut self,
         value: &str,
-        declaration: bool,
-        class_name: &str,
-        name: &str,
-        descriptor: &str,
+        _declaration: bool,
+        _class_name: &str,
+        _name: &str,
+        _descriptor: &str,
     ) -> &mut Self {
-        let descriptor = MethodDescriptor::parse_descriptor(descriptor);
-        self.append_method_descriptor(value, declaration, class_name, name, &descriptor)
+        self.append(value)
     }
 
     /// Java: `appendMethod(String, boolean, String, String, MethodDescriptor)`.
     pub fn append_method_descriptor(
         &mut self,
         value: &str,
-        declaration: bool,
-        class_name: &str,
-        name: &str,
-        descriptor: &MethodDescriptor,
+        _declaration: bool,
+        _class_name: &str,
+        _name: &str,
+        _descriptor: &MethodDescriptor,
     ) -> &mut Self {
-        let at = self.length();
-        self.add_token(MethodTextToken::new(
-            at,
-            value.jlen() as i32,
-            declaration,
-            class_name.to_string(),
-            name.to_string(),
-            descriptor.clone(),
-        ));
         self.append(value)
     }
 
@@ -607,25 +412,15 @@ impl TextBuffer {
     pub fn append_variable(
         &mut self,
         value: &str,
-        declaration: bool,
-        parameter: bool,
-        class_name: &str,
-        method_name: &str,
-        method_descriptor: &str,
-        index: i32,
-        name: &str,
+        _declaration: bool,
+        _parameter: bool,
+        _class_name: &str,
+        _method_name: &str,
+        _method_descriptor: &str,
+        _index: i32,
+        _name: &str,
     ) -> &mut Self {
-        let descriptor = MethodDescriptor::parse_descriptor(method_descriptor);
-        self.append_variable_descriptor(
-            value,
-            declaration,
-            parameter,
-            class_name,
-            method_name,
-            &descriptor,
-            index,
-            name,
-        )
+        self.append(value)
     }
 
     /// Java: `appendVariable(String, boolean, boolean, String, String, MethodDescriptor, int, String)`.
@@ -633,26 +428,14 @@ impl TextBuffer {
     pub fn append_variable_descriptor(
         &mut self,
         value: &str,
-        declaration: bool,
-        parameter: bool,
-        class_name: &str,
-        method_name: &str,
-        method_descriptor: &MethodDescriptor,
-        index: i32,
-        name: &str,
+        _declaration: bool,
+        _parameter: bool,
+        _class_name: &str,
+        _method_name: &str,
+        _method_descriptor: &MethodDescriptor,
+        _index: i32,
+        _name: &str,
     ) -> &mut Self {
-        let at = self.length();
-        self.add_token(VariableTextToken::new(
-            at,
-            value.jlen() as i32,
-            declaration,
-            parameter,
-            class_name.to_string(),
-            method_name.to_string(),
-            method_descriptor.clone(),
-            index,
-            name.to_string(),
-        ));
         self.append(value)
     }
 
@@ -664,18 +447,12 @@ impl TextBuffer {
     /// every later edit like a token's (kuna, see `kuna_spans`).
     pub fn add_kuna_mark(&mut self, id: u32) {
         let at = self.my_string_builder.len() as i32;
-        self.add_token(TextToken::new(at, 0, false, TextTokenKind::KunaMark(id)));
+        self.add_token(TextToken { start: at, id });
     }
 
     /// Every mark of [`TextBuffer::add_kuna_mark`] still in the text, as `(id, UTF-16 offset)`.
     pub fn kuna_marks(&self) -> Vec<(u32, i32)> {
-        self.get_tokens()
-            .into_iter()
-            .filter_map(|t| match t.kind {
-                TextTokenKind::KunaMark(id) => Some((id, t.start)),
-                _ => None,
-            })
-            .collect()
+        self.get_tokens().into_iter().map(|t| (t.id, t.start)).collect()
     }
 
     /// Opens a group of possible newlines that are either all taken or none.
@@ -789,41 +566,8 @@ impl TextBuffer {
             .retain(|key, _| key.my_class.is_some());
     }
 
-    /// One tracer per `(class, method key)`, in mapping order, each fed the
-    /// source line of every bytecode offset.
-    pub fn get_tracers(
-        &self,
-    ) -> JLinkedHashMap<Pair<String, Option<String>>, BytecodeMappingTracer> {
-        let sb = &self.my_string_builder;
-        let sep = &self.my_line_separator;
-        let mut newline_offsets: Vec<i32> = Vec::new();
-        let mut i = index_of(sb, sep, 0);
-        while i != -1 {
-            newline_offsets.push(i);
-            i = index_of(sb, sep, i + 1);
-        }
-        let mut tracers: JLinkedHashMap<Pair<String, Option<String>>, BytecodeMappingTracer> =
-            JLinkedHashMap::new();
-        for (key, &text_offset) in self.my_bytecode_offset_mapping.iter() {
-            let Some(class_name) = &key.my_class else {
-                jthrow!(IllegalStateException;
-                    "getTracers called when not all bytecode offsets have a valid class and method");
-            };
-            let tracer = *tracers.compute_if_absent(
-                Pair::of(class_name.clone(), key.my_method.clone()),
-                BytecodeMappingTracer::new,
-            );
-            let line_no = match newline_offsets.binary_search(&text_offset) {
-                Ok(at) | Err(at) => at as i32,
-            };
-            tracer.set_current_source_line(line_no);
-            tracer.add_mapping(key.my_bytecode_offset);
-        }
-        tracers
-    }
-
-    /// What [`TextBuffer::get_tracers`] feeds its tracers, without creating
-    /// any: `(class, method key, bytecode offset, 0-based line)` in mapping order (kuna).
+    /// `(class, method key, bytecode offset, 0-based line)` of every bytecode
+    /// mapping, in mapping order (kuna).
     pub fn kuna_bytecode_lines(&self) -> Vec<(Option<String>, Option<String>, i32, i32)> {
         let sb = &self.my_string_builder;
         let sep = &self.my_line_separator;
@@ -994,118 +738,7 @@ impl TextBuffer {
     }
 
     pub fn convert_to_string_and_allow_data_discard(&self) -> String {
-        let original = &self.my_string_builder;
-        let line_to_offset = match &self.my_line_to_offset_mapping {
-            Some(map) if !map.is_empty() => map,
-            _ => {
-                if self.my_line_mapping.is_some() {
-                    return self.add_original_line_numbers();
-                }
-                return text_of(original);
-            }
-        };
-        let sep = &self.my_line_separator;
-        let mut res: Vec<u16> = Vec::new();
-        let src_lines = split(original, sep);
-        let mut current_line_start_offset = 0i32;
-        let mut current_line = 0usize;
-        let mut previous_mark_line = 0usize;
-        let mut dumped_lines = 0i32;
-        let mut lines_with_marks = line_to_offset.key_vec();
-        lines_with_marks.sort();
-        for mark_line in lines_with_marks {
-            let mark_offset = *line_to_offset.get(&mark_line).expect("mark line");
-            while current_line < src_lines.len() {
-                let line = &src_lines[current_line];
-                let line_end = current_line_start_offset + line.len() as i32 + sep.len() as i32;
-                if mark_offset <= line_end {
-                    let required_line = mark_line - 1;
-                    let lines_to_add = required_line - dumped_lines;
-                    dumped_lines = required_line;
-                    self.append_lines(
-                        &mut res,
-                        &src_lines,
-                        previous_mark_line,
-                        current_line,
-                        lines_to_add,
-                    );
-                    previous_mark_line = current_line;
-                    break;
-                }
-                current_line_start_offset = line_end;
-                current_line += 1;
-            }
-        }
-        if previous_mark_line < src_lines.len() {
-            let n = (src_lines.len() - previous_mark_line) as i32;
-            self.append_lines(&mut res, &src_lines, previous_mark_line, src_lines.len(), n);
-        }
-        text_of(&res)
-    }
-
-    fn add_original_line_numbers(&self) -> String {
-        let sb = &self.my_string_builder;
-        let sep = &self.my_line_separator;
-        let line_mapping = self.my_line_mapping.as_ref().expect("line mapping");
-        let mut out: Vec<u16> = Vec::new();
-        let mut line_start = 0i32;
-        let mut count = 0;
-        let length = sep.len() as i32;
-        loop {
-            let line_end = index_of(sb, sep, line_start);
-            if line_end <= 0 {
-                break;
-            }
-            count += 1;
-            out.extend_from_slice(&sb[line_start as usize..line_end as usize]);
-            if let Some(integers) = line_mapping.get(&count) {
-                push_units(&mut out, "//");
-                for integer in integers {
-                    out.push(b' ' as u16);
-                    push_units(&mut out, &integer.to_string());
-                }
-            }
-            out.extend_from_slice(sep);
-            line_start = line_end + length;
-        }
-        if (line_start as usize) < sb.len() {
-            out.extend_from_slice(&sb[line_start as usize..]);
-        }
-        text_of(&out)
-    }
-
-    fn append_lines(
-        &self,
-        res: &mut Vec<u16>,
-        src_lines: &[Vec<u16>],
-        from: usize,
-        to: usize,
-        required_line_number: i32,
-    ) {
-        let sep = &self.my_line_separator;
-        let span = to as i32 - from as i32;
-        if span > required_line_number {
-            let strings =
-                TextBuffer::compact_lines(src_lines[from..to].to_vec(), required_line_number);
-            let mut separators_required = required_line_number - 1;
-            for s in strings {
-                res.extend_from_slice(&s);
-                let more = separators_required > 0;
-                separators_required -= 1;
-                if more {
-                    res.extend_from_slice(sep);
-                }
-            }
-            res.extend_from_slice(sep);
-        } else {
-            for line in &src_lines[from..to] {
-                res.extend_from_slice(line);
-                res.extend_from_slice(sep);
-            }
-            for _ in 0..(required_line_number - span).max(0) {
-                res.extend_from_slice(sep);
-            }
-        }
+        text_of(&self.my_string_builder)
     }
 
     pub fn length(&self) -> i32 {
@@ -1133,15 +766,6 @@ impl TextBuffer {
             );
         }
         self.my_string_builder.resize(position as usize, 0);
-        if let Some(map) = &self.my_line_to_offset_mapping {
-            let mut new_map = JHashMap::new();
-            for (&key, &value) in map.iter() {
-                if value <= position {
-                    new_map.put(key, value);
-                }
-            }
-            self.my_line_to_offset_mapping = Some(new_map);
-        }
         self.truncate_group(ROOT, position);
     }
 
@@ -1179,15 +803,6 @@ impl TextBuffer {
             jthrow!(IllegalArgumentException; "Can't append buffer with non-root group");
         }
         let len = self.my_string_builder.len() as i32;
-        if let Some(other) = &buffer.my_line_to_offset_mapping {
-            if !other.is_empty() {
-                self.check_map_created();
-                let map = self.my_line_to_offset_mapping.as_mut().expect("created");
-                for (&key, &value) in other.iter() {
-                    map.put(key, value + len);
-                }
-            }
-        }
         for (key, &value) in buffer.my_bytecode_offset_mapping.iter() {
             let key = if key.my_class.is_none() {
                 BytecodeMappingKey::new(
@@ -1271,28 +886,9 @@ impl TextBuffer {
     }
 
     fn shift_mapping(&mut self, shift_offset: i32) {
-        if let Some(map) = &self.my_line_to_offset_mapping {
-            let mut new_map = JHashMap::new();
-            for (&key, &value) in map.iter() {
-                let mut new_value = value;
-                if new_value >= 0 {
-                    new_value += shift_offset;
-                }
-                if new_value >= 0 {
-                    new_map.put(key, new_value);
-                }
-            }
-            self.my_line_to_offset_mapping = Some(new_map);
-        }
         self.my_bytecode_offset_mapping
             .for_each_value_mut(|_, value| *value += shift_offset);
         self.shift_group(ROOT, shift_offset);
-    }
-
-    fn check_map_created(&mut self) {
-        if self.my_line_to_offset_mapping.is_none() {
-            self.my_line_to_offset_mapping = Some(JHashMap::new());
-        }
     }
 
     /// Java: `countLines()`.
@@ -1331,56 +927,6 @@ impl TextBuffer {
             .count() as i32
     }
 
-    fn compact_lines(src_lines: Vec<Vec<u16>>, required_line_number: i32) -> Vec<Vec<u16>> {
-        if src_lines.len() < 2 || src_lines.len() as i32 <= required_line_number {
-            return src_lines;
-        }
-        let mut res = src_lines;
-        let open = [b'{' as u16];
-        let close = [b'}' as u16];
-        let mut i = res.len() - 1;
-        while i > 0 {
-            let s = res[i].clone();
-            let trimmed = trim(&s);
-            if trimmed == open || trimmed == close {
-                res[i - 1].extend_from_slice(&s);
-                res.remove(i);
-            }
-            if res.len() as i32 <= required_line_number {
-                return res;
-            }
-            i -= 1;
-        }
-        let mut i = res.len() - 1;
-        while i > 0 {
-            let s = res[i].clone();
-            if trim(&s).is_empty() {
-                res[i - 1].extend_from_slice(&s);
-                res.remove(i);
-            }
-            if res.len() as i32 <= required_line_number {
-                return res;
-            }
-            i -= 1;
-        }
-        res
-    }
-
-    /// `line_mapping` holds `(original line, new line)` pairs.
-    pub fn dump_original_line_numbers(&mut self, line_mapping: &[i32]) {
-        if !line_mapping.is_empty() {
-            let mut map: JHashMap<i32, BTreeSet<i32>> = JHashMap::new();
-            let mut i = 0;
-            while i < line_mapping.len() {
-                let key = line_mapping[i + 1];
-                map.compute_if_absent(key, BTreeSet::new)
-                    .insert(line_mapping[i]);
-                i += 2;
-            }
-            self.my_line_mapping = Some(map);
-        }
-    }
-
     pub fn get_tokens(&self) -> Vec<TextToken> {
         self.flatten_tokens(ROOT)
     }
@@ -1399,16 +945,12 @@ impl TextBuffer {
     pub fn check_leaks() {}
 }
 
-/// `toString()`: discouraged, so it warns (or fails in unit-test mode) first.
+/// `toString()`: discouraged, so it warns first.
 impl std::fmt::Display for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !ALLOW_TO_STRING {
-            if DecompilerContext::get_option(IFernflowerPreferences::UNIT_TEST_MODE) {
-                exception::throw("AssertionError", "Usage of TextBuffer.toString");
-            } else {
-                DecompilerContext::get_logger()
-                    .write_message("Usage of TextBuffer.toString", Severity::Warn);
-            }
+            DecompilerContext::get_logger()
+                .write_message("Usage of TextBuffer.toString", Severity::Warn);
         }
         f.write_str(&self.convert_to_string_and_allow_data_discard())
     }

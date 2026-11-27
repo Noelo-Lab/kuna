@@ -7,7 +7,7 @@
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::p6_variables::var_definition_helper::{NameMap, VarDefs, VarInMethod};
-use crate::plugin_context::PluginContext;
+use crate::language_spec::LanguageSpec;
 use crate::rt::JHashSet;
 use crate::statement::{Statement, StatementType};
 use crate::struct_method::StructMethod;
@@ -83,7 +83,7 @@ pub fn set_non_final(
 /// blocks of their own.
 fn java(mt: StructMethod) -> bool {
     let class = DecompilerContext::get_struct_context().get_class(&mt.get_class_qualified_name());
-    class.is_none_or(|cl| PluginContext::get_current_context().get_language_spec(cl).is_none())
+    class.is_none_or(|cl| LanguageSpec::of(cl).is_none())
 }
 
 /// Whether `stat` is a statement sequence that is a case body of a switch

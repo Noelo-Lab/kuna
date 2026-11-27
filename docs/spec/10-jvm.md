@@ -74,7 +74,7 @@ so a change upstream can be found and applied in the same place:
   `label7`), so an object is allocated exactly where the Java constructor runs, never as
   an extra temporary.
 - **kuna's own code** lives in `kuna_*` modules (`kuna_input`, `kuna_inventory`,
-  `kuna_options`, `kuna_driver`, `kuna_engine`, `kuna_partition`, `kuna_plugins`, `kuna_spans`,
+  `kuna_options`, `kuna_driver`, `kuna_engine`, `kuna_partition`, `kuna_spans`,
   `kuna_corpus`, `kuna_reclaim`), in `src/fixes/`, in the modules that replace JVM
   facilities (`context_source`, `jdk_runtime`, `zip_reader`, `byte_cursor`), and in the
   Kotlin plugin's seams (`kt_metadata`, `kt_attrs`, `k_dispatch`). Changes inside ported
@@ -104,7 +104,7 @@ phase, but the order of execution is the engine's own:
 | `substrate/` | the shared IR: statements, expressions, edges, types and the set/map containers |
 | `rt/` | (kuna) the Java-runtime kernel the port stands on (section 10.13) |
 | `infra/` | the per-method schedule, pass hooks, the parallel driver and the debugging aids |
-| `plugins/` | Vineflower's VariableRenaming and IdeaNotNull plugins (this section, below) |
+| `plugins/` | Vineflower's IdeaNotNull plugin's pass (this section, below) |
 | `kotlin/` | Vineflower's Kotlin plugin: metadata decoding, its pass schedule, expression and statement layer and writer (section 10.15) |
 | `fixes/` | (kuna) the fixes of Vineflower's defects, one module per family, called from the folders above (section 10.16) |
 
@@ -123,31 +123,24 @@ runs the pass schedule of sections 10.4-10.10 from bytecode to a structured stat
 tree. Every pass is recorded by name through
 `decompiler/managed/kuna-jvm/src/infra/decompile_record.rs (DecompileRecord::add)`.
 
-Vineflower's plugin API is ported: the pass locations (`CfgConstruction`, `BeforeMain`,
-`InLoopDecomp`, `MainLoop`, `AfterMain`, `AtEnd`, `LateProcessing`) are kept in the
-schedule, and `decompiler/managed/kuna-jvm/src/infra/plugin_context.rs (PluginContext)`
-registers each plugin's passes there and asks it for a language spec, which takes over the
-method pipeline and the class writer for the classes it claims. Plugins are
-not discovered on a class path: the engine carries the plugins `java -jar vineflower.jar`
-bundles, in its registration order, in
-`decompiler/managed/kuna-jvm/src/infra/kuna_plugins.rs`, and the custom property
-`jvm_plugins` (on unless set; the corpus runner turns it off for Vineflower's test fixture,
-which loads none) decides whether they load. It is not a catalog option: off gives what
-`jvm_kt_enable off` gives, without the IdeaNotNull pass. Each plugin's options join the option
-map with the plugin's defaults when the plugins initialize, and an option a caller set
-keeps its value. Of the two Java plugins, IdeaNotNull is ported, in
-`decompiler/managed/kuna-jvm/src/plugins`; VariableRenaming (JAD-style and tiny-style
-renamers of locals) is not, and every name stays as Vineflower's own pipeline gives it.
-**IdeaNotNull** registers one
-`MainLoop` pass that removes the
+Vineflower loads plugins that register passes at named locations of this schedule and
+may supply a language spec, which takes over the method pipeline and the class writer for
+the classes it claims. The engine has no plugin loading: of the plugins `java -jar
+vineflower.jar` bundles, IdeaNotNull and Kotlin are ordinary parts of the pipeline, always
+present, and VariableRenaming (JAD-style and tiny-style renamers of locals) is not ported,
+so every name stays as Vineflower's own pipeline gives it. `Fernflower::new` installs the
+Kotlin spec and puts the Kotlin options' defaults into the option map, keeping a value a
+caller set. **IdeaNotNull**
+(`decompiler/managed/kuna-jvm/src/plugins/idea_not_null_pass.rs`) is a step of the Java
+schedule's main loop, after the loop condensing, that removes the
 null checks IntelliJ IDEA's compiler instruments: an `if (p == null) $$$reportNull$$$0(n);`
 heading the method body for a parameter whose invisible parameter annotations carry
 `org/jetbrains/annotations/NotNull` (the annotation lists counted from the last parameter
 when javac recorded fewer lists than parameters) is replaced, head block and all, by an
 empty block; and, in a method annotated `@NotNull`, an `if (v == null) $$$reportNull$$$0(n);`
 right before `return v;` is removed, its head block's expressions moving into the return's
-block, as is the older `if (v == null) <exit>; else return v;` shape. The third bundled
-plugin, **Kotlin**, is a language plugin: it claims the classes the Kotlin compiler
+block, as is the older `if (v == null) <exit>; else return v;` shape; a change restarts
+the loop. **Kotlin** is the language spec: it claims the classes the Kotlin compiler
 emitted and decompiles and writes them as Kotlin (section 10.15). Every other class is
 written as Java; Vineflower has no other language support.
 
@@ -1052,28 +1045,25 @@ Numbers print with the JDK's own algorithms (section 10.13).
 
 **Failed methods.** A method whose schedule threw is written as its signature and a body
 of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then the
-`error-message` note (a request to report the class to kuna's tracker; section 10.16), the
+note asking for the class to be reported to kuna's tracker (section 10.16), the
 exception text and its throw location, and a listing of
-the method's bytecode. The class around it is written normally. (Vineflower's
-`dump-exception-on-error`, which the corpus fixture turns off, drops the note and the
-exception.)
+the method's bytecode. The class around it is written normally.
 
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/managed/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
 argument lists, chained calls and long operator chains at their recorded break points
 wherever a line exceeds 160 columns, and indents with three spaces (Vineflower's
 `preferred-line-length` and `indent-string`, fixed at their defaults). Offsets and widths are counted in UTF-16
-units, as Java counts them. Every reference and declaration in the text is recorded as a text token
-(Vineflower's hook for IDE consumers; kuna reads none), and kuna's zero-width span marks
-(`kuna_spans`) ride the same mechanism, following every later edit.
+units, as Java counts them. kuna's zero-width span marks (`kuna_spans`) are the buffer's
+only tokens: they follow every later edit the way Vineflower's text tokens (its hook for
+IDE consumers, which kuna does not record) do.
 
-**Line mapping.** While expressions are written,
-`decompiler/managed/kuna-jvm/src/p9_emit/bytecode_mapping_tracer.rs` records which
-bytecode offsets each output line came from, and
-`decompiler/managed/kuna-jvm/src/p9_emit/bytecode_source_mapper.rs` relates them to the
-class file's `LineNumberTable`. (kuna) `decompiler/managed/kuna-jvm/src/infra/kuna_spans.rs`
+**Line mapping.** While expressions are written, the text buffer records which bytecode
+offsets each output line came from
+(`decompiler/managed/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::kuna_bytecode_lines)`).
+(kuna) `decompiler/managed/kuna-jvm/src/infra/kuna_spans.rs`
 records, with zero-width marks that ride through re-wrapping and are never printed, where
-each class and each method starts and ends in the final text, and groups the tracer's
+each class and each method starts and ends in the final text, and groups those
 offsets by method and line. These spans are what lets a front end slice one method out of
 a class, report its line mapping in bytecode offsets, and mark a method as failed, without
 changing a byte of the output. The recorder also keeps the stack of spans open while the
@@ -1096,8 +1086,8 @@ underflow) has no statement tree; the variable naming of the enclosing method
 (`VarDefinitionHelper::iterate_clashing_exprent`) skips such a body instead of failing the
 enclosing class, so the body is written as its failure comment like any other. A class whose processing throws (section 10.11) is written as
 `// $VF: Couldn't be decompiled` followed by the exception, in place of its body. A class
-whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment
-(not at all under the corpus fixture's `dump-exception-on-error=0`). Nothing
+whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment.
+Nothing
 else stops the run: the other classes of the input are still written. A Java
 `RuntimeException` and an ordinary Rust panic (an index out of bounds, an `unwrap` on
 `None`) are caught at these boundaries alike (section 10.13), and so is recursion deeper
@@ -1232,21 +1222,19 @@ default-arguments constructor without its marker parameter).
 Results reach the caller in root order,
 whatever the number of workers, and the call returns after the last delivery while the
 workers drop their engines. Each engine instance runs on a thread with a 512 MiB
-stack, of which the recursion guard (section 10.13) lets it use 32 MiB. The driver reads
-Vineflower's three-letter option names as their long names (`mpm` is
-`max-time-per-method`) before setting the keys it owns.
+stack, of which the recursion guard (section 10.13) lets it use 32 MiB. The driver sets
+the keys it owns (runtime, thread count, time limit) over the caller's.
 
 **Options.** `decompiler/managed/kuna-jvm/src/p0_knowledge/kuna_options.rs (resolve)`
-turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as a user
-writes it into the Vineflower key and value; the table is generated from `options.toml` by
-the crate's build script. Keys the front end sets itself (thread count, time limit, method
-selection, logging, line separator, line mapping, class-path keys a JVM would serve), and
-the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
-there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; `Fernflower::new` takes `jvm_plugins` (no row) off the property list before the rest becomes Vineflower's option map (section
-10.16), so that map is the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
-switch: `resolve` refuses it as an unknown option, and given to the engine directly it
-stays in Vineflower's option map like any key Vineflower does not read.
+turns a `jvm_*` name and a value as a user writes it into the engine key (Vineflower's long
+name) and value; the table is generated from `options.toml` by the crate's build script,
+and each option has that one name. The keys the front end sets itself (thread count, time
+limit, method selection) and the formatting keys kuna fixes at Vineflower's defaults have no
+row, so `resolve` refuses them, like any other name, as unknown options. kuna's own rows
+resolve to their own names; the rest becomes Vineflower's option map (section 10.16).
+`decompiler/managed/kuna-jvm/src/p0_knowledge/i_fernflower_preferences.rs` tables the keys
+the engine reads and their defaults; given to the engine directly, any other key stays in
+the option map unread.
 
 **The CLI seam.** `kuna-cli` routes an input to this engine before any native code runs
 when the input operand is a class file, an archive or a directory (chapter 00, section
@@ -1289,10 +1277,8 @@ lambda discovery and the nested-class and accessor processing of a root class (1
 the class carries a `kotlin/Metadata` annotation, visible or invisible at run time: the
 annotation the Kotlin compiler puts on every class it emits. Nothing else counts, so a Java
 class is never written as Kotlin and a Kotlin class whose annotation was stripped is
-written as Java. The plugin context asks the chooser of every loaded language plugin in
-turn (`decompiler/managed/kuna-jvm/src/infra/plugin_context.rs
-(PluginContext::get_language_spec)`), and the first that claims a class supplies its
-language spec (`decompiler/managed/kuna-jvm/src/infra/language_spec.rs`): a CFG pass, a
+written as Java. A class the chooser claims gets the session's Kotlin language spec
+(`decompiler/managed/kuna-jvm/src/infra/language_spec.rs (LanguageSpec::of)`): a CFG pass, a
 statement parser, a main pass, a root-class processor, a writer and a file extension. The
 question is asked for the root class at four places - when it is processed
 (`decompiler/managed/kuna-jvm/src/p1_classfile/classes_processor.rs
@@ -1304,7 +1290,6 @@ chooser is asked once more while statements are written, to decide whether they 
 semicolon.) With `jvm_kt_enable`
 off, a Kotlin class takes the Java pipeline and is written as Java, the `@Metadata`
 annotation printed like any other annotation, and its metadata is not parsed.
-With no plugin loaded (`jvm_plugins=0`, the corpus fixture) every class is Java.
 
 **Metadata.** Asking the chooser also parses the class's metadata, once
 (`KotlinChooser::parse_metadata_for`). The annotation's `k` (the kind), `d1` (the data)
@@ -1345,8 +1330,8 @@ default arguments, a companion object's members mirrored as static methods on th
 class, a property's `$annotations` holder method and a delegated property's delegate
 field, and, when the class is written, the `Companion` and `INSTANCE` fields. Vineflower stores all of these in the
 members' attribute maps; (kuna) the port keeps them in a session-scope side table keyed by
-member (`decompiler/managed/kuna-jvm/src/kotlin/kt_attrs.rs`), which the plugin clears
-when it closes. Parsing one class can mark members of another (a companion's outer class),
+member (`decompiler/managed/kuna-jvm/src/kotlin/kt_attrs.rs`), which the struct context
+clears when it closes. Parsing one class can mark members of another (a companion's outer class),
 so the order of parsing matters, and it is Vineflower's: before any class is processed,
 `decompiler/managed/kuna-jvm/src/p0_knowledge/context_unit.rs` forms every class's file
 name, which parses the metadata of every class in entry order.
@@ -1367,8 +1352,7 @@ builds the graph, removes dead blocks, inlines `jsr`, connects the exit and remo
 as for Java, then
 hands the method to the spec's passes, declared in
 `decompiler/managed/kuna-jvm/src/kotlin/kotlin_plugin.rs`, and returns; none of the Java
-schedule after that point runs, nor any plugin pass registered at the Java pass locations
-(IdeaNotNull's, for one). The CFG pass is the exception-range repairs of section 10.4 in
+schedule after that point runs, IdeaNotNull included. The CFG pass is the exception-range repairs of section 10.4 in
 the same order, step 8 as `decompiler/managed/kuna-jvm/src/kotlin/obfuscated_exceptions_pass.rs`.
 The statement tree comes from the same dominator-based recovery (10.5), and the
 main pass is the Java schedule of sections 10.6-10.10 with these differences: the
@@ -1474,7 +1458,7 @@ spans are recorded by the Kotlin writer too: a property's getter and setter shar
 of the property's declaration, a primary constructor's span is its `init` block (it has
 none when the body is empty; it is opened before the constructor is stringified, so a
 failure inside it is the constructor's), and members the writer folds away have none.
-`DecompiledClass::language` (`decompiler/managed/kuna-jvm/src/infra/kuna_plugins.rs`)
+`DecompiledClass::language` (`decompiler/managed/kuna-jvm/src/p0_knowledge/fernflower.rs`)
 reports `kotlin` for a unit whose file name ends in `.kt`, which is how the CLI labels
 units and writes `.kt` files in a project export; the CLI's `--language java` is
 `jvm_kt_enable off`. The Kotlin schedule polls the per-method deadline (section 10.12) at
@@ -1493,9 +1477,8 @@ mechanisms groups of them share. A fix longer than a few lines lives in its fami
 
 **No switch.** A fix is a correction, not a judgement call, so it has no option and no
 gate: its code takes the place of the Java's at its site, and the engine has one mode.
-`Fernflower::new` (`decompiler/managed/kuna-jvm/src/p0_knowledge/fernflower.rs`) sets the
-`error-message` default to kuna's note (`report_to_kuna`). The regression corpus's runner
-(`decompiler/managed/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) runs every case
+The regression corpus's runner
+(`decompiler/managed/kuna-jvm/src/infra/kuna_corpus.rs (execute)`) runs every case
 with the defaults: the cases from Vineflower's own test suite against a digest of the text kuna
 printed when last reviewed, and kuna's cases (`decompiler/managed/kuna-jvm/corpus/kuna-fixes/`) against kuna's
 reviewed text.
@@ -1506,10 +1489,9 @@ reviewed text.
   where the evidence a fix needs is missing (a class outside the input, a type kuna cannot
   resolve), Vineflower's choice stands.
 - The failure marker line never changes: the CLI and the benchmark count failed methods by
-  it. `report_to_kuna` changes only the `error-message` note under it, putting kuna's
-  request (`KUNA_ERROR_MESSAGE`) in place of the default before the caller's options are
-  applied, so an `error-message` the caller passes (the corpus fixture's empty one) still
-  wins; it reads the set being built, since `Fernflower::new` has installed no context yet.
+  it. Only the note under it is kuna's: a request to report the class to kuna's tracker
+  (`decompiler/managed/kuna-jvm/src/p0_knowledge/fernflower.rs (KUNA_ERROR_MESSAGE)`) where
+  Vineflower names its own.
 - The `kt_*` fixes change Kotlin output only: in a pass or writer that Java output shares,
   they act only on a class written as Kotlin (a class with Kotlin metadata, the Kotlin
   plugin on).

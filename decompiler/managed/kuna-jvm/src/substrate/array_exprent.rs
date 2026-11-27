@@ -113,7 +113,6 @@ impl ArrayExprent {
                 &format!("(({})", ExprProcessor::get_cast_type_name(&obj_arr)),
                 ")",
             );
-            res.add_type_name_token(&obj_arr, 2);
         }
 
         res.add_bytecode_mapping(self.get_bytecode().as_ref());

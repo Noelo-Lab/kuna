@@ -1,4 +1,5 @@
-//! Port of `org/vineflower/kotlin/KotlinPlugin.java`.
+//! Port of `org/vineflower/kotlin/KotlinPlugin.java`: the Kotlin pipeline
+//! (`LanguageSpec`), which `Fernflower::new` installs.
 
 use std::rc::Rc;
 
@@ -35,9 +36,7 @@ use crate::fixes::kt_suspend::kt_suspend_state_machine;
 use crate::fixes::kt_compiler_idioms::kt_nothing_value_throw;
 use crate::fixes::kt_suspend::kt_suspend_lambda;
 use crate::kotlin_chooser::KotlinChooser;
-use crate::kotlin_options::KotlinOptions;
 use crate::kotlin_writer::KotlinWriter;
-use crate::kt_attrs::KtAttrs;
 use crate::label_helper::LabelHelper;
 use crate::language_spec::LanguageSpec;
 use crate::loop_extract_helper::LoopExtractHelper;
@@ -49,11 +48,8 @@ use crate::nested_member_access::NestedMemberAccess;
 use crate::obfuscated_exceptions_pass::ObfuscatedExceptionsPass;
 use crate::fixes::constructor_calls::split_constructor_call::join_split_constructors;
 use crate::p_pand_mm_helper::PPandMMHelper;
-use crate::pair::Pair;
 use crate::pass::Pass;
 use crate::pass_context::PassContext;
-use crate::plugin::Plugin;
-use crate::plugin_options::{DefaultsConsumer, PluginOptions};
 use crate::replace_exprents_pass::ReplaceExprentsPass;
 use crate::replace_stats_pass::ReplaceStatsPass;
 use crate::resugar_kotlin_methods_pass::ResugarKotlinMethodsPass;
@@ -79,10 +75,6 @@ fn graph(ctx: &PassContext) -> ControlFlowGraph {
 pub struct KotlinPlugin;
 
 impl KotlinPlugin {
-    pub fn new() -> KotlinPlugin {
-        KotlinPlugin
-    }
-
     #[allow(non_snake_case)]
     fn INLINE_ALL_VARS() -> StackSimplifyOptions {
         StackSimplifyOptions::new().inline_regular_vars()
@@ -407,37 +399,17 @@ impl KotlinPlugin {
     }
 }
 
-impl Plugin for KotlinPlugin {
-    fn id(&self) -> String {
-        "Kotlin".to_string()
-    }
-
-    fn description(&self) -> String {
-        "Detects and decompiles Kotlin class files.".to_string()
-    }
-
-    /// Not in Vineflower: the member attributes live in `kt_attrs`, which has
-    /// session scope, rather than on the members themselves.
-    fn close(&self) {
-        KtAttrs::clear();
-    }
-
-    fn get_plugin_options(&self) -> Option<Rc<dyn PluginOptions>> {
-        Some(Rc::new(|| {
-            let defaults: DefaultsConsumer = Rc::new(KotlinOptions::add_defaults);
-            Pair::of(KotlinOptions::OPTIONS, defaults)
-        }))
-    }
-
-    fn get_language_spec(&self) -> Option<LanguageSpec> {
-        Some(LanguageSpec::new(
-            Rc::new(KotlinChooser::new()),
+impl KotlinPlugin {
+    /// Java: getLanguageSpec().
+    pub fn language_spec() -> LanguageSpec {
+        LanguageSpec::new(
+            KotlinChooser::new(),
             Rc::new(DomHelper),
             Rc::new(KotlinWriter::new()),
             KotlinPlugin::make_pass(),
             KotlinPlugin::make_cfg_pass(),
             KotlinPlugin::get_root_processor(),
             "kt",
-        ))
+        )
     }
 }

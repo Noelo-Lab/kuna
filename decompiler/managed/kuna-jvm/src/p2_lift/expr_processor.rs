@@ -32,11 +32,11 @@ use crate::fixes::kt_operators::kt_implicit_widening;
 use crate::fixes::kt_java_syntax::kt_java_cast_syntax;
 use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
+use crate::language_spec::LanguageSpec;
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::monitor_exprent::{MonitorExprent, Type as MonitorType};
 use crate::new_exprent::NewExprent;
-use crate::plugin_context::PluginContext;
 use crate::pooled_constant::PooledConstant;
 use crate::primitive_exprs_list::PrimitiveExprsList;
 use crate::root_statement::RootStatement;
@@ -235,8 +235,6 @@ impl ExprProcessor {
     pub fn process_statement(&self, root: RootStatement, cl: StructClass) {
         let mut flat_helper = FlattenStatementsHelper::new();
         let dgraph = flat_helper.build_direct_graph(root);
-
-        ValidationHelper::validate_d_graph(dgraph, root);
 
         let mut map_catch: JHashMap<String, VarExprent> = JHashMap::new();
         Self::collect_catch_vars(root.0, &flat_helper, &mut map_catch);
@@ -1247,8 +1245,7 @@ impl ExprProcessor {
         };
 
         let cl = DecompilerContext::get_current_class();
-        let plugin_context = PluginContext::get_current_context();
-        let spec = cl.and_then(|cl| plugin_context.get_language_spec(cl));
+        let spec = cl.and_then(LanguageSpec::of);
 
         let mut buf = TextBuffer::new();
         let lst = Exprent::sort_indexed(&lst.to_vec());

@@ -44,7 +44,6 @@ use crate::if_helper::IfHelper;
 use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
-use crate::java_pass_location::JavaPassLocation;
 use crate::fixes::asserts;
 use crate::fixes::control_flow;
 use crate::fixes::nested_class_vars::captured_var_clash_name;
@@ -56,7 +55,6 @@ use crate::fixes::class_writing::EnumBodySeparator;
 use crate::fixes::class_writing;
 use crate::fixes::nested_class_vars;
 use crate::pair::Pair;
-use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
 use crate::pooled_constant::PooledConstant;
 use crate::record_helper::RecordHelper;
@@ -272,8 +270,7 @@ impl ClassWriter {
 
         let methods = wrapper.get_methods().borrow().to_vec();
         for method in methods {
-            let (method_struct, class_struct, varproc) =
-                method.with(|d| (d.method_struct, d.class_struct, d.varproc));
+            let method_struct = method.with(|d| d.method_struct);
             let rec = DecompileRecord::new();
             DecompilerContext::reset_method(method);
 
@@ -286,18 +283,6 @@ impl ClassWriter {
                     if IfHelper::prettify_ifs(root.0) {
                         rec.add("FinalPrettifyIfs", Some(root));
                     }
-
-                    let mut pctx = PassContext::new(
-                        Some(root),
-                        None,
-                        method_struct,
-                        class_struct,
-                        varproc,
-                        rec,
-                    );
-                    DecompilerContext::get_struct_context()
-                        .get_plugin_context()
-                        .run_passes(JavaPassLocation::LateProcessing, &mut pctx);
                 });
                 if let Err(e) = result {
                     let qualified_name = node.with(|d| d.class_struct).qualified_name();
@@ -370,17 +355,15 @@ impl ClassWriter {
     pub fn write_exception(buffer: &mut TextBuffer, t: &Caught) {
         buffer.append("// $VF: Couldn't be decompiled");
         buffer.append_line_separator();
-        if DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR) {
-            let mut lines: Vec<String> = Vec::new();
-            lines.extend(ClassWriter::get_error_comment());
-            ClassWriter::collect_error_lines(t, &mut lines);
-            for line in &lines {
-                buffer.append("//");
-                if !line.is_empty() {
-                    buffer.append(" ").append(line);
-                }
-                buffer.append_line_separator();
+        let mut lines: Vec<String> = Vec::new();
+        lines.extend(ClassWriter::get_error_comment());
+        ClassWriter::collect_error_lines(t, &mut lines);
+        for line in &lines {
+            buffer.append("//");
+            if !line.is_empty() {
+                buffer.append(" ").append(line);
             }
+            buffer.append_line_separator();
         }
     }
 
@@ -2209,19 +2192,15 @@ impl ClassWriter {
     fn dump_error(buffer: &mut TextBuffer, wrapper: MethodWrapper, indent: i32) {
         kuna_spans::method_failed(wrapper);
         let mut lines: Vec<String> = vec!["$VF: Couldn't be decompiled".to_string()];
-        let exceptions =
-            DecompilerContext::get_option(IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR);
         let bytecode =
             DecompilerContext::get_option(IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR);
-        if exceptions {
-            lines.extend(ClassWriter::get_error_comment());
-            let error = wrapper
-                .with(|d| d.decompile_error.clone())
-                .expect("NullPointerException: decompileError");
-            ClassWriter::collect_error_lines(&error, &mut lines);
-            if bytecode {
-                lines.push(String::new());
-            }
+        lines.extend(ClassWriter::get_error_comment());
+        let error = wrapper
+            .with(|d| d.decompile_error.clone())
+            .expect("NullPointerException: decompileError");
+        ClassWriter::collect_error_lines(&error, &mut lines);
+        if bytecode {
+            lines.push(String::new());
         }
         if bytecode {
             let method_struct = wrapper.with(|d| d.method_struct);
@@ -2249,7 +2228,7 @@ impl ClassWriter {
         }
     }
 
-    /// The `DUMP_EXCEPTION_ON_ERROR` lines describing `error`: its text and its
+    /// The lines describing `error` in a failure comment: its text and its
     /// throw location as the single stack frame (nothing without a location).
     pub fn collect_error_lines(error: &Caught, lines: &mut Vec<String>) {
         let mut filtered_stack: Vec<&str> = Vec::new();
@@ -2567,15 +2546,9 @@ impl ClassWriter {
         type_text
     }
 
-    /// The non-empty lines of the `ERROR_MESSAGE` property.
+    /// The note under a failure comment.
     pub fn get_error_comment() -> Vec<String> {
-        let message =
-            DecompilerContext::get_property(IFernflowerPreferences::ERROR_MESSAGE).unwrap();
-        message
-            .split('\n')
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect()
+        vec![crate::fernflower::KUNA_ERROR_MESSAGE.to_string()]
     }
 
     fn append_comment(buffer: &mut TextBuffer, comment: &str, indent: i32) {

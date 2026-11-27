@@ -1,7 +1,7 @@
 //! Inputs that would end the run or never finish. The recursion guard
 //! (`rt::stack`): input nested deeper than an engine thread's stack fails one
 //! method or class with `StackOverflowError`, and the run goes on. The method
-//! budget counts polls; a three-letter option name is its long name.
+//! budget counts polls.
 //! Fixtures in `decompiler/managed/kuna-jvm/corpus/stackguard/`: `TestDeepExpression` (javac 21.0.12
 //! `--release 17 -g`, a sum 300 terms deep), `TestDeepField` (javac 21.0.13.1
 //! `--release 17 -g`, the same depth in a field initializer) and `TestLambdaCycle`
@@ -13,12 +13,14 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use kuna_jvm::fernflower::canonical_option;
 use kuna_jvm::i_fernflower_logger::IFernflowerLogger;
 use kuna_jvm::kuna_driver::{self, ClassResult, DriverConfig, Jobs};
 use kuna_jvm::kuna_input::{self, LoadOptions};
 
 use crate::kuna_support::{options, scratch, RecordingLogger};
+
+/// A stack the deep field initializer overflows only while its class is written.
+const STACK_PROBE: usize = 768 << 10;
 
 fn fixture(dir: &str, classes: &[&str]) -> PathBuf {
     let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/corpus/stackguard/classes/pkg");
@@ -53,7 +55,7 @@ fn text<'a>(results: &'a [ClassResult], name: &str) -> &'a str {
 #[test]
 fn an_expression_deeper_than_the_stack_fails_only_its_method() {
     let dir = fixture("stackguard-deep", &["TestDeepExpression.class"]);
-    let small = run(&dir, &[], Some(1 << 20));
+    let small = run(&dir, &[], Some(STACK_PROBE));
     let out = text(&small, "pkg/TestDeepExpression");
     assert!(out.contains("// $VF: Couldn't be decompiled"), "{out}");
     assert!(out.contains("StackOverflowError"), "{out}");
@@ -68,7 +70,7 @@ fn an_expression_deeper_than_the_stack_fails_only_its_method() {
 #[test]
 fn an_initializer_deeper_than_the_stack_fails_its_class_and_the_run_goes_on() {
     let dir = fixture("stackguard-field", &["TestDeepField.class", "TestDeepExpression.class"]);
-    let small = run(&dir, &[], Some(1 << 20));
+    let small = run(&dir, &[], Some(STACK_PROBE));
     let out = text(&small, "pkg/TestDeepField");
     assert!(out.contains("$VF: Unable to decompile class"), "{out}");
     assert!(out.contains("StackOverflowError"), "{out}");
@@ -92,19 +94,6 @@ fn a_lambda_cycle_does_not_nest_without_end() {
     assert!(!cycle.contains("StackOverflowError"), "{cycle}");
     let other = text(&results, "pkg/TestDeepExpression");
     assert!(other.contains("return a + 1;"), "{other}");
-}
-
-#[test]
-fn a_three_letter_option_name_is_its_long_name() {
-    assert_eq!(
-        canonical_option("mpm", "120"),
-        ("max-time-per-method".to_string(), "120".to_string())
-    );
-    assert_eq!(canonical_option("din", "true"), ("decompile-inner".to_string(), "1".to_string()));
-    assert_eq!(
-        canonical_option("max-time-per-method", "5"),
-        ("max-time-per-method".to_string(), "5".to_string())
-    );
 }
 
 #[test]

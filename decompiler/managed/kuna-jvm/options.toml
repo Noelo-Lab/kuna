@@ -1,21 +1,15 @@
 # kuna-facing options of the JVM engine (kuna-jvm, a port of Vineflower 1.12.0).
 #
 # One [[option]] row per exposed decision, spelled jvm_<vineflower long name with
-# '-' turned into '_'>; `vineflower` and `short` are Vineflower's own long and
-# three-letter names, accepted as aliases. Fields follow a [[settable]] row of
+# '-' turned into '_'>; `vineflower` is the engine key the row sets (empty for an
+# option of kuna's own). Fields follow a [[settable]] row of
 # decompiler/crates/kuna-decomp/phases.toml; `phase`/`subphase` name the
 # kuna-jvm source folder and the module(s) that read the key. build.rs turns
-# this file into the static table of src/p0_knowledge/kuna_options.rs; a test
-# checks it one to one against IFernflowerPreferences.all_options().
-#
-# [[driver_owned]] keys are set by kuna's driver or front end, or fixed at
-# Vineflower's default (the corpus runner may still pass them), never by a row.
+# this file into the static table of src/p0_knowledge/kuna_options.rs.
 
 [[option]]
 option = "jvm_remove_bridge"
 vineflower = "remove-bridge"
-short = "rbr"
-aliases = ["remove-bridge", "rbr"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -36,8 +30,6 @@ symptoms = "method javap lists as bridge is missing from the output|need the gen
 [[option]]
 option = "jvm_remove_synthetic"
 vineflower = "remove-synthetic"
-short = "rsy"
-aliases = ["remove-synthetic", "rsy"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -58,8 +50,6 @@ symptoms = "code javap shows is missing from the decompiled class|lambda$main$0 
 [[option]]
 option = "jvm_decompile_inner"
 vineflower = "decompile-inner"
-short = "din"
-aliases = ["decompile-inner", "din"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -80,8 +70,6 @@ symptoms = "Outer$Inner written as a separate class instead of nested|anonymous 
 [[option]]
 option = "jvm_decompile_generics"
 vineflower = "decompile-generics"
-short = "dgs"
-aliases = ["decompile-generics", "dgs"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -102,8 +90,6 @@ symptoms = "nonsense generic types from a tampered Signature attribute|need eras
 [[option]]
 option = "jvm_keep_literals"
 vineflower = "keep-literals"
-short = "lit"
-aliases = ["keep-literals", "lit"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -124,8 +110,6 @@ symptoms = "Math.PI where the source had a numeric literal|Long.MAX_VALUE or Dou
 [[option]]
 option = "jvm_ascii_strings"
 vineflower = "ascii-strings"
-short = "asc"
-aliases = ["ascii-strings", "asc"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -146,8 +130,6 @@ symptoms = "string literal shows odd or invisible characters|homoglyphs in a com
 [[option]]
 option = "jvm_synthetic_not_set"
 vineflower = "synthetic-not-set"
-short = "nns"
-aliases = ["synthetic-not-set", "nns"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -168,8 +150,6 @@ symptoms = "access$000(this) calls left in the output|this$0 or val$name fields 
 [[option]]
 option = "jvm_use_lvt_names"
 vineflower = "use-lvt-names"
-short = "udv"
-aliases = ["use-lvt-names", "udv"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -190,8 +170,6 @@ symptoms = "variables named like keywords or with misleading names from debug in
 [[option]]
 option = "jvm_decompile_finally"
 vineflower = "decompile-finally"
-short = "fdi"
-aliases = ["decompile-finally", "fdi"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -212,8 +190,6 @@ symptoms = "\"Could not verify finally blocks\" comment with a semaphore variabl
 [[option]]
 option = "jvm_ignore_invalid_bytecode"
 vineflower = "ignore-invalid-bytecode"
-short = "iib"
-aliases = ["ignore-invalid-bytecode", "iib"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -234,8 +210,6 @@ symptoms = "$VF: Couldn't be decompiled with RuntimeException: Constructor ... n
 [[option]]
 option = "jvm_verify_anonymous_classes"
 vineflower = "verify-anonymous-classes"
-short = "vac"
-aliases = ["verify-anonymous-classes", "vac"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -256,8 +230,6 @@ symptoms = "anonymous class body inlined at the wrong new expression|class used 
 [[option]]
 option = "jvm_pattern_matching"
 vineflower = "pattern-matching"
-short = "pam"
-aliases = ["pattern-matching", "pam"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -278,8 +250,6 @@ symptoms = "String s = (String)o; after an instanceof test (option is off)|typeS
 [[option]]
 option = "jvm_decompile_switch_expressions"
 vineflower = "decompile-switch-expressions"
-short = "swe"
-aliases = ["decompile-switch-expressions", "swe"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -300,8 +270,6 @@ symptoms = "switch statement assigning a temporary in every case where a switch 
 [[option]]
 option = "jvm_verify_merges"
 vineflower = "verify-merges"
-short = "vvm"
-aliases = ["verify-merges", "vvm"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -322,8 +290,6 @@ symptoms = "one variable reused for two unrelated values|variable read before it
 [[option]]
 option = "jvm_verify_pre_post_merges"
 vineflower = "verify-pre-post-merges"
-short = "pvm"
-aliases = ["verify-pre-post-merges", "pvm"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -344,8 +310,6 @@ symptoms = "i++ applied to the wrong variable after merging|loop counter merged 
 [[option]]
 option = "jvm_old_try_dedup"
 vineflower = "old-try-dedup"
-short = ""
-aliases = ["old-try-dedup"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -366,8 +330,6 @@ symptoms = "\"Could not handle exception ranges with multiple entries\" comment|
 [[option]]
 option = "jvm_include_runtime"
 vineflower = "include-runtime"
-short = "jrt"
-aliases = ["include-runtime", "jrt"]
 values = "on|off|current|<path>"
 default = "on"
 destructive = false
@@ -388,8 +350,6 @@ symptoms = "extra casts on calls into java.util or java.lang|@Override missing o
 [[option]]
 option = "jvm_rename_members"
 vineflower = "rename-members"
-short = "ren"
-aliases = ["rename-members", "ren"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -410,8 +370,6 @@ symptoms = "class or method named like a Java keyword|identifiers that are not v
 [[option]]
 option = "jvm_decompiler_comments"
 vineflower = "decompiler-comments"
-short = "dec"
-aliases = ["decompiler-comments", "dec"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -432,8 +390,6 @@ symptoms = "/* $VF: ... */ and // $VF: comments clutter the output|need to know 
 [[option]]
 option = "jvm_force_jsr_inline"
 vineflower = "force-jsr-inline"
-short = "fji"
-aliases = ["force-jsr-inline", "fji"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -454,8 +410,6 @@ symptoms = "method with jsr/ret fails to decompile in a modern class file|finall
 [[option]]
 option = "jvm_mark_corresponding_synthetics"
 vineflower = "mark-corresponding-synthetics"
-short = "mcs"
-aliases = ["mark-corresponding-synthetics", "mcs"]
 values = "on|off"
 default = "off"
 destructive = false
@@ -476,8 +430,6 @@ symptoms = "stack trace names lambda$main$0 or Main$1 and the matching code is h
 [[option]]
 option = "jvm_siblings"
 vineflower = ""
-short = ""
-aliases = []
 values = "on|off"
 default = "on"
 destructive = false
@@ -498,8 +450,6 @@ symptoms = "inner and anonymous classes missing when decompiling one .class file
 [[option]]
 option = "jvm_kt_enable"
 vineflower = "kt-enable"
-short = ""
-aliases = ["kt-enable"]
 values = "on|off"
 default = "on"
 destructive = false
@@ -516,79 +466,3 @@ inspiration = "Vineflower 1.12.0 Kotlin plugin: KotlinOptions.DECOMPILE_KOTLIN (
 change_kind = "vineflower-option"
 tier = "core"
 symptoms = "Kotlin classes come out as Java with @Metadata(mv = ..., d1 = ...)|a Kotlin class is written as .kt but Java output is wanted|Kotlin output of a class is wrong or failed"
-
-[[driver_owned]]
-vineflower = "thread-count"
-kuna = "--jobs: the driver runs one engine per thread"
-
-[[driver_owned]]
-vineflower = "max-time-per-method"
-kuna = "--max-fn-seconds: the driver's cooperative per-method deadline"
-
-[[driver_owned]]
-vineflower = "method-to-decompile"
-kuna = "method selection (decompile <class>.<method>) slices the class by its method spans"
-
-[[driver_owned]]
-vineflower = "log-level"
-kuna = "kuna's own logger"
-
-[[driver_owned]]
-vineflower = "new-line-separator"
-kuna = "output always uses \\n"
-
-[[driver_owned]]
-vineflower = "bytecode-source-mapping"
-kuna = "line mappings are always collected (method spans)"
-
-[[driver_owned]]
-vineflower = "user-renamer-class"
-kuna = "not supported: a renamer class needs a JVM to load"
-
-[[driver_owned]]
-vineflower = "include-classpath"
-kuna = "not supported: there is no JVM class path; use --lib and jvm_include_runtime"
-
-[[driver_owned]]
-vineflower = "dump-code-lines"
-kuna = "line data of Vineflower's archive saver; kuna writes no archives"
-
-[[driver_owned]]
-vineflower = "skip-extra-files"
-kuna = "kuna copies no resources"
-
-[[driver_owned]]
-vineflower = "decompile-preview"
-kuna = "read nowhere in Vineflower 1.12.0: it has no effect"
-
-[[driver_owned]]
-vineflower = "__unit_test_mode__"
-kuna = "corpus runner only"
-
-[[driver_owned]]
-vineflower = "__dump_original_lines__"
-kuna = "corpus runner only"
-
-[[driver_owned]]
-vineflower = "indent-string"
-kuna = "fixed at Vineflower's default, three spaces"
-
-[[driver_owned]]
-vineflower = "preferred-line-length"
-kuna = "fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests"
-
-[[driver_owned]]
-vineflower = "error-message"
-kuna = "fixed: the note under a failure comment asks for reports to kuna's tracker; the corpus fixture sets it empty"
-
-[[driver_owned]]
-vineflower = "dump-bytecode-on-error"
-kuna = "fixed on: a failed method's comment lists its bytecode"
-
-[[driver_owned]]
-vineflower = "dump-exception-on-error"
-kuna = "fixed on: a failure comment names the exception; the corpus fixture turns it off"
-
-[[driver_owned]]
-vineflower = "kt-unknown-defaults"
-kuna = "fixed at the Kotlin plugin's default: ... stands for a default argument the $default stub does not reveal"

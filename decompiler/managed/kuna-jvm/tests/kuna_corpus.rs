@@ -55,7 +55,6 @@ fn unit(path: &str, content: &str) -> DecompiledClass {
         qualified_name: path.trim_end_matches(".java").to_string(),
         path: path.to_string(),
         content: content.to_string(),
-        mapping: None,
         ..DecompiledClass::default()
     }
 }
@@ -506,14 +505,6 @@ fn vendored_corpus_is_complete() {
     assert_eq!(cases.len(), 898);
     assert_eq!(cases.iter().filter(|c| c.set_slug != "kuna-fixes").count(), 591);
     assert_eq!(cases.iter().filter(|c| c.set_slug == "kuna-fixes").count(), 307);
-    for case in cases.iter().filter(|c| c.set_slug == "kuna-fixes") {
-        assert!(
-            case.options
-                .contains(&("dump-exception-on-error".to_string(), "0".to_string())),
-            "{}",
-            case.id
-        );
-    }
     assert_eq!(
         cases
             .iter()
@@ -524,14 +515,10 @@ fn vendored_corpus_is_complete() {
     let ids: BTreeSet<&str> = cases.iter().map(|c| c.id.as_str()).collect();
     assert_eq!(ids.len(), cases.len());
     let base = [
-        ("log-level", "warn"),
         ("decompile-generics", "1"),
         ("remove-synthetic", "1"),
         ("remove-bridge", "1"),
         ("keep-literals", "1"),
-        ("__unit_test_mode__", "1"),
-        ("new-line-separator", "1"),
-        ("error-message", ""),
         ("include-runtime", ""),
     ];
     for case in &cases {
@@ -549,27 +536,19 @@ fn vendored_corpus_is_complete() {
         for class in &case.class_files {
             assert!(class.is_file(), "{}", class.display());
         }
-        let plugin_set = matches!(
-            case.set_slug.as_str(),
-            "with-idea-not-null"
-                | "plugin-defaults"
-                | "kotlin-entire-classpath"
-        ) || kotlin_fix_case(case);
-        assert_eq!(
-            case.options
-                .iter()
-                .any(|(k, v)| k == "jvm_plugins" && v == "1"),
-            plugin_set,
-            "{}",
-            case.id
-        );
+        assert!(case.options.iter().all(|(k, _)| k != "jvm_plugins"), "{}", case.id);
+        let kt_off = case.options.contains(&("kt-enable".to_string(), "0".to_string()));
+        assert!(!(kt_off && kotlin_fix_case(case)), "{}", case.id);
         if case.set_slug == "plugin-defaults" {
-            assert_eq!(case.options, [("jvm_plugins".to_string(), "1".to_string())]);
+            assert!(case.options.is_empty(), "{}", case.id);
             continue;
         }
         let kotlin = case.set_slug.starts_with("kotlin-");
+        let as_java = case.set_slug == "kotlin-core-default";
+        if as_java {
+            assert_eq!(case.options[0], ("kt-enable".to_string(), "0".to_string()), "{}", case.id);
+        }
         if kotlin {
-            assert_eq!(case.options[0].0, "jvm_plugins", "{}", case.id);
             let class = case.class_files[0].file_stem().unwrap().to_string_lossy();
             assert_eq!(
                 case.compare,
@@ -579,7 +558,7 @@ fn vendored_corpus_is_complete() {
         let keys: Vec<&str> = case
             .options
             .iter()
-            .skip(usize::from(kotlin))
+            .skip(usize::from(as_java))
             .take(base.len())
             .map(|(k, _)| k.as_str())
             .collect();

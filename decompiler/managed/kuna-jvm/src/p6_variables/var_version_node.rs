@@ -7,7 +7,6 @@ use crate::i_graph_node::IGraphNode;
 use crate::rt::{JLinkedHashSet, JavaEq, JavaHash, Shared};
 use crate::s_forms_fast_map_direct::SFormsFastMapDirect;
 use crate::struct_local_variable_table_attribute::LocalVariable;
-use crate::validation_helper::ValidationHelper;
 use crate::var_version_pair::VarVersionPair;
 use crate::{arena_identity, arena_object};
 
@@ -17,7 +16,6 @@ pub struct VarVersionNodeData {
     pub successors: JLinkedHashSet<VarVersionNode>,
     pub predecessors: JLinkedHashSet<VarVersionNode>,
     pub phantom_node: Option<VarVersionNode>,
-    pub phantom_parent_node: Option<VarVersionNode>,
     pub live: Option<Shared<SFormsFastMapDirect>>,
     pub lvt: Option<LocalVariable>,
     pub state: Option<State>,
@@ -34,7 +32,6 @@ impl VarVersionNode {
             successors: JLinkedHashSet::new(),
             predecessors: JLinkedHashSet::new(),
             phantom_node: None,
-            phantom_parent_node: None,
             live: None,
             lvt,
             state: None,
@@ -65,14 +62,6 @@ impl VarVersionNode {
 
     pub fn set_phantom_node(self, node: Option<VarVersionNode>) {
         self.with_mut(|d| d.phantom_node = node)
-    }
-
-    pub fn phantom_parent_node(self) -> Option<VarVersionNode> {
-        self.with(|d| d.phantom_parent_node)
-    }
-
-    pub fn set_phantom_parent_node(self, node: Option<VarVersionNode>) {
-        self.with_mut(|d| d.phantom_parent_node = node)
     }
 
     pub fn live(self) -> Option<Shared<SFormsFastMapDirect>> {
@@ -107,19 +96,11 @@ impl VarVersionNode {
         self.with_mut(|d| d.predecessors.remove(&node));
     }
 
-    pub fn has_single_predecessor(self) -> bool {
-        self.with(|d| d.predecessors.len() == 1)
-    }
-
     pub fn has_any_successors(self) -> bool {
         self.with(|d| !d.successors.is_empty())
     }
 
     pub fn get_single_predecessor(self) -> VarVersionNode {
-        ValidationHelper::validate_true(
-            self.has_single_predecessor(),
-            "Expected only a single predecessor",
-        );
         self.with(|d| d.predecessors.iter().next().copied())
             .expect("NoSuchElementException")
     }

@@ -5202,12 +5202,11 @@ shown: the JVM path has no `--verbose`, and none of them, alone, marks wrong out
 JVM options are the `jvm_*` rows of `kuna catalog --engine jvm` (`docs/options-jvm.md`),
 set the usual way: `--option jvm_decompile_finally off`. A boolean takes `on|off` (also
 `1|0|true|false`), a number a decimal integer, and text, regex and path options their text.
-Vineflower's own long and three-letter names are accepted as aliases (`--option
-decompile-finally off`, `--option fdi off`), so a Vineflower command line translates
-directly. A native option on a JVM input is an error that points at `kuna catalog --engine
-jvm`, a `jvm_*` option on a native input gets a hint the other way, and a Vineflower key
-kuna sets itself (thread count, time limit, method selection, line separator and the like)
-is refused with what sets it instead. All of these exit `2` before anything is decompiled.
+Each option has that one name: Vineflower's long and three-letter names are unknown
+options (a close one gets a did-you-mean, `decompile-finally` -> `jvm_decompile_finally`).
+A native option on a JVM input is an error that points at `kuna catalog --engine
+jvm`, and a `jvm_*` option on a native input gets a hint the other way. All of these exit
+`2` before anything is decompiled.
 `--mode` is accepted and validated, and every mode means the engine's defaults
 (`docs/modes.md`). `--language auto|java` picks Java or Kotlin output (*Kotlin classes*
 above).

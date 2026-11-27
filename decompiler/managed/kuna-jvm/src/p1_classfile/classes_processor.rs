@@ -5,7 +5,6 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::class_pass_location::ClassPassLocation;
 use crate::class_wrapper::ClassWrapper;
 use crate::class_writer::ClassWriter;
 use crate::code_constants::{
@@ -16,7 +15,8 @@ use crate::code_constants::{
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::i_identifier_renamer::{IIdentifierRenamer, Type as RenamerType};
+use crate::converter_helper::ConverterHelper;
+use crate::i_identifier_renamer::Type as RenamerType;
 use crate::import_collector::ImportCollector;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
@@ -27,7 +27,6 @@ use crate::nested_member_access::NestedMemberAccess;
 use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
 use crate::fixes::anonymous_classes::unlisted_anonymous_class;
 use crate::fixes::overloads::unseen_class_overload;
-use crate::plugin_context::PluginContext;
 use crate::rt::{
     rethrow, try_catch, Caught, JHashMap, JHashSet, JLinkedHashSet, JList, JavaStr, Shared,
 };
@@ -122,7 +121,7 @@ impl ClassesProcessor {
         })
     }
 
-    pub fn load_classes(self, renamer: Option<&dyn IIdentifierRenamer>) {
+    pub fn load_classes(self, renamer: Option<&ConverterHelper>) {
         unseen_class_overload::reset();
         let mut map_inner_classes: JHashMap<String, Inner> = JHashMap::new();
         let mut map_nested_class_references: JHashMap<String, JHashSet<String>> = JHashMap::new();
@@ -569,14 +568,11 @@ impl ClassesProcessor {
         DecompilerContext::start_class(import_collector);
         let result = try_catch(|| {
             if !package_info && !module_info {
-                DecompilerContext::get_struct_context()
-                    .get_plugin_context()
-                    .run_class_passes(ClassPassLocation::BeforeProcessing, root);
                 LambdaProcessor::new().process_class(root);
 
                 Self::add_class_name_to_import(root, import_collector);
 
-                let spec = PluginContext::get_current_context().get_language_spec(cl);
+                let spec = LanguageSpec::of(cl);
 
                 Self::init_wrappers(root, spec.as_deref());
 
@@ -590,10 +586,6 @@ impl ClassesProcessor {
                         spec.root_processor.run(root);
                     }
                 }
-
-                DecompilerContext::get_struct_context()
-                    .get_plugin_context()
-                    .run_class_passes(ClassPassLocation::AfterProcessing, root);
             }
         });
         DecompilerContext::get_logger().end_processing_class();
@@ -635,58 +627,19 @@ impl ClassesProcessor {
 
                 buffer.append_buffer(&module_buffer);
             } else {
-                let spec = PluginContext::get_current_context().get_language_spec(cl);
+                let spec = LanguageSpec::of(cl);
                 let mut class_buffer = TextBuffer::with_capacity(Self::AVERAGE_CLASS_SIZE);
                 let writer: Rc<dyn StatementWriter> = match spec {
                     Some(spec) => spec.writer.clone(),
                     None => Rc::new(ClassWriter::new()),
                 };
 
-                DecompilerContext::get_struct_context()
-                    .get_plugin_context()
-                    .run_class_passes(ClassPassLocation::BeforeWriting, root);
-
                 writer.write_class(root, &mut class_buffer, 0);
                 class_buffer.reformat();
 
-                for (class_and_method, tracer) in class_buffer.get_tracers().entry_vec() {
-                    let clazz =
-                        DecompilerContext::get_struct_context().get_class(&class_and_method.a);
-                    if let Some(clazz) = clazz {
-                        let method = class_and_method
-                            .b
-                            .as_deref()
-                            .and_then(|key| clazz.get_method_key(key));
-
-                        if let Some(method) = method {
-                            let line_number_table = method
-                                .get_attribute(StructGeneralAttribute::ATTRIBUTE_LINE_NUMBER_TABLE);
-                            tracer.set_line_number_table(line_number_table);
-                            DecompilerContext::get_bytecode_source_mapper().add_tracer(
-                                &class_and_method.a,
-                                class_and_method.b.as_deref().unwrap_or_default(),
-                                tracer,
-                            );
-                        }
-                    }
-                }
-
                 writer.write_class_header(cl, buffer, DecompilerContext::get_import_collector());
-                let offset_lines = buffer.count_lines();
 
                 buffer.append_buffer(&class_buffer);
-
-                if DecompilerContext::get_option(IFernflowerPreferences::BYTECODE_SOURCE_MAPPING) {
-                    let mapper = DecompilerContext::get_bytecode_source_mapper();
-                    mapper.add_total_offset(offset_lines);
-                    if DecompilerContext::get_option(IFernflowerPreferences::DUMP_ORIGINAL_LINES) {
-                        buffer.dump_original_line_numbers(&mapper.get_original_lines_mapping());
-                    }
-                    if DecompilerContext::get_option(IFernflowerPreferences::UNIT_TEST_MODE) {
-                        buffer.append_line_separator();
-                        mapper.dump_mapping(buffer, true);
-                    }
-                }
             }
         });
         Self::destroy_wrappers(root);

@@ -105,7 +105,7 @@ fn check_against(results: &[ClassResult], reference: &[DecompiledClass]) -> Vec<
 #[test]
 fn renamed_roots_are_planned_and_delivered() {
     let input = kuna_input::load(&data("renamed_roots"), &LoadOptions::default()).unwrap();
-    let opts = options(&[("ren", "1")]);
+    let opts = options(&[("rename-members", "1")]);
     let reference = contents(&decompile(&input, &opts));
     assert_eq!(reference.len(), 7);
     assert!(reference.iter().any(|(name, _)| name == "o/class_0"));
@@ -142,7 +142,7 @@ fn renamed_roots_are_planned_and_delivered() {
 #[test]
 fn an_engine_renames_once_for_all_its_batches() {
     let input = kuna_input::load(&data("renamed_roots"), &LoadOptions::default()).unwrap();
-    let opts = options(&[("ren", "1")]);
+    let opts = options(&[("rename-members", "1")]);
     let reference = contents(&decompile(&input, &opts));
     let (units, scans) = with_engine_stack(|| {
         reset_engine_thread();

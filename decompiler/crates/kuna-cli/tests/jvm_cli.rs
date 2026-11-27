@@ -360,11 +360,11 @@ fn functions_json_is_the_inventory() {
 }
 
 #[test]
-fn jvm_options_resolve_by_name_and_alias() {
+fn jvm_options_resolve_by_name() {
     let default = ok(&jvm(&["decompile", &jar(), "com.ex.util.Helper.loop"]));
     assert!(default.contains("total--;"), "{default}");
-    for spelling in [["jvm_decompile_finally", "off"], ["decompile-finally", "0"], ["fdi", "false"]] {
-        ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--option", spelling[0], spelling[1]]));
+    for value in ["off", "0", "false"] {
+        ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--option", "jvm_decompile_finally", value]));
     }
 }
 
@@ -375,7 +375,7 @@ fn bad_options_and_native_flags_are_usage_errors() {
         (&["--option", "jvm_no_such_option", "on"], "unknown JVM option"),
         (&["--option", "jvm_decompile_finaly", "on"], "did you mean jvm_decompile_finally?"),
         (&["--option", "jvm_decompile_finally", "maybe"], "invalid value"),
-        (&["--option", "thread-count", "4"], "set by kuna itself"),
+        (&["--option", "decompile-finally", "off"], "did you mean jvm_decompile_finally?"),
         (&["--isa", "arm"], "--isa is a native-engine flag"),
         (&["--define-function", "0x10"], "native-engine flag"),
         (&["--mode", "bogus"], "unknown --mode"),
@@ -569,19 +569,18 @@ fn catalog_lists_jvm_rows_on_request() {
         assert!(["transform", "analysis", "core"].contains(&row["tier"].as_str().unwrap()));
     }
     let finally = rows.iter().find(|r| r["option"] == "jvm_decompile_finally").unwrap();
-    assert_eq!(finally["aliases"], serde_json::json!(["decompile-finally", "fdi"]));
+    assert_eq!(finally["aliases"], serde_json::json!([]));
     assert_eq!(&keys(finally)[..3], ["option", "values", "default"]);
     let all: Vec<Value> = serde_json::from_str(&ok(&kuna(&["catalog", "--engine", "all", "--json"]))).unwrap();
     assert_eq!(all.len(), native.len() + rows.len());
     assert!(all[..native.len()].iter().all(|r| r["engine"] == "native"));
-    let one: Vec<Value> = serde_json::from_str(&ok(&kuna(&["catalog", "--json", "--option", "fdi"]))).unwrap();
+    let one: Vec<Value> =
+        serde_json::from_str(&ok(&kuna(&["catalog", "--json", "--option", "jvm_decompile_finally"]))).unwrap();
     assert_eq!(one.len(), 1);
     assert_eq!(one[0]["option"], "jvm_decompile_finally");
     let transforms: Vec<Value> =
         serde_json::from_str(&ok(&kuna(&["catalog", "--engine", "jvm", "--json", "--tier", "transform"]))).unwrap();
     assert!(!transforms.is_empty() && transforms.len() < rows.len());
-    let text = ok(&kuna(&["catalog", "--option", "jvm_decompile_finally"]));
-    assert!(text.contains("aliases: decompile-finally, fdi"), "{text}");
     let check = ok(&kuna(&["catalog", "--check"]));
     assert!(check.contains("JVM engine options"), "{check}");
     assert_eq!(kuna(&["catalog", "--engine", "bogus"]).status.code(), Some(2));
@@ -726,7 +725,7 @@ fn a_kotlin_class_prints_as_kotlin_and_language_java_prints_it_as_java() {
     assert!(java.contains("\n   public final int bump(int by) {\n"), "{java}");
     assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_kt_enable", "off"])), java);
     assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "auto"])), kotlin);
-    let out = jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java", "--option", "kt-enable", "1"]);
+    let out = jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java", "--option", "jvm_kt_enable", "on"]);
     assert_eq!(out.status.code(), Some(2));
     assert!(stderr(&out).contains("--language java writes every class as Java"), "{}", stderr(&out));
 }

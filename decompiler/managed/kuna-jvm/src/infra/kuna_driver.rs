@@ -64,9 +64,7 @@ pub type ProgressFn = Arc<dyn Fn(&Progress) + Send + Sync>;
 
 pub struct DriverConfig {
     /// Vineflower options as `(key, value)`; later pairs win. The driver sets
-    /// `include-runtime`, `include-classpath`, `thread-count` and
-    /// `new-line-separator` itself. kuna's `jvm_plugins` pair reaches every
-    /// instance (the bundled plugins are on when it is absent).
+    /// `include-runtime` and `thread-count` itself.
     pub options: Vec<(String, String)>,
     pub jobs: Jobs,
     /// The JDK whose classes give the engine context (`None`: no runtime).
@@ -512,11 +510,7 @@ struct Session {
 }
 
 fn engine_options(config: &DriverConfig) -> Vec<(String, String)> {
-    let mut options: Vec<(String, String)> = config
-        .options
-        .iter()
-        .map(|(k, v)| crate::fernflower::canonical_option(k, v))
-        .collect();
+    let mut options = config.options.clone();
     let mut set = |key: &str, value: String| {
         options.retain(|(k, _)| k != key);
         options.push((key.to_string(), value));
@@ -525,12 +519,7 @@ fn engine_options(config: &DriverConfig) -> Vec<(String, String)> {
         IFernflowerPreferences::INCLUDE_JAVA_RUNTIME,
         "0".to_string(),
     );
-    set(
-        IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH,
-        "0".to_string(),
-    );
     set(IFernflowerPreferences::THREADS, "1".to_string());
-    set(IFernflowerPreferences::NEW_LINE_SEPARATOR, "1".to_string());
     set(
         IFernflowerPreferences::MAX_PROCESSING_METHOD,
         config.max_method_seconds.to_string(),

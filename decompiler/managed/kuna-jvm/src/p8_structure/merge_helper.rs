@@ -37,7 +37,6 @@ use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
 use crate::statement::{EdgeDirection, Statement, StatementType};
 use crate::try_with_resources_processor::TryWithResourcesProcessor;
-use crate::validation_helper::ValidationHelper;
 use crate::var_exprent::VarExprent;
 
 pub struct MergeHelper;
@@ -1247,7 +1246,6 @@ impl MergeHelper {
                 Self::match_do_while(dostat);
                 if dostat.get_looptype() != LoopType::Infinite {
                     ret = true;
-                    ValidationHelper::validate_statement(stat.get_top_parent());
                 }
             }
         }

@@ -12,7 +12,7 @@ use kuna_jvm::byte_cursor::ByteCursor;
 use kuna_jvm::classes_processor::ClassesProcessor;
 use kuna_jvm::decompiler_context::DecompilerContext;
 use kuna_jvm::i_decompiled_data::IDecompiledData;
-use kuna_jvm::i_fernflower_logger::{CollectingLogger, IFernflowerLogger, Severity};
+use kuna_jvm::i_fernflower_logger::CollectingLogger;
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::pool_interceptor::PoolInterceptor;
 use kuna_jvm::struct_class::StructClass;
@@ -65,11 +65,6 @@ pub fn install_context_with(options: &[(&str, &str)]) -> ContextGuard {
     }
 
     let logger = Rc::new(CollectingLogger::new());
-    if let Some(level) = properties.get_cloned(&IFernflowerPreferences::LOG_LEVEL.to_string()) {
-        if let Some(severity) = Severity::value_of(&level.to_uppercase()) {
-            logger.set_severity(severity);
-        }
-    }
 
     let data = Rc::new(ProcessorData(OnceCell::new()));
     let struct_context = StructContext::new(data.clone());
@@ -90,10 +85,6 @@ pub fn install_context_with(options: &[(&str, &str)]) -> ContextGuard {
         interceptor,
     );
     DecompilerContext::set_current_context(Some(context.clone()));
-
-    let plugins = struct_context.get_plugin_context();
-    plugins.find_plugins();
-    plugins.initialize();
 
     ContextGuard { context, logger }
 }

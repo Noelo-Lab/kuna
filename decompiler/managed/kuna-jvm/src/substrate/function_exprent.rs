@@ -949,7 +949,6 @@ impl FunctionExprent {
                         &format!("(({})", ExprProcessor::get_cast_type_name(&obj_arr)),
                         ")",
                     );
-                    buf.add_type_name_token(&obj_arr, 2);
                 }
                 if writing_kotlin() {
                     buf.append(".size");

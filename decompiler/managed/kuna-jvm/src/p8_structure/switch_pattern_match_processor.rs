@@ -46,18 +46,14 @@ impl SwitchPatternMatchProcessor {
     }
 
     fn process_pattern_matching_rec(stat: Statement, root: Statement) -> bool {
-        ValidationHelper::validate_statement(root.as_root());
-
         let mut ret = false;
         let stats = stat.get_stats().borrow().to_vec();
         for st in stats {
             ret |= Self::process_pattern_matching_rec(st, root);
-            ValidationHelper::validate_statement(root.as_root());
         }
 
         if let Some(switch_stat) = stat.try_as_switch() {
             ret |= Self::process_statement(switch_stat, root);
-            ValidationHelper::validate_statement(root.as_root());
         }
 
         ret

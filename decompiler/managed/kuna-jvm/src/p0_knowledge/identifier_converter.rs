@@ -7,7 +7,7 @@ use crate::class_wrapper_node::ClassWrapperNode;
 use crate::code_constants::{ACC_INTERFACE, ACC_NATIVE, ACC_PRIVATE};
 use crate::converter_helper::ConverterHelper;
 use crate::field_descriptor::FieldDescriptor;
-use crate::i_identifier_renamer::{IIdentifierRenamer, Type};
+use crate::i_identifier_renamer::Type;
 use crate::method_descriptor::MethodDescriptor;
 use crate::new_class_name_builder::NewClassNameBuilder;
 use crate::pool_interceptor::PoolInterceptor;
@@ -21,7 +21,7 @@ type NameMap = JLinkedHashMap<String, String>;
 
 pub struct IdentifierConverter {
     context: StructContext,
-    helper: Rc<dyn IIdentifierRenamer>,
+    helper: Rc<ConverterHelper>,
     interceptor: PoolInterceptor,
     root_classes: Vec<ClassWrapperNode>,
     root_interfaces: Vec<ClassWrapperNode>,
@@ -31,7 +31,7 @@ pub struct IdentifierConverter {
 impl IdentifierConverter {
     pub fn new(
         context: StructContext,
-        helper: Rc<dyn IIdentifierRenamer>,
+        helper: Rc<ConverterHelper>,
         interceptor: PoolInterceptor,
     ) -> IdentifierConverter {
         IdentifierConverter {

@@ -102,7 +102,6 @@ impl ClassWrapper {
         let max_sec = java_parse_int(&max_sec_property).unwrap_or_else(
             || jthrow!(NumberFormatException; "For input string: \"{}\"", max_sec_property),
         );
-        let test_mode = DecompilerContext::get_option(IFernflowerPreferences::UNIT_TEST_MODE);
 
         let methods = class_struct.get_methods().to_vec();
         for &mt in &methods {
@@ -144,7 +143,7 @@ impl ClassWrapper {
 
             let processed = try_catch(|| {
                 if mt.contains_code() {
-                    if max_sec == 0 || test_mode {
+                    if max_sec == 0 {
                         Some(MethodProcessor::code_to_java(
                             class_struct,
                             mt,

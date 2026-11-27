@@ -44,6 +44,7 @@ public final class TestSuspendLoopTry {
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Irreducible bytecode was duplicated to produce valid code
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public final Object indexOf(@NotNull TestSuspendLoopTry.Source src, int x, @NotNull Continuation<? super Integer> $completion) {
       Continuation $continuation;
@@ -225,6 +226,7 @@ public final class TestSuspendLoopTry {
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Irreducible bytecode was duplicated to produce valid code
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public final Object pairs(
       @NotNull TestSuspendLoopTry.Source src,
@@ -487,6 +489,7 @@ public final class TestSuspendLoopTry {
    // $VF: Duplicated exception handlers to handle obfuscated exceptions
    // $VF: Irreducible bytecode was duplicated to produce valid code
    // $VF: Could not verify finally blocks. A semaphore variable has been added to preserve control flow.
+   // Please report this to the kuna issue tracker, at https://github.com/Noelo-Lab/kuna/issues with a copy of the class file (if you have the rights to distribute it!)
    @Nullable
    public final Object watch(@NotNull TestSuspendLoopTry.Source src, @NotNull List<Integer> out, @NotNull Continuation<?> $completion) {
       Continuation $continuation;
