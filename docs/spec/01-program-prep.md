@@ -2668,6 +2668,9 @@ funcsym stream:
   or `halt_missing()` even with no stub. With `importdata` off no symbol is
   registered at the slot, so its prototypes park nowhere. Its no-return fact
   falls back to the import's name like any fact whose address names no function.
+  The commit also records each slot whose FunctionSymbol ends up no-return, and
+  the flow makes a call through one direct (chapter [02](02-lift-and-flow.md)),
+  so resolving it does not restart the function.
   A slot whose symbol the image defines is never taken. `dynrelocs` already fills it in and
   folds it to the object (`exported_value`, `&exported_value`), and `externref` would
   stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image

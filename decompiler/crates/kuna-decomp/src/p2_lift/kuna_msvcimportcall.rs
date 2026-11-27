@@ -15,6 +15,12 @@
 //! that address is an import slot (`peimportcall` paints it external) whose
 //! prototype `msvcsig` locked. Any other indirect call is left to
 //! `ActionDeindirect`, as before.
+//!
+//! (kuna `elfgotimports`) A call through an ELF import's `GLOB_DAT` slot whose
+//! FunctionSymbol is no-return (`call *__stack_chk_fail@GOTPCREL(%rip)`) is made
+//! direct the same way: `ActionDeindirect` restarts the function for every
+//! no-return callee it resolves, and a `-fno-plt` image calls one through its
+//! slot in nearly every function that has a stack protector.
 
 use std::collections::BTreeSet;
 
@@ -33,6 +39,28 @@ pub fn locked_import_slot(
     op: OpId,
     locked: &BTreeSet<(int4, uintb)>,
 ) -> Option<Address> {
+    let slot = import_slot(data, op, locked)?;
+    let (_, entry, proto) = data.get_arch().query_function(&slot)?;
+    (entry == slot && proto.is_input_locked()).then_some(slot)
+}
+
+/// (kuna `elfgotimports`) The import slot `op` calls through, when `noreturn`
+/// holds it: the commit marked the FunctionSymbol there no-return. Made direct
+/// here, the call ends the flow as a direct call to the import's stub does, and
+/// `ActionDeindirect` no longer restarts the function to learn it.
+pub fn noreturn_import_slot(
+    data: &Funcdata,
+    op: OpId,
+    noreturn: &BTreeSet<(int4, uintb)>,
+) -> Option<Address> {
+    let slot = import_slot(data, op, noreturn)?;
+    let (_, entry, _) = data.get_arch().query_function(&slot)?;
+    (entry == slot).then_some(slot)
+}
+
+/// The external import slot in `slots` that the CALLIND `op`'s own instruction
+/// reads its target from.
+fn import_slot(data: &Funcdata, op: OpId, slots: &BTreeSet<(int4, uintb)>) -> Option<Address> {
     let call = data.obank().get(op)?;
     if call.code() != OpCode::CPUI_CALLIND {
         return None;
@@ -45,15 +73,11 @@ pub fn locked_import_slot(
         _ => return None,
     };
     let space = slot.get_space()?;
-    if !locked.contains(&(space.get_index(), slot.get_offset())) {
+    if !slots.contains(&(space.get_index(), slot.get_offset())) {
         return None;
     }
     let props = data.get_arch().query_global_properties(&slot, size, &slot);
-    if props & crate::varnode::varnode_flags::externref == 0 {
-        return None;
-    }
-    let (_, entry, proto) = data.get_arch().query_function(&slot)?;
-    (entry == slot && proto.is_input_locked()).then_some(slot)
+    (props & crate::varnode::varnode_flags::externref != 0).then_some(slot)
 }
 
 /// The memory word the temporary `(addr, size)` that `op` reads was filled from,

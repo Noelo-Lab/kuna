@@ -1743,6 +1743,11 @@ pub struct Architecture {
     /// through one of these import slots is made direct while the flow is
     /// followed ([`crate::kuna_msvcimportcall`]). Empty unless `msvcsig` applied.
     pub msvcsig_import_slots: std::collections::BTreeSet<(int4, uintb)>,
+    /// (kuna `elfgotimports`) The import slots, as `(space index, offset)`, whose
+    /// FunctionSymbol the analysis commit marked no-return. A call through one is
+    /// made direct while the flow is followed
+    /// ([`crate::kuna_msvcimportcall::noreturn_import_slot`]).
+    pub noreturn_import_slots: std::collections::BTreeSet<(int4, uintb)>,
     /// (kuna) Gate the address-table pass (`addrtable`); default **off** (matches
     /// Ghidra `AddressTableAnalyzer.setDefaultEnablement(false)`).
     pub analysis_addrtable: bool,
@@ -2768,6 +2773,7 @@ impl Architecture {
             analysis_godwarfsig: false,
             analysis_cppsig: crate::kuna_cppsig::CppSigMode::Off,
             msvcsig_import_slots: std::collections::BTreeSet::new(),
+            noreturn_import_slots: std::collections::BTreeSet::new(),
             analysis_addrtable: false,
             analysis_operand_refs: false,
             analysis_formatstring: crate::kuna_formatstring::FormatStringMode::Off,

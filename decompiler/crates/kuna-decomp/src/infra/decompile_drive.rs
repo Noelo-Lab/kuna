@@ -530,6 +530,13 @@ impl FlowEnvironment for ArchFlowEnv {
         }
         crate::kuna_msvcimportcall::locked_import_slot(fd, op, locked)
     }
+    fn noreturn_import_slot(&self, fd: &Funcdata, op: crate::context::OpId) -> Option<Address> {
+        let slots = &self.arch().noreturn_import_slots;
+        if slots.is_empty() {
+            return None;
+        }
+        crate::kuna_msvcimportcall::noreturn_import_slot(fd, op, slots)
+    }
     fn msvc_locked_entry(&self, entry: &Address) -> bool {
         let locked = &self.arch().msvcsig_import_slots;
         !locked.is_empty()

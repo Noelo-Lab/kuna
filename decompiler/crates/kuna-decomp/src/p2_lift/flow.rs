@@ -400,6 +400,14 @@ pub trait FlowEnvironment {
         None
     }
 
+    /// (kuna `elfgotimports`) The import slot the CALLIND `op` calls through, when
+    /// the FunctionSymbol there is no-return, so the call is direct from the flow
+    /// on. See [`kuna_msvcimportcall`](crate::kuna_msvcimportcall). The default
+    /// shell reports `None`.
+    fn noreturn_import_slot(&self, _fd: &Funcdata, _op: OpId) -> Option<Address> {
+        None
+    }
+
     /// Complete set of taken targets supplied for this machine instruction.
     fn stated_jump_targets(&self, _site: &Address) -> Option<&crate::jumptable::StatedJump> {
         None
@@ -3331,6 +3339,9 @@ truncating the fall-through here"
         let mut direct = self.data.get_override().find_indirect_override(&op_addr).cloned();
         if direct.is_none() {
             direct = self.env.msvc_import_slot(&self.data, op);
+        }
+        if direct.is_none() {
+            direct = self.env.noreturn_import_slot(&self.data, op);
         }
 
         // C++ flow.cc:730-731: `if (fc != 0 && fc->getEntryAddress() ==

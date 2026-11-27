@@ -6167,6 +6167,14 @@ fn commit_analysis_output(
             prog.arch_mut().symboltab.set_function_no_return(sid, true);
         }
     }
+    // (kuna `elfgotimports`) The import slots now no-return, so the flow makes a
+    // call through one direct (`kuna_msvcimportcall::noreturn_import_slot`).
+    for (slot, _) in &out.import_slot_names {
+        let addr = Address::new(Rc::clone(code_space), *slot);
+        if prog.arch().symboltab.function_is_no_return_across_scopes(&addr) {
+            prog.arch_mut().noreturn_import_slots.insert((code_space.get_index(), *slot));
+        }
+    }
 
     // 3a'. (kuna, Ghidra-gap) Stash the `call error(nonzero,…)` prune list on the arch
     //      so `decompile-all` applies CALL_RETURN flow overrides per function (prunes the
