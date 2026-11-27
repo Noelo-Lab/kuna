@@ -813,6 +813,8 @@ pub struct LambdaInformation {
     pub content_method_key: String,
     pub is_method_reference: bool,
     pub is_content_method_static: bool,
+    /// Interfaces an `altMetafactory` bootstrap adds (`Serializable`, markers).
+    pub added_interfaces: Vec<String>,
 }
 
 pub struct ClassNodeData {

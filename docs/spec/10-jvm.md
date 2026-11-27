@@ -979,7 +979,14 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    (LambdaProcessor::process_class)` reads the `BootstrapMethods` of every class of the
    tree (Java 8+) and gives each `invokedynamic` to `LambdaMetafactory.metafactory` or
    `altMetafactory` a lambda class node, which is written later as a lambda or a method
-   reference.
+   reference. (kuna) `altMetafactory` also takes flags: `FLAG_SERIALIZABLE` and
+   `FLAG_MARKERS` add `Serializable` and marker interfaces to the lambda, which the source
+   wrote as an intersection cast (`(Comparator & Serializable) (a, b) -> 1`). The node
+   records the interfaces its functional interface is not known to extend
+   (`lambdas::added_interfaces`), and the lambda is written under the intersection cast,
+   naming its inferred parameterized type, or the interface itself when that is known not to
+   be generic; otherwise it is written as before. Without the cast the recompiled lambda is
+   not serializable.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 10.4-10.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.

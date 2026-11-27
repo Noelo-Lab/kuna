@@ -2018,3 +2018,5 @@ case	kuna-fixes/pkg/TestStaticInitializerOrder	Kuna Fixes	kuna-fixes/classes/pkg
 case	kuna-fixes/pkg/TestFieldReadAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestFieldReadAfterCall
 # kuna-fixes/src/pkg/TestRecordPatternNestedType.java, javac 21.0.13.1 (-g:none --release 21)
 case	kuna-fixes/pkg/TestRecordPatternNestedType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternNestedType
+# kuna-fixes/src/pkg/TestSerializableLambda.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSerializableLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestSerializableLambda

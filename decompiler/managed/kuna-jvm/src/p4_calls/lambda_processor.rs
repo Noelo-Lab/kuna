@@ -6,7 +6,7 @@ use crate::decompiler_context::DecompilerContext;
 use crate::interpreter_util::InterpreterUtil;
 use crate::jthrow;
 use crate::method_descriptor::MethodDescriptor;
-use crate::fixes::lambdas::self_referencing_lambda;
+use crate::fixes::lambdas::{self, self_referencing_lambda};
 use crate::rt::{BitSet, JHashMap};
 use crate::struct_general_attribute::StructGeneralAttribute;
 
@@ -109,6 +109,18 @@ impl LambdaProcessor {
                                 &lambda_method_descriptor,
                                 cl,
                             );
+                            if bootstrap
+                                .get_method_reference(invoke_dynamic.index1)
+                                .is_some_and(|m| m.elementname == Self::JAVAC_LAMBDA_ALT_METHOD)
+                            {
+                                let added =
+                                    lambdas::added_interfaces(&bootstrap_arguments, &lambda_class_name);
+                                node_lambda.with_mut(|d| {
+                                    if let Some(info) = d.lambda_information.as_mut() {
+                                        info.added_interfaces = added;
+                                    }
+                                });
+                            }
                             let simple_name = format!(
                                 "{}##Lambda_{}_{}",
                                 cl.qualified_name(),
