@@ -1994,9 +1994,11 @@ impl InvocationExprent {
                     types[x] = descriptor.params[x].clone();
                     continue;
                 }
-                if raw_receiver_erasure::unbound_class_variable(&desc_class, &parameter_type, &|f| {
-                    hierarchy_map.contains_key(f) || self.gm_contains(f)
-                }) {
+                if self.get_functype() == Type::General
+                    && raw_receiver_erasure::unbound_class_variable(&desc_class, &parameter_type, &|f| {
+                        hierarchy_map.contains_key(f) || self.gm_contains(f)
+                    })
+                {
                     continue;
                 }
                 if let Some(type_) = type_ {

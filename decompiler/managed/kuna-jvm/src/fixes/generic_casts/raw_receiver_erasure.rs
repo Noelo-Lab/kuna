@@ -16,7 +16,8 @@ use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
 use crate::var_type::{get_class, instance_of, VarType};
 
-/// Whether `param`, a parameter type of a method of `class`, names a type
+/// Whether `param`, a parameter type of a method (not a constructor, whose
+/// class's variables a diamond infers) of `class`, names a type
 /// variable of `class` that `bound` says the call does not bind and that is
 /// not in scope at the call (neither the current class nor an enclosing one
 /// is `class`): the receiver's type leaves it unknown, so the argument is

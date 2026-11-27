@@ -1579,7 +1579,8 @@ that class (a receiver whose parameterization kuna does not see, such as a local
 enclosing method declares and a lambda captures), the remapped type kept the variable's
 name, and a cast to it named whatever variable of that name is in scope at the call:
 `bag.add(check(t))` printed as `bag.add((E)((Task)check((E)t)))` inside a method declaring
-its own `E`. `raw_receiver_erasure` writes such an argument against the parameter's erasure,
+its own `E`. `raw_receiver_erasure` writes such an argument of a method call (a constructor's
+class variables are inferred from its arguments) against the parameter's erasure,
 the type the descriptor passes it as, so no cast names a variable of another declaration; a
 class whose variables are in scope at the call (the current class or an enclosing one) keeps
 the remapped type.

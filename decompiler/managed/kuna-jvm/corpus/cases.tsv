@@ -2230,3 +2230,5 @@ case	kuna-fixes/pkg/TestNarrowConstLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestN
 case	kuna-fixes/pkg/TestCapturedListAdd	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedListAdd
 # kuna-fixes/src/pkg/TestLocalGenericNoDebug.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestLocalGenericNoDebug	Kuna Fixes	kuna-fixes/classes/pkg/TestLocalGenericNoDebug
+# kuna-fixes/src/pkg/TestDiamondWildcardArg.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestDiamondWildcardArg	Kuna Fixes	kuna-fixes/classes/pkg/TestDiamondWildcardArg
