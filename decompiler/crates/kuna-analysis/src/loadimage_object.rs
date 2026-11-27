@@ -486,6 +486,8 @@ struct FuncSym {
 pub struct ElfFunctionProvenance {
     pub definitions: HashSet<u64>,
     pub imports: HashSet<u64>,
+    /// Import stubs whose GOT destinations do not identify a single function.
+    pub ambiguous_mips_stubs: HashSet<u64>,
     /// The MIPS imports whose symbol version binds them to glibc, by name.
     pub glibc_imports: std::collections::HashMap<u64, String>,
 }
@@ -1037,6 +1039,7 @@ impl ObjectLoadImage {
         let mut aliases: Vec<FuncSym> = Vec::new();
         let mut seen: HashSet<u64> = HashSet::new();
         let mut elf_functions = ElfFunctionProvenance::default();
+        elf_functions.ambiguous_mips_stubs = crate::loader::kuna_mipsabi::ambiguous_imports(&file).destinations;
         let mut split_candidates: Vec<(u64, Vec<u8>)> = Vec::new();
         let is_elf = file.format() == object::BinaryFormat::Elf;
         let is_macho = file.format() == object::BinaryFormat::MachO;
@@ -1908,6 +1911,8 @@ impl LoadImage for ObjectLoadImage {
         self.elf_functions.definitions = self.elf_functions.definitions.drain()
             .map(|addr| addr.wadd(badjust)).collect();
         self.elf_functions.imports = self.elf_functions.imports.drain()
+            .map(|addr| addr.wadd(badjust)).collect();
+        self.elf_functions.ambiguous_mips_stubs = self.elf_functions.ambiguous_mips_stubs.drain()
             .map(|addr| addr.wadd(badjust)).collect();
         self.elf_functions.glibc_imports = self.elf_functions.glibc_imports.drain()
             .map(|(addr, name)| (addr.wadd(badjust), name)).collect();

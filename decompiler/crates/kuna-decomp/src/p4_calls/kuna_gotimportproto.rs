@@ -21,27 +21,51 @@
 //! evidence, and a declaration of another name at that import is not glibc's.
 //! The parameters must be at most four integers or pointers no wider than a
 //! pointer, which every MIPS ABI passes in its first argument registers.
+//!
+//! A fixed DWARF declaration identified by a live call-site origin and the
+//! linked call's ELF relocations can also supply the import's void result
+//! ([`VoidPrototypeSource::Declaration`], from `kuna-analysis`'s
+//! `kuna_mipsimportdecl`).
 
 use kuna_base::address::Address;
 
+use crate::architecture::Architecture;
 use crate::context::ArchContext;
 use crate::dtype::{type_metatype, Datatype};
-use crate::fspec::PrototypePieces;
+use crate::fspec::{PrototypePieces, VoidPrototypeSource};
 
 fn concrete(ty: &Datatype) -> bool {
     ty.get_size() > 0 && !matches!(ty.get_metatype(), type_metatype::TYPE_VOID | type_metatype::TYPE_UNKNOWN)
 }
 
+/// Whether the declaration describes each argument and fixes their count.
+pub fn fixed_inputs(pieces: &PrototypePieces) -> bool {
+    pieces.first_var_arg_slot < 0 && pieces.intypes.iter().all(|ty| concrete(ty))
+}
+
 /// Whether the type-only declaration `pieces` binds at a call to `entry`.
 pub fn binds_type_only(arch: &ArchContext, entry: &Address, pieces: &PrototypePieces) -> bool {
     arch.loader_mips_imports.contains(entry)
-        && pieces.first_var_arg_slot < 0
-        && pieces.intypes.iter().all(|ty| concrete(ty))
+        && fixed_inputs(pieces)
         && match pieces.outtype.as_ref() {
             Some(ty) if concrete(ty) => true,
-            Some(ty) if ty.get_metatype() == type_metatype::TYPE_VOID => glibc_declares(arch, entry, pieces),
+            Some(ty) if ty.get_metatype() == type_metatype::TYPE_VOID => {
+                pieces.void_prototype_source == Some(VoidPrototypeSource::Declaration)
+                    || glibc_declares(arch, entry, pieces)
+            }
             _ => false,
         }
+}
+
+/// A loader-proven import with a declared fixed void prototype has no
+/// register-pair result to infer from its lazy resolver stub.
+pub(crate) fn declares_void_at(arch: &Architecture, entry: &Address) -> bool {
+    arch.loader_mips_imports.contains(entry)
+        && arch.symboltab.function_proto_pieces_across_scopes(entry).is_some_and(|p| {
+            p.void_prototype_source == Some(VoidPrototypeSource::Declaration)
+                && fixed_inputs(p)
+                && p.outtype.as_ref().is_some_and(|ty| ty.get_metatype() == type_metatype::TYPE_VOID)
+        })
 }
 
 /// Whether `pieces` is glibc's own declaration of the import at `entry`, with

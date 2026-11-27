@@ -9,6 +9,45 @@ pub(crate) fn is_mips(arch: object::Architecture) -> bool {
     matches!(arch, object::Architecture::Mips | object::Architecture::Mips64 | object::Architecture::Mips64_N32)
 }
 
+/// An unqualified name can denote multiple symbol versions, and different
+/// GOT slots can name the same nonzero destination. Neither identifies a
+/// unique library function, even when the image has no DWARF.
+#[derive(Default)]
+pub(crate) struct AmbiguousImports<'a> {
+    pub names: std::collections::HashSet<&'a str>,
+    pub destinations: std::collections::HashSet<u64>,
+}
+
+pub(crate) fn ambiguous_imports<'a>(file: &object::File<'a>) -> AmbiguousImports<'a> {
+    use object::{ObjectSymbol, ObjectSymbolTable};
+    use std::collections::{HashMap, HashSet};
+
+    let mut result = AmbiguousImports::default();
+    if !is_mips(file.architecture()) || file.format() != object::BinaryFormat::Elf {
+        return result;
+    }
+    let Some(symbols) = file.dynamic_symbol_table() else { return result };
+    let base_name = |s: &'a str| s.split_once('@').map_or(s, |(name, _)| name);
+    let mut seen = HashSet::new();
+    // A default definition and a non-default import may share the unversioned name.
+    for name in file.dynamic_symbols().filter(|s| s.is_global()).filter_map(|s| s.name().ok()) {
+        let name = base_name(name);
+        if !seen.insert(name) { result.names.insert(name); }
+    }
+    let mut owners = HashMap::new();
+    for (stub, index) in super::elf_plt::mips_stub_identities(file) {
+        if stub == 0 { continue; }
+        let name = symbols.symbol_by_index(object::SymbolIndex(index as usize))
+            .ok().and_then(|s| s.name().ok()).map(base_name);
+        if let Some(other) = owners.insert(stub, name) {
+            result.destinations.insert(stub);
+            result.names.extend(other);
+            result.names.extend(name);
+        }
+    }
+    result
+}
+
 /// The whole 32-bit instruction words at the start of `bytes`, in the image's
 /// byte order.
 pub(crate) fn words(bytes: &[u8], little: bool) -> impl Iterator<Item = u32> + '_ {

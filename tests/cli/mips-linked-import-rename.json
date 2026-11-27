@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "forward_alias",
+    "--define-function",
+    "0x1284=perror"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/mips-import-flow/slots/scoped.so",
+    "binary_sha256": "5fc4fc93f682f849692ee7c94c4599dccfb2f619ab591f4a142d9cf17bb26f81",
+    "binary_size": 18392,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/mips-import-flow/slots/scoped.so",
+    "selector": "forward_alias",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "perror\\(a0\\);"
+    ]
+  },
+  "notes": "Naming the import explicitly preserves its linked DWARF evidence when the library table supplies a different prototype."
+}

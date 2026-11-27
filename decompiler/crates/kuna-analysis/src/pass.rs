@@ -601,6 +601,9 @@ pub struct AnalysisOutput {
     /// emits them here instead. The libc and Win32 signature passes all use this
     /// stream for concrete resolver entries. See [`crate::protos`].
     pub prototypes_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
+    /// Exact MIPS import names whose DWARF evidence supersedes a void library
+    /// guess, including declarations for which argument storage is unknown.
+    pub mips_import_declarations: MipsImportDeclarations,
     /// Library prototypes declaring a `float` or `double` that an ARM image
     /// holds back, by name (`None`) or by entry address: whether the image
     /// returns a `double` whole depends on `armfloatreturn`, which is set after
@@ -772,7 +775,53 @@ pub struct AnalysisOutput {
     pub arm_frames: Option<crate::aif::kuna_framereplay::ArmFrameReplay>,
 }
 
+/// A matched declaration with proven storage, or a veto for that import name.
+#[derive(Default, Debug)]
+pub struct MipsImportDeclarations {
+    pub(crate) by_name: std::collections::BTreeMap<String, Option<(u64, kuna_decomp::fspec::PrototypePieces)>>,
+    pub(crate) void_results: std::collections::BTreeSet<String>,
+    /// Linked import entries whose DWARF evidence takes precedence over re-seeding a library name.
+    pub entries: std::collections::BTreeSet<u64>,
+}
+
+/// A void declaration a MIPS GOT import can take without storage: a verified
+/// DWARF declaration, or a library table's guess (`gotimportproto`'s glibc rule).
+fn void_guess(p: &kuna_decomp::fspec::PrototypePieces) -> bool {
+    p.void_prototype_source.is_some()
+        || (p.kuna_library_table
+            && p.outtype.as_ref().is_some_and(|t| t.get_metatype() == kuna_decomp::dtype::type_metatype::TYPE_VOID))
+}
+
 impl AnalysisOutput {
+    fn remove_void_guesses(&mut self, matches: impl Fn(&str) -> bool) {
+        let keep = |p: &kuna_decomp::fspec::PrototypePieces| !void_guess(p) || !matches(&p.name);
+        self.prototypes.retain(keep);
+        self.prototypes_at.retain(|(_, p)| keep(p));
+    }
+
+    pub(crate) fn exclude_ambiguous_mips_imports(&mut self, ambiguous: &crate::loader::kuna_mipsabi::AmbiguousImports) {
+        if !ambiguous.names.is_empty() || !ambiguous.destinations.is_empty() {
+            self.remove_void_guesses(|name| ambiguous.names.contains(name));
+            self.prototypes_at.retain(|(address, p)| !void_guess(p) || !ambiguous.destinations.contains(address));
+            self.mips_import_declarations.by_name.retain(|name, declaration| !ambiguous.names.contains(name.as_str())
+                && !declaration.as_ref().is_some_and(|(addr, _)| ambiguous.destinations.contains(addr)));
+        }
+    }
+
+    /// Reconcile both library streams after the enabled passes have merged.
+    /// A refused declaration still vetoes a void guess from either stream.
+    pub fn apply_mips_import_declarations(&mut self) {
+        let declarations = std::mem::take(&mut self.mips_import_declarations.by_name);
+        if !declarations.is_empty() {
+            let void_results = std::mem::take(&mut self.mips_import_declarations.void_results);
+            let keep = |p: &kuna_decomp::fspec::PrototypePieces| !declarations.contains_key(&p.name)
+                || !(void_guess(p) || (p.kuna_library_table && void_results.contains(&p.name)));
+            self.prototypes.retain(keep);
+            self.prototypes_at.retain(|(_, p)| keep(p));
+            self.prototypes_at.extend(declarations.into_values().flatten());
+        }
+    }
+
     /// (kuna `symbolnamechars`, GH-340) Apply the symbol-name character
     /// sanitizer to every NAME this output carries, at the mint.
     ///
@@ -819,6 +868,7 @@ impl AnalysisOutput {
         self.signature_vetoes.iter_mut().for_each(|f| fix(&mut f.name));
         self.fallback_names.iter_mut().for_each(|f| fix(&mut f.name));
         self.prototypes.iter_mut().for_each(fix_proto);
+        self.mips_import_declarations.by_name.values_mut().flatten().for_each(|(_, p)| fix_proto(p));
         self.prototypes_at.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.arm_float_prototypes.iter_mut().for_each(|(_, p)| fix_proto(p));
         self.main_decl_at.iter_mut().for_each(|(_, p)| fix_proto(p));
@@ -949,6 +999,9 @@ impl AnalysisOutput {
         self.wide_strings32.extend(other.wide_strings32);
         self.cfstrings.extend(other.cfstrings);
         self.blobs.extend(other.blobs);
+        self.mips_import_declarations.by_name.extend(other.mips_import_declarations.by_name);
+        self.mips_import_declarations.void_results.extend(other.mips_import_declarations.void_results);
+        self.mips_import_declarations.entries.extend(other.mips_import_declarations.entries);
         self.prototypes.extend(other.prototypes);
         self.prototypes_at.extend(other.prototypes_at);
         self.arm_float_prototypes.extend(other.arm_float_prototypes);
@@ -1061,5 +1114,7 @@ pub fn run_analyses(ctx: &AnalysisCtx, passes: &[Box<dyn AnalysisPass>]) -> Anal
     for pass in passes {
         out.merge(pass.run(ctx));
     }
+    out.exclude_ambiguous_mips_imports(&crate::loader::kuna_mipsabi::ambiguous_imports(ctx.file));
+    out.apply_mips_import_declarations();
     out
 }

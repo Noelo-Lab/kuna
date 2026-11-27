@@ -128,6 +128,7 @@ mod kuna_dwarfbyref;
 mod kuna_dwarflocation;
 pub(crate) mod kuna_dwarfcomplex;
 mod kuna_dwarflinkage;
+mod kuna_mipsimportdecl;
 mod kuna_dwarfsignatures;
 pub mod kuna_godwarfsig;
 mod kuna_goformals;
@@ -215,6 +216,7 @@ struct DieSnap {
     /// `DW_AT_name`, resolved through `.debug_str`/`.debug_line_str` (may be empty).
     name: String,
     linkage_name: String,
+    has_linkage_name: bool,
     external: Option<bool>,
     /// `DW_AT_low_pc` resolved to a VMA, if present (marks a *defined* function).
     low_pc: Option<u64>,
@@ -265,6 +267,10 @@ struct DieSnap {
     declaration: bool,
     /// (kuna `calltargettype`) `DW_AT_prototyped` on a `DW_TAG_subroutine_type`.
     prototyped: bool,
+    /// Fixed C/C++ declaration with a normal calling convention and no inherited signature.
+    fixed_declaration: bool,
+    cpp_declaration: bool,
+    has_type_attribute: bool,
     /// True if the DIE carries a `DW_AT_location` (a global var has a real address).
     has_location: bool,
     /// `DW_OP_addr` operand of a simple `DW_AT_location`, if that is its form.
@@ -301,6 +307,7 @@ impl DieSnap {
             tag,
             name: String::new(),
             linkage_name: String::new(),
+            has_linkage_name: false,
             external: None,
             low_pc: None,
             type_ref: None,
@@ -319,6 +326,9 @@ impl DieSnap {
             const_value: None,
             declaration: false,
             prototyped: false,
+            fixed_declaration: false,
+            cpp_declaration: false,
+            has_type_attribute: false,
             has_location: false,
             addr_location: None,
             fbreg_location: None,
@@ -361,7 +371,7 @@ fn snapshot_unit_for_abi(
     unit: &gimli::Unit<Reader<'_>>,
     abi: kuna_dwarfbyref::ArgumentAbi,
 ) -> BTreeMap<usize, DieSnap> {
-    snapshot_unit_with_go(dwarf, unit, abi, None)
+    snapshot_unit_with_go(dwarf, unit, abi, None).0
 }
 
 fn snapshot_unit_with_go(
@@ -369,7 +379,7 @@ fn snapshot_unit_with_go(
     unit: &gimli::Unit<Reader<'_>>,
     abi: kuna_dwarfbyref::ArgumentAbi,
     mut go: Option<&mut kuna_godwarfsig::UnitExtras>,
-) -> BTreeMap<usize, DieSnap> {
+) -> (BTreeMap<usize, DieSnap>, bool) {
     let mut map: BTreeMap<usize, DieSnap> = BTreeMap::new();
     // Parent stack of (offset, depth) to attach children to their parent.
     let mut stack: Vec<(usize, isize)> = Vec::new();
@@ -381,7 +391,9 @@ fn snapshot_unit_with_go(
             Ok(Some(entry)) => entry,
             Ok(None) => {
                 if let Some(go) = go.as_mut() { go.complete = true; }
-                break;
+                // An exhausted unit can still have an unterminated child
+                // list. Its prefix does not establish a function's arity.
+                return (map, cursor.next_depth() == 0);
             }
             Err(_) => break,
         };
@@ -435,7 +447,10 @@ fn snapshot_unit_with_go(
         if let Some(gimli::AttributeValue::Flag(value)) = entry.attr_value(gimli::DW_AT_external) {
             snap.external = Some(value);
         }
-        if let Some(val) = entry.attr_value(gimli::DW_AT_linkage_name) {
+        if let Some(val) = entry.attr_value(gimli::DW_AT_linkage_name)
+            .or_else(|| entry.attr_value(gimli::DW_AT_MIPS_linkage_name))
+        {
+            snap.has_linkage_name = true;
             if let Ok(s) = dwarf.attr_string(unit, val) {
                 if let Ok(s) = std::str::from_utf8(s.slice()) {
                     snap.linkage_name = s.to_string();
@@ -447,7 +462,9 @@ fn snapshot_unit_with_go(
                 snap.low_pc = Some(a);
             }
         }
-        if let Some(gimli::AttributeValue::UnitRef(o)) = entry.attr_value(gimli::DW_AT_type) {
+        let type_attr = entry.attr_value(gimli::DW_AT_type);
+        snap.has_type_attribute = type_attr.is_some();
+        if let Some(gimli::AttributeValue::UnitRef(o)) = type_attr {
             snap.type_ref = Some(o.0);
         }
         if let Some(v) = entry.attr_value(gimli::DW_AT_byte_size) {
@@ -499,9 +516,26 @@ fn snapshot_unit_with_go(
         {
             snap.declaration = true;
         }
-        if matches!(entry.attr_value(gimli::DW_AT_prototyped), Some(gimli::AttributeValue::Flag(true))) {
-            snap.prototyped = true;
-        }
+        snap.prototyped = matches!(entry.attr_value(gimli::DW_AT_prototyped),
+            Some(gimli::AttributeValue::Flag(true)));
+        // C++ functions are prototyped by the language. Producers normally
+        // omit the C-specific flag, including for extern "C" declarations.
+        let prototyped_language = match language {
+            Some(gimli::DW_LANG_C | gimli::DW_LANG_C89 | gimli::DW_LANG_C99
+                | gimli::DW_LANG_C11 | gimli::DW_LANG_C17) => snap.prototyped,
+            Some(gimli::DW_LANG_C_plus_plus | gimli::DW_LANG_C_plus_plus_03
+                | gimli::DW_LANG_C_plus_plus_11 | gimli::DW_LANG_C_plus_plus_14
+                | gimli::DW_LANG_C_plus_plus_17 | gimli::DW_LANG_C_plus_plus_20) => {
+                snap.cpp_declaration = snap.declaration;
+                true
+            }
+            _ => false,
+        };
+        snap.fixed_declaration = prototyped_language && snap.declaration && snap.tag == gimli::DW_TAG_subprogram
+            && entry.attr_value(gimli::DW_AT_specification).is_none()
+            && entry.attr_value(gimli::DW_AT_abstract_origin).is_none()
+            && matches!(entry.attr_value(gimli::DW_AT_calling_convention),
+                None | Some(gimli::AttributeValue::CallingConvention(gimli::DW_CC_normal)));
         if let Some(loc) = entry.attr_value(gimli::DW_AT_location) {
             snap.has_location = true;
             snap.addr_location = simple_addr_location(&loc, unit.encoding().address_size)
@@ -535,7 +569,7 @@ fn snapshot_unit_with_go(
             stack.push((off, depth));
         }
     }
-    map
+    (map, false)
 }
 
 /// Decode a `DW_AT_location` that is a single `DW_OP_addr <vma>` expression (the
@@ -761,7 +795,7 @@ fn build_datatype_at(
             intern_aggregate(types, die, dies, alias, "anon_union", walk, word_size, cpp, true)
         }
         gimli::DW_TAG_enumeration_type => {
-            let size = die.byte_size.map(|b| b as i32).unwrap_or(4).max(1);
+            let size = enum_width(die, dies).unwrap_or(4);
             let signed = enum_signed(die, dies);
             build_enum(die, dies, types, size, signed)
                 // Anonymous, memberless, or the wrong width for the factory's
@@ -832,29 +866,31 @@ fn intern_aggregate(
 /// qualified `void`) or exceeds the bound is returned as-is, so the caller's own
 /// arms still handle it.
 fn strip_qualifiers<'a>(
-    mut die: &'a DieSnap,
+    die: &'a DieSnap,
     dies: &'a BTreeMap<usize, DieSnap>,
 ) -> (&'a DieSnap, Option<&'a str>) {
-    let mut alias: Option<&str> = None;
-    for _ in 0..MAX_QUALIFIER_HOPS {
-        if !matches!(
-            die.tag,
-            gimli::DW_TAG_typedef
-                | gimli::DW_TAG_const_type
-                | gimli::DW_TAG_volatile_type
-                | gimli::DW_TAG_restrict_type
-        ) {
-            break;
+    let mut alias = None;
+    let mut base = die;
+    for node in qualifier_chain(die, dies) {
+        if node.tag == gimli::DW_TAG_typedef && !node.name.is_empty() {
+            alias = Some(node.name.as_str());
         }
-        if die.tag == gimli::DW_TAG_typedef && !die.name.is_empty() {
-            alias = Some(&die.name);
-        }
-        match die.type_ref.and_then(|t| dies.get(&t)) {
-            Some(next) => die = next,
-            None => break,
-        }
+        base = node;
     }
-    (die, alias)
+    (base, alias)
+}
+
+/// Includes the terminal type, without following a pointer to its referent.
+fn qualifier_chain<'a>(
+    die: &'a DieSnap,
+    dies: &'a BTreeMap<usize, DieSnap>,
+) -> impl Iterator<Item = &'a DieSnap> {
+    std::iter::successors(Some(die), |node| match node.tag {
+        gimli::DW_TAG_typedef | gimli::DW_TAG_const_type | gimli::DW_TAG_volatile_type
+        | gimli::DW_TAG_restrict_type => node.type_ref.and_then(|off| dies.get(&off)),
+        _ => None,
+    })
+    .take(MAX_QUALIFIER_HOPS as usize + 1)
 }
 
 /// Bound on the [`strip_qualifiers`] walk (a real qualifier chain is 1-3 hops).
@@ -900,8 +936,16 @@ fn encoding_signed(encoding: Option<gimli::DwAte>) -> Option<bool> {
     }
 }
 
-/// The sign of an enumeration: its `DW_AT_encoding` (gcc), else that of the
-/// integer its `DW_AT_type` names (clang states only that), else `None`.
+/// An enum can inherit its storage extent from its underlying integer type.
+fn enum_width(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>) -> Option<i32> {
+    let base = die.type_ref.and_then(|offset| dies.get(&offset)).map(|base| strip_qualifiers(base, dies).0)
+        .filter(|base| base.tag == gimli::DW_TAG_base_type && encoding_signed(base.encoding).is_some())
+        .and_then(|base| base.byte_size);
+    if matches!((die.byte_size, base), (Some(a), Some(b)) if a != b) { return None; }
+    i32::try_from(die.byte_size.or(base)?).ok().filter(|&size| size > 0)
+}
+
+/// Signedness from the enumeration or the integer named by its underlying type.
 fn enum_signed(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>) -> Option<bool> {
     encoding_signed(die.encoding).or_else(|| {
         let (base, _) = strip_qualifiers(dies.get(&die.type_ref?)?, dies);
@@ -1038,27 +1082,17 @@ fn build_pieces(
 ) -> Option<PrototypePieces> {
     // Return type: a null DW_AT_type is `void` (build_datatype handles None).
     let mut walk = TypeWalk::new();
-    let outtype = build_datatype(sub.type_ref, dies, types, word_size, &mut walk, false);
+    let outtype = build_datatype(sub.type_ref, dies, types, word_size, &mut walk, sub.cpp_declaration);
 
     let mut intypes = Vec::new();
     let mut innames = Vec::new();
-    let mut first_var_arg_slot: i32 = -1;
-
-    for &coff in &sub.children {
-        let Some(child) = dies.get(&coff) else { continue };
-        match child.tag {
-            gimli::DW_TAG_formal_parameter => {
-                let ty = build_datatype(child.type_ref, dies, types, word_size, &mut walk, false)?;
-                let ty = kuna_dwarfbyref::parameter_type(child, ty, types, word_size)?;
-                intypes.push(ty);
-                innames.push(child.name.clone());
-            }
-            gimli::DW_TAG_unspecified_parameters => {
-                // `...` — variadic from the current fixed-parameter count.
-                first_var_arg_slot = intypes.len() as i32;
-            }
-            _ => {}
-        }
+    let params = kuna_cppproto::formal_parameters(sub, dies);
+    let first_var_arg_slot = kuna_cppproto::var_arg_slot(sub, dies, params.len());
+    for offset in params {
+        let child = dies.get(&offset)?;
+        let ty = build_datatype(child.type_ref, dies, types, word_size, &mut walk, sub.cpp_declaration)?;
+        intypes.push(kuna_dwarfbyref::parameter_type(child, ty, types, word_size)?);
+        innames.push(child.name.clone());
     }
 
     Some(PrototypePieces {
@@ -1071,6 +1105,7 @@ fn build_pieces(
         input_storage: Vec::new(),
         kuna_library_names: None,
         kuna_library_table: false,
+        void_prototype_source: None,
     })
 }
 
@@ -1197,6 +1232,13 @@ impl DwarfPass {
             kuna_dwarfcomplex::max_size(ctx.file.format(), ctx.file.architecture(), &ctx.arch.archid);
 
         let linkage_imports = kuna_dwarflinkage::imports(ctx);
+        // On MIPS the ELF resolver supplies only lazy stubs for undefined
+        // function symbols from the external GOT. The engine installs its
+        // address set after this preparation pass.
+        let mips_imports = crate::loader::kuna_mipsabi::is_mips(ctx.file.architecture())
+            && !linkage_imports.is_empty();
+        let linked_calls = if mips_imports { kuna_mipsimportdecl::linked_calls(ctx.file) } else { BTreeMap::new() };
+        let mut void_declarations = crate::pass::MipsImportDeclarations::default();
         let linkage_definitions = kuna_dwarflinkage::definitions(ctx, &linkage_imports);
         let go_target = ctx.file.is_little_endian() && ctx.file.architecture() == object::Architecture::X86_64;
         let mut go_facts = kuna_godwarfsig::Facts::default();
@@ -1204,7 +1246,7 @@ impl DwarfPass {
         while let Ok(Some(header)) = units.next() {
             let Ok(unit) = dwarf.unit(header) else { continue };
             let mut go = kuna_godwarfsig::UnitExtras::default();
-            let mut dies = snapshot_unit_with_go(
+            let (mut dies, complete) = snapshot_unit_with_go(
                 &dwarf,
                 &unit,
                 kuna_dwarfbyref::argument_abi(ctx.file.format(), ctx.file.architecture()),
@@ -1218,9 +1260,15 @@ impl DwarfPass {
 
             let signatures = kuna_goformals::generic_prototype_allowed(&unit)
                 && kuna_dwarfsignatures::has_signature_information(&dies);
-            for snap in dies.values() {
+            let witnessed = kuna_mipsimportdecl::witnessed(&dwarf, &unit, &linked_calls);
+            for (offset, snap) in &dies {
                 match snap.tag {
                     gimli::DW_TAG_subprogram => {
+                        if snap.declaration && snap.has_linkage_name
+                            && witnessed.get(offset) == Some(&Some(snap.linkage_name.as_str())) {
+                            kuna_mipsimportdecl::record(snap, &dies, &linkage_imports, ctx,
+                                complete, &mut void_declarations);
+                        }
                         // Defined function only: DW_AT_low_pc present and not a
                         // declaration-only DIE (DWARFFunction.read body-ranges guard).
                         let Some(low_pc) = snap.low_pc else { continue };
@@ -1335,6 +1383,7 @@ impl DwarfPass {
             }
             go_facts.append_unit(dies, go);
         }
+        out.mips_import_declarations = void_declarations;
         if !go_facts.is_empty() {
             out.go_dwarf.push(go_facts);
         }

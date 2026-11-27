@@ -1720,11 +1720,13 @@ pub fn run_default_analyses_per_pass(
         image_path: image_on_disk_path(image),
     };
     let format = file.format();
+    let ambiguous = crate::loader::kuna_mipsabi::ambiguous_imports(&file);
     let mut split: Vec<(&'static str, AnalysisOutput)> = passes_for(compiler, format)
         .iter()
         .filter(|pass| load_pass_enabled(pass.id()))
         .map(|pass| {
             let mut out = pass.run(&ctx);
+            out.exclude_ambiguous_mips_imports(&ambiguous);
             if let Some(view) = &view {
                 crate::loader::kuna_relocrebase::retain_in_image(&mut out, view);
             }

@@ -223,6 +223,15 @@ for files under 500 KiB, the same call prints as the import `extra`.
 exit and prints `if (x) return; x = 1;`, as the preset did while it carried
 the option.
 
+`kuna-mipsimportdecl.xml` loads original GCC O32 PIC callers and DWARF call
+sites with retained ELF relocations. It checks forwarding through a linked
+C declaration, a nested C++ namespace, lvalue and rvalue references and
+a typedef of void. An assembler-renamed reference and a discarded caller
+leave unrelated imported results intact. Other controls cover legacy MIPS
+linkage names, an unterminated parameter list, floating and multiword inputs,
+versioned imports, a class member and two GOT slots sharing a destination.
+The source and build recipes are in `tests/fixtures/mips-import-flow`.
+
 `kuna-mips-octeon-elf32-o64.xml` loads big-endian Octeon ELF32 images without a
 target: one declaring O64, one declaring no ABI with GCC's `.mdebug.abiO64`
 marker, and one declaring no ABI at all. Each now loads with the Octeon O64

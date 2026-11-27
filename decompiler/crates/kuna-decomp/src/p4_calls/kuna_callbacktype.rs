@@ -539,6 +539,7 @@ fn pieces_of(sig: &Sig, name: &str, arch: &Architecture) -> Option<PrototypePiec
         input_storage: Vec::new(),
         kuna_library_names: None,
         kuna_library_table: false,
+        void_prototype_source: None,
     })
 }
 

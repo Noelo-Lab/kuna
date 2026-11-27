@@ -151,7 +151,7 @@ pub(super) fn resolve_subprogram(
 /// the direct children therefore under-counts the arity — `std::vector<int>
 /// ::emplace_back<int>(this, int &&)` looked like a one-parameter function, and
 /// locking that signature dropped the argument at every call site.
-fn formal_parameters(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>) -> Vec<usize> {
+pub(super) fn formal_parameters(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>) -> Vec<usize> {
     let mut out = Vec::new();
     for &c in &die.children {
         let Some(child) = dies.get(&c) else { continue };
@@ -172,7 +172,7 @@ fn formal_parameters(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>) -> Vec<usiz
 
 /// The fixed-parameter count at which a trailing `DW_TAG_unspecified_parameters`
 /// starts the `...`, or `-1` when the DIE has none.
-fn var_arg_slot(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>, nparams: usize) -> i32 {
+pub(super) fn var_arg_slot(die: &DieSnap, dies: &BTreeMap<usize, DieSnap>, nparams: usize) -> i32 {
     let variadic = die
         .children
         .iter()
@@ -265,6 +265,7 @@ pub(super) fn build_pieces(
         input_storage: Vec::new(),
         kuna_library_names: None,
         kuna_library_table: false,
+        void_prototype_source: None,
     })
 }
 

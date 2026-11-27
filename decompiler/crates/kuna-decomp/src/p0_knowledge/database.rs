@@ -2954,6 +2954,17 @@ impl Database {
         );
     }
 
+    /// Withdraw a name-based library prototype after stronger import evidence arrives.
+    pub fn clear_library_prototype_at(&mut self, addr: &Address) {
+        self.kuna_gen += 1;
+        let Some((sid, _)) = self.find_function_across_scopes(addr) else { return; };
+        if let SymbolKind::Function { proto_pieces, .. } = &mut self.symbols[sid].kind {
+            if proto_pieces.as_ref().is_some_and(|proto| proto.pieces.kuna_library_table) {
+                *proto_pieces = None;
+            }
+        }
+    }
+
     pub(crate) fn set_function_proto_with_go_string(
         &mut self,
         sid: SymbolId,

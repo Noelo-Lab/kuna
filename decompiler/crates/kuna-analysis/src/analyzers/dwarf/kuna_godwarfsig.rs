@@ -376,6 +376,7 @@ impl Facts {
             innames: vec![sanitize_symbol_name(&input.name, self.names).into_owned()], first_var_arg_slot: -1,
             output_storage: None, input_storage: Vec::new(), kuna_library_names: None,
             kuna_library_table: false,
+            void_prototype_source: None,
         };
         let mut assigned = Vec::new();
         arch.default_fp()?.assign_parameter_storage(&pieces, &mut assigned, false, types, arch.manage()).ok()?;
@@ -607,6 +608,7 @@ impl Facts {
             outtype: Some(outtype), intypes, innames: names, first_var_arg_slot: -1,
             output_storage: None, input_storage: Vec::new(), kuna_library_names: None,
             kuna_library_table: false,
+            void_prototype_source: None,
         };
         let mut assigned = Vec::new();
         arch.default_fp()?.assign_parameter_storage(&pieces, &mut assigned, false, types, arch.manage()).ok()?;
@@ -888,7 +890,7 @@ impl Deferred {
         while let Some(header) = units.next().ok()? {
             let unit = dwarf.unit(header).ok()?;
             let mut extra = UnitExtras::default();
-            let dies = super::snapshot_unit_with_go(&dwarf, &unit,
+            let (dies, _) = super::snapshot_unit_with_go(&dwarf, &unit,
                 kuna_dwarfbyref::ArgumentAbi::default(), Some(&mut extra));
             facts.append_unit(dies, extra);
         }
