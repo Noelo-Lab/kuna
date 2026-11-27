@@ -28,6 +28,16 @@ public class TestAnonymousVarReceiver {
       return var1.area() + var1.perimeter();
    }
 
+   static int inherited() {
+      TestAnonymousVarReceiver.Shape var0 = new TestAnonymousVarReceiver.Shape() {
+         @Override
+         public int area() {
+            return 2;
+         }
+      };
+      return var0.area() + var0.hashCode();
+   }
+
    interface Shape {
       int area();
    }

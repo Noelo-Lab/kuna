@@ -30,4 +30,13 @@ public class TestAnonymousVarReceiver {
       };
       return square.area() + square.perimeter();
    }
+
+   static int inherited() {
+      var shape = new Shape() {
+         public int area() {
+            return 2;
+         }
+      };
+      return shape.area() + shape.hashCode();
+   }
 }

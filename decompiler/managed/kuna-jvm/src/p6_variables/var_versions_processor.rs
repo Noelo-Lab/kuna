@@ -69,9 +69,11 @@ impl VarVersionsProcessor {
     }
 
     /// A variable that a call or a field access reads as an instance of an
-    /// anonymous class: javac names the class of the variable's declared type as
-    /// the owner, and an anonymous class is that type only for a `var` local
-    /// (Java 10, class file 54), so the variable takes the anonymous class.
+    /// anonymous class, of a member the anonymous class declares and no
+    /// supertype of it does: javac names the class of the variable's declared
+    /// type as the owner, the member is reachable through no other type, and
+    /// an anonymous class is a declared type only for a `var` local (Java 10,
+    /// class file 54), so the variable takes the anonymous class.
     fn type_anonymous_receivers(type_processor: VarTypeProcessor, graph: DirectGraph, method: StructMethod) {
         if method.get_bytecode_version().major <= BytecodeVersion::MAJOR_9 {
             return;
@@ -79,10 +81,10 @@ impl VarVersionsProcessor {
         let min_types = type_processor.get_lower_bounds();
         graph.iterate_exprents(|exprent: Exprent| {
             for e in exprent.get_all_exprents_rec_self(true, true) {
-                let (instance, owner) = if let Some(inv) = e.try_as_invocation() {
-                    (inv.get_instance(), inv.get_classname())
+                let (instance, owner, member) = if let Some(inv) = e.try_as_invocation() {
+                    (inv.get_instance(), inv.get_classname(), (inv.get_name(), inv.get_string_descriptor(), false))
                 } else if let Some(field) = e.try_as_field() {
-                    (field.get_instance(), field.get_classname())
+                    (field.get_instance(), field.get_classname(), (field.get_name(), field.get_descriptor().descriptor_string.clone(), true))
                 } else {
                     continue;
                 };
@@ -94,7 +96,7 @@ impl VarVersionsProcessor {
                     .borrow()
                     .get(&owner)
                     .is_some_and(|node| node.with(|n| n.type_ == ClassNodeType::Anonymous));
-                if !anonymous {
+                if !anonymous || Self::declared_above(&owner, &member.0, &member.1, member.2) {
                     continue;
                 }
                 let pair = VarVersionPair::from_var(var);
@@ -107,6 +109,53 @@ impl VarVersionsProcessor {
             }
             0
         });
+    }
+
+    /// Whether a supertype of `class` declares the method or field `name`
+    /// with `descriptor`, or may: a class that is not known counts as
+    /// declaring it, except `Object`, whose members are fixed.
+    fn declared_above(class: &str, name: &str, descriptor: &str, field: bool) -> bool {
+        const OBJECT_METHODS: [(&str, &str); 11] = [
+            ("equals", "(Ljava/lang/Object;)Z"),
+            ("hashCode", "()I"),
+            ("toString", "()Ljava/lang/String;"),
+            ("getClass", "()Ljava/lang/Class;"),
+            ("clone", "()Ljava/lang/Object;"),
+            ("finalize", "()V"),
+            ("notify", "()V"),
+            ("notifyAll", "()V"),
+            ("wait", "()V"),
+            ("wait", "(J)V"),
+            ("wait", "(JI)V"),
+        ];
+        let context = DecompilerContext::get_struct_context();
+        let Some(cls) = context.get_class(class) else {
+            return true;
+        };
+        let mut work: Vec<String> = cls.super_class().map(|s| s.get_string().to_string()).into_iter().collect();
+        work.extend(cls.get_interface_names());
+        let mut seen = 0;
+        while let Some(name_) = work.pop() {
+            seen += 1;
+            if seen > 256 {
+                return true;
+            }
+            if name_ == "java/lang/Object" {
+                if !field && OBJECT_METHODS.contains(&(name, descriptor)) {
+                    return true;
+                }
+                continue;
+            }
+            let Some(sup) = context.get_class(&name_) else {
+                return true;
+            };
+            if (field && sup.has_field(name, descriptor)) || (!field && sup.get_method(name, descriptor).is_some()) {
+                return true;
+            }
+            work.extend(sup.super_class().map(|s| s.get_string().to_string()));
+            work.extend(sup.get_interface_names());
+        }
+        false
     }
 
     fn merge_phi_versions(ssa: &SSAConstructorSparseEx, graph: DirectGraph) {

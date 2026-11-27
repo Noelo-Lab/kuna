@@ -892,7 +892,14 @@ class. Without a LocalVariableTable that printed `Object var0 = ..; var0.bump();
 later, `VarVersionsProcessor::type_anonymous_receivers` gives a variable that a call or a
 field access reads as an instance of an anonymous class (the class the instruction names
 is one) that class as its type, which prints as `var`; such a variable can hold no other
-value, since no other type could be the call's qualifying type (JLS 13.1).
+value, since no other type could be the call's qualifying type (JLS 13.1). Only a member
+the anonymous class declares and no supertype does counts (`declared_above`; a supertype
+that is not known counts as declaring it, `Object` by its fixed members): a member it
+inherits or overrides is reachable through the supertype the local already has. The class
+file version does not tell a DEX-derived class (kuna-dex raises a nest member to 55), where
+d8 holds `new TypeVisitor() {..}.visit(from)` in a register: `var` there printed text the
+project's Java 8 does not compile (guava's `TypeResolver.populateTypeMappings`, release
+DEX).
 
 **An `int` conditional assigned to a local (kuna).** Vineflower lowers the `int` type of a
 conditional on the right of an assignment to `bytechar`, so that `byte v = b ? 0 : 1` keeps its
