@@ -1,5 +1,5 @@
 //! Stack argument alignment can differ from the in-memory type alignment.
-use super::fspec::param_entry_flags::IGNORE_TYPE_ALIGN;
+use super::fspec::param_entry_flags::{FLOAT_LEFT, IGNORE_TYPE_ALIGN};
 use kuna_base::{
     error::{KunaError, KunaResult},
     space::{spacetype, AddrSpace},
@@ -12,23 +12,23 @@ pub(crate) fn decode(
     alignment: i32,
     size: i32,
 ) -> KunaResult<u32> {
-    let value = (0..entry.get_num_attributes())
-        .find(|&i| entry.get_attribute_name(i) == "stackalign")
-        .map(|i| entry.get_attribute_value_at(i));
-    match value {
-        None | Some(b"true") => Ok(0),
-        Some(b"false")
-            if space.get_type() == spacetype::IPTR_SPACEBASE
-                && alignment > 0
-                && alignment != size =>
-        {
-            Ok(IGNORE_TYPE_ALIGN)
+    let aligned_stack =
+        space.get_type() == spacetype::IPTR_SPACEBASE && alignment > 0 && alignment != size;
+    let mut flags = 0;
+    for i in 0..entry.get_num_attributes() {
+        match (entry.get_attribute_name(i), entry.get_attribute_value_at(i)) {
+            ("stackalign", b"false") if aligned_stack => flags |= IGNORE_TYPE_ALIGN,
+            ("floatleft", b"true") if aligned_stack => flags |= FLOAT_LEFT,
+            ("stackalign", b"true") | ("floatleft", b"false") => {}
+            ("stackalign" | "floatleft", _) => {
+                return Err(KunaError::lowlevel(
+                    "invalid stack placement attribute on pentry",
+                ))
+            }
+            _ => {}
         }
-        Some(b"false") => Err(KunaError::lowlevel(
-            "pentry stackalign requires aligned stack storage",
-        )),
-        Some(_) => Err(KunaError::lowlevel("bad pentry stackalign")),
     }
+    Ok(flags)
 }
 
 pub(crate) fn effective_alignment(flags: u32, type_alignment: i32, slot_alignment: i32) -> i32 {
@@ -69,5 +69,10 @@ mod tests {
         let mut entry = Element::new();
         entry.add_attribute("stackalign", b"invalid");
         assert!(decode(&entry, &stack, 4, 500).is_err());
+        let mut entry = Element::new();
+        entry.add_attribute("floatleft", b"true");
+        entry.add_attribute("stackalign", b"false");
+        assert_eq!(decode(&entry, &stack, 8, 500).unwrap(), FLOAT_LEFT | IGNORE_TYPE_ALIGN);
+        assert!(decode(&entry, &register, 8, 500).is_err());
     }
 }

@@ -685,6 +685,19 @@ single-slot entry, or any other value, fails the `<pentry>` decode
 (`kuna_stackparamalign.rs (decode)`), which drops the model like any other
 malformed `<pentry>`. Every other cspec keeps the upstream rounding.
 
+On a big-endian stack slot wider than the value, upstream right-justifies the
+value. The kuna `<pentry floatleft="true">` attribute instead puts a
+floating-point value at the slot's low address in either byte order
+(`fspec.rs (ParamEntry::justify_right_for)`). The attribute applies to the
+fallback walk and to both justification sites of the model rules
+(`modelrules.rs (AssignAction::assign_address, assign_goto_stack)`).
+Integers keep the entry's justification. Like `stackalign`, the attribute is
+valid only on an aligned stack entry; `false` is the default, and any other
+value fails the decode (`kuna_stackparamalign.rs (decode)`).
+`mips64_32_n32.cspec` sets it. GCC stores a `float` that N32 passes on the
+stack at the start of its eight-byte slot in both byte orders, and an `int`
+after it at SP+12 on big-endian.
+
 The bundled AArch64 cspecs (`AARCH64.cspec`, `AARCH64_apple.cspec` and
 `AARCH64_win.cspec`) never split an argument wider than one general register
 between x7 and the stack. AAPCS64 passes such an argument wholly in registers
@@ -791,6 +804,25 @@ may use v0 for an indirect-call target before the call and then read its new
 the physical clobbers lets heritage create fresh output trials before a typed
 indirect prototype is recovered. The N32 stack fixture covers both inferred
 and declared calls at the 32-bit pointer / 64-bit result boundary.
+
+The generic hard-float MIPS models number arguments by position, as GCC does.
+- **N32 (`mips64_32_n32.cspec`).** Each of the first eight positions is a
+  `<group>` of `f(12+n)` and the n-th GPR, as in the N64 spec. A double at
+  position one is therefore in `f13`, and the integer after it is in `a2`.
+- **R6 O32 (`mips32_fp64.cspec`).** The first eligible float or double takes
+  `f12` and consumes its GPR words. A second takes `f14` after a leading FP
+  argument. Any later float is passed in the integer sequence, including the
+  last register (`boundary(1,2,3,4.5f,5)` puts `4.5f` in `a3`). Its 64-bit
+  values are aligned to an even register pair.
+- **Hard-float O64 (`mips64_32_o64.cspec`).** Up to two leading fixed FP
+  arguments take `f12` and `f13`, each reserving one eight-byte GPR position.
+  A double after an integer, and every variadic value, takes the GPR sequence.
+
+`tests/stages/kuna-mips-float-arguments.xml` checks GCC 7.3 callers and callees
+under declared prototypes against these registers. N64 and the Octeon N32 models
+already paired the banks; they serve as controls. A variadic call's named double
+on R6 O32 still loses its value: GCC passes it in `a0`/`a1`, and the rules do
+not yet reach it.
 
 ### Recovery: trials → parameters
 

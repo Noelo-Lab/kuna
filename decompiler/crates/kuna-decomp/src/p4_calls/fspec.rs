@@ -175,6 +175,8 @@ pub mod param_entry_flags {
     pub const FIRST_STORAGE: uint4 = 0x800;
     /// (kuna) Slots keep the entry's alignment, not the data type's (`stackalign="false"`).
     pub const IGNORE_TYPE_ALIGN: uint4 = 0x1000;
+    /// Stack scalar floats occupy the low-address end of their slot.
+    pub const FLOAT_LEFT: uint4 = 0x2000;
 }
 
 /// Characterization of how a memory range relates to a [`ParamEntry`] (C++
@@ -330,7 +332,7 @@ impl ParamEntry {
 
     /// Is the logical value left-justified within its container (C++
     /// `isLeftJustified`).
-    fn is_left_justified(&self) -> bool {
+    pub(crate) fn is_left_justified(&self) -> bool {
         (self.flags & param_entry_flags::FORCE_LEFT_JUSTIFY) != 0 || (!self.spaceid().is_big_endian())
     }
 
@@ -635,6 +637,11 @@ impl ParamEntry {
         manager: &AddrSpaceManager,
     ) -> KunaResult<Address> {
         self.get_addr_by_slot_justify(slotnum, sz, type_align, !self.is_left_justified(), manager)
+    }
+
+    pub(crate) fn justify_right_for(&self, ty: &Datatype, default: bool) -> bool {
+        default && !(self.flags & param_entry_flags::FLOAT_LEFT != 0
+            && ty.get_metatype() == type_metatype::TYPE_FLOAT)
     }
 
     /// Calculate the storage address assigned when allocating a parameter of
@@ -2834,10 +2841,11 @@ impl ParamListStandard {
             {
                 continue; // Wrong type
             }
-            param.addr = cur_entry.get_addr_by_slot(
+            param.addr = cur_entry.get_addr_by_slot_justify(
                 &mut status[grp as usize],
                 crate::kuna_floatregister::storage_size(cur_entry, tp, manager),
                 tp.get_alignment(),
+                cur_entry.justify_right_for(tp, !cur_entry.is_left_justified()),
                 manager,
             )?;
             if param.addr.is_invalid() {
