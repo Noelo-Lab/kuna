@@ -184,7 +184,11 @@ for exactly it.
 
 ---
 
-### Rank 5 -- `aggressive-preset-regionedgeorder` (one line) -- *unrefuted*
+### Rank 5 -- `aggressive-preset-regionedgeorder` (one line) -- **SHIPPED**
+
+> **Resolved.** `regionedgeorder` is no longer in `AGGRESSIVE_OVERRIDES`, so every mode
+> leaves it off. The full-corpus re-measure this row asked for: with it off, 9 more
+> O2-noinline and 82 more O0 functions match the source's control flow and none fewer.
 
 | | |
 |---|---|
