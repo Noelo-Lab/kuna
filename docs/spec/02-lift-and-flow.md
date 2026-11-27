@@ -3905,6 +3905,12 @@ it publishes flags before limiting and shifting the value for DATA.
 The `R2` and `R3` postmodifiers use the cached `RM2` alignment in implicit
 modulo mode. An instruction that writes `RM2` also refreshes that cache.
 
+An unallocated opcode in the second slot of a recognized sequential
+fetch can be omitted before issue. It contributes neither effects nor
+a clock. The lift handles the unallocated compact arithmetic selectors
+in a proved fallthrough region ending at one return. It does not
+recover redirects across the displaced issue addresses.
+
 For compact `ADD` with a half result and a first operand selector `30` or
 `31`, the unbound input is zero and the other word supplies the result.
 The accumulator `ADD` form with a postincrementing DATA input and selector

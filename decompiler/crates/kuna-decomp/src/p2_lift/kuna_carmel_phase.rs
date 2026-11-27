@@ -39,6 +39,7 @@ pub(crate) struct PhaseDecode<'a> {
     fixed_load: Option<u64>,
     fixed_store: Option<u64>,
     end_unmodeled: Option<u64>,
+    omitted: Option<u64>,
     idle_tick: Option<u64>,
     reset: Option<u64>,
     register_ex: Option<u64>,
@@ -65,6 +66,7 @@ impl<'a> PhaseDecode<'a> {
         let fixed_load = index(b"carmel_single_data_load");
         let fixed_store = index(b"carmel_single_data_store");
         let end_unmodeled = index(b"carmel_end_unmodeled_issue");
+        let omitted = index(b"carmel_omitted_sequential_slot");
         let idle_tick = index(b"carmel_record_idle_admission");
         let reset = index(b"carmel_d2_reset");
         let register_ex = index(b"carmel_register_only_ex");
@@ -87,7 +89,7 @@ impl<'a> PhaseDecode<'a> {
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
-            fixed_read_tick, fixed_load, fixed_store, end_unmodeled, idle_tick, reset, register_ex, data_ex, address_ex,
+            fixed_read_tick, fixed_load, fixed_store, end_unmodeled, omitted, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
             staged_data, ff })
     }
@@ -138,6 +140,8 @@ impl<'a> PhaseDecode<'a> {
                 markers.push((op_id, offset, Mark::Slot));
             } else if Some(index) == self.end_unmodeled {
                 markers.push((op_id, offset, Mark::EndUnmodeled));
+            } else if Some(index) == self.omitted {
+                markers.push((op_id, offset, Mark::Omitted));
             } else if Some(index) == self.fixed_load || Some(index) == self.fixed_store {
                 markers.push((op_id, offset, Mark::FixedAccess));
             } else if Some(index) == self.delay_mask {
@@ -145,6 +149,9 @@ impl<'a> PhaseDecode<'a> {
             } else if index == self.admission {
                 reads = true;
             }
+        }
+        if let Some(&(_, offset, _)) = markers.iter().find(|(_, _, kind)| *kind == Mark::Omitted) {
+            prove_omitted_prefix(fd, visits, &markers, offset)?;
         }
         let overlap = if resets.is_empty() {
             Overlap::default()
@@ -214,7 +221,7 @@ impl<'a> PhaseDecode<'a> {
                 cleanup.push(marker);
             } else {
                 known.insert(offset);
-                if matches!(kind, Mark::EndUnmodeled | Mark::FixedAccess) {
+                if matches!(kind, Mark::EndUnmodeled | Mark::FixedAccess | Mark::Omitted) {
                     cleanup.push(marker);
                 }
             }
@@ -424,7 +431,64 @@ enum Mark {
     Redirect,
     EndUnmodeled,
     FixedAccess,
+    Omitted,
     Copy,
+}
+
+fn prove_omitted_prefix(fd: &Funcdata, visits: &VisitedMap, markers: &[(OpId, u64, Mark)],
+                        omitted: u64) -> KunaResult<()> {
+    let unproved = || KunaError::lowlevel(format!(
+        "Unproved Carmel control flow after omitted sequential slot at CODE {:#x}", omitted / 3,
+    ));
+    let entry = fd.get_address().get_offset();
+    if omitted <= entry || markers.iter().any(|&(_, _, kind)| matches!(kind, Mark::Redirect | Mark::Slot)) {
+        return Err(unproved());
+    }
+    let modeled: BTreeSet<_> = markers.iter().filter_map(|&(_, offset, kind)|
+        matches!(kind, Mark::Tick | Mark::Idle | Mark::Omitted).then_some(offset)).collect();
+    let mut returned = None;
+    let mut unknown = None;
+    let mut first = u64::MAX;
+    let mut last = 0;
+    let graph = fd.bblocks_ref();
+    for n in 0..fd.bblocks_get_size() {
+        let block = fd.bblocks_get_block(n);
+        let edges = graph.block(block);
+        let mut previous = None;
+        let mut current = fd.bb_op_head(block);
+        while let Some(id) = current {
+            let op = fd.obank().get(id).unwrap();
+            let addr = op.get_addr();
+            let offset = addr.get_offset();
+            if op.get_halt_type() != 0 || matches!(op.code(),
+                OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND)
+                || previous.is_some_and(|from| !contiguous(visits, from, addr))
+                || (previous.is_none() && edges.size_in() == 0 && offset != entry)
+            {
+                return Err(unproved());
+            }
+            if op.code() == OpCode::CPUI_RETURN && returned.replace(offset).is_some() {
+                return Err(unproved());
+            }
+            if !modeled.contains(&offset) && unknown.replace(offset).is_some_and(|old| old != offset) {
+                return Err(unproved());
+            }
+            first = first.min(offset);
+            last = last.max(offset);
+            previous = Some(addr);
+            current = fd.bb_op_next(id);
+        }
+        let Some(from) = previous else { return Err(unproved()) };
+        for edge in 0..edges.size_out() {
+            let Some(head) = fd.bb_op_head(edges.get_out(edge)) else { return Err(unproved()) };
+            let to = fd.obank().get(head).unwrap().get_addr();
+            if !contiguous(visits, from, to) { return Err(unproved()) }
+        }
+    }
+    if first != entry || returned != Some(last) || unknown.is_some_and(|offset| offset != last) {
+        return Err(unproved());
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy)]

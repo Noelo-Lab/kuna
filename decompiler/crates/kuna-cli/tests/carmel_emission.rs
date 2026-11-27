@@ -2044,6 +2044,64 @@ fn carmel_indexed_shifted_mac_feeds_carry_to_the_serial_data_store() {
 }
 
 #[test]
+fn carmel_omits_unallocated_right_alu_without_inventing_a_clock() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("omitted-slot.bin");
+    let source = scratch.path().join("omitted-slot.c");
+    let executable = scratch.path().join("omitted-slot");
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(&specs, &[
+        ("FFG", 0), ("FF2", 0x1000), ("X1", 1), ("R7", 0xc048), ("EST", 0), ("ECFG", 0),
+        ("CECFG1", 0), ("CECFG2", 0), ("CETBL", 0xffff),
+    ], 0, 0);
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let decompile = |code: &[[u8; 6]]| {
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict", "--assert", "return %A2L unsigned short",
+            "--assert", "data [data,0xc048] volatile unsigned short operand",
+        ]);
+        common::process::output_with_timeout(&mut kuna, Duration::from_secs(15), Duration::from_millis(10)).unwrap()
+    };
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\nstatic volatile unsigned short operand = 0x8000;\n");
+    let mut checks = String::new();
+    for (i, opcode) in [0x248000u32, 0x25d068, 0x26b068, 0x26ffff].into_iter().enumerate() {
+        let [_, a, b, d] = opcode.to_be_bytes();
+        let output = decompile(&[[0xb3, 0x31, 0xe8, a, b, d], [0x31, 0xaa, 0x4e, 0x2b, 0xec, 0], NOP, RET, NOP]);
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let f = &report["functions"][0];
+        assert!(f["error"].is_null(), "{f}");
+        writeln!(c, "#define sub_0 omitted_{i}\n{}\n#undef sub_0", f["code"].as_str().unwrap()).unwrap();
+        writeln!(checks, "if (omitted_{i}() != 0xffff) return {};", i + 1).unwrap();
+    }
+    writeln!(c, "int main(void) {{\n{checks}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+
+    let mut code = vec![NOP; 3];
+    code.extend([
+        [0xab, 0xec, 0, 0x26, 0xb0, 0x68], [0xd3, 0x38, 0xd3, 0x4a, 0xc0, 0x71], NOP, RET, NOP,
+    ]);
+    let failed = decompile(&code);
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(!failed.status.success() && error.contains("4 of 5 clocks"), "{error}");
+    let mut branch = vec![NOP; 16];
+    branch[0] = [0xab, 0xec, 0, 0x26, 0xb0, 0x68];
+    branch[1] = [0xc0, 0x00, 0x18, 0xcf, 0x80, 0x00];
+    branch[14] = RET;
+    let failed = decompile(&branch);
+    let error = String::from_utf8_lossy(&failed.stderr);
+    assert!(!failed.status.success() && error.contains("Unproved Carmel control flow after omitted sequential slot"), "{error}");
+}
+
+#[test]
 fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

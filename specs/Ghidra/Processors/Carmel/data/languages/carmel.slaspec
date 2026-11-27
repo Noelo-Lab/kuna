@@ -196,6 +196,7 @@ define pcodeop carmel_fixed_read_admission;
 define pcodeop carmel_single_data_load;
 define pcodeop carmel_single_data_store;
 define pcodeop carmel_end_unmodeled_issue;
+define pcodeop carmel_omitted_sequential_slot;
 define pcodeop carmel_capture_ff_before_ex;
 define pcodeop carmel_sample_ff_at_of;
 define pcodeop carmel_sample_ff_at_ex;
@@ -318,6 +319,8 @@ define context contextreg
 define token slot (24)
     slot_raw = (0,23) hex
     slot_mode = (23,23)
+    slot_18_22 = (18,22)
+    slot_14_17 = (14,17)
     inc_source = (1,5)
     slot_3_5 = (3,5)
     slot_2_5 = (2,5)
@@ -9541,18 +9544,34 @@ compact_mpy_ff: "FF2" is slot_9_9=1 { export FF2; }
 @define COMPACT_FF_MPY "slot_10_22=0x11f3 & slot_6_8=3 & slot_1_5=0x1a & slot_0_0=1 & compact_mpy_ff"
 @define COMPACT_FF_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
 
-macro shifted_ff_mac_exec(word, factor, flags) {
+macro shifted_ff_mac_exec(word, factor, signed_word, limit, flags) {
     local high:2 = carmel_sample_ff_at_ex(FF2);
     local addend:8;
     shifted_ff_addend(high, addend);
     local product:8;
-    raw_mac_product(word, factor, 0:1, 1:1, product);
+    raw_mac_product(word, factor, signed_word, 1:1, product);
     local result:8;
     local active:2;
     raw_mac_finish_limit(addend + product, (addend & 0xffffffffff) + (product & 0xffffffffff),
-                         0:1, 0:1, 0:1, 0:1, result, active);
+                         0:1, 0:1, 0:1, limit, result, active);
     write_ff_pair(result);
     raw_mac_flags(flags, active, 0:4);
+}
+
+:MACH "FF12","*R7","X1" is carmel_issue=2 & slot_mode=1 & $(COMPACT_FF_PHASE) & slot_0_22=0x3331e8 {
+    local incoming:2 = X1;
+    carmel_single_data_load();
+    local word:2 = *[data]:2 R7;
+    X1 = word;
+    local flags:2 = EST & 0xcfff;
+    shifted_ff_mac_exec(word, incoming, 1:1, 1:1, flags);
+    publish_alu_ce(flags);
+    record_ce_admission();
+}
+
+:OMITTED is carmel_issue=3 & slot_mode=0 & $(COMPACT_FF_PHASE) & slot_18_22=9
+    & (slot_14_17=2 | slot_14_17=7 | slot_14_17=10 | slot_14_17=11) {
+    carmel_omitted_sequential_slot();
 }
 
 :MACHUS "CE1" "FF12","*R3","RN1" is $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & slot_0_22=0x5338d3 {
@@ -9565,7 +9584,7 @@ macro shifted_ff_mac_exec(word, factor, flags) {
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
     if (enabled == 0) goto <feedback>;
-    shifted_ff_mac_exec(word, RN1, flags);
+    shifted_ff_mac_exec(word, RN1, 0:1, 0:1, flags);
   <feedback>
     publish_alu_ce(flags);
     record_ce_admission();
@@ -9602,7 +9621,7 @@ macro shifted_ff_mac_exec(word, factor, flags) {
     local second:2 = *[data]:2 second_address;
     X1 = first;
     local flags:2 = EST & 0xcfff;
-    shifted_ff_mac_exec(first, second, flags);
+    shifted_ff_mac_exec(first, second, 0:1, 0:1, flags);
     publish_alu_ce(flags);
     record_ce_admission();
 }
