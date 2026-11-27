@@ -11,14 +11,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
+use crate::decompiler_context::DecompilerContext;
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::exprent::Exprent;
+use crate::field_exprent::FieldExprent;
 use crate::function_exprent::FunctionType;
 use crate::fixes::generic_casts::mentions;
 use crate::fixes::lambdas;
 use crate::generic_type::GenericType;
 use crate::kuna_static_types::{formals, param_type, supertype_args};
 use crate::root_statement::RootStatement;
+use crate::rt::JHashMap;
 use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
@@ -207,25 +210,39 @@ fn type_variable_local(
     );
 }
 
-/// The type variables `method` can name, its own over its class's (an
-/// instance method's only), each with its erasure: its first bound's, through
-/// bounds that are type variables in scope, or `Object`.
+/// The type variables `method` can name by a name that means one variable in
+/// its body, its own and its class's (an instance method's only), each with
+/// its erasure: its first bound's, through bounds that are type variables in
+/// scope, or `Object`. A name both the method and the class declare is left
+/// out, and so is, in a lambda's body, a name any method of the class
+/// declares: the values typed by the class's variable are not of the type
+/// the name denotes there.
 fn scope_type_variables(class: StructClass, method: StructMethod) -> BTreeMap<String, VarType> {
     let mut bounds: BTreeMap<String, Option<VarType>> = BTreeMap::new();
+    let mut hidden: BTreeSet<String> = BTreeSet::new();
     if !method.has_modifier(ACC_STATIC) {
         if let Some(sig) = class.get_signature() {
             for (name, b) in sig.fparameters().iter().zip(sig.fbounds().iter()) {
                 bounds.insert(name.clone(), b.first().cloned());
             }
         }
+        if method.is_synthetic() {
+            for other in class.get_methods().to_vec() {
+                if let Some(sig) = other.get_signature() {
+                    hidden.extend(sig.type_parameters().iter().cloned());
+                }
+            }
+        }
     }
     if let Some(sig) = method.get_signature() {
         for (name, b) in sig.type_parameters().iter().zip(sig.type_parameter_bounds().iter()) {
-            bounds.insert(name.clone(), b.first().cloned());
+            if bounds.insert(name.clone(), b.first().cloned()).is_some() {
+                hidden.insert(name.clone());
+            }
         }
     }
     let mut out = BTreeMap::new();
-    for name in bounds.keys() {
+    for name in bounds.keys().filter(|n| !hidden.contains(*n)) {
         let mut current = name.clone();
         for _ in 0..=bounds.len() {
             match bounds.get(&current).cloned().flatten() {
@@ -283,12 +300,12 @@ fn value_type(value: Exprent, index: i32, typed: &mut Option<VarType>, scope: &B
 
 /// The type of `e` as its declarations give it, `None` where they do not
 /// fix one: a parameter's from the method's signature, `this` as its class
-/// with its own type variables, an element of such an array, a field's from
-/// its signature, and the result of a call on one of these (or a static one)
-/// whose result type is a type variable of the method's class, which the
-/// receiver's type arguments give, when no argument is of a raw type where
-/// the parameter has type arguments (an unchecked conversion erases the
-/// result, JLS 15.12.2.6).
+/// with its own type variables, an element of such an array, a field's
+/// (`field_type`), and the result of a call on one of these whose result
+/// type is a type variable of the method's class, which the receiver's type
+/// arguments give, when no argument is of a raw type where the parameter has
+/// type arguments (an unchecked conversion erases the result, JLS
+/// 15.12.2.6).
 fn generic_type(e: Exprent) -> Option<VarType> {
     if let Some(var) = e.try_as_var() {
         if let Some(Some(t)) = param_type(var) {
@@ -304,8 +321,8 @@ fn generic_type(e: Exprent) -> Option<VarType> {
         let t = generic_type(array.get_array())?;
         return (t.array_dim > 0).then(|| t.decrease_array_dim());
     }
-    if e.try_as_field().is_some() {
-        return Some(e.get_inferred_expr_type(None));
+    if let Some(field) = e.try_as_field() {
+        return field_type(field);
     }
     let inv = e.try_as_invocation()?;
     let m = inv.find_desc()?;
@@ -331,6 +348,58 @@ fn generic_type(e: Exprent) -> Option<VarType> {
     let receiver = generic_type(inv.get_instance()?)?;
     let args = supertype_args(&receiver, &owner)?;
     args.get(k).cloned().flatten()
+}
+
+/// The type of the field `field` reads: its signature when that names no
+/// type variable, else with the type variables of the class declaring it
+/// replaced by the arguments the type of its instance gives that class.
+/// `None` when the instance's type is raw or not declared (the field's type
+/// is then its erasure, JLS 4.8) or the signature names a type variable of
+/// another declaration (an enclosing class's).
+fn field_type(field: FieldExprent) -> Option<VarType> {
+    let context = DecompilerContext::get_struct_context();
+    let name = field.get_name();
+    let descriptor = field.get_descriptor().descriptor_string.clone();
+    let mut cls = context.get_class(&field.get_classname());
+    let (owner, declared) = loop {
+        let c = cls?;
+        if let Some(f) = c.get_field(&name, &descriptor) {
+            break (c.qualified_name(), f);
+        }
+        cls = c.super_class().and_then(|s| s.get_string_opt()).and_then(|s| context.get_class(&s));
+    };
+    let Some(sig) = declared.get_signature() else {
+        return Some(field.get_descriptor().type_.clone());
+    };
+    let t = sig.type_();
+    if names_only(&t, &[]) {
+        return Some(t);
+    }
+    let owner_formals = formals(&owner)?;
+    if !names_only(&t, &owner_formals) {
+        return None;
+    }
+    let receiver = generic_type(field.get_instance()?)?;
+    let args = supertype_args(&receiver, &owner)?;
+    if args.len() != owner_formals.len() {
+        return None;
+    }
+    let mut subst = JHashMap::new();
+    for (formal, arg) in owner_formals.iter().zip(args) {
+        subst.put(formal.clone(), arg?);
+    }
+    t.remap(&subst)
+}
+
+/// Whether every type variable `t` names is one of `vars`.
+fn names_only(t: &VarType, vars: &[VarType]) -> bool {
+    if t.type_ == CodeType::Genvar {
+        return vars.iter().any(|v| v.value == t.value);
+    }
+    t.try_as_generic().is_none_or(|g| {
+        g.get_arguments().iter().flatten().all(|a| names_only(a, vars))
+            && g.get_parent().is_none_or(|p| names_only(&p, vars))
+    })
 }
 
 /// The variable and element type of each for-each loop of `root` whose

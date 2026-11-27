@@ -943,9 +943,18 @@ instance method, the class's) and erases to the local's type: `for (N item : sou
 map.put(item.toString(), item)` for a `List<N> source` and a `Map<String, N> map` printed
 `for (Number var3 : var1)`, which does not compile. A variable of a type variable accepts
 every read its erasure did, its bound's members and conversions included, so no read is
-checked. A value's type counts only where declarations fix it (`generic_type`): a
-parameter's from the method's signature, `this`, an element of such an array, a field's
-signature, a variable this pass typed, and a call on one of these whose result is a type
+checked. A name that both the method and its class declare is not used (the class's
+variable is hidden there, and a value of its type is not of the type the name denotes), nor,
+in a lambda's body, a name that any method of the class declares, since the body's method
+does not say which method encloses it. A value's type counts only where declarations fix it
+(`generic_type`): a parameter's from the method's signature, `this`, an element of such an
+array, a field's (`field_type`: its signature with the type variables of the class that
+declares it replaced by the arguments the type of its instance gives that class; none when
+the instance is of a raw or undeclared type, whose field has the erased type (JLS 4.8), or
+when the signature names a variable of an enclosing class: `Object var1 = this.raw.value`
+and `Object var3 = box.value` for a `Box<String> box` stay as they are, where the name `T`
+of `Box<T>`'s variable would otherwise be read as the reading class's `T`), a variable this
+pass typed, and a call on one of these whose result is a type
 variable of the method's class, given by the receiver's type arguments, when no argument
 is of a raw type for a parameter with type arguments (that unchecked conversion erases the
 result, JLS 15.12.2.6: `V v = this.operate(k, v, rawDecisionMaker)` does not compile);

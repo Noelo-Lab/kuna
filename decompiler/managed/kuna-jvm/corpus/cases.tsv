@@ -2060,3 +2060,5 @@ case	kuna-fixes/pkg/TestLambdaInstantiatedType	Kuna Fixes	kuna-fixes/classes/pkg
 case	kuna-fixes/pkg/TestExplicitLambdaParams	Kuna Fixes	kuna-fixes/classes/pkg/TestExplicitLambdaParams
 # kuna-fixes/src/pkg/TestTypeVariableLocal.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestTypeVariableLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeVariableLocal
+# kuna-fixes/src/pkg/TestTypeVariableScope.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestTypeVariableScope	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeVariableScope
