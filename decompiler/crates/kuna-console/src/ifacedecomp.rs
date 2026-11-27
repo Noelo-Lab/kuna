@@ -4121,6 +4121,29 @@ decomp_command!(
     }
 );
 
+decomp_command!(
+    /// (kuna) `map import <slot> <name>`: the pointer word at `<slot>` holds the
+    /// address of the external function `<name>`
+    /// ([`ConsoleProgram::declare_import`]). Not a C++ command, so
+    /// [`crate::kuna_console::register_kuna_commands`] registers it.
+    IfcMapImport,
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let dcp = dcp_mut(status)?;
+        let Some(prog) = dcp.conf.as_mut() else {
+            return Err(IfaceError::execution("No binary loaded"));
+        };
+        let (slot, _size) = parse_machaddr(prog, s, false).map_err(IfaceError::parse)?;
+        s.skip_ws();
+        let name = s.read_token();
+        if name.is_empty() {
+            return Err(IfaceError::parse("Missing import name"));
+        }
+        prog.declare_import(slot, &name).map_err(|e| IfaceError::execution(e.explain().to_string()))?;
+        status.out(&format!("Successfully mapped import {name}\n"));
+        Ok(())
+    }
+);
+
 // --- volatile / readonly (ifacedecomp.cc) ----------------------------------
 
 decomp_command!(

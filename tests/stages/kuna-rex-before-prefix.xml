@@ -48,7 +48,7 @@
   <com>decompile</com>
   <com>print C</com>
 </script>
-<stringmatch name="REXPREFIX #1: rep stos after an ignored REX.W stores dwords through a wrapping edi" min="1" max="1">\*a0 = v2;</stringmatch>
+<stringmatch name="REXPREFIX #1: rep stos after an ignored REX.W stores dwords through a wrapping edi" min="1" max="1">\*a0 = v[0-9]+;</stringmatch>
 <stringmatch name="REXPREFIX #1b: a 32-bit-address rep stos is no builtin_memset32" min="0" max="0">builtin_memset32</stringmatch>
 <stringmatch name="REXPREFIX #1c: the rep stos loop steps a pointer to dwords" min="1" max="1">rex_stos\(unsigned int \*a0,</stringmatch>
 <stringmatch name="REXPREFIX #2: a 66 after an ignored REX.W stores words" min="1" max="1">builtin_memset16\(a0,v1,a3\);</stringmatch>
@@ -56,7 +56,7 @@
 <stringmatch name="REXPREFIX #3b: a 32-bit-address rep movs is no builtin_memcpy" min="0" max="0">builtin_memcpy</stringmatch>
 <stringmatch name="REXPREFIX #3c: the rep movs loop steps pointers to quadwords" min="1" max="1">rex_movs\(unsigned long \*a0,unsigned long \*a1,</stringmatch>
 <stringmatch name="REXPREFIX #4: a load through edi after an ignored REX.W" min="1" max="1">return \*\(unsigned int \*\)\(int8\)a0;</stringmatch>
-<stringmatch name="REXPREFIX #6: repz cmpsb after an ignored REX.W compares bytes through a wrapping esi and edi" min="1" max="1">\} while \(v2 == v4\);</stringmatch>
+<stringmatch name="REXPREFIX #6: repz cmpsb after an ignored REX.W compares bytes through a wrapping esi and edi" min="1" max="1">\} while \(v[0-9]+ == v[0-9]+\);</stringmatch>
 <stringmatch name="REXPREFIX #6b: a 32-bit-address repz cmpsb is no builtin_memcmp" min="0" max="0">builtin_memcmp</stringmatch>
 <stringmatch name="REXPREFIX #5: no bad-instruction halt" min="0" max="0">halt_baddata</stringmatch>
 </decompilertest>

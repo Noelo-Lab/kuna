@@ -57,6 +57,15 @@ registry is `phases.toml`.
 | P8 | `p8_structure/` | structured AST & goto quality (the structuring engine, `blockaction`) |
 | P9 | `p9_emit/` | surface rendering & refinement (PrintC, casts, strings, naming) |
 | Infra | `infra/` | orchestration & framework (the schedule, the Action/Rule engine) |
+| — (deobf) | `deobf/` | deobfuscation plane: deobfuscators acting at stage hooks (before flow, after flow, the rule pool, the final audit) and the recovered-body contract the phases read |
+
+The **deobfuscation plane** (`deobf/`) cuts across the phases instead of being one, because
+obfuscation is undone at the stage whose representation can undo it. A deobfuscator acts at the
+stage hooks it needs: the front (before P2's flow follower, where it can hand over a recovered
+body in place of the function's bytes), after the plain flow, the P3 rule pool, and a final
+audit. The phases after the flow read one contract, the recovered body's facts and analysis
+policy, and never ask which deobfuscator produced it. Its first member is the VM devirtualizer
+(`option deobfuscate`, technique `devirtualize`). Spec: `docs/spec/10-deobfuscation.md`.
 
 The **program-prep analyses** that sit *outside* this phase model (the loader/analyzer tier
 Ghidra runs as "Run Analysis": PLT/GOT markup, strings, DWARF, demangling, function-start
