@@ -695,7 +695,10 @@ if-else, and an if-else the graph builder made of it (both branches continue the
 split into the `if` and the statements after it (`splits_else`, `split_else`).
 `collapse_if_if`, `collapse_if_else` and `collapse_else` do not join two `if`s that each jump
 on their own into one condition: the first one's condition is followed by a `goto` (a
-then-branch the source wrote as a jump, `separate_test`), or the first is the head of an
+then-branch the source wrote as a jump, `separate_test`; not when the condition ends with an
+`instanceof` pattern's binding, whose `goto` goes over the then-branch or, in `a || b`, to the
+code the condition guards: `while (o instanceof String x || o.hashCode() < 0)` printed as a
+`while (true)` around nested ifs, which javac compiles to other code), or the first is the head of an
 infinite loop, a bare condition, and jumps where the `goto` of the second one's then-branch
 goes (javac's loop condition and an `if (..) break;` after it, `separate_jumps`; `if (a || b)
 break;` jumps there the same way and is not the loop condition either). `if (c) continue;` is

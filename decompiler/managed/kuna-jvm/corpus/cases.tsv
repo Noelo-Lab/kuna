@@ -794,11 +794,11 @@ kuna	0c5cf456cd0fde4e
 case	default/pkg/TestPatternMatching17Fake	Default	classes/java17/pkg/TestPatternMatching17Fake
 kuna	fc2eb01545d42117
 case	default/pkg/TestPatternMatching17FakeLoops	Default	classes/java17/pkg/TestPatternMatching17FakeLoops
-kuna	48bed6b9b87a3668
+kuna	e3a4a589b3fc6c94
 case	default/pkg/TestPatternMatching17FakeLoopsInverted	Default	classes/java17/pkg/TestPatternMatching17FakeLoopsInverted
-kuna	aeeebbfa2c17fbdd
+kuna	c98118d13415b9cb
 case	default/pkg/TestPatternMatching17FakeNew	Default	classes/java17/pkg/TestPatternMatching17FakeNew
-kuna	b7ec12843255bbcb
+kuna	2b7cdfe794a6b1d5
 case	default/pkg/TestPatternMatchingAssign	Default	classes/java16nodebug/pkg/TestPatternMatchingAssign
 kuna	4bda5bb14a405845
 case	default/pkg/TestPatternMatchingCompoundBool	Default	classes/java16/pkg/TestPatternMatchingCompoundBool
@@ -806,11 +806,11 @@ kuna	728a0f2d1d4eb189
 case	default/pkg/TestPatternMatchingFake	Default	classes/java16/pkg/TestPatternMatchingFake
 kuna	335728c966f0d2de
 case	default/pkg/TestPatternMatchingFakeLoops	Default	classes/java16/pkg/TestPatternMatchingFakeLoops
-kuna	6d8a301bf29e1b4e
+kuna	ca426a5d34928328
 case	default/pkg/TestPatternMatchingFakeLoopsInverted	Default	classes/java16/pkg/TestPatternMatchingFakeLoopsInverted
-kuna	2aba455f6fb3b91a
+kuna	89345f8b41726b6f
 case	default/pkg/TestPatternMatchingFakeNew	Default	classes/java16/pkg/TestPatternMatchingFakeNew
-kuna	1521b55ff3719534
+kuna	264c4cd0154e1363
 case	default/pkg/TestPatternMatchingInline	Default	classes/java16/pkg/TestPatternMatchingInline
 kuna	ed296ce38ef76a07
 case	default/pkg/TestPatternMatchingInteger	Default	classes/java17/pkg/TestPatternMatchingInteger

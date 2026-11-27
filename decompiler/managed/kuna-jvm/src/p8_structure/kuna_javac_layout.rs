@@ -956,10 +956,28 @@ fn in_protected_exit(stat: Statement) -> bool {
 pub fn separate_test(first: IfStatement) -> bool {
     !in_pattern_switch(first.0)
         && fall_through(first)
+            .filter(|after_jump| !binding_ends_at(*after_jump))
             .and_then(|after_jump| {
                 goto_at(after_jump).map(|(length, target)| target != after_jump + length)
             })
             .unwrap_or(false)
+}
+
+/// Whether an `instanceof` pattern's binding (`aload; checkcast; astore`)
+/// ends at `offset`: a condition the binding ends belongs to a pattern, whose
+/// `goto` after the binding goes over the then-branch or, in `a || b`, to the
+/// code the condition guards.
+fn binding_ends_at(offset: i32) -> bool {
+    with_code(|code| {
+        let Ok(index) = code.binary_search_by_key(&offset, |c| c.0) else {
+            return false;
+        };
+        index >= 3
+            && code[index - 3..index]
+                .iter()
+                .map(|c| c.1)
+                .eq([OPC_ALOAD, OPC_CHECKCAST, OPC_ASTORE])
+    })
 }
 
 /// Whether `first` and `second`, two ifs whose jumps the structurer would
