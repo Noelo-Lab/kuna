@@ -776,6 +776,16 @@ empty `while (cmp(++i, v) < 0) {}` sharing the start of a `for (;;)` became `if 
 return;`; the same guard corrects Vineflower's inverted exit of that shape in an infinite loop
 that already had a successor).
 
+**An else-branch that held a loop's update (kuna).** `MergeHelper::match_for` takes a loop's
+update from the last statement of its body, which can end the else-branch of an if-else that ends
+the body (`if (a[i] != 0) { .. } else { i++; }`, as the rules above make it);
+`remove_last_empty_statement` then removed the emptied branch but left the statement an if-else,
+and `IfNode` failed on it (`called Option::unwrap() on a None value`, the one method kuna failed
+on the second held-out benchmark).
+`decompiler/managed/kuna-jvm/src/p8_structure/merge_helper.rs (MergeHelper::drop_else_edge)`
+makes it an if: the head's edge into the branch, which now continues the loop, leaves the if, or
+is dropped when the if already has a successor, which goes where the branch went.
+
 **ECJ's layout (kuna).** In a class the Eclipse compiler wrote (section 10.3) the rules above
 read ECJ's code, which places an `if`'s branches, its exits and its `continue` and `break`
 jumps as javac does, with two differences.

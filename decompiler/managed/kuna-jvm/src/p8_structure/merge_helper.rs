@@ -658,6 +658,23 @@ impl MergeHelper {
         }
     }
 
+    /// kuna: `ifstat`, an if-else whose emptied else-branch was the loop's
+    /// last statement and is gone, becomes an if: the head's edge into that
+    /// branch, now continuing the loop, leaves the if instead (or is dropped
+    /// when the if has a successor, which goes where the branch went).
+    fn drop_else_edge(ifstat: IfStatement) {
+        let Some(edge) = ifstat.get_else_edge() else {
+            return;
+        };
+        ifstat.d_mut(|d| d.iftype = IfStatement::IFTYPE_IF);
+        ifstat.set_else_edge(None);
+        if ifstat.get_all_successor_edges().is_empty() {
+            edge.change_source(ifstat.0);
+        } else {
+            edge.remove();
+        }
+    }
+
     pub fn remove_last_empty_statement(dostat: DoStatement, stat: Statement) {
         if Some(stat) == dostat.get_first() {
             let bstat = BasicBlockStatement::create();
@@ -690,6 +707,7 @@ impl MergeHelper {
                     parent.set_ifstat(None);
                 } else if parent.get_elsestat() == Some(stat) {
                     parent.set_elsestat(None);
+                    Self::drop_else_edge(parent);
                 }
             }
         }
