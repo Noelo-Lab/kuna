@@ -3394,7 +3394,8 @@ JNI environment. A short JNI export or a primitive-only long export can also
 yield a candidate when the same native function looks up a constant class,
 looks up a method with a valid descriptor on that class, and uses the ID in
 a matching JNI invocation. This candidate retains the unresolved ABI and is
-local to that function. A bounded p-code walk follows loads from the NDK interface
+local to that function. A p-code walk of at most 8,192 instructions from the
+native entries follows loads from the NDK interface
 through the target calling convention. It tracks class references, method
 lookups and their raw JVM descriptors through register copies, spills, helper
 arguments and returns, and fixed cache fields. Initialization and cache writes

@@ -86,13 +86,28 @@ impl State {
                 & mask(width),
         ))
     }
+    /// Stored slots never overlap, so only the nearest slot below `slot` and those starting
+    /// inside it can share bytes with it.
     pub(crate) fn write(&mut self, slot: Slot, value: Option<Value>) {
         let Slot(place, base, width) = slot;
-        self.0.retain(|&Slot(other, at, n), _| {
-            place != other
-                || base.saturating_sub(at) >= u64::from(n)
-                || at.saturating_sub(base) >= u64::from(width)
-        });
+        if width > 0 {
+            let end = base.saturating_add(u64::from(width));
+            let below = self
+                .0
+                .range(..Slot(place, base, 0))
+                .next_back()
+                .map(|(&k, _)| k)
+                .filter(|&Slot(other, at, n)| other == place && at.saturating_add(u64::from(n)) > base);
+            let inside: Vec<Slot> = self
+                .0
+                .range(Slot(place, base, 0)..Slot(place, end, 0))
+                .map(|(&k, _)| k)
+                .filter(|k| k.2 > 0)
+                .collect();
+            for k in below.into_iter().chain(inside) {
+                self.0.remove(&k);
+            }
+        }
         if let Some(v) = value {
             self.0.insert(slot, v);
         }
@@ -408,13 +423,22 @@ impl<'a, 'd> Machine<'a, 'd> {
     }
 }
 pub(crate) fn discard_temporaries(st: &mut State, arch: &Architecture) {
-    st.0.retain(|k, _| match k.0 {
-        Place::Register(i) => arch
-            .manage()
+    let manage = arch.manage();
+    for i in 0..manage.num_spaces() {
+        if manage
             .get_space(i)
-            .is_some_and(|s| s.get_type() != spacetype::IPTR_INTERNAL),
-        _ => true,
-    });
+            .is_some_and(|s| s.get_type() == spacetype::IPTR_INTERNAL)
+        {
+            let temporaries: Vec<Slot> = st
+                .0
+                .range(Slot(Place::Register(i), 0, 0)..Slot(Place::Register(i + 1), 0, 0))
+                .map(|(&k, _)| k)
+                .collect();
+            for k in temporaries {
+                st.0.remove(&k);
+            }
+        }
+    }
 }
 /// The tagged target of a direct ARM or Thumb branch. BLX switches instruction sets;
 /// B and BL preserve the calling instruction set. Unrecognized encodings have no proven mode.
@@ -485,7 +509,34 @@ pub(crate) fn decode_scope(
 
 #[cfg(test)]
 mod tests {
-    use super::direct_entry;
+    use super::{direct_entry, Place, Slot, State, Value};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn a_write_removes_exactly_the_slots_it_overlaps() {
+        let mut fast = State::default();
+        let mut naive = BTreeMap::new();
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        for i in 0..4000 {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let place = [Place::Stack, Place::Data, Place::Register(3)][(seed % 3) as usize];
+            let width = [1, 2, 4, 8, 16][((seed >> 20) % 5) as usize];
+            let slot = Slot(place, (seed >> 8) % 64, width);
+            let value = ((seed >> 32) % 4 != 0).then_some(Value::Constant(i));
+            naive.retain(|&Slot(other, at, n): &Slot, _| {
+                place != other
+                    || slot.1.saturating_sub(at) >= u64::from(n)
+                    || at.saturating_sub(slot.1) >= u64::from(width)
+            });
+            if let Some(v) = value {
+                naive.insert(slot, v);
+            }
+            fast.write(slot, value);
+            assert_eq!(fast.0, naive, "write {i}");
+        }
+    }
 
     #[test]
     fn direct_arm_branches_preserve_or_switch_instruction_set() {

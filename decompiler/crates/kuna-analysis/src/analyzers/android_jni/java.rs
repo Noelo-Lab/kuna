@@ -965,7 +965,7 @@ pub fn java_calls<'d>(
         calls: BTreeMap::new(),
         instructions: BTreeMap::new(),
         writes: BTreeMap::new(),
-        cap: 65536,
+        cap: 8192,
         limited: false,
         local_hypothesis: false,
     };

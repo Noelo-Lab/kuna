@@ -35,6 +35,9 @@ six warm-up pairs and records wall time and child CPU time.
 | Alternating pairs, wall time | 82.470 ms | 85.933 ms | +4.20% | -2.33% to +10.10% |
 | Alternating pairs, child user + system CPU | 78.939 ms | 81.263 ms | +2.94% | -2.03% to +9.35% |
 
-The standard wall-time gate passed its 5% budget. The paired wall-time and
+The standard wall-time gate passed its 5% budget. The walk visits at most
+8,192 instructions from the native entries. On a 277 KB Xamarin runtime
+(`libmonodroid.so`, AArch64), which reaches that limit, `kuna functions`
+executes about 6% more instructions with the option on. The paired wall-time and
 child CPU estimates were also below 5%, though both 95% intervals extend
 above it. Both benchmarks used CPU 30.
