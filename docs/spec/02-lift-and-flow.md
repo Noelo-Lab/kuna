@@ -4084,8 +4084,12 @@ Unqualified wide `RESET` applies control-field masks at D2. For a
 quiescent reset, Kuna proves that the earlier issue slots are either
 empty at physical CODE zero or already filled by four inert issues.
 It follows decoded issue boundaries, not a fixed byte count: the two
-slots of a sequential fetch are separate issues. An unproved window
-is not lifted as a serial register clear.
+slots of a sequential fetch are separate issues. The physical CODE-zero
+issue can survive in RA when it immediately precedes RESET. For a single
+register-only compact `INC` with an inactive peer, Kuna applies the D2
+control effects before its EX computation. The surviving increment uses
+the reset ECFG and can publish fresh lane flags after the EST clear.
+An unproved window is not lifted as a serial register clear.
 
 The compact signed DATA `MOVE` with indexed destination and fixed
 source postincrement captures both old addresses. The address stage

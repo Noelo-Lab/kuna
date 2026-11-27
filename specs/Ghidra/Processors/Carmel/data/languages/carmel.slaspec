@@ -195,6 +195,7 @@ define pcodeop carmel_sample_ff_at_ex;
 define pcodeop carmel_record_ff_late_admission;
 define pcodeop carmel_record_idle_admission;
 define pcodeop carmel_d2_reset;
+define pcodeop carmel_register_only_ex;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -1222,6 +1223,12 @@ ce_single_tick: is carmel_phase_emit=1 & hw_loop_actions=0 & carmel_single_issue
     carmel_delay_slot_admission(sample);
 }
 
+register_only_ex: is epsilon { }
+register_only_ex: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & slot_10_22=0x86b {
+    carmel_register_only_ex();
+}
+
 macro commit_half(destination, stage, shift) {
     destination = stage:2;
     EST = (EST & ~(0x3b << shift)) | (stage(2) << shift);
@@ -1572,15 +1579,17 @@ with : hw_loop_phase=1 {
     build ce_single_tick;
 }
 :^complete_left "||" nop_right is
-    (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left & ce_single_tick);
+    (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left & ce_single_tick & register_only_ex);
     (slot_mode=0 & nop_right) {
+    build register_only_ex;
     local incoming:2 = EST;
     build complete_left;
     publish_ce_feedback(EST & 0xcfff, incoming);
     build ce_single_tick;
 }
 :^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick);
-    (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) {
+    (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right & register_only_ex) {
+    build register_only_ex;
     local incoming:2 = EST;
     build complete_right;
     publish_ce_feedback(EST & 0xcfff, incoming);
