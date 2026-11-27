@@ -15,6 +15,7 @@ pub mod abi;
 pub mod compare;
 pub mod graph;
 pub mod machine;
+pub mod oracle;
 pub mod report;
 pub mod semantics;
 pub mod session;

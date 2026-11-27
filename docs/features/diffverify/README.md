@@ -22,6 +22,10 @@ $K corpus tests/datatests tests/stages   # every function the test corpus decomp
 make verify-corpus                       # the same against docs/baseline-verify.json
 ```
 
+The optional [function oracle](function-oracle.md) runs the same explicit
+x86-64 case in Unicorn, raw p-code and the final IR. Its observations are
+available separately from the Tier C verdicts.
+
 A difference looks like this (#794's fixture, with the option that brings the bug back):
 
 ```

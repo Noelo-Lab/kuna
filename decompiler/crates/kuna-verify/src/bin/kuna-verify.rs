@@ -38,6 +38,7 @@ const USAGE: &str = "usage:
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
+  kuna-verify oracle-case <x86-64-elf> <function|0xaddr> [--input-reg NAME HEX]... [--seed S] [--budget OPS] [--sleighpath DIR]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --call-reruns N (4)  --json  --trace  --sleighpath DIR";
 
@@ -60,6 +61,7 @@ struct Args {
     save_baseline: Option<String>,
     pass: Option<usize>,
     regs: Vec<String>,
+    input_regs: Vec<(String, String)>,
     flags: Vec<String>,
     canonical: bool,
     states: u32,
@@ -87,6 +89,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         save_baseline: None,
         pass: None,
         regs: Vec::new(),
+        input_regs: Vec::new(),
         flags: Vec::new(),
         canonical: false,
         states: 4,
@@ -151,6 +154,11 @@ fn parse(argv: &[String]) -> Result<Args, String> {
             "--regs" | "--flags" => {
                 let v: Vec<String> = it.next().ok_or(format!("{arg} needs names"))?.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect();
                 if arg == "--regs" { a.regs = v } else { a.flags = v }
+            }
+            "--input-reg" => {
+                let name = it.next().ok_or("--input-reg needs NAME HEX")?;
+                let value = it.next().ok_or("--input-reg needs NAME HEX")?;
+                a.input_regs.push((name.clone(), value.clone()));
             }
             "--states" => a.states = num(it.next(), "--states")?.max(1) as u32,
             "--canonical" => a.canonical = true,
@@ -805,6 +813,7 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
     let result = parse(rest).and_then(|a| match cmd.as_str() {
+        cmd if cmd != "oracle-case" && !a.input_regs.is_empty() => Err("--input-reg is for oracle-case".into()),
         "check" => run_check(&a),
         "corpus" => run_corpus(&a),
         "shard" => run_shard(&a),
@@ -812,6 +821,7 @@ fn main() -> ExitCode {
         "step" => run_step(&a),
         "localize" => run_localize(&a),
         "mutate" => run_mutate(&a),
+        "oracle-case" => run_oracle_case(&a),
         _ => Err(USAGE.to_string()),
     });
     match result {
@@ -821,6 +831,16 @@ fn main() -> ExitCode {
             ExitCode::from(2)
         }
     }
+}
+
+fn run_oracle_case(a: &Args) -> Result<ExitCode, String> {
+    let [path, function] = a.positional.as_slice() else {
+        return Err("oracle-case needs an ELF and a function".into());
+    };
+    let roots = spec_roots(a.sleighpath.as_deref());
+    let case = kuna_verify::oracle::capture(path, function, &a.options, &roots, a.opts.seed, a.opts.budget, &a.input_regs)?;
+    println!("{case}");
+    Ok(ExitCode::SUCCESS)
 }
 
 fn mutant_json(o: &kuna_verify::mutate::Outcome) -> Value {

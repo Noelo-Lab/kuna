@@ -51,6 +51,9 @@ impl PcodeEmit for Collect {
 }
 
 pub(crate) fn lift(env: &Env, addr: u64) -> Result<Rc<Insn>, Halt> {
+    if let Some(explicit) = &env.explicit {
+        explicit.check(addr, 1, b'x')?;
+    }
     if let Some(i) = env.insns.borrow().get(&addr) {
         return Ok(Rc::clone(i));
     }
@@ -62,6 +65,13 @@ pub(crate) fn lift(env: &Env, addr: u64) -> Result<Rc<Insn>, Halt> {
         .one_instruction(&mut emit, &Address::new(Rc::clone(&env.code), addr))
         .map_err(|e| Halt::Unsupported(format!("lift at {addr:#x}: {}", e.explain())))?;
     let insn = Rc::new(Insn { len: len.max(1) as u64, ops: emit.0 });
+    if let Some(explicit) = &env.explicit {
+        explicit.check(addr, insn.len, b'x')?;
+        let bytes = env.prog.read_bytes_at(&Address::new(Rc::clone(&env.code), addr), insn.len as usize);
+        if !bytes.is_some_and(|bytes| bytes.iter().copied().eq((addr..addr + insn.len).map(|at| explicit.byte(at)))) {
+            return Err(Halt::Unsupported(format!("loader bytes differ from the explicit case at {addr:#x}")));
+        }
+    }
     env.insns.borrow_mut().insert(addr, Rc::clone(&insn));
     Ok(insn)
 }
@@ -952,7 +962,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
                     return m.tail_call(addr, target, true);
                 }
                 if top && !env.code_mapped(target) {
-                    if env.ret_addr.is_none_or(|r| r == target) {
+                    if env.explicit.is_none() && env.ret_addr.is_none_or(|r| r == target) {
                         return Ok(Exit::Return);
                     }
                     return Err(Halt::Unsupported(format!(
@@ -1093,7 +1103,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
                     let k = m.events.len();
                     let file = if system { m.state.register_file_with(&crate::calls::SyscallAbi::of(env.prog).inputs) } else { m.state.register_file() };
                     m.events.push(crate::calls::UserEvent { at: addr, name, ins, file });
-                    if trap {
+                    if trap || env.explicit.is_some() {
                         return Ok(Exit::NoReturn);
                     }
                     let run = m.state.run;

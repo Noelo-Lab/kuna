@@ -509,7 +509,7 @@ impl Run<'_, '_, '_> {
                     }
                     let k = self.events.len();
                     self.events.push(crate::calls::UserEvent { at, name: name.clone(), ins, file: Vec::new() });
-                    if trap {
+                    if trap || self.state.env.explicit.is_some() {
                         return Ok(Flow::NoReturn);
                     }
                     if let Some(out) = op.out.as_ref() {

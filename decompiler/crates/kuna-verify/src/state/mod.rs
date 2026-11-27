@@ -7,11 +7,13 @@
 //! pointer is fixed, and image-backed memory reads the load image. Each side then
 //! keeps its own writes on top.
 
+mod explicit;
 mod mem;
 mod stack_inputs;
 
 pub(crate) use stack_inputs::StackInputs;
 pub use mem::*;
+pub(crate) use explicit::{ExplicitState, Region};
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -123,6 +125,7 @@ pub struct Env<'p> {
     /// Bytes a call pushes for its return address on the stack (0 when the
     /// model keeps it in a register).
     pub ret_slot: u32,
+    pub(crate) explicit: Option<ExplicitState>,
     /// Register parameters of type `bool`: a caller passes 0 or 1.
     pub booleans: Vec<(i32, u64, u32)>,
     /// The machine's system calls write the kernel's result registers.
@@ -277,6 +280,7 @@ impl<'p> Env<'p> {
             tracked: Vec::new(),
             ret_addr: None,
             ret_slot: 0,
+            explicit: None,
             booleans: Vec::new(),
             kernel: Cell::new(true),
             stub_recovered: Cell::new(false),
@@ -456,6 +460,9 @@ impl<'p> Env<'p> {
     /// Memory either side's caller can observe after the function: anything
     /// but registers, temporaries and the stack.
     pub fn observable(&self, space: &AddrSpace, off: u64) -> bool {
+        if let Some(explicit) = &self.explicit {
+            return space.get_index() == self.ram.get_index() && explicit.observable(off);
+        }
         self.is_memory(space) && !(space.get_index() == self.ram.get_index() && self.in_stack(off, 1))
     }
 
@@ -572,6 +579,14 @@ impl<'p> Env<'p> {
 
     pub fn initial_byte(&self, run: u32, space: &AddrSpace, off: u64) -> u8 {
         let idx = space.get_index();
+        if let Some(explicit) = &self.explicit {
+            if idx == self.register.get_index() {
+                return explicit.registers.get(&off).copied().unwrap_or(0);
+            }
+            if idx == self.ram.get_index() {
+                return explicit.byte(off);
+            }
+        }
         if let Some(&(_, t, size, val)) =
             self.tracked.iter().find(|&&(sp, t, size, _)| sp == idx && off >= t && off < t + u64::from(size))
         {
@@ -1170,6 +1185,19 @@ impl<'e, 'p> State<'e, 'p> {
         if size > MAX_SIZE {
             return Err(Halt::Unsupported(format!("{size}-byte value")));
         }
+        if let Some(explicit) = &self.env.explicit {
+            if space.get_index() == self.env.ram.get_index() {
+                explicit.check(off, size.into(), b'r')?;
+            }
+            if space.get_index() == self.env.register.get_index() {
+                for at in off..off.saturating_add(u64::from(size)) {
+                    let present = self.flags.get(at as usize).is_some_and(|f| f & PRESENT != 0);
+                    if !present && !explicit.registers.contains_key(&at) {
+                        return Err(Halt::Unsupported(format!("unmodeled initial register byte {at:#x}")));
+                    }
+                }
+            }
+        }
         if self.is_unique(space) {
             if let Some(v) = self.unique.exact(off, size) {
                 return Ok(v);
@@ -1207,6 +1235,10 @@ impl<'e, 'p> State<'e, 'p> {
     /// code traps, as it does on the target; one that leaves it as it is (the
     /// decompiler's value of a global, kept across a call) does nothing.
     pub fn write(&mut self, space: &AddrSpace, off: u64, size: u32, val: u128) -> Result<(), Halt> {
+        let explicit_ram = self.env.explicit.as_ref().filter(|_| space.get_index() == self.env.ram.get_index());
+        if let Some(explicit) = explicit_ram {
+            explicit.check(off, size.into(), b'w')?;
+        }
         if !self.saved.is_empty() && space.get_index() == self.env.ram.get_index() {
             let dead: Vec<u64> = self.saved.range(off..=off.saturating_add(u64::from(size).max(1) - 1)).map(|(k, _)| *k).collect();
             for k in dead {
@@ -1234,7 +1266,7 @@ impl<'e, 'p> State<'e, 'p> {
             }
             return Ok(());
         }
-        if space.get_index() == self.env.ram.get_index()
+        if explicit_ram.is_none() && space.get_index() == self.env.ram.get_index()
             && (self.env.is_readonly(off, size.into()) || self.env.in_code_section(off))
         {
             if self.read(space, off, size)? == val & crate::value::mask(size) {

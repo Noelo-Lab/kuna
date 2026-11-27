@@ -4087,6 +4087,14 @@ NaN quiet-bit equivalence, and also check storage from a supplied contract.
 Discarding a speculative callee restores its execution metadata and machine
 state while charging the steps it spent against the budget.
 
+The opt-in `oracle-case` command gives the interpreters an explicit
+x86-64 SysV entry state and fixed memory permissions. The raw interpreter
+checks fetched instruction bytes against the exported ELF image. The same
+map and architectural state can run in Unicorn without SLEIGH. Each backend
+reports its return, visible memory and execution boundaries with the state
+it could observe. These observations leave the Tier C verdicts unchanged.
+See `docs/features/diffverify/function-oracle.md` for the input model.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the
