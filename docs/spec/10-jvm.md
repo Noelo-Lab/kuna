@@ -1515,6 +1515,22 @@ as wherever javac would otherwise pick another overload, box to another type, or
 or an identity comparison the bytecode lacks. For a class outside the input, the
 descriptors the input calls stand in for its methods.
 
+**Casts that select an overload (kuna).** `getAmbiguousParameters` finds no ambiguity when
+no overload takes the argument types exactly, so `f(m)` for a `Member` that is both a `Decl`
+and a `Named`, with `f(Decl)` and `f(Named)` declared, or `put(d, null)` beside `put(Decl,
+String)` and `put(Decl, Integer)`, printed without the cast that picks the invoked method,
+and javac reports the call ambiguous. For a method of a class in the input,
+`selecting_cast` resolves the written call as javac does (JLS 15.12.2): the candidates are
+the methods of that name of the class and its known supertypes the current class can
+access, less bridges and synthetic methods; when the invoked method is applicable by strict
+invocation to the written argument types and some other candidate also is but is not less
+specific, each argument whose type differs from its parameter's at a position where such a
+candidate's parameter differs is cast to its parameter type. Every candidate still
+applicable then takes a supertype of each parameter, so the invoked method is the most
+specific. A call whose candidates have generic parameter types, whose arguments include a
+lambda or a type kuna cannot resolve, or whose method is varargs or not strictly
+applicable keeps Vineflower's casts.
+
 **Expression types.** A switch expression's or conditional's type is the join of its arms
 (their nearest common ancestor, or `Object` when the class universe knows none). Writing
 the arms or a cast against that join breaks Java's typing: a literal cannot have the join

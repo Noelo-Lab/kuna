@@ -4,6 +4,7 @@
 //! length 0.
 
 pub(crate) mod ambiguous_type_variable_argument;
+pub(crate) mod selecting_cast;
 pub(crate) mod unseen_class_overload;
 pub(crate) mod vararg_spread_resolution;
 

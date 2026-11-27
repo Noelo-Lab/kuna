@@ -2218,3 +2218,5 @@ opt	jvm_plugins	1
 case	kuna-fixes/pkg/TestWildcardArrayBound	Kuna Fixes	kuna-fixes/classes/pkg/TestWildcardArrayBound
 # kuna-fixes/src/pkg/TestQualifiedSuperEmpty.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestQualifiedSuperEmpty	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedSuperEmpty
+# kuna-fixes/src/pkg/TestSelectingCast.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSelectingCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSelectingCast
