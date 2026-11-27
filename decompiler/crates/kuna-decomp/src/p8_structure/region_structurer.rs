@@ -131,11 +131,11 @@ impl OptionRegionStructure {
 /// `data.install_switch_defaults()` and `data.seed_sblocks_copy()` have run, so
 /// `sblocks` is a `BlockCopy` mirror of `bblocks` with the same edges.
 ///
-/// 1. Runs the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid) over the
-///    real CFG (proves the W7 adapter; its node order guides the virtualize
-///    fallback).
+/// 1. Builds the [`KunaRegionIdentifier`](crate::p7_regions::kuna_regionid) over
+///    the real CFG; it runs when a loop first needs refining.
 /// 2. Collapses the `sblocks` graph to a single structured root using the acyclic
-///    sequence schema + the SAILR-ordered virtualize-to-goto fallback.
+///    sequence schema + the SAILR-ordered virtualize-to-goto fallback, declining
+///    at once when [`components_stay_apart`] shows it cannot.
 ///
 /// On success, returns `Ok((true, flips))` where `flips` is the list of `bblocks`
 /// `BlockBasic` ids whose trailing CBRANCH must have its `boolean_flip`/
