@@ -62,6 +62,7 @@ pub mod kuna_loadoptions;
 // (kuna) DWARF variant-part (discriminated-union) import option gate
 // (load-time, env-bridged) plus the recovered-layout side table.
 pub mod kuna_dwarfvariants;
+pub mod kuna_androidcalls;
 // (kuna) DWARF full-depth type-resolution option gate (load-time, env-bridged).
 // (kuna) Degenerate-symbol-name repair option gate (load-time, env-bridged).
 pub mod kuna_symbolnamerepair;

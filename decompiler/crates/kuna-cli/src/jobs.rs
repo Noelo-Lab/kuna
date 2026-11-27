@@ -1650,6 +1650,7 @@ fn lost_result(t: &TargetSpec, reason: &str) -> FuncResult {
         callwide_prototypes: Vec::new(),
         variables: Vec::new(),
         types: Vec::new(),
+        android_calls: None,
         stack_objects: Vec::new(),
         globals: Vec::new(),
         field_calls: Vec::new(),
@@ -2131,6 +2132,7 @@ mod tests {
                 definition: "struct mystruct {\n    int a;\n};\n".into(),
                 size: 4,
             }],
+            android_calls: Some(crate::android_calls::sample()),
             stack_objects: vec![kuna_decomp::kuna_stackobjectinfo::StackObjectInfo {
                 id: "object_401004_1".into(),
                 name: "frame_é".into(),
@@ -2204,6 +2206,7 @@ mod tests {
             && a.synth == b.synth
             && a.line_mappings == b.line_mappings
             && a.globals == b.globals
+            && a.android_calls == b.android_calls
             && a.stack_objects == b.stack_objects
             && a.types.len() == b.types.len()
             && a.types.iter().zip(&b.types).all(|(x, y)| {
@@ -2280,6 +2283,7 @@ mod tests {
             callwide_prototypes: Vec::new(),
             variables: Vec::new(),
             types: Vec::new(),
+            android_calls: None,
             stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
@@ -2337,6 +2341,7 @@ mod tests {
             callwide_prototypes: Vec::new(),
             variables: Vec::new(),
             types: Vec::new(),
+            android_calls: None,
             stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),
@@ -2891,6 +2896,7 @@ mod tests {
             callwide_prototypes: Vec::new(),
             variables: Vec::new(),
             types: Vec::new(),
+            android_calls: None,
             stack_objects: Vec::new(),
             globals: Vec::new(),
             field_calls: Vec::new(),

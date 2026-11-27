@@ -56,13 +56,13 @@ fn surface_count_is_101() {
 }
 
 #[test]
-fn settable_count_is_246() {
-    assert_eq!(kuna_num_settables(), 246);
-    assert_eq!(SETTABLE_TABLE.len(), 246);
+fn settable_count_is_248() {
+    assert_eq!(kuna_num_settables(), 248);
+    assert_eq!(SETTABLE_TABLE.len(), 248);
 }
 
 #[test]
-fn tier_counts_are_50_core_132_transform_64_analysis() {
+fn tier_counts_are_50_core_132_transform_66_analysis() {
     let mut core = 0;
     let mut transform = 0;
     let mut analysis = 0;
@@ -74,7 +74,7 @@ fn tier_counts_are_50_core_132_transform_64_analysis() {
             other => panic!("invalid tier {other:?} on {}", s.option),
         }
     }
-    assert_eq!((core, transform, analysis), (50, 132, 64));
+    assert_eq!((core, transform, analysis), (50, 132, 66));
 }
 
 #[test]
@@ -470,6 +470,8 @@ fn option_values_live_value_present_for_78() {
         // like the analysis-pass gates above. Default-on, ELF-only.
         "itaniumrtti",
         "jniregister",
+        "jnicalls",
+        "ndkbinder",
         // (kuna `lazyfuncs`) The deferred entry commit -- read console-side at
         // `read symbols` (the commit either creates a Function per entry or parks
         // the starts), so it has no codegen live reader. Default-off.
@@ -1170,7 +1172,7 @@ fn emit_catalog_json_static_form_brackets_and_commas() {
     // +1 each for `swifthelpers` and `valuewitness`.
     // +1 for `bytestorewidth`; its P3 row sits after `globalarrayanchor`.
     // +1 for `boolbranch`; its P3 row sits after `bytestorewidth`.
-    assert_eq!(json.matches("},\n").count(), 245);
+    assert_eq!(json.matches("},\n").count(), 247);
     // +1 for `calleefilledarg`; its P4 row sits after `stackaddrargtrial`.
 }
 

@@ -132,6 +132,7 @@ mod tests {
 
     fn result(name: &str, code: Option<&str>) -> FuncResult {
         FuncResult {
+            android_calls: None,
             stack_objects: Vec::new(),
             name: name.into(),
             address: 0x1000,

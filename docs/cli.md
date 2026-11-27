@@ -748,6 +748,21 @@ per-function `stack_objects` array when objects were recovered. Each row has
 `name`/`type` directive. Native addresses follow the CLI's address units; treat
 selectors as opaque identifiers. `--no-vars` suppresses these records.
 
+For Android ELF, `decompile --json`, `decompile-all --json` and project
+`index.jsonl` rows carry `java_calls` and `binder_services` when the respective
+analysis recovers evidence for that function. A Java call records its native
+`owner` and `site`, dispatch and argument form, and a list of targets with
+class, name, JVM descriptor and native `lookup` instruction. A known class
+also supplies a JVM `key` such as `Ltest/Bridge;->count(I)I`. A null class
+leaves the key null. `incomplete` means some paths have an unresolved target;
+an ID read from a cache, or a call inside a helper, is always incomplete.
+A Binder service records its interface `descriptor`, the `define_site`
+instruction and the `create`, `destroy` and `transact` callbacks. Each
+transaction carries its numeric `code`, a nullable method `name` and a
+nullable callback comparison `site`. These native addresses are hexadecimal
+strings. The service appears on its callbacks and on the function containing
+the definition instruction.
+
 For an existing mapped frame layout, a logical name can appear as a typed
 `<name>_view` pointer into that physical object. Repeated uses of the same family
 share one pointer; different families can name the same address independently.
@@ -2842,6 +2857,8 @@ kuna xrefs ./a.out --to authenticate            # who references this?
 kuna xrefs ./a.out --to 0x1030 --json           # by address, machine-readable
 kuna xrefs ./a.out --from main                  # what does this reference?
 kuna xrefs ./a.out --from main --kind call      # call sites only
+kuna xrefs libplayer.so --to 'Ldemo/Player;->seek(I)V' --json
+kuna xrefs libplayer.so --from 0x5084 --kind java-call --json
 ```
 
 The navigation query: `--to` returns everything that references the target — call
@@ -2971,8 +2988,23 @@ stub whose forwarding jump the walk could not decode), the answer is still for t
 selected address, and stderr says so with
 `warning: "NAME" also names 0x...; this answer is for 0x... only, query that address for the rest`.
 
-Flags: `--json`, `--kind call,jump,data,read,write,pointer` (repeatable-by-comma
+Flags: `--json`, `--kind call,jump,data,read,write,pointer,java-call` (repeatable-by-comma
 filter), plus the shared `--mode`, `--option N V`, `--slice`, `--target`, `--sleighpath`.
+
+On an Android ELF, a JVM lookup key in `--to` accepts the complete class,
+method name and descriptor, including the return type. Quote the key so the
+shell preserves it. A key such as `Ldemo/Player;->seek(I)V` can be copied
+directly from a JNI call comment in the decompiled code. Each matching row
+names the native function, its call instruction, the dispatch and argument
+form, and the lookup instructions
+behind the candidate targets. The `incomplete` field records additional
+unknown possibilities. A Java target has no native implementation address.
+`--from <native function or instruction> --kind java-call` returns those same
+rows. For a Java query, `coverage.enabled` records whether the analysis ran
+on this target, and `coverage.limited` reports a decoding or analysis limit
+even if the query returned zero rows. A mixed native query (including `--kind call`) adds `java_refs` and
+`java_refs_count` when managed calls are present. Its ordinary `xrefs` and
+`count` keep their native address semantics.
 
 **A pointer stored in data is a `pointer` row, not an instruction xref.** The
 `xrefs` rows are references an instruction makes. A word in `.data` that holds a

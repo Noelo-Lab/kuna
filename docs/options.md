@@ -660,6 +660,10 @@ Three tiers:
 | no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes | [`rtti`](#rtti----on--off-default-on) |
 | Android native methods appear as sub_<addr> despite a RegisterNatives table | [`jniregister`](#jniregister----on--off-default-on) |
 | registered JNI methods have generic integer parameters instead of Java types | [`jniregister`](#jniregister----on--off-default-on) |
+| JNI calls show only an opaque jmethodID | [`jnicalls`](#jnicalls----on--off-default-on) |
+| Java methods called by native code have no visible cross-references | [`jnicalls`](#jnicalls----on--off-default-on) |
+| native Binder dispatch callback is anonymous | [`ndkbinder`](#ndkbinder----on--off-default-on) |
+| numbered Binder request branches have no method names | [`ndkbinder`](#ndkbinder----on--off-default-on) |
 | gcc/clang c++ class names missing and vtables left as unnamed DAT_ data | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | no Class::vtable or typeinfo labels in a stripped elf or mach-o with polymorphic classes | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | virtual dispatch slot resolves to sub_<addr> with no class | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
@@ -2313,6 +2317,22 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default. Set off to ignore dynamic registration records. Standard JNI interfaces and types established by exported JNI names still apply.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-android-jni
 - **Example:** `kuna decompile libexample.so 0x1200 --addr --option jniregister off`
+
+### `jnicalls` -- on | off, default `on`
+
+- **Symptoms:** JNI calls show only an opaque jmethodID; Java methods called by native code have no visible cross-references.
+- **What it does:** Android ELF libraries can invoke Java methods through JNIEnv. Associate a native call instruction with the lookup class, name, JVM descriptor and method-ID producer supported by the ELF.
+- **When to flip:** On by default. Inspect native-to-Java dispatch and cached method IDs; turn off to omit these call annotations and symbolic references.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-android-java-calls
+- **Example:** `kuna xrefs libexample.so --to 'Ldemo/Player;->seek(I)V'`
+
+### `ndkbinder` -- on | off, default `on`
+
+- **Symptoms:** native Binder dispatch callback is anonymous; numbered Binder request branches have no method names.
+- **What it does:** Android ELF libraries can define Binder services with libbinder_ndk. Recover the interface descriptor and callbacks and associate transaction codes with the names the library registered.
+- **When to flip:** On by default. Inspect inbound Binder requests and their dispatch sites; turn off to view the underlying native callbacks without Binder facts.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-android-binder
+- **Example:** `kuna functions libexample.so --option ndkbinder off`
 
 ### `itaniumrtti` -- on | off, default `on`
 

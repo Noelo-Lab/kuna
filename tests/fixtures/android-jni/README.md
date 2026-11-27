@@ -24,3 +24,17 @@ cp "$toolchain/sysroot/usr/include/jni.h" "$include_dir/"
 cc -shared -fPIC -O2 -s -I "$include_dir" -Wl,--build-id=none bridge.c -o x86_64-linux-gnu.so
 chmod 0644 *.so
 ```
+
+`patched-helper.c` declares the two interface slots it uses, so it needs no NDK.
+Its `JNI_OnLoad` registers one table as written, then registers a second table
+after a straight-line helper stores a new implementation into it through an
+index. The second table's static contents are not what the VM receives. These
+commands use Clang 21.1.8 and LLD:
+
+```sh
+for abi in aarch64 x86_64; do
+    clang --target=$abi-linux-android24 -fuse-ld=lld -shared -fPIC -O2 -nostdlib \
+        -fno-stack-protector -Wl,-s,--build-id=none patched-helper.c -o patched-helper-$abi.so
+done
+chmod 0644 patched-helper-*.so
+```

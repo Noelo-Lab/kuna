@@ -1,0 +1,26 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A:default">
+<bytechunk space="ram" offset="0x1000" readonly="true">c0035fd6</bytechunk>
+<symbol space="ram" offset="0x1000" name="stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/android-binder/aarch64-linux-android.so</com>
+  <com>option ndkbinder off</com>
+  <com>read symbols</com>
+  <com>load addr 0x4ac4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/android-binder/aarch64-linux-android.so</com>
+  <com>read symbols</com>
+  <com>load addr 0x4ac4</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="disabled Binder analysis leaves the stripped callback unnamed" min="1" max="1">sub_4ac4\(</stringmatch>
+<stringmatch name="default Binder callback has its service name and type" min="1" max="1">org_example_ILevel_onTransact\(AIBinder</stringmatch>
+<stringmatch name="the read request has its registered method name" min="1" max="1">readLevel</stringmatch>
+<stringmatch name="the write request has its registered method name" min="1" max="1">writeLevel</stringmatch>
+</decompilertest>

@@ -2771,6 +2771,15 @@ impl Translate for Sleigh {
     ) -> KunaResult<i32> {
         Sleigh::one_instruction_with_assembly(self, pcode, assembly, baseaddr)
     }
+    fn one_instruction_checked_reusable(
+        &self,
+        emit: &mut dyn PcodeEmit,
+        addr: &Address,
+        image: &dyn ImageBytes,
+        context: &mut Option<Vec<u32>>,
+    ) -> KunaResult<i32> {
+        self.one_instruction_with_map(emit, addr, Some(image), None, Some(context))
+    }
     fn one_instruction_reusable(
         &self, pcode: &mut dyn PcodeEmit, assembly: &mut dyn AssemblyEmit,
         baseaddr: &Address, context: &mut Option<Vec<u32>>,

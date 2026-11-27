@@ -516,6 +516,18 @@ pub trait Translate: RegisterLookup {
         Err(KunaError::lowlevel("Checked instruction translation is unsupported"))
     }
 
+    /// Checked p-code lift with the same context certificate as `one_instruction_reusable`.
+    fn one_instruction_checked_reusable(
+        &self,
+        emit: &mut dyn PcodeEmit,
+        addr: &Address,
+        image: &dyn crate::loadimage::ImageBytes,
+        context: &mut Option<Vec<u32>>,
+    ) -> KunaResult<i32> {
+        *context = None;
+        self.one_instruction_checked(emit, addr, image)
+    }
+
     /// \brief Disassemble a single machine instruction
     ///
     /// This is the main interface to the disassembler for the processor.  It

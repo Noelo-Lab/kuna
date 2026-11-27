@@ -3370,8 +3370,11 @@ JNI_OnLoad, a bounded instruction walk follows the environment through
 GetEnv or AttachCurrentThread and the class through FindClass. At a proven
 RegisterNatives call it resolves the constant table and count, checks the
 relocated name and descriptor and the executable implementation address, and
-binds each unambiguous Java method at that address. The walk stays inside
-JNI_OnLoad, so a registration made by a helper it calls is not recovered. A
+binds each unambiguous Java method at that address. Registration sites are
+collected in JNI_OnLoad. The walk can inspect a straight-line local helper
+to determine which caller values survive its return; a helper
+that stores through an address the walk cannot evaluate is treated as an
+unmodelled call. A
 table, or a class, name or descriptor string, that the walk stores into or
 whose address it passes to code it does not model is not read from the image,
 because its contents may differ at run time. The entries are available
@@ -3384,6 +3387,45 @@ generic object reference until the static/instance distinction is known.
 A JNI long export with a reference argument supplies input types while its
 return is recovered from code. A short export name alone supplies neither the
 Java descriptor nor the static/instance flag.
+
+On these Android targets, `jnicalls` recovers calls in the other direction.
+It starts at the VM initialization hook and native functions with an established
+JNI environment. A short JNI export or a primitive-only long export can also
+yield a candidate when the same native function looks up a constant class,
+looks up a method with a valid descriptor on that class, and uses the ID in
+a matching JNI invocation. This candidate retains the unresolved ABI and is
+local to that function. A p-code walk of at most 8,192 instructions from the
+native entries follows loads from the NDK interface
+through the target calling convention. It tracks class references, method
+lookups and their raw JVM descriptors through register copies, spills, helper
+arguments and returns, and fixed cache fields. Initialization and cache writes
+are analyzed for the image before a function is selected. Writes that can
+conflict, an address passed to an unknown writer, and control-flow alternatives
+limit the result to candidates or an unknown lookup. A cached value is always
+a candidate set that includes an unknown lookup, and a call inside a helper is
+always incomplete, because code the walk does not reach can store another ID
+or call the helper with one. A call is complete only when the JNI entry, or
+JNI_OnLoad, looks up its ID itself on every path. A class name identifies the
+class used for lookup; class loaders, inheritance and virtual dispatch can change
+the runtime implementation. A native address identifies each invocation and its
+lookup evidence. Exact keys can be queried in either direction in `xrefs`.
+Ordinary, A and V forms share the symbolic target even when the argument values
+are unavailable. The JVM method is reported independently of the native call ABI.
+An inlined C++ JNI call or a call through a locally bound wrapper can retain its
+lookup. Calls through a preemptible external wrapper can resolve to another
+library at runtime and leave that edge unresolved.
+
+`ndkbinder` recognizes the Android NDK Binder class definition import and
+recovers the interface descriptor and the create, destroy and transact
+callbacks passed to it. Proven callbacks receive NDK prototypes and stripped
+implementations can acquire a service-specific name. The transaction number
+is a native input to the dispatch callback. Native comparisons and recovered
+switch destinations associate it with a branch or case. For a matching
+transaction-name registration, array index zero corresponds to transaction one.
+The analysis associates names with the same class object and uses the ELF's
+relocations and string data. Numeric cases remain visible without a supported
+name, including when evidence for the name is ambiguous. Options are applied
+at symbol import before publishing the image facts.
 
 The always-on core, in pass order (`passes.rs (passes_for)`):
 

@@ -5,7 +5,7 @@ use std::rc::Rc;
 use kuna_base::{address::Address, space::spacetype};
 use kuna_decomp::{architecture::Architecture, fspec::effect_type};
 use kuna_num::{opcodes::OpCode, pcoderaw::VarnodeData};
-use object::Object;
+use object::{Object, ObjectSection, SectionKind};
 
 use super::Image;
 use crate::listing::xrefs::{FullCapture, FullOp};
@@ -227,6 +227,7 @@ struct Walk<'a, 'd> {
     code_space: i32,
     found: BTreeSet<Registration>,
     sites: Sites,
+    helper_budget: usize,
 }
 
 impl Walk<'_, '_> {
@@ -402,6 +403,97 @@ impl Walk<'_, '_> {
         st.write(self.abi.result, result);
     }
 
+    /// Preserve caller storage only if the local helper returns with that same value.
+    /// A branch, an opaque call, a store through an unknown address or an unbounded
+    /// helper leaves its effects unknown.
+    fn local_effects(&mut self, caller: &State, raw: u64) -> Option<State> {
+        let arm = self.image.file.architecture() == object::Architecture::Arm;
+        let mut pc = self.image.pc(raw);
+        let section = self.image.file.sections().find(|s| {
+            s.kind() == SectionKind::Text
+                && pc.checked_sub(s.address()).is_some_and(|d| d < s.size())
+                && s.name()
+                    .is_ok_and(|n| !n.starts_with(".plt") && !n.starts_with(".iplt"))
+        })?;
+        let end = section.address().checked_add(section.size())?;
+        let arch = self.arch;
+        let _scope = crate::analyzers::nativeflow::decode_scope(arch, raw, arm)?;
+        let code = arch.manage().get_default_code_space()?;
+        let tr = arch.translate();
+        let mapped = tr.loader_rc().try_borrow().ok()?.shared_bytes()?;
+        let mut userops = vec![];
+        let mut capture = FullCapture::default();
+        let mut st = caller.clone();
+        for _ in 0..256 {
+            self.helper_budget = self.helper_budget.checked_sub(1)?;
+            capture.begin();
+            let len = tr
+                .one_instruction_checked(
+                    &mut capture,
+                    &Address::new(Rc::clone(code), pc),
+                    mapped.as_ref(),
+                )
+                .ok()?;
+            let next = pc.checked_add(u64::try_from(len).ok()?)?;
+            if next <= pc || next > end {
+                return None;
+            }
+            for op in capture.ops() {
+                use OpCode::*;
+                match op.opcode {
+                    CPUI_RETURN => return Some(st),
+                    CPUI_CALLOTHER => {
+                        if !arm {
+                            return None;
+                        }
+                        if userops.is_empty() {
+                            tr.get_user_op_names(&mut userops);
+                        }
+                        if userops
+                            .get(usize::try_from(op.ins.first()?.offset).ok()?)
+                            .map(String::as_str)
+                            != Some("setISAMode")
+                        {
+                            return None;
+                        }
+                    }
+                    CPUI_CALL | CPUI_BRANCH
+                        if self.abi.stack_return && op.ins.first()?.offset == next => {}
+                    CPUI_CALLIND => {
+                        let func = self.value(&st, op.ins.first()?)?;
+                        let recv = self.abi.argument(&st, 0).and_then(|s| st.read(s));
+                        if !matches!(
+                            (func, recv),
+                            (
+                                Value::Function {
+                                    vm: false,
+                                    index: 6 | 21 | 25 | 33 | 94 | 113 | 144 | 226
+                                },
+                                Some(Value::Env)
+                            )
+                        ) {
+                            return None;
+                        }
+                        self.call(&mut st, Some(func));
+                    }
+                    CPUI_BRANCH | CPUI_CBRANCH | CPUI_BRANCHIND | CPUI_CALL => return None,
+                    CPUI_STORE
+                        if self
+                            .value(&st, &op.ins[1])
+                            .and_then(|v| v.slot(op.ins[2].size))
+                            .is_none() =>
+                    {
+                        return None
+                    }
+                    _ => self.step(&mut st, op),
+                }
+            }
+            discard_temporaries(&mut st, arch);
+            pc = next;
+        }
+        None
+    }
+
     fn step(&mut self, st: &mut State, op: &FullOp) {
         use OpCode::*;
         match op.opcode {
@@ -482,6 +574,7 @@ pub(super) fn sites(
             return Sites::default();
         }
     }
+    let raw_entry = start;
     let start = image.pc(start);
     let mut st = State::default();
     st.write(abi.sp, Some(Value::Stack(0)));
@@ -496,6 +589,7 @@ pub(super) fn sites(
         code_space: code.get_index(),
         found: BTreeSet::new(),
         sites: Sites::default(),
+        helper_budget: 4096,
     };
     let end = start.saturating_add(if size == 0 { 8192 } else { size.min(32768) });
     let mut queue = VecDeque::from([(start, st)]);
@@ -557,6 +651,34 @@ pub(super) fn sites(
                 CPUI_RETURN | CPUI_BRANCHIND => {
                     falls = false;
                     break;
+                }
+                CPUI_CALL
+                    if op
+                        .ins
+                        .first()
+                        .and_then(|v| v.space.as_ref())
+                        .is_some_and(|s| s.get_index() == code.get_index()) =>
+                {
+                    let target = op.ins[0].offset;
+                    if walk.abi.stack_return && target == pc + len as u64 {
+                        continue;
+                    }
+                    let raw = crate::analyzers::nativeflow::direct_entry(
+                        image.file.architecture() == object::Architecture::Arm,
+                        raw_entry,
+                        image.data(pc).unwrap_or_default(),
+                        target,
+                        true,
+                    );
+                    if let Some(exit) = raw.and_then(|raw| walk.local_effects(&st, raw)) {
+                        st.0.retain(|slot, value| {
+                            matches!(slot.0, Place::Register(_)) || exit.read(*slot) == Some(*value)
+                        });
+                        walk.abi.after_call(&mut st, arch);
+                        st.write(walk.abi.result, exit.read(walk.abi.result));
+                    } else {
+                        walk.call(&mut st, None);
+                    }
                 }
                 _ => walk.step(&mut st, op),
             }

@@ -83,25 +83,63 @@ pub(crate) fn load(arch: &Architecture, bytes: &[u8]) -> KunaResult<Option<Analy
     Ok(Some(out))
 }
 
-pub(crate) fn collect(arch: &Architecture, bytes: &[u8], out: &mut AnalysisOutput) {
+pub(crate) struct PendingCalls {
+    image: kuna_analysis::image_bytes::ImageBytes,
+    methods: Vec<kuna_analysis::android_jni::NativeMethod>,
+    binder: Vec<kuna_decomp::kuna_androidcalls::BinderService>,
+}
+
+impl PendingCalls {
+    pub(crate) fn finish(
+        self,
+        arch: &Architecture,
+    ) -> kuna_decomp::kuna_androidcalls::AndroidCalls {
+        let (java, limited) = if arch.analysis_jnicalls {
+            kuna_analysis::loadimage_object::parse_object(&self.image)
+                .map(|file| {
+                    kuna_analysis::android_jni::java_calls(&file, &self.image, arch, &self.methods)
+                })
+                .unwrap_or_else(|_| (Vec::new(), true))
+        } else {
+            (Vec::new(), false)
+        };
+        let mut calls = kuna_decomp::kuna_androidcalls::AndroidCalls::new(java, self.binder);
+        calls.java_limited = limited;
+        calls
+    }
+}
+
+pub(crate) fn collect(
+    arch: &Architecture,
+    bytes: &kuna_analysis::image_bytes::ImageBytes,
+    out: &mut AnalysisOutput,
+) -> KunaResult<Option<PendingCalls>> {
     let Ok(file) = kuna_analysis::loadimage_object::parse_object(bytes) else {
-        return;
+        return Ok(None);
     };
     let (addr_size, word_size) = arch.data_org();
     let org = DataOrg {
         addr_size,
         word_size,
     };
-    for method in
-        kuna_analysis::android_jni::registrations(&file, bytes, arch, arch.analysis_jniregister)
-    {
+    let methods =
+        kuna_analysis::android_jni::registrations(&file, bytes, arch, arch.analysis_jniregister);
+    let binder = if arch.analysis_ndkbinder {
+        kuna_analysis::android_binder::services(&file, bytes, arch)
+    } else {
+        Vec::new()
+    };
+    if !binder.is_empty() {
+        crate::kuna_ndkbinder::bind(arch, &file, bytes, &binder, out)?;
+    }
+    for method in &methods {
         out.symbols.push(SymFact {
             addr: method.addr,
-            name: method.name,
+            name: method.name.clone(),
             kind: SymKind::Function,
         });
-        if let Some(decl) = method.declaration {
-            if let Ok(mut pieces) = parse_protopieces(&decl, arch.types(), org) {
+        if let Some(decl) = &method.declaration {
+            if let Ok(mut pieces) = parse_protopieces(decl, arch.types(), org) {
                 if !method.return_known {
                     pieces.outtype = None;
                 }
@@ -109,4 +147,9 @@ pub(crate) fn collect(arch: &Architecture, bytes: &[u8], out: &mut AnalysisOutpu
             }
         }
     }
+    Ok(Some(PendingCalls {
+        image: bytes.clone(),
+        methods,
+        binder,
+    }))
 }
