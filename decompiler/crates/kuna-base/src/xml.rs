@@ -2345,12 +2345,13 @@ mod tests {
         // and gh1883-quotientreturn-x64 / a div quotient beside a float computed from its remainder is no return
         // and kuna-epiloguepop(-sysv, -x87) / a register the epilogue pops is not the return beside a float
         // and gh1793-outparam-argslot / an address-taken incoming slot no parameter claims is one local
+        // and kuna-bytemap-noguard / a two-stage table with no bound on its map's index ends at the map
         // and kuna-devirtualize / a VM-protected entry stub devirtualized (deobfuscate devirtualize)
         // and kuna-devirtualize-sound / a devirtualized body says nothing false about its program
         // and kuna-devirtualize-interp / an in-function bytecode interpreter devirtualized (deobfuscate devirtualize)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
-        assert_eq!(count, 951, "corpus file count drifted");
+        assert_eq!(count, 952, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
