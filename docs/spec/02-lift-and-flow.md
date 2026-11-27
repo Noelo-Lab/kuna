@@ -4754,6 +4754,13 @@ high byte to the source. `ADDH` and `SUBH` shift a signed word source into
 the high half but consume a signed long source without a shift. A connected
 accumulator receives the entire 40-bit result.
 
+For covered wide immediate `MOVU` forms with a disconnected result, the
+literal cannot reach DATA, an address register, or an accumulator half.
+An admitted DATA descriptor still updates its pointer, using the indexed
+word step or the fixed long decrement. The result ALU sees zero and sets
+the primary `Z` flag only if both early admission and late execution allow
+it. The CE lookup uses the incoming flags, not the newly produced zero.
+
 Wide immediate `ADDL` and `SUBL` use an unsigned literal in the low word.
 `ADDH` and `SUBH` sign-extend the literal and shift it into the high word.
 They adjust the full 40-bit accumulator, computing carry and overflow

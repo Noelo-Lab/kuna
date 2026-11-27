@@ -1632,6 +1632,69 @@ int main(void) {
 }
 
 #[test]
+fn carmel_movu_literal_keeps_agu_and_late_flags_independent() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("movu.bin");
+    let source = scratch.path().join("movu.c");
+    let executable = scratch.path().join("movu");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let loadce = |bypass, table| [0x80, 0, table, 0xcd, 0xe4, if bypass { 0x40 } else { 0 }];
+    let long = [0x2c, 0xab, 0x23, 0xc6, 0xd1, 0x7c];
+    let rows = [
+        ([0x96, 0x75, 0x38, 0xc6, 0xdc, 0x2e], false, 0, 0, "R3", 0xc044, 8),
+        (long, false, 0xff, 0, "R7", 0xc046, 9),
+        (long, false, 0, 0xff, "R7", 0xc048, 0x3009),
+        (long, true, 0, 0xff, "R7", 0xc046, 0x3008),
+        ([0x4f, 0xd8, 0x03, 0xc6, 0xe6, 0xb0], true, 0, 0xff, "RN4", 0x792a, 0x3008),
+        ([0xd4, 0xcc, 0x42, 0xc6, 0xca, 0x53], false, 0xff, 0xff, "A4L", 0x1a2b, 0x3008),
+        ([0xd8, 0xe0, 0xbb, 0xc6, 0xd7, 0x6e], false, 0xff, 0xff, "EST", 0x3008, 0x3008),
+    ];
+    let inputs = [
+        "A0L", "A4L", "RN3", "RN4", "R3", "R7", "PACFG", "RM2", "RL2", "RM6", "RL6",
+        "EST", "CECFG1", "CECFG2", "CETBL", "ECFG",
+    ];
+    let mut generated = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut calls = String::new();
+    for (i, (packet, bypass, early, late, reg, value, est)) in rows.into_iter().enumerate() {
+        let mut code = vec![[0x21, 0xac, 0x20, 0x2b, 0xec, 0], loadce(bypass, early)];
+        code.extend([nop; 6]);
+        code.push(loadce(false, late));
+        code.extend([nop; 3]);
+        code.push(packet);
+        code.extend([nop; 4]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([nop; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        for (j, (storage, expected)) in [(reg, value), ("EST", est)].into_iter().enumerate() {
+            if j == 1 && reg == "EST" { continue; }
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+                "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+                "--assert", &format!("return %{storage} unsigned short"),
+            ]);
+            for (n, input) in inputs.into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let fun = &json["functions"][0];
+            assert!(fun["error"].is_null(), "{packet:02x?} {storage}: {fun}");
+            let text = fun["code"].as_str().unwrap();
+            let name = format!("movu_{i}_{j}");
+            writeln!(generated, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+            writeln!(calls, "if ({name}(0xffff,0x1a2b,4,0x792a,0xc040,0xc048,0,0,0,0,0,0,0,0,0,0) != {expected:#x}) return {};", 2 * i + j + 1).unwrap();
+        }
+    }
+    writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+}
+
+#[test]
 fn carmel_mixed_square_keeps_admission_separate_from_result_enable() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

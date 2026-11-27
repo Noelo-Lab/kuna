@@ -674,6 +674,7 @@ define token wide (48)
     wide_logic_lhs_modulo = (2,4)
     wide_logic_lhs_bound = (2,4)
     wide_logic_lhs_mode_shift = (2,4)
+    wide_movu_rn = (2,4)
     wide_logic_rhs_modulo = (40,42)
     wide_logic_rhs_bound = (40,42)
     wide_logic_rhs_mode_shift = (40,42)
@@ -998,6 +999,7 @@ attach variables [short_alu_src_step short_alu_rhs_step] [RN0 RN1 RN2 RN3 RN4 RN
 attach variables [short_alu_dst_modulo wide_logic_lhs_modulo wide_logic_rhs_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
 attach variables [short_alu_dst_bound wide_logic_lhs_bound wide_logic_rhs_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
 attach values [short_alu_dst_mode_shift wide_logic_lhs_mode_shift wide_logic_rhs_mode_shift] [0 2 4 6 8 10 12 14];
+attach variables [wide_movu_rn] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [packed_dm_dst_lo packed_dm_lhs_lo packed_dm_rhs_lo] [R0 R1 R2 R3];
 attach variables [packed_dm_dst_hi packed_dm_lhs_hi packed_dm_rhs_hi] [R4 R5 R6 R7];
 attach variables [packed_extract_src] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _];
@@ -13474,6 +13476,54 @@ movs_ce_low: "A1L" is wide_2_11=0x91 { export A1L; }
 
 # Unsigned MOVE consumes a word or a 24-bit saved loop address.
 macro moveu_flags(value) { EST = (EST & 0xffc4) | (zext(value == 0) << 3); }
+
+wide_movu_disconnected: "*"^wide_logic_lhs_ptr^"+="^wide_movu_rn is
+    wide_2_9>=8 & wide_2_9<=0xf & wide_logic_lhs_ptr & wide_movu_rn
+    & wide_logic_lhs_modulo & wide_logic_lhs_bound & wide_logic_lhs_mode_shift {
+    modify_ptr(wide_logic_lhs_ptr, wide_movu_rn, wide_logic_lhs_modulo, wide_logic_lhs_bound, wide_logic_lhs_mode_shift, 1:2);
+}
+wide_movu_disconnected: "long *"^wide_logic_lhs_ptr^"--" is
+    wide_2_9>=0x58 & wide_2_9<=0x5f & wide_logic_lhs_ptr
+    & wide_logic_lhs_modulo & wide_logic_lhs_bound & wide_logic_lhs_mode_shift {
+    modify_ptr_scaled(wide_logic_lhs_ptr, 0:2, wide_logic_lhs_modulo, wide_logic_lhs_bound, wide_logic_lhs_mode_shift, 3:2, 2:2);
+}
+wide_movu_disconnected: wide_movu_rn is wide_2_9>=0xa8 & wide_2_9<=0xaf & wide_movu_rn { }
+wide_movu_disconnected: wide_smove_reg_dst is ($(SIGNED_MOVE_HALF_DST)) & wide_smove_reg_dst { }
+wide_movu_disconnected: "unbound" is wide_2_9=0xdb { }
+
+@define WIDE_MOVU_DISCONNECTED "wide_right_mode=1 & wide_14_22=0x11b & wide_movu_disconnected & literal_word & ce_tick"
+
+:MOVU wide_movu_disconnected,literal_word is carmel_issue=5 & wide_left_mode=1 & $(WIDE_MOVU_DISCONNECTED) {
+    build wide_movu_disconnected;
+    local incoming:2 = EST;
+    publish_ce_feedback((incoming & 0xcfc4) | 8, incoming);
+    build ce_tick;
+}
+
+:MOVU wide_ce_prefix wide_movu_disconnected,literal_word is
+    carmel_issue=4 & wide_left_mode=0 & wide_ce_prefix & $(WIDE_MOVU_DISCONNECTED)
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & ((wide_2_9>=0x58 & wide_2_9<=0x5f) | (wide_2_9>=0xa8 & wide_2_9<=0xaf)) {
+    build wide_ce_prefix;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    local admitted:1 = carmel_read_address_admission(wide_ce_prefix:1);
+    if (admitted == 0) goto <publish>;
+    build wide_movu_disconnected;
+    local enabled:2;
+    if (wide_ce_prefix == 2) goto <second>;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    goto <result>;
+  <second>
+    unary_ce(CECFG2, incoming, CETBL, 1:2, enabled);
+  <result>
+    if (enabled == 0) goto <publish>;
+    flags = (flags & 0xffc4) | 8;
+  <publish>
+    publish_ce_feedback(flags, incoming);
+    build ce_tick;
+}
+
 :MOVU "A0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_9=0x88 & wide_14_22=0x11b & literal_word { A0 = zext(literal_word); moveu_flags(literal_word); }
 :MOVU "A0","A0L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x10 { local source:4 = zext(A0L); A0 = zext(source); moveu_flags(source); }
 :MOVU "A0","A1L" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_9=0x222 & wide_13_22=0x21c & wide_40_45=0x11 { local source:4 = zext(A1L); A0 = zext(source); moveu_flags(source); }
