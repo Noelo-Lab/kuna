@@ -17,7 +17,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/j" "$tmp/k" "$tmp/d" "$tmp/r" "$tmp/kd" "$tmp/s" "$tmp/sd" expected
 "$JAVAC" -g --release 8 -d "$tmp/j" src/dx/*.java
-"$JAVAC" -g --release 17 -d "$tmp/s" src/sx/*.java
+"$JAVAC" -g -parameters --release 17 -d "$tmp/s" src/sx/*.java
 "$KOTLINC" -nowarn src/kx/Kt.kt -d "$tmp/k"
 $D8 --debug --min-api 21 --lib "$LIB" --output "$tmp/d" $(find "$tmp/j" -name '*.class')
 $D8 --release --min-api 21 --lib "$LIB" --output "$tmp/r" $(find "$tmp/j" -name '*.class')

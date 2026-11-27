@@ -80,6 +80,15 @@ public class Sugar {
     private int count;
     private static int secret = 5;
 
+    /** A parameter named like the field it is stored to, through a call (d8 reuses its register). */
+    static final class Holder {
+        final String name;
+
+        Holder(String name) {
+            this.name = Objects.requireNonNull(name);
+        }
+    }
+
     /** Parameters updated in place or reassigned (d8 keeps them in their registers). */
     static final class Params {
         int size = 4;
@@ -122,6 +131,36 @@ public class Sugar {
             int sum = a;
             a = s.length();
             return sum + a + 1;
+        }
+
+        static String lower(String s) {
+            for (int i = 0; i < s.length(); i++) {
+                if (Character.isUpperCase(s.charAt(i))) {
+                    char[] cs = s.toCharArray();
+                    cs[i] = Character.toLowerCase(cs[i]);
+                    return String.valueOf(cs);
+                }
+            }
+            return s;
+        }
+
+        static Runnable wrap(Runnable r) {
+            java.util.concurrent.Callable<Object> c = java.util.concurrent.Executors.callable(r, null);
+            return () -> {
+                try {
+                    c.call();
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            };
+        }
+
+        static boolean inRange(int c) {
+            return c >= 3 && c <= 9;
+        }
+
+        static List<String> none() {
+            return java.util.Collections.emptyList();
         }
 
         static String text(String s, int n) {
@@ -223,9 +262,12 @@ public class Sugar {
         System.out.println(pick(true, 3, 4) + " " + pick(false, 3, 4));
         System.out.println(backports("a", 2));
         System.out.println(new Peer(2).read(new Sugar()) + " " + secret);
+        System.out.println(new Holder("h").name);
         Params ps = new Params();
         System.out.println(ps.successor(1) + " " + ps.successor(3) + " " + Params.lastIndexOf(new int[] {1, 2, 1, 3}, 1, 0, 4)
                 + " " + Params.wide(3L, 4, 1.5) + " " + Params.onePath(2, true) + " " + Params.onePath(2, false)
-                + " " + Params.captured(4) + " " + Params.reassigned(6, "abc") + " " + Params.text("x", 3));
+                + " " + Params.captured(4) + " " + Params.reassigned(6, "abc") + " " + Params.text("x", 3) + " " + Params.lower("aBc")
+                + " " + Params.inRange(5) + Params.inRange(12) + Params.none());
+        Params.wrap(() -> System.out.println("wrapped")).run();
     }
 }

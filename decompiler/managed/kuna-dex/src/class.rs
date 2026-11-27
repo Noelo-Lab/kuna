@@ -524,7 +524,8 @@ impl<'d, 'a> Writer<'d, 'a> {
         desc.extend_from_slice(dex.type_desc(proto.ret)?);
         let mut attrs = Vec::new();
         if em.code_off != 0 {
-            let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.code(this_desc, em, proto.clone(), opts)))
+            let names = self.parameter_names(anns);
+            let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.code(this_desc, em, proto.clone(), opts, &names)))
                 .unwrap_or_else(|_| Err(err("internal error in kuna-dex".to_string())));
             match body {
                 Ok(b) => {
@@ -621,12 +622,23 @@ impl<'d, 'a> Writer<'d, 'a> {
         })
     }
 
+    /// The parameter names of a `MethodParameters` annotation (`NO_INDEX`
+    /// for one without).
+    fn parameter_names(&self, anns: &[Annotation]) -> Vec<u32> {
+        match self.system(anns, b"Ldalvik/annotation/MethodParameters;").and_then(|a| element(self.dex, a, b"names")) {
+            Some(Value::Array(names)) => names.iter().map(|n| if let Value::String(s) = n { *s } else { NO_INDEX }).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// `names`: the `MethodParameters` names (see `Method::param_names`).
     fn code(
         &mut self,
         this_desc: &[u8],
         em: &EncodedMethod,
         proto: crate::dex::Proto,
         opts: &Options,
+        names: &[u32],
     ) -> Result<Vec<u8>> {
         let dex = self.dex;
         let code = dex.code_item(em.code_off)?;
@@ -645,6 +657,7 @@ impl<'d, 'a> Writer<'d, 'a> {
         let debug = dex.debug_info(&code, &params, THIS_NAME).unwrap_or_default();
         let mut m = Method::new(dex, &code, &debug, is_static, proto, !opts.verifiable)?;
         m.this_desc = this_desc.to_vec();
+        m.param_names = names.to_vec();
         let peers = self.peers;
         let interfaces = |desc: &[u8]| {
             let def = std::iter::once(dex).chain(peers).find_map(|d| d.defined(desc).and_then(|t| d.class_def(d.class_of_type(t)?).ok()));

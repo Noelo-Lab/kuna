@@ -279,6 +279,27 @@ the same sources, methods perfect on all metrics:
 | Ghidra | 98.71% | 73.01% | 56.59% |
 | Elasticsearch | 98.89% | 64.60% | 36.05% |
 
+Release builds (what APKs ship) carry no local-variable debug info, and d8 optimises more
+(shared values, split returns, rewritten library calls). Built with `--release` instead of
+`--debug` (same d8, min-api 26, classpath), methods perfect on all metrics, and the release
+metrics for kuna / jadx:
+
+| project | from the jar | debug DEX, kuna | release DEX, kuna | release DEX, jadx | structure | types | bytes | classes recompiling |
+|---|---|---|---|---|---|---|---|---|
+| Guava | 98.78% | 80.32% | 64.86% | 38.23% | 92.1 / 88.5% | 83.2 / 82.6% | 67.2 / 38.6% | 69.9 / 48.7% |
+| spring-boot | 99.29% | 76.33% | 62.06% | 47.90% | 90.0 / 90.5% | 79.2 / 80.9% | 64.2 / 48.9% | 76.6 / 59.8% |
+| spring-framework | 99.03% | 73.86% | 61.43% | 52.52% | 87.9 / 88.5% | 79.2 / 81.7% | 62.9 / 52.8% | 76.8 / 68.7% |
+| Ghidra | 98.71% | 73.01% | 60.29% | 49.57% | 84.6 / 84.6% | 77.2 / 78.0% | 61.1 / 50.0% | 80.7 / 73.0% |
+| Elasticsearch | 98.89% | 64.60% | 51.54% | 31.71% | 84.1 / 83.0% | 82.5 / 81.4% | 52.1 / 31.8% | 68.0 / 44.7% |
+| all | 98.88% | 69.31% | 56.08% | 38.57% | 85.8 / 84.8% | 81.2 / 81.0% | 57.1 / 38.8% | 72.3 / 54.7% |
+
+What a release build costs both tools: the types metric most (local types come from debug
+info: kuna 95.7% to 81.2%, jadx 93.9% to 81.0%, so neither has an edge there), then bytes
+exact and classes recompiling (d8's release optimisations reach the recompiled code; kuna
+69.3% to 57.1% and 81.2% to 72.3%, jadx 44.4% to 38.8% and 56.1% to 54.7%), and structure
+least (88.8% to 85.8%, jadx 87.8% to 84.8%). Parameter names survive where the code was
+compiled with `-parameters`, and line numbers survive.
+
 Most of the remaining loss is structure that differs from javac's (d8's shared comparisons
 and merged returns, string concatenation), `byte`/`int` typed where `boolean` is needed
 (a constant shared between a boolean and an int use), and 442 methods the engine fails
