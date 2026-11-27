@@ -4041,6 +4041,10 @@ qualified read if any incoming path lacks enough modeled issue clocks.
 An unqualified wide direct `GOTO` without a delay slot records its own
 issue clock and three refill clocks. The phase pass carries those samples
 across that modeled redirect instead of requiring adjacent CODE addresses.
+The covered compact parallel `GOTO EQ2` with one delay issue shares the
+slot clock and three refill clocks on both outcomes. The phase pass
+accepts those edges only if the decoder proved one slot clock; otherwise
+it discards the branch's samples and retains the existing status effects.
 
 Signed immediate `MOVE` distinguishes the early address-qualified ports
 from late DATA or accumulator results. The indexed store captures the old

@@ -1744,6 +1744,77 @@ int main(void) {
 }
 
 #[test]
+fn carmel_conditional_redirect_uses_the_executed_predecessor_clock() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-conditional-redirect-admission", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short phase_word = 0x00ff;\n",
+    );
+    for (label, slot) in [
+        ("parallel", [0x21, 0xac, 0x20, 0x2b, 0xec, 0]),
+        ("sequential", [0xa1, 0xac, 0x20, 0x2b, 0xec, 0]),
+        ("unknown", [0x20, 0xba, 0x02, 0x2b, 0xec, 0]),
+    ] {
+        let mut code = vec![[0x80, 0xc0, 0x40, 0xc6, 0x42, 0x8c]]; // MOVE R3, 0xc040
+        code.push([0x2b, 0xec, 0, 0x21, 0xac, 0x62]); // Right INC writes the EQ2 condition
+        code.extend([NOP; 7]);
+        code.push([0x28, 0x5c, 0x31, 0x2b, 0xec, 0]); // GOTO EQ2 with one delay issue
+        code.push(slot);
+        code.push(NOP);
+        code.push([0x80, 0, 6, 0xcf, 0x80, 0]); // Untaken path reaches the join later
+        code.extend([NOP; 2]);
+        code.push([0x13, 0x34, 0x68, 0xc2, 0x2f, 0x50]); // NOT CE1 LC1,*R3++
+        code.extend([NOP; 4]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([NOP; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        for register in ["R3", "LC1"] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+                "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+                "--assert", &format!("return %{register} unsigned short"),
+                "--assert", "data [data,0xc040] volatile unsigned short phase_word",
+            ]);
+            for (i, input) in ["R3", "LC1", "EST", "CECFG1", "CECFG2", "CETBL",
+                "PACFG", "RM2", "RL2", "A0L", "A1L", "ECFG"].into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+            }
+            let output = kuna.output().unwrap();
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            if label == "unknown" {
+                assert!(!output.status.success() && function["code"].is_null(), "{function}");
+                break;
+            }
+            assert!(output.status.success() && function["error"].is_null(), "{function}");
+            let name = format!("{label}_{}", register.to_ascii_lowercase());
+            writeln!(generated, "{}", function["code"].as_str().unwrap().replace("sub_1000", &name)).unwrap();
+        }
+    }
+    generated.push_str(r"
+#define INPUTS(a1) 0xc040,0x4567,0,0x888,0x888,0x0180,0,0,0,0xffff,a1,0
+int main(void) {
+    if (parallel_r3(INPUTS(0xffff)) != 0xc040 || parallel_lc1(INPUTS(0xffff)) != 0x4567) return 1;
+    if (parallel_r3(INPUTS(2)) != 0xc041 || parallel_lc1(INPUTS(2)) != 0xff00) return 2;
+    if (sequential_r3(INPUTS(0xffff)) != 0xc040 || sequential_lc1(INPUTS(0xffff)) != 0x4567) return 3;
+    if (sequential_r3(INPUTS(2)) != 0xc041 || sequential_lc1(INPUTS(2)) != 0xff00) return 4;
+    return 0;
+}
+");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_logic_rmw_routes_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

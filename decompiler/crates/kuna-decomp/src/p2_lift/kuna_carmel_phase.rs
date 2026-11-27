@@ -1,6 +1,6 @@
 //! Bind Carmel's D1 address admission to a proved older issue clock before SSA.
 
-use std::{collections::{BTreeSet, VecDeque}, rc::Rc};
+use std::{collections::{BTreeMap, BTreeSet, VecDeque}, rc::Rc};
 
 use kuna_base::{address::Address, error::{KunaError, KunaResult}};
 use kuna_num::opcodes::OpCode;
@@ -20,6 +20,8 @@ pub(crate) struct PhaseDecode<'a> {
     tick: u64,
     admission: u64,
     redirect: Option<u64>,
+    delay_tick: Option<u64>,
+    delay_mask: Option<u64>,
 }
 
 impl<'a> PhaseDecode<'a> {
@@ -30,6 +32,8 @@ impl<'a> PhaseDecode<'a> {
         let tick = arch.userops.get_op_by_name(b"carmel_record_admission")?.get_index() as u64;
         let admission = arch.userops.get_op_by_name(b"carmel_read_address_admission")?.get_index() as u64;
         let redirect = arch.userops.get_op_by_name(b"carmel_known_redirect").map(|op| op.get_index() as u64);
+        let delay_tick = arch.userops.get_op_by_name(b"carmel_delay_slot_admission").map(|op| op.get_index() as u64);
+        let delay_mask = arch.userops.get_op_by_name(b"carmel_modeled_delay_mask").map(|op| op.get_index() as u64);
         let (word, bits) = arch.with_context_db(|db| {
             let field = db.get_variable(b"carmel_phase_emit").ok()?;
             Some((field.get_word() as usize, field.get_mask() << field.get_shift()))
@@ -37,33 +41,59 @@ impl<'a> PhaseDecode<'a> {
         let translate = arch.translate();
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
-        Some(Self { translate, word, saved, tick, admission, redirect })
+        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
         let mut markers = Vec::new();
+        let mut delay_queries = Vec::new();
+        let mut slot_clocks = BTreeMap::<u64, usize>::new();
         let mut reads = false;
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
             if op.get_parent().is_none() { continue; }
             let Some(index) = userop(fd, op) else { continue };
+            let offset = op.get_addr().get_offset();
             if index == self.tick || Some(index) == self.redirect {
-                markers.push((op_id, index == self.tick));
+                markers.push((op_id, offset, if index == self.tick { Mark::Tick } else { Mark::Redirect }));
+            } else if Some(index) == self.delay_tick {
+                *slot_clocks.entry(offset).or_default() += 1;
+                markers.push((op_id, offset, Mark::Slot));
+            } else if Some(index) == self.delay_mask {
+                delay_queries.push((op_id, offset));
             } else if index == self.admission {
                 reads = true;
             }
         }
+        let mut delayed = BTreeMap::new();
+        for (query, offset) in delay_queries {
+            let modeled = slot_clocks.get(&offset) == Some(&1);
+            delayed.insert(offset, modeled);
+            let mask = fd.new_constant(2, if modeled { 0xffff } else { 0 });
+            fd.op_set_opcode(query, type_op_for(OpCode::CPUI_COPY));
+            fd.op_set_input(query, mask, 0)?;
+        }
         if !reads {
-            for (marker, _) in markers {
+            for (marker, _, _) in markers {
                 fd.op_destroy(marker);
             }
             return Ok(());
         }
-        let known: BTreeSet<_> = markers.iter().filter(|(_, tick)| *tick)
-            .map(|&(id, _)| fd.obank().get(id).unwrap().get_addr().get_offset()).collect();
+        let mut known = BTreeSet::new();
+        let mut redirects = Vec::new();
+        for (marker, offset, kind) in markers {
+            let modeled = delayed.get(&offset).copied();
+            if modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
+                fd.op_destroy(marker);
+            } else if kind == Mark::Redirect {
+                redirects.push(marker);
+            } else {
+                known.insert(offset);
+            }
+        }
         // structure_reset has assigned dense block numbers in this order.
         let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|n| fd.bblocks_get_block(n)).collect();
-        let traces: Vec<_> = blocks.iter().map(|&block| self.trace(fd, visits, &known, block)).collect();
+        let traces: Vec<_> = blocks.iter().map(|&block| self.trace(fd, visits, &known, &delayed, block)).collect();
         let inputs = incoming_ages(fd, visits, &blocks, &traces);
         for (trace, mut age) in traces.iter().zip(inputs) {
             for event in &trace.events {
@@ -106,13 +136,16 @@ impl<'a> PhaseDecode<'a> {
                 }
             }
         }
-        for (marker, tick) in markers {
-            if !tick { fd.op_destroy(marker); }
+        for redirect in redirects {
+            fd.op_destroy(redirect);
         }
         Ok(())
     }
 
-    fn trace(&self, fd: &Funcdata, visits: &VisitedMap, known: &BTreeSet<u64>, block: BlockId) -> Trace {
+    fn trace(
+        &self, fd: &Funcdata, visits: &VisitedMap, known: &BTreeSet<u64>, delayed: &BTreeMap<u64, bool>,
+        block: BlockId,
+    ) -> Trace {
         let mut trace = Trace::default();
         let mut current = fd.bb_op_head(block);
         while let Some(id) = current {
@@ -126,12 +159,16 @@ impl<'a> PhaseDecode<'a> {
                 }
                 trace.first.get_or_insert_with(|| addr.clone());
                 trace.last = Some(addr.clone());
-                trace.redirect = false;
+                trace.redirect_edges = 0;
             }
             match userop(fd, op) {
-                Some(index) if index == self.tick => trace.events.push(Event::Tick(id)),
+                Some(index) if index == self.tick || Some(index) == self.delay_tick => {
+                    trace.events.push(Event::Tick(id));
+                }
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
-                Some(index) if Some(index) == self.redirect => trace.redirect = true,
+                Some(index) if Some(index) == self.redirect => {
+                    trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
+                }
                 _ if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN
                     | OpCode::CPUI_LOAD | OpCode::CPUI_STORE) => {
                     // Bus effects and opaque transfers can change the spacing
@@ -158,6 +195,13 @@ fn userop(fd: &Funcdata, op: &PcodeOp) -> Option<u64> {
     index.is_constant().then(|| index.get_offset())
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mark {
+    Tick,
+    Slot,
+    Redirect,
+}
+
 #[derive(Clone, Copy)]
 enum Event {
     Barrier,
@@ -180,7 +224,7 @@ struct Trace {
     first: Option<Address>,
     last: Option<Address>,
     events: Vec<Event>,
-    redirect: bool,
+    redirect_edges: i32,
 }
 
 fn contiguous(visits: &VisitedMap, from: &Address, to: &Address) -> bool {
@@ -204,7 +248,7 @@ fn incoming_ages(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces:
                 let source = graph.block(block.get_in(edge));
                 let predecessor = source.get_index() as usize;
                 let prior = &traces[predecessor];
-                if prior.redirect && source.size_out() == 1 {
+                if source.size_out() <= prior.redirect_edges {
                     exits[predecessor]
                 } else {
                     match prior.last.as_ref().zip(trace.first.as_ref()) {

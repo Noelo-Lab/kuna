@@ -184,6 +184,8 @@ define register offset=0x300 size=1 [
 define pcodeop carmel_record_admission;
 define pcodeop carmel_read_address_admission;
 define pcodeop carmel_known_redirect;
+define pcodeop carmel_delay_slot_admission;
+define pcodeop carmel_modeled_delay_mask;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -1178,6 +1180,28 @@ macro publish_ce_feedback(flags, feedback) {
     EST = flags | (first << 12) | (second << 13);
 }
 
+macro ce_admission(sample) {
+    local first:1 = ((EST | CECFG1) & 0x1000) != 0;
+    local second:1 = (EST & 0x2000) != 0 || (CECFG2 & 0x1000) != 0;
+    sample = first | (second << 1);
+}
+
+macro record_ce_admission() {
+    local sample:1;
+    ce_admission(sample);
+    carmel_record_admission(sample);
+}
+
+ce_single_tick: is (carmel_phase_emit=0 | hw_loop_actions=1) { }
+ce_single_tick: is carmel_phase_emit=1 & hw_loop_actions=0 & carmel_single_issue=0 {
+    record_ce_admission();
+}
+ce_single_tick: is carmel_phase_emit=1 & hw_loop_actions=0 & carmel_single_issue=1 {
+    local sample:1;
+    ce_admission(sample);
+    carmel_delay_slot_admission(sample);
+}
+
 macro commit_half(destination, stage, shift) {
     destination = stage:2;
     EST = (EST & ~(0x3b << shift)) | (stage(2) << shift);
@@ -1520,20 +1544,27 @@ with : hw_loop_phase=1 {
     arm_block_loop(0:2, 12:1, $(ARM_LOOP_PLAN));
 }
 
-:^complete_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & $(COMPACT_COMPUTE) & complete_left {
+:^complete_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))
+    & $(COMPACT_COMPUTE) & complete_left & ce_single_tick {
     local incoming:2 = EST;
     build complete_left;
     publish_ce_feedback(EST & 0xcfff, incoming);
+    build ce_single_tick;
 }
-:^complete_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & nop_right) {
+:^complete_left "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left & ce_single_tick);
+    (slot_mode=0 & nop_right) {
     local incoming:2 = EST;
     build complete_left;
     publish_ce_feedback(EST & 0xcfff, incoming);
+    build ce_single_tick;
 }
-:^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) {
+:^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick);
+    (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) {
     local incoming:2 = EST;
     build complete_right;
     publish_ce_feedback(EST & 0xcfff, incoming);
+    build ce_single_tick;
 }
 
 # Sample and compute both lanes before publishing either lane's result.
@@ -2334,12 +2365,6 @@ macro clock_ce() {
     publish_alu_ce(EST & 0xcfff);
 }
 
-macro record_ce_admission() {
-    local first:1 = ((EST | CECFG1) & 0x1000) != 0;
-    local second:1 = (EST & 0x2000) != 0 || (CECFG2 & 0x1000) != 0;
-    carmel_record_admission(first | (second << 1));
-}
-
 ce_tick: is (carmel_phase_emit=0 | carmel_single_issue=1 | hw_loop_actions=1) { }
 ce_tick: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 { record_ce_admission(); }
 
@@ -2361,16 +2386,25 @@ ce_redirect: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 
     carmel_known_redirect();
 }
 
+# Before SSA the mask is set to zero when the expanded slot has no proved
+# clock, so the added branch and refill clocks leave EST unchanged.
+macro clock_conditional_redirect(mask) {
+    local incoming:2 = EST;
+    clock_ce();
+    EST = (EST & mask) | (incoming & ~mask);
+    record_ce_admission();
+}
+
 ce_marked_load_tick: is wide_left_mode=0 { }
 ce_marked_load_tick: is wide_left_mode=1 & ce_tick { build ce_tick; }
 
-:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left & ce_tick {
+:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left & ce_single_tick {
     clock_ce();
-    build ce_tick;
+    build ce_single_tick;
 }
-:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_tick); (slot_mode=0 & nop_right) {
+:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick); (slot_mode=0 & nop_right) {
     clock_ce();
-    build ce_tick;
+    build ce_single_tick;
 }
 
 compact_cmpu: "CMPU" cmpu_lhs,cmpu_rhs is slot_0_0=0 & slot_10_22=0x82e
@@ -12533,6 +12567,20 @@ wide_inactive_input: wide_input_select is carmel_gpp_disconnected=1 & $(WIDE_GPP
 :^nop_left "||" "GOTO EQ2" conditional_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x0 & slot_9_22=0x142e & conditional_target) { if (((EST & 0x200) != 0)) goto conditional_target; }
 :"GOTO EQ2" conditional_target "delay 1" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x1 & slot_9_22=0x142e & conditional_target [ carmel_counted_delay=1; ] { local taken:1 = ((EST & 0x200) != 0); delayslot(1); if (taken) goto conditional_target; }
 :"GOTO EQ2" conditional_target "delay 1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x1 & slot_9_22=0x142e & conditional_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = ((EST & 0x200) != 0); delayslot(1); if (taken) goto conditional_target; }
+:"GOTO EQ2" conditional_target "delay 1" "||" nop_right is
+    (carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & carmel_issue=1 & slot_mode=0 & slot_0_1=0x1 & slot_9_22=0x142e & conditional_target);
+    (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] {
+    local taken:1 = (EST & 0x200) != 0;
+    local mask:2 = carmel_modeled_delay_mask();
+    clock_conditional_redirect(mask);
+    delayslot(1);
+    clock_conditional_redirect(mask);
+    clock_conditional_redirect(mask);
+    clock_conditional_redirect(mask);
+    carmel_known_redirect();
+    if (taken) goto conditional_target;
+}
 :^nop_left "||" "GOTO EQ2" conditional_target "delay 1" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_1=0x1 & slot_9_22=0x142e & conditional_target) [ carmel_counted_delay=1; ] { local taken:1 = ((EST & 0x200) != 0); delayslot(1); if (taken) goto conditional_target; }
 :"GOTO EQ2" conditional_target "delay 2" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_1=0x2 & slot_9_22=0x142e & conditional_target [ carmel_counted_delay=1; ] { local taken:1 = ((EST & 0x200) != 0); delayslot(2); if (taken) goto conditional_target; }
 :"GOTO EQ2" conditional_target "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_1=0x2 & slot_9_22=0x142e & conditional_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { local taken:1 = ((EST & 0x200) != 0); delayslot(2); if (taken) goto conditional_target; }

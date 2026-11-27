@@ -54,6 +54,7 @@ pub(super) struct DelayUops {
 impl DelayUops {
     pub(super) fn record(
         &mut self,
+        engine: &Sleigh,
         cache: &PcodeCacher,
         start: usize,
         multiple_issues: bool,
@@ -66,7 +67,8 @@ impl DelayUops {
                 .and_then(|i| cache.pool[i].space.as_ref())
                 .is_none_or(|space| space.get_type() != IPTR_CONSTANT),
             OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND
-            | OpCode::CPUI_RETURN | OpCode::CPUI_CALLOTHER => true,
+            | OpCode::CPUI_RETURN => true,
+            OpCode::CPUI_CALLOTHER => !delay_admission(engine, cache, op),
             _ => false,
         };
         if slot.iter().any(external_flow) {
@@ -100,6 +102,18 @@ impl DelayUops {
         }
         Ok(())
     }
+}
+
+fn delay_admission(engine: &Sleigh, cache: &PcodeCacher, op: &PcodeData) -> bool {
+    if op.outvar.is_some() || op.isize != 2 {
+        return false;
+    }
+    let Some(input) = op.invar else { return false; };
+    let selector = &cache.pool[input];
+    cache.pool[input + 1].size == 1
+        && selector.space.as_ref().is_some_and(|space| space.get_type() == IPTR_CONSTANT)
+        && engine.base.get_user_op_names().get(selector.offset as usize)
+            .is_some_and(|name| name.as_slice() == b"carmel_delay_slot_admission")
 }
 
 fn memory(op: &PcodeData) -> bool {

@@ -1428,7 +1428,7 @@ impl PcodeBuilder for SleighBuilder<'_> {
         }
         if let Some(start) = carmel_start {
             self.carmel_delay_uops.record(
-                self.cache, start, counted && consumed > 1, fall_base,
+                self.engine, self.cache, start, counted && consumed > 1, fall_base,
             )?;
         }
         self.cur = saved_cur;
