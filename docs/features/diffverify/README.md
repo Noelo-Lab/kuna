@@ -81,6 +81,13 @@ ins16  DIFFERS  (run 1 of 256)
   callee at a function entry changes an `unaffected` register, the run is repeated with
   the change kept; if that changes what the run does, it is `UNKNOWN(abi-violation)`,
   otherwise the change is a suspect line.
+- **Stack arguments on x86-32 `cdecl`.** For a recovered prototype, the checker
+  tracks the mapped stack argument bytes a concrete callee reads before overwriting
+  them. If kuna passes different values there, the checker reruns the machine with
+  those values at the callee's entry stack pointer. Another callee return value or
+  other observable effects can give `DIFFERS`. A replay that falls back to a stub
+  or fails to return to the call's continuation with the expected stack pointer
+  leaves the check undecided.
 - **How much it catches** is measured by planting faults in the IR (`mutation.md`): 76%
   of reached mutants on the test corpus, 74–75% on `ls` and `find`.
 
@@ -106,7 +113,7 @@ error, and 0 otherwise. With `--baseline`, it is 1 only for a regression (§6).
 | `contract` | the C prototype used for the return value, with `--contract` |
 | `call N at A to T` | a call one side makes and the other does not, or makes from elsewhere or to another target |
 | `call N to T, argument i (reg)` | an argument value that differs. With a recovered prototype it is a `PROTOTYPE_SUSPECT` note, not a difference. |
-| `the callee reads R; kuna's call passes nothing there` | a callee run for real reads an argument kuna's C does not pass |
+| `the callee reads R` / `the callee reads stack[...]` | a callee run for real reads an argument whose value kuna's C changes or omits |
 | `kuna passes N arguments, and the prototype it gives the callee takes M` | a call short of its callee's declared prototype |
 | `memory before call N` / `memory at exit` | the first byte that differs, and how many do |
 | `kuna's result depends on ... which its C never assigns` | rerunning kuna's side with another value there changes its result: the C reads something it never set |
@@ -325,12 +332,11 @@ run yet.
 - **Replaying a counterexample, and concolic paths of failed runs.** A `DIFFERS`
   prints its inputs as text; there is no `--replay` of a saved input, and a run that
   ran past the budget or trapped gives the concolic worklist no branches.
-- **Stack arguments to a callee run for real.** The machine's callee runs on the
-  machine's arguments and kuna's side replays its effect. A register argument kuna gets
-  wrong is caught by rerunning the machine with kuna's value (the callee reads it); a
-  stack argument is not, so a stack argument kuna's recovered prototype misses or gets
-  wrong (x86-32 `cdecl`) can agree. Extending that rerun to the outgoing argument area
-  needs kuna's stack inputs mapped to the callee's reads first.
+- **Unmapped stack arguments.** The x86-32 `cdecl` replay starts from stack slots
+  identified by call recovery and uses the callee's reads to check those slots. Finding
+  outgoing arguments that call recovery missed entirely requires independent evidence
+  to distinguish them from the rest of the caller's frame. Other conventions still
+  need their own stack mappings.
 - **Object sizes for a callee outside the image.** What a callee can reach through a
   frame pointer is kuna's local that holds it. A callee run for real is also compared on
   the bytes it reads past that local, when they are another of kuna's locals; a stubbed

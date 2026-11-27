@@ -528,6 +528,12 @@ fn check_runs(
                     break;
                 }
             };
+            if !ci.with.stack_bytes.is_empty()
+                && ci.with.call.and_then(|k| alt.calls.get(k)).is_none_or(|r| r.stack_in.is_none())
+            {
+                rerun_failed = Some(format!("{}; the callee did not complete a concrete stack-argument replay", ci.msg));
+                break;
+            }
             let callee = ci.with.call.and_then(|k| callee_differs(prog, &machine_calls, mo.calls.get(k), alt.calls.get(k)));
             if let Some(d) = machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).or(callee) {
                 let l = format!("{}; given kuna's arguments, the machine's {d}", ci.msg);
@@ -684,9 +690,9 @@ fn check_runs(
                 };
                 if u.shared {
                     let with = if u.entry.is_empty() {
-                        machine::WithArgs { call: None, bytes: Vec::new(), kill_salt: 0x5a5a_5a5a }
+                        machine::WithArgs { call: None, bytes: Vec::new(), stack_bytes: Vec::new(), kill_salt: 0x5a5a_5a5a }
                     } else {
-                        machine::WithArgs { call: None, bytes: entry_bytes(&env, u, run), kill_salt: 0 }
+                        machine::WithArgs { call: None, bytes: entry_bytes(&env, u, run), stack_bytes: Vec::new(), kill_salt: 0 }
                     };
                     let base = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
                     let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&with));

@@ -84,6 +84,8 @@ pub struct Site {
     /// Where each CALL input lives for the callee: its prototype parameter,
     /// or the trial kuna's recovery matched it to.
     pub input_storage: Vec<Option<Storage>>,
+    /// An unlocked x86-32 cdecl call.
+    cdecl_stack: bool,
     /// How the ABI extends that value across its register, which a stub
     /// keeps (a 32-bit `int` in a 64-bit RISC-V register is sign-extended).
     pub ret_ext: Option<crate::state::Extension>,
@@ -198,6 +200,18 @@ pub struct Record {
     /// The argument-register bytes that callee read before writing, with
     /// the machine's values: what kuna's call must pass there.
     pub live_in: Option<Vec<(u64, u8)>>,
+    pub(crate) stack_in: Option<crate::state::StackInputs>,
+}
+
+impl Site {
+    pub(crate) fn stack_input(&self, index: usize) -> Option<&Storage> {
+        let st = self.input_storage.get(index)?.as_ref()?;
+        (self.cdecl_stack
+            && st.space.get_type() == kuna_base::space::spacetype::IPTR_SPACEBASE
+            && (4..=u64::from(u32::MAX)).contains(&st.off)
+            && (1..=16).contains(&st.size))
+            .then_some(st)
+    }
 }
 
 impl Calls {
@@ -374,6 +388,7 @@ fn extrapop(pop: i32) -> Option<i32> {
 /// Every call site of `fd`, keyed by its instruction address.
 pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
     let mut by_addr = BTreeMap::new();
+    let x86_cdecl_stack = env.prog.arch().archid.starts_with("x86:LE:32:");
     for i in 0..fd.num_calls() {
         let fc = fd.get_call_specs(i);
         let Some(op) = fd.obank().get(fc.get_op()) else { continue };
@@ -426,6 +441,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
                     .or_else(|| copied_to_register(fd, env, op.get_out())),
                 ret_ext: crate::abi::return_extension(env, proto),
                 input_storage,
+                cdecl_stack: x86_cdecl_stack && proto.get_model_name() == "__cdecl" && !proto.is_input_locked(),
                 resolved: fc.plt_stub().is_some() || proto.get_inject_id() >= 0,
                 plt_stub: fc.plt_stub().map(|a| a.get_offset()),
             },
@@ -446,6 +462,7 @@ pub fn sites(fd: &Funcdata, env: &Env) -> Calls {
         output: None,
         ret_ext: None,
         input_storage: Vec::new(),
+        cdecl_stack: false,
         resolved: false,
         plt_stub: None,
     };

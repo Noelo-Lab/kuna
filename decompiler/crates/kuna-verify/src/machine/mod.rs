@@ -294,7 +294,7 @@ struct Machine<'e, 'p, 'c> {
     returns: Vec<u64>,
     /// System calls and traps, in order.
     events: Vec<crate::calls::UserEvent>,
-    /// Argument-register bytes to give one call's callee instead of the
+    /// Argument bytes to give one call's callee instead of the
     /// machine's own: kuna's, to see whether the callee cares.
     with_args: Option<&'c WithArgs>,
     stop_before: Option<Checkpoint>,
@@ -353,7 +353,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         for st in &self.calls.pointer_regs {
             given.push(self.state.read_storage(&st.space, st.off, st.size)?);
         }
-        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given, target.is_some_and(|t| self.env.code_mapped(t))), effect: None, frame_reads: None, live_in: None };
+        let r = Record { at, target, indirect, args: args.clone(), writes: self.state.writes_at_call(&given, target.is_some_and(|t| self.env.code_mapped(t))), effect: None, frame_reads: None, live_in: None, stack_in: None };
         crate::calls::record(&mut self.records, r)?;
         if let Some(o) = self.with_args.filter(|o| o.call == Some(self.records.len() - 1)) {
             let register = std::rc::Rc::clone(&self.env.register);
@@ -575,24 +575,38 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         let saved = self.state.clone();
         let (records, steps, budget) = (self.records.len(), self.steps, self.budget);
         let call_sp = self.sp_value()?;
-        self.state.log = Some(Vec::new());
+        let stubs = self.stubs;
+        let back = lift(self.env, at).ok().map(|i| self.continuation(at, target, call_sp, &i));
         if outer {
             self.state.frame_reads = Some(crate::state::FrameReads::default());
-            self.state.live = Some(crate::state::LiveIn::new(self.calls.input_regs.clone()));
+            let mut live = crate::state::LiveIn::new(self.calls.input_regs.clone());
+            if back.is_some_and(|c| c.verify) {
+                live.stack = crate::state::StackInputs::new(self.env, self.calls.site(at), call_sp);
+            }
+            if let Some(stack) = &live.stack {
+                if let Some(args) = self.with_args.filter(|o| o.call == records.checked_sub(1)) {
+                    for &(off, b) in &args.stack_bytes {
+                        if stack.contains(off, 1) {
+                            self.state.write(&self.env.ram, call_sp + off, 1, u128::from(b))?;
+                        }
+                    }
+                }
+            }
+            self.state.live = Some(live);
         }
+        self.state.log = Some(Vec::new());
         self.budget = if outer { steps + limit } else { budget.min(steps + limit) };
         self.in_callee = true;
-        let back = lift(self.env, at).ok().map(|i| self.continuation(at, target, call_sp, &i));
         let ran = exec(self, target, Mode::Opaque, 1, back);
         self.in_callee = !outer;
         let reads = if outer { self.state.frame_reads.take() } else { None };
-        let live = if outer {
+        let (live, stack) = if outer {
             self.state.live.take().map(|mut l| {
                 l.instruction();
-                l.read.into_iter().collect::<Vec<_>>()
-            })
+                (Some(l.read.into_iter().collect::<Vec<_>>()), l.stack)
+            }).unwrap_or_default()
         } else {
-            None
+            (None, None)
         };
         self.budget = budget;
         if outer {
@@ -621,11 +635,12 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
                     }
                 }
                 self.close_effect(at, call_sp);
+                let sp = self.sp_value()?;
                 if let Some(r) = self.records.last_mut() {
                     r.frame_reads = reads;
                     r.live_in = live;
+                    r.stack_in = stack.filter(|_| matches!(exit, Exit::Return) && self.stubs == stubs && sp == call_sp + 4);
                 }
-                let sp = self.sp_value()?;
                 self.state.forget_below(sp.min(call_sp.wrapping_add(u64::from(self.env.ret_slot))));
                 Ok(Some(exit))
             }
@@ -872,6 +887,11 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
                 }
                 if !top {
                     if let Some(Continuation { at: b, sp: call_sp, verify }) = back {
+                        if depth == 1 && target != b {
+                            if let Some(live) = m.state.live.as_mut() {
+                                live.stack = None;
+                            }
+                        }
                         let elsewhere = !returns_to(target, b);
                         let sp = m.sp_value()?;
                         let switched = sp.wrapping_sub(call_sp).wrapping_add(STACK_SWITCH) > 2 * STACK_SWITCH;
@@ -1106,12 +1126,14 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
 }
 
 /// Run the function at `entry` from the run's initial state.
-/// The argument-register bytes the callee of the `call`-th call gets.
+/// The argument bytes the callee of the `call`-th call gets.
 #[derive(Clone, Debug)]
 pub struct WithArgs {
     /// The call by index, or `None` for the function's own entry.
     pub call: Option<usize>,
     pub bytes: Vec<(u64, u8)>,
+    /// Stack argument bytes by offset from the callee's entry stack pointer.
+    pub(crate) stack_bytes: Vec<(u64, u8)>,
     /// Nonzero: other values in the registers stubs kill.
     pub kill_salt: u32,
 }

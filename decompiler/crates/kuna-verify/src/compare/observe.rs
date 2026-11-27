@@ -186,6 +186,12 @@ pub(crate) fn compare_calls(prog: &ConsoleProgram, env: &Env, run: u32, calls: &
             if ma & mask(st.size) == ka & mask(st.size) {
                 continue;
             }
+            if same && site.stack_input(i).is_some_and(|s| {
+                s.off == st.off && s.size == st.size && s.space.get_index() == st.space.get_index()
+                    && mc.stack_in.as_ref().is_some_and(|reads| reads.contains(s.off, s.size))
+            }) {
+                continue;
+            }
             let l = format!(
                 "call {n} to {}, argument {} ({}): machine {}, kuna {}",
                 target(gc.target),

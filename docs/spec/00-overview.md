@@ -4030,6 +4030,12 @@ address and knows the call's continuation, a concrete callee that returns to
 an unexpected unmapped address yields `UNKNOWN(unsupported-op)`. A top-level
 return to an unexpected address also yields `UNKNOWN` after calls that ran
 without a stub.
+For x86-32 `cdecl` calls with recovered parameter storage, Tier C tracks which
+mapped stack argument bytes a concrete callee reads before writing them. If
+kuna supplies different bytes there, the machine is rerun with those arguments
+at the callee's entry stack pointer. A change in the callee's return value or
+other observable effects can give `DIFFERS` when the replay completes without a
+stub at the expected return address and stack pointer.
 
 ## 0.7 Feedback edges
 

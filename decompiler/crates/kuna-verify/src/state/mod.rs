@@ -8,6 +8,9 @@
 //! keeps its own writes on top.
 
 mod mem;
+mod stack_inputs;
+
+pub(crate) use stack_inputs::StackInputs;
 pub use mem::*;
 
 use std::cell::{Cell, RefCell};
@@ -666,6 +669,7 @@ pub struct LiveIn {
     tracked: Vec<bool>,
     written: Vec<bool>,
     pub read: BTreeMap<u64, u8>,
+    pub(crate) stack: Option<StackInputs>,
     /// Reads by the current op, committed when the next op starts.
     last: Vec<(u64, u8)>,
     /// Reads a COPY moved into a temporary this instruction, by its offset.
@@ -683,7 +687,7 @@ impl LiveIn {
                 }
             }
         }
-        LiveIn { written: vec![false; end], tracked, read: BTreeMap::new(), last: Vec::new(), pending: Vec::new() }
+        LiveIn { written: vec![false; end], tracked, read: BTreeMap::new(), stack: None, last: Vec::new(), pending: Vec::new() }
     }
 
     fn saw(&mut self, off: u64, b: u8) {
@@ -876,7 +880,13 @@ impl<'e, 'p> State<'e, 'p> {
         {
             self.read_uninitialized = true;
         }
-        found.unwrap_or_else(|| self.env.base_byte(self.run, self.epoch, &self.escaped, space, off))
+        let b = found.unwrap_or_else(|| self.env.base_byte(self.run, self.epoch, &self.escaped, space, off));
+        if let Some(stack) = self.live.as_mut().and_then(|l| l.stack.as_mut()) {
+            if space.get_index() == self.env.ram.get_index() {
+                stack.read(off, b);
+            }
+        }
+        b
     }
 
     fn put(&mut self, space: &AddrSpace, off: u64, b: u8) {
@@ -895,6 +905,11 @@ impl<'e, 'p> State<'e, 'p> {
                 log.push(Event::Write(space.get_index(), off, b));
             }
             self.mem.insert(space.get_index(), off, b);
+            if let Some(stack) = self.live.as_mut().and_then(|l| l.stack.as_mut()) {
+                if space.get_index() == self.env.ram.get_index() {
+                    stack.write(off);
+                }
+            }
             if space.get_index() == self.env.ram.get_index() && self.env.in_stack(off, 1) {
                 if self.in_callee_code {
                     self.callee_written.insert(off);

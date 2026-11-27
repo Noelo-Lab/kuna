@@ -43,8 +43,8 @@ pub struct Outcome {
     /// It read a byte of its own frame that nothing wrote.
     pub read_uninitialized: bool,
     /// The calls, up to [`CALL_INPUTS`] of them, where a callee the machine
-    /// ran for real read an argument register kuna's call does not pass the
-    /// same value in.
+    /// ran for real read argument bytes kuna's call does not pass the same
+    /// values in.
     pub call_inputs: Vec<CallInput>,
     /// Calls past [`CALL_INPUTS`] whose argument reads differ.
     pub unkept_inputs: usize,
@@ -56,7 +56,7 @@ pub struct Outcome {
 /// are only counted ([`Outcome::unkept_inputs`]).
 pub const CALL_INPUTS: usize = 64;
 
-/// A call whose callee reads argument-register bytes kuna passes otherwise:
+/// A call whose callee reads argument bytes kuna passes otherwise:
 /// the report, and kuna's bytes (a stand-in where it passes none) for a
 /// machine run that gives them to the callee.
 #[derive(Clone, Debug)]
@@ -172,8 +172,8 @@ impl Run<'_, '_, '_> {
             && p.inputs.iter().any(|&(o, n)| st.off < o + u64::from(n) && o < st.off + u64::from(st.size))
     }
 
-    /// Compare what a callee the machine ran for real read in argument
-    /// registers with what kuna's call passes there.
+    /// Compare what a callee the machine ran for real read with what kuna's
+    /// call passes there.
     fn check_inputs(&mut self, op: &Op, k: usize) -> Result<(), Halt> {
         let Some(live) = self.replay.get(k).filter(|r| r.at == op.at).and_then(|r| r.live_in.clone()) else { return Ok(()) };
         let env = self.state.env;
@@ -254,15 +254,47 @@ impl Run<'_, '_, '_> {
                 ));
             }
         }
-        if let Some(msg) = first {
+        let (stack_bytes, stack_msg) = self.stack_arguments(op.at, k);
+        if let Some(msg) = first.or(stack_msg) {
             if self.call_inputs.len() < CALL_INPUTS {
                 let locked = self.calls.site(op.at).locked;
-                self.call_inputs.push(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, kill_salt: 0 }, locked });
+                self.call_inputs.push(CallInput { msg, with: crate::machine::WithArgs { call: Some(k), bytes, stack_bytes, kill_salt: 0 }, locked });
             } else {
                 self.unkept_inputs += 1;
             }
         }
         Ok(())
+    }
+
+    fn stack_arguments(&self, at: u64, k: usize) -> (Vec<(u64, u8)>, Option<String>) {
+        let site = self.calls.site(at);
+        let machine = &self.replay[k];
+        let Some(stack) = machine.stack_in.as_ref().filter(|_| self.same_callee(machine.target, self.records[k].target, site)) else {
+            return (Vec::new(), None);
+        };
+        let args = &self.records[k].args;
+        let mut bytes = Vec::new();
+        let mut first = None;
+        for (off, read) in stack.bytes() {
+            let kuna = args.iter().enumerate().find_map(|(i, &v)| {
+                let st = site.stack_input(i)?;
+                let byte = off.checked_sub(st.off).filter(|&byte| byte < u64::from(st.size))?;
+                Some((v >> (8 * byte)) as u8)
+            });
+            if let Some(m) = read.filter(|&m| kuna != Some(m)) {
+                bytes.push((off, kuna.unwrap_or(!m)));
+                if first.is_none() {
+                    let what = kuna.map_or_else(|| "kuna's call passes nothing there".to_string(), |b| format!("kuna passes 0x{b:02x} there"));
+                    first = Some(format!("call at {at:#x}: the callee reads stack[{off:#x}] = 0x{m:02x}; {what}"));
+                }
+            } else if let Some(b) = kuna {
+                bytes.push((off, b));
+            }
+        }
+        if first.is_none() {
+            bytes.clear();
+        }
+        (bytes, first)
     }
 
     fn input(&mut self, op: &Op, k: usize) -> Result<u128, Halt> {
@@ -416,7 +448,7 @@ impl Run<'_, '_, '_> {
                 let indirect = direct.is_none();
                 let wide = target.is_some_and(|t| self.state.env.code_mapped(t));
                 let writes = self.state.writes_at_call(&args, wide);
-                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None, live_in: None })?;
+                crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None, live_in: None, stack_in: None })?;
                 let site = self.calls.site(at);
                 if site.noreturn {
                     return Ok(Flow::NoReturn);

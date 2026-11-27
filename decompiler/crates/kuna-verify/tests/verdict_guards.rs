@@ -25,7 +25,11 @@ fn specs() -> String {
 /// An object holding `.text` with the given functions, `(name, offset, size)`,
 /// and a call to the undefined function named at each offset in `calls`.
 fn object(name: &str, text: &[u8], functions: &[(&str, u64, u64)], calls: &[(u64, &str)]) -> PathBuf {
-    let mut obj = Object::new(BinaryFormat::Elf, Architecture::X86_64, Endianness::Little);
+    object_for(Architecture::X86_64, name, text, functions, calls)
+}
+
+fn object_for(arch: Architecture, name: &str, text: &[u8], functions: &[(&str, u64, u64)], calls: &[(u64, &str)]) -> PathBuf {
+    let mut obj = Object::new(BinaryFormat::Elf, arch, Endianness::Little);
     let code = obj.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
     obj.append_section_data(code, text, 16);
     let sym = |obj: &mut Object, name: &str, value, size, section| {
@@ -345,6 +349,51 @@ fn a_call_short_of_its_declared_prototype_is_caught() {
         .collect();
     assert!(!dropped.is_empty());
     assert!(dropped.iter().all(|r| r["killed"] == true), "{dropped:?}");
+}
+
+/// The caller returns callee(7) + 3. The callee reads its first cdecl slot,
+/// then either doubles it or masks off its low bit before returning.
+#[test]
+fn a_cdecl_stack_argument_is_replayed_for_a_real_callee() {
+    use kuna_verify::mutate::Operator;
+
+    let opts = Options { runs: 8, ..Options::default() };
+    let caller = [0x6a, 7, 0xe8, 7, 0, 0, 0, 0x83, 0xc4, 4, 0x83, 0xc0, 3, 0xc3];
+    for (name, calc, differs) in [("twice", [0x6b, 0xc0, 2], true), ("even", [0x83, 0xe0, 0xfe], false)] {
+        let text = [caller.as_slice(), &[0x8b, 0x44, 0x24, 4], &calc, &[0xc3]].concat();
+        let path = object_for(Architecture::I386, name, &text, &[("caller", 0, 14), ("callee", 14, 8)], &[]);
+        let script = kuna_verify::session::binary_script(&path.to_string_lossy(), &["caller".to_string()], &[]);
+        let mut checked = false;
+        kuna_verify::session::drive(script, None, &[specs()], |prog, fd| {
+            let r = kuna_verify::check::check_function(prog, fd, None, &opts);
+            assert_eq!(r.verdict, Verdict::Agrees(8), "{}", r.render());
+            let env = kuna_verify::state::Env::new(prog, opts.seed).unwrap();
+            let calls = kuna_verify::calls::sites(fd, &env);
+            let program = kuna_verify::program::compile(prog, fd, &calls);
+            let mutants = kuna_verify::mutate::mutants(&program, &calls);
+            let constant = mutants.iter().copied().find(|m| {
+                m.operator == Operator::Constant && matches!(program.blocks[m.block].ops[m.op].kind, kuna_verify::program::Kind::Call { .. })
+            }).expect("a mutant of the cdecl stack argument");
+            let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &opts, constant).unwrap();
+            assert!(reached);
+            if differs {
+                assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
+                assert!(r.lines.iter().any(|l| l.contains("reads stack[0x4] = 0x07; kuna passes 0x06")), "{}", r.render());
+                let no_replay = Options { call_reruns: 0, ..opts };
+                let (r, _, _) = kuna_verify::check::check_mutant(prog, fd, &no_replay, constant).unwrap();
+                assert!(r.verdict.label().starts_with("UNKNOWN(call-reruns"), "{}", r.render());
+                let dropped = mutants.into_iter().find(|m| m.operator == Operator::DropArg).unwrap();
+                let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &opts, dropped).unwrap();
+                assert!(reached);
+                assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
+                assert!(r.lines.iter().any(|l| l.contains("reads stack[0x4] = 0x07; kuna's call passes nothing")), "{}", r.render());
+            } else {
+                assert_eq!(r.verdict, Verdict::Agrees(8), "{}", r.render());
+            }
+            checked = true;
+        }).unwrap();
+        assert!(checked);
+    }
 }
 
 /// `report(int tag, const char *fmt, ...)` from `kuna-varargsave` (gcc -O2)

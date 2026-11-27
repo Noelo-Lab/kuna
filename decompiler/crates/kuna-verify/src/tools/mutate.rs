@@ -148,6 +148,9 @@ pub fn mutants(p: &Program, calls: &Calls) -> Vec<Mutation> {
                     if op.ins.len() > 1 {
                         add(Operator::DropArg);
                     }
+                    if stack_constant(op, calls.site(op.at)).is_some() {
+                        add(Operator::Constant);
+                    }
                 }
                 Kind::Call { direct: None } if op.ins.len() > 1 => add(Operator::DropArg),
                 _ => {}
@@ -155,6 +158,12 @@ pub fn mutants(p: &Program, calls: &Calls) -> Vec<Mutation> {
         }
     }
     out
+}
+
+fn stack_constant(op: &crate::program::Op, site: &crate::calls::Site) -> Option<usize> {
+    op.ins.iter().skip(1).enumerate().find_map(|(i, a)| {
+        (matches!(a.op, Operand::Const(_)) && site.stack_input(i).is_some()).then_some(i + 1)
+    })
 }
 
 /// Apply `m` to `p` and `calls`; a description of what changed, or `None`
@@ -175,6 +184,13 @@ pub fn apply(p: &mut Program, calls: &mut Calls, env: &Env, m: Mutation) -> Opti
             let was = *c;
             *c ^= 1;
             format!("constant {was:#x} -> {:#x}", *c)
+        }
+        (Operator::Constant, Kind::Call { .. }) => {
+            let index = stack_constant(op, calls.site(at))?;
+            let Operand::Const(c) = &mut op.ins[index].op else { return None };
+            let was = *c;
+            *c ^= 1;
+            format!("stack argument {index} constant {was:#x} -> {:#x}", *c)
         }
         (Operator::Swap, Kind::Eval(opc)) => {
             let s = format!("{opc:?} inputs swapped");
