@@ -1528,6 +1528,7 @@ impl Action for ActionActiveParam {
                 // arguments are arguments whatever the positional rules made
                 // of the gap in front of them.
                 crate::p4_calls::kuna_formattail::keep_declared_trials(&mut fc);
+                crate::p4_calls::kuna_wholeinputarg::widen(&mut fc, data);
                 let fixup = build_input_from_trials(&mut fc, data);
                 if let Some(p) = fixup.rescue {
                     pending_rescue.push(p);
