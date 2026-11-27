@@ -279,7 +279,9 @@ fifth of nine arguments; it keeps four parameters, also after `map prototype`
 declares the callee with four and the reload is dead (it printed `void` then).
 `unused2` spills two parameters and reads neither. `negatives` stores `rbx`,
 `r8` into `rcx`'s slot and a zeroed `r9`, and `reused` spills `rdx` and then
-keeps a local in its slot; both stay `void`.
+keeps a local in its slot; both stay `void`. `vararg` (MSVC /Od, taking the
+address of `rdx`'s slot for `va_start`) and `spillhigh` (gcc -O2, saving `rdx`,
+`r8` and `r9` without one) keep only their named `char *` parameter.
 
 `kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
 whose block holds unread flag writes once the register space has had a heritage

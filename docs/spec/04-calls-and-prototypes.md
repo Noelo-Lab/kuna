@@ -8371,12 +8371,28 @@ integers. A store of one argument register into another's slot (the CRT's
 computed, or of a callee-saved register (MSVC /O2 saves `rbx` and `rsi` in home
 slots) is not noted, the function's model must still accept the storage
 (`possible_input_param`), and a declared prototype for the function itself
-skips the recovery as before. Call sites are untouched, except where a rule
+skips the recovery as before. A variadic function's register save is not noted
+either (`kuna_homespill.rs (vararg_save)`). Every compiler stores the whole
+registers that may carry varargs, from the first unnamed argument's slot
+through `R9`'s, and `va_start` takes the address of that first slot; gcc also
+stores them in a variadic function that never calls `va_start`, leaving the
+named parameters' slots unwritten when it optimizes. So when the address of a
+home slot is used other than to load or store through it (`va_start`, or an
+out-parameter pointer into the slot), the run of whole-register spills that
+starts at such a slot and reaches `R9`'s slot is a save of varargs, and when no
+slot's address is taken, so is a run that reaches `R9`'s slot above slots the
+function never writes. A narrower spill, such as zlib's `uncompress` storing
+`r9d` and passing the slot's address as `&sourceLen`, stays a parameter.
+Without this, `int f(const char *fmt,...)` printed four parameters, and gcc's
+`snprintf.constprop.0` filled `r8`, which it never reads, below the `r9`
+vararg. An unoptimized variadic function that never calls `va_start` still
+shows its four registers: its prologue is that of a function declaring them.
+Call sites are untouched, except where a rule
 that reads the callee's recovered parameter list now finds the register in it:
 `protoorder` states the spilled parameter's type to callers, so a constant
 passed in it prints as that type (`__DestructExceptionObject(a0,1)` where the
 low byte of a leftover register was merged in before). `tests/stages/kuna-homespill-win64.xml`
-checks the spills, the refusals and an asserted callee;
+checks the spills, the refusals, both variadic saves and an asserted callee;
 `decompiler/crates/kuna-cli/tests/homespill_assert.rs` checks that a
 `prototype` assertion repeating the callee's own declaration changes only that
 call on `decompile-all` and in the `decompile-project` header.
