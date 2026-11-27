@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5590,
-    5590
+    5591,
+    5591
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -2459,6 +2459,7 @@
     "data:Pool fall-through #3",
     "data:Pool fall-through #4",
     "data:QUOTIENTRETURN #10: the double is the remainder",
+    "data:QUOTIENTRETURN #11: xmm1 alone leaves the quotient the return",
     "data:QUOTIENTRETURN #1: idiv then cvtsi2ss returns the float",
     "data:QUOTIENTRETURN #2: the float is the remainder",
     "data:QUOTIENTRETURN #3: a path that never writes rax returns the float",
