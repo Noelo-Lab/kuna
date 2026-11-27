@@ -197,6 +197,10 @@ pub struct Ledger {
     /// The functions in `words` a caller computed with wider than the word
     /// since [`due`] last ran.
     pub wide_due: BTreeSet<(int4, uintb)>,
+    /// The called functions [`due`] has to look at again: those whose claims,
+    /// recovered return, return storage, forced storage or withdrawal changed
+    /// since it last looked, and those it last forced or withdrew.
+    pub unsettled: BTreeSet<(int4, uintb)>,
 }
 
 fn key(entry: &Address) -> Option<(int4, uintb)> {
@@ -244,6 +248,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
             arch.kuna_voidret.storage.remove(&own);
         }
     }
+    arch.kuna_voidret.unsettled.insert(own);
     file_word(arch, own, word);
     if declared || !proto.has_store() || proto.is_input_locked() {
         arch.kuna_voidret.params.remove(&own);
@@ -706,6 +711,7 @@ pub fn withdrawals(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
     let bits_now: Vec<(int4, uintb)> = out.iter().filter(|k| ledger.float_bits.contains(k)).copied().collect();
     ledger.bits_withdrawn.extend(bits_now);
     ledger.withdrawn.extend(out.iter().copied());
+    ledger.unsettled.extend(out.iter().copied());
     out
 }
 
@@ -786,6 +792,7 @@ fn file_claim(arch: &mut Architecture, reader: (int4, uintb), callee: (int4, uin
     let claims = arch.kuna_voidret.read.entry(callee).or_default();
     if !claims.contains(&storage) {
         claims.push(storage);
+        arch.kuna_voidret.unsettled.insert(callee);
     }
     arch.kuna_voidret.readers.entry(callee).or_default().insert(reader);
 }
@@ -994,18 +1001,24 @@ pub(crate) fn read_storage(out: &crate::varnode::Varnode) -> Option<(Address, in
 /// withdrawn: it returns nothing again, as before the redo. Also each function
 /// returning a zero-extended word a caller reads wider, kept whole at the
 /// widest such read ([`crate::kuna_zextreturn::zero_extended_word`]).
+///
+/// Only the callees in `unsettled` are looked at. A callee's verdict reads
+/// nothing but its own claims, recovered return, return storage, forced storage
+/// and withdrawal, and one that forces or withdraws it changes them so that it
+/// comes out empty the next time, so every other callee would come out as it
+/// did when it was last looked at: with nothing to do.
 pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
-    let lows: BTreeMap<(int4, uintb), Option<(Address, int4)>> =
-        arch.kuna_voidret.read.iter().map(|(callee, claims)| (*callee, common_low_register(arch, claims))).collect();
-    let ledger = &mut arch.kuna_voidret;
+    let unsettled = std::mem::take(&mut arch.kuna_voidret.unsettled);
+    let ledger = &arch.kuna_voidret;
     let mut force: Vec<((int4, uintb), (Address, int4))> = Vec::new();
     let mut withdraw: Vec<(int4, uintb)> = Vec::new();
     let mut displace: Vec<(int4, uintb)> = Vec::new();
-    for (callee, claims) in &ledger.read {
+    for callee in &unsettled {
+        let Some(claims) = ledger.read.get(callee) else { continue };
         let Some(first) = claims.first() else { continue };
         let space = |a: &Address| a.get_space().map(|s| s.get_index());
         let same = claims.iter().all(|(a, _)| space(a) == space(&first.0) && a.get_offset() == first.0.get_offset());
-        let low = lows.get(callee).cloned().flatten().filter(|_| !same);
+        let low = if same { None } else { common_low_register(arch, claims) };
         let agree = same || low.is_some();
         let widest = match &low {
             Some(low) => low.clone(),
@@ -1028,6 +1041,7 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
             _ => {}
         }
     }
+    let ledger = &mut arch.kuna_voidret;
     ledger.displacing.extend(displace);
     let mut out = BTreeSet::new();
     for (callee, storage) in force {
@@ -1038,6 +1052,7 @@ pub fn due(arch: &mut Architecture) -> BTreeSet<(int4, uintb)> {
         ledger.withdrawn.insert(callee);
         out.insert(callee);
     }
+    ledger.unsettled.extend(out.iter().copied());
     for callee in std::mem::take(&mut ledger.wide_due) {
         let Some(word) = ledger.words.get(&callee) else { continue };
         let widest = ledger.used.get(&callee).and_then(|u| u.iter().filter(|u| widens(u, word)).max_by_key(|u| u.1));
@@ -1250,6 +1265,7 @@ pub fn return_storage(arch: &Architecture, k: (int4, uintb)) -> Option<(Address,
 /// as before.
 pub fn restore(arch: &mut Architecture, k: (int4, uintb), returns: Option<Returns>, storage: Option<(Address, int4)>) {
     arch.kuna_voidret.displacing.remove(&k);
+    arch.kuna_voidret.unsettled.insert(k);
     match returns {
         Some(r) => {
             arch.kuna_voidret.returns.insert(k, r);
