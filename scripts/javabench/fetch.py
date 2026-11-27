@@ -3,8 +3,9 @@
 Every downloaded file is SHA-256 pinned in ``pins/<project>.json`` (the lock the
 original fetch wrote). A project without a pin is resolved with coursier and its
 lock WRITTEN to ``<workspace>/locks/``; every fetch with a pin or lock
-re-downloads exactly the locked coordinates (``--intransitive``) and fails on
-any checksum mismatch. Archives are treated as untrusted data: only
+re-downloads exactly the locked coordinates from Maven Central, with no
+resolution (coursier's ``--intransitive`` still reconciles versions across
+them), and fails on any checksum mismatch. Archives are treated as untrusted data: only
 ``.class`` / ``.java`` entries with safe relative names are extracted, into a
 fresh directory, and nothing from them is ever executed.
 
@@ -218,8 +219,11 @@ def fetch_maven(proj: P.Project, lock: dict | None, work: Path) -> tuple[dict, d
             else:
                 extract_sources(data, sources)
     if lock and lock.get("deps"):
-        coords = [d["coord"] for d in lock["deps"]]
-        resolved = coursier(["--intransitive", *coords], work / "coursier.json")
+        resolved = []
+        for d in lock["deps"]:
+            dest = maven_cache_path(d["coord"])
+            download(maven_url(d["coord"]), dest, d["sha256"])
+            resolved.append({"coord": d["coord"], "file": str(dest)})
     else:
         args = []
         if proj.bom:
