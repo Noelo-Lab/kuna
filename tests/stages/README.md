@@ -942,3 +942,17 @@ with one pass.
 `vcmp`/`vcmpe` and `vmrs APSR_nzcv, fpscr`. The hardware sets C for unordered
 operands, so `hi` and `cs` are taken for a NaN and `ls` and `cc` are not; each
 printed test is false exactly when its branch is taken, NaN included.
+
+`kuna-epiloguepop.xml`, `kuna-epiloguepop-sysv.xml` and
+`kuna-epiloguepop-x87.xml` check float functions whose eight-byte (i386:
+four-byte) frame is a `push rax` / `pop rax` and whose spill overwrote the
+pushed slot (GH-1969). The register the epilogue pops is not the return value
+beside the float in `xmm0` or `ST0`: the Win64 half selection
+`((float *)&d)[i]` keeps its index parameter and indexed read, a Win64 float
+array is returned by index, clang's System V `float twice(float x) { g(); return
+x * 2.0f; }` returns `a0 + a0`, the issue's function without a red zone reads as
+its red-zone build, and the i386 `twice` returns `ST0`. A `pushfq; pop rax`
+still returns the flags, a pop beside an `xmm0` that is only stored still
+returns the popped argument, an eight-byte `struct { float f; int i; }`
+built in the frame and popped into `rax` keeps its `rax` return, and clang
+`-Oz`'s `push 5; pop rax` beside a discarded float read still returns 5.
