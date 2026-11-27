@@ -475,6 +475,12 @@ impl FinallyProcessor {
 
             if let Some(block_statement) = block_statement {
                 let handler = fstat.get_handler();
+                if is_true_exit
+                    && firstcode != 1
+                    && node.block().is_some_and(|b| !handler.contains_statement(b.0))
+                {
+                    return None;
+                }
                 for edge in block_statement.get_successor_edges(Statement::STATEDGE_DIRECT_ALL) {
                     if edge.get_type() != StatEdge::TYPE_REGULAR
                         && handler.contains_statement(block_statement.0)

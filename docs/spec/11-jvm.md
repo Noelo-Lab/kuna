@@ -453,6 +453,16 @@ where a `catch (Throwable)` then caught `t`, or an exception escaped that the `f
 `return` swallowed. kuna (`get_finally_information`) also requires that the block's exit
 is the rethrow of the stored exception, which the same pass already records per exit block.
 
+The handler's shape is read from the blocks of the catch-all's handler statement, but the
+structurer can place the rethrow outside it: in `while (..) { try { .. } catch (..) { .. }
+finally { if (c) break; } .. }` the handler's `aload; athrow` came after the loop body.
+The pass then saw a handler without a rethrow, matched the copies without one, found no
+code to continue at after them and sent the end of the `try` to the method's exit, which
+deleted the rest of the loop, and left `throw var3` with its store removed (Vineflower
+prints the same). A handler whose stored exception is rethrown from a block outside the
+handler statement is now read as inconsistent: it stays a `catch (Throwable)` with its copies
+where javac placed them.
+
 The schedule then rebuilds `synchronized` statements once more, removes their exception
 handlers (`DomHelper::remove_synchronized_handler`), condenses sequences and clears
 structure-only statements

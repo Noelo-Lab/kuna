@@ -595,7 +595,7 @@ kuna	dc0201b9af22b746
 case	default/pkg/TestLoopBreakException	Default	classes/java8/pkg/TestLoopBreakException
 kuna	e9b87c7479d5af5a
 case	default/pkg/TestLoopFinally	Default	classes/java8/pkg/TestLoopFinally
-kuna	6cb8dac6bd5cabab
+kuna	56f9b55e4b190370
 case	default/pkg/TestLoopMerging2	Default	classes/java8/pkg/TestLoopMerging2
 kuna	afba6960c702a585
 case	default/pkg/TestLoopReturn	Default	classes/java8/pkg/TestLoopReturn
@@ -2060,3 +2060,5 @@ case	kuna-fixes/pkg/TestRecordPatternInstanceofType	Kuna Fixes	kuna-fixes/classe
 case	kuna-fixes/pkg/TestStaticInitAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitAfterCall
 # kuna-fixes/src/pkg/TestNestedAlreadyCaught.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestNestedAlreadyCaught	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedAlreadyCaught
+# kuna-fixes/src/pkg/TestFinallyRethrowOutside.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFinallyRethrowOutside	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyRethrowOutside
