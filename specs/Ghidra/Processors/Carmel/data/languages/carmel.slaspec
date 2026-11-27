@@ -8610,6 +8610,60 @@ compact_direct_store_ce2: "CE2" is move_store_right_ce=1 {
     carmel_end_unmodeled_issue();
 }
 
+macro compact_store_scale_40(bits, result) {
+    local signed_wide:8 = (bits ^ 0x8000000000) - 0x8000000000;
+    result = signed_wide s>> ((ECFG >> 5) & 1);
+}
+
+# The primary long result takes RN6 and incoming X1, not the DATA input
+# sampled for the peer. Its flags are computed before SR1; its limiter
+# mask enables SR1 and FFT, but not ALIM or SAT.
+:MPYUS "CE1" "*R1+=RN1:long","X1","RN6" "||" "ADDABS" "*R5","*R0","A5H" is
+    (carmel_issue=1 & slot_mode=0 & carmel_phase_emit=1 & carmel_single_issue=0 &
+     hw_loop_actions=0 & slot_0_22=0x48291d); (slot_mode=0 & slot_0_22=0x1c2f40) {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local low:2 = R1;
+    local high:2 = low + 1;
+    local word:2 = R5;
+    if (admitted == 0) goto <operands>;
+    modify_native_agu(R1, RN1, RM0, RL0, RM0_ALIGN, 2:4, 1:2);
+  <operands>
+    local input:2 = *[data]:2 R0;
+    local status:2 = EST & 0xcfff;
+    if (admitted == 0) goto <right>;
+    # Three reservations can share an address in a flexible bank; the
+    # two-active-short alias check does not apply to a long plus a short.
+    if (((low ^ high) | (low ^ word)) < 0x8000) goto <stopped>;
+    local bank:2 = word & 0xc000;
+    if (bank == 0 || bank == 0xc000) goto <left>;
+    if (((low ^ word) & 0xc001) != 0 && ((high ^ word) & 0xc001) != 0) goto <left>;
+  <stopped>
+    carmel_data_write_conflict();
+    goto <stopped>;
+  <left>
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <right>;
+    local product:8;
+    raw_mac_product(X1, RN6, 0:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 0:1, 0:1, 0:1, result, active);
+    raw_mac_flags(status, active, 0);
+    compact_store_scale_40(result, result);
+    compact_pair_fft(product, result, 0:1, status);
+    compact_pair_long_store(low, result);
+  <right>
+    local sum:8;
+    compact_pair_addabs_word(input, A5H, 1:1, sum, result, active);
+    raw_mac_flags(status, active, 6);
+    compact_store_scale_40(result, result);
+    compact_pair_fft(sum, result, 1:1, status);
+    *[data]:2 word = result(2);
+    publish_alu_ce(status);
+    carmel_end_unmodeled_issue();
+}
+
 # Both DATA write addresses reserve their bus before either lane evaluates
 # its result predicate. The source postincrement uses the incoming word.
 :ADDABS "CE1" pair_ptr_11,pair_word_6,pair_ptr_1 "||" "SUB CE2" pair_ptr_7,pair_acc_4,cmp_full_rhs_full is

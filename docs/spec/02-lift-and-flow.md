@@ -4089,6 +4089,13 @@ stores to the same word, or two reservations on the same interleaved
 port, stop before either write commits. Unqualified lanes bypass both
 gates; enabled lanes apply the signed `ECFG.SR1` shift before writeback.
 
+In the paired `MPYUS` long and `ADDABS` short store, the long reservation
+uses the incoming pointer and its physical successor, regardless of
+postmodifier. The multiply reads `X1` and `RN6`, while `ADDABS` reads
+its own DATA word. SR1 shifts the complete signed long before its
+two-word split. A long and a short can share a flexible-bank word
+when the bus has room; the right short retires after the long.
+
 The mixed signed/unsigned compact multiply fetches a signed word at
 old `R7` and an unsigned word at `R2+RN2`. Address admission advances
 `R7`, but the later predicate alone writes the product's high word

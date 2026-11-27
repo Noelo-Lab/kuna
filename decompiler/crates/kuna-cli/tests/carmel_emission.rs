@@ -1991,6 +1991,73 @@ fn carmel_parallel_short_stores_reserve_ports_before_result_veto() {
 }
 
 #[test]
+fn carmel_parallel_long_short_stores_commit_after_shared_port_arbitration() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const PAIR: [u8; 6] = [0x48, 0x29, 0x1d, 0x1c, 0x2f, 0x40];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("mixed-store.bin");
+    let source = scratch.path().join("mixed-store.c");
+    let executable = scratch.path().join("mixed-store");
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n#include <setjmp.h>\n\
+        static jmp_buf conflict;\nstatic void carmel_data_write_conflict(void) { longjmp(conflict, 1); }\n\
+        static volatile unsigned short mem_0, mem_1, mem_2, mem_3;\n");
+    let mut checks = String::new();
+    for (i, (long, word, rn6, x1, a5h, ecfg, cfg, table, expected)) in [
+        (0x4040u16, 0x8048, 3, 0xba98, 0xfffe, 0, 0x1000, 0xffff, Some((0x4042, 0x3000, [0x2fc8, 2, 3]))),
+        (0x7fff, 0x8001, 0xffff, 0x8000, 0xfffe, 32, 0x1000, 0xffff, Some((0x8001, 0x3010, [0xc000, 0xffff, 1]))),
+        (0xffff, 0, 3, 0xba98, 2, 0, 0x1000, 0xffff, Some((1, 0x3000, [0x2fc8, 3, 0x9a3d]))),
+        (0x4040, 0x8048, 0x8000, 0xffff, 2, 1, 0x1000, 0xffff, Some((0x4042, 0x3034, [0, 1, 3]))),
+        (0x4040, 0x8048, 3, 0xba98, 0x8000, 4, 0x1000, 0, Some((0x4042, 0x0900, [0xa12b, 0x783c, 0x7fff]))),
+        (0x4040, 0x4048, 3, 0xba98, 2, 0, 0, 0, Some((0x4040, 0, [0xa12b, 0x783c, 3]))),
+        (0x7fff, 0x8000, 3, 0xba98, 2, 0, 0x1000, 0, None),
+    ].into_iter().enumerate() {
+        let mut code = vec![NOP; 6];
+        code.extend([PAIR, NOP, NOP, NOP, NOP, NOP, RET, NOP]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let specs = scratch.path().join(format!("mixed-store-specs-{i}"));
+        tracked_carmel_entry_specs(&specs, &[
+            ("R0", 0x40), ("R1", long), ("R5", word), ("RN1", 2), ("RN6", rn6),
+            ("PACFG", 0), ("ECFG", ecfg), ("EST", 0), ("FFTV", 0),
+            ("A5H", a5h), ("X1", x1), ("CECFG1", cfg), ("CECFG2", 0), ("CETBL", table),
+        ], 0, 0);
+        for (reg, result) in [("R1", expected.map(|v| v.0)), ("EST", expected.map(|v| v.1))] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            ]);
+            let cells = [long, long.wrapping_add(1), word, 0x40];
+            for (j, address) in cells.into_iter().enumerate() {
+                if !cells[..j].contains(&address) {
+                    kuna.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short mem_{j}")]);
+                }
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let f = &json["functions"][0];
+            assert!(f["error"].is_null(), "{f}");
+            let name = format!("mixed_store_{i}_{reg}");
+            writeln!(c, "#define sub_0 {name}\n{}\n#undef sub_0", f["code"].as_str().unwrap()).unwrap();
+            writeln!(checks, "mem_0 = 0xa12b; mem_1 = 0x783c; mem_2 = 0x9a3d; mem_3 = 1;").unwrap();
+            if let (Some(result), Some((_, _, [lo, hi, right]))) = (result, expected) {
+                writeln!(checks, "if ({name}() != {result} || mem_0 != {lo} || mem_1 != {hi} || \
+                    mem_2 != {right} || mem_3 != 1) return {};", i + 1).unwrap();
+            } else {
+                writeln!(checks, "if (setjmp(conflict) == 0) {{ {name}(); return {}; }}\n\
+                    if (mem_0 != 0xa12b || mem_1 != 0x783c || mem_2 != 0x9a3d || mem_3 != 1) return {};", i + 1, i + 1).unwrap();
+            }
+        }
+    }
+    writeln!(c, "int main(void) {{\n{checks}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_compact_shifted_mac_uses_guard_and_separates_qualification() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
