@@ -595,7 +595,7 @@ kuna	dc0201b9af22b746
 case	default/pkg/TestLoopBreakException	Default	classes/java8/pkg/TestLoopBreakException
 kuna	e9b87c7479d5af5a
 case	default/pkg/TestLoopFinally	Default	classes/java8/pkg/TestLoopFinally
-kuna	360397b9e0117fe5
+kuna	6cb8dac6bd5cabab
 case	default/pkg/TestLoopMerging2	Default	classes/java8/pkg/TestLoopMerging2
 kuna	afba6960c702a585
 case	default/pkg/TestLoopReturn	Default	classes/java8/pkg/TestLoopReturn
@@ -905,7 +905,7 @@ kuna	842ff5967e7b2fae
 case	default/pkg/TestSwitchFinally	Default	classes/java8/pkg/TestSwitchFinally
 kuna	74be45cd6e8c5c44
 case	default/pkg/TestSwitchInTry	Default	classes/java8/pkg/TestSwitchInTry
-kuna	e6703a1336514686
+kuna	e8e013ce78532ebb
 case	default/pkg/TestSwitchLoop	Default	classes/java8/pkg/TestSwitchLoop
 kuna	e57fdfff9b22ea71
 case	default/pkg/TestSwitchOnEnum	Default	classes/java8/pkg/TestSwitchOnEnum
@@ -2052,3 +2052,5 @@ case	kuna-fixes/pkg/TestNestedLambdaCapturedGeneric	Kuna Fixes	kuna-fixes/classe
 case	kuna-fixes/pkg/TestFinallyBodyThrows	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyBodyThrows
 # kuna-fixes/src/pkg/TestForEachArrayIncrement.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestForEachArrayIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestForEachArrayIncrement
+# kuna-fixes/src/pkg/TestExitCopiedIntoTry.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestExitCopiedIntoTry	Kuna Fixes	kuna-fixes/classes/pkg/TestExitCopiedIntoTry

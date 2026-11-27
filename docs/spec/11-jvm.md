@@ -818,6 +818,21 @@ while `c` is false iterated over all of them. The increment is now the last stat
 block every `continue` edge of the loop leaves from, so it runs before every jump back, and it
 must be `i++` or `++i` on the index variable itself; otherwise the loop stays a `while`.
 
+**An exit copied into a `try` (kuna).** `ExitHelper::integrate_exits` replaces a `break` to a
+block that holds only a `return` or `throw` with a copy of that exit, at the place of the `break`.
+When the `break` leaves a `try`, a `finally` or a `synchronized` body, the copy lands in it, which
+Vineflower did not check: `for (..) { try { switch (..) { .. } break; } catch (Exception e) {} }
+return Arrays.asList(ret);` printed the `return` in both cases of the switch, where the `catch`
+covers `Arrays.asList` and continues the loop when it throws, and a `return n` copied into a `try`
+whose `finally` assigns `n` returned the value from before the `finally`.
+`decompiler/managed/kuna-jvm/src/p8_structure/exit_helper.rs (ExitHelper::moves_into_protected)`
+walks from the place of the copy to the statement the jump leaves and refuses the copy when it
+passes a protected body the exit could run differently in: a `try` with a `catch` or a
+`synchronized` body unless the exit is a `return` of nothing, a constant or a variable (which
+cannot throw), and the `try` of a `finally` unless it returns nothing or a constant (the
+`finally` runs after the value is computed). The `break` then stays, labelled where it leaves
+an outer statement.
+
 **ECJ's layout (kuna).** In a class the Eclipse compiler wrote (section 11.3) the rules above
 read ECJ's code, which places an `if`'s branches, its exits and its `continue` and `break`
 jumps as javac does, with two differences.
