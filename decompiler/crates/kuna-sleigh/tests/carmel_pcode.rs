@@ -629,6 +629,34 @@ fn direct_repeat_zero_publishes_ce_without_running_the_annulled_issue() {
 }
 
 #[test]
+fn immediate_repeat_publishes_ce_at_setup_and_annul_without_an_extra_iteration() {
+    for (mode, right) in [(1, false), (1, true), (2, false), (3, true), (5, false)] {
+        for (count, est) in [(0u32, 0x1000), (1, 0x1009), (2, 0x3000)] {
+            let repeat = 0x2bc000 | count;
+            let root = match mode {
+                2 => (SEQUENTIAL | repeat, INC_A0),
+                3 => (SEQUENTIAL | NOP, repeat),
+                5 => (0x800000 | count, 0xcef800),
+                _ if right => (NOP, repeat),
+                _ => (repeat, NOP),
+            };
+            let next = if mode == 2 { (NOP, NOP) } else { (INC_A0, NOP) };
+            let mode0 = if mode == 3 { 2 } else { mode };
+            let (next_size, mode1) = if mode0 == 2 { (3, 3) } else { (6, 0) };
+            let mut m = Machine::new(
+                0, &[root, next, (NOP, NOP), (NOP, NOP)],
+                &[(0, mode0, next_size), (1, mode1, 6), (2, 1, 6), (4, 1, 6), (6, 1, 0)], None,
+            );
+            m.seed(&[("A0L", 0xffff), ("CECFG1", 0x08ed), ("CECFG2", 0x08cd), ("CETBL", 0xe132)]);
+            m.start(u64::from(mode == 3)).unwrap();
+            assert_eq!(m.step(), if mode == 2 { 6 } else { 12 });
+            assert_eq!((m.reg("EST"), m.reg("A0L")), (est, u64::from(count.wrapping_sub(1) & 0xffff)),
+                       "{mode}, {right}, {count}");
+        }
+    }
+}
+
+#[test]
 fn wide_data_store_uses_the_old_word_address_and_postincrements_r0() {
     for (low, expected_r0) in [(0xc64000, 0x4100), (0xc64040, 0x4101)] {
         let mut m = Machine::new(0, &[(0x808e4c, low), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);

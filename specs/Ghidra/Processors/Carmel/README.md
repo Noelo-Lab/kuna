@@ -93,6 +93,8 @@ repeats. For wide CE1
 REPEAT, a veto with address enable clear executes that issue once; otherwise
 the immediate count applies. REPEAT does not lift a transfer or DATA access
 in the repeated issue.
+Unqualified immediate REP with no arithmetic peer also publishes condition
+feedback during an annulled body's idle clock.
 Selected dynamic REPEAT forms sample `A0L`, a postmodified `R1`, an absolute
 DATA word, or a literal before three setup issues. A zero count skips only
 the first body issue. The direct DATA and literal forms publish condition
