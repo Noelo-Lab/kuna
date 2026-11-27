@@ -404,7 +404,8 @@ impl Walk<'_, '_> {
     }
 
     /// Preserve caller storage only if the local helper returns with that same value.
-    /// A branch, an opaque call or an unbounded helper leaves its effects unknown.
+    /// A branch, an opaque call, a store through an unknown address or an unbounded
+    /// helper leaves its effects unknown.
     fn local_effects(&mut self, caller: &State, raw: u64) -> Option<State> {
         let arm = self.image.file.architecture() == object::Architecture::Arm;
         let mut pc = self.image.pc(raw);
@@ -476,6 +477,14 @@ impl Walk<'_, '_> {
                         self.call(&mut st, Some(func));
                     }
                     CPUI_BRANCH | CPUI_CBRANCH | CPUI_BRANCHIND | CPUI_CALL => return None,
+                    CPUI_STORE
+                        if self
+                            .value(&st, &op.ins[1])
+                            .and_then(|v| v.slot(op.ins[2].size))
+                            .is_none() =>
+                    {
+                        return None
+                    }
                     _ => self.step(&mut st, op),
                 }
             }

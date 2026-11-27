@@ -83,6 +83,15 @@ fn ndk_interfaces_and_registered_methods_use_the_target_abi() {
 }
 
 #[test]
+fn a_table_a_helper_patches_through_an_index_is_not_registered() {
+    for abi in ["aarch64", "x86_64"] {
+        let json = output(&["functions", &image(&format!("patched-helper-{abi}")), "--json"]);
+        assert!(json.contains("Java_x_Z_kept"), "{abi}: {json}");
+        assert!(!json.contains("Java_x_Y_patched"), "{abi}: {json}");
+    }
+}
+
+#[test]
 fn a_linux_elf_can_export_the_same_jni_names() {
     let image = image("x86_64-linux-gnu");
     let hook = output(&["decompile", &image, "JNI_OnLoad"]);

@@ -3372,7 +3372,9 @@ RegisterNatives call it resolves the constant table and count, checks the
 relocated name and descriptor and the executable implementation address, and
 binds each unambiguous Java method at that address. Registration sites are
 collected in JNI_OnLoad. The walk can inspect a straight-line local helper
-to determine which caller values survive its return. A
+to determine which caller values survive its return; a helper
+that stores through an address the walk cannot evaluate is treated as an
+unmodelled call. A
 table, or a class, name or descriptor string, that the walk stores into or
 whose address it passes to code it does not model is not read from the image,
 because its contents may differ at run time. The entries are available
