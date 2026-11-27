@@ -920,7 +920,7 @@ kuna	002411973871f560
 case	default/pkg/TestSelfIterableLoop	Default	classes/jasm/pkg/TestSelfIterableLoop
 kuna	31f5cde8bf1625d4
 case	default/pkg/TestSharedVarIndex	Default	classes/java8/pkg/TestSharedVarIndex
-kuna	e8364d9ea8d1c023
+kuna	0a545799b17991b9
 case	default/pkg/TestShiftAssignmentInCall	Default	classes/java8/pkg/TestShiftAssignmentInCall
 kuna	dec17aa602f9b7be
 case	default/pkg/TestShiftLoop	Default	classes/java8/pkg/TestShiftLoop
@@ -2185,6 +2185,8 @@ opt	jvm_plugins	1
 # kuna-fixes/src/pkg/TestUnlistedAnonymousClass.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
 case	kuna-fixes/pkg/TestUnlistedAnonymousClass	Kuna Fixes	kuna-fixes/classes/pkg/TestUnlistedAnonymousClass	kuna-fixes/classes/pkg/UnlistedQueue	kuna-fixes/classes/pkg/UnlistedTask	kuna-fixes/classes/pkg/UnlistedHandler	kuna-fixes/classes/pkg/UnlistedSink	kuna-fixes/classes/pkg/UnlistedSource
 opt	jvm_plugins	1
+# kuna-fixes/src/pkg/TestUnreadBlockLocal.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUnreadBlockLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestUnreadBlockLocal
 # kuna-fixes/src/pkg/TestUnrepresentableType.kt, kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21)
 case	kuna-fixes/pkg/TestUnrepresentableType	Kuna Fixes	kuna-fixes/classes/pkg/TestUnrepresentableType
 opt	jvm_plugins	1

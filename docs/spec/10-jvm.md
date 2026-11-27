@@ -845,6 +845,13 @@ merged into that variable (Vineflower splits `it = new Wrapper(it)` or `origin =
 origin.getParent()` into a new `var3`). Every merge is refused when a read of one variable could see
 a write of the other (`fixes::var_merge::var_merge_liveness::overwrites_live`, both ways), and a variable a
 lambda or a local or anonymous class captures, or a `final` one, is neither moved nor merged.
+A variable none of whose instructions an entry covers takes the name of an entry that starts
+right after one of its stores (the offsets an occurrence records can lie up to four bytes before
+its store instruction), unless another variable of the slot stores in between: javac starts a
+local's entry after the store that declares it and writes no entry for a local never read, so in
+`{ int[] counts = new int[n]; } String text = "n=";` the entry `text` starts after the second
+store, and the unread array stays a variable of its own instead of being merged into `text`
+(`int[] text = new int[n]; text = "n=";`, which javac rejects).
 `order_declarations` moves only variables the table names. `VarDefinitionHelper::merge_check`
 refuses to merge two variables the table names differently (`kuna_source_locals::named_apart`,
 `properties` and a later block's `subFields`). Increments
