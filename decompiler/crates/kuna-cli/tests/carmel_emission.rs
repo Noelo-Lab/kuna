@@ -5633,6 +5633,64 @@ fn carmel_compact_ff12_data_and_stack_select_physical_words() {
 }
 
 #[test]
+fn carmel_compact_move_literal_and_ff_ports_execute_in_emitted_c() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("compact-move.bin");
+    let source = scratch.path().join("compact-move.c");
+    let executable = scratch.path().join("compact-move");
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(&specs, &[
+        ("R0", 0x40), ("R6", 0x8048), ("RN6", 3), ("PACFG", 0),
+    ], 0x1000, 0);
+    let nop = [0x2b, 0xec, 0];
+    let inc = [0x21, 0xac, 0x20];
+    let zero = [0x31, 0x9a, 0];
+    let seq = [0xb1, 0x9a, 0x3e];
+    let read = [0x31, 0x2f, 0x80];
+    let store = [0x31, 0x43, 0xbc];
+    let packet = |left: [u8; 3], right: [u8; 3]| [left[0], left[1], left[2], right[0], right[1], right[2]];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short src, dst;\n");
+    let mut calls = String::new();
+    for (i, (first, second, reg, expected, expected_dst, config)) in [
+        (packet(zero, nop), packet(nop, nop), "EST", 0x0c, 0x1111, 4),
+        (packet(nop, zero), packet(nop, nop), "EST", 0x224, 0x1111, 4),
+        (packet(seq, nop), packet(nop, nop), "A5H", 0x1f, 0x1111, 4),
+        (packet(read, nop), packet(store, nop), "FF1", 0xb679, 0xb679, 4),
+        (packet(nop, read), packet(nop, store), "FF2", 0xb679, 0xdb3c, 0x24),
+        (packet(nop, read), packet(nop, store), "FF1", 0x1234, 0xdb3c, 0x24),
+        (packet(read, nop), packet(store, nop), "R6", 0x804b, 0xdb3c, 0x24),
+        (packet(read, nop), packet(store, nop), "EST", 0x24, 0xdb3c, 0x24),
+    ].into_iter().enumerate() {
+        let code = [packet(inc, nop), packet(nop, nop), first, second, packet(nop, nop),
+                    packet([0x2b, 0xd8, 0], nop), packet(nop, nop), packet(nop, nop)];
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000", "--target", "Carmel:BE:24:default:default",
+            "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            "--assert", "data [data,0x40] volatile unsigned short src",
+            "--assert", "data [data,0x8048] volatile unsigned short dst",
+        ]);
+        for (n, input) in ["A0L", "EST", "ECFG", "CECFG1", "CECFG2", "CETBL", "FF1", "FF2"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+        }
+        let out = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+        let fun = &json["functions"][0];
+        assert!(fun["error"].is_null(), "{reg}: {fun}");
+        let name = fun["name"].as_str().unwrap();
+        writeln!(c, "#define {name} move_port_{i}\n{}\n#undef {name}", fun["code"].as_str().unwrap()).unwrap();
+        writeln!(calls, "src=0xb679; dst=0x1111; if (move_port_{i}(0x7fff,0,{config:#x},0x1000,0x1000,0,0x1234,0xf678) != {expected:#x} || src != 0xb679 || dst != {expected_dst:#x}) return {};", i + 1).unwrap();
+    }
+    writeln!(c, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_compact_shift_lane_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

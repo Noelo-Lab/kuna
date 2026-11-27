@@ -3293,6 +3293,53 @@ macro move_address_literal(dst, immediate, cfg, bank) {
 :"MOVE CE1" address_literal_dst,address_literal_value "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(ADDRESS_LITERAL)); (slot_mode=0 & nop_right) { move_address_literal(address_literal_dst, address_literal_value, CECFG1, 0); }
 :^nop_left "||" "MOVE CE2" address_literal_dst,address_literal_value is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(ADDRESS_LITERAL)) { move_address_literal(address_literal_dst, address_literal_value, CECFG2, 1); }
 
+@define SHORT_A5H_MOVE "slot_6_22=0xc668 & slot_0_0=0 & slot_1_5"
+
+macro move_a5_high_literal(value, lane) {
+    local incoming:2 = EST;
+    local staged:4;
+    stage_move(value, staged);
+    commit_half(A5H, staged, lane);
+    publish_ce_feedback(EST & 0xcfff, incoming);
+}
+
+:MOVE "A5H",slot_1_5 is carmel_issue=2 & slot_mode=1 & $(SHORT_A5H_MOVE) {
+    move_a5_high_literal(slot_1_5, 0);
+}
+:MOVE "A5H",slot_1_5 "||" nop_right is (carmel_issue=1 & slot_mode=0 & $(SHORT_A5H_MOVE)); (slot_mode=0 & nop_right) {
+    move_a5_high_literal(slot_1_5, 0);
+}
+:^nop_left "||" "MOVE" "A5H",slot_1_5 is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SHORT_A5H_MOVE)) {
+    move_a5_high_literal(slot_1_5, 6);
+}
+
+macro compact_move_read_ff(port) {
+    local address:2 = R0;
+    port = *[data]:2 address;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+macro compact_move_write_ff(port) {
+    local address:2 = R6;
+    modify_ptr(R6, RN6, RM6, RL6, 12, 1);
+    local shifted:2 = port s>> ((ECFG >> 5) & 1);
+    *[data]:2 address = shifted;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:MOVE "FF1","*R0" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x312f80); (slot_mode=0 & nop_right) {
+    compact_move_read_ff(FF1);
+}
+:^nop_left "||" "MOVE" "FF2","*R0" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x312f80) {
+    compact_move_read_ff(FF2);
+}
+:MOVE "*R6+=RN6","FF1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_22=0x3143bc); (slot_mode=0 & nop_right) {
+    compact_move_write_ff(FF1);
+}
+:^nop_left "||" "MOVE" "*R6+=RN6","FF2" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x3143bc) {
+    compact_move_write_ff(FF2);
+}
+
 reset_of_live: enabled is epsilon [ enabled = 1; ] { export *[const]:1 enabled; }
 reset_of_live: is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
     local live:1 = carmel_operand_fetch_survives(1:1);

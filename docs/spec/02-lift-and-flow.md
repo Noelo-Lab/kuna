@@ -4115,6 +4115,15 @@ The stored word is arithmetically shifted by `ECFG.SR1`, and the copy
 does not set ALU flags. Two update requests for the same pointer are
 not this legal route.
 
+The unqualified compact `MOVE` short literal to `A5H` zero-extends the
+five-bit source. It leaves `A5L` and the guard intact and sets zero in
+the physical result lane without clearing sticky L. An unqualified
+`MOVE FF12,*R0` captures one DATA word without changing `R0` and
+forwards it to a following `MOVE *R6+=RN6,FF12`. The idle peer chooses
+which physical FF register the active slot uses. The store postmodifies
+`R6`, writes its old address with the `ECFG.SR1` word shift, and leaves
+the arithmetic flags intact, as does the load.
+
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
