@@ -803,7 +803,7 @@ kuna	b08d85166d477120
 case	default/pkg/TestRecordPatterns5	Default	classes/java21/pkg/TestRecordPatterns5
 kuna	3141226b5166a334
 case	default/pkg/TestRecordPatterns6	Default	classes/java21/pkg/TestRecordPatterns6
-kuna	54c381101e899790
+kuna	a9c8936f5a256121
 case	default/pkg/TestRecordPatterns7	Default	classes/java21/pkg/TestRecordPatterns7
 kuna	ceafb9a7e35d64b5
 case	default/pkg/TestRecordPatterns8	Default	classes/java21/pkg/TestRecordPatterns8
@@ -1069,7 +1069,7 @@ kuna	732a821e5f189175
 case	default/pkg/TestUnknownCastJ17	Default	classes/java17preview/pkg/TestUnknownCastJ17
 kuna	21e1e1efee29a1bc
 case	default/pkg/TestUnnamedVar1	Default	classes/java25/pkg/TestUnnamedVar1
-kuna	1d8d295bf3eaaa7f
+kuna	095f9bedff24a1e9
 case	default/pkg/TestVarHandles	Default	classes/java9/pkg/TestVarHandles
 kuna	372e00877f3d94b6
 case	default/pkg/TestVarIndex	Default	classes/java8nodebug/pkg/TestVarIndex
@@ -2016,3 +2016,5 @@ case	kuna-fixes/pkg/TestIncrementBeforeCondition	Kuna Fixes	kuna-fixes/classes/p
 case	kuna-fixes/pkg/TestStaticInitializerOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitializerOrder
 # kuna-fixes/src/pkg/TestFieldReadAfterCall.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestFieldReadAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestFieldReadAfterCall
+# kuna-fixes/src/pkg/TestRecordPatternNestedType.java, javac 21.0.13.1 (-g:none --release 21)
+case	kuna-fixes/pkg/TestRecordPatternNestedType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternNestedType

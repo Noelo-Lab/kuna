@@ -534,7 +534,12 @@ and most changes restart the loop from the top, so the order below is a priority
    (IfPatternMatchProcessor::match_instanceof)` turns `instanceof` followed by a cast into
    an `instanceof` pattern, record patterns included. (kuna) Only from javac's compiled
    pattern (fix `pattern_binding_shape`, section 10.16), and not where the line table shows
-   the cast as a statement (source patterns, section 10.10).
+   the cast as a statement (source patterns, section 10.10). (kuna) A record component matched
+   by a nested type test (`R(String s)` for `record R(Object o)`: javac tests the accessor's
+   value with `instanceof String`, and on failure goes on to the next case) is bound with the
+   tested type, not the component's: without a LocalVariableTable, or for an unnamed `_`,
+   the binding had the type `Object`, so the pattern printed as `R(Object var4)`, which
+   matches every `R`.
 7. When the method has switches:
    `decompiler/managed/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs`
    rebuilds pattern switches from `SwitchBootstraps.typeSwitch` dispatch (also gated by
