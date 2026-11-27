@@ -1705,6 +1705,8 @@ case	kuna-fixes/pkg/TestInnerOfGenericOuter	Kuna Fixes	kuna-fixes/classes/pkg/Te
 # kuna-fixes/src/pkg/TestInterfaceCompanionField.kt, kotlinc 2.0.0 -jvm-target 17
 case	kuna-fixes/pkg/TestInterfaceCompanionField	Kuna Fixes	kuna-fixes/classes/pkg/TestInterfaceCompanionField
 opt	jvm_plugins	1
+# kuna-fixes/src/pkg/TestInterfaceObjectMethods.java, javac 21.0.13.1 (-g --release 17) (with java/lang/Object.java, a stand-in that declares clone protected, javac 21.0.13.1 --patch-module java.base, vendored as a second input class)
+case	kuna-fixes/pkg/TestInterfaceObjectMethods	Kuna Fixes	kuna-fixes/classes/pkg/TestInterfaceObjectMethods	kuna-fixes/classes/java/lang/Object
 # kuna-fixes/src/pkg/TestIrreducibleTry.jasm, asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1
 case	kuna-fixes/pkg/TestIrreducibleTry	Kuna Fixes	kuna-fixes/classes/pkg/TestIrreducibleTry
 # kuna-fixes/src/pkg/TestJavaCastSyntax.kt, kotlinc 2.0.0 (-Xlambdas=class)

@@ -973,7 +973,10 @@ left out by policy: synthetic members (`jvm_remove_synthetic`), bridge methods
 (`jvm_remove_bridge`), a lone default constructor, and
 whatever the class-level rewrites hid. kuna adds `@Override` where an
 instance method of a Java 5+ class file overrides or implements a method of a supertype
-the engine can see;
+the engine can see (an interface's superclass in the class file is `Object`, but an interface
+has only `Object`'s public methods, so its `Object clone();` overrides nothing and gets no
+`@Override`, which javac would reject: `decompiler/managed/kuna-jvm/src/fixes/class_writing.rs
+(overrides)`);
 `jvm_mark_corresponding_synthetics` names the synthetic method behind each lambda and the
 class behind each anonymous class in a comment; `jvm_decompiler_comments` controls every `$VF:` note
 the passes above attached to a method. Lambdas are written inline at their use, without
