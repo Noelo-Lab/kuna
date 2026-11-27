@@ -24,7 +24,7 @@ kuna catalog --engine jvm                     # the jvm_* options
 | `docs/spec/11-jvm.md` | what the engine computes, stage by stage, and how its code is organised |
 | `docs/options-jvm.md` | the generated `jvm_*` option catalog (`kuna catalog --markdown --engine jvm`) |
 | `decompiler/managed/kuna-jvm/corpus/README.md` | the regression corpus: what a case is, how to add one, how to investigate a red one |
-| `docs/jvm-benchmark.md` | the benchmark against Vineflower on five large Java projects: what it scores, how to run it, the result |
+| `docs/jvm-benchmark.md` | the benchmark against Vineflower on three sets of Java projects (26 in all): what it scores, how to run it, the results |
 
 ## Inputs
 

@@ -205,7 +205,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 | `docs/options.md` | The generated option catalog (tiers, symptoms, flip guidance). |
 | `docs/jvm.md` | The JVM engine (`kuna-jvm`): inputs, the JDK it reads, options worth knowing, Kotlin output, failures, limits, testing, provenance. |
 | `docs/options-jvm.md` | The generated `jvm_*` option catalog of the JVM engine. |
-| `docs/jvm-benchmark.md` | The JVM benchmark (`scripts/javabench`): kuna's JVM engine vs Vineflower on five large Java projects, how to run it, the result. |
+| `docs/jvm-benchmark.md` | The JVM benchmark (`scripts/javabench`): kuna's JVM engine vs Vineflower on three sets of Java projects, how to run it, the result. |
 | `docs/cli.md` | The full `kuna` CLI reference. |
 | `docs/pr-bodies.md` | How to write a PR body (read before opening or editing any PR). |
 | `docs/prepr.md` | Optional pre-PR helpers: a call-arity diff over real MSVC binaries, and a diff lint. |

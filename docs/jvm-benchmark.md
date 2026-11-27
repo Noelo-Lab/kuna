@@ -1,20 +1,26 @@
 # The JVM benchmark
 
-`scripts/javabench` scores Java decompilers against the original source of five large
-Java projects, method by method, the way decbench scores native decompilers
+`scripts/javabench` scores Java decompilers against the original source of open-source Java
+projects, method by method, the way decbench scores native decompilers
 (`docs/decbench-loop.md`). It is how kuna's JVM engine is compared with Vineflower 1.12.0,
 the decompiler it ports. The package's `README.md` has every definition and rule; this page
 is the summary and the result.
 
 ## What it measures
 
-The dataset is the five most-starred Java projects on GitHub that publish both a build and
-its sources: Guava 33.8.0-jre, spring-boot 4.1.2, spring-framework 7.0.10 (core, beans,
-context), Ghidra 12.2 (SoftwareModeling) and Elasticsearch 9.5.6 (the server). Every method
-with code is either scored or excluded for a stated reason (synthetic and bridge methods,
-static initializers, members with no source declaration, Kotlin and generated sources), so
-110,238 methods are scored and every decompiler is judged on the same ones. A decompiler
-gets the class files of the scored top-level classes as one jar, with default options.
+Three sets of projects, each a jar and its sources at a pinned release
+(`scripts/javabench/docs/dataset.md` has the rule that chose each set and every pin):
+
+| Set (`--project`) | Projects | Scored methods | What it says |
+|---|---|--:|---|
+| `insample` (default) | Guava, spring-boot, spring-framework (core, beans, context), Ghidra (SoftwareModeling), Elasticsearch (server) | 110,238 | how the engine does where its fixes were first developed |
+| `heldout1` | antlr4, h2, httpcore5, fastjson2, tink, janino, rhino, joda-time, commons-math3, jenetics, nashorn | 63,189 | measured once out of sample, then used to develop fixes |
+| `heldout2` | parboiled, hsqldb, undertow, dsl-json, jasypt, ecj, luaj, junit4, ojalgo, langchain4j | 51,458 | measured once on projects nothing had been tuned against |
+
+Every method with code is either scored or excluded for a stated reason (synthetic and bridge
+methods, static initializers, members with no source declaration, Kotlin and generated
+sources), so every decompiler is judged on the same methods. A decompiler gets the class files
+of the scored top-level classes as one jar, with default options.
 
 Each scored method gets three measurements against its source declaration:
 
@@ -31,15 +37,24 @@ method the decompiler loses or fails stays in every denominator. The scoreboards
 mean GED, type matches at the erasure level, bytecode similarity, the share of classes that
 recompile as written, and the decompiler's wall time, CPU time and peak memory.
 
+The harness has a ceiling of its own: the source pseudo-decompiler (`--decompiler source`,
+the original source scored as if it were a decompiler's output) reaches 100% on structure
+and 99.98% on bytes on the five in-sample projects and misses 1% of variable types (source-level
+`var`), and on the second held-out set it reaches 92.79% of methods perfect, because ecj is
+compiled by the Eclipse compiler, whose bytecode no javac reproduces (about 70% of its methods
+can be byte-exact), and luaj was compiled for Java 1.3.
+
 ## Running it
 
 It needs the Python packages and JDK homes `scripts/javabench/README.md` lists, and about
-2 GB of disk for the downloads plus 1 GB for full runs of both tools; `fetch` downloads the projects, coursier, Temurin 25
-and the Vineflower jar, each checked against a pinned SHA-256. Everything goes to one workspace directory. From the repository root:
+2 GB of disk for the downloads of the default set plus 1 GB for full runs of both tools;
+`fetch` downloads the projects, coursier, Temurin 25 and the Vineflower jar, each checked
+against a pinned SHA-256. Everything goes to one workspace directory. From the repository
+root:
 
 ```bash
 export JAVABENCH_WORKSPACE=/path/to/workspace
-scripts/javabench/fetch.sh
+scripts/javabench/fetch.sh                    # the five projects; --project heldout1 | heldout2 | all for the others
 (cd decompiler && CARGO_INCREMENTAL=0 cargo build --release -p kuna-cli)
 for p in guava spring-boot spring-framework ghidra elasticsearch; do
   python3 -m scripts.javabench run --decompiler kuna --kuna-bin decompiler/target/release/kuna \
@@ -52,73 +67,111 @@ done
 `run` decompiles and scores (`--jobs` is the scoring parallelism and Vineflower's `-thr`;
 kuna runs with its defaults), writing `$JAVABENCH_WORKSPACE/results/<run>/` with
 `scoreboard.md`, `scoreboard.json` and one record per method. `compare` lists the methods one
-run has perfect and the other does not. Without `--full`, `run` scores a 3,000-method sample
-per project in a few minutes.
+run has perfect and the other does not. `--project` takes project names and the set names
+above. Without `--full`, `run` scores a 3,000-method sample per project in a few minutes.
 
-## Result
+## Results
 
-kuna and Vineflower 1.12.0 were scored on all 110,238 methods. A method that is not perfect
-departs from the source, or is one of the few the harness cannot score perfectly even from the
-source itself: the source pseudo-decompiler (`--decompiler source`) reaches 100% on
-structure, 99.98% on bytes and 98.96% of variable types, the misses being source-level
-`var` (`scripts/javabench/README.md`). Timings are in `docs/jvm.md`, "Performance and
-limits".
+Each cell is Vineflower's score, then kuna's where it differs. *Structure perfect* is GED 0,
+*types perfect* is every declared type of the method exact, *bytes exact* is an identical
+recompiled listing, *classes recompile* is the share of decompiled classes javac accepts as
+written, and *methods lost* counts methods a decompiler failed on or whose text the harness
+cannot find or parse. Timings are in `docs/jvm.md`, "Performance and limits".
 
-### kuna against Vineflower
-
-kuna with default flags against the same Vineflower runs: its fixes, and its three choices of
-form: ifs, loops, exits and boolean comparisons laid out as javac laid out the bytecode; the
-locals the class file names kept, declared in slot order and in the source's scopes; and a test
-and a cast where the source wrote them, not an `instanceof` pattern. Each cell is Vineflower's score, then kuna's where it differs; *structure perfect*
-is GED 0, *types perfect* is every declared type of the method exact, *bytes exact* is an
-identical recompiled listing, *classes recompile* is the share of decompiled classes javac
-accepts as written, and *methods lost* counts methods the decompiler failed on or whose
-text does not parse.
+### The five projects the fixes were first developed on
 
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
-|---|---|---|---|---|---|---|---|
-| guava | 12,167 | 91.86% → 98.78% | 98.19% → 99.87% | 99.64% → 99.97% | 91.92% → 98.84% | 84.04% → 94.55% | 0 |
+|---|--:|---|---|---|---|---|---|
+| guava | 12,167 | 91.86% → 98.79% | 98.19% → 99.88% | 99.64% → 99.97% | 91.92% → 98.85% | 84.04% → 94.55% | 0 |
 | spring-boot | 3,967 | 88.98% → 99.29% | 97.09% → 99.97% | 99.41% → 99.95% | 89.01% → 99.32% | 95.04% → 97.16% | 1 → 0 |
-| spring-framework | 13,874 | 90.83% → 99.03% | 97.45% → 99.90% | 99.36% → 99.91% | 90.88% → 99.14% | 95.75% → 98.88% | 2 → 0 |
-| ghidra | 18,153 | 80.05% → 98.71% | 90.60% → 99.78% | 98.56% → 99.83% | 80.18% → 98.86% | 98.09% → 99.73% | 0 |
-| elasticsearch | 62,077 | 84.20% → 98.89% | 96.80% → 99.82% | 99.62% → 99.92% | 84.26% → 99.00% | 91.82% → 97.54% | 14 → 0 |
+| spring-framework | 13,874 | 90.83% → 99.05% | 97.45% → 99.90% | 99.36% → 99.91% | 90.88% → 99.15% | 95.75% → 98.88% | 2 → 0 |
+| ghidra | 18,153 | 80.05% → 98.71% | 90.60% → 99.78% | 98.56% → 99.83% | 80.18% → 98.87% | 98.09% → 99.73% | 0 |
+| elasticsearch | 62,077 | 84.20% → 98.90% | 96.80% → 99.83% | 99.62% → 99.92% | 84.26% → 99.00% | 91.82% → 97.56% | 14 → 0 |
+| **all** | 110,238 | 85.37% → 98.89% | 96.02% → 99.84% | 99.41% → 99.91% | 85.44% → 98.99% | 93.29% → 97.96% | 17 → 0 |
 
-Over all five projects, 109,006 methods are perfect on every metric instead of 94,106
-(98.88% instead of 85.37%), every method is decompiled, and 380 more classes recompile
-(7,988 of 8,155 instead of 7,608). Most of the gain in perfect methods comes from
-the javac layout: Vineflower writes two returns as one `return c ? a : b`, negates ifs
-and swaps their branches against the bytecode's order, and folds an early `return;` or
-`continue;` into a negated `if` around the rest, all of which recompile to equivalent code
-laid out differently from the original. Most of the gain in classes that recompile comes
-from the fixes, as the javac errors that go away show: raw generic constructors (`new
-C(..)` for a library class `C`, whose lambda arguments then lose their parameter types;
-`array required, but found` in 106 Elasticsearch classes), imports of non-public nested
-library classes (22), unchecked type patterns (20), `assert` statements printed where Java
-needs an expression, enums without the `;` before their members, and the casts and type
-arguments generic inference needs (`incompatible types`: 129 classes to 76 in
-Elasticsearch, 60 to 18 in Guava, 41 to 8 in spring-framework). Every class that
-recompiles from Vineflower's output also recompiles from kuna's.
+109,013 methods are perfect on every metric instead of 94,106, every method is decompiled, and
+381 more classes recompile (7,989 of 8,155 instead of 7,608). Most of the gain in perfect
+methods comes from laying code out as javac laid out the bytecode: Vineflower writes two
+returns as one `return c ? a : b`, negates ifs and swaps their branches against the bytecode's
+order, and folds an early `return;` or `continue;` into a negated `if` around the rest, all of
+which recompile to equivalent code laid out differently from the original. Most of the gain in
+classes that recompile comes from fixes, as the javac errors that go away show: raw generic
+constructors (`array required, but found` in 106 Elasticsearch classes), imports of non-public
+nested library classes, unchecked type patterns, `assert` statements printed where Java needs
+an expression, enums without the `;` before their members, and the casts and type arguments
+generic inference needs. Every class that recompiles from Vineflower's output also recompiles
+from kuna's.
 
-Method by method, 15,365 methods score better on some metric and worse on none, and 32
-score worse on at least one. 27 of them come from the three options:
+Method by method, 15,370 methods score better than Vineflower's on some metric and worse on
+none, and 32 score worse on at least one: 27 where kuna's layout, local order, declaration
+scope or test-and-cast follows the bytecode and another difference in the method shifts a
+metric (15 lose bytecode similarity, 7 of them while their GED or types improve; 12 have a
+GED one to three higher, 9 of them with bytes closer to the original), and 5 in Elasticsearch whose try-with-resources kuna rebuilds
+where the source assigns a local before the `try` and returns it after.
 
-- 8 lose only bytes similarity, and 7 more lose bytes similarity while their GED or types
-  improve: the recompiled method follows the source's layout, local order, declaration
-  scopes or test-and-cast more closely, but another difference (a reordered `switch`, a
-  loop shape, a variable Vineflower merges) shifts how the benchmark aligns its listing with the original's.
-- 12 have a GED one to three higher, 9 of them with bytes closer to the original: an
-  early exit kept as in the bytecode (`if (..) return;`), code kept after a loop where javac
-  placed it, a comparison with `false` kept as the source wrote it, or an `else if` chain of
-  `instanceof` tests adds a node to the statement graph of a method whose structure differs
-  from the source's elsewhere.
+### Eleven more projects (`heldout1`)
 
-The other 5 come from fixes:
+When this set was first measured, with an engine that had seen none of it, kuna had 92.39% of
+its methods perfect against Vineflower's 81.68%. That run showed defects kuna introduced
+(a local split into two variables, switch case groups reordered, an `@Override` javac rejects)
+and failure shapes it shared with Vineflower (casts that select an overload dropped, a
+qualified `super()` call dropped, raw locals captured by lambdas). They were fixed from what
+the class files prove, each with a small original reproducer in the corpus, and the set now
+reads:
 
-- Four lose one declared type: Elasticsearch's two
-  `SimulateBulkRequest.convertRawTemplateTo*`, `InternalEngine.noOp` and
-  `DecayFunctionBuilder.doToFunction`. Their try-with-resources is now rebuilt (fix
-  `twr_unresolved_resource`) and returns from inside the `try`, where the source assigns a
-  local declared before it and returns that local after it.
-- Elasticsearch's `TranslogWriter.writeAndReleaseOps`: 10 of 11 types instead of 11, with
-  bytes now exact. The rebuilt resource is written `try (toWrite)`, Vineflower's form, where
-  the source declares `try (ReleasableBytesReference toClose = toWrite)`.
+| Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
+|---|--:|---|---|---|---|---|---|
+| antlr4 | 1,447 | 83.07% → 97.37% | 95.12% → 99.08% | 98.65% → 99.93% | 83.41% → 98.06% | 98.62% → 99.31% | 0 |
+| h2 | 12,095 | 78.45% → 88.69% | 94.94% → 99.08% | 91.38% → 93.38% | 81.97% → 93.44% | 86.55% → 97.28% | 76 → 0 |
+| httpcore5 | 5,138 | 91.32% → 96.96% | 97.51% → 99.78% | 99.66% → 99.96% | 91.48% → 97.04% | 99.40% → 99.60% | 0 |
+| fastjson2 | 6,645 | 67.96% → 93.05% | 88.50% → 98.50% | 98.86% → 99.74% | 68.16% → 93.33% | 91.14% → 97.05% | 0 |
+| tink | 4,384 | 90.10% → 99.59% | 98.41% → 99.80% | 99.75% → 99.85% | 90.21% → 99.70% | 98.21% → 100.00% | 3 |
+| janino | 4,095 | 51.36% → 95.78% | 97.16% → 98.52% | 98.00% → 98.49% | 51.65% → 96.29% | 95.50% → 98.20% | 40 → 38 |
+| rhino | 6,178 | 85.22% → 97.62% | 95.34% → 99.34% | 99.29% → 99.78% | 85.45% → 97.86% | 95.80% → 98.80% | 0 |
+| joda-time | 3,910 | 86.85% → 97.67% | 97.87% → 99.90% | 98.00% → 98.49% | 87.24% → 98.16% | 95.74% → 98.58% | 0 |
+| commons-math3 | 8,073 | 87.44% → 96.83% | 97.85% → 99.89% | 99.54% → 99.97% | 87.48% → 96.84% | 96.38% → 97.32% | 4 → 1 |
+| jenetics | 1,915 | 91.49% → 97.02% | 99.41% → 99.95% | 99.41% → 99.78% | 91.85% → 97.23% | 88.51% → 92.53% | 2 → 0 |
+| nashorn | 9,309 | 87.94% → 97.96% | 96.48% → 98.97% | 99.71% → 99.87% | 88.24% → 98.51% | 93.42% → 95.18% | 1 |
+| **all** | 63,189 | 81.68% → 95.32% | 95.80% → 99.28% | 97.69% → 98.44% | 82.52% → 96.47% | 94.12% → 97.72% | 126 → 43 |
+
+60,233 methods perfect instead of 51,610, and 4,240 of 4,339 classes recompile instead of
+4,084. 9,844 methods score better than Vineflower's and 88 worse. h2 and joda-time ship
+without local-variable tables, which is where the types column stays lowest for both tools.
+
+### Ten projects nothing had been tuned against (`heldout2`)
+
+Chosen after the fixes above, by a rule written before any decompiler ran on any candidate,
+and measured once:
+
+| Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
+|---|--:|---|---|---|---|---|---|
+| parboiled | 348 | 83.33% → 90.52% | 97.97% → 100.00% | 93.60% → 95.06% | 86.21% → 92.82% | 87.88% → 90.91% | 0 |
+| hsqldb | 9,959 | 75.13% → 87.83% | 92.49% → 98.48% | 89.52% → 92.02% | 78.00% → 91.87% | 94.32% → 96.79% | 2 → 0 |
+| undertow | 7,542 | 86.50% → 97.52% | 95.15% → 99.31% | 99.43% → 99.91% | 86.62% → 97.67% | 94.55% → 98.24% | 0 |
+| dsl-json | 1,074 | 80.26% → 98.04% | 95.61% → 100.00% | 99.72% → 100.00% | 80.45% → 98.04% | 93.75% → 98.75% | 0 |
+| jasypt | 673 | 93.16% → 98.37% | 98.66% → 100.00% | 99.67% → 100.00% | 93.31% → 98.37% | 97.44% → 100.00% | 0 |
+| ecj | 10,886 | 59.14% → 69.67% | 84.19% → 87.67% | 95.97% → 98.23% | 59.26% → 74.41% | 88.09% → 93.95% | 136 → 1 |
+| luaj | 2,218 | 80.79% → 85.84% | 96.36% → 99.13% | 95.79% → 96.43% | 82.46% → 87.74% | 90.72% → 92.78% | 0 |
+| junit4 | 1,473 | 90.77% → 97.69% | 97.67% → 99.86% | 99.03% → 99.93% | 90.77% → 97.69% | 96.97% → 97.58% | 0 |
+| ojalgo | 13,686 | 90.68% → 98.23% | 97.65% → 99.76% | 99.82% → 99.93% | 90.81% → 98.39% | 92.53% → 94.44% | 0 |
+| langchain4j | 3,599 | 88.25% → 95.58% | 97.24% → 99.94% | 99.86% → 100.00% | 88.25% → 95.61% | 97.14% → 98.18% | 0 |
+| **all** | 51,458 | 79.56% → 89.28% | 93.36% → 96.91% | 96.70% → 97.85% | 80.29% → 91.23% | 93.29% → 96.24% | 138 → 1 |
+
+45,943 methods perfect instead of 40,939 (89.28% against 79.56%, under a ceiling of 92.79%);
+2,841 of 2,952 classes recompile instead of 2,754. 7,292 methods score better than
+Vineflower's and 716 worse, 601 of them in ecj. That project is compiled by the Eclipse
+compiler: kuna lays code out as javac would have compiled it to the bytecode it sees, and on
+bytecode javac did not write that inference is unfounded, so 536 of its methods get a
+structure further from the source (with recompiled bytecode closer to the original) where
+Vineflower's canonical form is the source's. The rest of the 716: 13 methods in classes that
+recompile from Vineflower's text and not from kuna's (ojalgo 8, ecj 3, hsqldb 1, undertow 1),
+one method kuna fails (ecj `ImplicitNullAnnotationVerifier#areParametersEqual`), about 60 with
+one declared type worse, and 35 in hsqldb that differ only in bytecode similarity.
+
+## From DEX
+
+The same five projects compiled to DEX with d8 and decompiled from the DEX are scored by the
+same harness against jadx 1.5.3: 69.31% of methods perfect from debug builds (jadx 44.31%)
+and 56.08% from release builds (jadx 38.57%), kuna ahead on each project in both.
+`docs/jvm.md`, "Android: DEX and APK input", has the per-project tables and what a DEX costs relative to
+the class files.
