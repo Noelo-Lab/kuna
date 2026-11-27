@@ -572,10 +572,34 @@ fn get_input_cast_equal(
     let slottype = data.vn_high_type_read_facing(slotvn, op);
     let standard = strat.cast_standard(&reqtype, &slottype, false, false);
     let other = if slot == 0 { in1 } else { in0 };
-    if standard.is_none() && promotes_with_other_sign(data, strat, slotvn, other, &slottype, &reqtype) {
+    if standard.is_none()
+        && (promotes_with_other_sign(data, strat, slotvn, other, &slottype, &reqtype)
+            || compared_word_needs_truncation(data, strat, slotvn, &reqtype))
+    {
         return Some(reqtype);
     }
     standard
+}
+
+/// Two-byte target `int` does not promote its own words; wider C hosts do.
+fn compared_word_needs_truncation(
+    data: &Funcdata,
+    strat: &CastStrategyC,
+    vn: VarnodeId,
+    compared: &Datatype,
+) -> bool {
+    if strat.promote_size() != 2 || compared.get_size() != 2 || !data.get_arch().int_promotion {
+        return false;
+    }
+    let Some(v) = data.vbank().get(vn) else { return false };
+    if v.get_size() != 2 || !v.is_implied() || v.has_implied_field()
+        || !v.get_def().and_then(|id| data.obank().get(id)).is_some_and(|op|
+            matches!(op.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB))
+    {
+        return false;
+    }
+    let Some((min, max)) = super::kuna_castimplied::int_range(compared) else { return false };
+    !super::kuna_truncarg::c_range(data, vn, 0).is_some_and(|(lo, hi)| min <= lo && hi <= max)
 }
 
 /// (kuna) The integer operand type of an `==`/`!=` that orders after a

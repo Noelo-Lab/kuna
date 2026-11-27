@@ -306,7 +306,7 @@ fn fits_unsigned(data: &Funcdata, vn: VarnodeId, size: int4) -> bool {
 /// clear sign bit, truth values and `+ * & | ^` of those.  A variable counts when
 /// the bound on its defining expression keeps its sign bit clear, so neither its
 /// width nor its signedness changes the value.
-fn c_range(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(i128, i128)> {
+pub(super) fn c_range(data: &Funcdata, vn: VarnodeId, depth: u32) -> Option<(i128, i128)> {
     if depth > 6 {
         return None;
     }
