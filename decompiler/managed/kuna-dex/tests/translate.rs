@@ -126,9 +126,38 @@ fn an_untranslatable_method_fails_alone() {
 fn d8_lambda_classes_become_invokedynamic_again() {
     let classes = translate("release.dex");
     let objects = &classes.iter().find(|c| c.0 == "dx/Objects").unwrap().1;
-    assert_eq!(objects.version, 52);
+    assert!(objects.version >= 52, "{}", objects.version);
     assert!(objects.attrs.iter().any(|a| a == "BootstrapMethods"));
     assert!(objects.utf8.iter().any(|s| s == "java/lang/invoke/LambdaMetafactory"));
     assert!(objects.utf8.iter().any(|s| s == "applyAsInt"));
 }
 
+
+#[test]
+fn d8_backports_become_the_jdk_calls() {
+    let data = fixture("backports/probe.dex");
+    let dex = Dex::parse(&data).unwrap();
+    let table = include_str!("../src/backports.tsv");
+    let index = String::from_utf8(fixture("backports/index.tsv")).unwrap();
+    let mut omitted = 0;
+    for t in dex.translate_all(&Options::default(), 4) {
+        let t = t.unwrap();
+        if t.omit {
+            omitted += 1;
+            continue;
+        }
+        assert_eq!(t.name, "bp/Probe");
+        let c = read_class(&t.bytes);
+        assert!(!c.utf8.iter().any(|s| s.contains("ExternalSynthetic")));
+        for line in index.lines() {
+            let method = line.split('\t').nth(1).unwrap();
+            if !table.lines().any(|l| l.ends_with(method)) {
+                continue;
+            }
+            let (owner, rest) = method.split_once('#').unwrap();
+            let name = &rest[..rest.find('(').unwrap()];
+            assert!(c.utf8.iter().any(|s| s == owner) && c.utf8.iter().any(|s| s == name), "{method}");
+        }
+    }
+    assert!(omitted > 0, "the backport classes are left out");
+}

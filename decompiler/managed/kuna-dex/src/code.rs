@@ -156,8 +156,12 @@ pub struct Method<'d, 'a> {
     pub edge_const: BTreeMap<(u32, u32, u32), u32>,
     /// Registers live into some exception handler (a bit per register).
     pub handler_live: Vec<u64>,
-    /// Per parameter: no instruction writes its register.
+    /// Per parameter: nothing writes its local (no def in its web, and none
+    /// in its register that debug info names as the parameter).
     pub clean_param: Vec<bool>,
+    /// Webs of values in a parameter's register that are another variable:
+    /// they get a local of their own.
+    pub reused: std::collections::BTreeSet<u32>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -174,8 +178,11 @@ pub fn throws(op: u8) -> bool {
         | 0xd3 | 0xd4 | 0xdb | 0xdc | 0xfa..=0xff)
 }
 
+/// Whether an op ends its block: branches, returns, throws, and the monitor
+/// ops (a `synchronized` region starts right after `monitor-enter` and ends
+/// right after `monitor-exit`).
 fn ends_block(op: u8) -> bool {
-    matches!(op, 0x0e..=0x11 | 0x27 | 0x28..=0x2c | 0x32..=0x3d)
+    matches!(op, 0x0e..=0x11 | 0x1d | 0x1e | 0x27 | 0x28..=0x2c | 0x32..=0x3d)
 }
 
 fn unop_masks(op: u8) -> (Mask, Mask) {
@@ -212,12 +219,14 @@ pub fn binop_masks(k: u8) -> (Mask, Mask, Mask) {
 }
 
 impl<'d, 'a> Method<'d, 'a> {
+    /// `undo` writes d8's nest accessors back as the accesses they make.
     pub fn new(
         dex: &'d Dex<'a>,
         code: &'d CodeItem<'a>,
         debug: &'d DebugInfo,
         is_static: bool,
         proto: Proto,
+        undo: bool,
     ) -> Result<Method<'d, 'a>> {
         let mut m = Method {
             dex,
@@ -243,24 +252,35 @@ impl<'d, 'a> Method<'d, 'a> {
             edge_const: BTreeMap::new(),
             handler_live: Vec::new(),
             clean_param: Vec::new(),
+            reused: std::collections::BTreeSet::new(),
         };
-        m.build_ops()?;
+        m.build_ops(undo)?;
         m.build_blocks()?;
         m.fuse_constructors()?;
         m.number_values()?;
         m.infer_types()?;
-        m.clean_param = m
-            .params
-            .iter()
-            .map(|&(r, c)| {
-                !m.ops.iter().any(|o| {
-                    o.def.as_ref().is_some_and(|d| {
-                        let (lo, hi) = (d.reg, d.reg + size(d.mask) as u32);
-                        lo < r + size(c) as u32 && r < hi
-                    })
-                })
-            })
-            .collect();
+        m.forward_moves();
+        let name_at = |m: &Self, r: u32, pc: u32| {
+            m.debug.locals.iter().find(|l| l.reg == r && l.start <= pc && pc < l.end.max(l.start + 1)).map(|l| l.name)
+        };
+        let mut named = std::collections::BTreeSet::new();
+        for p in 0..m.params.len() {
+            let (r, root) = (m.params[p].0, m.root(p as u32));
+            let name = name_at(&m, r, 0);
+            let mut clean = true;
+            for o in &m.ops {
+                let Some(d) = o.def.as_ref().filter(|d| d.reg == r) else { continue };
+                let web = m.root(d.id);
+                if web == root || (name.is_some() && name_at(&m, r, o.end) == name) {
+                    clean = false;
+                    named.insert(web);
+                } else {
+                    m.reused.insert(web);
+                }
+            }
+            m.clean_param.push(clean);
+        }
+        m.reused.retain(|w| !named.contains(w));
         Ok(m)
     }
 
@@ -425,9 +445,12 @@ impl<'d, 'a> Method<'d, 'a> {
         }
     }
 
-    fn build_ops(&mut self) -> Result<()> {
+    fn build_ops(&mut self, undo: bool) -> Result<()> {
         self.param_layout()?;
-        let insns = decode(self.code.insns)?;
+        let mut insns = decode(self.code.insns)?;
+        if undo {
+            crate::nest::rewrite(self.dex, &mut insns);
+        }
         let regs = u32::from(self.code.registers);
         let mut k = 0;
         while k < insns.len() {
@@ -499,22 +522,27 @@ impl<'d, 'a> Method<'d, 'a> {
         })
     }
 
-    /// Pairs each `new-instance` with the `<init>` call on its register that
-    /// every path from it reaches first, within a few blocks and without
-    /// another read or write of the register or a loop back; the pair
-    /// becomes one op defining the register at the call.
+    /// Pairs each `new-instance` with the `<init>` call that every path from
+    /// it reaches first, within a few blocks and without a loop back, on the
+    /// register holding the new reference: its own, or a copy d8 made with
+    /// `move-object` to line up a range call. Nothing else may read the
+    /// reference before the call, and at most one of its registers is read
+    /// after it; the pair becomes one op defining that register at the call,
+    /// and the copies vanish.
     fn fuse_constructors(&mut self) -> Result<()> {
         let touches = |r: u32, m: Mask, reg: u32| r == reg || (is_wide(m) && r + 1 == reg);
+        let mut live: Option<Vec<Vec<u64>>> = None;
         for k in 0..self.ops.len() {
             if self.ops[k].insn.op != 0x22 || !self.blocks[self.ops[k].block as usize].reachable {
                 continue;
             }
-            let (reg, ty, home) = (self.ops[k].insn.a, self.ops[k].insn.idx, self.ops[k].block);
-            let mut init: Option<usize> = None;
-            let mut seen = std::collections::BTreeSet::new();
-            let mut work = vec![k + 1];
+            let (ty, home) = (self.ops[k].insn.idx, self.ops[k].block);
+            let mut init: Option<(usize, u32)> = None;
+            let mut seen: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+            let mut moves: Vec<usize> = Vec::new();
+            let mut work = vec![(k + 1, vec![self.ops[k].insn.a])];
             let mut ok = true;
-            while let Some(start) = work.pop() {
+            while let Some((start, mut aliases)) = work.pop() {
                 if start >= self.ops.len() || seen.len() > 64 {
                     ok = false;
                     break;
@@ -523,19 +551,42 @@ impl<'d, 'a> Method<'d, 'a> {
                 let mut reached = false;
                 for j in start..self.blocks[b].end {
                     let o = &self.ops[j];
+                    let hits = |r: u32, m: Mask| aliases.iter().any(|&a| touches(r, m, a));
                     let is_init = matches!(o.insn.op, 0x70 | 0x76)
-                        && o.uses.first().is_some_and(|u| u.reg == reg)
+                        && o.uses.first().is_some_and(|u| aliases.contains(&u.reg))
                         && self.dex.method(o.insn.idx)?.class == ty
                         && self.dex.string(self.dex.method(o.insn.idx)?.name)? == b"<init>";
-                    if is_init && !o.uses[1..].iter().any(|u| touches(u.reg, u.mask, reg)) {
-                        ok &= init.is_none_or(|i| i == j);
-                        init = Some(j);
+                    if is_init && !o.uses[1..].iter().any(|u| hits(u.reg, u.mask)) {
+                        let mut holder = o.uses[0].reg;
+                        if aliases.len() > 1 {
+                            let live = live.get_or_insert_with(|| self.liveness());
+                            let after: Vec<u32> = aliases.iter().copied().filter(|&a| !self.dead_after(j, a, live)).collect();
+                            ok &= after.len() <= 1;
+                            holder = after.first().copied().unwrap_or(holder);
+                        }
+                        ok &= init.is_none_or(|i| i == (j, holder));
+                        init = Some((j, holder));
                         reached = true;
                         break;
                     }
-                    if o.uses.iter().any(|u| touches(u.reg, u.mask, reg))
-                        || o.def.as_ref().is_some_and(|d| touches(d.reg, d.mask, reg))
-                    {
+                    if matches!(o.insn.op, 0x07..=0x09) && o.uses.first().is_some_and(|u| aliases.contains(&u.reg)) {
+                        let d = o.def.as_ref().expect("move").reg;
+                        aliases.retain(|&a| a != d);
+                        aliases.push(d);
+                        aliases.sort_unstable();
+                        if !moves.contains(&j) {
+                            moves.push(j);
+                        }
+                        continue;
+                    }
+                    if o.uses.iter().any(|u| hits(u.reg, u.mask)) {
+                        ok = false;
+                        break;
+                    }
+                    if let Some(d) = &o.def {
+                        aliases.retain(|&a| !touches(d.reg, d.mask, a));
+                    }
+                    if aliases.is_empty() {
                         ok = false;
                         break;
                     }
@@ -552,14 +603,26 @@ impl<'d, 'a> Method<'d, 'a> {
                     break;
                 }
                 for &s in succs {
-                    if seen.insert(s) {
-                        work.push(self.blocks[s as usize].start);
+                    match seen.get(&s) {
+                        Some(prev) if *prev != aliases => ok = false,
+                        Some(_) => {}
+                        None => {
+                            seen.insert(s, aliases.clone());
+                            work.push((self.blocks[s as usize].start, aliases.clone()));
+                        }
                     }
                 }
             }
-            if let (true, Some(j)) = (ok, init) {
+            if let (true, Some((j, reg))) = (ok, init) {
                 self.ops[k].kind = Kind::Absorbed;
                 self.ops[k].def = None;
+                for &m in &moves {
+                    let o = &mut self.ops[m];
+                    o.kind = Kind::Absorbed;
+                    o.def = None;
+                    o.uses.clear();
+                    o.rel = Rel::None;
+                }
                 let o = &mut self.ops[j];
                 o.kind = Kind::NewObject { ty };
                 o.uses.remove(0);
@@ -567,6 +630,22 @@ impl<'d, 'a> Method<'d, 'a> {
             }
         }
         Ok(())
+    }
+
+    /// Whether register `r` is written before it is read after op `j`.
+    fn dead_after(&self, j: usize, r: u32, live: &[Vec<u64>]) -> bool {
+        let b = self.ops[j].block as usize;
+        for o in &self.ops[j + 1..self.blocks[b].end] {
+            if o.uses.iter().any(|u| u.reg == r || (is_wide(u.mask) && u.reg + 1 == r)) {
+                return false;
+            }
+            if o.def.as_ref().is_some_and(|d| d.reg == r || (is_wide(d.mask) && d.reg + 1 == r)) {
+                return true;
+            }
+        }
+        let blk = &self.blocks[b];
+        let bit = |s: u32| live[s as usize].get(r as usize / 64).is_some_and(|w| w >> (r % 64) & 1 != 0);
+        !blk.succs.iter().chain(blk.handlers.iter().map(|h| &h.1)).any(|&s| bit(s))
     }
 
     fn op_at(&self, addr: u32) -> Option<usize> {
@@ -923,6 +1002,75 @@ impl<'d, 'a> Method<'d, 'a> {
         Ok(())
     }
 
+    /// Removes the register copies d8 makes to line up a range call: a
+    /// `move` of a parameter or of a value read only by it, whose copy is
+    /// read once later in the same block, hands that reader the value itself,
+    /// when no other op writes the value's local in between. The value can
+    /// then fold into its reader as an expression, and a constructor's
+    /// `super(...)` reads its parameters where javac's does.
+    fn forward_moves(&mut self) {
+        let single = |m: &Self, v: u32| {
+            m.direct_uses.get(v as usize) == Some(&1) && m.web_uses.get(&m.root(v)).is_some_and(|w| w.0 == 1 && !w.1)
+        };
+        let mut user = vec![usize::MAX; self.def_op.len()];
+        for (k, o) in self.ops.iter().enumerate() {
+            for u in &o.uses {
+                user[u.val as usize] = k;
+            }
+        }
+        let mut moved: Vec<(usize, usize, u32)> = Vec::new();
+        for k in 0..self.ops.len() {
+            let o = &self.ops[k];
+            let (Some(d), Some(src)) = (&o.def, o.uses.first()) else { continue };
+            let u = user[d.id as usize];
+            let from = self.def_op[src.val as usize];
+            let param = from == usize::MAX && (src.val as usize) < self.params.len();
+            let plain = matches!(o.insn.op, 0x01..=0x09) && o.kind == Kind::Plain && (!self.named_def(k) || param && self.moves_local(k));
+            let source = param || from < self.ops.len() && single(self, src.val);
+            if plain && source && single(self, d.id) && u > k && u < self.ops.len() && self.ops[u].block == o.block {
+                moved.push((k, u, d.id));
+            }
+        }
+        loop {
+            let absorbed: std::collections::BTreeSet<usize> = moved.iter().map(|m| m.0).collect();
+            let source = |m: &Self, mut v: u32| {
+                while let Some(&(k, _, _)) = moved.iter().find(|x| x.2 == v) {
+                    v = m.ops[k].uses[0].val;
+                }
+                v
+            };
+            let bad = moved.iter().position(|&(k, u, d)| {
+                let v = source(self, d);
+                let (reg, start) = match self.def_op[v as usize] {
+                    usize::MAX => (self.params[v as usize].0, k),
+                    at => (self.ops[at].def.as_ref().expect("def").reg, at.max(k)),
+                };
+                let c = self.cat[v as usize];
+                (start + 1..u).any(|j| !absorbed.contains(&j) && self.ops[j].def.as_ref().is_some_and(|x| x.reg == reg && self.cat[x.id as usize] == c))
+            });
+            match bad {
+                Some(i) => {
+                    moved.remove(i);
+                }
+                None => break,
+            }
+        }
+        for &(k, u, d) in &moved {
+            let src = self.ops[k].uses[0].clone();
+            for x in &mut self.ops[u].uses {
+                if x.val == d {
+                    x.val = src.val;
+                    x.reg = src.reg;
+                }
+            }
+            let o = &mut self.ops[k];
+            o.kind = Kind::Absorbed;
+            o.def = None;
+            o.uses.clear();
+            o.rel = Rel::None;
+        }
+    }
+
     /// Whether the value is a constant read only where it reaches alone.
     pub fn inline_const(&self, v: u32) -> bool {
         let k = self.def_op[v as usize];
@@ -962,7 +1110,7 @@ impl<'d, 'a> Method<'d, 'a> {
                 return self.clean_param[v as usize].then_some(v as usize);
             }
             let o = self.ops.get(k)?;
-            if !matches!(o.insn.op, 0x01..=0x09) || o.kind != Kind::Plain || self.named_def(k) {
+            if !matches!(o.insn.op, 0x01..=0x09) || o.kind != Kind::Plain || (self.named_def(k) && !self.moves_local(k)) {
                 return None;
             }
             if self.web_uses.get(&self.root(v)).is_none_or(|w| w.1) {
@@ -971,6 +1119,22 @@ impl<'d, 'a> Method<'d, 'a> {
             v = o.uses[0].val;
         }
         None
+    }
+
+    /// Whether a `move` only carries a source variable to another register:
+    /// debug info gives its destination, right after it, the name and type
+    /// its source has at it.
+    fn moves_local(&self, k: usize) -> bool {
+        let o = &self.ops[k];
+        let (Some(d), Some(u)) = (&o.def, o.uses.first()) else { return false };
+        let at = |reg: u32, pc: u32| {
+            self.debug
+                .locals
+                .iter()
+                .find(|l| l.reg == reg && l.start <= pc && pc < l.end.max(l.start + 1))
+                .map(|l| (l.name, l.ty))
+        };
+        at(d.reg, o.end).is_some_and(|n| at(u.reg, o.insn.addr) == Some(n))
     }
 
     /// Whether debug info names the register an op defines right after it.

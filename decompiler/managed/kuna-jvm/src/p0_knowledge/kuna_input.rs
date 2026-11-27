@@ -537,9 +537,12 @@ fn read_entries<'a>(
 }
 
 /// Translates every class of a DEX file, or of an APK's `classes*.dex` in
-/// order (`classes.dex`, `classes2.dex`, …), into class-file entries; a class
-/// defined twice keeps its first definition, and a class that cannot be
-/// translated is an entry whose read fails with the reason.
+/// order (`classes.dex`, `classes2.dex`, …), into class-file entries, each
+/// file with the others as its peers (d8 may call a synthetic class of
+/// another file); a class defined twice keeps its first definition, one
+/// kuna-dex leaves out (a d8 helper whose uses it rewrote) is not listed,
+/// and a class that cannot be translated is an entry whose read fails with
+/// the reason.
 fn dex_unit(path: &Path, kind: InputKind) -> Result<Unit, InputError> {
     let io = |e| InputError::Io(path.to_path_buf(), e);
     let file = java_file_path(path);
@@ -569,12 +572,17 @@ fn dex_unit(path: &Path, kind: InputKind) -> Result<Unit, InputError> {
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get()).min(8);
     let mut bytes = BTreeMap::new();
     let mut classes = Vec::new();
-    for (entry, data) in &images {
-        let dex = kuna_dex::Dex::parse(data)
-            .map_err(|e| InputError::BadDex(path.to_path_buf(), format!("{entry}: {e}")))?;
-        let translated = dex.translate_all(&kuna_dex::Options::default(), threads);
+    let dexes = images
+        .iter()
+        .map(|(entry, data)| {
+            kuna_dex::Dex::parse(data).map_err(|e| InputError::BadDex(path.to_path_buf(), format!("{entry}: {e}")))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for dex in &dexes {
+        let translated = dex.translate_all_with(&kuna_dex::Options::default(), threads, &dexes);
         for (i, t) in translated.into_iter().enumerate() {
             let (name, read) = match t {
+                Ok(t) if t.omit => continue,
                 Ok(t) => (t.name, Ok(Arc::from(t.bytes))),
                 Err(e) => match dex.class_name(i as u32) {
                     Ok(n) => (n, Err(format!("DEX class not translated: {e}"))),

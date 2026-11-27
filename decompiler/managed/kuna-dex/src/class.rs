@@ -15,6 +15,7 @@ use crate::dex::{
     VISIBILITY_RUNTIME, VISIBILITY_SYSTEM,
 };
 use crate::emit::{code_attribute, Shared, THIS_NAME};
+use crate::record::{Generated, Record};
 use crate::{err, Options, Result, Translated};
 
 const ACC_STATIC: u32 = 0x8;
@@ -124,7 +125,7 @@ impl Nesting {
 
 /// JDK interfaces with static or default methods that DEX code calls
 /// directly; DEX does not say whether a method's class is an interface.
-fn library_interface(desc: &[u8]) -> bool {
+pub(crate) fn library_interface(desc: &[u8]) -> bool {
     const NAMES: [&[u8]; 14] = [
         b"Ljava/util/Comparator;",
         b"Ljava/util/List;",
@@ -153,6 +154,7 @@ fn internal(desc: &[u8]) -> &[u8] {
 
 struct Writer<'d, 'a> {
     dex: &'d Dex<'a>,
+    peers: &'d [Dex<'d>],
     pool: Pool,
     bootstrap: Vec<(u16, Vec<u16>)>,
     version: u16,
@@ -382,6 +384,46 @@ impl<'d, 'a> Writer<'d, 'a> {
         Ok(attrs)
     }
 
+    /// `NestHost` (the outermost class) or `NestMembers` (every class nested
+    /// in it, at any depth), so the private accesses d8's nest accessors stood
+    /// for are legal again (version 55).
+    fn nest_attributes(&mut self, ty: u32, nesting: &Nesting) -> Result<Vec<Attr>> {
+        let dex = self.dex;
+        let mut host = ty;
+        for _ in 0..64 {
+            match nesting.outer_of(dex, host) {
+                Some(o) if o != host => host = o,
+                _ => break,
+            }
+        }
+        let mut body = Body::default();
+        let name = if host != ty {
+            body.u16(self.pool.class(internal(dex.type_desc(host)?)));
+            "NestHost"
+        } else {
+            let mut members = Vec::new();
+            let mut work = vec![ty];
+            while let Some(t) = work.pop() {
+                for &n in nesting.nested.get(&t).into_iter().flatten() {
+                    if n != ty && !members.contains(&n) && members.len() < 4096 {
+                        members.push(n);
+                        work.push(n);
+                    }
+                }
+            }
+            if members.is_empty() {
+                return Ok(Vec::new());
+            }
+            body.u16(members.len() as u16);
+            for m in members {
+                body.u16(self.pool.class(internal(dex.type_desc(m)?)));
+            }
+            "NestMembers"
+        };
+        self.version = self.version.max(55);
+        Ok(vec![self.attr(name, body.0)])
+    }
+
     fn failed_body(&mut self, message: &str) -> Vec<u8> {
         let mut asm = Asm::new(false);
         let class = self.pool.class(b"java/lang/IllegalStateException");
@@ -400,6 +442,63 @@ impl<'d, 'a> Writer<'d, 'a> {
         b.0.extend_from_slice(&asm.code);
         b.u16(0).u16(0);
         b.0
+    }
+
+    /// javac's `toString`, `hashCode` or `equals` of a record: one
+    /// `invokedynamic` to `ObjectMethods.bootstrap` over the components.
+    fn record_method(&mut self, this: &[u8], r: &Record, g: Generated) -> Result<Vec<u8>> {
+        let dex = self.dex;
+        let bsm = self.pool.method(
+            b"java/lang/runtime/ObjectMethods",
+            b"bootstrap",
+            b"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/TypeDescriptor;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/invoke/MethodHandle;)Ljava/lang/Object;",
+            false,
+        );
+        let bsm = self.pool.method_handle(6, bsm);
+        let mut names = Vec::new();
+        let mut args = vec![self.pool.class(this)];
+        let mut getters = Vec::new();
+        for (i, &f) in r.components.iter().enumerate() {
+            let fi = dex.field(f)?;
+            let name = dex.string(fi.name)?;
+            if i > 0 {
+                names.push(b';');
+            }
+            names.extend_from_slice(name);
+            let field = self.pool.field(this, name, dex.type_desc(fi.ty)?);
+            getters.push(self.pool.method_handle(1, field));
+        }
+        args.push(self.pool.string(&names));
+        args.extend(getters);
+        let entry = (bsm, args);
+        let index = match self.bootstrap.iter().position(|e| *e == entry) {
+            Some(i) => i,
+            None => {
+                self.bootstrap.push(entry);
+                self.bootstrap.len() - 1
+            }
+        };
+        let mut recv = vec![b'(', b'L'];
+        recv.extend_from_slice(this);
+        recv.push(b';');
+        let (name, desc, locals, ret): (&[u8], Vec<u8>, u16, u8) = match g {
+            Generated::ToString => (b"toString", [&recv[..], b")Ljava/lang/String;"].concat(), 1, op::IRETURN + 4),
+            Generated::HashCode => (b"hashCode", [&recv[..], b")I"].concat(), 1, op::IRETURN),
+            Generated::Equals => (b"equals", [&recv[..], b"Ljava/lang/Object;)Z"].concat(), 2, op::IRETURN),
+        };
+        let indy = self.pool.invoke_dynamic(index as u16, name, &desc);
+        let mut asm = Asm::new(false);
+        for slot in 0..locals {
+            asm.local(op::ILOAD, 4, slot, 1);
+        }
+        asm.op(op::INVOKEDYNAMIC, &[(indy >> 8) as u8, indy as u8, 0, 0], 1 - i32::from(locals));
+        asm.op(ret, &[], -1);
+        self.version = self.version.max(52);
+        let mut b = Body::default();
+        b.u16(locals).u16(locals).u32(asm.code.len() as u32);
+        b.0.extend_from_slice(&asm.code);
+        b.u16(0).u16(0);
+        Ok(b.0)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -425,7 +524,8 @@ impl<'d, 'a> Writer<'d, 'a> {
         desc.extend_from_slice(dex.type_desc(proto.ret)?);
         let mut attrs = Vec::new();
         if em.code_off != 0 {
-            let body = self.code(this_desc, em, proto.clone(), opts);
+            let body = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.code(this_desc, em, proto.clone(), opts)))
+                .unwrap_or_else(|_| Err(err("internal error in kuna-dex".to_string())));
             match body {
                 Ok(b) => {
                     let a = self.attr("Code", b);
@@ -543,11 +643,15 @@ impl<'d, 'a> Writer<'d, 'a> {
             reg += if matches!(dex.type_desc(t)?.first(), Some(b'J' | b'D')) { 2 } else { 1 };
         }
         let debug = dex.debug_info(&code, &params, THIS_NAME).unwrap_or_default();
-        let mut m = Method::new(dex, &code, &debug, is_static, proto)?;
+        let mut m = Method::new(dex, &code, &debug, is_static, proto, !opts.verifiable)?;
         m.this_desc = this_desc.to_vec();
-        let interfaces = |ty: u32| match dex.class_of_type(ty) {
-            Some(i) => dex.class_def(i).is_ok_and(|d| d.access & ACC_INTERFACE != 0),
-            None => dex.type_desc(ty).is_ok_and(library_interface),
+        let peers = self.peers;
+        let interfaces = |desc: &[u8]| {
+            let def = std::iter::once(dex).chain(peers).find_map(|d| d.defined(desc).and_then(|t| d.class_def(d.class_of_type(t)?).ok()));
+            match def {
+                Some(d) => d.access & ACC_INTERFACE != 0,
+                None => library_interface(desc),
+            }
         };
         let mut sh = Shared {
             pool: &mut self.pool,
@@ -555,6 +659,7 @@ impl<'d, 'a> Writer<'d, 'a> {
             version: self.version,
             interfaces: &interfaces,
             verifiable: opts.verifiable,
+            peers,
         };
         let out = code_attribute(&m, &mut sh)?;
         self.version = sh.version;
@@ -586,7 +691,7 @@ fn clinit_puts(dex: &Dex, data: &crate::dex::ClassData) -> std::collections::BTr
 }
 
 /// Translates class definition `idx`.
-pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
+pub fn translate(dex: &Dex, idx: u32, opts: &Options, peers: &[Dex]) -> Result<Translated> {
     let def = dex.class_def(idx)?;
     let this_desc = dex.type_desc(def.class)?;
     let name = internal(this_desc);
@@ -595,13 +700,17 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
     }
     let mut w = Writer {
         dex,
+        peers,
         pool: Pool::new(),
         bootstrap: Vec::new(),
         version: opts.min_version.max(49),
     };
     let this = w.pool.class(name);
+    let record = dex.records().by_type.get(&def.class).filter(|_| !opts.verifiable);
     let superclass = if def.superclass == NO_INDEX {
         0
+    } else if record.is_some() {
+        w.pool.class(b"java/lang/Record")
     } else {
         w.pool.class(internal(dex.type_desc(def.superclass)?))
     };
@@ -660,6 +769,25 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
     let mut failures = Vec::new();
     let is_interface = def.access & ACC_INTERFACE != 0;
     for em in data.direct_methods.iter().chain(&data.virtual_methods) {
+
+        if let Some(r) = record {
+            if r.hidden.contains(&em.method) {
+                continue;
+            }
+            if let Some(&g) = r.generated.get(&em.method) {
+                let mi = dex.method(em.method)?;
+                let body = w.record_method(name, r, g)?;
+                let code = w.attr("Code", body);
+                let desc = dex.proto_desc(mi.proto)?;
+                methods.push(Member {
+                    access: (em.access & 0x1dff) as u16,
+                    name: w.pool.utf8(dex.string(mi.name)?),
+                    desc: w.pool.utf8(&desc),
+                    attrs: vec![code],
+                });
+                continue;
+            }
+        }
         let anns = match method_anns.get(&em.method) {
             Some(&off) => dex.annotation_set(off)?,
             None => Vec::new(),
@@ -685,6 +813,28 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
         )?);
     }
     let mut attrs = Vec::new();
+    if let Some(r) = record {
+        let mut b = Body::default();
+        b.u16(r.components.len() as u16);
+        for &f in &r.components {
+            let fi = dex.field(f)?;
+            let anns = match field_anns.get(&f) {
+                Some(&off) => dex.annotation_set(off)?,
+                None => Vec::new(),
+            };
+            let mut own = Vec::new();
+            w.signature(&anns, &mut own)?;
+            w.annotations(&anns, &mut own)?;
+            let (n, d) = (w.pool.utf8(dex.string(fi.name)?), w.pool.utf8(dex.type_desc(fi.ty)?));
+            b.u16(n).u16(d).u16(own.len() as u16);
+            for (an, body) in own {
+                b.u16(an).u32(body.len() as u32);
+                b.0.extend_from_slice(&body);
+            }
+        }
+        let a = w.attr("Record", b.0);
+        attrs.push(a);
+    }
     if def.source_file != NO_INDEX {
         let s = w.pool.utf8(dex.string(def.source_file)?);
         let a = w.attr("SourceFile", s.to_be_bytes().to_vec());
@@ -693,6 +843,9 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
     w.signature(&class_anns, &mut attrs)?;
     let nesting = dex.nesting();
     attrs.extend(w.inner_classes(def.class, nesting)?);
+    if !opts.verifiable {
+        attrs.extend(w.nest_attributes(def.class, nesting)?);
+    }
     w.annotations(&class_anns, &mut attrs)?;
     if !w.bootstrap.is_empty() {
         let mut b = Body::default();
@@ -724,5 +877,7 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options) -> Result<Translated> {
         name: crate::mutf8_to_string(name),
         bytes: file.write(&w.pool)?,
         failures,
+        omit: !opts.verifiable
+            && (dex.backports().classes.contains(&idx) || dex.records().omit.contains(&idx) || dex.nest().classes.contains(&idx)),
     })
 }

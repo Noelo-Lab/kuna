@@ -484,6 +484,18 @@ fn an_apk_reads_every_classes_dex() {
 }
 
 #[test]
+fn d8_desugaring_is_undone() {
+    let out = ok(&jvm(&["decompile-all", &dex("sugar.dex")]));
+    assert!(!out.contains("$VF: Couldn't be decompiled"), "{out}");
+    assert!(!out.contains("ExternalSyntheticBackport") && !out.contains("RecordTag"), "{out}");
+    assert!(out.contains("record Point(int x, long y, String name, List<String> tags, boolean on, double w)"), "{out}");
+    assert!(out.contains("\"ab\".repeat(n)") && out.contains("List.of(s, \"b\", \"c\")"), "{out}");
+    assert!(out.contains("xs.forEach(this::add);"), "{out}");
+    let flow = ok(&jvm(&["decompile", &dex("debug.dex"), "dx.Flow.locked(I)I"]));
+    assert!(flow.contains("synchronized (LOCK) {") && !flow.contains("$VF"), "{flow}");
+}
+
+#[test]
 fn a_kotlin_class_from_dex_prints_as_kotlin() {
     let out = ok(&jvm(&["decompile", &dex("kotlin.dex"), "kx.Point"]));
     assert!(out.contains("data class Point(") && out.contains("operator fun plus"), "{out}");

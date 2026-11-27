@@ -1,10 +1,11 @@
 //! d8's desugared lambdas, undone: a `final class X$$ExternalSyntheticLambdaN`
 //! implementing one interface, whose constructor stores its captures in
 //! fields and whose single method loads them, adapts its parameters (casts,
-//! unboxing), calls one implementation method and returns its (boxed)
+//! unboxing, primitive widening), calls one implementation method and returns its (boxed)
 //! result, is what javac's `invokedynamic` to `LambdaMetafactory.metafactory`
-//! became. A `new` of such a class is written back as that `invokedynamic`,
-//! so the engine rebuilds the lambda or method reference.
+//! became (an unboxing call alone is the method reference `Long::longValue`).
+//! A `new` of such a class is written back as that `invokedynamic`, so the
+//! engine rebuilds the lambda or method reference.
 
 use std::collections::BTreeMap;
 
@@ -29,6 +30,8 @@ pub struct Lambda {
 enum Origin {
     Capture(usize),
     Param(usize),
+    /// The second register of a wide value.
+    High,
     Other,
 }
 
@@ -57,9 +60,16 @@ fn boxed(desc: &[u8]) -> &[u8] {
     }
 }
 
-/// Every d8 lambda class of the file, by type index.
-pub fn scan(dex: &Dex) -> BTreeMap<u32, Lambda> {
-    let mut out = BTreeMap::new();
+/// The d8 lambda classes of a file by type index, and the d8 bridges their
+/// handles skip.
+#[derive(Debug, Default)]
+pub struct Lambdas {
+    pub by_type: BTreeMap<u32, Lambda>,
+    pub bridges: std::collections::BTreeSet<u32>,
+}
+
+pub fn scan(dex: &Dex) -> Lambdas {
+    let mut out = Lambdas::default();
     for i in 0..dex.class_count() {
         let Ok(def) = dex.class_def(i) else { continue };
         let Ok(desc) = dex.type_desc(def.class) else { continue };
@@ -67,14 +77,15 @@ pub fn scan(dex: &Dex) -> BTreeMap<u32, Lambda> {
         if !desc.windows(MARK.len()).any(|w| w == MARK) {
             continue;
         }
-        if let Some(l) = recognize(dex, def) {
-            out.insert(def.class, l);
+        if let Some((l, bridge)) = recognize(dex, def) {
+            out.bridges.extend(bridge);
+            out.by_type.insert(def.class, l);
         }
     }
     out
 }
 
-fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<Lambda> {
+fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<(Lambda, Option<u32>)> {
     let ifaces = dex.type_list(def.interfaces_off).ok()?;
     let object = dex.type_desc(def.superclass).ok()? == b"Ljava/lang/Object;";
     if ifaces.len() != 1 || !object {
@@ -107,11 +118,17 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<Lambda> {
     let mut reg = first + 1;
     for (j, &t) in sam_params.params.iter().enumerate() {
         *origin.get_mut(reg)? = Origin::Param(j);
-        reg += if matches!(dex.type_desc(t).ok()?.first(), Some(b'J' | b'D')) { 2 } else { 1 };
+        if matches!(dex.type_desc(t).ok()?.first(), Some(b'J' | b'D')) {
+            *origin.get_mut(reg + 1)? = Origin::High;
+            reg += 1;
+        }
+        reg += 1;
     }
     let mut cast: BTreeMap<usize, u32> = BTreeMap::new();
     let mut found: Option<(u8, u32, Vec<Origin>)> = None;
     let mut new_type = NO_INDEX;
+    let mut unboxed: Option<(u32, usize)> = None;
+    let mut widened = std::collections::BTreeSet::new();
     let mut k = 0;
     while k < insns.len() {
         let x = &insns[k];
@@ -119,6 +136,9 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<Lambda> {
             0x52..=0x58 if x.b as usize == first => {
                 let i = fields.iter().position(|&f| f == x.idx)?;
                 origin[x.a as usize] = Origin::Capture(i);
+                if x.op == 0x53 {
+                    *origin.get_mut(x.a as usize + 1)? = Origin::High;
+                }
             }
             0x1f => {
                 if let Origin::Param(j) = origin[x.a as usize] {
@@ -129,14 +149,18 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<Lambda> {
             0x6e..=0x72 | 0x74..=0x78 => {
                 let mid = dex.method(x.idx).ok()?;
                 let name = dex.string(mid.name).ok()?;
-                let args: Vec<Origin> = x.args().iter().map(|&r| origin[r as usize]).collect();
+                let args: Vec<Origin> = x.args().iter().map(|&r| origin[r as usize]).filter(|&o| o != Origin::High).collect();
                 let unbox = x.op == 0x6e && UNBOX.contains(&name) && args.len() == 1;
                 let valueof = x.op == 0x71 && name == b"valueOf" && found.is_some();
                 if unbox {
                     if let Some(Origin::Param(j)) = args.first().copied() {
                         let next = insns.get(k + 1).filter(|n| matches!(n.op, 0x0a..=0x0c) && (n.a as usize) < regs)?;
                         origin[next.a as usize] = Origin::Param(j);
+                        if next.op == 0x0b {
+                            *origin.get_mut(next.a as usize + 1)? = Origin::High;
+                        }
                         cast.insert(j, mid.class);
+                        unboxed = Some((x.idx, j));
                         k += 2;
                         continue;
                     }
@@ -160,13 +184,31 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<Lambda> {
                 let args = if kind == 8 { args[1..].to_vec() } else { args };
                 found = Some((kind, x.idx, args));
             }
+            0x81..=0x83 | 0x85 | 0x86 | 0x89 => {
+                if let Origin::Param(j) = origin[x.b as usize] {
+                    widened.insert(j);
+                }
+                origin[x.a as usize] = origin[x.b as usize];
+                if matches!(x.op, 0x81 | 0x83 | 0x86 | 0x89) {
+                    *origin.get_mut(x.a as usize + 1)? = Origin::High;
+                }
+            }
             0x0a..=0x0c | 0x0e..=0x11 | 0x00 => {}
             0x01..=0x09 => origin[x.a as usize] = origin[x.b as usize],
             _ => return None,
         }
         k += 1;
     }
-    let (kind, method, args) = found?;
+    let (kind, method, args) = match found {
+        Some(f) => f,
+        None => {
+            let (idx, j) = unboxed?;
+            (5, idx, vec![Origin::Param(j)])
+        }
+    };
+    let body = (kind == 6).then(|| unbridge(dex, method)).flatten();
+    let bridge = body.map(|_| method);
+    let (kind, method) = body.unwrap_or((kind, method));
     let want: Vec<Origin> = (0..captures.len())
         .map(Origin::Capture)
         .chain((0..sam_params.params.len()).map(Origin::Param))
@@ -193,6 +235,7 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<Lambda> {
         let p: &[u8] = if sam_desc.first() == Some(&b'L') && p.len() == 1 { boxed(p) } else { p };
         let p = match cast.get(&j) {
             Some(&t) if sam_desc.first() == Some(&b'L') => dex.type_desc(t).ok()?,
+            _ if widened.contains(&j) => sam_desc,
             _ => p,
         };
         inst.extend_from_slice(p);
@@ -210,13 +253,52 @@ fn recognize(dex: &Dex, def: crate::dex::ClassDef) -> Option<Lambda> {
         (_, r) => r,
     };
     inst.extend_from_slice(ret);
-    Some(Lambda {
-        iface: ifaces[0],
-        sam_name: sam_id.name,
-        sam_proto: sam_id.proto,
-        kind,
-        method,
-        captures,
-        instantiated: inst,
-    })
+    Some((
+        Lambda {
+            iface: ifaces[0],
+            sam_name: sam_id.name,
+            sam_proto: sam_id.proto,
+            kind,
+            method,
+            captures,
+            instantiated: inst,
+        },
+        bridge,
+    ))
+}
+
+/// The lambda body behind a d8 bridge: d8 reaches a private instance method
+/// (a lambda body or a method reference's target) through a public static
+/// synthetic method of the same class that passes its parameters on
+/// unchanged (`$r8$lambda$...`), where javac's handle names the method itself
+/// (javac's own lambda bodies, static ones included, are never public), and
+/// likewise through a nest accessor.
+fn unbridge(dex: &Dex, idx: u32) -> Option<(u8, u32)> {
+    let m = dex.method(idx).ok()?;
+    let def = dex.class_def(dex.class_of_type(m.class)?).ok()?;
+    let data = dex.class_data(def.class_data_off).ok()?;
+    let em = data.direct_methods.iter().find(|e| e.method == idx)?;
+    let accessor = matches!(dex.nest().accessors.get(&idx), Some(crate::nest::Access::Call { .. }));
+    if em.access & 0x1009 != 0x1009 && !accessor {
+        return None;
+    }
+    let code = dex.code_item(em.code_off).ok()?;
+    let insns = decode(code.insns).ok()?;
+    let first = u32::from(code.registers.checked_sub(code.ins)?);
+    let call = insns.first()?;
+    let regs: Vec<u32> = (first..u32::from(code.registers)).collect();
+    if !matches!(call.op, 0x6e | 0x70 | 0x72 | 0x74 | 0x76 | 0x78) || call.args() != regs {
+        return None;
+    }
+    let returns = match &insns[1..] {
+        [r] => r.op == 0x0e,
+        [mr, r] => matches!(mr.op, 0x0a..=0x0c) && matches!(r.op, 0x0f..=0x11) && mr.a == r.a,
+        _ => false,
+    };
+    let target = dex.method(call.idx).ok()?;
+    if !returns || target.class != m.class || dex.string(target.name).ok()? == b"<init>" {
+        return None;
+    }
+    let kind = if def.access & 0x200 != 0 { 9 } else { 5 };
+    Some((kind, call.idx))
 }

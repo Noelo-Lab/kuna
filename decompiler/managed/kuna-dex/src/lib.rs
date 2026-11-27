@@ -8,6 +8,7 @@
 //! untrusted: every offset and count is checked, and a malformed file or
 //! method is an error, never a panic.
 
+mod backport;
 mod class;
 mod classfile;
 mod code;
@@ -16,7 +17,10 @@ mod dex;
 mod emit;
 mod insn;
 mod lambda;
+mod nest;
 mod reader;
+mod record;
+mod region;
 
 pub use class::ERROR_ATTRIBUTE;
 
@@ -76,6 +80,9 @@ pub struct Translated {
     pub bytes: Vec<u8>,
     /// `name(descriptor): reason` for each method whose code failed.
     pub failures: Vec<String>,
+    /// d8 wrote the class for its desugaring and every use of it is written
+    /// back as the JDK call it stands for (backports): a loader leaves it out.
+    pub omit: bool,
 }
 
 /// Whether `head` starts a DEX file.
@@ -86,7 +93,14 @@ pub fn is_dex(head: &[u8]) -> bool {
 impl Dex<'_> {
     /// Translates class definition `idx` to class-file bytes.
     pub fn translate(&self, idx: u32, opts: &Options) -> Result<Translated> {
-        class::translate(self, idx, opts)
+        self.translate_with(idx, opts, &[])
+    }
+
+    /// Translates class definition `idx`, its calls into d8's synthetic
+    /// classes of the other DEX files of the input (`peers`) undone too.
+    pub fn translate_with(&self, idx: u32, opts: &Options, peers: &[Dex]) -> Result<Translated> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| class::translate(self, idx, opts, peers)))
+            .unwrap_or_else(|_| Err(err("internal error in kuna-dex".to_string())))
     }
 
     /// The internal name of class definition `idx`.
@@ -101,10 +115,15 @@ impl Dex<'_> {
 
     /// Translates every class on up to `threads` threads, in definition order.
     pub fn translate_all(&self, opts: &Options, threads: usize) -> Vec<Result<Translated>> {
+        self.translate_all_with(opts, threads, &[])
+    }
+
+    /// [`Dex::translate_all`] with the other DEX files of the input.
+    pub fn translate_all_with(&self, opts: &Options, threads: usize, peers: &[Dex]) -> Vec<Result<Translated>> {
         let n = self.class_count() as usize;
         let threads = threads.clamp(1, 64).min(n.div_ceil(64).max(1));
         if threads == 1 {
-            return (0..n as u32).map(|i| self.translate(i, opts)).collect();
+            return (0..n as u32).map(|i| self.translate_with(i, opts, peers)).collect();
         }
         let next = std::sync::atomic::AtomicUsize::new(0);
         let mut parts: Vec<(usize, Result<Translated>)> = std::thread::scope(|scope| {
@@ -118,7 +137,7 @@ impl Dex<'_> {
                                 break;
                             }
                             for i in start..(start + 32).min(n) {
-                                out.push((i, self.translate(i as u32, opts)));
+                                out.push((i, self.translate_with(i as u32, opts, peers)));
                             }
                         }
                         out
