@@ -49,8 +49,6 @@ pub struct DecompiledClass {
     /// The output entry, e.g. `a/b/C.java`.
     pub path: String,
     pub content: String,
-    /// The original line mapping when `bytecode-source-mapping` is on.
-    pub mapping: Option<Vec<i32>>,
     /// Why the class could not be written normally (`content` is then the
     /// error comment Vineflower writes in its place).
     pub error: Option<String>,

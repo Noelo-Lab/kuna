@@ -1037,13 +1037,12 @@ units, as Java counts them. Every reference and declaration in the text is recor
 (Vineflower's hook for IDE consumers; kuna reads none), and kuna's zero-width span marks
 (`kuna_spans`) ride the same mechanism, following every later edit.
 
-**Line mapping.** While expressions are written,
-`decompiler/managed/kuna-jvm/src/p9_emit/bytecode_mapping_tracer.rs` records which
-bytecode offsets each output line came from, and
-`decompiler/managed/kuna-jvm/src/p9_emit/bytecode_source_mapper.rs` relates them to the
-class file's `LineNumberTable`. (kuna) `decompiler/managed/kuna-jvm/src/infra/kuna_spans.rs`
+**Line mapping.** While expressions are written, the text buffer records which bytecode
+offsets each output line came from
+(`decompiler/managed/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::kuna_bytecode_lines)`).
+(kuna) `decompiler/managed/kuna-jvm/src/infra/kuna_spans.rs`
 records, with zero-width marks that ride through re-wrapping and are never printed, where
-each class and each method starts and ends in the final text, and groups the tracer's
+each class and each method starts and ends in the final text, and groups those
 offsets by method and line. These spans are what lets a front end slice one method out of
 a class, report its line mapping in bytecode offsets, and mark a method as failed, without
 changing a byte of the output. The recorder also keeps the stack of spans open while the

@@ -538,10 +538,6 @@ vineflower = "new-line-separator"
 kuna = "output always uses \\n"
 
 [[driver_owned]]
-vineflower = "bytecode-source-mapping"
-kuna = "line mappings are always collected (method spans)"
-
-[[driver_owned]]
 vineflower = "user-renamer-class"
 kuna = "not supported: a renamer class needs a JVM to load"
 

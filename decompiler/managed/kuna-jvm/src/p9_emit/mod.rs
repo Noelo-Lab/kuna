@@ -1,7 +1,5 @@
 //! P9, emit: Java source rendering, imports and line mapping.
 
-pub mod bytecode_mapping_tracer;
-pub mod bytecode_source_mapper;
 pub mod class_text_token;
 pub mod class_writer;
 pub mod field_text_token;

@@ -9,7 +9,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::bytecode_source_mapper::BytecodeSourceMapper;
 use crate::class_wrapper::ClassWrapper;
 use crate::class_writer::IFabricJavadocProvider;
 use crate::classes_processor::{ClassNode, ClassesProcessor};
@@ -47,7 +46,6 @@ pub struct DecompilerContextData {
     import_collector: Option<ImportCollector>,
     var_processor: Option<VarProcessor>,
     counter_container: CounterContainer,
-    bytecode_source_mapper: Option<BytecodeSourceMapper>,
 }
 
 #[derive(Clone)]
@@ -77,7 +75,6 @@ impl DecompilerContext {
             import_collector: None,
             var_processor: None,
             counter_container: CounterContainer::new(),
-            bytecode_source_mapper: None,
         })))
     }
 
@@ -133,8 +130,6 @@ impl DecompilerContext {
         context.with_mut(|d| d.import_collector = Some(import_collector));
         let counter_container = CounterContainer::new();
         context.with_mut(|d| d.counter_container = counter_container);
-        let bytecode_source_mapper = BytecodeSourceMapper::new();
-        context.with_mut(|d| d.bytecode_source_mapper = Some(bytecode_source_mapper));
     }
 
     pub fn start_method(var_processor: VarProcessor) {
@@ -222,15 +217,6 @@ impl DecompilerContext {
         Self::current(|d| d.counter_container)
     }
 
-    pub fn get_bytecode_source_mapper() -> BytecodeSourceMapper {
-        Self::current(|d| d.bytecode_source_mapper).expect("getBytecodeSourceMapper()")
-    }
-
-    /// Detaches the class's source mapper once its class has been written.
-    pub(crate) fn take_bytecode_source_mapper() -> Option<BytecodeSourceMapper> {
-        Self::current_mut(|d| d.bytecode_source_mapper.take())
-    }
-
     pub fn get_current_class() -> Option<StructClass> {
         Self::current(|d| d.static_props.current_class)
     }
@@ -283,7 +269,6 @@ impl DecompilerContext {
             d.counter_container = counter_container;
             d.import_collector = d.import_collector.filter(|h| h.is_live());
             d.var_processor = d.var_processor.filter(|h| h.is_live());
-            d.bytecode_source_mapper = d.bytecode_source_mapper.filter(|h| h.is_live());
             let props = &mut d.static_props;
             props.current_class_wrapper = props.current_class_wrapper.filter(|h| h.is_live());
             props.current_method_wrapper = props.current_method_wrapper.filter(|h| h.is_live());

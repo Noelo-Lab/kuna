@@ -6,8 +6,7 @@
 //! through appends and line re-wrapping the way text tokens do and are never
 //! printed, so recording changes no output. When the root class's text is
 //! final, [`finish`] turns the marks into byte offsets and 1-based lines, and
-//! groups the buffer's bytecode-offset mapping (what `BytecodeMappingTracer`
-//! receives, whatever `bytecode-source-mapping` says) by method and line, as
+//! groups the buffer's bytecode-offset mapping by method and line, as
 //! the CLI contract's spans (`kuna_managed::{TypeSpan, MemberSpan}`).
 //! Recording is active only between [`begin`] and [`take`].
 //!

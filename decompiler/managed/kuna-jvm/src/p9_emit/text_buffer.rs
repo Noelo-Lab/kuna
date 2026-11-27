@@ -12,7 +12,6 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
-use crate::bytecode_mapping_tracer::BytecodeMappingTracer;
 use crate::class_text_token::ClassTextToken;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -787,41 +786,8 @@ impl TextBuffer {
             .retain(|key, _| key.my_class.is_some());
     }
 
-    /// One tracer per `(class, method key)`, in mapping order, each fed the
-    /// source line of every bytecode offset.
-    pub fn get_tracers(
-        &self,
-    ) -> JLinkedHashMap<Pair<String, Option<String>>, BytecodeMappingTracer> {
-        let sb = &self.my_string_builder;
-        let sep = &self.my_line_separator;
-        let mut newline_offsets: Vec<i32> = Vec::new();
-        let mut i = index_of(sb, sep, 0);
-        while i != -1 {
-            newline_offsets.push(i);
-            i = index_of(sb, sep, i + 1);
-        }
-        let mut tracers: JLinkedHashMap<Pair<String, Option<String>>, BytecodeMappingTracer> =
-            JLinkedHashMap::new();
-        for (key, &text_offset) in self.my_bytecode_offset_mapping.iter() {
-            let Some(class_name) = &key.my_class else {
-                jthrow!(IllegalStateException;
-                    "getTracers called when not all bytecode offsets have a valid class and method");
-            };
-            let tracer = *tracers.compute_if_absent(
-                Pair::of(class_name.clone(), key.my_method.clone()),
-                BytecodeMappingTracer::new,
-            );
-            let line_no = match newline_offsets.binary_search(&text_offset) {
-                Ok(at) | Err(at) => at as i32,
-            };
-            tracer.set_current_source_line(line_no);
-            tracer.add_mapping(key.my_bytecode_offset);
-        }
-        tracers
-    }
-
-    /// What [`TextBuffer::get_tracers`] feeds its tracers, without creating
-    /// any: `(class, method key, bytecode offset, 0-based line)` in mapping order (kuna).
+    /// `(class, method key, bytecode offset, 0-based line)` of every bytecode
+    /// mapping, in mapping order (kuna).
     pub fn kuna_bytecode_lines(&self) -> Vec<(Option<String>, Option<String>, i32, i32)> {
         let sb = &self.my_string_builder;
         let sep = &self.my_line_separator;

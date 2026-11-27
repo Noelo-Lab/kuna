@@ -265,16 +265,7 @@ impl ContextUnit {
                 class_ctx.error = recorded.error;
                 class_ctx.classes = recorded.classes;
                 class_ctx.methods = recorded.methods;
-                if DecompilerContext::get_option(IFernflowerPreferences::BYTECODE_SOURCE_MAPPING) {
-                    class_ctx.mapping = Some(
-                        DecompilerContext::get_bytecode_source_mapper()
-                            .get_original_lines_mapping(),
-                    );
-                }
                 window.close();
-                if let Some(mapper) = DecompilerContext::take_bytecode_source_mapper() {
-                    mapper.release();
-                }
             }));
         }
 
@@ -290,7 +281,6 @@ impl ContextUnit {
                     qualified_name,
                     path: cls.entry_name,
                     content: class_content,
-                    mapping: cls.mapping,
                     error: cls.error,
                     classes: cls.classes,
                     methods: cls.methods,
@@ -377,7 +367,6 @@ struct ClassContext {
     ctx: Option<DecompilerContext>,
     entry_name: String,
     class_content: Option<String>,
-    mapping: Option<Vec<i32>>,
     pending_error: Option<Caught>,
     error: Option<String>,
     classes: Vec<TypeSpan>,
@@ -391,7 +380,6 @@ impl ClassContext {
             ctx: None,
             entry_name,
             class_content: None,
-            mapping: None,
             pending_error: None,
             error: None,
             classes: Vec::new(),

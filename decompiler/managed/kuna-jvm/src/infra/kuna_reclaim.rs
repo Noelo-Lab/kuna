@@ -26,7 +26,6 @@ use crate::array_exprent::ArrayExprentData;
 use crate::assert_exprent::AssertExprentData;
 use crate::assignment_exprent::AssignmentExprentData;
 use crate::basic_block_statement::BasicBlockStatementData;
-use crate::bytecode_mapping_tracer::BytecodeMappingTracer;
 use crate::catch_all_statement::CatchAllStatementData;
 use crate::catch_statement::CatchStatementData;
 use crate::const_exprent::ConstExprentData;
@@ -105,7 +104,6 @@ fn cached_exprents_since(mark: u32) -> Vec<Exprent> {
 pub(crate) struct ClassWindow {
     decompile_record: u32,
     var_definition_helper: u32,
-    tracer: u32,
 }
 
 impl ClassWindow {
@@ -113,14 +111,12 @@ impl ClassWindow {
         ClassWindow {
             decompile_record: DecompileRecord::arena_len(),
             var_definition_helper: VarDefinitionHelper::arena_len(),
-            tracer: BytecodeMappingTracer::arena_len(),
         }
     }
 
     pub(crate) fn close(self) {
         DecompileRecord::release_since(self.decompile_record, |_| false);
         VarDefinitionHelper::release_since(self.var_definition_helper, |_| false);
-        BytecodeMappingTracer::release_since(self.tracer, |_| false);
     }
 }
 

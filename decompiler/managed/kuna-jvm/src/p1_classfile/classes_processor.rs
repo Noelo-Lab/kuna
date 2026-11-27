@@ -649,37 +649,9 @@ impl ClassesProcessor {
                 writer.write_class(root, &mut class_buffer, 0);
                 class_buffer.reformat();
 
-                for (class_and_method, tracer) in class_buffer.get_tracers().entry_vec() {
-                    let clazz =
-                        DecompilerContext::get_struct_context().get_class(&class_and_method.a);
-                    if let Some(clazz) = clazz {
-                        let method = class_and_method
-                            .b
-                            .as_deref()
-                            .and_then(|key| clazz.get_method_key(key));
-
-                        if let Some(method) = method {
-                            let line_number_table = method
-                                .get_attribute(StructGeneralAttribute::ATTRIBUTE_LINE_NUMBER_TABLE);
-                            tracer.set_line_number_table(line_number_table);
-                            DecompilerContext::get_bytecode_source_mapper().add_tracer(
-                                &class_and_method.a,
-                                class_and_method.b.as_deref().unwrap_or_default(),
-                                tracer,
-                            );
-                        }
-                    }
-                }
-
                 writer.write_class_header(cl, buffer, DecompilerContext::get_import_collector());
-                let offset_lines = buffer.count_lines();
 
                 buffer.append_buffer(&class_buffer);
-
-                if DecompilerContext::get_option(IFernflowerPreferences::BYTECODE_SOURCE_MAPPING) {
-                    let mapper = DecompilerContext::get_bytecode_source_mapper();
-                    mapper.add_total_offset(offset_lines);
-                }
             }
         });
         Self::destroy_wrappers(root);

@@ -8,7 +8,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use kuna_jvm::byte_cursor::ByteCursor;
-use kuna_jvm::bytecode_mapping_tracer::BytecodeMappingTracer;
 use kuna_jvm::classes_processor::ClassesProcessor;
 use kuna_jvm::context_source::{Entries, Entry, IContextSource};
 use kuna_jvm::counter_container::CounterContainer;
@@ -385,7 +384,6 @@ fn unit_save_reports_failing_classes_and_keeps_going() {
     assert_eq!(names, ["p/A", "p/B", "p/C"]);
     assert_eq!(out[0].path, "p/A.java");
     assert_eq!(out[0].content, "class p/A same-context true counter 2");
-    assert_eq!(out[0].mapping, None);
     assert_eq!(out[1].content, "// $VF: Couldn't be decompiled\n");
     assert_eq!(out[2].content, "// $VF: Couldn't be decompiled\n");
 
@@ -427,7 +425,6 @@ fn delivers_each_root_class_in_entry_order() {
         assert_eq!(class.path, format!("{}.java", class.qualified_name));
         let simple = class.qualified_name.rsplit('/').next().unwrap();
         assert!(class.content.contains(simple), "{}", class.content);
-        assert_eq!(class.mapping, None);
     }
 
     let counters = DecompilerContext::get_counter_container();
@@ -450,28 +447,6 @@ fn delivers_each_root_class_in_entry_order() {
 }
 
 #[test]
-fn line_mapping_follows_the_option() {
-    let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("bsm", "true"),
-            ("log-level", "error"),
-        ]),
-        Rc::new(CollectingLogger::new()),
-    );
-    assert!(DecompilerContext::get_option(
-        IFernflowerPreferences::BYTECODE_SOURCE_MAPPING
-    ));
-    let (own, lib) = sources();
-    fernflower.add_source(Rc::new(own));
-    fernflower.add_library(Rc::new(lib));
-    let classes = decompile(&mut fernflower);
-    assert_eq!(classes.len(), OWN.len());
-    assert!(classes.iter().all(|c| c.mapping.is_some()));
-    fernflower.clear_context();
-}
-
-#[test]
 fn unknown_log_level_keeps_the_logger_severity() {
     let logger: Rc<dyn IFernflowerLogger> = Rc::new(CollectingLogger::new());
     logger.set_severity(Severity::Error);
@@ -486,16 +461,3 @@ fn unknown_log_level_keeps_the_logger_severity() {
     fernflower.clear_context();
 }
 
-#[test]
-fn mapping_tracer_keeps_the_first_line_per_offset() {
-    let tracer = BytecodeMappingTracer::new_line(10);
-    tracer.add_mapping(4);
-    tracer.set_current_source_line(11);
-    tracer.add_mapping(4);
-    tracer.add_mapping(7);
-    assert_eq!(
-        tracer.get_mapping().borrow().entry_vec(),
-        vec![(4, 10), (7, 11)]
-    );
-    assert!(tracer.get_original_lines_mapping().is_empty());
-}

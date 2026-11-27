@@ -135,7 +135,7 @@ pub use p8_structure::{
     try_helper, try_with_resources_processor,
 };
 pub use p9_emit::{
-    bytecode_mapping_tracer, bytecode_source_mapper, class_text_token, class_writer,
+    class_text_token, class_writer,
     field_text_token, import_collector, method_text_token, text_buffer, text_token,
     variable_text_token,
 };

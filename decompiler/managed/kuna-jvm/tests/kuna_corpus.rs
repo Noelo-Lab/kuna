@@ -55,7 +55,6 @@ fn unit(path: &str, content: &str) -> DecompiledClass {
         qualified_name: path.trim_end_matches(".java").to_string(),
         path: path.to_string(),
         content: content.to_string(),
-        mapping: None,
         ..DecompiledClass::default()
     }
 }
