@@ -365,15 +365,24 @@ impl KunaRegionGraph {
     /// Endpoints are keyed via the pool, exactly as C++ `nodes[a]`/`nodes[b]`
     /// default-construct adjacency on first reference.
     pub fn add_edge(&mut self, pool: &KunaNodePool, a: KunaNodeId, b: KunaNodeId) {
-        if self.has_edge(a, b) {
+        let succs = &mut self.adjacency(pool, a).succs;
+        if succs.contains(&b) {
             return;
         }
-        let ak = pool.key(a);
-        let bk = pool.key(b);
-        self.add_node_keyed(ak);
-        self.add_node_keyed(bk);
-        self.nodes.get_mut(&ak).unwrap().succs.push(b);
-        self.nodes.get_mut(&bk).unwrap().preds.push(a);
+        succs.push(b);
+        self.adjacency(pool, b).preds.push(a);
+    }
+
+    /// The adjacency of `n`, added under its pool key when absent.
+    fn adjacency(&mut self, pool: &KunaNodePool, n: KunaNodeId) -> &mut Adjacency {
+        let key = pool.key(n);
+        match self.nodes.entry(key) {
+            std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
+            std::collections::btree_map::Entry::Vacant(e) => {
+                self.keyof.insert(n, key);
+                e.insert(Adjacency::default())
+            }
+        }
     }
 
     /// Remove edge if present (C++ `removeEdge`).
