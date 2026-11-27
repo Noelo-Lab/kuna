@@ -4124,6 +4124,14 @@ which physical FF register the active slot uses. The store postmodifies
 `R6`, writes its old address with the `ECFG.SR1` word shift, and leaves
 the arithmetic flags intact, as does the load.
 
+The qualified sequential right `MOVE` samples `FF2` at operand fetch.
+Early CE1 admission captures old `R6` and applies its indexed update;
+the later CE1 result gate independently controls the `SR1` DATA store.
+The explicit modulo window uses all sixteen bits of `RM6`.
+The implicit window uses the saved alignment mask and a signed sum
+before truncation. A guest write to active `RM6` refreshes the mask; its
+entry value is not inferred from `RM6` alone.
+
 A compact long `MOVE` from saved `LEA1` uses the unmodified selected
 `R0`–`R7` as its DATA address. `SR1` shifts the zero-extended 24-bit saved
 address as one value before storing the low and high words. The second

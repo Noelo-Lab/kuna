@@ -1091,6 +1091,7 @@ fn compact_bank_exchange_routes_all_address_selects() {
         let slot = SEQUENTIAL | 0x2b8000 | 1 << (2 + select);
         let mut m = Machine::new(0, &[(slot, NOP)], &[(0, 2, 3), (1, 3, 0)], None);
         m.seed(&[("PACFG", 0x9999), ("PACFGS", 0x6666), ("ESTS", 0x2240), ("CETBL", 0x00ff)]);
+        m.seed(&[("RM6_ALIGN", 0xa5a5)]);
         for (i, &(a, s)) in pairs.iter().enumerate() {
             m.seed(&[(a, 0x4100 + i as u64), (s, 0x5100 + i as u64)]);
         }
@@ -1099,6 +1100,7 @@ fn compact_bank_exchange_routes_all_address_selects() {
         for (i, &(a, s)) in pairs.iter().enumerate() {
             assert_eq!((m.reg(a), m.reg(s)), (0x5100 + i as u64, 0x4100 + i as u64));
         }
+        assert_eq!(m.reg("RM6_ALIGN"), if select == 11 { 0x8000 } else { 0xa5a5 });
         let mask = if select < 8 { 3 << (2 * select) } else { 0 };
         assert_eq!((m.reg("PACFG"), m.reg("PACFGS")), (0x9999 ^ mask, 0x6666 ^ mask));
         assert_eq!((m.reg("EST"), m.reg("ESTS")), (0x1000, 0x2240));

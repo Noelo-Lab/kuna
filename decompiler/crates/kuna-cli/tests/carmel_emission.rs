@@ -1767,6 +1767,85 @@ fn carmel_qualified_wide_transfer_uses_early_address_enable() {
 }
 
 #[test]
+fn carmel_sequential_ff2_store_separates_pointer_and_writeback() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("sequential-ff2.bin");
+    let source = scratch.path().join("sequential-ff2.c");
+    let executable = scratch.path().join("sequential-ff2");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut code = vec![[0x21, 0xac, 0x20, 0x2b, 0xec, 0]];
+    code.extend([NOP; 5]);
+    code.push([0xbd, 0xac, 0x0e, 0x31, 0x43, 0xbd]);
+    code.extend([NOP, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], NOP]);
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\nstatic volatile unsigned short cell;\n");
+    let mut checks = String::new();
+    const RM7: [u8; 6] = [0x30, 0x8e, 0x0e, 0x2b, 0xec, 0];
+    const RM255: [u8; 6] = [0x30, 0x8f, 0xfe, 0x2b, 0xec, 0];
+    const BANK: [u8; 6] = [0x2b, 0xa0, 0, 0x2b, 0xec, 0];
+    for (r, (ptr, step, cfg, modulo, align, advanced, writers)) in [
+        (0x8048, 3, 0, 0, 0, 0x804b, &[][..]),
+        (0x4005, 3, 0x3000, 0x1007, 0, 0x3000, &[][..]),
+        (0x8010, 0x8000, 0x2000, 0x3f, 0, 0x50, &[][..]),
+        (0x8047, 0xffff, 0x2000, 7, 0, 0x804e, &[][..]),
+        (0x8047, 0xffff, 0x2000, 7, 0xfff8, 0x8046, &[][..]),
+        (0x8047, 0xffff, 0x2000, 0, 0, 0x8046, &[RM7][..]),
+        (0x8047, 0xffff, 0x2000, 0, 0, 0x8046, &[RM255, [0xdf, 0, 0, 0x9b, 0x6f, 0xdd]][..]),
+        (0x8047, 0xffff, 0x2000, 0x1234, 0, 0x8046, &[[0x77, 0, 0, 0xc3, 0xb2, 0x1a]][..]),
+        (0x8047, 0xffff, 0x2000, 0, 0, 0x8046, &[RM7, BANK, RM255, BANK][..]),
+    ].into_iter().enumerate() {
+        let mut program = Vec::new();
+        for &writer in writers {
+            program.push(writer);
+            program.extend([NOP; 6]);
+        }
+        program.extend_from_slice(&code);
+        fs::write(&binary, program.as_flattened()).unwrap();
+        let specs = scratch.path().join(format!("specs-{r}"));
+        tracked_carmel_entry_specs(
+            &specs,
+            &[
+                ("R6", ptr), ("RN6", step), ("RM6", modulo), ("RL6", 0), ("RM6_ALIGN", align),
+                ("PACFG", cfg), ("A0L", 0xffff), ("A0H", 1),
+                ("FF1", 4), ("X2", 3), ("RM6S", 0), ("RL6S", 0),
+            ],
+            0,
+            0,
+        );
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict", "--assert", "return %R6 unsigned short",
+            "--assert", &format!("data [data,{ptr:#x}] volatile unsigned short cell"),
+        ]);
+        for (i, reg) in ["CECFG1", "CECFG2", "CETBL", "ECFG", "FF2", "EST"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{reg} unsigned short in_{i}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        writeln!(c, "#define sub_0 store_{r}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+        for (arm, (ce, table, ecfg, new_ptr, data)) in [
+            (0x0888, 0x80, 0, advanced, 0x2468),
+            (0x0888, 1, 0, ptr, 0x2468),
+            (0x0888, 0x81, 0x20, advanced, 0xfb3c),
+            (0x1000, 0, 0, advanced, 0x2468),
+        ].into_iter().enumerate() {
+            writeln!(checks,
+                "cell=0x2468; if (store_{r}({ce},0,{table},{ecfg},0xf678,0) != {new_ptr} || cell != {data}) return {};",
+                r * 4 + arm + 1, table = table | 0xff00,
+            ).unwrap();
+        }
+    }
+    writeln!(c, "int main(void) {{\n{checks}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

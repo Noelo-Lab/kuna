@@ -78,6 +78,7 @@ define register offset=0x108 size=2 [ RM0 ];
 define register offset=0x10c size=2 [ RM2 ];
 define register offset=0x110 size=2 [ RM4 ];
 define register offset=0x114 size=2 [ RM6 ];
+define register offset=0x116 size=2 [ RM6_ALIGN ];
 define register offset=0x118 size=2 [ RN0 ];
 define register offset=0x11c size=2 [ RN1 ];
 define register offset=0x120 size=2 [ RN2 ];
@@ -549,6 +550,7 @@ define token slot (24)
     slot_13_22 = (13,22)
     address_literal_dst = (9,12)
     address_literal_value = (1,8) signed
+    compact_rm6_literal = (1,8)
     rel_words = (3,12) signed
     slot_0_2 = (0,2)
     conditional_words = (2,8) signed
@@ -1829,6 +1831,30 @@ macro modify_ptr(reg, increment, rm, rl, shift, modifier) {
     modify_ptr_scaled(reg, increment, rm, rl, shift, modifier, 1:2);
 }
 
+macro refresh_rm6_alignment() {
+    local bits:2 = RM6;
+    bits = bits | (bits >> 1);
+    bits = bits | (bits >> 2);
+    bits = bits | (bits >> 4);
+    bits = bits | (bits >> 8);
+    RM6_ALIGN = ~bits;
+}
+
+macro modify_indexed_r6() {
+    if ((PACFG & 0x3000) == 0x2000) goto <implicit>;
+    modify_ptr_scaled_window(R6, RN6, RM6, RL6, 12, 1, 1, 0xffff);
+    goto <done>;
+  <implicit>
+    local lower:4 = sext(R6 & RM6_ALIGN);
+    local size:4 = zext(RM6 & 0xfff) + 1;
+    local candidate:4 = sext(R6) + sext(RN6);
+    if (candidate s>= lower && candidate s< lower + size) goto <publish>;
+    candidate = candidate + size * (2 * zext(RN6 s< 0) - 1);
+  <publish>
+    R6 = candidate:2;
+  <done>
+}
+
 agu_group_0: agu_0_r,agu_1_r is (slot_13_14=0 | slot_12_14=2 | slot_13_14=2 | slot_12_14=6) & agu_0_r & agu_0_rn & agu_0_rm & agu_0_rl & agu_0_shift & agu_modifier_0 & agu_1_r & agu_1_rn & agu_1_rm & agu_1_rl & agu_1_shift & agu_modifier_1 { modify_ptr(agu_0_r, agu_0_rn, agu_0_rm, agu_0_rl, agu_0_shift, agu_modifier_0); modify_ptr(agu_1_r, agu_1_rn, agu_1_rm, agu_1_rl, agu_1_shift, agu_modifier_1); }
 agu_group_1: agu_2_r,agu_3_r is (slot_10_11=0 | slot_9_11=2 | slot_10_11=2 | slot_9_11=6) & agu_2_r & agu_2_rn & agu_2_rm & agu_2_rl & agu_2_shift & agu_modifier_2 & agu_3_r & agu_3_rn & agu_3_rm & agu_3_rl & agu_3_shift & agu_modifier_3 { modify_ptr(agu_2_r, agu_2_rn, agu_2_rm, agu_2_rl, agu_2_shift, agu_modifier_2); modify_ptr(agu_3_r, agu_3_rn, agu_3_rm, agu_3_rl, agu_3_shift, agu_modifier_3); }
 :"ADDRUPDATE" agu_group_0,agu_group_1 is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_0=0x0 & slot_15_22=0x59 & agu_group_0 & agu_group_1 { build agu_group_0; build agu_group_1; }
@@ -2591,6 +2617,7 @@ macro compact_bank_ports(selected) {
     if ((mask & 0x800) == 0) goto <done>;
     swap16(RM6, RM6S);
     swap16(RL6, RL6S);
+    refresh_rm6_alignment();
   <done>
 }
 
@@ -2862,6 +2889,8 @@ wide_lim8_disconnected: "0xff" is wide_2_9=0xff { }
 wide_lim8_result: "RMW1" is wide_2_9=0x86 { export RM6; }
 wide_lim8_result: "FF12" is wide_2_9=0xbe { export FF1; }
 wide_lim8_result: "LC" is wide_2_9=0xd4 { export LC1; }
+wide_lim8_rm_update: is epsilon { }
+wide_lim8_rm_update: is wide_2_9=0x86 { refresh_rm6_alignment(); }
 
 # L1 is sticky and its driver is independent of the register result port.
 macro wide_lim8_status(input, enabled) {
@@ -2881,7 +2910,7 @@ macro wide_lim8_clamp(input, result) {
     unary_ce(CECFG2, EST, CETBL, 1, enabled);
     wide_lim8_status(wide_lim8_source, enabled);
 }
-:LIM8 "CE2" wide_lim8_result,"RM6" is $(WIDE_LIM8_CE2) & wide_40_45=0x37 & wide_lim8_result {
+:LIM8 "CE2" wide_lim8_result,"RM6" is $(WIDE_LIM8_CE2) & wide_40_45=0x37 & wide_lim8_result & wide_lim8_rm_update {
     local enabled:2;
     unary_ce(CECFG2, EST, CETBL, 1, enabled);
     local input:2 = RM6;
@@ -2889,6 +2918,7 @@ macro wide_lim8_clamp(input, result) {
     local result:2;
     wide_lim8_clamp(input, result);
     wide_lim8_result = result;
+    build wide_lim8_rm_update;
   <finish>
     wide_lim8_status(input, enabled);
 }
@@ -3376,6 +3406,31 @@ macro compact_move_write_ff(port) {
 }
 :^nop_left "||" "MOVE" "*R6+=RN6","FF2" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_22=0x3143bc) {
     compact_move_write_ff(FF2);
+}
+
+:MOVU "RM6",compact_rm6_literal "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_9_22=0x1847 & slot_0_0=0 & compact_rm6_literal & ce_single_tick);
+    (slot_mode=0 & nop_right) {
+    RM6 = compact_rm6_literal;
+    refresh_rm6_alignment();
+    clock_ce();
+    build ce_single_tick;
+}
+
+:MOVE "CE1" "*R6+=RN6","FF2" is carmel_issue=3 & slot_mode=0 & slot_0_22=0x3143bd
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    if (admitted == 0) goto <feedback>;
+    local address:2 = R6;
+    modify_indexed_r6();
+    local word:2 = carmel_sample_ff_at_of(FF2, __FF2_BEFORE_EX);
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <feedback>;
+    *[data]:2 address = word s>> ((ECFG >> 5) & 1);
+  <feedback>
+    clock_ce();
+    carmel_end_unmodeled_issue();
 }
 
 reset_of_live: enabled is epsilon [ enabled = 1; ] { export *[const]:1 enabled; }
@@ -6031,6 +6086,7 @@ macro limit_acc_value(raw, word_result, value) {
     local carry_set:1 = (EST & 0x40) != 0;
     wide_routed_arithmetic(left, right, carry_set, 0:1, 1:1, 0:1, result);
     RM6 = result(2);
+    refresh_rm6_alignment();
 }
 
 :SUBC1 "*"^absolute_data_addr,"*R4++",alias_of_word is $(WIDE_ROUTED_ALU) & logic_ce_bank=1 & wide_alias_add_op=2 & wide_alias_add_dst=0x3a & wide_alias_add_lhs=0xfa & wide_40_45=0x14 & wide_0_0=0 & absolute_data_addr & carmel_of_route=2 & alias_of_word {
