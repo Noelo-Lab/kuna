@@ -9,10 +9,10 @@
 //! `a / b` and dead-code removal dropped the float.
 //!
 //! [`drop_quotient`] runs before the output fill-in. It retires an active
-//! trial outside the floating output entries while a floating trial is active
-//! and, at every live RETURN, each value the trial reads there (followed
-//! through copies, zero extensions, low truncations, the low half of a PIECE
-//! and MULTIEQUALs) is one of
+//! trial outside the floating output entries while a trial in the first
+//! floating entry (`xmm0`) is active and, at every live RETURN, each value the
+//! trial reads there (followed through copies, zero extensions, low
+//! truncations, the low half of a PIECE and MULTIEQUALs) is one of
 //! - a quotient whose remainder, the INT_REM or INT_SREM of the same operands,
 //!   the floating trial's value at that RETURN is computed from;
 //! - a value that floating value is computed from (`(float)rng()` converts the
@@ -60,19 +60,17 @@ pub fn drop_quotient(data: &Funcdata, active: &mut ParamActive, returns: &[OpId]
         return;
     }
     let entries = output_entries(data);
-    let class_of = |i: i32| {
+    let entry_of = |i: i32| {
         let t = active.get_trial(i);
-        entries
-            .iter()
-            .find(|e| e.justified_contain(t.get_address(), t.get_size()) >= 0)
-            .map(|e| e.get_type())
+        entries.iter().position(|e| e.justified_contain(t.get_address(), t.get_size()) >= 0)
     };
+    let first_float = entries.iter().position(|e| e.get_type() == type_class::TYPECLASS_FLOAT);
     let (floats, ints): (Vec<i32>, Vec<i32>) = candidates
         .iter()
         .copied()
-        .filter(|&i| class_of(i).is_some())
-        .partition(|&i| class_of(i) == Some(type_class::TYPECLASS_FLOAT));
-    if floats.is_empty() || ints.is_empty() {
+        .filter(|&i| entry_of(i).is_some())
+        .partition(|&i| entry_of(i).is_some_and(|k| entries[k].get_type() == type_class::TYPECLASS_FLOAT));
+    if ints.is_empty() || first_float.is_none() || !floats.iter().any(|&i| entry_of(i) == first_float) {
         return;
     }
     let live: Vec<OpId> = returns

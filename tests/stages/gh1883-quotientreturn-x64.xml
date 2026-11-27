@@ -47,18 +47,26 @@
         1088  f2 48 0f 2a c2     CVTSI2SD XMM0,RDX     ; (double)(a % b)
         108d  c3                 RET
 
+        10a0  48 89 f8           MOV      RAX,RDI
+        10a3  48 99              CQO
+        10a5  48 f7 fe           IDIV     RSI
+        10a8  f2 48 0f 2a ca     CVTSI2SD XMM1,RDX     ; xmm1 alone is no return
+        10ad  c3                 RET
+
     Stage: P4 return recovery. The first, second, third and fifth functions
-    return the float or double; store_rem stores the float and still returns
+    return the float or double; store_rem stores the float and xmm1_only
+    writes only the second floating return register, and both still return
     the quotient.
 -->
 <bytechunk space="ram" offset="0x1000">
-89f899f7fef30f2ac2c30000000000000000000000000000000000000000000085d2740a89f899f7fef30f2ac2c3f30f2ac7c30000000000000000000000000085d2740b89f831d2f7f6f30f2ac2c389f8f3480f2ac0c30000000000000000004989d089f899f7fef30f2ac2f3410f1100c300000000000000000000000000004889f831d248f7f6f2480f2ac2c3
+89f899f7fef30f2ac2c30000000000000000000000000000000000000000000085d2740a89f899f7fef30f2ac2c3f30f2ac7c30000000000000000000000000085d2740b89f831d2f7f6f30f2ac2c389f8f3480f2ac0c30000000000000000004989d089f899f7fef30f2ac2f3410f1100c300000000000000000000000000004889f831d248f7f6f2480f2ac2c30000000000000000000000000000000000004889f8489948f7fef2480f2acac3
 </bytechunk>
 <symbol space="ram" offset="0x1000" name="srem_float"/>
 <symbol space="ram" offset="0x1020" name="pick"/>
 <symbol space="ram" offset="0x1040" name="scale"/>
 <symbol space="ram" offset="0x1060" name="store_rem"/>
 <symbol space="ram" offset="0x1080" name="rem_double"/>
+<symbol space="ram" offset="0x10a0" name="xmm1_only"/>
 </binaryimage>
 <script>
   <com>lo fu srem_float</com>
@@ -76,6 +84,9 @@
   <com>lo fu rem_double</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu xmm1_only</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="QUOTIENTRETURN #1: idiv then cvtsi2ss returns the float" min="1" max="1">^float4 srem_float\(int4 a0,int4 a1\)</stringmatch>
@@ -88,4 +99,5 @@
 <stringmatch name="QUOTIENTRETURN #8: the stored float is kept" min="1" max="1">^  \*a2 = \(float4\)\(a0 % a1\);</stringmatch>
 <stringmatch name="QUOTIENTRETURN #9: div rsi then cvtsi2sd returns the double" min="1" max="1">^float8 rem_double\(uint8 a0,uint8 a1\)</stringmatch>
 <stringmatch name="QUOTIENTRETURN #10: the double is the remainder" min="1" max="1">^  return \(float8\)\(int8\)\(a0 % a1\);</stringmatch>
+<stringmatch name="QUOTIENTRETURN #11: xmm1 alone leaves the quotient the return" min="1" max="1">^int8 xmm1_only\(int8 a0,int8 a1\)</stringmatch>
 </decompilertest>
