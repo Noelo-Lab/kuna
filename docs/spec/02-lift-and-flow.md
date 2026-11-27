@@ -33,6 +33,12 @@ reaches the architecture only through the
 live implementation is
 `decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs (ArchFlowEnv)`.
 
+Instruction and byte queries over a headerless raw image use the caller's
+SLEIGH language and file mapping without adding function entry points. Their
+walks and mapping checks use byte offsets; input and reported CODE addresses
+use the language's address units. Byte counts and lifted varnode offsets are
+not rescaled.
+
 PPC32 `blr` and its conditional forms are not necessarily ABI returns: LR can
 hold a locally computed code address. Before return processing discards that
 target, `decompiler/crates/kuna-decomp/src/p2_lift/kuna_ppc32lrflow.rs (classify)`
@@ -1168,6 +1174,27 @@ an indirect GOT jump; jump-table recovery fails on it and the function renders
 a `(*dat_...)(...)` computed call with a `"Treating indirect jump as call"`
 warning. Two datatests (Long double #1/#2) opt out per-test.
 
+**Explicit call resumes.** An unconditional direct branch immediately after
+`CALL` or `CALLIND` in the same instruction's p-code is followed as the call's
+explicit resume edge, even if its destination is also a known function entry.
+`flow.rs (FlowInfo::tail_call_kind)` declines that `CPUI_BRANCH` before the
+extent check, so neither tail-call rule claims it. A conditional branch after a
+call still makes a separate flow decision, and so does a branch after
+`CALLOTHER`. A jump in a different instruction can still be a tail call. A
+no-return call never reaches its branch: the halt planted after the call ends
+the instruction first. No vendored constructor emits a call and then a `goto`:
+SPARC `call` resumes through `if (didrestore==0) goto inst_next`, a
+`CPUI_CBRANCH`. The shape comes from a call-class instruction in a delay slot.
+A SPARC `ta` or `t<cc>` (lifted as `call [sw_trap(..)]`) in the delay slot of
+`ba` or an annulled branch returns to that branch's target. Before this rule, a
+function declared at that target, as discovery declares one after a call,
+printed as a second call. If the target really is another function, the
+follower now walks into its body. No genuine case occurs in 357 Debian
+SPARC32/SPARC64 images. `tests/stages/kuna-sparc-trap-resume.xml` pins the
+SPARC case. `decompiler/crates/kuna-cli/tests/post_call_resume.rs` pins
+direct and indirect resumes, a separate tail `jmp` and a same-instruction
+conditional tail on a test processor.
+
 **Bounded conditional tails.** With an explicit extent, a machine-address
 `CPUI_CBRANCH` to another known function's entry outside that extent is the
 conditional form of the same direct tail. Both `on` and `direct` recover it
@@ -1366,6 +1393,7 @@ a back-edge, as in `tailcalljump`) nor an address this function has already
 decoded (already-decoded blocks are live flow, whatever the stack looks like).
 The rewrite is the one `tailcalljump` already drives in the BRANCH arm of
 `flow.rs (FlowInfo::xref_control_flow)`; `flow.rs (FlowInfo::tail_call_kind)`
+declines an explicit call resume, then
 checks the caller-declared extent before asking either tail-call rule, then asks
 `tailcalljump` first for eligible targets. A known eligible target keeps that
 path and warning text, and a `tailcallframe: recovered tail call` warning
@@ -2432,7 +2460,9 @@ that is a return, not a switch (`RecoveryMode::FailReturn`).
 Failure demotes: `flow.rs (FlowInfo::truncate_indirect_jump)` rewrites the
 BRANCHIND to a RETURN (`fail_return`, warning `"Treating indirect jump as
 return"`) or to a CALLIND with an artificial RETURN after it (`fail_normal`,
-warning `"Treating indirect jump as call"`; `fail_thunk` silently; a
+which marks the call's `FuncCallSpecs` a bad jump table so the warning
+`"Treating indirect jump as call"` is published only if that call survives
+simplification, chapter 9; `fail_thunk` silently; a
 CALLOTHER-computed target additionally marks the halt no-return) (unreachable today: nothing produces the CALLOTHER failure, see above). This is the
 failure mode every rescue below is fighting for: one unbounded table turns a
 switch into an opaque computed call.

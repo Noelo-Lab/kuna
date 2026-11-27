@@ -47,6 +47,9 @@ mod verify_aifpoolslide;
 #[path = "verify_aifstrict.rs"]
 mod verify_aifstrict;
 
+#[path = "verify_android_jni.rs"]
+mod verify_android_jni;
+
 #[path = "verify_armderef.rs"]
 mod verify_armderef;
 

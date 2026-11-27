@@ -1,11 +1,14 @@
 //! Octeon ELF identity from standard machine, ABI and floating-point evidence.
 use super::kuna_mipsabi::{abi_flags, fp_abi, AbiFlags};
-use kuna_decomp::kuna_octeonid::language_id as id;
-use object::{Architecture, BinaryFormat, FileFlags, Object};
+use kuna_decomp::kuna_octeonid::{language_id as id, o64_language_id as o64_id};
+use object::{Architecture, BinaryFormat, FileFlags, Object, ObjectSection};
 
 const MACH_MASK: u32 = 0x00ff_0000;
 const ABI2: u32 = 0x20;
 const ABI_MASK: u32 = 0xf000;
+const ABI_O64: u32 = 0x2000;
+const MODE_32BIT: u32 = 0x100;
+const FLOAT_BITS: u32 = 0xe00;
 
 fn machine_variant(machine: u32) -> Option<&'static str> {
     match machine {
@@ -28,14 +31,16 @@ fn extension_variant(extension: u32) -> Option<&'static str> {
 
 
 /// `None` leaves non-Octeon selection alone. Identified but unqualified or
-/// contradictory profiles require an explicit target, never an inferred ABI.
+/// contradictory N32/N64 profiles require an explicit target; an ELF32 O64
+/// profile that does not qualify keeps generic selection, and [`notes`] says why.
 pub fn language_id(file: &object::File<'_>) -> Result<Option<String>, &'static str> {
-    if file.format() != BinaryFormat::Elf
-        || !matches!(
-            file.architecture(),
-            Architecture::Mips64 | Architecture::Mips64_N32
-        )
-    {
+    if file.format() != BinaryFormat::Elf {
+        return Ok(None);
+    }
+    if file.architecture() == Architecture::Mips {
+        return Ok(o64_profile(file).and_then(Result::ok));
+    }
+    if !matches!(file.architecture(), Architecture::Mips64 | Architecture::Mips64_N32) {
         return Ok(None);
     }
     let FileFlags::Elf { e_flags, .. } = file.flags() else {
@@ -80,26 +85,8 @@ pub fn language_id(file: &object::File<'_>) -> Result<Option<String>, &'static s
         Some(3) => false,
         _ => return Err("Octeon floating-point ABI is missing or unsupported; specify a target"),
     };
-    if let Some(AbiFlags(raw)) = record {
-        let revision = raw[3] == 2 || (variant == "octeon3" && raw[3] == 5);
-        if raw[2] != 64
-            || !revision
-            || raw[4] != 2
-            || raw[5] != if hard { 2 } else { 0 }
-            || raw[6] != 0
-        {
-            return Err(
-                "Octeon ABI-flags ISA or register widths disagree with its calling convention",
-            );
-        }
-        let ases = u32::from_be_bytes(raw[12..16].try_into().unwrap());
-        let generation_ases = if variant == "octeon3" { 0x100 } else { 0 };
-        if ases & !generation_ases != 0
-            || u32::from_be_bytes(raw[16..20].try_into().unwrap()) & !1 != 0
-            || raw[20..24] != [0; 4]
-        {
-            return Err("Octeon ABI-flags declare unqualified ISA extensions or flags");
-        }
+    if let Some(record) = record {
+        check_record(record, variant, hard)?;
     }
     if hard && variant != "octeon3" {
         return Err("hard-float automatic selection is qualified only for Octeon III");
@@ -107,8 +94,111 @@ pub fn language_id(file: &object::File<'_>) -> Result<Option<String>, &'static s
     Ok(Some(id(variant, n32, hard)))
 }
 
+/// Why an ELF32 image with an Octeon machine tag that declares O64 or no ABI
+/// did not load as Octeon O64, for the loader's diagnostics; empty when it did,
+/// when `explicit`, or for any other image.
+pub fn notes(file: &object::File<'_>, language: &str, explicit: bool) -> Vec<String> {
+    match o64_profile(file) {
+        Some(Err(reason)) if !explicit => {
+            let closest = if file.is_little_endian() {
+                String::new()
+            } else {
+                format!(" ({} decodes the original Octeon instructions with O64)", o64_id())
+            };
+            vec![format!(
+                "Octeon ELF32 image not loaded as Octeon O64: {reason}; using {language}; use --target to choose another language{closest}"
+            )]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// `None` for every image but a non-N32 ELF32 image with an Octeon machine tag
+/// that declares O64 or no ABI; for that image, the O64 language when its
+/// metadata is consistent with soft-float O64 on a big-endian original Octeon,
+/// else the contradiction. The original Octeon has no FPU, so an image without
+/// a float declaration is soft-float; with no attribute or ABI-flags record,
+/// the header's float bits are that declaration.
+fn o64_profile(file: &object::File<'_>) -> Option<Result<String, &'static str>> {
+    let FileFlags::Elf { e_flags, .. } = file.flags() else {
+        return None;
+    };
+    if file.format() != BinaryFormat::Elf
+        || file.architecture() != Architecture::Mips
+        || !matches!(e_flags & ABI_MASK, 0 | ABI_O64)
+    {
+        return None;
+    }
+    let variant = machine_variant(e_flags & MACH_MASK)?;
+    Some(o64(file, e_flags, variant))
+}
+
+fn o64(file: &object::File<'_>, e_flags: u32, variant: &str) -> Result<String, &'static str> {
+    if file.is_little_endian() {
+        return Err("little-endian Octeon requires an explicit target");
+    }
+    if variant != "octeon" {
+        return Err("only the original Octeon has an O64 model");
+    }
+    let record = abi_flags(file)?;
+    match record.map(|r| r.extension(false)).unwrap_or(0) {
+        0 | 5 => {}
+        3 => return Err("Octeon Plus has no O64 model"),
+        _ => return Err("conflicting Octeon machine and ISA-extension declarations"),
+    }
+    if e_flags & 0xf000_0000 != 0x8000_0000 {
+        return Err("Octeon automatic selection requires MIPS64r2 ISA evidence");
+    }
+    if e_flags & 0x0f00_0000 != 0 {
+        return Err("Octeon image declares an unqualified MIPS ISA extension");
+    }
+    if e_flags & MODE_32BIT != 0 {
+        return Err("it declares 32-bit registers, which O64 does not use");
+    }
+    if file
+        .sections()
+        .filter_map(|section| section.name().ok())
+        .any(|name| name.starts_with(".mdebug.") && name != ".mdebug.abiO64")
+    {
+        return Err("its .mdebug ABI marker names an ABI other than O64");
+    }
+    match fp_abi(file, record)? {
+        Some(3) => {}
+        None if e_flags & FLOAT_BITS == 0 => {}
+        None => return Err("its header declares float registers, but O64 is soft-float"),
+        Some(_) => return Err("it declares a floating-point ABI other than soft float, the only O64 model"),
+    }
+    if let Some(record) = record {
+        check_record(record, variant, false)?;
+    }
+    Ok(o64_id())
+}
+
+/// An ABI-flags record must declare the MIPS64r2 ISA, 64-bit GPRs, the float
+/// registers `hard` implies and no extension or flag beyond the variant's own.
+fn check_record(AbiFlags(raw): AbiFlags, variant: &str, hard: bool) -> Result<(), &'static str> {
+    let revision = raw[3] == 2 || (variant == "octeon3" && raw[3] == 5);
+    if raw[2] != 64
+        || !revision
+        || raw[4] != 2
+        || raw[5] != if hard { 2 } else { 0 }
+        || raw[6] != 0
+    {
+        return Err("Octeon ABI-flags ISA or register widths disagree with its calling convention");
+    }
+    let ases = u32::from_be_bytes(raw[12..16].try_into().unwrap());
+    let generation_ases = if variant == "octeon3" { 0x100 } else { 0 };
+    if ases & !generation_ases != 0
+        || u32::from_be_bytes(raw[16..20].try_into().unwrap()) & !1 != 0
+        || raw[20..24] != [0; 4]
+    {
+        return Err("Octeon ABI-flags declare unqualified ISA extensions or flags");
+    }
+    Ok(())
+}
+
 pub fn language_ids() -> Vec<String> {
-    let mut ids = Vec::new();
+    let mut ids = vec![o64_id()];
     for variant in kuna_decomp::kuna_octeonid::VARIANTS {
         for n32 in [false, true] {
             ids.push(id(variant, n32, false));
@@ -221,6 +311,84 @@ mod tests {
             put16(&mut bytes, if n32 { 50 } else { 62 }, 0);
         }
         bytes
+    }
+
+    #[test]
+    fn original_octeon_elf32_declaring_o64_or_no_abi_selects_the_o64_model() {
+        for abi in [0, ABI_O64] {
+            for sections in [
+                vec![],
+                vec![(b".mdebug.abiO64".as_slice(), vec![])],
+                vec![(b".gnu.attributes".as_slice(), attributes(3))],
+                vec![(b".MIPS.abiflags".as_slice(), flags(5, false))],
+                vec![(b".mdebug".as_slice(), vec![0; 4])],
+            ] {
+                let bytes = elf(true, 0x808b0001 | abi, &sections);
+                assert_eq!(select(&bytes), Ok(Some(o64_id())));
+                assert!(notes(&object::File::parse(bytes.as_slice()).unwrap(), &o64_id(), false).is_empty());
+            }
+        }
+    }
+
+    fn refused(bytes: &[u8]) -> bool {
+        let file = object::File::parse(bytes).unwrap();
+        language_id(&file) == Ok(None)
+            && matches!(o64_profile(&file), Some(Err(_)))
+            && notes(&file, "MIPS:BE:32:default", false).len() == 1
+            && notes(&file, "MIPS:BE:32:default", true).is_empty()
+    }
+
+    #[test]
+    fn contradicting_elf32_octeon_metadata_keeps_generic_selection_with_a_note() {
+        let none = 0x808b0001;
+        for (e_flags, sections) in [
+            (none, vec![(b".mdebug.abi32".as_slice(), vec![])]),
+            (ABI_O64 | none, vec![(b".mdebug.abiN32".as_slice(), vec![])]),
+            (none, vec![(b".mdebug.abiO64".as_slice(), vec![]), (b".mdebug.abi64".as_slice(), vec![])]),
+            (none, vec![(b".gnu.attributes".as_slice(), attributes(1))]),
+            (none, vec![(b".MIPS.abiflags".as_slice(), flags(3, false))]),
+            (none, vec![(b".MIPS.abiflags".as_slice(), flags(2, false))]),
+            (none, vec![(b".MIPS.abiflags".as_slice(), vec![0; 8])]),
+            (none | MODE_32BIT, vec![]),
+            (0x708b0001, vec![]),
+            (0x608b0001, vec![]),
+            (0xa08b0001, vec![]),
+            (0x848b0001, vec![]),
+            (ABI_O64 | 0x808d0001, vec![]),
+            (0x808e0001, vec![]),
+        ] {
+            assert!(refused(&elf(true, e_flags, &sections)), "{e_flags:#x}");
+        }
+        let mut narrow = flags(5, false);
+        narrow[4] = 1;
+        assert!(refused(&elf(true, none, &[(b".MIPS.abiflags", narrow)])));
+        assert!(refused(&elf(true, none, &[(b".MIPS.abiflags", flags(5, true))])));
+        assert!(refused(&elf_endian(true, none, &[], Endianness::Little)));
+        let little = elf_endian(true, none, &[], Endianness::Little);
+        let note = notes(&object::File::parse(little.as_slice()).unwrap(), "MIPS:LE:32:default", false);
+        assert!(!note[0].contains("MIPS:BE:"), "{note:?}");
+        for bit in [0x200, 0x400, 0x800] {
+            assert!(refused(&elf(true, none | bit, &[])), "{bit:#x}");
+            let soft = [(b".gnu.attributes".as_slice(), attributes(3))];
+            assert_eq!(select(&elf(true, none | bit, &soft)), Ok(Some(o64_id())), "{bit:#x}");
+        }
+    }
+
+    #[test]
+    fn elf32_without_an_octeon_identity_or_declaring_another_abi_keeps_generic_selection() {
+        for (e_flags, sections) in [
+            (0x80000001, vec![]),
+            (0x80002001, vec![]),
+            (0x80000001, vec![(b".MIPS.abiflags".as_slice(), flags(5, false))]),
+            (0x808b1001, vec![]),
+            (0x808b3001, vec![]),
+            (0x808b4001, vec![]),
+        ] {
+            let bytes = elf(true, e_flags, &sections);
+            let file = object::File::parse(bytes.as_slice()).unwrap();
+            assert_eq!(language_id(&file), Ok(None), "{e_flags:#x}");
+            assert!(notes(&file, "MIPS:BE:32:default", false).is_empty(), "{e_flags:#x}");
+        }
     }
 
     #[test]

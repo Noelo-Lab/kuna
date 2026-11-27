@@ -343,6 +343,10 @@ pub struct Architecture {
     /// on every path without a section table, so it is inert for the XML
     /// datatest oracle.
     pub globalref_ranges: Rc<Vec<(u64, u64)>>,
+    /// (kuna `ptrfromuse`) The image has a section table, so an empty
+    /// [`Self::globalref_ranges`] means it holds no data objects, not that
+    /// none are known.
+    pub section_table: bool,
     /// (kuna `cstringconst`) The `[start, end)` ranges of the loaded sections
     /// that hold only C string literals (a Mach-O `__cstring` section of type
     /// `S_CSTRING_LITERALS`). Empty without a section table.
@@ -434,6 +438,9 @@ pub struct Architecture {
     /// (kuna `armshiftguard`) Which register-controlled ARM LSLs print the
     /// `n < 32u ? x << n : 0` range guard.
     pub arm_shift_guard: crate::p9_emit::kuna_armshiftguard::ShiftGuardMode,
+    /// (kuna `rangetest`) Where a merged unsigned range test prints as its two
+    /// comparisons.
+    pub range_test: crate::p9_emit::kuna_rangetest::RangeTestMode,
     /// (kuna `wrapadd`) Print a four-byte addition that a wider sign extension
     /// observes through unsigned C, so it wraps as the machine word does.
     pub wrap_add: bool,
@@ -647,6 +654,8 @@ pub struct Architecture {
     /// Mapped ELF x86 flow recovery: load-time container/target eligibility;
     /// XML, raw, and remote images abstain.
     pub mapped_flow_boundary_image: bool,
+    /// Android ELF with the NDK JNI type declarations installed.
+    pub android_jni: bool,
     /// (kuna `overlapbranch`) Truncate a conditional branch's fall-through when the
     /// branch's own target lies strictly inside that fall-through instruction's
     /// encoding — the anti-disassembly junk-lead-byte idiom, where the fall-through
@@ -977,11 +986,9 @@ pub struct Architecture {
     /// clauses; the earlier-addressed arm becomes the `if` clause instead of
     /// out-index 0.
     pub guard_arm: crate::p8_structure::kuna_ifnoexit::GuardArmMode,
-    /// (kuna) Defer a live loop head in `CollapseStructure`'s deferred
-    /// `ruleBlockIfNoExit` scan while a non-head candidate remains (option
-    /// `loopcondhoist`, default-off opt-in), so `ruleBlockWhileDo` keeps the
-    /// loop's head test instead of emitting `while(true) { if (!C) ...; }`.
-    pub loop_cond_hoist: bool,
+    /// (kuna) Which exit of a loop the structurers keep as the loop's own
+    /// (option `loopcondhoist`); see [`crate::p8_structure::kuna_loopcond`].
+    pub loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist,
     /// Preserve secondary natural-loop latches as continues (`loopcontinue`).
     pub loop_continue: bool,
     /// (kuna) `loopcontinue auto`: in a function `kuna_unoptimized` flags, the
@@ -1083,6 +1090,9 @@ pub struct Architecture {
     /// [`crate::p8_structure::kuna_outline`].
     pub outline_spec: String,
     pub cond_fold: int4,
+    /// (kuna `condfold noreturn|auto`) Which chains of tests into one shared
+    /// block fold.  See [`crate::p8_structure::kuna_fatalchain`].
+    pub cond_fold_chain: crate::p8_structure::kuna_fatalchain::ChainFold,
     /// (kuna) `condstmts` statement cap for folded condition operands; negative =
     /// off.  See [`crate::p8_structure::kuna_condstmts`].
     pub cond_stmts: int4,
@@ -1105,6 +1115,9 @@ pub struct Architecture {
     /// (`gotoreduce`/`crossjumprevert`) (`dedup_ite_tail`, opt-in
     /// default-off).
     pub dedup_ite_tail: bool,
+    /// (kuna) join duplicated loop latches (`dedupitetail latch`); see
+    /// [`crate::p8_structure::kuna_latchjoin`].
+    pub latch_join: bool,
     /// (kuna) angr `ITERegionConverter`: rewrite a two-arm assignment *diamond*
     /// (`if (c) v = A; else v = B;`, both arms a single COPY to the same
     /// variable, converging on one tail) to a `?:` ternary (`v = c ? A : B;`).
@@ -1165,6 +1178,10 @@ pub struct Architecture {
     /// size of its conditional tail; `None` when off.  Read by
     /// [`crate::p8_structure::kuna_tailform`].
     pub tail_form: Option<crate::p8_structure::kuna_tailform::TailFormPolicy>,
+    /// (kuna) `returndup auto`: in optimized functions, fold adjacent guards
+    /// and give the arms of a merged return their own.  Read by
+    /// [`crate::p8_structure::kuna_retshape`].
+    pub ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy,
     /// (kuna) Hoist a leading const-guard into an early return (`if (c) return K;`) by
     /// peeling only the CONSTANT arm of a mixed return phi — the per-edge narrowing of
     /// angr SAILR `ReturnDuplicatorHigh` that `duplicate_shared_returns`' whole-block
@@ -1332,6 +1349,10 @@ pub struct Architecture {
     /// (kuna `boolbranch`) Keep a 0/1 select under a branch instruction instead of
     /// folding it into the condition ([`crate::p3_dataflow::kuna_boolbranch`]).
     pub bool_branch_keep: bool,
+    /// (kuna `boolbranch return`) A function that is only a guard with a
+    /// short-circuit condition returning 1 or 0 prints one `return` of the
+    /// condition ([`crate::p8_structure::kuna_boolret`]).
+    pub bool_ret: bool,
     /// (kuna `acleintrinsics`) On AArch64, lift the memory-tagging instructions
     /// with their tag effect (`kuna_memtag`) and print the barrier, hint and
     /// memory-tagging user ops as ACLE intrinsics (`kuna_acleintrinsics`).
@@ -1906,6 +1927,8 @@ pub struct Architecture {
     /// (output-changing: it adds named data and function symbols);
     /// `--option itaniumrtti on` enables it.
     pub analysis_itaniumrtti: bool,
+    /// Recover methods registered by Android JNI libraries.
+    pub analysis_jniregister: bool,
     /// (kuna `panicloc`) Rust images only: type and name the panic `Location`
     /// records (`kuna-analysis` `strings/kuna_panicloc.rs`). Default on.
     pub analysis_panicloc: bool,
@@ -2442,6 +2465,7 @@ impl Architecture {
             eh_sections: None,
             func_sizes: Rc::new(Vec::new()),
             globalref_ranges: Rc::new(Vec::new()),
+            section_table: false,
             cstring_ranges: Rc::new(Vec::new()),
             cstring_const: false, // (kuna) option cstringconst; reset_defaults sets the shipped default
             infer_pointers: false,
@@ -2471,6 +2495,7 @@ impl Architecture {
             bool_byte: true, // (kuna) option boolbyte; reset_defaults sets the shipped default
             arm_constant_shift: crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off,
             arm_shift_guard: crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Always, // (kuna) option armshiftguard; reset_defaults sets the shipped default
+            range_test: crate::p9_emit::kuna_rangetest::RangeTestMode::Merged, // (kuna) option rangetest; reset_defaults sets the shipped default
             wrap_add: false,
             rust_array_zero: false,
             char_byte: true, // (kuna) option charbyte; reset_defaults sets the shipped default
@@ -2512,6 +2537,7 @@ impl Architecture {
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             mapped_flow_boundary_image: false,
+            android_jni: false,
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
             vararg_save: false, // (kuna) option varargsave; reset_defaults sets the shipped default
@@ -2608,16 +2634,18 @@ impl Architecture {
             loop_continue: true,
             loop_continue_record: false, // (kuna) option loopcontinue auto; reset_defaults sets the shipped default
             post_increment: true,
-            loop_cond_hoist: false,
+            loop_cond_hoist: crate::p8_structure::kuna_loopcond::LoopCondHoist::Off, // (kuna) option loopcondhoist; reset_defaults sets the shipped default
             region_loop_refine: false,
             region_edge_order: false,
             outline_spec: String::new(),
             cond_fold: 0,
+            cond_fold_chain: crate::p8_structure::kuna_fatalchain::ChainFold::Off,
             cond_stmts: -1,
             goto_reduce: crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Off,
             flatten_ifelse: false,
             revert_cross_jumps: false,
             dedup_ite_tail: false,
+            latch_join: false, // (kuna) option dedupitetail latch; reset_defaults sets the shipped default
             iteregion: false,
             iteregion_record: false,
             iteexpr: false,
@@ -2628,6 +2656,7 @@ impl Architecture {
             returndup_record: false, // (kuna) option returndup auto; reset_defaults sets the shipped default
             returndup_triangle: false, // (kuna) option rettriangle; reset_defaults sets the shipped default
             tail_form: None, // (kuna) option tailform; reset_defaults sets the shipped default
+            ret_shape: crate::p8_structure::kuna_retshape::RetShapePolicy::off(), // (kuna) option returndup auto; reset_defaults sets the shipped default
             early_return: false,
             switch_return: false,
             recover_loop_break: false,
@@ -2661,6 +2690,7 @@ impl Architecture {
             cortexmpriv: false, // (kuna) option cortexmpriv; reset_defaults sets the shipped default
             byte_store_width: false, // (kuna) option bytestorewidth; reset_defaults sets the shipped default
             bool_branch_keep: false, // (kuna) option boolbranch; reset_defaults sets the shipped default
+            bool_ret: false, // (kuna) option boolbranch return; reset_defaults sets the shipped default
             acle_intrinsics: false, // (kuna) option acleintrinsics; reset_defaults sets the shipped default
             cortexmpriv_inject: None, // (kuna) set by init_userops_and_fixups when the language declares the user-op
             present_lessequal: false,
@@ -2764,6 +2794,7 @@ impl Architecture {
             analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
+            analysis_jniregister: true,
             analysis_panicloc: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
@@ -2951,21 +2982,25 @@ impl Architecture {
         self.region_edge_order = false; // (kuna) SAILR P2 default-OFF opt-in (H2 post-dominator + dominance-tiered edge-virtualization ordering; only reorders which goto is chosen when virtualizing, so OFF is byte-identical)
         self.outline_spec = String::new(); // (kuna) default-OFF opt-in (excise a supplied single-entry region into a synthesized pseudofunction call; destructive, and inert with no region supplied)
         self.cond_stmts = crate::p8_structure::kuna_condstmts::DEFAULT_CAP; // (kuna) condstmts default-on: a folded condition operand prints at most 3 statements before its test (0/675 ablation)
+        self.cond_fold_chain = crate::p8_structure::kuna_fatalchain::ChainFold::Auto; // (kuna) condfold default `auto`: a chain of tests into one no-return call folds into one condition, and in an optimized function a chain into any block it alone enters
         self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
         self.goto_reduce = crate::p8_structure::kuna_gotoreduce::GotoReduceMode::On; // (kuna) gotoreduce default `on`: call-free return tails and return tails with a call (angr SAILR ReturnDuplicator/ReturnDuplicatorLow; 0/675 ablation)
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
+        self.latch_join = true; // (kuna) option dedupitetail default `latch`: join loop latches the compiler copied into each path (kuna_latchjoin)
         self.iteregion_record = true; // (kuna) `iteregion auto` default: the recorded conditional values decide unoptimized functions
         self.iteregion = true; // (kuna) DIV-17 default-on (angr ITERegionConverter: assignment-diamond -> `?:` ternary, decbench F5). Per-test opt-out (`option iteregion off`) on the datatests it changes keeps the corpus byte-identical.
         self.iteexpr = false; // (kuna) computed-arm ?: extension: runtime choice, default-off (corpus byte-identical).
         self.iteboolean = true; // (kuna) DIV-51 default-on (short-circuit 0/1 select -> boolean assignment; 0/675 ablation). Per-test opt-out (`option iteboolean off`) on the one stage test it changes keeps the corpus byte-identical.
         self.tail_form = Some(crate::p8_structure::kuna_tailform::TailFormPolicy::shipped()); // (kuna) option tailform default `model`
+        self.loop_cond_hoist = crate::p8_structure::kuna_loopcond::LoopCondHoist::On; // (kuna) option loopcondhoist default `on`: the loop's condition is its exit, read from the layout in functions `kuna_unoptimized` calls unoptimized; `auto` keeps the structurer's choice in optimized ones
         self.guard_arm = crate::p8_structure::kuna_ifnoexit::GuardArmMode::Auto; // (kuna) option guardarm default `auto`: the layout tie-break only in functions `kuna_unoptimized` calls unoptimized; `option guardarm off` restores out-index order everywhere
         self.returndup_triangle = false; // (kuna) option rettriangle default-off: decbench sample O0 -163 GED / +56 perfect, O2 +60 GED / +1 perfect; on in the aggressive preset
         self.duplicate_shared_returns = true; // (kuna) DIV-54 default-on, superseding the DIV-18 revert (angr SAILR gotoless ReturnDuplicatorHigh). The -976 GED-perfect regression that reverted it was measured before #137 added the const-return gate (`returndup_is_const_ret`); re-ablated on 52,862 decbench functions the selective pass is +417 GED-perfect / -7,756 aggregate GED, net-positive in every one of nine tested partitions. Per-test opt-out (`option returndup off`) on the datatests it changes keeps the corpus byte-identical.
         self.duplicate_call_returns = false; // (kuna) `returndup calls` is opt-in: the merged call is often the source's own ternary argument
         self.returndup_record = true; // (kuna) `returndup auto` default: in unoptimized functions the recorded return statements decide the splits
+        self.ret_shape.on = true; // (kuna) `returndup auto` default: in optimized functions adjacent guards fold and merged returns split per arm
         self.early_return = true; // (kuna) DIV-23 default-on (angr SAILR ReturnDuplicatorHigh PER-EDGE const-guard early-return hoisting: peel only the CONSTANT arm of a mixed return phi). The const-only narrowing of returndup that returndup's whole-block gate cannot reach; unlike broad returndup (DIV-18, -976 regression), the decbench ablation measured this NET-POSITIVE (+47 perfect matches, -576 summed GED, 158:54 improved:regressed across 508 sailr binaries) because it only recovers genuine source early-return guards. Per-test opt-out (`option earlyreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.switch_return = true; // (kuna) DIV-25 default-on. The continuation of earlyreturn (DIV-23) to WIDE multi-way switch-phi returns (`switch { case: v=K; break; } return v` above earlyreturn's 16-in-edge cap -> per-case `return K`); same per-edge const-peel machinery so it inherits earlyreturn's safety (peels only CONSTANT arms, so it cannot cause returndup's variable-return regression). The decbench ablation of the wide-switch delta on top of default earlyreturn-on measured NET-POSITIVE (+2 perfect matches, -107 summed GED, 3:0 improved:regressed across 17 sailr binaries, zero regressions). Per-test opt-out (`option switchreturn off`) on the datatests it changes keeps the corpus byte-identical.
         self.recover_loop_break = true; // (kuna) DIV-10 default-on (angr break/continue recovery; scopeBreak port)
@@ -2996,7 +3031,8 @@ impl Architecture {
         self.rep_string = true; // (kuna) option repstring default-on: an x86 rep movs/stos/cmpsb loop prints as a copy, fill or compare builtin; inert off x86, 0/675 datatest assertions
         self.cortexmpriv = true; // (kuna) DIV-99: default-ON; the fixup is registered only on a language that declares the user-op (ARM), so inert elsewhere; "the core is privileged" is a modelling judgement, so `off` audits unprivileged Thread-mode code
         self.byte_store_width = false; // (kuna) option bytestorewidth: opt-in
-        self.bool_branch_keep = true; // (kuna) option boolbranch default keep: a 0/1 select under a branch instruction keeps its if; conditional execution still folds
+        self.bool_branch_keep = true; // (kuna) option boolbranch default return: a 0/1 select under a branch instruction keeps its if; conditional execution still folds
+        self.bool_ret = true; // (kuna) option boolbranch default return: a whole-body short-circuit guard returning 1/0 prints one return of the condition
         self.acle_intrinsics = true; // (kuna) option acleintrinsics default-on; reads the AArch64 `ShowMemTag` context and AArch64 user-op names only, so inert on every other target
         self.float_globals = true; // (kuna) option floatglobals default-on
         self.call_target_type = true; // (kuna) option calltargettype default-on; acts only with `ctypes` on, and `option calltargettype off` keeps the upstream `code *` spellings
@@ -3004,6 +3040,7 @@ impl Architecture {
         self.bool_byte = true; // (kuna) option boolbyte default-on: measured 0/675 datatest assertions moved, stages PARITY OK, decbench type_match improved with none worse, speed within budget; docs/features/boolbyte/record.json carries the evidence
         self.arm_constant_shift = crate::p9_emit::kuna_armconstantshift::ConstShiftMode::Off;
         self.arm_shift_guard = crate::p9_emit::kuna_armshiftguard::ShiftGuardMode::Wide; // (kuna) option armshiftguard default `wide`: only the counts of a lowered double-word shift keep the guard; `needed` adds every count not proven below 32, `always` every guard
+        self.range_test = crate::p9_emit::kuna_rangetest::RangeTestMode::Auto; // (kuna) option rangetest default `auto`: split except in loop conditions and in stand-alone conditions of at most 16 values; `merged` restores the one comparison
         self.wrap_add = false; // (kuna) option wrapadd: default off, the casts cost readability on every widened int sum
         self.rust_array_zero = false;
         self.arm_float_args = true; // (kuna) option armfloatargs: default-ON with armfloatreturn; inert unless the ELF states the VFP procedure-call standard
@@ -3136,6 +3173,7 @@ impl Architecture {
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_fid_strict = false;
         self.analysis_flirt = false;
+        self.analysis_jniregister = true;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_panicloc = true; // (kuna) default-on, Rust images only: the pass is registered for a rustc-detected image and the XML datatest path never runs an analysis pass (0/675)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
@@ -3175,6 +3213,9 @@ impl Architecture {
     /// See [`crate::modes`]. The frontend-only `auto` policy errors here because
     /// an Architecture has no input-file size; file frontends resolve it to a
     /// concrete preset before this method. Errors on an unknown mode name.
+    /// `ppc32picimports abi` acts only while an image loads, so the preset
+    /// sets it for the next load and leaves the open image's live mode, a
+    /// caller-local `on` included, as it was.
     pub fn apply_mode(&mut self, name: &str) -> KunaResult<String> {
         if crate::modes::mode_is_automatic(name) {
             return Err(KunaError::parse(
@@ -3188,9 +3229,11 @@ impl Architecture {
                 known.join(", ")
             ))
         })?;
+        let ppc32picimports = self.analysis_ppc32picimports;
         for (opt, val) in overrides {
             self.set_kuna_option(opt, val)?;
         }
+        self.analysis_ppc32picimports = ppc32picimports;
         Ok(format!(
             "mode {name} applied ({} option override{})",
             overrides.len(),
@@ -3694,6 +3737,7 @@ impl Architecture {
         ctx.opaque_predicate = self.opaque_predicate;
         ctx.byte_store_width = self.byte_store_width;
         ctx.bool_branch_keep = self.bool_branch_keep;
+        ctx.bool_ret = self.bool_ret && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) boolbranch return
         ctx.ret_split_global = self.ret_split_global; // retsplitglobal
         ctx.ret_split_limit = self.ret_split_limit; // retsplitlimit
         // (kuna) resolve the byte-shuffle user-op ids ONCE per program, so the
@@ -3742,9 +3786,11 @@ impl Architecture {
         ctx.cast_index = self.cast_index && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castindex
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
+        ctx.android_jni = self.android_jni;
         ctx.analysis_valuewitness = self.analysis_valuewitness; // (kuna) valuewitness
         ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
         ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
+        ctx.section_table = self.section_table; // (kuna) ptrfromuse
         ctx.libctypes = self.analysis_libctypes; // (kuna) libctypes (kuna_libcfit)
         ctx.recover_lowered_switch = self.recover_lowered_switch; // loweredswitch
         ctx.nul_terminator = self.nul_terminator; // nulterminator
@@ -3794,6 +3840,8 @@ impl Architecture {
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.vararg_save = self.vararg_save; // varargsave
+        ctx.win64_home_slots = self.archid.starts_with("x86:LE:64:")
+            && crate::kuna_fastfailnoreturn::archid_is_windows(&self.archid);
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.octeon_effects = self.octeon_effects; // octeoneffects
@@ -3830,11 +3878,13 @@ impl Architecture {
         ctx.lowered_switch_tree = self.lowered_switch_tree; // loweredswitch tree|all
         ctx.lowered_switch_compiled = self.lowered_switch_compiled; // loweredswitch auto
         ctx.cond_fold = self.cond_fold; // condfold
+        ctx.cond_fold_chain = self.cond_fold_chain; // condfold noreturn|auto
         ctx.cond_stmts = self.cond_stmts; // condstmts
         ctx.goto_reduce = self.goto_reduce; // gotoreduce
         ctx.flatten_ifelse = self.flatten_ifelse; // ifelseflatten
         ctx.revert_cross_jumps = self.revert_cross_jumps; // crossjumprevert
         ctx.dedup_ite_tail = self.dedup_ite_tail; // dedupitetail
+        ctx.latch_join = self.latch_join; // dedupitetail latch
         ctx.iteregion = self.iteregion; // iteregion (diamond -> ?: ternary, runtime-choice)
         ctx.iteregion_record = self.iteregion_record; // iteregion auto
         ctx.iteexpr = self.iteexpr; // iteexpr (computed-arm ?: extension, runtime-choice)
@@ -3845,6 +3895,7 @@ impl Architecture {
         ctx.returndup_record = self.returndup_record; // returndup auto
         ctx.returndup_triangle = self.returndup_triangle; // rettriangle (one-block-if join)
         ctx.tail_form = self.tail_form.map(|p| crate::p8_structure::kuna_tailform::TailFormPolicy { elide_void: self.voidtailreturn, loop_test: self.loop_test, ..p }); // tailform
+        ctx.ret_shape = crate::p8_structure::kuna_retshape::RetShapePolicy { loop_test: self.loop_test, ..self.ret_shape }; // returndup auto
         ctx.early_return = self.early_return; // earlyreturn
         ctx.switch_return = self.switch_return; // switchreturn
         ctx.recover_loop_break = self.recover_loop_break; // loopbreak_recovery

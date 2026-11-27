@@ -104,6 +104,8 @@
             else if (f == fc) g(9);
             else g(0);
         }
+    The script pins `option dedupitetail on`: the default `latch` joins a loop
+    latch gcc duplicated here, which changes the shape these asserts pin.
 -->
 <binaryimage arch="x86:LE:64:default:gcc">
 <bytechunk space="ram" offset="0x401000" readonly="true">
@@ -155,6 +157,7 @@ bf07000000eba9660f1f840000000000
 <symbol space="ram" offset="0x403240" name="pick"/>
 </binaryimage>
 <script>
+  <com>option dedupitetail on</com>
   <com>option noreturn die</com>
   <com>option loweredswitch off</com>
   <com>lo fu nid_name</com>

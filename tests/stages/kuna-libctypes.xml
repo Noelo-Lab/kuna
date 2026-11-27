@@ -124,6 +124,8 @@ c3
   <com>option libctypes off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64</com>
+  <!-- kuna: returndup auto re-spells the returns of optimized functions; this test pins the structured form -->
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function fclose</com>
   <com>decompile</com>
@@ -137,6 +139,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_stat_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function fclose</com>
   <com>decompile</com>
@@ -149,6 +152,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/regglobal_fmt_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function fclose</com>
   <com>decompile</com>
@@ -159,6 +163,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function next_byte</com>
   <com>decompile</com>
@@ -169,6 +174,7 @@ c3
   <com>option libctypes glibc</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_glibc_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function next_byte</com>
   <com>decompile</com>
@@ -179,6 +185,7 @@ c3
   <com>option libctypes off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function pending</com>
   <com>decompile</com>
@@ -194,6 +201,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>option returndup record</com>
   <com>option importdata off</com>
   <com>read symbols</com>
   <com>load function 0x11b9</com>
@@ -211,6 +219,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function pending</com>
   <com>decompile</com>
@@ -226,6 +235,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_streams_so_x86_64.so</com>
+  <com>option returndup record</com>
   <com>option importdata off</com>
   <com>read symbols</com>
   <com>load function 0x11b9</com>
@@ -243,6 +253,7 @@ c3
   <com>option libctypes off</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function grow</com>
   <com>decompile</com>
@@ -252,6 +263,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function grow_import</com>
   <com>decompile</com>
@@ -259,6 +271,7 @@ c3
   <com>option libctypes opaque</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function grow</com>
   <com>decompile</com>
@@ -268,12 +281,14 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_obstack_import_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function grow_import</com>
   <com>decompile</com>
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_container_x86_64</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function kws_grow</com>
   <com>decompile</com>
@@ -286,6 +301,7 @@ c3
   <com>print C</com>
   <com>clear architecture</com>
   <com>load file decompiler/crates/kuna-analysis/tests/fixtures/libctypes_widths_i386</com>
+  <com>option returndup record</com>
   <com>read symbols</com>
   <com>load function sub_8049040</com>
   <com>decompile</com>

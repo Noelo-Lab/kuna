@@ -181,6 +181,7 @@ fn compile_and_run(source: &str, stem: &str) -> std::process::Output {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn recovered_result_expressions_match_native_string_contents() {
     use std::collections::BTreeMap;
     use std::process::Command;

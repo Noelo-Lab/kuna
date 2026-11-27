@@ -1,0 +1,81 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:windows">
+<!-- MSVC /Od shapes: each function stores its argument registers into the
+     Windows x64 home slots at entry RSP+8..+0x20. caller spills ecx, edx,
+     r8d and r9b and reloads only the r9b slot, to pass it fifth of nine
+     arguments to callee; unused2 spills two and reads neither; mixed spills
+     edx and xmm0 and reads edx; negatives stores rbx, r8 into rcx's slot and
+     a zeroed r9; reused spills rdx and then keeps a local in that slot.
+     Bytes from homespill_pe_x86_64.py. vararg and spillhigh are variadic
+     int f(const char *fmt, ...) shapes (llvm-mc -triple=x86_64): vararg is
+     MSVC /Od's, which spills all four registers and takes the address of
+     rdx's slot for va_start (mov [rsp+0x20],r9; mov [rsp+0x18],r8;
+     mov [rsp+0x10],rdx; mov [rsp+0x8],rcx; sub rsp,0x18; lea rax,[rsp+0x28];
+     mov [rsp],rax; mov rax,[rsp+0x20]; movsx eax,byte [rax]; add rsp,0x18;
+     ret), and spillhigh is gcc -O2's, which saves rdx, r8 and r9 without
+     a va_start (movsx eax,byte [rcx]; mov [rsp+0x10],rdx;
+     mov [rsp+0x18],r8; mov [rsp+0x20],r9; ret). -->
+<bytechunk space="ram" offset="0x140001100" readonly="true">
+44884c2420448944241889542410894c24084883ec688b05f40e000083e00383
+f803756648c7442440220000008b05dd0e0000488944243848c7442430220000
+0048c7442428220000000fb68424880000008944242041b9220000004c8d05b5
+0e0000488b159e0e0000488b0d8f0e0000e88a00000048b90500000000000080
+4839c875054889c8eb0231c04883c468c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001200" readonly="true">
+4c894c24204c89442418488b01480302450fb6004c01c04c01c8c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001300" readonly="true">
+89542410894c240831c0c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001340" readonly="true">
+89542410f20f114424088b442410c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001380" readonly="true">
+48895c24104c894424084531c94c894c2420b801000000c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1400013c0" readonly="true">
+4889542410c7442410050000008b442410c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001400" readonly="true">
+4c894c24204c89442418488954241048894c24084883ec18488d44242848890424488b4424200fbe004883c418c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140001440" readonly="true">
+0fbe0148895424104c894424184c894c2420c3
+</bytechunk>
+<bytechunk space="ram" offset="0x140002000">
+0000000000000000000000000000000003000000000000007374617475732025
+642025642025640a0000000000000000000000000000f03f
+</bytechunk>
+<symbol space="ram" offset="0x140001100" name="caller"/>
+<symbol space="ram" offset="0x140001200" name="callee"/>
+<symbol space="ram" offset="0x140001300" name="unused2"/>
+<symbol space="ram" offset="0x140001340" name="mixed"/>
+<symbol space="ram" offset="0x140001380" name="negatives"/>
+<symbol space="ram" offset="0x1400013c0" name="reused"/>
+<symbol space="ram" offset="0x140001400" name="vararg"/>
+<symbol space="ram" offset="0x140001440" name="spillhigh"/>
+</binaryimage>
+<script>
+<com>lo fu caller</com><com>decompile</com><com>print C</com>
+<com>map prototype 0x140001200 long long callee(long long *a0,long long *a1,unsigned char *a2,long long a3)</com>
+<com>lo fu caller</com><com>decompile</com><com>print C</com>
+<com>lo fu unused2</com><com>decompile</com><com>print C</com>
+<com>lo fu mixed</com><com>decompile</com><com>print C</com>
+<com>lo fu negatives</com><com>decompile</com><com>print C</com>
+<com>lo fu reused</com><com>decompile</com><com>print C</com>
+<com>lo fu vararg</com><com>decompile</com><com>print C</com>
+<com>lo fu spillhigh</com><com>decompile</com><com>print C</com>
+<com>quit</com>
+</script>
+<stringmatch name="HOMESPILL-WIN64 #1: caller keeps its four spilled parameters, also once callee is declared" min="2" max="2">caller\(unsigned int a0,unsigned int a1,unsigned int a2,char a3\)</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #2: caller never prints without parameters" min="0" max="0">caller\(void\)</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #3: undeclared, callee is passed the reloaded a3 fifth" min="1" max="1">callee\(dat_140002000,dat_140002008,0x140002018,0x22,\(uint1\)a3,0x22,0x22,dat_140002010,0x22\) ==</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #4: declared, callee takes exactly its four arguments" min="1" max="1">callee\(dat_140002000,dat_140002008,\(uint1 \*\)0x140002018,0x22\) ==</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #5: two spilled parameters nothing reads back" min="1" max="1">unused2\(unsigned int a0,unsigned int a1\)</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #6: mixed keeps two parameters, the edx it reads second" min="1" max="1">mixed\(unsigned long long a0,unsigned int a1\)</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #7: rbx, r8 in rcx's slot and a computed r9 are no parameters" min="1" max="1">negatives\(void\)</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #8: a spill whose slot the function reuses is no parameter" min="1" max="1">reused\(void\)</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #9: the registers va_start reads from their slots are varargs, not parameters" min="1" max="1">vararg\(char \*a0\)</stringmatch>
+<stringmatch name="HOMESPILL-WIN64 #10: gcc's variadic register save without va_start is no parameter either" min="1" max="1">spillhigh\(char \*a0\)</stringmatch>
+</decompilertest>

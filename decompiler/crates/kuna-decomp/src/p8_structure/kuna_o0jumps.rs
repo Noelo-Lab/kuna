@@ -303,10 +303,10 @@ fn continue_once(data: &mut Funcdata, lp: BlockId, slot: int4, point: BlockId) -
         comps[slot as usize] = ls;
         sg.kuna_set_components(lp, comps);
     }
-    if clause_items.first() != Some(&clause) {
-        sg.arena.remove(clause);
+    if let Some(&first) = clause_items.first().filter(|&&c| c != clause) {
+        sg.kuna_free_replaced(clause, first);
     }
-    sg.arena.remove(ifb);
+    sg.kuna_free_replaced(ifb, jump);
     true
 }
 
@@ -374,6 +374,11 @@ thread_local! {
 /// Turn the fold gate on or off for the next structuring and reset its count.
 pub(crate) fn set_gate(on: bool) {
     GATE.with(|g| g.set((on, 0)));
+}
+
+/// Whether the gate is on.
+pub(crate) fn gate_on() -> bool {
+    GATE.with(|g| g.get().0)
 }
 
 /// Whether the gate refused a fold since [`set_gate`].

@@ -104,7 +104,7 @@ impl PrintC {
         let plan = self.call_result_plan(fd, arch, op)?;
         if plan.boolean {
             if self.out_lang == OutLang::Rust {
-                self.push_op(&tokens::NOT_EQUAL, Some(op_key(op)));
+                self.push_op(self.byte_test_token(), Some(op_key(op)));
             } else {
                 self.push_go_conversion(&plan.target, &plan.cast_type, op);
             }

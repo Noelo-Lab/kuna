@@ -4,6 +4,7 @@
 //!   kuna disassemble <binary> <name|0xaddr|0xstart-0xend> [--addr] [--as VIEW]
 //!                    [--count N] [--bytes N] [--json] [--mode MODE]
 //!                    [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]
+//!                    [--raw-image --target T --base ADDRESS]
 //!   kuna read <binary> <name|0xaddr|0xstart-0xend> ...   # the same, --as data
 //! ```
 //!
@@ -174,6 +175,8 @@ pub(crate) struct DisArgs {
     pub(crate) target: Option<String>,
     pub(crate) sleighpath: Option<String>,
     pub(crate) isa: Option<kuna_console::engine::ArmIsa>,
+    /// Raw file offset zero, in the target's CODE units.
+    pub(crate) raw_base: Option<u64>,
 }
 
 /// Where the walk starts, where it stops, and what the program calls the start.
@@ -192,6 +195,8 @@ struct Region {
     /// imposes rather than one the caller asked for. `None` where the loader
     /// publishes no segment map and there is nothing to bound the walk with.
     mapped_end: Option<u64>,
+    /// The walk uses byte offsets; the CLI displays raw CODE addresses in words.
+    word_size: u64,
 }
 
 impl Region {
@@ -210,6 +215,14 @@ impl Region {
     /// True for an unbounded `--count` walk, which has no byte stop at all.
     fn reaches_past_image(&self) -> bool {
         self.mapped_end.is_some_and(|mapped| self.end.is_none_or(|end| end > mapped))
+    }
+
+    fn address(&self, offset: u64) -> u64 {
+        offset / self.word_size
+    }
+
+    fn end_address(&self, offset: u64) -> u64 {
+        offset.div_ceil(self.word_size)
     }
 }
 
@@ -307,6 +320,12 @@ fn load_target(
     bounded: bool,
 ) -> Result<(ConsoleProgram, Region), String> {
     let options = mode_options_for_binary(args.mode.as_deref(), &args.binary, args.options.clone())?;
+    if args.raw_base.is_some() {
+        let load = load_args(args, options);
+        let prog = load_program(&load, DriverDefaults::RawView)?;
+        let region = resolve_region(&prog, args)?;
+        return Ok((prog, region));
+    }
     if bounded {
         let load = load_args(args, windowed_options(&options, &args.options));
         let prog = load_program(&load, DriverDefaults::Inventory)?;
@@ -343,8 +362,8 @@ fn load_args(args: &DisArgs, options: Vec<(String, String)>) -> Args {
         target: args.target.clone(),
         sleighpath: args.sleighpath.clone(),
         isa: args.isa,
-        raw_image: false,
-        base: None,
+        raw_image: args.raw_base.is_some(),
+        base: args.raw_base,
         ..Args::serial()
     }
 }
@@ -361,11 +380,11 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
                 notes.push(pool_note(folded));
             }
             if !anchored.is_empty() {
-                notes.push(follow_note(&anchored));
+                notes.push(follow_note(&anchored, &region));
             }
             let overlapping = disasm::overlapping_rows(&rows);
             if !overlapping.is_empty() {
-                notes.push(overlap_note(&overlapping));
+                notes.push(overlap_note(&overlapping, &region));
             }
             let reasons =
                 [Skip::Straight, Skip::Unreached, Skip::Undecodable, Skip::PastWindow, Skip::PastBudget];
@@ -379,7 +398,9 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
             if cut_short_by_image(&region, args.count, rows.len(), end) {
                 notes.push(image_bound_note(prog, &region));
             }
-            notes.extend(flow_end_note(prog, &region));
+            if args.raw_base.is_none() {
+                notes.extend(flow_end_note(prog, &region));
+            }
             if args.json {
                 let doc_notes = crate::funcdecl::json_notes(prog, &notes);
                 format!("{}\n", dumps_indent2(&result_json(args, &region, &rows, truncated, &doc_notes)))
@@ -393,15 +414,25 @@ fn listing_for(args: &DisArgs, prog: &ConsoleProgram, region: Region) -> Result<
             if cut_short_by_image(&region, args.count, rows.len(), end) {
                 notes.push(image_bound_note(prog, &region));
             }
-            let pref = kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref());
-            let (image, repairs) = crate::image::image_bytes_and_repairs(&args.binary, pref)
-                .map_or((None, Vec::new()), |(bytes, repairs)| (Some(bytes), repairs));
-            let file = image.as_deref().and_then(|b| kuna_analysis::loadimage_object::parse_object(b).ok());
-            let view = image.as_deref().zip(file.as_ref());
-            let fixups = fixups::overlapping(view, prog, region.start, end);
+            let (fixups, provenance) = if let Some(base) = args.raw_base {
+                let base = prog.input_address_offset(base).map_err(|e| e.explain().to_string())?;
+                (
+                    fixups::overlapping(None, prog, region.start, end),
+                    provenance::raw(base, region.start, end),
+                )
+            } else {
+                let pref = kuna_analysis::loader::macho_fat::slice_pref(args.slice.as_deref(), args.target.as_deref());
+                let (image, repairs) = crate::image::image_bytes_and_repairs(&args.binary, pref)
+                    .map_or((None, Vec::new()), |(bytes, repairs)| (Some(bytes), repairs));
+                let file = image.as_deref().and_then(|b| kuna_analysis::loadimage_object::parse_object(b).ok());
+                let view = image.as_deref().zip(file.as_ref());
+                let slice = if view.is_some() { crate::image::slice_offset(&args.binary, pref) } else { 0 };
+                (
+                    fixups::overlapping(view, prog, region.start, end),
+                    provenance::of(view, slice, &repairs, prog, region.start, end),
+                )
+            };
             notes.extend(fixups.note());
-            let slice = if view.is_some() { crate::image::slice_offset(&args.binary, pref) } else { 0 };
-            let provenance = provenance::of(view, slice, &repairs, prog, region.start, end);
             notes.extend(provenance.notes());
             if args.json {
                 let doc_notes = crate::funcdecl::json_notes(prog, &notes);
@@ -423,10 +454,16 @@ fn require_mapped(args: &DisArgs, prog: &ConsoleProgram, region: &Region) -> Res
     if prog.vma_bytes_mapped(region.start) {
         return Ok(());
     }
+    if args.raw_base.is_some() {
+        return Err(format!(
+            "no bytes mapped at 0x{:x} in raw image {}",
+            region.address(region.start), args.binary
+        ));
+    }
     Err(format!(
         "no bytes mapped at 0x{:x} in {}: no loaded segment covers it \
          (a packed image maps none of its original addresses -- `kuna unpack` first)",
-        region.start, args.binary
+        region.address(region.start), args.binary
     ))
 }
 
@@ -523,7 +560,7 @@ fn choose_view(prog: &ConsoleProgram, region: &Region, want: ViewRequest) -> (Vi
         vec![format!(
             "0x{:x} is in a non-executable data section, so these are bytes, not \
              instructions -- pass `--as code` to disassemble them anyway",
-            region.start
+            region.address(region.start)
         )]
     } else {
         Vec::new()
@@ -571,6 +608,7 @@ fn decide_view(want: ViewRequest, from_entry: bool, section: Option<u32>) -> Vie
 fn walk_data(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (Vec<DataRow>, bool) {
     let cap = if region.derived { Some(DERIVED_ROW_CAP) } else { None };
     let stop = region.stop();
+    let row_bytes = (HEXDUMP_ROW_BYTES as u64 / region.word_size).max(1) * region.word_size;
     let mut rows: Vec<DataRow> = Vec::new();
     let mut truncated = false;
     let mut addr = region.start;
@@ -586,10 +624,7 @@ fn walk_data(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (V
             truncated = true;
             break;
         }
-        let want = match stop {
-            Some(end) => (end - addr).min(HEXDUMP_ROW_BYTES as u64) as usize,
-            None => HEXDUMP_ROW_BYTES,
-        };
+        let want = stop.map_or(row_bytes, |end| (end - addr).min(row_bytes)) as usize;
         let got = read_upto(prog, addr, want, &mut raw);
         if got == 0 {
             break;
@@ -622,9 +657,12 @@ fn walk_data(prog: &ConsoleProgram, region: &Region, count: Option<usize>) -> (V
 fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, String> {
     let spec = args.spec.trim();
     let addressy = args.by_address || looks_like_addr(spec);
+    let raw = args.raw_base.is_some();
+    let input_offset = |value| prog.input_address_offset(value).map_err(|e| e.explain().to_string());
+    let word_size = prog.code_unit_bytes();
 
     if let Some((lo, hi)) = split_range(spec) {
-        let (start, end) = (parse_addr(lo)?, parse_addr(hi)?);
+        let (start, end) = (input_offset(parse_addr(lo)?)?, input_offset(parse_addr(hi)?)?);
         if end <= start {
             return Err(format!("empty range {spec:?}: the end must be above the start"));
         }
@@ -636,15 +674,28 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
             Region {
                 start,
                 end: Some(end),
-                name: name_at(prog, start),
+                name: if raw { None } else { name_at(prog, start) },
                 derived: false,
                 from_entry: false,
                 mapped_end: None,
+                word_size,
             },
+            raw,
         ));
     }
 
-    let (start, name, from_entry) = if addressy {
+    let (start, name, from_entry) = if raw {
+        let addr = parse_addr(spec)?;
+        let start = if args.view == Some(ViewRequest::Data) {
+            input_offset(addr)?
+        } else {
+            if prog.is_arm32() && addr & 1 != 0 && args.isa == Some(kuna_console::engine::ArmIsa::Arm) {
+                return Err("an odd ARM code pointer requests Thumb, conflicting with --isa arm".into());
+            }
+            prog.input_code_offset(addr).map_err(|e| e.explain().to_string())?
+        };
+        (start, None, false)
+    } else if addressy {
         let addr = parse_addr(spec)?;
         // An ARM caller legitimately holds an odd `entry|1` Thumb address; the
         // inventory folds the mode bit, so resolve through it when it knows the
@@ -682,12 +733,13 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
             derived: false,
             from_entry,
             mapped_end: None,
+            word_size,
         },
         (None, Some(_)) => {
-            Region { start, end: None, name, derived: false, from_entry, mapped_end: None }
+            Region { start, end: None, name, derived: false, from_entry, mapped_end: None, word_size }
         }
         (None, None) => {
-            let extent = prog.function_extent_at(start);
+            let extent = if raw { 0 } else { prog.function_extent_at(start) };
             let span = if extent > 0 { extent } else { DEFAULT_WINDOW_BYTES };
             Region {
                 start,
@@ -696,17 +748,25 @@ fn resolve_region(prog: &ConsoleProgram, args: &DisArgs) -> Result<Region, Strin
                 derived: true,
                 from_entry,
                 mapped_end: None,
+                word_size,
             }
         }
     };
-    Ok(bound_to_image(prog, region))
+    Ok(bound_to_image(prog, region, raw))
 }
 
 /// (kuna, `disassembly-fabricates-zero-byte`) Record the end of mapped memory
 /// on a resolved region, so no walk over it can list a byte the image does not
 /// hold ([`mapped_run_end`]).
-fn bound_to_image(prog: &ConsoleProgram, region: Region) -> Region {
-    let mapped_end = mapped_run_end(prog, region.start).map(|(end, _)| end);
+fn bound_to_image(prog: &ConsoleProgram, region: Region, raw: bool) -> Region {
+    let mapped_end = if raw {
+        // The raw loader describes its contiguous file as a single section.
+        prog.sections().into_iter().find_map(|(start, size, _)| {
+            (region.start >= start && region.start - start < size).then_some(start + size)
+        })
+    } else {
+        mapped_run_end(prog, region.start).map(|(end, _)| end)
+    };
     Region { mapped_end, ..region }
 }
 
@@ -723,16 +783,16 @@ fn cut_short_by_image(region: &Region, count: Option<usize>, listed: usize, end:
 /// agent cannot infer from a short answer, and the one that says `--count` will
 /// not buy more.
 fn image_bound_note(prog: &ConsoleProgram, region: &Region) -> String {
-    let mapped_end = region.mapped_end.unwrap_or(region.start);
+    let mapped_end = region.end_address(region.mapped_end.unwrap_or(region.start));
     let next = mapped_run_end(prog, region.start).and_then(|(_, next)| next);
     let resume = match next {
-        Some(addr) => format!(", and the next mapped address is 0x{addr:x}"),
+        Some(addr) => format!(", and the next mapped address is {:#x}", region.address(addr)),
         None => String::new(),
     };
     format!(
         "the listing stops at 0x{mapped_end:x}, where the segment holding \
          0x{:x} ends -- the bytes above it are not in the image{resume}",
-        region.start
+        region.address(region.start)
     )
 }
 
@@ -812,9 +872,10 @@ fn result_json(
     let instructions = Json::Array(
         rows.iter()
             .map(|r| {
+                let address = region.address(r.addr);
                 Json::Object(vec![
-                    ("address".into(), Json::Number(r.addr.to_string())),
-                    ("address_hex".into(), Json::Str(format!("0x{:x}", r.addr))),
+                    ("address".into(), Json::Number(address.to_string())),
+                    ("address_hex".into(), Json::Str(format!("0x{address:x}"))),
                     ("size".into(), Json::Number(r.size.to_string())),
                     ("bytes".into(), Json::Str(r.hex())),
                     ("mnemonic".into(), Json::Str(r.mnemonic.clone())),
@@ -852,9 +913,10 @@ fn data_result_json(
     let listed = Json::Array(
         rows.iter()
             .map(|r| {
+                let address = region.address(r.addr);
                 Json::Object(vec![
-                    ("address".into(), Json::Number(r.addr.to_string())),
-                    ("address_hex".into(), Json::Str(format!("0x{:x}", r.addr))),
+                    ("address".into(), Json::Number(address.to_string())),
+                    ("address_hex".into(), Json::Str(format!("0x{address:x}"))),
                     ("size".into(), Json::Number(r.bytes.len().to_string())),
                     ("bytes".into(), Json::Str(r.hex())),
                     ("ascii".into(), Json::Str(r.ascii())),
@@ -866,7 +928,7 @@ fn data_result_json(
     doc.push(("hex".into(), Json::Str(hex)));
     doc.push(("rows".into(), listed));
     doc.extend(fixups.json_fields());
-    doc.extend(provenance.json_fields());
+    doc.extend(provenance.json_fields(region));
     Json::Object(doc)
 }
 
@@ -882,14 +944,16 @@ fn envelope(
     notes: &[String],
     kind: &str,
 ) -> Vec<(String, Json)> {
+    let start_address = region.address(region.start);
+    let end_address = region.end_address(end);
     vec![
         ("binary".into(), Json::Str(args.binary.clone())),
         ("kind".into(), Json::Str(kind.to_string())),
         ("target".into(), target_json(region)),
-        ("start".into(), Json::Number(region.start.to_string())),
-        ("start_hex".into(), Json::Str(format!("0x{:x}", region.start))),
-        ("end".into(), Json::Number(end.to_string())),
-        ("end_hex".into(), Json::Str(format!("0x{end:x}"))),
+        ("start".into(), Json::Number(start_address.to_string())),
+        ("start_hex".into(), Json::Str(format!("0x{start_address:x}"))),
+        ("end".into(), Json::Number(end_address.to_string())),
+        ("end_hex".into(), Json::Str(format!("0x{end_address:x}"))),
         ("count".into(), Json::Number(count.to_string())),
         ("bytes".into(), Json::Number((end - region.start).to_string())),
         ("truncated".into(), Json::Bool(truncated)),
@@ -899,10 +963,11 @@ fn envelope(
 
 /// What the program calls the start: its `name` (or null) and its address.
 fn target_json(region: &Region) -> Json {
+    let address = region.address(region.start);
     Json::Object(vec![
         ("name".into(), region.name.clone().map(Json::Str).unwrap_or(Json::Null)),
-        ("address".into(), Json::Number(region.start.to_string())),
-        ("address_hex".into(), Json::Str(format!("0x{:x}", region.start))),
+        ("address".into(), Json::Number(address.to_string())),
+        ("address_hex".into(), Json::Str(format!("0x{address:x}"))),
     ])
 }
 
@@ -919,9 +984,10 @@ fn render_text(region: &Region, rows: &[Row], truncated: bool) -> String {
     let plural = if rows.len() == 1 { "instruction" } else { "instructions" };
     let _ = writeln!(
         out,
-        "# {} {plural} at {label} (0x{:x}..0x{end:x}, {} bytes){}",
+        "# {} {plural} at {label} (0x{:x}..0x{:x}, {} bytes){}",
         rows.len(),
-        region.start,
+        region.address(region.start),
+        region.end_address(end),
         end - region.start,
         if truncated {
             " [truncated: --count N, --bytes N or a 0xstart-0xend range lists more]"
@@ -930,7 +996,8 @@ fn render_text(region: &Region, rows: &[Row], truncated: bool) -> String {
         }
     );
     for r in rows {
-        let line = format!("{:<13} {:<22}{}", format!("0x{:x}", r.addr), r.hex(), r.text());
+        let address = region.address(r.addr);
+        let line = format!("{:<13} {:<22}{}", format!("0x{address:x}"), r.hex(), r.text());
         let _ = writeln!(out, "{}", line.trim_end());
     }
     out
@@ -947,17 +1014,18 @@ fn render_data_text(region: &Region, rows: &[DataRow], truncated: bool) -> Strin
     let plural = if end - region.start == 1 { "byte" } else { "bytes" };
     let _ = writeln!(
         out,
-        "# {} {plural} at {} (0x{:x}..0x{end:x}){}",
+        "# {} {plural} at {} (0x{:x}..0x{:x}){}",
         end - region.start,
         label(region),
-        region.start,
+        region.address(region.start),
+        region.end_address(end),
         if truncated { " [truncated: --bytes N or a 0xstart-0xend range reads more]" } else { "" }
     );
     for r in rows {
         let _ = writeln!(
             out,
             "{:<14}{:<49}|{}|",
-            format!("0x{:x}", r.addr),
+            format!("0x{:x}", region.address(r.addr)),
             r.grouped(),
             r.ascii()
         );
@@ -979,7 +1047,8 @@ pub(crate) fn function_listing(prog: &ConsoleProgram, start: u64, end: u64) -> O
     }
     let region = bound_to_image(
         prog,
-        Region { start, end: Some(end), name: None, derived: false, from_entry: true, mapped_end: None },
+        Region { start, end: Some(end), name: None, derived: false, from_entry: true, mapped_end: None, word_size: 1 },
+        false,
     );
     let CodeWalk { rows, .. } = disasm::walk(prog, &region.window(), None, false);
     if rows.is_empty() {
@@ -1019,9 +1088,9 @@ fn listed_end(region: &Region, rows: &[Row]) -> u64 {
 }
 
 /// Up to [`SKIPPED_NOTE_ADDRS`] addresses spelled out, the rest counted.
-fn spelled(addrs: &[u64]) -> String {
-    let shown: Vec<String> =
-        addrs.iter().take(SKIPPED_NOTE_ADDRS).map(|a| format!("0x{a:x}")).collect();
+fn spelled(addrs: &[u64], region: &Region) -> String {
+    let shown: Vec<String> = addrs.iter().take(SKIPPED_NOTE_ADDRS)
+        .map(|&addr| format!("0x{:x}", region.address(addr))).collect();
     match addrs.len() - shown.len() {
         0 => shown.join(", "),
         n => format!("{} and {n} more", shown.join(", ")),
@@ -1044,7 +1113,7 @@ fn spelled(addrs: &[u64]) -> String {
 /// each reason has a different move, so each gets its own note: re-running the
 /// same command fixes none of them.
 fn skipped_note(skipped: &[u64], why: Skip, region: &Region, count: Option<usize>) -> String {
-    let list = spelled(skipped);
+    let list = spelled(skipped, region);
     let (what, subject) = match skipped.len() {
         1 => ("an address".to_string(), "it"),
         n => (format!("{n} addresses"), "them"),
@@ -1061,7 +1130,7 @@ fn skipped_note(skipped: &[u64], why: Skip, region: &Region, count: Option<usize
             "{lead} because only bytes no flow from 0x{:x} reaches branch there, and --follow \
              lists those bytes straight-line rather than decoding from what they name -- \
              disassemble from one of them on its own to decode from it",
-            region.start
+            region.address(region.start)
         ),
         Skip::Undecodable => format!(
             "{lead} because flow reaches {subject} and the bytes there do not decode as an \
@@ -1071,7 +1140,7 @@ fn skipped_note(skipped: &[u64], why: Skip, region: &Region, count: Option<usize
             "{lead} because the window ends at 0x{:x} and {} not below it: the instruction \
              straddling that end is listed whole, but --follow decodes only from addresses inside \
              the window -- widen --bytes or the range to include {subject}",
-            region.stop().unwrap_or(region.start),
+            region.end_address(region.stop().unwrap_or(region.start)),
             if skipped.len() == 1 { "it is" } else { "they are" },
         ),
         Skip::PastBudget => {
@@ -1094,7 +1163,7 @@ fn skipped_note(skipped: &[u64], why: Skip, region: &Region, count: Option<usize
 /// (kuna, `linear-disassembly-silently-skips`) Say which addresses `--follow`
 /// re-anchored, so a caller comparing two runs of the same range knows which
 /// rows moved and why.
-fn follow_note(anchored: &[u64]) -> String {
+fn follow_note(anchored: &[u64], region: &Region) -> String {
     let n = match anchored.len() {
         1 => "one address".to_string(),
         n => format!("{n} addresses"),
@@ -1102,14 +1171,14 @@ fn follow_note(anchored: &[u64]) -> String {
     format!(
         "--follow decoded from {n} the straight line would have walked over -- {} --; bytes \
          no flow reaches are still listed, straight-line, in between",
-        spelled(anchored)
+        spelled(anchored, region)
     )
 }
 
 /// Say that some rows start inside another: under `--follow` two reachable
 /// paths can read the same bytes as different instructions, both readings are
 /// listed, and a consumer that assumes the rows tile the span would misread it.
-fn overlap_note(overlapping: &[u64]) -> String {
+fn overlap_note(overlapping: &[u64], region: &Region) -> String {
     let n = match overlapping.len() {
         1 => "one row starts".to_string(),
         n => format!("{n} rows start"),
@@ -1118,16 +1187,17 @@ fn overlap_note(overlapping: &[u64]) -> String {
         "{n} inside another listed row -- {} -- where two reachable paths read the same bytes \
          as different instructions; --follow lists both readings, so these rows overlap rather \
          than tile",
-        spelled(overlapping)
+        spelled(overlapping, region)
     )
 }
 
 /// What to call the start address in a header: its name and address when the
 /// program has a name for it, the bare address otherwise.
 fn label(region: &Region) -> String {
+    let start = region.address(region.start);
     match &region.name {
-        Some(name) => format!("{name} @ 0x{:x}", region.start),
-        None => format!("0x{:x}", region.start),
+        Some(name) => format!("{name} @ 0x{start:x}"),
+        None => format!("0x{start:x}"),
     }
 }
 
@@ -1154,6 +1224,8 @@ pub(crate) fn parse_args_for(argv: &[String], command: &str) -> Result<DisArgs, 
     let mut target: Option<String> = None;
     let mut sleighpath: Option<String> = None;
     let mut isa = None;
+    let mut raw_image = false;
+    let mut raw_base = None;
 
     let mut i = 0;
     while i < argv.len() {
@@ -1174,6 +1246,11 @@ pub(crate) fn parse_args_for(argv: &[String], command: &str) -> Result<DisArgs, 
             "--isa" => isa = kuna_console::engine::ArmIsa::parse(&take(argv, &mut i, "--isa")?)?,
             "--slice" => slice = Some(take(argv, &mut i, "--slice")?),
             "--target" => target = Some(take(argv, &mut i, "--target")?),
+            "--raw-image" => raw_image = true,
+            "--base" => {
+                raw_base = Some(parse_addr(&take(argv, &mut i, "--base")?)
+                    .map_err(|e| format!("--base: {e}"))?);
+            }
             "--sleighpath" => sleighpath = Some(take(argv, &mut i, "--sleighpath")?),
             "-h" | "--help" => {
                 usage();
@@ -1192,6 +1269,22 @@ pub(crate) fn parse_args_for(argv: &[String], command: &str) -> Result<DisArgs, 
     let binary = it.next().ok_or_else(|| format!("{command} requires <binary>"))?;
     let spec =
         it.next().ok_or_else(|| format!("{command} requires <name|0xaddr|0xstart-0xend>"))?;
+    if raw_image {
+        if target.as_deref().is_none_or(|value| value.trim().is_empty()) {
+            return Err("--raw-image requires --target <SLEIGH-language-id>".into());
+        }
+        if raw_base.is_none() {
+            return Err("--raw-image requires --base <address>".into());
+        }
+        if slice.is_some() {
+            return Err("--slice does not apply to --raw-image input".into());
+        }
+        if split_range(spec.trim()).is_none() {
+            parse_addr(&spec).map_err(|e| format!("--raw-image requires a numeric address or range: {e}"))?;
+        }
+    } else if raw_base.is_some() {
+        return Err("--base requires --raw-image".into());
+    }
     Ok(DisArgs {
         binary,
         spec,
@@ -1208,6 +1301,7 @@ pub(crate) fn parse_args_for(argv: &[String], command: &str) -> Result<DisArgs, 
         target,
         sleighpath,
         isa,
+        raw_base,
     })
 }
 
@@ -1233,12 +1327,15 @@ fn usage() {
          \x20                    [--as code|data|auto] [--count N] [--bytes N] [--follow] [--json] \\\n\
          \x20                    [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                    [--define-function S[-E][=N]|@FILE].. \\\n\
-         \x20                    [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
+         \x20                    [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D] \\\n\
+         \x20                    [--raw-image --target T --base ADDRESS]\n\
          \n\
          The target is a function name, an address (--addr for a bare hex one), or an\n\
          explicit range (0x1000-0x1040 / 0x1000..0x1040) for bytes no function owns.\n\
          A named function lists its whole extent; a raw address lists 64 bytes unless\n\
          --count / --bytes / a range says otherwise.\n\
+         --raw-image takes a numeric address or range in the target's CODE units;\n\
+         --bytes and instruction sizes are still bytes. --slice is for objects only.\n\
          \n\
          --as picks the view. `code` decodes instructions, `data` prints a hexdump,\n\
          and `auto` (the default for `disassemble`) reads bytes when the address is\n\
@@ -1303,6 +1400,7 @@ mod tests {
             derived: false,
             from_entry: false,
             mapped_end: None,
+            word_size: 1,
         };
         let note = |addrs: &[u64], why| skipped_note(addrs, why, &region, None);
         let one = note(&[0x43d092], Skip::Straight);
@@ -1350,6 +1448,7 @@ mod tests {
             derived: false,
             from_entry: false,
             mapped_end: None,
+            word_size: 1,
         };
         let rows = vec![
             row(0x244, &[0xb8, 0xb8, 0x2a, 0x00, 0x00], "MOV", "EAX,0x2ab8"),
@@ -1439,6 +1538,7 @@ mod tests {
             derived: true,
             from_entry: true,
             mapped_end: None,
+            word_size: 1,
         };
         let rows = vec![row(0x1000, &[0x55], "PUSH", "RBP"), row(0x1001, &[0x48, 0x89, 0xe5], "MOV", "RBP,RSP")];
         let text = render_text(&region, &rows, false);
@@ -1460,6 +1560,7 @@ mod tests {
             derived: false,
             from_entry: false,
             mapped_end: None,
+            word_size: 1,
         };
         let rows = vec![DataRow { addr: 0x400915, bytes: b"Username: \0\x01\x02\x03\x04\x05".to_vec() }];
         let text = render_data_text(&region, &rows, false);
@@ -1522,6 +1623,7 @@ mod tests {
             target: None,
             sleighpath: None,
             isa: None,
+            raw_base: None,
         }
     }
 
@@ -1556,6 +1658,7 @@ mod tests {
             derived: false,
             from_entry: false,
             mapped_end,
+            word_size: 1,
         };
         assert_eq!(region(Some(0x1100), Some(0x1040)).stop(), Some(0x1040));
         assert_eq!(region(Some(0x1020), Some(0x1040)).stop(), Some(0x1020));
@@ -1620,6 +1723,7 @@ mod tests {
             derived: false,
             from_entry,
             mapped_end: None,
+            word_size: 1,
         };
         use ViewRequest::{Auto, Data as WantData};
         for (name, from_entry, section, want, expect) in [

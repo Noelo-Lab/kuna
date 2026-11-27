@@ -2291,6 +2291,41 @@ steady rate. At `--jobs 1` there is no pool thread and the main thread
 alternates decompile batches with sweep steps instead, so a serial streamed run
 starts producing C after its first function and still finishes its `.asm` early.
 
+(kuna) **A selected export's disassembly.** An export narrowed by `--functions` or
+`--addr` has a `.c` of the selected functions only, so its `.asm` sweeps only the
+code that `.c` came from, not every CODE section
+(`decompiler/crates/kuna-console/src/kuna_asmscope.rs (selection_spans)`). For each
+selected function that is its inventory extent, `[entry, entry + size)`, joined with
+the bytes its decompile decoded (`FuncResult::ranges`, chapter
+[01](01-program-prep.md), coverage). Neither is enough alone. The extent holds what
+the flow does not decode, such as a switch table, a literal pool, or the padding to
+the next entry, and it is all a failed decompile has. The ranges hold code the
+extent misses: gcc's `.cold` blocks, which sit away from their function, and tails
+that ARM soft-float helpers share. The union is merged where it touches and
+clipped to the same CODE sections the whole-image sweep walks, so a selected `.asm`
+never disassembles bytes a whole-image one would not. Each stretch is swept by the
+same resumable walk (`project_stream.rs (AsmSweep::over)`) under a `code range`
+line instead of a `code section` line, with only the selected functions labeled.
+The data tail is cut down the same way. A whole-image tail labels every named global
+in the image, which on an unstripped image is most of the file: 61 MB of the
+`.asm` for four functions of `libLLVM-15.so.1`, whose code is 14 KB of it. A
+selected tail keeps a named global only when the `.c` names it
+(`kuna_asmscope.rs (referenced_names)`) or the swept code points into it
+(`kuna_asmscope.rs (TailScope)`). The `.c` names a global the `.h` declares, or a
+token of the C text, found the way the `dat_<hex>` labels already are. The code
+points into a global when a `0x<hex>` constant in an operand of a swept
+instruction falls inside it: that is the address a reader follows from the
+disassembly, and it keeps the label of a string the C prints as a literal. The
+globals a selected tail leaves out still bound a bare `dat_<hex>` label's dump, so
+a label it prints reads as it does in a tail that keeps them all. A streamed
+export gathers the names as each body is written, before it drops the text, and
+the operands as its sweep runs.
+The ranges exist only once the decompile has run, so a selected streamed export
+sweeps during finalization instead of alongside the decompile. Its sweep is still
+the non-stream one without the variable comments, and its `.streaming` reads `asm:
+pending` until then. A whole-image export, streamed or not, is unchanged byte for
+byte.
+
 Owning every artifact also makes the writer the run's failure oracle. A write it
 cannot complete means nothing a reader polls is advancing, so it records its own
 error, publishes the `failed` status itself and raises a stop flag that the
@@ -2442,7 +2477,7 @@ lowering) and applied by
 | `function <start>[-<end>][=<name>]` | `function bounds` | P1, the `--define-function` spelling |
 | `typedef <C declaration>` | `parse line` | P5 type-propagation |
 | `prototype <func> <C declaration>` | `map prototype` | P4 prototype-source |
-| `data <addr> <C typedeclaration>` | `map address` | P5 const-pointer |
+| `data <addr\|[space,addr]> <C typedeclaration>` | `map address` | P5 const-pointer |
 | `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
@@ -2470,6 +2505,14 @@ anything after a name or number other than a complete `:size`, `:size+offset` or
 exact lookup as written, then in upper and lower case, so `rax` is x86's `RAX`. A
 number is still read in C notation (`%4000` is decimal), and its suffix is read
 from where the number ends.
+
+A data assertion with `[space,addr]` resolves the named processor space and
+scales the hexadecimal address by that space's word size before inserting the
+symbol. The mapping and any outer `volatile` qualifier apply only to that
+space. Bare addresses keep the existing default mapping. The console lowering
+is `map address data [space,addr] <C typedeclaration>`, a form `map address`
+recognizes before its machine-address grammar; it always maps a global. An
+unknown space's rejection lists the target's processor spaces.
 
 `map address` retains an object's outer `volatile` qualifier and marks a
 global object's entire byte range volatile, so `--assert 'data 0x20000 volatile int cursor'`

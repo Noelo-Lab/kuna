@@ -242,6 +242,7 @@ fn emitted_macro_expressions_compile_and_reproduce_primitive_output() {
 }
 
 #[test]
+#[cfg_attr(not(target_os = "linux"), ignore = "builds and runs the fixture as a Linux ELF with the host rustc")]
 fn real_macros_reproduce_the_compiled_fixture_output() {
     use crate::common;
     use std::process::Command;

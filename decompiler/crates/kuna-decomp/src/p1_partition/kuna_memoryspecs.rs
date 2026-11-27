@@ -260,7 +260,7 @@ pub(crate) fn scan_directory_recursive(
 /// directories: the first directory holding `name` wins, and `res` is cleared
 /// when none does.
 pub(crate) fn find_file(mounts: &[MemorySpecs], paths: &FileManage, res: &mut String, name: &str) {
-    if name.chars().next().is_some_and(FileManage::is_separator) {
+    if FileManage::is_absolute_path(name) {
         *res = name.to_string();
         if exists(mounts, res) {
             return;

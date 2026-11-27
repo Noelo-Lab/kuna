@@ -553,18 +553,62 @@ treats each differently.
 * A constant that is **address-like but names nothing** settles nothing, so it is
   neutral, exactly like a variable addend: it neither carries the walk nor
   refuses it. This is the grade a stripped image's `.bss` table falls into (no
-  symbol at all), and also the grade a genuinely large struct falls into — bzip2's
-  `bzFile` is 0x13f0 bytes and its fields are read at `+0x1394` and `+0x13e8`. A
-  parameter with no other use is declined either way; one the function *also*
-  dereferences at an ordinary field offset keeps its candidate from that use.
+  symbol at all). A parameter with no other use is declined; one the function
+  *also* dereferences at an ordinary field offset keeps its candidate from that
+  use.
 * Anything below the bound is an ordinary field offset and the walk carries on.
+  So is a constant inside the bounds when the image has a section table
+  (`ArchContext::section_table`) and the constant lies in none of the sections
+  its data objects live in (the loader's `globalref` ranges,
+  `ArchContext::elem_ptr_ranges`: initialized, read-only and zero-filled data,
+  without code, the GOT, `.dynamic`, unwind data or import slots; possibly
+  none) and outside the image's executable read-only regions
+  (`ArchContext::litpool_const`): it lands on an ELF header, `.hash`,
+  `.gnu.hash`, `.dynsym`, `.dynstr`, a relocation table or nothing at all, and
+  no data object lives there. Two limits keep an absolute address out of this
+  reading. The constant must be below 1 MiB (`FIELD_OFFSET_LIMIT`): past it,
+  a constant outside every section is a microcontroller's peripheral or RAM
+  word (`*(uint32_t *)(0x40020000 + off)`), a data object in a section whose
+  type the loader cannot read as data, the slot a relocatable object gives an
+  extern table, or text decoded as code, while the largest field offset seen
+  in the measured images, Go's `mheap`, is 0x18ec0. And it must not lie
+  within 0x100 bytes below the start of a data section (`TABLE_BIAS_LIMIT`),
+  where `table[c - 'a']` puts the base `&table - 0x61` of a byte table at the
+  start of its section. Code keeps the first two grades, because a table
+  can be linked into it (firmware that places `.rodata` in `.text`, armcc's
+  execute region), with one exception: a function's entry is not the address of
+  a data object, so a constant whose covering symbol is a function is a field
+  offset too. That is the grade a genuinely large struct falls into, bzip2's
+  0x13f0-byte `bzFile` read at `+0x1394` and `+0x13e8`, and a record read only
+  that far in. A shared object loaded at 0 holds its ELF header and dynamic
+  tables in its first pages and often its code from 0x1000, so a field offset
+  there used to land on a mapped address or on a function, the parameter stayed
+  an integer, and a read at offset 0x1000 printed as `*(int *)&near_leaf[a0]`
+  when a function started at 0x1000. A constant that lands inside a data
+  section keeps the first two grades, and an image without a section table (a
+  raw image, the XML corpus, an ELF with no section headers) keeps them for
+  every constant in the bounds.
 
 So the residual exposure is precise: a parameter used *only* to subscript an
 unnamed byte-element table would be declined (nothing tells the walk it is a
-base, but nothing gives it a base either), and a parameter used both as such a
-subscript and as a real memory base is typed on the strength of the second use.
-`tests/stages/kuna-ptrfromuse.xml` pins both grades, as `globalindex` and
-`blindindex`.
+base, but nothing gives it a base either), a parameter used both as such a
+subscript and as a real memory base is typed on the strength of the second use,
+and a field offset that happens to fall inside one of the image's own data
+sections or just below one, or inside its code away from a function's entry,
+or that reaches 1 MiB, is still neutral. A parameter whose field address is
+subtracted from another pointer (`b->next - b->data`) is refused at any
+offset; reaching far fields brings that refusal to Go 386's
+`runtime.wbBufFlush1`, whose parameter was a pointer only because the walk
+stopped at its field at 0x1858.
+`tests/stages/kuna-ptrfromuse.xml` pins the first two grades, as `globalindex`
+and `blindindex`, and `tests/stages/kuna-ptrfromuse-faroffset.xml` the third on
+x86-64 and AArch64 ELF images, with `.data`, `.bss` and `.text` tables, named
+and stripped, as the control, and a peripheral address, a character-biased
+byte table and a relocatable object's extern table as the controls for the
+two limits.
+`charptr`, `castarith` and `floatreg` ask the same question of a literal addend
+(`constant_is_global_base`, `constant_may_be_global_base`) and get the same
+answer.
 
 The candidate is **folded** into `get_local_type`'s result by
 `Datatype::type_order`, not installed as a replacement seed. That is the whole
@@ -1712,9 +1756,9 @@ inference: RISC-V lists the 2-byte `csreg` space, so
 It also keeps the bits of a `double` slot from printing as `(double)table`, and
 an MSP430 enum return of 296 from printing as `(State)&FCTL1` instead of `BUSY`.
 
-An explicit global data declaration is authoritative at an exact address.
-Both `--assert 'data …'` surfaces — the in-process assertion plane and its
-`map address` console lowering — route through
+An explicit global data declaration is authoritative at an exact address in
+its address space. Both `--assert 'data …'` surfaces — the in-process assertion
+plane and its console lowering — route through
 `decompiler/crates/kuna-decomp/src/p0_knowledge/database.rs
 (upsert_data_mapped)`. If analysis already planted non-function data there,
 the declaration retypes, resizes, and renames that mapping in place before

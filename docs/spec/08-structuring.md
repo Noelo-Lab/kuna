@@ -123,31 +123,72 @@ fprintf(...); exit(1);` — layout order gets all three right, because it is
 reading what the compiler recorded about the source rather than guessing from
 the callee.
 
-**`loopcondhoist` — which *block* the deferred scan folds first.** The deferred
-scan walks the live components in order and folds the first one whose terminal
-arm qualifies, then restarts the whole cascade from the top. A head-tested loop
-whose exit arm is a `return` is such a component — once `ActionReturnSplit` (or
-`returndup`) has given that return in-degree 1, `rule_block_if_no_exit` matches
-the loop head — and the head sits ahead of its own body in component order. So
-the head folds to `if (!C) return X;` and drops to one out-edge, at which point
-`rule_block_while_do` can never match it again: the loop is emitted as
-`while( true ) { if (!C) return X; BODY; }` where the source and IDA write
-`while (C) { BODY }`. Nothing later recovers it; the head test is now a
-statement, not a condition.
+**`loopcondhoist` — the loop's condition is its exit.** A loop written
+`while (C) { … if (X) break; … }` has one natural exit, `C` failing; every
+other way out is a `break`, a `return` or a `goto`. Three places decide which
+exit a structured loop keeps, and each can lose the condition's. `LoopBody::findExit`
+takes the first exit it meets, tails first; the deferred scan above folds the
+first block whose terminal arm qualifies, and a loop's head sits ahead of its
+own body in component order, so a head whose exit arm is a `return` folds to
+`if (!C) return X;` and drops to one out-edge, after which
+`rule_block_while_do` can never match it; and `ActionReturnSplit` copies a
+return block for every goto into it, so a `break` to the return statement
+after the loop becomes a second return that the head's exit no longer
+shares. The loop is then emitted as `while( true ) { if (!C) return X; … }`
+with the code written before a `break` printed after the loop.
 
-The block carrying the loop's `break` is a candidate in the *same* scan, and
-folding it first is strictly better. Its clause is the loop's follower, which
-the rule already requires be reached from nowhere else (`size_in() == 1`), so
-absorbing it into the break arm is semantics-preserving by the rule's own
-precondition; the body then collapses to a single back-edge clause and the head
-test hoists into the `while`/`for` header on the next cascade pass with no new
-machinery and no relocated statement. `loopcondhoist on` (default-off opt-in)
-therefore gives the non-heads one pass of the scan to themselves — skipping
-components that are live loop heads, resolved through the collapsed graph the
-same way `LoopBody::update` resolves a recorded head — and falls back to the
-unrestricted upstream pass only when that finds nothing. A function with no
-loop-head candidate is byte-identical, and the scan still terminates on the same
-fixpoint because each fold strictly reduces the component count.
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_loopcond.rs (condition)`
+names the block whose test is the condition. In a function chapter 03's
+detector calls unoptimized it reads the layout: a compiler that does not
+optimize enters a `while` or `for` loop by jumping to its condition, which it
+places after the body, so a head laid out after every latch is the condition;
+a head laid out first with one conditional latch is a `do … while`, whose latch
+is the condition; and a head laid out first with no conditional latch is a
+`for (;;)`, which keeps the structurer's choice. In an optimized function a
+single conditional latch is the condition (`gcc` rotates a `while` loop into a
+guard and a bottom test, which `looptest` later moves back to the top), else a
+test at the head. An arm into a block that ends in a call that does not
+return is not an exit for this purpose, so `for (;;) { …; if (n != len)
+error(); }` stays an infinite loop. With a condition block known,
+`CollapseStructure` hands it to `findExit` first, and the deferred
+`ruleBlockIfNoExit` scan skips it in a first pass over the other blocks; while
+its loop still holds an unstructured inner loop it skips it in the second pass
+too, so `select_goto` resolves the inner loop before the outer condition can be
+folded away. The region structurer's refinement keeps the condition's exit
+edge structural (`region_structurer.rs (condition_exit)`). In an unoptimized
+function `ActionReturnSplit` leaves an in-edge of a return block alone when
+the goto it comes from is a `break` of its innermost loop
+(`kuna_loopcond.rs (is_loop_break)`: the goto's target starts the code after
+that loop) and the `returndup auto` record (`kuna_o0returns.rs (groups)`) says
+that edge enters the same return statement as another (`kuna_loopcond.rs (shared_return)`), so the
+break prints as `break;` to the one `return`. In optimized code a shared return
+block is as often the compiler merging two `return`s as a source `break`, and
+the split stays. Every change is a different nesting of the same blocks; no
+statement is copied or moved along any path.
+
+A structuring that follows the conditions is kept only where it prints no more
+`goto`s than the structurers' own choice
+(`kuna_loopcond.rs (printed_gotos)` counts the jumps that are neither the next
+statement, a `break` of their innermost loop nor a `continue` to its start).
+When the rule changed a choice and the result holds a `goto`,
+`ActionBlockStructure` structures the graph again without it and keeps the
+version with fewer (the region structurer's result is only kept against its
+own choice; where that fails, `CollapseStructure` decides as upstream). The
+first collapse is set aside and put back when it wins, instead of being
+collapsed a third time: both start from a fresh seed of the same blocks,
+which `blockaction.rs (copy_maps)` confirms by the copy each basic block maps
+to. The
+check is per structuring: the earlier structurings also decide which return
+blocks `ActionReturnSplit` and `returndup` copy, so a function can still end
+with one more `goto` than upstream, which on the decbench corpus happens to a
+few dozen functions against a few hundred that lose one.
+
+The option takes `off` (the structurers' own choices, as upstream), `auto` (the
+condition in unoptimized functions only) and `on`, the default (unoptimized
+functions as under `auto`, optimized ones by the latch-then-head rule). On the
+decbench corpus against main `on` gains 142 and loses 2 exact matches at O0
+and gains 64 and loses 1 at O2-noinline, positive on both project halves at
+both levels; `auto` leaves O2-noinline unchanged.
 
 **`loopcontinue` — preserve secondary latches before greedy loop folding.**
 A single-entry natural loop can have several back-edges to the same head:
@@ -379,7 +420,9 @@ the sequencing argument above is independent of the call count, so the looser
 count cannot produce wrong C — it only admits a denser operand than angr would.
 Rule B, which charges every call op, is the tighter half of the union.
 
-Option `condfold`, default **off**, three-valued: `on` uses angr's statement
+Option `condfold`, default **auto**, five-valued: `noreturn` relaxes the gate
+for one shape only (below), `auto` adds a second shape in optimized functions,
+and `on` and `wide` include `auto`. `on` uses angr's statement
 threshold (width budget 5, and Rule A additionally 1 statement-root call) and
 `wide` raises the width budget to 9 for **both** rules; Rule A's call cap, Rule
 B's shape allowlist and scored caps, the cross-leaf caps and every soundness or
@@ -391,9 +434,8 @@ shadows the AIL never materializes — so a block angr folds as one statement ca
 print as seven in kuna. Both levels apply to **both** engines (`blockaction.rs
 (CollapseStructure::rule_block_or)` and `region_structurer.rs
 (RegionStructurer::try_block_or)`, which are verbatim copies of each other);
-implementing only one would no-op on functions where the other converges. Off,
-the precompute is skipped and every disjunct is dead, so output is
-byte-identical to upstream.
+implementing only one would no-op on functions where the other converges. Under
+`off`, `noreturn` and `auto` the precompute is skipped and every disjunct is dead.
 
 Two effects are accepted rather than fixed. The option is **not a monotone goto
 reducer**: folding changes which edges the structurer can subsequently match,
@@ -405,6 +447,95 @@ suppresses `emit_comment_group` for the whole operand — so an advisory emitted
 by a pass that runs after structuring can still vanish (`newbury::main` emits
 four `WARNING:` lines at `off` and three at `on`). Those are kuna
 annotations, never a correctness signal, and the emitted C is unaffected.
+
+**`condfold noreturn` — a chain of tests into one call that does not return.**
+Source code often checks a sequence of calls and stops in one fatal call when
+any of them fails, `if ((r = put(b, x)) != 0 || (r = put(b, y)) != 0)
+fatal(r, "compose"); rest;`. The binary is a chain of two-way blocks, each
+holding one call and its test, whose taken edges all reach one block that ends
+in the call that does not return. `rule_block_or` would fold the chain, but the
+function is structured inside the main loop, while each call block still holds
+the call's stack bookkeeping (on x86 the push of the return address, a `STORE`
+the stack analysis has not yet turned into a dead stack copy). `bb_is_complex`
+counts the call, the store and the branch, so every later test is complex and
+the chain prints as a ladder of nested `if`s, the continuation innermost and
+the call after all of them. At the final `ActionBlockStructure` the same blocks
+score as simple, but the tree already exists and is kept.
+
+`p8_structure/kuna_fatalchain.rs (chains)` finds the shape on the basic
+blocks: a block with no out-edge ending in the halt flow plants after a call,
+whose call carries the no-return note (a flow cut at the next function's entry
+carries another warning and does not count), entered only from two-way blocks
+`C1 .. Ck` (k >= 2) where each later `Ci` is entered only from `C(i-1)` and
+leaves either to the target or to `C(i+1)`. `kuna_fatalchain.rs (relax)` runs
+wherever `ActionBlockStructure` builds a tree and drops `C2 .. Ck` from the
+complex set both engines read, except a block the `condstmts` seed keeps
+complex or one that carries a buffered comment. Once highs exist it also skips
+a block printing more statements before its test than the `condstmts` cap; in
+the main loop that check is left to `condstmts`' own final measurement, whose
+reanalysis keeps such a block complex from the first structuring on, which is
+what the old structuring also gives it. `blockaction.rs
+(ActionBlockStructure::structure_held)` keeps a structuring that relaxed only
+when it prints no goto; otherwise it restores the branch orientation and
+structures the function again without the relaxation, because a fold in a
+function that keeps gotos changes which edges the later goto passes take and
+can leave it with more.
+
+Folding the chain is not enough to give the source's form: when the rest of the
+function also ends without falling through, the collapse's arm order makes the
+continuation the `if` body, `if (!c1 && !c2) { rest } fatal(..);`.
+`kuna_fatalchain.rs (ActionFatalChain)` runs after the tree is final (before
+`retshape` and `tailform`) and, for each chain, finds the leaf printing its
+target as the last statement of a list whose preceding statement is a plain
+`if` testing the chain's later blocks; when that `if`'s arm does not fall
+through, carries no label and is not a goto target, the condition is negated in
+place and the arm and the call change places, `if (c1 || c2) fatal(..); rest`.
+Neither form reaches past the call, so both run the same tests in the same
+order with the same short-circuit, and the call sees the same values; no
+p-code moves. This works at any depth, unlike `tailform`'s top-level no-return
+rule, which then sees the rewritten list.
+
+Measured on decbench (gcc O2 without inlining and O0, within one build,
+`off` against `noreturn`): 66 and 89 more functions match the source's
+control flow exactly and none is lost. `off` prints the ladder. Witnesses:
+`tests/stages/kuna-fatalchain.xml` and
+`decompiler/crates/kuna-cli/tests/fatalchain_round_trip.rs`, which compiles
+the printed functions and runs them with each call failing in turn.
+
+**`condfold auto` — a chain into an ordinary block, in optimized code.** The
+same stale verdict ladders a chain whose tests all reach a block that returns,
+`if ((r = put(b, x)) != 0 || (r = put(b, y)) != 0) { note(r); return -1; }`,
+or the target of a `goto out`. Under `auto`, `kuna_fatalchain.rs (chains)`
+accepts any target block that only the chain enters, in a function that
+`p3_dataflow/kuna_unoptimized.rs (is_unoptimized)` does not flag; an
+unoptimized function keeps exactly the `noreturn` behaviour, because there
+the authors' nesting `if (p == 0 && n == 0) { p = malloc(1); if (p == 0) .. }`
+is common enough to make the fold a net loss. Every guard of the no-return
+case applies: the `condstmts` width cap, the comment check, the target entered
+only from the chain, and `ActionBlockStructure::structure_held`'s goto
+fallback. That fallback structures again only when a relaxed block actually
+folded (otherwise the two collapses made the same choices), and once a fold
+into an ordinary block has fallen back in a function of 64 or more blocks
+(`kuna_fatalchain.rs (GIVE_UP_BLOCKS)`), later structurings of the same
+analysis do not relax at all, so a large function re-structured many times
+pays for the comparison once. Such a fold is not reoriented, since its target
+can fall through.
+A later print-tree pass can still leave a goto in a tree that had none when it
+was structured (`taildup` does on expat's `startElementNS`), so
+`kuna_fatalchain.rs (late_gotos)` reports a function whose kept structuring
+folded a chain into an ordinary block and still prints a goto, and
+`infra/decompile_drive.rs` analyzes it again without such folds, keeping the
+copy with fewer gotos and the unfolded one on a tie. Measured against
+`noreturn` within one build: 73 more functions match at O2 (102 gained, 29
+lost; +51 and +22 on the two project halves), 14 more at O0 from functions the
+detector misses, and no function gains a goto. The losses are sources that
+nest the second test, mostly because they use its value afterwards, or keep
+separate guards before one constant return; excluding plain-return targets,
+chains whose every test calls, two-test chains, chains in loops, or chains
+whose later test defines a value used afterwards each costs more gains than
+losses on both halves. Witness: `tests/stages/kuna-chainfold.xml` (gcc -O2
+folds, gcc -O0 keeps the ladder) and the second test of
+`decompiler/crates/kuna-cli/tests/fatalchain_round_trip.rs`.
 
 **`condstmts` — a cap on what a folded operand prints before its test.** The
 opposite pressure: Ghidra's own non-complex budget can let a block fold whose
@@ -638,12 +769,11 @@ grown increment by increment (the archived plan is
 the retired region-structurer roadmap, git history) and made the default S8 engine
 by DIV-12 under `option regionstructure`.
 
-**Input.** `region_structurer.rs (run_region_structurer)` first runs the
-chapter-07 region identifier fresh over the real CFG
+**Input.** When `regionlooprefine` is on, `region_structurer.rs
+(run_region_structurer)` first runs the loop half of the chapter-07 region
+identifier fresh over the real CFG
 (`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regionid.rs
-(KunaRegionIdentifier)`) and consumes two things from it: the deterministic
-node order (tie-breaking for edge virtualization) and — when
-`regionlooprefine` is on — the `kuna_regionid.rs
+(KunaRegionIdentifier::compute_cyclic)`) and consumes its `kuna_regionid.rs
 (KunaRegionIdentifier::cyclic_loops)` projection: each loop's refined body
 and exit frontier keyed by block start address, which absorbs
 dominated switch-case successors that a purely structural natural-loop walk
@@ -787,6 +917,15 @@ code is byte-identical with the flag off or on.
 across the full datatest corpus (DIV-12's verification) and structurally
 cannot do worse: any function it cannot finish is re-structured by the
 upstream engine from a clean re-seed.
+
+Its result depends only on the basic-block graph, the loop-condition rule and
+the `o0jumps` gate, so `blockaction.rs (ActionBlockStructure)` remembers,
+within one application, that it failed under the current gate: the second
+structuring of `structure_held` and the `o0jumps` structuring with the record
+back on run on the same graph (restored with `restore_orientation`) and go
+straight to `CollapseStructure`. On the decbench `bash` the region structurer
+fails on four structurings in five, and each such failure costs several times
+the collapse that follows it.
 
 ## 8.3 The goto-quality pass family (angr)
 
@@ -1062,6 +1201,75 @@ place (`decompiler/crates/kuna-decomp/src/substrate/block.rs
 which starts at the same leaf, so the goto keeps its label and lands on the
 same statement. A dropped copy hands over to the copy that was kept. Before
 this, the goto kept the freed node's id and printing its label panicked.
+
+**Loop latches (`dedupitetail latch`, the default).** An optimizing compiler
+copies a loop's latch, the step and the test that jumps back, into each path
+through the body that reaches it (tail duplication, jump threading through the
+latch, rotation of a loop whose body ends in an `if`). The loop header then has
+two back edges whose source blocks end in the same operations, and the
+structurer prints two loops, one directly inside the other, where the source
+has one loop with an `if` in it. `decompiler/crates/kuna-decomp/src/p8_structure/kuna_latchjoin.rs
+(ActionLatchJoin)` joins such copies on the p-code graph, before structuring, so
+every later pass sees one latch; it runs in the main loop right after the
+upstream `ActionNodeJoin`, while the exit the copies share has not yet been
+split by `ActionReturnSplit`.
+
+*Pattern:* a header with exactly two back edges, whose source blocks `A` and `B`
+both end in a conditional branch to the same two targets, one of them the header,
+neither of them `A` or `B` (a self-loop latch is a separate inner loop, as in a
+busy-wait). With a third back edge the joined loop would still have two
+latches, and the structurer prints the third as a goto where it printed an inner
+loop before, so such a header is left alone. *Identity rule:* the ops of `A` and `B` are paired from the branch
+backwards, and the longest run that is operation-for-operation identical is
+kept: same opcode, same arity, equal constants, the same output size, and the
+same output storage whenever the storage is address-tied, persistent or not yet
+in SSA form. A test with the opposite sense and its targets swapped is the same
+test (`==`/`!=`, `<`/`<=` with operands swapped, signed and unsigned). Each
+input of a paired op is the same value in both copies, the outputs of
+corresponding ops of the run, or values from before the run, which then meet in
+a new MULTIEQUAL; a value of address-tied or persistent storage, or a constant
+against a non-constant, does not merge. Two loads from different addresses stay
+in their copies (the run starts after them): a merged address would hide which
+memory is read, and a variadic function's read of its own register save area
+would no longer be seen as one. Up to two ops that only one copy has are
+stepped over when they have no effect but their output (no memory access, no
+call, an output in plain register or temporary storage) and read nothing the
+run computes before them; they stay in their copy, ahead of the run. A copy that
+reads a value of the run that the other copy does not cuts the run to start
+after it. The run must hold the op that computes the branch condition. *Refused:*
+calls, user ops, INDIRECTs, MULTIEQUALs, stores, any value of the run used
+anywhere but the run and the target MULTIEQUALs on the copy's own edge,
+irreducible edges, unconditional latches, and unoptimized functions
+(`p3_dataflow/kuna_unoptimized.rs`), which do not duplicate latches.
+
+*Transform:* `Funcdata::node_join_create_block` gives `A` and `B` one new
+successor `J` that takes their out edges (the control-flow half
+`ConditionalJoin` uses). `J` receives the MULTIEQUALs for the values that differ
+and then `A`'s run, in order; `B`'s run is deleted. In each target, the
+MULTIEQUAL inputs from `A` and `B` become one input from `J`: the run's output,
+the shared value, or the new MULTIEQUAL; a target MULTIEQUAL left with one input
+becomes a COPY. Every path still runs the same operations in the same order, so
+the join is exact; `count_dns_rr` prints `while (p) { if (...) n++; p =
+p->next; }` instead of a `while` loop inside a `do` loop.
+
+*Goto guard:* joining can move where the structurer needs a goto, typically a
+goto between two places in the joined loop where the nested loops used a `break`.
+A function of at most `kuna_latchjoin.rs (MAX_RECHECK_OPS)` = 1000 ops whose
+finished structure prints a goto from one place to another inside a loop that
+holds a joined latch (`kuna_latchjoin.rs (gotos_near_joins)`; any goto at all
+when that loop is not found) is decompiled again from the start with the join
+withdrawn
+(`decompiler/crates/kuna-decomp/src/infra/decompile_drive.rs`, after the
+`stackstoreguard` and `condstmts` re-attempts, which the second decompile runs
+again on its own); the joined result is kept unless the other is structured and
+prints strictly fewer gotos (`kuna_latchjoin.rs (fewer_gotos)`, counted by the
+print-time census in `p2_lift/kuna_loweredswitchkeep.rs (printed_gotos)`). The
+second decompile costs as much as the first; on the decbench O2 corpus the
+unjoined result printed fewer gotos in 32 of 479 such functions, all under 500
+ops, so larger functions keep the joined result unchecked.
+
+`option dedupitetail on` keeps only the if/else hoisting above and prints the
+copies as before; `off` turns both off.
 
 ### iteregion — `?:` recovery (angr `ITERegionConverter`)
 
@@ -1831,7 +2039,97 @@ Two source forms are the same code at `-O0` and the record picks one:
 printed as the second (merging non-constant returns instead was measured worse,
 195 functions lost against 9 gained), and a `switch` whose `default: break;`
 is the last statement emits the same `nop` as a `return;`. Optimized functions
-are untouched; `option returndup on` restores the rules everywhere.
+are not recorded (the next section covers what `auto` does there); `option
+returndup on` restores the rules everywhere, and `option returndup record` keeps
+the record but not the optimized-function shapes.
+
+### returndup auto in optimized functions — one guard per `||`, one return per arm
+
+An optimizing compiler emits the same code for `if (a) return K; if (b) return
+K;` and `if (a || b) return K;`, and for `if (c) v = f(); else v = g(); return
+v;` and `if (c) return f(); return g();`. Which one structuring recovers is
+decided by the return layout — whether the paths share a return block, and
+whether the splitters above give each path its own — not by the author, and
+measured against the sources it is the wrong one far more often than not: where
+kuna printed one return fed by assignments in both arms of the last `if`, the
+source wrote that form for 5 of 204 functions; where it printed adjacent guards
+with the same return, the source had a `||` guard in 241 of 626 and separate
+guards in 160. In functions the detector of chapter 03 does not call
+unoptimized and that do not address their frame through a frame pointer (the
+detector's own evidence, cached at the first heritage pass: small `-O0`
+functions it misses keep one, optimizing compilers rarely do), `auto` re-spells
+both
+(`decompiler/crates/kuna-decomp/src/p8_structure/kuna_retshape.rs`).
+
+**Guards.** `kuna_retshape.rs (ActionRetShape)` runs on the final tree right
+before `tailform`. In every statement list (each `Ls`/`Graph` no enclosing list
+flattens, with the condition prefixes of its `if`s hoisted the way `tailform`
+hoists them, print-neutrally and only when a fold is decided) it folds a run of
+adjacent guards `if (a) return K; if (b) return K;` into one `if (a || b)
+return K;`: both arms must print only a bare return of the same value (void,
+equal constants, one named variable, or the same expression varnode), the
+second guard must print nothing in front of its test and carry no label, and
+neither may be a guard the `looptest` plan drops. The folded condition is a new
+`BlockCondition` over the two existing conditions, left-nested as
+`rule_block_or` builds a chain, and the second return leaf leaves the tree. Each
+leaf keeps its own `CBRANCH` polarity — it already printed the test that enters
+its clause — so the `||` evaluates the same tests in the same order and runs the
+same `return` on the same paths. Two adjacent tests that both call something
+stay two guards when the return is void or a constant (authors check one call's
+result per guard: across the corpus sources such joins were written as `||` 30%
+of the time for void and 41% for constants, against 49-78% when at most one
+test calls).
+
+**Merged returns.** `kuna_retshape.rs (arm_returns)` adds candidates to
+`returndup` (`Funcdata::returndup_apply`, before the short-circuit gate): a
+RETURN block whose returned value is a phi of its in-edges, perhaps through
+casts, extensions or a `SUBPIECE`, and which holds nothing else but the
+return's own `glob = glob` guard copies (`value_tail`: no load, store, call,
+branch or `INDIRECT`; at most 16 ops). The split is the same `node_split` the
+constant duplication uses, so each arm runs its own copy of a value-only block
+and returns the value it computed. On ARM the phi is often extended in the
+return block (`sxth r0, r0` before `pop {pc}`), which the bare-epilogue filter
+rejects; on x86 a stack-protector check joins the paths, and once
+`kuna_stackguard` has stripped it the phi sits in a block that only runs into a
+one-predecessor RETURN, which is spliced into it first (the same move as
+`kuna_o0returns.rs (joined)`), after every other check has passed.
+
+Which merges split is the judgement. Every in-edge must end an arm (one
+out-edge), so a one-armed update `if (c) v += k; return v;` keeps its merge. An
+arm entered from several places qualifies only when its entries join one `if`
+(`if_join`: a two-way block and the one block it branches to, or two blocks
+entered only from the same two-way block) or fold into one short-circuit chain
+(`kuna_orchain.rs (folded_in_degree)`, the fold replay above, leaves it one
+in-edge): any other arm, such as a cleanup block several failure paths and a
+`switch` reach, becomes a terminal block with several entries once it returns
+on its own, and the structurer needs a `goto` for it. The one exception to the
+arm rule is a one-block `if` (`fresh_triangle`): `v = a; if (c) v = b; return
+v;` splits when `b` does not read `a` (through copies), which is the source's
+`if (!c) return a; return b;`, while the update keeps its merge.
+
+Measured on the decbench corpus against `record` in the same build (main
+fb88f5865, where `record` prints every function byte for byte as before),
+`auto` makes 305 more O2-noinline functions structurally exact and 23 fewer
+(+204 on one half of the projects, +78 on the other); measured one at a time
+on the previous main (068372109), the guard fold was +60 (63 / 3) and the merged-return split
++222 (242 / 20). The losses are sources that wrote the other form: a ternary, a
+result variable assigned in each arm and returned once, separate guards each
+checking a call's result. The two shapes never touch a function the detector
+calls unoptimized or one with a frame pointer; at -O0 the functions both tests
+let through (mostly firmware built with optimization) move 61 functions to an
+exact match and 8 off (+5 and +48 on the two halves); without the frame-pointer
+test two small openssh functions in nine binaries were lost. Each is a
+print-tree edit or a split of a value-only block, so both print the same
+program. One function of the 35,197 gains a `goto`, through `loopcondhoist`:
+with the arms split, the loop-condition structuring of its last pass prints a
+`goto`, the retry without the rule does no better, and the function falls back
+to `CollapseStructure` (with `loopcondhoist off`, or with `record`, it has
+none). The extra work is one pass over the final tree, a check of each valued
+return block, and one more round of the main loop in a function whose arms
+split (0.5% more heritage passes over sshd, 0.3% over bash). Measured with
+`KUNA_ACTION_PROF` and one job, `record` and `auto` side by side, whole-binary
+time on those two binaries moves by +0.3% and -1.5%, inside the run-to-run
+noise; `ActionRetShape` itself takes 5-10 ms per binary.
 
 ### loopcontinue auto — the jump statements an unoptimized function was written with
 
@@ -2104,6 +2402,63 @@ clause, and under `on`, which keeps the four-line tail wrapped.
 off and on, and `kuna-cli/tests/tailform_round_trip.rs` compiles the printed C
 of gcc -O2 and -O0 builds beside the source and checks every function returns
 and stores what the source does.
+
+### boolbranch return — one return of a short-circuit test
+
+`return p != NULL && p[0] == '/';` and `if (p != NULL && p[0] == '/') return 1;
+return 0;` compile to the same branches wherever the compiler materializes the
+value with a jump (every unoptimized build, and optimized code for targets such
+as Cortex-M where gcc branches to a `movs r0,#1` and a `movs r0,#0`): the short
+circuit jumps to a block that sets 1 and a block that sets 0, and structuring
+recovers a guard and a final return. P3 `RuleConditionalMove` cannot fold that
+select into `return C;` under any `boolbranch` value (§3, *Which 0/1 selects fold
+into their condition*), because the 0 arm is entered from every short-circuit
+exit. For a function whose whole body is that test the source almost always
+wrote the one return, so under `option boolbranch return` (the default)
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_boolret.rs (ActionBoolRet)`
+re-spells it after `tailform`, on the final tree.
+
+The match (`kuna_boolret.rs (find)`): the function's top-level statements,
+flattened as `tailform` flattens them, are exactly a one-arm `if` whose arm prints
+only `return K;` and a final leaf that prints only `return K';`, where `K` and `K'`
+are the constants 1 and 0 in either order and the prototype returns an integer,
+a Boolean or an unknown scalar; the condition is a `BlockCondition` chain (an
+`&&`/`||`) every leaf of which prints nothing but its `CBRANCH` test
+(`kuna_boolret.rs (quiet_chain)`), so the function prints no statement besides
+the return (declarations aside) and the condition holds no comma expression; and
+no block involved carries a label or is named by a goto. The edit sets
+`kuna_boolret.rs (F_BOOL_RET)` on the `if`, plus `F_BOOL_RET_NOT` when the guard
+returns 0, and frees the final return leaf. The printer
+(`decompiler/crates/kuna-decomp/src/p9_emit/printc.rs (emit_block_if_return)`)
+emits `return ( C );`, or `return !( C );`, with `C` rendered by the same
+`ONLY_BRANCH` path as the `if` header, anchored on the guard's `RETURN`. `C`'s
+operands are evaluated in the same order with the same short circuit, and `&&`,
+`||` and `!` yield exactly 1 or 0, the constants the two returns gave; no p-code
+is touched. The negation is printed as a `!` in front of the unchanged condition
+rather than pushed through it: decbench's extractor makes no node for a bare
+identifier operand, and pushing `!` through the leaves turns kuna's `!x` tests
+into bare `x`, which cost 3 functions at -O2 and 5 at -O0 against the `!` form.
+The context flag `bool_ret` is set only for C output.
+
+Left alone, by measurement against the default on the decbench corpus: a simple
+condition (`if (a == b) return 1; return 0;`), because an unoptimizing compiler
+would have set a flag for `return a == b;`; two or more guards; a condition that
+prints a comma expression (3 sites, all at -O0); and the same test after other
+statements, which in optimized functions only gained 6 and lost 1 at -O2 but
+gained 8 and lost 5 at -O0, negative on one half of the projects. Against
+`keep` on main d85062bb5 the value makes 94 more functions structurally exact
+at -O0 and 4 fewer (+59 on one half of the projects, +31 on the other), and 10
+more at -O2 without inlining (+2, +8), every changed body being exactly
+`if (C) return K; return K';` turned into one return. The losses are sources
+that wrote the `if` (bzip2 `isempty_RL`, `if (c>=0x30 && c<=0x39) { return TRUE; }
+else { return FALSE; }`), which the binary cannot tell apart.
+`tests/stages/kuna-boolret.xml` (gcc -O0 x86-64: a returned `&&`, a negated
+guard, a simple condition, two guards and a guard after a store, under `keep`
+and `return`) and `tests/stages/kuna-boolret-thumb.xml` (two hand-assembled
+Thumb functions in gcc -O2's layout) pin the shapes, and
+`kuna-cli/tests/boolret_round_trip.rs` compiles the functions printed from a
+gcc -O0 fixture under both values beside their source with gcc and clang at
+-O0 and -O2 and checks that each returns what the source returns.
 
 ## 8.4 The quality signal
 

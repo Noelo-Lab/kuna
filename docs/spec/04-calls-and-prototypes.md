@@ -4187,7 +4187,8 @@ In the one-shot tail, after merge has built HighVariables:
 **`ActionInputPrototype`** (`coreaction_protos.rs (ActionInputPrototype)`)
 re-derives the function's own parameter list from its input Varnodes — each
 input that the model admits as a possible parameter becomes a trial, active
-iff it has readers; `fillin_map` orders them (with the (kuna) own-input
+iff it has readers (or, on Windows x64, the body spilled it to its home slot:
+see the (kuna) home-slot section in 4.4); `fillin_map` orders them (with the (kuna) own-input
 gap-tolerance above, which applies only to this call of it); recovered-but-unreferenced
 parameters get fresh input Varnodes unless something already overlaps the
 slot; and the store is rewritten with each parameter typed from its
@@ -4404,6 +4405,17 @@ why an existing lock wins: a user `override prototype` at the call address, or
 a prototype an earlier pass already forced, is never replaced. A target with no
 declared prototype (an untyped `void *` field, or a code type without one)
 leaves the site on its model-recovered argument list.
+
+On an Android ELF, a typed call through the GetEnv field of JNIInvokeInterface
+still carries the header's generic output parameter, `void **`. When the
+version argument is a constant JNI version supported by Android, the call site
+refines this parameter to `JNIEnv **`. A successful call then leaves an
+environment pointer in the caller's output slot. Loads through that pointer
+can identify fields such as FindClass and RegisterNatives and apply their
+declared parameter types. A call requesting another interface, such as JVMTI,
+keeps the generic parameter. When another indirect call passes the same output
+address without a known JNI version, the shared location retains its generic
+type. The receiver type and field must both agree with the loaded JNI declaration (`kuna_jnigetenv.rs`).
 
 A prototype whose storage puts a parameter or the return value in one of its
 model's floating-point entries is forced only where the image states a
@@ -8319,6 +8331,75 @@ means; `kuna-verify` fills the save area from it before running the function.
 (`Decline::Variadic`), so callers recover their own arguments to such a
 function. `tests/stages/kuna-varargsave.xml` checks two folded functions, the two refused
 shapes and the option off. Windows x64 and every other target are untouched.
+
+### (kuna) A Windows x64 argument register spilled to its home slot (`kuna_homespill.rs`)
+
+(kuna) On Windows x64, an `x86:LE:64` language under the `windows` or
+`clangwindows` compiler spec, a function that stores an argument register's
+incoming value into the home slot the convention reserves for that register
+takes that argument. This is always on and inert on every other target
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_homespill.rs (record)`).
+Every Windows x64 call leaves 32 bytes above the return address, one 8-byte
+slot per argument register: `RCX`/`XMM0` at entry `RSP+0x8`, `RDX`/`XMM1` at
+`+0x10`, `R8`/`XMM2` at `+0x18`, `R9`/`XMM3` at `+0x20`. Unoptimized MSVC, gcc
+and clang store each declared parameter there at its declared width (`mov
+byte ptr [rsp+0x20],r9b` for a `char`) and read it back from the slot. The
+slot is in the caller's frame and nothing reads it after the return, so a
+parameter the body never reloads leaves only a dead store, which is gone
+before `ActionInputPrototype` scores the inputs: `int f(int a,int b) { return
+0; }` printed `f(void)` while its callers printed `f(1,2)`. How many
+parameters survived also depended on which reloads stayed live, so a fact
+about another function could take them away: a caller that reloaded its
+home-slotted `char` only to pass it as the fifth of nine arguments printed
+`void` once a `prototype` assertion declared that callee with four.
+
+`record` runs from `ActionHeritage` right after the first heritage pass, when
+the registers are in SSA form and the stack is not: a spill is still the raw
+`STORE` of an incoming register, or of its low piece (`SUBPIECE` at offset 0,
+through copies), to the entry stack pointer plus a constant, which is read back
+through copies and constant additions and subtractions, so `push rbp; mov
+rbp,rsp; mov [rbp+0x10],ecx` reaches `RSP+0x8`. It notes the register and the
+stored width when the constant is that register's own home offset and no other
+store of the function writes any byte of that slot; a slot the function also
+uses for something else says nothing (MSVC /O2 keeps locals in home slots, and
+one such function in a C++ crackme spills `rdx`, which its only caller never
+sets, and then keeps a local in the same slot). `mark` (`kuna_homespill.rs (mark)`), called by `ActionInputPrototype`
+once the input Varnodes are registered as trials, makes the trial covering each
+noted register active, or registers an unreferenced active trial at the stored
+width when none does; `fillin_map` keeps it and the unreferenced-trial path
+gives it a fresh input Varnode. The parameter takes the stored width, so four
+spills of `ecx`, `edx`, `r8d` and `r9b` print `(unsigned int a0,unsigned int
+a1,unsigned int a2,char a3)` where the unreferenced fillers printed eight-byte
+integers. A store of one argument register into another's slot (the CRT's
+`_NLG_Notify` lays a record over the home area), of a value the function
+computed, or of a callee-saved register (MSVC /O2 saves `rbx` and `rsi` in home
+slots) is not noted, the function's model must still accept the storage
+(`possible_input_param`), and a declared prototype for the function itself
+skips the recovery as before. A variadic function's register save is not noted
+either (`kuna_homespill.rs (vararg_save)`). Every compiler stores the whole
+registers that may carry varargs, from the first unnamed argument's slot
+through `R9`'s, and `va_start` takes the address of that first slot; gcc also
+stores them in a variadic function that never calls `va_start`, leaving the
+named parameters' slots unwritten when it optimizes. So when the address of a
+home slot is used other than to load or store through it (`va_start`, or an
+out-parameter pointer into the slot), the run of whole-register spills that
+starts at such a slot and reaches `R9`'s slot is a save of varargs, and when no
+slot's address is taken, so is a run that reaches `R9`'s slot above slots the
+function never writes. A narrower spill, such as zlib's `uncompress` storing
+`r9d` and passing the slot's address as `&sourceLen`, stays a parameter.
+Without this, `int f(const char *fmt,...)` printed four parameters, and gcc's
+`snprintf.constprop.0` filled `r8`, which it never reads, below the `r9`
+vararg. An unoptimized variadic function that never calls `va_start` still
+shows its four registers: its prologue is that of a function declaring them.
+Call sites are untouched, except where a rule
+that reads the callee's recovered parameter list now finds the register in it:
+`protoorder` states the spilled parameter's type to callers, so a constant
+passed in it prints as that type (`__DestructExceptionObject(a0,1)` where the
+low byte of a leftover register was merged in before). `tests/stages/kuna-homespill-win64.xml`
+checks the spills, the refusals, both variadic saves and an asserted callee;
+`decompiler/crates/kuna-cli/tests/homespill_assert.rs` checks that a
+`prototype` assertion repeating the callee's own declaration changes only that
+call on `decompile-all` and in the `decompile-project` header.
 
 ### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
 

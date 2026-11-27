@@ -1,0 +1,32 @@
+<decompilertest>
+<!-- P3 signed division by a power of two, Thumb. Two hand-assembled forms of
+     gcc's correction of a negative dividend before the asr:
+
+       itdiv8 0x10000: cmp r0,#0; it lt; addlt r0,r0,#7; asrs r0,r0,#3; bx lr
+       brdiv4096 0x10010: cmp r0,#0; blt 1f; 2: asrs r0,r0,#12; bx lr;
+                          1: addw r0,r0,#4095; b 2b
+
+     The IT block lifts the add to a CBRANCH that skips the rest of its own
+     instruction; brdiv4096 takes the add out of line, as gcc -O2 does for
+     arm-none-eabi. Either way the shift reads a join of x and x + (2^n - 1)
+     decided by the sign of x, and prints as the division. -->
+<binaryimage arch="ARM:LE:32:v8:default">
+<bytechunk space="ram" offset="0x10000" readonly="true">0028b8bfc01dc010704700bf00bf00bf002801db0013704700f6ff70fae7</bytechunk>
+</binaryimage>
+<script>
+<com>set context TMode 1 [ram,0x10000] [ram,0x1001f]</com>
+<com>map function r0x10000 itdiv8</com>
+<com>map function r0x10010 brdiv4096</com>
+<com>parse line extern int itdiv8(int x);</com>
+<com>parse line extern int brdiv4096(int x);</com>
+<com>lo fu itdiv8</com>
+<com>decompile</com>
+<com>print C</com>
+<com>lo fu brdiv4096</com>
+<com>decompile</com>
+<com>print C</com>
+</script>
+<stringmatch name="SDIVPOW2 THUMB #1: an it lt; addlt before asrs prints as the division" min="1" max="1">^  return x / 8;$</stringmatch>
+<stringmatch name="SDIVPOW2 THUMB #2: an add taken out of line by blt prints as the division" min="1" max="1">^  return x / 0x1000;$</stringmatch>
+<stringmatch name="SDIVPOW2 THUMB #3: neither keeps a branch" min="0" max="0">^  if \(</stringmatch>
+</decompilertest>

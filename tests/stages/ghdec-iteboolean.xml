@@ -53,6 +53,7 @@ e401d05dc3
 <symbol space="ram" offset="0x101000" name="f"/>
 </binaryimage>
 <script>
+  <com>option truthycond on</com>
   <com>option iteboolean off</com>
   <com>lo fu f</com>
   <com>decompile</com>

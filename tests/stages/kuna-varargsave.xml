@@ -23,6 +23,8 @@
     parameters, and pass those on); #4-#5 are the refused controls (a body
     that reads its own save area keeps the stores); #6-#7 prove the bug with
     the option off (fourteen parameters and the `if (v1)` block).
+    The script pins `option dedupitetail on`: the default `latch` joins a loop
+    latch gcc duplicated here, which changes the shape these asserts pin.
 -->
 <bytechunk space="ram" offset="0x100000">
 0fbe0601f8c3662e0f1f840000000000
@@ -68,6 +70,7 @@ c0eb180f1f44000089ca83c00183c110
 <symbol space="ram" offset="0x100180" name="dsum"/>
 </binaryimage>
 <script>
+  <com>option dedupitetail on</com>
   <com>lo fu report</com>
   <com>decompile</com>
   <com>print C</com>
