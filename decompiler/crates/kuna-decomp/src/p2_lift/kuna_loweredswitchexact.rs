@@ -29,6 +29,7 @@ use crate::block::{block_get_start, BlockType};
 use crate::context::{BlockId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::p2_lift::kuna_loweredswitch::KunaLoweredSwitchRecord;
+use crate::p2_lift::kuna_switchrestart::{RawIr, RawOp, RawVn};
 
 /// Marshaling element `<loweredswitchexact>` (kuna 4000+ range).
 pub const ELEM_LOWEREDSWITCHEXACT: ElementId = ElementId::new("loweredswitchexact", 4171);
@@ -311,7 +312,7 @@ pub(crate) fn install_keeps_statements(data: &Funcdata, head: BlockId, targets: 
 /// with a second copy of the chain the compiler threaded into another path, and
 /// a switch over one copy then prints the other copy's jumps into its arms as
 /// `goto`s.
-pub(crate) fn raw_cases_private(data: &Funcdata, head: BlockId, cases: &[BlockId], targets: &[BlockId]) -> bool {
+pub(crate) fn raw_cases_private<R: RawIr + ?Sized>(data: &R, head: BlockId, cases: &[BlockId], targets: &[BlockId]) -> bool {
     let removed = removed_blocks(data, head, targets);
     let mut region: BTreeSet<BlockId> = BTreeSet::new();
     let mut stack: Vec<BlockId> = targets.to_vec();
@@ -319,12 +320,10 @@ pub(crate) fn raw_cases_private(data: &Funcdata, head: BlockId, cases: &[BlockId
         if x == head || !region.insert(x) || region.len() > 4096 {
             continue;
         }
-        let b = data.bblocks_ref().block(x);
-        stack.extend((0..b.size_out()).map(|i| b.get_out(i)));
+        stack.extend((0..data.raw_size_out(x)).map(|i| data.raw_out(x, i)));
     }
     cases.iter().all(|&t| {
-        let blk = data.bblocks_ref().block(t);
-        (0..blk.size_in()).map(|i| blk.get_in(i)).all(|p| p == head || removed.contains(&p) || region.contains(&p))
+        (0..data.raw_size_in(t)).map(|i| data.raw_in(t, i)).all(|p| p == head || removed.contains(&p) || region.contains(&p))
     })
 }
 
@@ -339,20 +338,19 @@ pub(crate) fn raw_cases_private(data: &Funcdata, head: BlockId, cases: &[BlockId
 /// the compare tree is such a block, with that block's only successor the
 /// target, is entered through it instead, so every value reaching the body still
 /// runs it.
-pub(crate) fn raw_case_entries(data: &Funcdata, head: BlockId, targets: &mut [BlockId]) {
+pub(crate) fn raw_case_entries<R: RawIr + ?Sized>(data: &R, head: BlockId, targets: &mut [BlockId]) {
     for _ in 0..8 {
         let removed = removed_blocks(data, head, targets);
         let mut changed = false;
         for i in 0..targets.len() {
             let t = targets[i];
-            let blk = data.bblocks_ref().block(t);
             let preds: BTreeSet<BlockId> =
-                (0..blk.size_in()).map(|k| blk.get_in(k)).filter(|p| *p == head || removed.contains(p)).collect();
+                (0..data.raw_size_in(t)).map(|k| data.raw_in(t, k)).filter(|p| *p == head || removed.contains(p)).collect();
             let p = match preds.iter().next() {
                 Some(&p) if preds.len() == 1 && p != head => p,
                 _ => continue,
             };
-            if data.bblocks_ref().block(p).size_out() != 1 || targets.contains(&p) {
+            if data.raw_size_out(p) != 1 || targets.contains(&p) {
                 continue;
             }
             targets[i] = p;
@@ -375,29 +373,29 @@ pub(crate) fn raw_case_entries(data: &Funcdata, head: BlockId, targets: &mut [Bl
 /// again (by an op, or by a call when the prototype model says calls kill it)
 /// before an op reads it, before a call or tail call that may take it as a
 /// parameter, and before a return that may return it.
-pub(crate) fn raw_install_keeps_values(data: &Funcdata, head: BlockId, targets: &[BlockId]) -> bool {
+pub(crate) fn raw_install_keeps_values<R: RawIr + ?Sized>(data: &R, head: BlockId, targets: &[BlockId]) -> bool {
     keeps_values(data, head, targets, false)
 }
 
 /// [`raw_install_keeps_values`] with every raw read of a deleted value counted as
 /// a use, as the recogniser had it before reads were followed to their uses.
-pub(crate) fn raw_install_keeps_values_strictly(data: &Funcdata, head: BlockId, targets: &[BlockId]) -> bool {
+pub(crate) fn raw_install_keeps_values_strictly<R: RawIr + ?Sized>(data: &R, head: BlockId, targets: &[BlockId]) -> bool {
     keeps_values(data, head, targets, true)
 }
 
-fn keeps_values(data: &Funcdata, head: BlockId, targets: &[BlockId], strict: bool) -> bool {
+fn keeps_values<R: RawIr + ?Sized>(data: &R, head: BlockId, targets: &[BlockId], strict: bool) -> bool {
     let removed = removed_blocks(data, head, targets);
     let mut written: Vec<(Address, int4)> = Vec::new();
     for &b in &removed {
-        for op in data.bb_ops(b) {
-            let o = match data.obank().get(op) {
+        for op in data.raw_ops(b) {
+            let o = match data.raw_op(op) {
                 Some(o) => o,
                 None => return false,
             };
             if deleted_op_is_statement(o.code()) {
                 return false;
             }
-            let out = match o.get_out().and_then(|v| data.vbank().get(v)) {
+            let out = match o.get_out().and_then(|v| data.raw_vn(v)) {
                 Some(out) => out,
                 None => continue,
             };
@@ -424,8 +422,8 @@ fn keeps_values(data: &Funcdata, head: BlockId, targets: &[BlockId], strict: boo
 /// and that read keeps no value alive. With `returns` a return reads only that
 /// storage, the storage the function was seen to return, rather than every
 /// location the prototype model allows a return value in.
-pub(crate) fn read_before_written(
-    data: &Funcdata,
+pub(crate) fn read_before_written<R: RawIr + ?Sized>(
+    data: &R,
     removed: &BTreeSet<BlockId>,
     targets: &[BlockId],
     addr: &Address,
@@ -435,8 +433,8 @@ pub(crate) fn read_before_written(
     uses_before_written(data, removed, targets, addr, size, returns, false)
 }
 
-fn uses_before_written(
-    data: &Funcdata,
+fn uses_before_written<R: RawIr + ?Sized>(
+    data: &R,
     removed: &BTreeSet<BlockId>,
     targets: &[BlockId],
     addr: &Address,
@@ -448,7 +446,7 @@ fn uses_before_written(
         Some(s) => s.get_index(),
         None => return true,
     };
-    let proto = data.get_func_proto();
+    let proto = data.raw_proto();
     let modelled = proto.has_model();
     let start = Loc { space, lo: addr.get_offset(), size, addr: addr.clone() };
     let mut seen: BTreeMap<BlockId, Vec<Loc>> = BTreeMap::new();
@@ -467,19 +465,19 @@ fn uses_before_written(
             }
         }
         *known = live.clone();
-        for op in data.bb_ops(b) {
-            let o = match data.obank().get(op) {
+        for op in data.raw_ops(b) {
+            let o = match data.raw_op(op) {
                 Some(o) => o,
                 None => return true,
             };
-            let reads = (0..o.num_input()).filter_map(|i| o.get_in(i).and_then(|v| data.vbank().get(v))).any(|v| {
+            let reads = (0..o.num_input()).filter_map(|i| o.get_in(i).and_then(|v| data.raw_vn(v))).any(|v| {
                 !v.is_constant()
                     && v.get_addr().get_space().is_some_and(|s| {
                         let vl = Loc { space: s.get_index(), lo: v.get_offset(), size: v.get_size(), addr: v.get_addr().clone() };
                         live.iter().any(|l| l.overlaps(&vl))
                     })
             });
-            let out = o.get_out().and_then(|v| data.vbank().get(v)).and_then(|v| {
+            let out = o.get_out().and_then(|v| data.raw_vn(v)).and_then(|v| {
                 v.get_addr().get_space().map(|s| Loc { space: s.get_index(), lo: v.get_offset(), size: v.get_size(), addr: v.get_addr().clone() })
             });
             if reads {
@@ -528,13 +526,12 @@ fn uses_before_written(
         if live.is_empty() {
             continue;
         }
-        let blk = data.bblocks_ref().block(b);
         let returns_here = returns.is_some()
-            && data.bb_op_tail(b).and_then(|op| data.obank().get(op)).is_some_and(|op| op.code() == OpCode::CPUI_RETURN);
-        if blk.size_out() == 0 && !returns_here && live.iter().any(|l| !modelled || proto.possible_input_param(&l.addr, l.size)) {
+            && data.raw_tail(b).and_then(|op| data.raw_op(op)).is_some_and(|op| op.code() == OpCode::CPUI_RETURN);
+        if data.raw_size_out(b) == 0 && !returns_here && live.iter().any(|l| !modelled || proto.possible_input_param(&l.addr, l.size)) {
             return true;
         }
-        stack.extend((0..blk.size_out()).map(|i| (blk.get_out(i), live.clone())));
+        stack.extend((0..data.raw_size_out(b)).map(|i| (data.raw_out(b, i), live.clone())));
     }
     false
 }
@@ -582,13 +579,12 @@ fn deleted_op_is_statement(code: OpCode) -> bool {
 
 /// The basic blocks the install deletes: reachable from an entry now, and not once
 /// `head` branches straight to `targets`.
-pub(crate) fn removed_blocks(data: &Funcdata, head: BlockId, targets: &[BlockId]) -> BTreeSet<BlockId> {
-    let n = data.bblocks_get_size();
-    let blocks: Vec<BlockId> = (0..n).map(|i| data.bblocks_get_block(i)).collect();
-    let mut roots: Vec<BlockId> =
-        blocks.iter().copied().filter(|&b| data.bblocks_ref().block(b).is_entry_point()).collect();
+pub(crate) fn removed_blocks<R: RawIr + ?Sized>(data: &R, head: BlockId, targets: &[BlockId]) -> BTreeSet<BlockId> {
+    let n = data.raw_num_blocks();
+    let blocks: Vec<BlockId> = (0..n).map(|i| data.raw_block(i)).collect();
+    let mut roots: Vec<BlockId> = blocks.iter().copied().filter(|&b| data.raw_is_entry(b)).collect();
     if roots.is_empty() {
-        roots = blocks.iter().copied().filter(|&b| data.bblocks_ref().block(b).size_in() == 0).collect();
+        roots = blocks.iter().copied().filter(|&b| data.raw_size_in(b) == 0).collect();
     }
     let reach = |rewire: bool| -> BTreeSet<BlockId> {
         let mut reached: BTreeSet<BlockId> = BTreeSet::new();
@@ -601,16 +597,12 @@ pub(crate) fn removed_blocks(data: &Funcdata, head: BlockId, targets: &[BlockId]
                 stack.extend(targets.iter().copied());
                 continue;
             }
-            let blk = data.bblocks_ref().block(b);
-            stack.extend((0..blk.size_out()).map(|i| blk.get_out(i)));
+            stack.extend((0..data.raw_size_out(b)).map(|i| data.raw_out(b, i)));
         }
         reached
     };
     let after = reach(true);
-    reach(false)
-        .into_iter()
-        .filter(|b| !after.contains(b) && data.bblocks_ref().block(*b).get_type() == BlockType::Basic)
-        .collect()
+    reach(false).into_iter().filter(|b| !after.contains(b) && data.raw_is_basic(*b)).collect()
 }
 
 /// The basic block whose first address is `addr`.

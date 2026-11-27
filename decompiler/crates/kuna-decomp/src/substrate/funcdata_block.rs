@@ -1939,40 +1939,6 @@ impl Funcdata {
         Some(vn)
     }
 
-    /// Find the basic block whose first address is `addr` (the install's
-    /// target-block locator; the cascade record stores block START addresses).
-    fn kuna_block_at_start(&self, addr: &Address) -> Option<BlockId> {
-        let n = self.bblocks_get_size();
-        for i in 0..n {
-            let bl = self.bblocks_get_block(i);
-            if self.bblocks_ref().block(bl).get_type() != crate::block::BlockType::Basic {
-                continue;
-            }
-            if &crate::block::block_get_start(&self.bblocks_ref().arena, bl) == addr {
-                return Some(bl);
-            }
-        }
-        None
-    }
-
-    /// Find the basic block whose terminating op is at address `addr` (the
-    /// cascade head, recorded as `branch_addr` = the head CBRANCH's op address).
-    fn kuna_block_with_tail_at(&self, addr: &Address) -> Option<BlockId> {
-        let n = self.bblocks_get_size();
-        for i in 0..n {
-            let bl = self.bblocks_get_block(i);
-            if self.bblocks_ref().block(bl).get_type() != crate::block::BlockType::Basic {
-                continue;
-            }
-            if let Some(tail) = self.bb_op_tail(bl) {
-                if self.obank().get(tail).map(|o| o.get_addr()) == Some(addr) {
-                    return Some(bl);
-                }
-            }
-        }
-        None
-    }
-
     /// (kuna) Manufacture the S2 switch artifact from a recovered lowered
     /// comparison cascade (C++ `Funcdata::kunaInstallLoweredSwitch`,
     /// `kuna_loweredswitch.cc:463`).
@@ -2018,23 +1984,21 @@ impl Funcdata {
     ) -> KunaResult<Option<(usize, bool, bool)>> {
         use kuna_base::types::uintb;
 
+        use crate::p2_lift::kuna_loweredswitchvalue::HeadOperand;
+        use crate::p2_lift::kuna_switchrestart::{block_with_tail_at, strands_table, RawIr};
         // Don't re-install if a table already exists for this branch address.
-        if self.jumpvec_ref().iter().any(|jt| jt.get_op_address() == branch_addr) {
+        if self.raw_table_at(branch_addr) {
             return Ok(None);
         }
 
         // (1) Locate the cascade head block.
-        let head = match self.kuna_block_with_tail_at(branch_addr) {
+        let head = match block_with_tail_at(self, branch_addr) {
             Some(h) => h,
             None => return Ok(None),
         };
 
-        // (2) Build the ordered distinct out-edge target list: each distinct case
-        // target (in first-seen order), then the default last.  Record, per
-        // out-edge, a representative case label (the printer emits one `case` per
-        // address-table entry; duplicate-valued cases collapse to the same edge,
-        // and the C++ trivial recovery emits one label per edge).
-        // (kuna `loweredswitchexact`) every label of a shared body is kept instead.
+        // (2) The ordered distinct out-edge targets and their labels
+        // ([`direct_install_targets`]).
         // (kuna `loweredswitchpath`) A tree that loads each case's value inside it
         // installs along its raw paths.
         let (out_blocks, out_labels, out_is_default, strict) = if !path_spine.is_empty() {
@@ -2044,7 +2008,7 @@ impl Funcdata {
                 _ => return Ok(None),
             };
             let targets: Vec<BlockId> = arms.iter().map(|a| a.target).collect();
-            if self.kuna_lowered_switch_strands_table(head, &targets) {
+            if strands_table(self, head, &targets) {
                 return Ok(None);
             }
             if linear && !crate::p2_lift::kuna_loweredswitchexact::raw_cases_private(self, head, &targets[..targets.len() - 1], &targets) {
@@ -2055,99 +2019,18 @@ impl Funcdata {
             let labels: Vec<Vec<uintb>> = arms.into_iter().map(|a| if a.labels.is_empty() { vec![0] } else { a.labels }).collect();
             (blocks, labels, (0..n).map(|i| i + 1 == n).collect::<Vec<bool>>(), false)
         } else {
-            let mut out_targets: Vec<Address> = Vec::new();
-            let mut out_labels: Vec<Vec<uintb>> = Vec::new();
-            let mut out_is_default: Vec<bool> = Vec::new();
-
-            for (i, tgt) in case_targets.iter().enumerate() {
-                if tgt == default_target {
-                    continue; // a case that coincides with the default folds away
-                }
-                if let Some(k) = out_targets.iter().position(|a| a == tgt) {
-                    out_labels[k].push(case_vals[i]);
-                    continue; // duplicate target: one out-edge
-                }
-                out_targets.push(tgt.clone());
-                out_labels.push(vec![case_vals[i]]);
-                out_is_default.push(false);
+            match direct_install_targets(self, head, case_vals, case_targets, default_target, linear) {
+                Some(t) => t,
+                None => return Ok(None),
             }
-            // Default out-edge last.
-            out_targets.push(default_target.clone());
-            out_labels.push(vec![0]);
-            out_is_default.push(true);
-
-            // Resolve every target to a live basic block; if any is missing the CFG no
-            // longer matches — decline.
-            let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
-            for tgt in &out_targets {
-                match self.kuna_block_at_start(tgt) {
-                    Some(b) => out_blocks.push(b),
-                    None => return Ok(None),
-                }
-            }
-            // (kuna `loweredswitchexact`) Enter each body through the raw block the tree
-            // reaches it by.
-            let entered = out_blocks.clone();
-            crate::p2_lift::kuna_loweredswitchexact::raw_case_entries(self, head, &mut out_blocks);
-            // Need at least 2 case edges + a default for a switch.
-            if out_blocks.len() < 3 {
-                return Ok(None);
-            }
-
-            // The rewiring severs the head's out-edges, so everything reachable only
-            // through the cascade spine is swept.  If an already-recovered jump table
-            // sits down there, the cascade was a guard chain in front of a genuine
-            // switch and installing would delete it — decline.
-            if self.kuna_lowered_switch_strands_table(head, &out_blocks) {
-                return Ok(None);
-            }
-            // (kuna `loweredswitchexact`) Nothing a deleted compare block writes may be
-            // read again on the raw p-code this edits.
-            if !crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values(self, head, &out_blocks) {
-                return Ok(None);
-            }
-            let strict = out_blocks == entered
-                && crate::p2_lift::kuna_loweredswitchexact::raw_install_keeps_values_strictly(self, head, &out_blocks);
-            if linear && !crate::p2_lift::kuna_loweredswitchexact::raw_cases_private(self, head, &out_blocks[..out_blocks.len() - 1], &out_blocks) {
-                return Ok(None);
-            }
-            (out_blocks, out_labels, out_is_default, strict)
         };
 
-        // The head's trailing op must be the recorded CBRANCH.
-        let cbranch = match self.bb_op_tail(head) {
-            Some(o) => o,
+        // The head's trailing CBRANCH and the operand the switch reads
+        // ([`install_head_operand`]).
+        let (cbranch, head_operand) = match install_head_operand(self, head, var_addr, var_size, prefer_head_operand, load_at) {
+            Some(x) => x,
             None => return Ok(None),
         };
-        if self.obank().get(cbranch).map(|o| o.code()) != Some(OpCode::CPUI_CBRANCH) {
-            return Ok(None);
-        }
-
-        // Recover the live switch-variable Varnode from the head comparison BEFORE
-        // any surgery: the CBRANCH's boolean input is written by a comparison whose
-        // non-constant operand is the switch variable.  Reusing that exact Varnode
-        // (rather than a fresh free read of `var_addr`) keeps its full def-use chain
-        // intact so heritage threads SSA through it and the printer names it.
-        // (kuna `loweredswitchvalue`) Prefer what the head compare itself reads:
-        // `var_addr` need not hold the compared value at the head.
-        use crate::p2_lift::kuna_loweredswitchvalue::{head_compare_operand, HeadOperand};
-        let head_operand = if prefer_head_operand {
-            head_compare_operand(self, head, cbranch, var_addr, var_size)
-                .filter(|op| *op != HeadOperand::Storage(var_addr.clone()))
-        } else {
-            None
-        };
-        // (kuna) A selector the detection graph held in a temporary has no storage
-        // to fall back to: the head compare must read the output of that load.
-        if let Some(at) = load_at {
-            let loaded = match &head_operand {
-                Some(HeadOperand::Value(v)) => self.vbank().get(*v).and_then(|v| v.get_def()).and_then(|d| self.obank().get(d)),
-                _ => None,
-            };
-            if !loaded.is_some_and(|op| op.code() == OpCode::CPUI_LOAD && op.get_addr() == at) {
-                return Ok(None);
-            }
-        }
         let read_head_operand = head_operand.is_some();
         let swvn = match head_operand {
             Some(_) => None,
@@ -2234,7 +2117,7 @@ impl Funcdata {
 
         // Re-find the head after the sweep (block ids are stable, but be defensive)
         // and build the table against its post-sweep out-edge indices.
-        let head = match self.kuna_block_with_tail_at(branch_addr) {
+        let head = match block_with_tail_at(self, branch_addr) {
             Some(h) => h,
             None => return Ok(None),
         };
@@ -2288,71 +2171,6 @@ impl Funcdata {
         self.jumpvec_mut().push(jt);
         let idx = self.num_jump_tables() as usize - 1;
         Ok(Some((idx, read_head_operand, strict)))
-    }
-
-    /// (kuna) Would installing the lowered switch at `head` strand a genuine jump
-    /// table?
-    ///
-    /// Walks reachability from the entry over the *post-surgery* successor
-    /// relation (`head`'s out-edges replaced by `out_blocks`) and reports whether
-    /// any block that drops out of the reachable set ends in a BRANCHIND with a
-    /// recovered [`JumpTable`](crate::jumptable::JumpTable).  The
-    /// `remove_unreachable_blocks` sweep at the end of
-    /// [`kuna_install_lowered_switch`](Self::kuna_install_lowered_switch) would
-    /// destroy that BRANCHIND and its table, replacing a real switch with the
-    /// synthetic cascade dispatch and losing every case the table dispatched.
-    fn kuna_lowered_switch_strands_table(&self, head: BlockId, out_blocks: &[BlockId]) -> bool {
-        let size = self.bblocks_get_size();
-        let mut entry: Option<BlockId> = None;
-        for i in 0..size {
-            let blk = self.bblocks_get_block(i);
-            if self.bblocks_ref().block(blk).is_entry_point() {
-                entry = Some(blk);
-                break;
-            }
-        }
-        let entry = match entry {
-            Some(e) => e,
-            None => return false,
-        };
-
-        let mut seen: std::collections::HashSet<BlockId> = std::collections::HashSet::new();
-        let mut stack: Vec<BlockId> = vec![entry];
-        seen.insert(entry);
-        while let Some(b) = stack.pop() {
-            if b == head {
-                for &t in out_blocks {
-                    if seen.insert(t) {
-                        stack.push(t);
-                    }
-                }
-                continue;
-            }
-            let nout = self.bblocks_ref().block(b).size_out();
-            for i in 0..nout {
-                let t = self.bblocks_ref().block(b).get_out(i);
-                if seen.insert(t) {
-                    stack.push(t);
-                }
-            }
-        }
-
-        for i in 0..size {
-            let blk = self.bblocks_get_block(i);
-            if seen.contains(&blk) {
-                continue;
-            }
-            let op = match self.bb_op_tail(blk) {
-                Some(o) => o,
-                None => continue,
-            };
-            if self.obank().get(op).map(|o| o.code()) == Some(OpCode::CPUI_BRANCHIND)
-                && self.find_jump_table_index(op).is_some()
-            {
-                return true;
-            }
-        }
-        false
     }
 
     /// (kuna) Post-heritage repair of synthetic lowered-switch BRANCHIND inputs.
@@ -4590,6 +4408,144 @@ impl CloneBlockOps {
             _ => false,
         }
     }
+}
+
+
+/// The out-edges of a lowered switch installed straight to its case bodies:
+/// each distinct case target in first-seen order with every label that reaches
+/// it, then the default; and whether the install is strict. `None` when the raw
+/// p-code at `head` cannot take the switch.
+///
+/// The printer emits one `case` per address-table entry, and (kuna
+/// `loweredswitchexact`) every label of a shared body is kept.
+pub(crate) fn direct_install_targets<R: crate::p2_lift::kuna_switchrestart::RawIr + ?Sized>(
+    raw: &R,
+    head: BlockId,
+    case_vals: &[uintb],
+    case_targets: &[Address],
+    default_target: &Address,
+    linear: bool,
+) -> Option<(Vec<BlockId>, Vec<Vec<uintb>>, Vec<bool>, bool)> {
+    use crate::p2_lift::kuna_loweredswitchexact as exact;
+    let mut out_targets: Vec<Address> = Vec::new();
+    let mut out_labels: Vec<Vec<uintb>> = Vec::new();
+    let mut out_is_default: Vec<bool> = Vec::new();
+
+    for (i, tgt) in case_targets.iter().enumerate() {
+        if tgt == default_target {
+            continue; // a case that coincides with the default folds away
+        }
+        if let Some(k) = out_targets.iter().position(|a| a == tgt) {
+            out_labels[k].push(case_vals[i]);
+            continue; // duplicate target: one out-edge
+        }
+        out_targets.push(tgt.clone());
+        out_labels.push(vec![case_vals[i]]);
+        out_is_default.push(false);
+    }
+    // Default out-edge last.
+    out_targets.push(default_target.clone());
+    out_labels.push(vec![0]);
+    out_is_default.push(true);
+
+    // Resolve every target to a live basic block; if any is missing the CFG no
+    // longer matches — decline.
+    let mut out_blocks: Vec<BlockId> = Vec::with_capacity(out_targets.len());
+    for tgt in &out_targets {
+        out_blocks.push(crate::p2_lift::kuna_switchrestart::block_at_start(raw, tgt)?);
+    }
+    // (kuna `loweredswitchexact`) Enter each body through the raw block the tree
+    // reaches it by.
+    let entered = out_blocks.clone();
+    exact::raw_case_entries(raw, head, &mut out_blocks);
+    // Need at least 2 case edges + a default for a switch.
+    if out_blocks.len() < 3 {
+        return None;
+    }
+
+    // The rewiring severs the head's out-edges, so everything reachable only
+    // through the cascade spine is swept.  If an already-recovered jump table
+    // sits down there, the cascade was a guard chain in front of a genuine
+    // switch and installing would delete it — decline.
+    if crate::p2_lift::kuna_switchrestart::strands_table(raw, head, &out_blocks) {
+        return None;
+    }
+    // (kuna `loweredswitchexact`) Nothing a deleted compare block writes may be
+    // read again on the raw p-code this edits.
+    if !exact::raw_install_keeps_values(raw, head, &out_blocks) {
+        return None;
+    }
+    let strict = out_blocks == entered && exact::raw_install_keeps_values_strictly(raw, head, &out_blocks);
+    if linear && !exact::raw_cases_private(raw, head, &out_blocks[..out_blocks.len() - 1], &out_blocks) {
+        return None;
+    }
+    Some((out_blocks, out_labels, out_is_default, strict))
+}
+
+/// The `CBRANCH` ending `head` and, with `prefer_head_operand`, the operand its
+/// compare reads when that is not `var_addr`. `None` when the head does not end
+/// in a `CBRANCH`, or when a selector the detection graph held in a temporary
+/// (`load_at`) is not the output of that load at the head.
+///
+/// The live switch-variable Varnode is recovered from the head comparison
+/// BEFORE any surgery: reusing it keeps its def-use chain intact so heritage
+/// threads SSA through it and the printer names it. (kuna `loweredswitchvalue`)
+/// What the head compare itself reads is preferred: `var_addr` need not hold the
+/// compared value at the head.
+pub(crate) fn install_head_operand<R: crate::p2_lift::kuna_switchrestart::RawIr + ?Sized>(
+    raw: &R,
+    head: BlockId,
+    var_addr: &Address,
+    var_size: int4,
+    prefer_head_operand: bool,
+    load_at: Option<&Address>,
+) -> Option<(OpId, Option<crate::p2_lift::kuna_loweredswitchvalue::HeadOperand>)> {
+    use crate::p2_lift::kuna_loweredswitchvalue::{head_compare_operand, HeadOperand};
+    use crate::p2_lift::kuna_switchrestart::{RawOp, RawVn};
+    let cbranch = raw.raw_tail(head)?;
+    if raw.raw_op(cbranch).map(|o| o.code()) != Some(OpCode::CPUI_CBRANCH) {
+        return None;
+    }
+    let head_operand = if prefer_head_operand {
+        head_compare_operand(raw, head, cbranch, var_addr, var_size).filter(|op| *op != HeadOperand::Storage(var_addr.clone()))
+    } else {
+        None
+    };
+    if let Some(at) = load_at {
+        let loaded = match &head_operand {
+            Some(HeadOperand::Value(v)) => raw.raw_vn(*v).and_then(|v| v.get_def()).and_then(|d| raw.raw_op(d)),
+            _ => None,
+        };
+        if !loaded.is_some_and(|op| op.code() == OpCode::CPUI_LOAD && op.get_addr() == at) {
+            return None;
+        }
+    }
+    Some((cbranch, head_operand))
+}
+
+/// Every check [`Funcdata::kuna_install_lowered_switch`] makes before it changes
+/// anything, for a switch installed straight to its case bodies. `None` when the
+/// install declines.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn plan_direct_install<R: crate::p2_lift::kuna_switchrestart::RawIr + ?Sized>(
+    raw: &R,
+    branch_addr: &Address,
+    var_addr: &Address,
+    var_size: int4,
+    case_vals: &[uintb],
+    case_targets: &[Address],
+    default_target: &Address,
+    prefer_head_operand: bool,
+    load_at: Option<&Address>,
+    linear: bool,
+) -> Option<()> {
+    if raw.raw_table_at(branch_addr) {
+        return None;
+    }
+    let head = crate::p2_lift::kuna_switchrestart::block_with_tail_at(raw, branch_addr)?;
+    direct_install_targets(raw, head, case_vals, case_targets, default_target, linear)?;
+    install_head_operand(raw, head, var_addr, var_size, prefer_head_operand, load_at)?;
+    Some(())
 }
 
 #[cfg(test)]

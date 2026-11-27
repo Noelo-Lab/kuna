@@ -28,6 +28,7 @@ use kuna_num::opcodes::OpCode;
 use crate::context::{BlockId, OpId, VarnodeId};
 use crate::funcdata::Funcdata;
 use crate::p2_lift::kuna_loweredswitch::SharedLoweredSwitchStore;
+use crate::p2_lift::kuna_switchrestart::{RawIr, RawOp, RawVn};
 
 /// Marshaling element `<loweredswitchvalue>` (kuna 4000+ range).
 pub const ELEM_LOWEREDSWITCHVALUE: ElementId = ElementId::new("loweredswitchvalue", 4170);
@@ -374,8 +375,8 @@ pub enum HeadOperand {
 /// location is the operand: the walk follows copies and extensions back to the
 /// load, past a write that extends a location into itself (x86-64 zero-extends
 /// every 32-bit register write into the whole register).
-pub(crate) fn head_compare_operand(
-    data: &Funcdata,
+pub(crate) fn head_compare_operand<R: RawIr + ?Sized>(
+    data: &R,
     head: BlockId,
     cbranch: OpId,
     home: &Address,
@@ -384,13 +385,12 @@ pub(crate) fn head_compare_operand(
     let home_space = home.get_space()?.get_index();
     let home_temp = home.get_space()?.get_type() == spacetype::IPTR_INTERNAL;
     let mut ops = Vec::new();
-    let block = data.bblocks_ref().block(head);
-    if block.size_in() == 1 && block.get_in(0) != head {
-        ops = data.bb_ops(block.get_in(0));
+    if data.raw_size_in(head) == 1 && data.raw_in(head, 0) != head {
+        ops = data.raw_ops(data.raw_in(head, 0));
     }
-    ops.extend(data.bb_ops(head));
+    ops.extend(data.raw_ops(head));
     let cbpos = ops.iter().position(|&o| o == cbranch)?;
-    let cond = data.obank().get(cbranch)?.get_in(1)?;
+    let cond = data.raw_op(cbranch)?.get_in(1)?;
     let mut found: Option<HeadOperand> = None;
     let mut seen: BTreeSet<OpId> = BTreeSet::new();
     let mut work: Vec<(VarnodeId, usize)> = vec![(cond, cbpos)];
@@ -398,14 +398,14 @@ pub(crate) fn head_compare_operand(
         if seen.len() > 64 {
             return None;
         }
-        let v = data.vbank().get(vn)?;
+        let v = data.raw_vn(vn)?;
         if v.is_constant() {
             continue;
         }
         let (operand, writer) = if v.is_written() {
             let d = v.get_def()?;
             let dpos = ops[..pos].iter().position(|&o| o == d)?;
-            if data.obank().get(d)?.code() == OpCode::CPUI_LOAD && v.get_size() == size {
+            if data.raw_op(d)?.code() == OpCode::CPUI_LOAD && v.get_size() == size {
                 (Some(HeadOperand::Value(vn)), None)
             } else {
                 (None, Some((d, dpos)))
@@ -414,7 +414,7 @@ pub(crate) fn head_compare_operand(
             let space = v.get_addr().get_space()?.get_index();
             let (off, sz) = (v.get_offset(), v.get_size() as uintb);
             let overlap = |o: OpId| -> Option<bool> {
-                let out = data.vbank().get(data.obank().get(o)?.get_out()?)?;
+                let out = data.raw_vn(data.raw_op(o)?.get_out()?)?;
                 if out.get_addr().get_space()?.get_index() != space {
                     return None;
                 }
@@ -440,21 +440,21 @@ pub(crate) fn head_compare_operand(
                         continue;
                     }
                 }
-                if home_temp && exact && data.obank().get(o)?.code() == OpCode::CPUI_COPY {
+                if home_temp && exact && data.raw_op(o)?.code() == OpCode::CPUI_COPY {
                     if seen.insert(o) {
-                        work.push((data.obank().get(o)?.get_in(0)?, p));
+                        work.push((data.raw_op(o)?.get_in(0)?, p));
                     }
                     continue;
                 }
             }
             match prior {
-                Some((o, _, true)) if data.obank().get(o)?.code() == OpCode::CPUI_LOAD => {
+                Some((o, _, true)) if data.raw_op(o)?.code() == OpCode::CPUI_LOAD => {
                     if v.get_size() != size {
                         return None;
                     }
-                    (Some(HeadOperand::Value(data.obank().get(o)?.get_out()?)), None)
+                    (Some(HeadOperand::Value(data.raw_op(o)?.get_out()?)), None)
                 }
-                Some((o, p, true)) if flag_op(data.obank().get(o)?.code()) || !candidate || v.get_size() == 1 => {
+                Some((o, p, true)) if flag_op(data.raw_op(o)?.code()) || !candidate || v.get_size() == 1 => {
                     (None, Some((o, p)))
                 }
                 _ if candidate => {
@@ -477,11 +477,11 @@ pub(crate) fn head_compare_operand(
         if !seen.insert(d) {
             continue;
         }
-        let op = data.obank().get(d)?;
+        let op = data.raw_op(d)?;
         if !slice_op(op.code()) {
             return None;
         }
-        let out = data.vbank().get(op.get_out()?)?;
+        let out = data.raw_vn(op.get_out()?)?;
         let temp = out.get_addr().get_space().map(|s| s.get_type() == spacetype::IPTR_INTERNAL);
         if temp != Some(true) && out.get_size() != 1 {
             return None;
@@ -496,13 +496,13 @@ pub(crate) fn head_compare_operand(
 /// Whether `op` zero- or sign-extends a location into storage whose low bytes
 /// are that same location and hold the `sz` bytes at `off` in space `space`,
 /// which it then leaves as they were.
-fn extends_into_itself(data: &Funcdata, op: OpId, space: int4, off: uintb, sz: uintb) -> bool {
-    let Some(o) = data.obank().get(op) else { return false };
+fn extends_into_itself<R: RawIr + ?Sized>(data: &R, op: OpId, space: int4, off: uintb, sz: uintb) -> bool {
+    let Some(o) = data.raw_op(op) else { return false };
     if !matches!(o.code(), OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) {
         return false;
     }
     let (Some(out), Some(input)) =
-        (o.get_out().and_then(|v| data.vbank().get(v)), o.get_in(0).and_then(|v| data.vbank().get(v)))
+        (o.get_out().and_then(|v| data.raw_vn(v)), o.get_in(0).and_then(|v| data.raw_vn(v)))
     else {
         return false;
     };
@@ -520,12 +520,12 @@ fn extends_into_itself(data: &Funcdata, op: OpId, space: int4, off: uintb, sz: u
 /// The input of `op` when `op` zero- or sign-extends it into storage whose low
 /// bytes are the `sz`-byte location at `off` in space `space`, so a compare of
 /// that location compares the extended value.
-fn extended_low_bytes(data: &Funcdata, op: OpId, space: int4, off: uintb, sz: int4) -> Option<VarnodeId> {
-    let o = data.obank().get(op)?;
+fn extended_low_bytes<R: RawIr + ?Sized>(data: &R, op: OpId, space: int4, off: uintb, sz: int4) -> Option<VarnodeId> {
+    let o = data.raw_op(op)?;
     if !matches!(o.code(), OpCode::CPUI_INT_ZEXT | OpCode::CPUI_INT_SEXT) {
         return None;
     }
-    let out = data.vbank().get(o.get_out()?)?;
+    let out = data.raw_vn(o.get_out()?)?;
     let out_space = out.get_addr().get_space()?;
     if out_space.get_index() != space {
         return None;
@@ -536,7 +536,7 @@ fn extended_low_bytes(data: &Funcdata, op: OpId, space: int4, off: uintb, sz: in
         return None;
     }
     let input = o.get_in(0)?;
-    if data.vbank().get(input)?.get_size() > sz {
+    if data.raw_vn(input)?.get_size() > sz {
         return None;
     }
     Some(input)
