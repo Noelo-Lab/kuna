@@ -132,8 +132,3 @@ pub fn fixture_method() -> StructMethod {
 pub fn start_method(mt: StructMethod) {
     DecompilerContext::start_method(VarProcessor::new(mt, &mt.method_descriptor()));
 }
-
-/// Vineflower's options with `TRY_LOOP_FIX`, the one these hand-built graphs reach, off.
-pub fn oracle_context() -> ContextGuard {
-    install_context_with(&[(IFernflowerPreferences::TRY_LOOP_FIX, "0")])
-}

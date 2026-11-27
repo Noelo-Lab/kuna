@@ -364,28 +364,6 @@ tier = "transform"
 symptoms = "String s = (String)o; after an instanceof test (option is off)|typeSwitch bootstrap call instead of a pattern switch|pattern variable reconstructed wrongly"
 
 [[option]]
-option = "jvm_try_loop_fix"
-vineflower = "try-loop-fix"
-short = "tlf"
-aliases = ["try-loop-fix", "tlf"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "p7_regions"
-subphase = "dec_helper"
-strength = "HARD"
-rewind = "p7_regions"
-issue = ""
-summary = "Refuse a loop-head merge that would pull an if statement into a try block nested in a while loop, which otherwise produces malformed loops around try/catch."
-use_when = "Turn off only to reproduce older Fernflower structuring when comparing outputs."
-example = "kuna decompile app.jar com.ex.Retry --option jvm_try_loop_fix off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.TRY_LOOP_FIX (try-loop-fix, -tlf)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "while (true) with a try inside that does not match the bytecode|loop condition moved into a try block"
-
-[[option]]
 option = "jvm_decompile_switch_expressions"
 vineflower = "decompile-switch-expressions"
 short = "swe"

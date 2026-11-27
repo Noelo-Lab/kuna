@@ -59,8 +59,6 @@ Three tiers:
 | String s = (String)o; after an instanceof test (option is off) | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
 | typeSwitch bootstrap call instead of a pattern switch | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
 | pattern variable reconstructed wrongly | [`jvm_pattern_matching`](#jvm_pattern_matching----on--off-default-on) |
-| while (true) with a try inside that does not match the bytecode | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
-| loop condition moved into a try block | [`jvm_try_loop_fix`](#jvm_try_loop_fix----on--off-default-on) |
 | switch statement assigning a temporary in every case where a switch expression was written | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
 | yield statements misplaced | [`jvm_decompile_switch_expressions`](#jvm_decompile_switch_expressions----on--off-default-on) |
 | one variable reused for two unrelated values | [`jvm_verify_merges`](#jvm_verify_merges----on--off-default-off) |
@@ -199,15 +197,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p8_structure/if_pattern_match_processor, switch_pattern_match_processor, method_processor · vineflower · vineflower-option
 - **Also spelled:** `pattern-matching`, `pam`
 - **Example:** `kuna decompile app.jar com.ex.Shapes --option jvm_pattern_matching off`
-
-### `jvm_try_loop_fix` -- on | off, default `on`
-
-- **Symptoms:** while (true) with a try inside that does not match the bytecode; loop condition moved into a try block.
-- **What it does:** Refuse a loop-head merge that would pull an if statement into a try block nested in a while loop, which otherwise produces malformed loops around try/catch.
-- **When to flip:** Turn off only to reproduce older Fernflower structuring when comparing outputs.
-- **Where / provenance:** p7_regions/dec_helper · vineflower · vineflower-option
-- **Also spelled:** `try-loop-fix`, `tlf`
-- **Example:** `kuna decompile app.jar com.ex.Retry --option jvm_try_loop_fix off`
 
 ### `jvm_decompile_switch_expressions` -- on | off, default `on`
 

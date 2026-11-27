@@ -322,7 +322,7 @@ Everything is first recognized in its most general form - every loop is an infin
 with breaks, every `try` a plain `try`, every catch-all an unprocessed `finally` - and the
 later passes refine it. The `try` and catch-all shapes are refused when their head would
 merge an `if` into a `try` inside a loop (`decompiler/nonnative/kuna-jvm/src/p7_regions/dec_helper.rs
-(DecHelper::invalid_head_merge)`, `jvm_try_loop_fix`), which otherwise builds malformed
+(DecHelper::invalid_head_merge)`), which otherwise builds malformed
 loops around `try`/`catch`.
 
 **When the simple case is stuck.** `DomHelper::find_general_statement` carves out a
