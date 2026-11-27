@@ -409,7 +409,6 @@ impl MethodProcessor {
                         continue;
                     }
 
-
                     if IfHelper::merge_all_ifs(root) {
                         decompile_record.add("MergeAllIfs", Some(root));
                     } else {

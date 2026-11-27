@@ -415,7 +415,6 @@ fn equals_ignore_case(a: &str, b: &str) -> bool {
         })
 }
 
-
 impl DecompiledClass {
     /// The language the class was written in: `kotlin` when the Kotlin
     /// pipeline claimed it (its `path` then ends in `.kt`), else `java`.

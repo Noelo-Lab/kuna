@@ -328,7 +328,6 @@ impl StructContext {
         self.init_unit(unit);
     }
 
-
     fn init_unit(self, unit: ContextUnit) {
         DecompilerContext::get_logger().write_message(
             &format!("Scanning classes from {}", unit.get_name()),
