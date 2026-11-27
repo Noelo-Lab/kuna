@@ -11275,7 +11275,7 @@ before, the nearest one counted with the comparison's constant in range.
 
 Over 831 binaries (decbench x86-64, ARM and i386 PE at three optimization
 levels, MSVC and MinGW x64 PEs, Rust, AArch64 and system libraries up to
-libavcodec) the reference walk reads 156 more switches in 33 binaries and no
+libavcodec) the reference walk reads 154 more switches in 33 binaries and no
 switch fewer; nothing changes at `-O0`, on 32-bit ARM or on i386. Each new table's count is its range check's or its mask's, every
 entry of it was read, and where `kuna decompile` renders the switch its case
 values agree with that count. One reference is lost: in cargo a case body now jumps back above a `call
