@@ -142,9 +142,10 @@ impl VarVersionsProcessor {
                 };
                 map_exprent_min_types.borrow_mut().put(paar, type_);
             } else if type_.type_ == CodeType::Null {
-                map_exprent_min_types
-                    .borrow_mut()
-                    .put(paar, VarType::VARTYPE_OBJECT());
+                let type_ = max_type
+                    .filter(|t| t.type_ == CodeType::Object || t.array_dim > 0)
+                    .unwrap_or_else(VarType::VARTYPE_OBJECT);
+                map_exprent_min_types.borrow_mut().put(paar, type_);
             }
         }
     }

@@ -203,7 +203,7 @@ kuna	d54805ae79860693
 case	default/pkg/TestArrayNull1	Default	classes/java8nodebug/pkg/TestArrayNull1
 kuna	6c534cb7157e3a02
 case	default/pkg/TestArrayNull2	Default	classes/java8nodebug/pkg/TestArrayNull2
-kuna	4f982dabda0b6127
+kuna	72efeb1b33b6fd39
 case	default/pkg/TestArrayNullAccess	Default	classes/java8/pkg/TestArrayNullAccess
 kuna	0fa13027fb4e0741
 case	default/pkg/TestArrayPPMM	Default	classes/java8/pkg/TestArrayPPMM
@@ -2024,3 +2024,5 @@ case	kuna-fixes/pkg/TestSerializableLambda	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestConstantCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestConstantCapture
 # kuna-fixes/src/pkg/TestBoxedIncrementOperand.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestBoxedIncrementOperand	Kuna Fixes	kuna-fixes/classes/pkg/TestBoxedIncrementOperand
+# kuna-fixes/src/pkg/TestNullLocalType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullLocalType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullLocalType

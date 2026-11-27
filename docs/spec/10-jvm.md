@@ -801,6 +801,12 @@ increment or decrement writes (`b++` on a `byte` is `iadd`, `i2b`, `istore`, fol
 expression before types are computed) is not constant-only and keeps its narrow type:
 `int b = 0; take(b++)` would not select `take(byte)`.
 
+**A local that only holds `null` (kuna).** Vineflower types a variable whose every value is
+`null` as `Object` (`eliminateNonJavaTypes`), so without a LocalVariableTable `Source s =
+null; take(s);` printed `Object var0 = null; take((Source)var0);`. Such a variable now takes
+its upper bound when that is a class or array type: the type an argument, a store or a return
+of it requires, which the descriptors in the class file give.
+
 **An `int` conditional assigned to a local (kuna).** Vineflower lowers the `int` type of a
 conditional on the right of an assignment to `bytechar`, so that `byte v = b ? 0 : 1` keeps its
 narrow variable: the arms are constants and the conditional is `int` only by their default.
