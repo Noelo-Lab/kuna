@@ -854,6 +854,18 @@ converts this one itself). Expressions narrower than `int` are left to the
 upstream integer-promotion checks (`checkIntPromotionForCompare`,
 `checkIntPromotionForExtension`). This is a correctness fix with no option.
 
+**Word arithmetic in equality comparisons (kuna).** On a two-byte `int`
+target, `INT_EQUAL` and `INT_NOTEQUAL` compare the low word of an inline
+two-byte addition or subtraction. A host with wider `int` promotes the
+operands and retains high bits that the machine discarded. The C cast
+pass restores the comparison's word type unless the printed arithmetic
+already fits its range. For example, `(unsigned short)(x + y) == 0`
+stays true for `0xffff + 1` on either host. When the other side is a word
+of the other sign whose top bit may be set, the cast takes that side's
+type instead, so both sides widen the same way: beside a `short z`,
+`(short)(x + y) == z` holds for `x + y` = `0xffff` and `z` = -1, where
+`(unsigned short)(x + y) == z` would compare 65535 with -1.
+
 **Narrow unsigned products (kuna).** C promotes two unsigned operands
 narrower than `int` to signed `int`, so when their product can exceed
 `INT_MAX`, `a * b` is undefined even though the machine keeps only the low

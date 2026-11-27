@@ -2354,7 +2354,8 @@ mod tests {
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
         // and kuna-regionedgeorder-preset / mode aggressive leaves regionedgeorder off
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
-        assert_eq!(count, 956, "corpus file count drifted");
+        // and kuna-narrow-word-compare / a 16-bit sum keeps its wrap before == on a two-byte-int target
+        assert_eq!(count, 957, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
