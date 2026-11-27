@@ -612,7 +612,7 @@ fn guard_limit(
             }
         }
         joined |= reach.entered.is_some_and(|entered| entered(cur) != Entry::Unentered);
-        selector.step(cur, ops, data);
+        selector.step(cur, ops, data, reach.preserved);
         ends_at = Some(cur);
         cur = previous(decoded, cur).ok_or(if near { Some(cur) } else { None })?;
     }
@@ -1116,7 +1116,7 @@ pub(super) fn leaves_registers_unknown(opcode: OpCode) -> bool {
 /// and its dispatch (`lea jt(%rip),%r13; ... call f; cmp $5,%eax; ja; mov
 /// %eax,%eax; movslq 0(%r13,%rax,4),%rax`), and the compiler relied on the
 /// callee keeping it.
-fn survives(key: Key, preserved: &[(u64, u64)]) -> bool {
+pub(super) fn survives(key: Key, preserved: &[(u64, u64)]) -> bool {
     let Key::Reg(off, size) = key else { return false };
     let end = off.saturating_add(u64::from(size));
     preserved.iter().any(|&(lo, hi)| off >= lo && end <= hi)

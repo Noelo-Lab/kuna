@@ -3192,7 +3192,8 @@ hoisted above a loop or an `if/else`, or shared by two switches (MSVC keeps one
 `LEA reg,[__ImageBase]` for every table of a function), is found by following the
 one decoded branch into a block nothing falls into, and a range check may sit up
 to 128 instructions above the jump. Either way the check must compare the register
-the table is indexed by, or one it was copied from just above the comparison, and
+the table is indexed by, or one it was copied from just above the comparison, with
+no call in between that may overwrite it, and
 `jae` after `cmp $c` admits `c` cases where `ja` admits `c + 1`. A dispatch whose
 check compares another value, or that a branch enters between the check and the
 jump, is still not followed.

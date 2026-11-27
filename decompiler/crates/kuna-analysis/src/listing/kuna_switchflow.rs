@@ -57,8 +57,8 @@ use kuna_sleigh::translate::Translate;
 
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable::{
-    falls_through, fold_slice, is_constant, key_of, keys_overlap, leaves_registers_unknown, previous, Key, Val,
-    MAX_GUARD_INSNS,
+    falls_through, fold_slice, is_constant, key_of, keys_overlap, leaves_registers_unknown, previous, survives, Key,
+    Val, MAX_GUARD_INSNS,
 };
 use super::xrefs::{decode, FullCapture, FullOp};
 
@@ -127,7 +127,8 @@ pub(super) fn missing_base(
 
 /// The register holding the table index, followed up from the table-address
 /// sum through copies, extensions and scaling by a constant, as the range
-/// check search steps back over each instruction.
+/// check search steps back over each instruction. A call ends it unless the
+/// calling convention preserves the register.
 pub(super) struct Selector {
     site: Option<(u64, usize)>,
     key: Option<Key>,
@@ -141,7 +142,7 @@ impl Selector {
     }
 
     /// Steps back over the instruction at `at`, whose p-code is `ops`.
-    pub(super) fn step(&mut self, at: u64, ops: &[FullOp], data: Option<&Rc<AddrSpace>>) {
+    pub(super) fn step(&mut self, at: u64, ops: &[FullOp], data: Option<&Rc<AddrSpace>>, preserved: &[(u64, u64)]) {
         let ops = match self.site {
             Some((site, upto)) if site == at => {
                 self.site = None;
@@ -152,6 +153,10 @@ impl Selector {
         };
         let Some(mut key) = self.key else { return };
         for op in ops.iter().rev() {
+            if leaves_registers_unknown(op.opcode) && !survives(key, preserved) {
+                self.key = None;
+                return;
+            }
             let Some(out) = op.out.as_ref().and_then(|vn| key_of(vn, data)) else { continue };
             if !keys_overlap(out, key) {
                 continue;

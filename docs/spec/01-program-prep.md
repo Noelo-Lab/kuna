@@ -11257,7 +11257,8 @@ followed no further than before, and a dispatch the straight slice already reads
 is read the same. A function entry is never crossed. A read that crossed is held
 to a stricter range check than the near window's. The check must compare the
 register the table is indexed by, followed up from the table-address sum through
-copies, extensions and scaling by a constant; no decoded branch may enter the run
+copies, extensions and scaling by a constant, and past a call only in a register
+the calling convention preserves; no decoded branch may enter the run
 between the check and the jump; the branch-into-the-block form is not used; and
 the count is exact. The condition is evaluated a third time, with the selector
 equal to the constant (a `<` false, a `<=` true, the equality flag set), so `ja`

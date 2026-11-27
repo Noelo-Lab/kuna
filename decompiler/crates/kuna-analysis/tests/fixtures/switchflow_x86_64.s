@@ -1,6 +1,6 @@
 # Jump-table dispatches whose base or range check lies past where the
 # reference walk's straight step back from the jump stopped (issue #1824),
-# one per function, and three that must still read nothing. Every case body
+# one per function, and four that must still read nothing. Every case body
 # calls a function nothing else reaches, so a table the walk misses is a
 # missing call edge.
 #
@@ -328,6 +328,47 @@ branch_b:
 	.long	.Lj_c0-.Lj_jt, .Lj_c1-.Lj_jt, .Lj_c2-.Lj_jt, .Lj_c3-.Lj_jt
 .Lx_jt:
 	.long	.Lx_c0-.Lx_jt, .Lx_c1-.Lx_jt, .Lx_c2-.Lx_jt, .Lx_c3-.Lx_jt
+
+# Not read: the far check compares the register a call then returns in.
+	.globl	far_call
+	.type	far_call, @function
+far_call:
+	mov	%edi, %eax
+	cmp	$3, %eax
+	ja	.Lk_out
+	.rept	10
+	add	%esi, sink(%rip)
+	xor	sink(%rip), %esi
+	.endr
+	call	branch_a
+	mov	%eax, %eax
+	lea	.Lk_jt(%rip), %rcx
+	movslq	(%rcx,%rax,4), %rax
+	add	%rcx, %rax
+	jmp	*%rax
+.Lk_c0:
+	jmp	t_k_0
+.Lk_c1:
+	jmp	t_k_1
+.Lk_c2:
+	jmp	t_k_2
+.Lk_c3:
+	jmp	t_k_3
+.Lk_out:
+	ret
+	.size	far_call, .-far_call
+
+	.irp	f, t_k_0, t_k_1, t_k_2, t_k_3
+	.globl	\f
+	.type	\f, @function
+\f:
+	nop
+	ret
+	.endr
+
+	.p2align 2
+.Lk_jt:
+	.long	.Lk_c0-.Lk_jt, .Lk_c1-.Lk_jt, .Lk_c2-.Lk_jt, .Lk_c3-.Lk_jt
 
 	.bss
 	.p2align 2

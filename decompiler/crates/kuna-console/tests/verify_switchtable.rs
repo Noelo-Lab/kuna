@@ -483,12 +483,14 @@ const FLOW: [Gcc; 5] = [
 ];
 
 /// Dispatches of `switchflow_x86_64` that must read no table: a far check of
-/// another register, a far check a branch bypasses, and a base above a block
-/// boundary under a check of the byte count rather than the index.
-const UNREAD: [(&str, u64, [u64; 4]); 3] = [
+/// another register, a far check a branch bypasses, a base above a block
+/// boundary under a check of the byte count rather than the index, and a far
+/// check of the register a call then returns in.
+const UNREAD: [(&str, u64, [u64; 4]); 4] = [
     ("far check of another register", 0x100312, [0x10042e, 0x100430, 0x100432, 0x100434]),
     ("far check a branch bypasses", 0x1003c2, [0x100436, 0x100438, 0x10043a, 0x10043c]),
     ("crossed base, check of another value", 0x1003f9, [0x10043e, 0x100440, 0x100442, 0x100444]),
+    ("far check of a register a call overwrites", 0x100560, [0x10056b, 0x10056d, 0x10056f, 0x100571]),
 ];
 
 /// Each dispatch reaches exactly its four cases, and each case body's callee
@@ -525,8 +527,9 @@ fn a_base_or_range_check_past_a_block_boundary_reaches_exactly_the_cases() {
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
-/// A check that bounds another value than the table index, or that a branch
-/// enters below, states no case count, so no entry is read.
+/// A check that bounds another value than the table index, that a branch
+/// enters below, or that a call separates from the index, states no case
+/// count, so no entry is read.
 #[test]
 fn a_check_of_another_value_or_one_a_branch_bypasses_reads_no_table() {
     let idx = index_of("switchflow_x86_64");
