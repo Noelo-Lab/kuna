@@ -2352,7 +2352,9 @@ mod tests {
         // and kuna-devirtualize-frame / a read through a computed frame address stays ahead of a direct write it may read
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
-        assert_eq!(count, 954, "corpus file count drifted");
+        // and kuna-regionedgeorder-preset / mode aggressive leaves regionedgeorder off
+        // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
+        assert_eq!(count, 956, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
