@@ -2253,3 +2253,5 @@ case	kuna-fixes/pkg/TestEcjStringSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEc
 case	kuna-fixes/pkg/TestForUpdateInElse	Kuna Fixes	kuna-fixes/classes/pkg/TestForUpdateInElse
 # kuna-fixes/src/pkg/TestRawFieldErasure.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestRawFieldErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestRawFieldErasure
+# kuna-fixes/src/pkg/TestBridgeEntryLoop.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBridgeEntryLoop	Kuna Fixes	kuna-fixes/classes/pkg/TestBridgeEntryLoop	kuna-fixes/classes/pkg/TestBridgeEntryLoopBase

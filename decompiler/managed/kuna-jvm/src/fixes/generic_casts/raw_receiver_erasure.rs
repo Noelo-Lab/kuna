@@ -184,12 +184,28 @@ fn is_written_cast(func: FunctionExprent) -> Option<bool> {
     })
 }
 
+/// The method `inv` calls; past a bridge (javac's public forwarder, in a
+/// public class, to a method of a superclass that is not public: same name
+/// and descriptor, no signature) to the superclass's method it forwards to.
 fn desc_of(inv: InvocationExprent) -> Option<StructMethod> {
-    inv.get_desc().or_else(|| {
-        DecompilerContext::get_struct_context()
-            .get_class(&inv.get_classname())?
-            .get_method_recursive(&inv.get_name(), &inv.get_string_descriptor())
-    })
+    let context = DecompilerContext::get_struct_context();
+    let (name, descriptor) = (inv.get_name(), inv.get_string_descriptor());
+    let desc = inv.get_desc().or_else(|| {
+        context.get_class(&inv.get_classname())?.get_method_recursive(&name, &descriptor)
+    })?;
+    if !desc.has_modifier(CodeConstants::ACC_BRIDGE) {
+        return Some(desc);
+    }
+    let mut cls = context.get_class(&inv.get_classname());
+    while let Some(c) = cls {
+        if let Some(m) = c.get_method(&name, &descriptor) {
+            if !m.has_modifier(CodeConstants::ACC_BRIDGE) {
+                return Some(m);
+            }
+        }
+        cls = c.super_class().and_then(|s| s.get_string_opt()).and_then(|s| context.get_class(&s));
+    }
+    Some(desc)
 }
 
 /// The cast a for-each over the raw `iterable` needs for a loop variable of

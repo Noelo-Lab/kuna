@@ -1670,6 +1670,12 @@ read passed for a generic parameter of a method is written with the cast to the 
 read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
 inferred type stays, since a constructor infers its class's type arguments from it (a diamond
 inferred from the erasure would not compile).
+The declared type of a call looks past a bridge (`desc_of`): javac gives a public class a public
+forwarder, without a signature, for each public method it inherits from a superclass that is not
+public, and its erased result made a for-each over the call one over a raw iterable, cast to its
+class parameterized by the loop variable, which javac rejects for a wildcard receiver
+(`(Set<Entry<K, ? extends Comparable<?>>>)series.entrySet()`); the superclass's method it
+forwards to has the same name and descriptor and the signature.
 
 **A varargs spread beside a generic overload (kuna).** `vararg_spread_resolution` keeps a
 varargs array written as an array when another overload is applicable to the spread
