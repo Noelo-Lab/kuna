@@ -534,10 +534,6 @@ vineflower = "user-renamer-class"
 kuna = "not supported: a renamer class needs a JVM to load"
 
 [[driver_owned]]
-vineflower = "include-classpath"
-kuna = "not supported: there is no JVM class path; use --lib and jvm_include_runtime"
-
-[[driver_owned]]
 vineflower = "dump-code-lines"
 kuna = "line data of Vineflower's archive saver; kuna writes no archives"
 

@@ -197,13 +197,6 @@ fn runtime_option_registers_the_current_jdk() {
     }
     let lib = Some((false, "java/lang/Object".to_string()));
     assert_eq!(object(&[]), lib);
-    assert_eq!(
-        object(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            (IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH, "1"),
-        ]),
-        lib
-    );
 }
 
 #[test]

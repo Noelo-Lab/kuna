@@ -2,9 +2,8 @@
 //! kuna: finished classes are handed to a callback instead of an
 //! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
 //! by the custom property `jvm_plugins`) instead of the class path; renamer
-//! class loading has no Rust counterpart, and `include-classpath` adds the
-//! current JDK runtime (the system-module half of `ClasspathScanner`; the
-//! JVM's own class path has no analogue here).
+//! class loading and the class path (`include-classpath`) have no Rust
+//! counterpart.
 //!
 //! Class-scope arenas are reset at the end of [`Fernflower::decompile_context`],
 //! once every class of every unit has been delivered: Vineflower emits all
@@ -171,18 +170,14 @@ impl Fernflower {
             Severity::Info,
         );
 
-        if DecompilerContext::get_option(IFernflowerPreferences::INCLUDE_ENTIRE_CLASSPATH) {
-            JdkRuntime::add_runtime(struct_context, JRT_CURRENT);
-        } else {
-            let java_runtime =
-                DecompilerContext::get_property(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME)
-                    .expect("getProperty(INCLUDE_JAVA_RUNTIME)");
-            if !java_runtime.is_empty() {
-                let current = equals_ignore_case(&java_runtime, JRT_CURRENT)
-                    || equals_ignore_case(&java_runtime, "1");
-                if current || !equals_ignore_case(&java_runtime, "0") {
-                    JdkRuntime::add_runtime(struct_context, &java_runtime);
-                }
+        let java_runtime =
+            DecompilerContext::get_property(IFernflowerPreferences::INCLUDE_JAVA_RUNTIME)
+                .expect("getProperty(INCLUDE_JAVA_RUNTIME)");
+        if !java_runtime.is_empty() {
+            let current = equals_ignore_case(&java_runtime, JRT_CURRENT)
+                || equals_ignore_case(&java_runtime, "1");
+            if current || !equals_ignore_case(&java_runtime, "0") {
+                JdkRuntime::add_runtime(struct_context, &java_runtime);
             }
         }
 
