@@ -2048,3 +2048,5 @@ case	kuna-fixes/pkg/TestLambdaReceiverGeneric	Kuna Fixes	kuna-fixes/classes/pkg/
 case	kuna-fixes/pkg/TestCapturedConstantType	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedConstantType
 # kuna-fixes/src/pkg/TestNestedLambdaCapturedGeneric.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestNestedLambdaCapturedGeneric	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedLambdaCapturedGeneric
+# kuna-fixes/src/pkg/TestNullReceiverType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullReceiverType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullReceiverType

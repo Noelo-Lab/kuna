@@ -30,8 +30,8 @@ public class TestNullLocalType {
    }
 
    void store() {
-      Object var1 = null;
-      this.field = (TestNullLocalType.Source)var1;
+      TestNullLocalType.Source var1 = null;
+      this.field = var1;
    }
 
    interface Source {

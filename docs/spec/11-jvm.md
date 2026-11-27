@@ -868,7 +868,19 @@ null; take(s);` printed `Object var0 = null; take((Source)var0);`. Such a variab
 its upper bound when that is a class or array type: the type an argument, a store or a return
 of it requires, which the descriptors in the class file give. A variable that a reference cast
 reads keeps `Object`: javac writes a `checkcast` only where the value's type is not already
-the target's, so `Object o = null; accept((Integer) o)` must keep both.
+the target's, so `Object o = null; accept((Integer) o)` must keep both. The receiver of a
+call and the instance of a field access whose value is `null` are bounded by the class the
+instruction names (`InvocationExprent::check_expr_type_bounds`,
+`FieldExprent::check_expr_type_bounds`), and a `null` value stored into a field by the
+field's type (`AssignmentExprent::check_expr_type_bounds`): Vineflower bounded a receiver
+by its own type, which for a `null` local is the null type and erased every other bound, so
+`Cursor c = null; c.read()` printed `Object var0 = null; ((Cursor)var0).read()` and
+`int[] v = null; v.clone()` printed `var0.clone()` on an `Object`, which does not compile.
+The verifier checks the class an `invokevirtual`, `getfield` or `putfield` names; it checks
+an interface owner (`invokeinterface`, an interface-typed field) only loosely, so such a
+bound is evidence from javac, which names the receiver's compile-time type (JLS 13.1); a
+`null` local has no other type the call could compile with. The receiver of `arraylength`
+names no element type and keeps the `Object[]` cast.
 
 **An `int` conditional assigned to a local (kuna).** Vineflower lowers the `int` type of a
 conditional on the right of an assignment to `bytechar`, so that `byte v = b ? 0 : 1` keeps its

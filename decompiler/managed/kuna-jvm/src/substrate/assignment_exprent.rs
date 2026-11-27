@@ -1,6 +1,7 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/exps/AssignmentExprent.java`.
 
 use crate::check_types_result::CheckTypesResult;
+use crate::code_type::CodeType;
 use crate::fixes::generic_casts::disjoint_generic_cast;
 use crate::code_constants::ACC_FINAL;
 use crate::decompiler_context::DecompilerContext;
@@ -111,6 +112,10 @@ impl AssignmentExprent {
 
         if type_left.type_family == TypeFamily::Integer && self.d(|d| d.kuna_int_result) {
             result.add_expr_lower_bound(left, &VarType::VARTYPE_INT());
+        }
+
+        if type_right.type_ == CodeType::Null && left.get_type() == ExprentType::Field {
+            result.add_expr_upper_bound(right, &type_left);
         }
 
         let shift = matches!(

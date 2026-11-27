@@ -1221,11 +1221,17 @@ impl InvocationExprent {
         let mut result = CheckTypesResult::new();
 
         if let Some(instance) = self.get_instance() {
+            let instance_type = instance.get_expr_type();
             result.add_expr_lower_bound(
                 instance,
-                &VarType::find_family_bottom(instance.get_expr_type().type_family),
+                &VarType::find_family_bottom(instance_type.type_family),
             );
-            result.add_expr_upper_bound(instance, &instance.get_expr_type());
+            let upper = if instance_type.type_ == CodeType::Null {
+                VarType::new_signature_cl(&self.get_classname(), true)
+            } else {
+                instance_type
+            };
+            result.add_expr_upper_bound(instance, &upper);
         }
 
         let lst_parameters = self.get_lst_parameters();
