@@ -2356,7 +2356,8 @@ mod tests {
         // and kuna-narrow-word-compare / a 16-bit sum keeps its wrap before == on a two-byte-int target
         // and kuna-passthrough-filegap(-arm) / a float-register gap keeps the core registers a wrapper forwards
         // and kuna-arm-stored-double / an ARM hard-float double stored only to a global is a parameter
-        assert_eq!(count, 959, "corpus file count drifted");
+        // and kuna-arm-opaque-double / an ARM hard-float double written for an opaque callee is its argument
+        assert_eq!(count, 960, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
