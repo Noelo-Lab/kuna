@@ -10,6 +10,7 @@ use crate::code_type::CodeType;
 use crate::do_statement::{DoStatement, Type as LoopType};
 use crate::exprent::Exprent;
 use crate::fixes::generic_casts::mentions;
+use crate::fixes::lambdas;
 use crate::generic_type::GenericType;
 use crate::kuna_static_types::{formals, param_type, supertype_args};
 use crate::root_statement::RootStatement;
@@ -95,7 +96,10 @@ pub fn type_locals(root: RootStatement, method: StructMethod, processor: VarProc
             continue;
         }
         let declared = var.get_var_type();
-        let typed = values[0].get_inferred_expr_type(None);
+        let typed = values[0]
+            .try_as_new()
+            .and_then(lambdas::instantiated_parameterization)
+            .unwrap_or_else(|| values[0].get_inferred_expr_type(None));
         if declared.type_ != CodeType::Object
             || declared.array_dim != 0
             || typed.array_dim != 0

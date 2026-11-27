@@ -13,7 +13,12 @@ pub(crate) mod self_referencing_lambda;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::generic_type::GenericType;
+use crate::kuna_static_types::is_bare_var;
+use crate::method_descriptor::MethodDescriptor;
+use crate::new_exprent::NewExprent;
 use crate::pooled_constant::PooledConstant;
+use crate::struct_method::StructMethod;
 use crate::primitive_constant::ConstValue;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
@@ -89,6 +94,12 @@ pub fn receiver_cast_type(classname: &str, instance: Exprent) -> VarType {
         .try_as_new()
         .and_then(|n| n.d(|d| d.inferred_lambda_type.clone()))
         .filter(|t| t.is_generic() && t.array_dim == 0 && t.value.as_deref() == Some(classname))
+        .or_else(|| {
+            instance
+                .try_as_new()
+                .and_then(instantiated_parameterization)
+                .filter(|t| t.value.as_deref() == Some(classname))
+        })
         .unwrap_or_else(|| VarType::new_value(CodeType::Object, 0, classname))
 }
 
@@ -109,4 +120,85 @@ pub fn receiver_cast(instance: Exprent) -> bool {
                     })
                 })
     })
+}
+
+/// The functional interface of `lambda`, a lambda or method reference whose
+/// `invokedynamic` adds no interfaces, its instantiated method type, and the
+/// interface method it implements when the interface declares it.
+pub fn functional_method(lambda: NewExprent) -> Option<(VarType, String, StructMethod)> {
+    if !lambda.is_lambda() {
+        return None;
+    }
+    let node = DecompilerContext::get_class_processor()
+        .get_map_root_classes()
+        .borrow()
+        .get(&lambda.get_new_type().value_str().to_string())
+        .copied()?;
+    let (iface, li) = node.with(|d| (d.anonymous_class_type.clone(), d.lambda_information.clone()));
+    let (iface, li) = (iface?, li?);
+    if !li.added_interfaces.is_empty() {
+        return None;
+    }
+    let cls = DecompilerContext::get_struct_context().get_class(iface.value.as_deref()?)?;
+    let sam = cls.get_method_key(&lambda.get_lambda_method_key())?;
+    Some((iface, li.method_descriptor, sam))
+}
+
+/// The parameterization of the functional interface of `lambda`, a lambda or
+/// method reference, that its `invokedynamic` determines: the instantiated
+/// method type (the bootstrap's third argument) is the erasure of the
+/// function type of the lambda's target (JLS 15.27.3), so each type variable
+/// of the interface that is a parameter or the return of the method's
+/// signature takes the instantiated type at that position. `None` unless
+/// every type variable is determined, and unless a parameter is typed more
+/// specifically than `Object`, which the raw interface would give it.
+pub fn instantiated_parameterization(lambda: NewExprent) -> Option<VarType> {
+    let (iface, instantiated, sam) = functional_method(lambda)?;
+    let cls = DecompilerContext::get_struct_context().get_class(iface.value.as_deref()?)?;
+    let fparams = cls.get_signature()?.fparameters().clone();
+    if fparams.is_empty() {
+        return None;
+    }
+    let sig = sam.get_signature()?;
+    let instantiated = MethodDescriptor::parse_descriptor(&instantiated);
+    let generic_params = sig.parameter_types().clone();
+    if generic_params.len() != instantiated.params.len() {
+        return None;
+    }
+    let mut positions: Vec<(VarType, VarType, bool)> = generic_params
+        .into_iter()
+        .zip(instantiated.params.iter().cloned())
+        .map(|(g, t)| (g, t, true))
+        .collect();
+    positions.push((sig.return_type()?, instantiated.ret.clone(), false));
+    let mut args = Vec::with_capacity(fparams.len());
+    let mut specific = false;
+    for name in &fparams {
+        let mut found: Option<VarType> = None;
+        for (generic, erased, is_param) in &positions {
+            if !is_bare_var(generic) || generic.value_str() != name.as_str() {
+                continue;
+            }
+            if (erased.type_ != CodeType::Object && erased.array_dim == 0)
+                || found.as_ref().is_some_and(|f| !f.equals(erased))
+            {
+                return None;
+            }
+            specific |= *is_param && !erased.equals(&VarType::VARTYPE_OBJECT());
+            found = Some(erased.clone());
+        }
+        args.push(descriptor_of(&found?)?);
+    }
+    if !specific {
+        return None;
+    }
+    Some(GenericType::parse(&format!("L{}<{}>;", iface.value_str(), args.concat())))
+}
+
+fn descriptor_of(t: &VarType) -> Option<String> {
+    let element = match t.type_ {
+        CodeType::Object => format!("L{};", t.value.as_deref()?),
+        _ => t.value.as_deref()?.to_string(),
+    };
+    Some(format!("{}{}", "[".repeat(t.array_dim.max(0) as usize), element))
 }

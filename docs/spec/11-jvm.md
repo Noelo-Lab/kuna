@@ -1100,7 +1100,20 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    cast is dropped: `String s = ((Supplier<String>) () -> "x").get()` under the raw
    `(Supplier)` did not compile wherever the interface's signature is known (always, with a
    Java runtime found). An inferred type that names a type variable out of scope is not
-   stored on the lambda, and the cast stays the raw class.
+   stored on the lambda, and the cast stays the raw class. (kuna) Under a raw cast, or as
+   the value of a raw local without a LocalVariableTable, a lambda's parameters are typed
+   `Object` and its body may not compile (`((Mapper) (s -> s.get())).apply(source)`,
+   `Function f = s -> s.length() + 1`). The `invokedynamic`'s instantiated method type is
+   the erasure of the function type of the lambda's target (JLS 15.27.3), so
+   `lambdas::instantiated_parameterization` gives each type variable of the interface that
+   is a parameter or the return of its method's signature the instantiated type at that
+   place: `Mapper<Source, Object>`, `Function<String, Object>`. The lambda's body is written
+   from its implementation method, whose parameters have exactly these erased types, so it
+   compiles against them, and the parameterization's method erases to the descriptor the
+   call site names. It is used only when every type variable is determined and a parameter
+   is more specific than `Object` (where the raw type would serve), for the receiver cast
+   when no inferred type is stored, and by `initializer_local_type` as the type of a lambda
+   value.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.
