@@ -21,6 +21,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::kt_calls::kt_explicit_type_arguments;
 use crate::fixes::kt_calls::kt_mapped_java_member::{self, Form as MappedForm};
 use crate::fixes::kt_util::writing_kotlin;
+use crate::fixes::constructor_calls;
 use crate::fixes::lambdas;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::fixes::kt_java_syntax::kt_unboxing_cast_type;
@@ -1795,6 +1796,12 @@ impl InvocationExprent {
                 is_enum = new_node
                     .with(|d| d.class_struct)
                     .has_modifier(CodeConstants::ACC_ENUM);
+            } else if self.get_instance().is_none() {
+                mask = constructor_calls::listed_outer_instance_mask(
+                    &classname,
+                    &string_descriptor,
+                    lst_parameters.len(),
+                );
             }
         }
         let curr_cls = DecompilerContext::get_current_class_node();

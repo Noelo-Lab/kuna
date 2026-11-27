@@ -4,7 +4,7 @@
 
 use std::collections::VecDeque;
 
-use super::{has_member, inner_member_declaring, this_class};
+use super::{has_member, inner_member_declaring, listed_inner_member, this_class};
 use crate::classes_processor::ClassNodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
@@ -43,7 +43,7 @@ pub fn is_implicit(new: NewExprent, classname: &str, params: &[Exprent]) -> bool
     if new.is_outer_checked() || params.is_empty() {
         return false;
     }
-    let Some(declaring) = inner_member_declaring(classname) else {
+    let Some(declaring) = inner_member_declaring(classname).or_else(|| listed_inner_member(classname)) else {
         return false;
     };
     let Some(outer) = this_class(params[0]) else {

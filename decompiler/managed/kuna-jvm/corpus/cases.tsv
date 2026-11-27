@@ -2052,3 +2052,5 @@ case	kuna-fixes/pkg/TestNestedLambdaCapturedGeneric	Kuna Fixes	kuna-fixes/classe
 case	kuna-fixes/pkg/TestNullReceiverType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullReceiverType
 # kuna-fixes/src/pkg/TestAnonymousVarReceiver.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestAnonymousVarReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestAnonymousVarReceiver
+# kuna-fixes/src/pkg/TestListedInnerMember.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestListedInnerMember	Kuna Fixes	kuna-fixes/classes/pkg/TestListedInnerMember

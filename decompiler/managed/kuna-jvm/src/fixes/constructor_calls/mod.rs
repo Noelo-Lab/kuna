@@ -10,6 +10,9 @@ use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::ACC_STATIC;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::method_descriptor::MethodDescriptor;
+use crate::struct_general_attribute::StructGeneralAttribute;
+use crate::var_version_pair::VarVersionPair;
 
 fn class_node(name: &str) -> Option<ClassNode> {
     DecompilerContext::get_class_processor()
@@ -41,4 +44,41 @@ fn this_class(arg: Exprent) -> Option<String> {
         .get_this_vars()
         .borrow()
         .get_cloned(&var.get_var_version_pair())
+}
+
+/// The class that `class`, a class outside the input, is an inner
+/// (non-static) member of, as the InnerClasses attribute of the class being
+/// written lists it (JVMS 4.7.6: a class lists every nested class its
+/// constant pool names, with its outer class, simple name and flags).
+pub(crate) fn listed_inner_member(class: &str) -> Option<String> {
+    if class_node(class).is_some() {
+        return None;
+    }
+    let current = DecompilerContext::get_current_class_node()?.with(|d| d.class_struct);
+    let attribute = current.get_attribute(StructGeneralAttribute::ATTRIBUTE_INNER_CLASSES)?;
+    let entry = attribute.get_entries().into_iter().find(|e| e.inner_name == class)?;
+    if entry.simple_name.is_none() || (entry.access_flags & ACC_STATIC) != 0 {
+        return None;
+    }
+    entry.enclosing_name
+}
+
+/// The synthetic-parameter mask of a creation of `class` with constructor
+/// `descriptor` and `count` arguments when `class` is a listed inner member
+/// of a class outside the input: its constructor's first parameter is the
+/// outer instance.
+pub fn listed_outer_instance_mask(
+    class: &str,
+    descriptor: &str,
+    count: usize,
+) -> Option<Vec<Option<VarVersionPair>>> {
+    let outer = listed_inner_member(class)?;
+    let md = MethodDescriptor::parse_descriptor(descriptor);
+    let first = md.params.first()?;
+    if count == 0 || first.array_dim != 0 || first.value.as_deref() != Some(outer.as_str()) {
+        return None;
+    }
+    let mut mask = vec![None; count];
+    mask[0] = Some(VarVersionPair::new(-1, 0));
+    Some(mask)
 }

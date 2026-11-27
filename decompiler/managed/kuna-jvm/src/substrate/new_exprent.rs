@@ -20,7 +20,7 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
 use crate::fixes::generics;
 use crate::fixes::lambdas;
-use crate::fixes::constructor_calls::implicit_outer_instance;
+use crate::fixes::constructor_calls::{self, implicit_outer_instance};
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::overloads::vararg_spread_resolution;
 use crate::list_stack::ListStack;
@@ -765,7 +765,15 @@ impl NewExprent {
                             new_type.value.as_deref(),
                             &params,
                             indent,
-                        );
+                        )
+                        .or_else(|| {
+                            constructor_calls::listed_outer_instance_mask(
+                                new_type.value.as_deref()?,
+                                &constructor.get_string_descriptor(),
+                                params.len(),
+                            )?;
+                            NewExprent::outer_qualifier(params[0]).map(|e| e.to_java(indent))
+                        });
                     }
                     if let Some(enclosing) = &enclosing {
                         buf.append_buffer(enclosing).append_char('.');
@@ -903,44 +911,36 @@ impl NewExprent {
         lst_params: &[Exprent],
         indent: i32,
     ) -> Option<TextBuffer> {
-        let node = root_class_node(classname);
+        let node = root_class_node(classname)?;
+        let (type_, access) = node.with(|d| (d.type_, d.access));
+        if type_ != ClassNodeType::Root
+            && type_ != ClassNodeType::Local
+            && (access & ACC_STATIC) == 0
+            && !lst_params.is_empty()
+        {
+            return NewExprent::outer_qualifier(lst_params[0]).map(|e| e.to_java(indent));
+        }
+        None
+    }
 
-        if let Some(node) = node {
-            let (type_, access) = node.with(|d| (d.type_, d.access));
-            if type_ != ClassNodeType::Root
-                && type_ != ClassNodeType::Local
-                && (access & ACC_STATIC) == 0
-                && !lst_params.is_empty()
-            {
-                let enclosing = lst_params[0];
-
-                let mut is_qualified_new = false;
-
-                if let Some(var_enclosing) = enclosing.try_as_var() {
-                    let current_class = DecompilerContext::get_current_class_node()
-                        .expect("NullPointerException: current class node")
-                        .with(|d| d.class_struct);
-                    let this_classname = var_enclosing
-                        .get_processor()
-                        .expect("NullPointerException: processor")
-                        .get_this_vars()
-                        .borrow()
-                        .get_cloned(&var_enclosing.get_var_version_pair());
-
-                    if this_classname.as_deref() != Some(current_class.qualified_name().as_str()) {
-                        is_qualified_new = true;
-                    }
-                } else {
-                    is_qualified_new = true;
-                }
-
-                if is_qualified_new {
-                    return Some(enclosing.to_java(indent));
-                }
+    /// The qualifier `enclosing.` of an inner class creation whose outer
+    /// instance is `enclosing`: none for the current class's `this`.
+    fn outer_qualifier(enclosing: Exprent) -> Option<Exprent> {
+        if let Some(var_enclosing) = enclosing.try_as_var() {
+            let current_class = DecompilerContext::get_current_class_node()
+                .expect("NullPointerException: current class node")
+                .with(|d| d.class_struct);
+            let this_classname = var_enclosing
+                .get_processor()
+                .expect("NullPointerException: processor")
+                .get_this_vars()
+                .borrow()
+                .get_cloned(&var_enclosing.get_var_version_pair());
+            if this_classname.as_deref() == Some(current_class.qualified_name().as_str()) {
+                return None;
             }
         }
-
-        None
+        Some(enclosing)
     }
 
     fn get_lambda_return_type(

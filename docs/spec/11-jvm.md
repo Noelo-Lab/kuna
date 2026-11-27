@@ -1847,6 +1847,18 @@ its value; where it finds no such constant, the check stays written.
 already reads the outer instance and the creation still the stack variable holding it
 (`implicit_outer_instance::mark_checked`, which matched only an equal argument): it printed
 `new Base.Inner(..)`, which javac compiles without the check.
+(kuna) A creation of an inner member class whose class is not in the input (a nested class of
+another top-level class decompiled alone, or of a library) printed its outer instance as the
+first constructor argument, `new Cursor(Outer.this, false)`, which does not compile: the
+outer-instance parameter is known only from the created class's own node. The InnerClasses
+attribute of the class being written lists every nested class its constant pool names, with
+its outer class, simple name and flags (JVMS 4.7.6); `constructor_calls::listed_inner_member`
+reads a non-static member entry from it, and when the constructor's first parameter has that
+outer class's type (`listed_outer_instance_mask`) the argument is the outer instance: it is
+left out of the argument list and printed as the qualifier, or not at all, by the rules
+`implicit_outer_instance` applies to a class of the input (`lib.new Entry(2)`,
+`Outer.this.new Entry(3)` after javac's check, `new Entry(1)`). The superclass-call path of
+`qualified_super_call` reads the same entry.
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and
