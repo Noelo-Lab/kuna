@@ -4241,6 +4241,16 @@ moves the rounding boundary and shifts the stored pair on the long
 DATA port only. A qualified long DATA result captures the old pointer
 and performs the address update and operand latch when AEN allows
 them, even if the execution predicate suppresses the result and flags.
+
+The unqualified `A0` multiply routes with short DATA inputs reserve
+the original pointer addresses and postincrement before operand fetch.
+When both reads contend for a restricted bank, both address updates
+survive but neither `X1` nor `A0` changes. The first DATA input latches
+into `X1`; a DATA operand in the second input does not. The mixed
+product zero-extends its first word, sign-extends its second, and
+bypasses ALIM. The signed accumulating pair uses the full signed `A1`
+addend and enables ALIM.
+
 The short absolute DATA product writes the high word; its EQ test
 examines the entire product above the low word, including the guard
 bits. A long absolute DATA product tests the full product for zero,

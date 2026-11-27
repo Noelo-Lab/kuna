@@ -9022,6 +9022,69 @@ macro wide_mpy_result(first, second, kind, narrow, store, shift, product, result
   <done>
 }
 
+# These full accumulator routes use the primary MAC status lane. Mixed
+# products bypass ALIM, while the signed accumulating route enables it.
+macro wide_mixed_product_a0(first, second) {
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    local product:8;
+    local result:8;
+    wide_mpy_result(first, second, 2:1, 0:1, 0:1, 0:4, product, result, flags);
+    write_accumulator40(A0L, A0H, GB0, result);
+    publish_ce_feedback(flags, incoming);
+}
+
+:MPYUS "A0","*R0++","*R1++" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_24_45=0x110cd6 & wide_0_22=0x328820 {
+    local left:2 = R0;
+    local right:2 = R1;
+    modify_native_agu(R0, 1:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    modify_native_agu(R1, 1:2, RM0, RL0, RM0_ALIGN, 2:4, 4:2);
+    compact_pair_read_check(left, right);
+    local first:2 = *[data]:2 left;
+    local second:2 = *[data]:2 right;
+    X1 = first;
+    wide_mixed_product_a0(first, second);
+}
+
+:MPYUS "A0","A1L","*R1++" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_24_45=0x110cd6 & wide_0_22=0x3288a2 {
+    local address:2 = R1;
+    modify_native_agu(R1, 1:2, RM0, RL0, RM0_ALIGN, 2:4, 4:2);
+    local second:2 = *[data]:2 address;
+    wide_mixed_product_a0(A1L, second);
+}
+
+macro wide_accumulate_a1_data(first_data) {
+    local address:2 = R0;
+    modify_native_agu(R0, 1:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    local word:2 = *[data]:2 address;
+    if (first_data == 0) goto <compute>;
+    X1 = word;
+  <compute>
+    local product:8;
+    raw_mac_product(word, A1L, 1:1, 1:1, product);
+    local addend:8 = sext(GB1) * 0x100000000 + zext(A1H) * 0x10000 + zext(A1L);
+    local result:8;
+    local active:2;
+    raw_mac_add(addend, product, 0:8, 0:1, 0:1, result, active);
+    write_accumulator40(A0L, A0H, GB0, result);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    publish_ce_feedback(flags, incoming);
+}
+
+:MAC "A0","*R0++","A1L","A1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_24_45=0x085189 & wide_0_22=0x4b8888 {
+    wide_accumulate_a1_data(1:1);
+}
+
+:MAC "A0","A1L","*R0++","A1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_24_45=0x289089 & wide_0_22=0x4b8888 {
+    wide_accumulate_a1_data(0:1);
+}
+
 macro wide_square_data(input) {
     local address:2 = R0;
     local mode:2 = PACFG & 3;

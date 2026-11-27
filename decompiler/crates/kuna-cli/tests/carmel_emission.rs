@@ -5451,6 +5451,65 @@ fn carmel_wide_subtract_requires_cold_operand_fetch_and_reuses_the_data_word() {
 }
 
 #[test]
+fn carmel_wide_mac_data_ports_separate_latching_and_writeback() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let image = common::scratch_file("carmel-wide-mac-data", "xml");
+    let specs = image.with_extension("specs");
+    let source = image.with_extension("c");
+    let executable = image.with_extension("exe");
+    tracked_carmel_entry_specs(&specs, &[("R0", 0x100), ("R1", 0x120), ("PACFG", 0),
+        ("CECFG1", 0), ("CECFG2", 0), ("CETBL", 0), ("EST", 0)], 0, 0);
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n\
+        #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+        #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+        volatile unsigned short data_r0 = 0x8001, data_r1 = 0x8000;\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (row, (packet, bits, latch, r0, r1, flags)) in [
+        ("d10cd6b28820", 0xff7fff0000_u64, 0x8001, 0x101, 0x121, 0x30),
+        ("d10cd6b288a2", 0xffcc000000, 0x11, 0x100, 0x121, 0x10),
+        ("c85189cb8888", 0xffcc129c00, 0x8001, 0x101, 0x120, 0x10),
+        ("e89089cb8888", 0xffcc129c00, 0x11, 0x101, 0x120, 0x10),
+    ].into_iter().enumerate() {
+        fs::write(&image, format!(
+            "<binaryimage arch=\"Carmel:BE:24:default:default\">\n\
+             <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">{packet}2bd8002bec00</bytechunk>\n\
+             <symbol space=\"code\" offset=\"0\" name=\"wide_mac\"/>\n</binaryimage>\n"
+        )).unwrap();
+        for (column, (reg, expected, typ)) in [
+            ("A0L", bits as u16, "unsigned short"), ("A0H", (bits >> 16) as u16, "unsigned short"),
+            ("GB0", (bits >> 32) as u16, "unsigned char"), ("X1", latch, "unsigned short"),
+            ("R0", r0, "unsigned short"), ("R1", r1, "unsigned short"), ("EST", flags, "unsigned short"),
+        ].into_iter().enumerate() {
+            let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .env("KUNA_SPECS", &specs).arg("decompile").arg(&image)
+                .args(["wide_mac", "--target", "Carmel:BE:24:default:default", "--assert-strict",
+                    "--assert", "param 0 %A1L unsigned short factor", "--assert", "param 1 %A1H unsigned short high",
+                    "--assert", "param 2 %GB1 unsigned char guard", "--assert", "param 3 %ECFG unsigned short mode",
+                    "--assert", "param 4 %X1 unsigned short latch",
+                    "--assert", "data [data,0x100] volatile unsigned short data_r0",
+                    "--assert", "data [data,0x120] volatile unsigned short data_r1",
+                    "--assert", &format!("return %{reg} {typ}")]));
+            let emitted = String::from_utf8(output.stdout).unwrap();
+            assert!(!emitted.contains("halt_") && !emitted.to_lowercase().contains("warning:"), "{emitted}");
+            let name = format!("mac_{row}_{column}");
+            writeln!(c, "#define wide_mac {name}\n{emitted}\n#undef wide_mac").unwrap();
+            writeln!(calls, "if ({name}(0x3400,0x12,0,5,0x11) != {expected:#x}) return {};", row * 7 + column + 1)
+                .unwrap();
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [image, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+    fs::remove_dir_all(specs).unwrap();
+}
+
+#[test]
 fn carmel_wide_mac_guard_and_control_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
