@@ -1772,8 +1772,12 @@ the opcode its value's category picks, and `aconst_null` is accepted by every ar
 
 **Emission.** `decompiler/managed/kuna-dex/src/emit.rs` writes one JVM local per
 (register, category), parameters in their JVM slots; a parameter's register that d8 reuses
-for a value outside the parameter's web gets a second local for that, so the parameter's own
-local holds the parameter throughout and a copy of it can always read it. Blocks are laid
+for another variable gets a second local for it, so the parameter's own local holds the
+parameter throughout and a copy of it can always read it. A value is the parameter's own
+when it is in the parameter's web, when its instruction (as d8 wrote it) reads the
+register's own value and writes it back (an update in place, `n--`), or when debug info
+names it as the parameter; everything else in that register is another variable. An
+`add-int/lit` becomes `iinc` only when the value it reads is in the local it writes. Blocks are laid
 out in address order, a fall-through successor right after its block, and a block whose
 only predecessor jumps to it unconditionally right after that predecessor, with the `goto`
 dropped (so a handler's code is contiguous, as javac writes it); the regions below then

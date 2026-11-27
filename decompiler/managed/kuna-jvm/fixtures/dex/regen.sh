@@ -24,6 +24,9 @@ $D8 --release --min-api 21 --lib "$LIB" --output "$tmp/r" $(find "$tmp/j" -name 
 $D8 --release --min-api 21 --lib "$LIB" --classpath "$STDLIB" --output "$tmp/kd" $(find "$tmp/k" -name '*.class')
 $D8 --debug --min-api 26 --lib "$LIB" --output "$tmp/sd" $(find "$tmp/s" -name '*.class')
 cp "$tmp/sd/classes.dex" sugar.dex
+mkdir -p "$tmp/sr"
+$D8 --release --min-api 26 --lib "$LIB" --output "$tmp/sr" $(find "$tmp/s" -name '*.class')
+cp "$tmp/sr/classes.dex" sugar-release.dex
 "$JAVA" -cp "$tmp/s" sx.Sugar > expected/Sugar.txt
 cp "$tmp/d/classes.dex" debug.dex
 cp "$tmp/r/classes.dex" release.dex

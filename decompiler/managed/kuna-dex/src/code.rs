@@ -7,7 +7,7 @@
 //! method's own signature. A constant that reaches a use alone is typed by
 //! that use, so one register can carry one literal to differently-typed uses.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::debug::DebugInfo;
 use crate::dex::{CodeItem, Dex, Proto};
@@ -159,9 +159,10 @@ pub struct Method<'d, 'a> {
     /// Per parameter: nothing writes its local (no def in its web, and none
     /// in its register that debug info names as the parameter).
     pub clean_param: Vec<bool>,
-    /// Webs of values in a parameter's register that are another variable:
+    /// Webs of values in a parameter's register that are another variable
+    /// (not the parameter updated in place, nor named as it by debug info):
     /// they get a local of their own.
-    pub reused: std::collections::BTreeSet<u32>,
+    pub reused: BTreeSet<u32>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -252,35 +253,15 @@ impl<'d, 'a> Method<'d, 'a> {
             edge_const: BTreeMap::new(),
             handler_live: Vec::new(),
             clean_param: Vec::new(),
-            reused: std::collections::BTreeSet::new(),
+            reused: BTreeSet::new(),
         };
         m.build_ops(undo)?;
         m.build_blocks()?;
         m.fuse_constructors()?;
         m.number_values()?;
         m.infer_types()?;
+        m.classify_params();
         m.forward_moves();
-        let name_at = |m: &Self, r: u32, pc: u32| {
-            m.debug.locals.iter().find(|l| l.reg == r && l.start <= pc && pc < l.end.max(l.start + 1)).map(|l| l.name)
-        };
-        let mut named = std::collections::BTreeSet::new();
-        for p in 0..m.params.len() {
-            let (r, root) = (m.params[p].0, m.root(p as u32));
-            let name = name_at(&m, r, 0);
-            let mut clean = true;
-            for o in &m.ops {
-                let Some(d) = o.def.as_ref().filter(|d| d.reg == r) else { continue };
-                let web = m.root(d.id);
-                if web == root || (name.is_some() && name_at(&m, r, o.end) == name) {
-                    clean = false;
-                    named.insert(web);
-                } else {
-                    m.reused.insert(web);
-                }
-            }
-            m.clean_param.push(clean);
-        }
-        m.reused.retain(|w| !named.contains(w));
         Ok(m)
     }
 
@@ -927,7 +908,7 @@ impl<'d, 'a> Method<'d, 'a> {
             from: BTreeMap::new(),
             live,
             rpo,
-            work: std::collections::BTreeSet::new(),
+            work: BTreeSet::new(),
         };
         flow.entry[0] = Some(entry0);
         flow.work.insert((0, 0));
@@ -1002,6 +983,39 @@ impl<'d, 'a> Method<'d, 'a> {
         Ok(())
     }
 
+    /// Which values in a parameter's register are the parameter (its web,
+    /// an update of it in place, or a value debug info names as it) and
+    /// which are another variable d8 put there, from the instructions as
+    /// d8 wrote them (before copies are forwarded).
+    fn classify_params(&mut self) {
+        let name_at = |m: &Self, r: u32, pc: u32| {
+            m.debug.locals.iter().find(|l| l.reg == r && l.start <= pc && pc < l.end.max(l.start + 1)).map(|l| l.name)
+        };
+        let (mut named, mut reused, mut clean_param) = (BTreeSet::new(), BTreeSet::new(), Vec::new());
+        for p in 0..self.params.len() {
+            let (r, root) = (self.params[p].0, self.root(p as u32));
+            let name = name_at(self, r, 0);
+            let mut clean = true;
+            let mut own = BTreeSet::from([root]);
+            for o in &self.ops {
+                let Some(d) = o.def.as_ref().filter(|d| d.reg == r) else { continue };
+                let web = self.root(d.id);
+                let in_place = o.uses.iter().any(|u| u.reg == r && u.val != UNDEF && own.contains(&self.root(u.val)));
+                if web == root || in_place || (name.is_some() && name_at(self, r, o.end) == name) {
+                    clean = false;
+                    named.insert(web);
+                    own.insert(web);
+                } else {
+                    reused.insert(web);
+                }
+            }
+            clean_param.push(clean);
+        }
+        reused.retain(|w| !named.contains(w));
+        self.reused = reused;
+        self.clean_param = clean_param;
+    }
+
     /// Removes the register copies d8 makes to line up a range call: a
     /// `move` of a parameter or of a value read only by it, whose copy is
     /// read once later in the same block, hands that reader the value itself,
@@ -1032,7 +1046,7 @@ impl<'d, 'a> Method<'d, 'a> {
             }
         }
         loop {
-            let absorbed: std::collections::BTreeSet<usize> = moved.iter().map(|m| m.0).collect();
+            let absorbed: BTreeSet<usize> = moved.iter().map(|m| m.0).collect();
             let source = |m: &Self, mut v: u32| {
                 while let Some(&(k, _, _)) = moved.iter().find(|x| x.2 == v) {
                     v = m.ops[k].uses[0].val;
@@ -1365,7 +1379,7 @@ struct Flow {
     from: BTreeMap<(u32, u32), u32>,
     live: Vec<Vec<u64>>,
     rpo: Vec<u32>,
-    work: std::collections::BTreeSet<(u32, u32)>,
+    work: BTreeSet<(u32, u32)>,
 }
 
 impl Flow {
