@@ -1,7 +1,7 @@
 //! Fix `raw_receiver_erasure`: a call or field read on a receiver of raw static
-//! type has its erased type (a field read passed for a method's generic
-//! parameter is cast to it), and a for-each over a raw iterable casts the
-//! iterable to its class parameterized by the loop variable's type.
+//! type has its erased type (a field read passed for a parameter of a
+//! type-variable type is cast to it), and a for-each over a raw iterable
+//! casts the iterable to its class parameterized by the loop variable's type.
 
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
@@ -55,8 +55,9 @@ pub fn has_raw_receiver(inv: InvocationExprent) -> bool {
 /// Whether `field` is an instance field read through a receiver whose static
 /// type is a raw type, so that its type is the erasure of the declared one
 /// (JLS 4.8), not the declared type with its class's type variables: passed
-/// for a method's generic parameter it is written with the cast to the
-/// parameter's type.
+/// for a method's parameter whose type is a type variable (or an array of
+/// one), which the erasure does not convert to as it converts to a
+/// parameterized type, it is written with the cast to the parameter's type.
 pub fn has_raw_field_receiver(field: FieldExprent) -> bool {
     !field.0.is_kotlin() && field.get_instance().is_some_and(is_raw)
 }

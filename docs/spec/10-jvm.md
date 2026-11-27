@@ -1673,7 +1673,9 @@ the erasure of its declared type (JLS 4.8), as the result of a call on one has, 
 type kept its class's type variable; where the reading class has a variable of that name, the
 argument looked like the parameter's type and lost the cast it needs:
 `fill(into.data, ((UnitStore)from).data)` for `fill(N[], N[])`, which javac rejects. Such a field
-read passed for a generic parameter of a method is written with the cast to the parameter's type
+read passed for a parameter of a method whose type is a type variable or an array of one (the
+erasure converts to a parameterized type unchecked, not to these) is written with the cast to the
+parameter's type
 (`decompiler/managed/kuna-jvm/src/fixes/generic_casts/raw_receiver_erasure.rs (has_raw_field_receiver)`,
 read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
 inferred type stays, since a constructor infers its class's type arguments from it (a diamond
