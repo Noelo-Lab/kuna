@@ -19,6 +19,8 @@ use kuna_num::opcodes::{get_opname, OpCode};
 pub enum Halt {
     /// An op or value the interpreter does not model: `UNKNOWN(unsupported-op)`.
     Unsupported(String),
+    /// A concrete callee returned out of the image at an unexpected address.
+    UnexpectedReturn(String),
     /// The step budget ran out: `UNKNOWN(budget)`.
     Budget,
     /// The sides differ after an in-image callee the model could not run got
@@ -46,7 +48,7 @@ pub enum Halt {
 impl Halt {
     pub fn render(&self) -> String {
         match self {
-            Halt::Unsupported(s) => format!("UNKNOWN(unsupported-op: {s})"),
+            Halt::Unsupported(s) | Halt::UnexpectedReturn(s) => format!("UNKNOWN(unsupported-op: {s})"),
             Halt::Budget => "UNKNOWN(budget)".to_string(),
             Halt::Trap(s) => format!("UNKNOWN(trap: {s})"),
             Halt::Harness(s) => format!("UNKNOWN(harness: {s})"),

@@ -177,10 +177,12 @@ pub fn mutate_binary(
     mut emit: impl FnMut(mutate::Outcome),
 ) -> Result<(), String> {
     let script = session::binary_script(path, functions, options);
-    session::run(script, None, spec_roots, true, None, |prog, fd| {
+    let (_, failures) = session::run(script, None, spec_roots, true, None, |prog, fd| {
         for o in mutate::mutate_function(prog, fd, opts, per_function) {
             emit(o);
         }
-    })
-    .map(|_| ())
+    })?;
+    if failures.is_empty() { Ok(()) } else {
+        Err(failures.into_iter().map(|(_, msg)| msg).collect::<Vec<_>>().join("\n"))
+    }
 }

@@ -9,7 +9,7 @@ use kuna_console::ifacedecomp::{
     execute, register_console_commands, register_decomp_commands, IfaceDecompData, DECOMPILE_MODULE,
 };
 use kuna_console::ifaceterm::ConsoleCommands;
-use kuna_console::interface::IfaceStatus;
+use kuna_console::interface::{quote_filename, IfaceStatus};
 use kuna_console::kuna_console::register_kuna_commands;
 use kuna_decomp::funcdata::Funcdata;
 
@@ -161,7 +161,7 @@ pub fn drive(
 }
 
 pub fn load_lines(path: &str, options: &[(String, String)]) -> Vec<String> {
-    let mut lines = vec![format!("load file {path}"), "option readonly on".to_string()];
+    let mut lines = vec![format!("load file {}", quote_filename(path)), "option readonly on".to_string()];
     let named = |name: &str| options.iter().any(|(n, _)| n == name);
     lines.extend(
         driver_defaults(non_x86_64(path))

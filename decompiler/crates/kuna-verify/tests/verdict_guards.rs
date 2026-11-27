@@ -123,6 +123,41 @@ fn a_failed_load_does_not_check_the_previous_function_again() {
     assert_eq!(names, ["quot", "missing"], "{reports:?}");
 }
 
+#[test]
+fn check_opens_a_binary_whose_path_contains_spaces() {
+    let path = object("with space", &[0xb8, 7, 0, 0, 0, 0xc3], &[("f", 0, 6)], &[]);
+    let out = verify(&["check", &path.to_string_lossy(), "f", "--runs", "1", "--sleighpath", &specs()]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("f  AGREES(1)"));
+}
+
+#[test]
+fn mutate_reports_load_failures_in_process_and_in_workers() {
+    let binary = quot();
+    let missing = binary.with_file_name("nonexistent.o");
+    for jobs in ["1", "2"] {
+        for (path, name, diagnostic) in [(&missing, "quot", "No load image present"), (&binary, "nonexistent", "no function matches")] {
+            let out = verify(&["mutate", &path.to_string_lossy(), name, "--jobs", jobs, "--runs", "1", "--sleighpath", &specs()]);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert_eq!(out.status.code(), Some(3), "{stderr}");
+            assert!(stderr.contains(diagnostic), "{stderr}");
+        }
+    }
+}
+
+#[test]
+fn a_boolean_contract_converts_the_whole_return_value() {
+    let path = object("bool contract", &[0xb8, 0, 1, 0, 0, 0xc3], &[("f", 0, 6)], &[]);
+    let opts = Options { runs: 1, ..Options::default() };
+    let functions = ["f".to_string()];
+    for source in ["_Bool f(void);", "typedef _Bool result;\nresult f(void);"] {
+        let reports = check_binary(&path.to_string_lossy(), &functions, &[], &[specs()], Some((source, "prototype.c")), &opts).unwrap();
+        let r = &reports[0];
+        assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
+        assert!(r.lines.iter().any(|l| l.ends_with(" 0x01")), "{}", r.render());
+    }
+}
+
 /// `dec` is `decompile`: an abbreviated command is checked too.
 #[test]
 fn an_abbreviated_decompile_is_checked() {
@@ -442,7 +477,7 @@ fn mutant_rows(path: &std::path::Path, function: &str) -> Vec<serde_json::Value>
 #[test]
 fn thunks_that_push_an_argument_are_different_calls() {
     let text = [
-        0x59, 0x58, 0x51, 0xc3, 0x6a, 0x01, 0xeb, 0xf8, 0x6a, 0x02, 0xeb, 0xf4, 0x48, 0x83, 0xec, 0x08, 0xe8, 0xef, 0xff, 0xff,
+        0x58, 0x59, 0x51, 0xc3, 0x6a, 0x01, 0xeb, 0xf8, 0x6a, 0x02, 0xeb, 0xf4, 0x48, 0x83, 0xec, 0x08, 0xe8, 0xef, 0xff, 0xff,
         0xff, 0x48, 0x83, 0xc4, 0x08, 0xc3,
     ];
     let path = object("pushthunks", &text, &[("f", 0, 4), ("push1", 4, 4), ("push2", 8, 4), ("caller", 12, 14)], &[]);
@@ -543,6 +578,48 @@ fn a_call_before_an_overlapping_copy_is_still_compared() {
     assert!(stored.iter().all(|(_, label)| label == "DIFFERS"), "{killed:?}");
 }
 
+/// The first store is outside both copy ranges, with no call to snapshot it.
+#[test]
+fn a_store_before_an_overlapping_copy_is_compared_without_a_call() {
+    let text = [
+        0xc7, 0x47, 0x40, 7, 0, 0, 0, 0x83, 0xe2, 0x07, 0x48, 0x89, 0xfe, 0x48, 0x8d, 0x7c, 0x17, 0x01, 0xb9, 16, 0, 0, 0, 0xf3, 0xa4, 0xc3,
+    ];
+    let path = object("overlap_prefix", &text, &[("g", 0, text.len() as u64)], &[]);
+    let opts = Options { runs: 16, ..Options::default() };
+    let r = &check(&path, &["g"], &opts)[0];
+    assert_eq!(r.verdict.label(), "DIVERGES(copy-overlap)", "{}", r.render());
+
+    let script = kuna_verify::session::binary_script(&path.to_string_lossy(), &["g".to_string()], &[]);
+    let mut checked = false;
+    kuna_verify::session::drive(script, None, &[specs()], |prog, fd| {
+        let env = kuna_verify::state::Env::new(prog, opts.seed).unwrap();
+        let calls = kuna_verify::calls::sites(fd, &env);
+        let program = kuna_verify::program::compile(prog, fd, &calls);
+        let store = kuna_verify::mutate::mutants(&program, &calls)
+            .into_iter()
+            .find(|m| m.operator == kuna_verify::mutate::Operator::DropStore)
+            .expect("a mutant that drops the first store");
+        let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &opts, store).unwrap();
+        checked = true;
+        assert!(reached);
+        assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
+        assert!(r.lines.iter().any(|l| l.starts_with("memory before overlapping copy")), "{}", r.render());
+    })
+    .unwrap();
+    assert!(checked);
+}
+
+#[test]
+fn a_copy_in_a_loop_is_compared_at_the_overlapping_visit() {
+    let text = [
+        0x49, 0x89, 0xf8, 0x48, 0x89, 0xfe, 0x48, 0x8d, 0xbf, 0x80, 0, 0, 0, 0xba, 2, 0, 0, 0, 0xb9, 16, 0, 0, 0,
+        0xf3, 0xa4, 0x4c, 0x89, 0xc6, 0x49, 0x8d, 0x78, 0x01, 0xff, 0xca, 0x75, 0xee, 0xc3,
+    ];
+    let path = object("copy_loop", &text, &[("g", 0, text.len() as u64)], &[]);
+    let r = &check(&path, &["g"], &Options { runs: 16, ..Options::default() })[0];
+    assert_eq!(r.verdict.label(), "DIVERGES(copy-overlap)", "{}", r.render());
+}
+
 /// `g`: `mov ebx, 5; call h; mov eax, ebx; ret`, where `h` is `mov ebx, 7;
 /// ret`. `h` changes RBX, which the convention says it preserves; kuna's C
 /// follows the convention and returns 5, the program returns 7. The machine
@@ -583,4 +660,27 @@ fn a_return_to_another_address_is_not_a_return() {
     let label = r.verdict.label();
     assert!(label.starts_with("UNKNOWN(unsupported-op: return at 0x"), "{}", r.render());
     assert!(label.contains("not to the return address"), "{}", r.render());
+}
+
+#[test]
+fn a_concrete_callee_returning_to_unmapped_code_does_not_resume_its_caller() {
+    let text = [
+        0x48, 0x83, 0xec, 0x08, 0xe8, 0x0a, 0, 0, 0, 0x48, 0x83, 0xc4, 0x08, 0xb8, 7, 0, 0, 0, 0xc3,
+        0x48, 0xc7, 0x04, 0x24, 0, 0, 0x50, 0, 0xc3,
+    ];
+    let path = object("nested_return", &text, &[("caller", 0, 19), ("helper", 19, 9)], &[]);
+    let r = &check(&path, &["caller"], &Options { runs: 1, ..Options::default() })[0];
+    assert!(r.verdict.label().starts_with("UNKNOWN(unsupported-op: a callee returned to unmapped address 0x500000"), "{}", r.render());
+}
+
+#[test]
+fn tail_calls_can_return_through_an_unmodelled_link_register() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/stages/kuna-calleereadarg-a64.xml");
+    let opts = Options { runs: 4, ..Options::default() };
+    let result = kuna_verify::check_datatest(&path.to_string_lossy(), &[specs()], &opts);
+    assert!(result.error.is_none(), "{:?}", result.error);
+    assert_eq!(result.reports.len(), 2);
+    for report in &result.reports {
+        assert_eq!(report.verdict, Verdict::Agrees(4), "{}", report.render());
+    }
 }

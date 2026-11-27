@@ -182,6 +182,14 @@ pub struct CommandStream {
     eof: bool,
 }
 
+/// Encode a filename for [`CommandStream::read_filename`].
+pub fn quote_filename(path: &str) -> std::borrow::Cow<'_, str> {
+    if !path.as_bytes().iter().any(|b| b.is_ascii_whitespace() || *b == b'"') {
+        return std::borrow::Cow::Borrowed(path);
+    }
+    std::borrow::Cow::Owned(format!("\"{}\"", path.replace('\\', "\\\\").replace('"', "\\\"")))
+}
+
 impl CommandStream {
     /// Construct a stream over the given command line (C++
     /// `istringstream is(line)`).

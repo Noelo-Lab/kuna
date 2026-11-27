@@ -852,14 +852,28 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
         tasks.extend(files.iter().map(|f| vec![f.to_string_lossy().into_owned()]));
     } else {
         let chunks: Vec<Vec<String>> = if a.all {
-            let sized: Vec<(String, u64)> =
-                session::function_extents(first, &a.options, &roots)?.into_iter().map(|(at, n)| (format!("{at:#x}"), n)).collect();
+            let extents = match session::function_extents(first, &a.options, &roots) {
+                Ok(extents) => extents,
+                Err(e) => {
+                    eprintln!("kuna-verify: {first}: {e}");
+                    return Ok(ExitCode::from(3));
+                }
+            };
+            let sized: Vec<(String, u64)> = extents.into_iter().map(|(at, n)| (format!("{at:#x}"), n)).collect();
             chunks_by_size(&sized)
         } else {
             a.positional[1..].chunks(CHUNK).map(<[String]>::to_vec).collect()
         };
         tasks.extend(chunks.into_iter().map(|c| std::iter::once(first.clone()).chain(c).collect()));
     }
+    if tasks.is_empty() {
+        return Err(USAGE.to_string());
+    }
+    let failed = std::sync::atomic::AtomicBool::new(false);
+    let fail = |path: &str, error: &dyn std::fmt::Display| {
+        failed.store(true, std::sync::atomic::Ordering::Relaxed);
+        eprintln!("kuna-verify: {path}: {error}");
+    };
     let rows: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
     let print = |v: Value| {
         if a.json {
@@ -870,12 +884,13 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
     if jobs == 1 && !a.timed {
         for t in &tasks {
             let emit = |o: kuna_verify::mutate::Outcome| print(mutant_json(&o));
-            if datatests {
-                if let Err(e) = kuna_verify::mutate_datatest(&t[0], &roots, &a.opts, a.per_function, emit) {
-                    eprintln!("kuna-verify: {}: {e}", t[0]);
-                }
+            let result = if datatests {
+                kuna_verify::mutate_datatest(&t[0], &roots, &a.opts, a.per_function, emit)
             } else {
-                kuna_verify::mutate_binary(&t[0], &t[1..], &a.options, &roots, &a.opts, a.per_function, emit)?;
+                kuna_verify::mutate_binary(&t[0], &t[1..], &a.options, &roots, &a.opts, a.per_function, emit)
+            };
+            if let Err(e) = result {
+                fail(&t[0], &e);
             }
         }
     } else {
@@ -888,10 +903,16 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
                 scope.spawn(|| loop {
                     let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     let Some(t) = tasks.get(i) else { break };
-                    let Some(out) = output_within(Command::new(&exe).arg("mutate").args(t).args(&flags), a.file_seconds) else {
-                        eprintln!("kuna-verify: {}: no mutants in {} s", t[0], a.file_seconds);
-                        continue;
+                    let (status, out) = match output_within(Command::new(&exe).arg("mutate").args(t).args(&flags), a.file_seconds) {
+                        Ok(result) => result,
+                        Err(e) => {
+                            fail(&t[0], &e);
+                            continue;
+                        }
                     };
+                    if !status.success() {
+                        fail(&t[0], &format_args!("mutation worker exited with {status}"));
+                    }
                     for l in out.lines() {
                         if let Ok(mut v) = serde_json::from_str::<Value>(l) {
                             if v.get("operator").is_some() {
@@ -906,33 +927,32 @@ fn run_mutate(a: &Args) -> Result<ExitCode, String> {
     }
     let rows = rows.into_inner().unwrap_or_else(|e| e.into_inner());
     print_mutation_summary(&rows, a.json);
-    Ok(ExitCode::SUCCESS)
+    Ok(if failed.into_inner() { ExitCode::from(3) } else { ExitCode::SUCCESS })
 }
 
-/// Run `cmd` and return its standard output, or `None` when it fails to
-/// start or has not finished in `seconds`, in which case it is killed.
-fn output_within(cmd: &mut Command, seconds: u64) -> Option<String> {
-    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn().ok()?;
-    let mut stdout = child.stdout.take()?;
+/// Run `cmd` and collect its output, killing it if it runs past `seconds`.
+fn output_within(cmd: &mut Command, seconds: u64) -> Result<(std::process::ExitStatus, String), String> {
+    let mut child = cmd.stdout(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
+    let mut stdout = child.stdout.take().ok_or("worker without stdout")?;
     let reader = std::thread::spawn(move || {
         let mut out = String::new();
-        let _ = std::io::Read::read_to_string(&mut stdout, &mut out);
-        out
+        std::io::Read::read_to_string(&mut stdout, &mut out).map(|_| out)
     });
-    let deadline = Instant::now() + std::time::Duration::from_secs(seconds);
-    loop {
+    let started = Instant::now();
+    let status = loop {
         match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(50)),
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = reader.join();
-                return None;
-            }
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) if started.elapsed().as_secs() < seconds => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Ok(None) => break Err(format!("mutation worker timed out after {seconds} s")),
+            Err(e) => break Err(e.to_string()),
         }
+    };
+    if status.is_err() {
+        let _ = child.kill();
+        let _ = child.wait();
     }
-    reader.join().ok()
+    let output = reader.join();
+    Ok((status?, output.map_err(|_| "mutation worker's output reader panicked")?.map_err(|e| e.to_string())?))
 }
 
 fn print_mutation_summary(rows: &[Value], json: bool) {

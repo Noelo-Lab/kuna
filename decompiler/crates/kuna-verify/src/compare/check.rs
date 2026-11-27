@@ -14,7 +14,7 @@ use kuna_console::engine::ConsoleProgram;
 use kuna_decomp::funcdata::Funcdata;
 
 use crate::abi::{self, Claim};
-use crate::contract::{CType, Contract};
+use crate::contract::{CKind, CType, Contract};
 use crate::divergence::{self, ReturnMismatch};
 use crate::calls::{self, Record};
 use crate::program::{self, Program};
@@ -63,7 +63,7 @@ struct UpperWatch {
 impl UpperWatch {
     fn new(prog: &ConsoleProgram, fd: &Funcdata, claim: &Claim) -> Option<Self> {
         let out = claim.storage.as_ref()?;
-        let wide = abi::return_storage(prog, fd, &CType { spelling: String::new(), size: out.size * 2, signed: false, pointer: false }).ok()?;
+        let wide = abi::return_storage(prog, fd, &CType { spelling: String::new(), size: out.size * 2, signed: false, kind: CKind::Integer }).ok()?;
         let pieces = wide.pieces(prog);
         let extra: Vec<Storage> = pieces.iter().filter(|p| !p.overlaps(out)).cloned().collect();
         (!extra.is_empty() && pieces.iter().any(|p| p.covers(out))).then_some(UpperWatch {
@@ -157,7 +157,24 @@ impl Compare<'_> {
         let Some((c, cs)) = self.contract else { return Ok(Outcome::Same) };
         let mv = ms.read_storage(&cs.space, cs.off, cs.size)?;
         let kuna = match (&self.claim.storage, ret) {
-            (Some(out), Some(k)) => Some((out.size, abi::convert(k, out.size, self.claim.signed, cs.size))),
+            (Some(out), Some(k)) => {
+                let value = if c.ret.kind == CKind::Boolean {
+                    let value = k & mask(out.size);
+                    let nonzero = if self.claim.float {
+                        match out.size {
+                            4 => f32::from_bits(value as u32) != 0.0,
+                            8 => f64::from_bits(value as u64) != 0.0,
+                            _ => return Err(Halt::Unsupported(format!("{}-byte float conversion to _Bool", out.size))),
+                        }
+                    } else {
+                        value != 0
+                    };
+                    u128::from(nonzero)
+                } else {
+                    abi::convert(k, out.size, self.claim.signed, cs.size)
+                };
+                Some((out.size, value))
+            }
             _ => None,
         };
         if kuna.is_some_and(|(_, kv)| kv == mv) {
@@ -374,7 +391,15 @@ fn check_runs(
             m = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
             g = graph::run(&env, &program, run, opts.budget, &calls, m.as_ref().map(|mo| mo.calls.as_slice()).unwrap_or(&[]), None);
         }
-        let (mut mo, mut go) = match (m, g) {
+        let overlap = g.as_ref().ok().and_then(|go| go.overlapping_copy);
+        let rerun_machine = |with_args: Option<&machine::WithArgs>| match overlap {
+            Some(stop) => machine::run_before_copy(&env, run, entry, opts.budget, &machine_calls, with_args, stop),
+            None => machine::run(&env, run, entry, opts.budget, &machine_calls, with_args),
+        };
+        if overlap.is_some() && m.is_ok() {
+            m = rerun_machine(None);
+        }
+        let (mo, go) = match (m, g) {
             (Err(Halt::Trap(t)), Err(Halt::Trap(_))) => {
                 trapped.get_or_insert(t);
                 trapped_runs += 1;
@@ -403,7 +428,7 @@ fn check_runs(
             (Err(h), _) | (_, Err(h)) => {
                 match h {
                     Halt::Budget => budget_runs += 1,
-                    Halt::Unsupported(_) => unsupported_runs += 1,
+                    Halt::Unsupported(_) | Halt::UnexpectedReturn(_) => unsupported_runs += 1,
                     _ => {}
                 }
                 unknown.get_or_insert(h);
@@ -415,7 +440,7 @@ fn check_runs(
             (Ok(mo), Ok(go)) => {
                 if diverged.is_none() && !env.kernel.get() && mo.events.iter().any(|e| calls::SYSTEM_USEROPS.contains(&e.name.as_str())) {
                     env.kernel.set(true);
-                    let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+                    let alt = rerun_machine(None);
                     env.kernel.set(false);
                     if alt.is_ok_and(|alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).is_some()) {
                         kernel_shows = true;
@@ -435,7 +460,7 @@ fn check_runs(
             .find(|(at, o)| entry_callee(*at) && calls.site(*at).preserved.iter().any(|&(p, s)| *o >= p && *o < p + u64::from(s)))
         {
             env.keep_clobbers.set(true);
-            let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+            let alt = rerun_machine(None);
             env.keep_clobbers.set(false);
             if let Some(d) = alt.map_or_else(|h| Some(Verdict::from_halt(&h).label()), |alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt)) {
                 let reg = Storage::new(&env.register, o & !(u64::from(env.sp.1) - 1), env.sp.1).name(prog);
@@ -444,14 +469,6 @@ fn check_runs(
                 )));
                 continue;
             }
-        }
-        let overlap = go.overlapping_copy;
-        if let Some((nc, ne)) = overlap {
-            go.calls.truncate(nc);
-            go.events.truncate(ne);
-            mo.calls.truncate(nc);
-            mo.events.truncate(ne);
-            go.call_inputs.retain(|c| c.with.call.is_some_and(|k| k < nc));
         }
         let differs = |mut lines: Vec<String>| {
             let at = usize::from(lines.first().is_some_and(|l| l.starts_with("contract")));
@@ -499,7 +516,7 @@ fn check_runs(
             if cc.differs.is_some() || cc.stop {
                 break;
             }
-            let alt = match machine::run(&env, run, entry, opts.budget, &machine_calls, Some(&ci.with)) {
+            let alt = match rerun_machine(Some(&ci.with)) {
                 Ok(alt) => alt,
                 Err(h) => {
                     rerun_failed = Some(format!("{}; the machine could not be rerun with kuna's arguments: {}", ci.msg, Verdict::from_halt(&h).label()));
@@ -522,6 +539,10 @@ fn check_runs(
         }
         if cc.differs.is_none() && !cc.stop {
             cc.differs = compare_events(prog, &mo.events, &go.events);
+            if cc.differs.is_none() && overlap.is_some() {
+                cc.differs = compare_writes(&env, run, &mo.state.writes(), &go.writes, None)
+                    .map(|d| vec![format!("memory before overlapping copy: {d}")]);
+            }
         }
         let canary = cc.suspects.iter().any(|s| s.starts_with("canary: "));
         if canary {
@@ -532,7 +553,7 @@ fn check_runs(
         let argument_doubt = cc.suspects.iter().find(|s| s.ends_with("may not take it")).cloned();
         let narrowing = mo.narrowed && {
             env.stub_recovered.set(true);
-            let alt = machine::run(&env, run, entry, opts.budget, &machine_calls, None);
+            let alt = rerun_machine(None);
             env.stub_recovered.set(false);
             alt.map_or(true, |alt| machine_differs(prog, &env, run, &machine_calls, &claim, &mo, &alt).is_some())
         };

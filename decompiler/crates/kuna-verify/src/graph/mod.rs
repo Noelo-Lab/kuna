@@ -26,10 +26,8 @@ pub struct Outcome {
     pub ret: Returned,
     /// A switch met a selector no row of its table carries.
     pub unmatched_switch: bool,
-    /// A `memcpy` builtin ran with its destination inside its source, ahead
-    /// of it: the overlap `rep movs` defines and `memcpy` does not. Holds how
-    /// many calls and events the run had made before the first such copy.
-    pub overlapping_copy: Option<(usize, usize)>,
+    /// The run stopped before a forward overlapping copy.
+    pub(crate) overlapping_copy: Option<crate::machine::Checkpoint>,
     pub calls: Vec<Record>,
     /// The run ended in a call kuna says does not return.
     pub noreturn: bool,
@@ -94,12 +92,13 @@ struct Run<'e, 'p, 'c> {
     /// Steps a memory builtin took, charged to the budget like the loop it
     /// replaces.
     charged: u64,
-    overlapping_copy: Option<(usize, usize)>,
+    copies: std::collections::BTreeMap<u64, usize>,
 }
 
 enum Flow {
     Next,
     Edge(i32),
+    Overlap(crate::machine::Checkpoint),
     Return(Returned),
     NoReturn,
 }
@@ -315,8 +314,11 @@ impl Run<'_, '_, '_> {
         match name {
             "memcpy" => {
                 let src = ptr(b);
-                if dst > src && dst - src < bytes && self.overlapping_copy.is_none() {
-                    self.overlapping_copy = Some((self.records.len(), self.events.len()));
+                let visits = self.copies.entry(at).or_default();
+                *visits += 1;
+                if dst > src && dst - src < bytes {
+                    self.charged = 0;
+                    return Ok(Flow::Overlap(crate::machine::Checkpoint { at, visit: *visits }));
                 }
                 let mut data = Vec::with_capacity(bytes as usize);
                 for i in 0..bytes {
@@ -536,11 +538,11 @@ impl Run<'_, '_, '_> {
         }
     }
 
-    fn finish(self, ret: Returned, noreturn: bool) -> Outcome {
+    fn finish(self, ret: Returned, noreturn: bool, overlapping_copy: Option<crate::machine::Checkpoint>) -> Outcome {
         Outcome {
             ret,
             unmatched_switch: self.unmatched_switch,
-            overlapping_copy: self.overlapping_copy,
+            overlapping_copy,
             writes: self.state.writes(),
             read_uninitialized: self.state.read_uninitialized,
             call_inputs: self.call_inputs,
@@ -587,7 +589,7 @@ pub fn run(
         unmatched_switch: false,
         records: Vec::new(),
         charged: 0,
-        overlapping_copy: None,
+        copies: std::collections::BTreeMap::new(),
     };
     if let Some(f) = &program.vararg {
         r.va_start(env, f)?;
@@ -633,8 +635,9 @@ pub fn run(
                     edge = e;
                     break;
                 }
-                Flow::Return(ret) => return Ok(r.finish(ret, false)),
-                Flow::NoReturn => return Ok(r.finish(None, true)),
+                Flow::Overlap(at) => return Ok(r.finish(None, false, Some(at))),
+                Flow::Return(ret) => return Ok(r.finish(ret, false, None)),
+                Flow::NoReturn => return Ok(r.finish(None, true, None)),
             }
         }
         let Some(&(next, rev)) = block.outs.get(edge as usize).filter(|_| edge >= 0) else {

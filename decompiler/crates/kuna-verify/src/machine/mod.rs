@@ -243,6 +243,7 @@ pub struct Outcome<'e, 'p> {
     pub calls: Vec<Record>,
     /// The run ended in a call kuna says does not return.
     pub noreturn: bool,
+    pub(crate) stopped_before_copy: bool,
     /// It ended in one only kuna says does not return: no known name, no
     /// layout evidence, and no in-image callee that ran to its return.
     pub unverified_noreturn: bool,
@@ -292,6 +293,7 @@ struct Machine<'e, 'p, 'c> {
     /// Argument-register bytes to give one call's callee instead of the
     /// machine's own: kuna's, to see whether the callee cares.
     with_args: Option<&'c WithArgs>,
+    stop_before: Option<Checkpoint>,
     /// An in-image callee given a frame object fell back to the stub.
     guessed: bool,
     narrowed: bool,
@@ -526,6 +528,15 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         Ok(self.state.read(&sp.space, sp.off, sp.size)? as u64)
     }
 
+    fn continuation(&self, at: u64, target: u64, sp: u64, insn: &Insn) -> Continuation {
+        let verify = self.env.ret_addr.is_some() && insn.ops.iter().any(|op| match op.opc {
+            OpCode::CPUI_CALL => true,
+            OpCode::CPUI_CALLIND => self.env.is_entry(target),
+            _ => false,
+        });
+        Continuation { at: at.wrapping_add(insn.len), sp, verify }
+    }
+
     /// The function's call at `at` returned from a callee run for real: keep
     /// what it did for the decompiled side to replay. Writes into the callee's
     /// own frame, below the stack pointer at the call, are dead and dropped.
@@ -567,7 +578,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         }
         self.budget = if outer { steps + limit } else { budget.min(steps + limit) };
         self.in_callee = true;
-        let back = lift(self.env, at).ok().map(|i| (at.wrapping_add(i.len), call_sp));
+        let back = lift(self.env, at).ok().map(|i| self.continuation(at, target, call_sp, &i));
         let ran = exec(self, target, Mode::Opaque, 1, back);
         self.in_callee = !outer;
         let reads = if outer { self.state.frame_reads.take() } else { None };
@@ -585,6 +596,7 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             self.steps = steps;
         }
         match ran {
+            Err(h @ Halt::UnexpectedReturn(_)) => Err(h),
             Err(Halt::Budget) if !outer && self.steps > budget => Err(Halt::Budget),
             Ok(exit @ (Exit::Return | Exit::Leave | Exit::Unwind(_))) => {
                 let site = self.calls.site(at);
@@ -621,12 +633,13 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
         }
     }
 
-    fn finish(self, noreturn: bool) -> Outcome<'e, 'p> {
+    fn finish(self, exit: Exit) -> Outcome<'e, 'p> {
         Outcome {
             state: self.state,
             indirect: self.indirect,
             calls: self.records,
-            noreturn,
+            noreturn: matches!(exit, Exit::NoReturn),
+            stopped_before_copy: matches!(exit, Exit::Checkpoint),
             unverified_noreturn: self.unverified_noreturn,
             followed: self.followed,
             guessed: self.guessed,
@@ -671,6 +684,7 @@ const MAX_DEPTH: u32 = 32;
 enum Exit {
     Return,
     NoReturn,
+    Checkpoint,
     /// A callee returned to where an enclosing call returns (libgcc's float
     /// routines reach a shared tail with `bl` and pop their caller's frame):
     /// every frame up to that call's ends.
@@ -688,6 +702,13 @@ enum Mode {
     Opaque,
 }
 
+#[derive(Clone, Copy)]
+struct Continuation {
+    at: u64,
+    sp: u64,
+    verify: bool,
+}
+
 /// Execute from `entry` until a RETURN. `top` is the function itself: only its
 /// calls are recorded and compared, and only it has tail calls and an exit
 /// through the random return address. Anywhere else is a callee run for real.
@@ -698,11 +719,11 @@ enum Mode {
 /// model cannot follow it. A return elsewhere on the same stack outside the
 /// image (a pointer authentication the model does not run, eBPF's `exit`) is
 /// taken as a return, as before.
-fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(u64, u64)>) -> Result<Exit, Halt> {
+fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<Continuation>) -> Result<Exit, Halt> {
     let outer = m.state.in_callee_code;
     m.state.in_callee_code = mode != Mode::Top;
-    if let Some((b, _)) = back {
-        m.returns.push(b & !1);
+    if let Some(back) = back {
+        m.returns.push(back.at & !1);
     }
     let exit = exec_body(m, entry, mode, depth, back);
     if back.is_some() {
@@ -710,7 +731,7 @@ fn exec(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(u64, 
     }
     m.state.in_callee_code = outer;
     exit.map(|e| match (e, back) {
-        (Exit::Unwind(t), Some((b, _))) if returns_to(t, b) => Exit::Return,
+        (Exit::Unwind(t), Some(back)) if returns_to(t, back.at) => Exit::Return,
         (e, _) => e,
     })
 }
@@ -720,19 +741,32 @@ fn returns_to(target: u64, back: u64) -> bool {
     (target & !1).wrapping_sub(back & !1) <= RETURN_SLACK
 }
 
-fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(u64, u64)>) -> Result<Exit, Halt> {
+fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<Continuation>) -> Result<Exit, Halt> {
     let top = mode == Mode::Top;
     if depth > MAX_DEPTH {
         return Err(Halt::Unsupported("calls nested too deep".into()));
     }
     let env = m.env;
     let calls = m.calls;
+    let entry_stubs = m.stubs;
     let mut addr = entry;
     let mut insn = lift(env, addr)?;
     let mut i = 0usize;
     let mut mode_switch: Option<(String, Option<u128>)> = None;
     let mut called_here = false;
+    let mut previous_addr = None;
     loop {
+        if top {
+            if let Some(stop) = m.stop_before.as_mut() {
+                if i == 0 && addr == stop.at && previous_addr != Some(addr) {
+                    stop.visit -= 1;
+                    if stop.visit == 0 {
+                        return Ok(Exit::Checkpoint);
+                    }
+                }
+                previous_addr = Some(addr);
+            }
+        }
         if i >= insn.ops.len() {
             addr = env.code.wrap_offset(addr.wrapping_add(insn.len));
             insn = lift(env, addr)?;
@@ -821,7 +855,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                     return Ok(if top { Exit::Return } else { Exit::Leave });
                 }
                 if !top {
-                    if let Some((b, call_sp)) = back {
+                    if let Some(Continuation { at: b, sp: call_sp, verify }) = back {
                         let elsewhere = !returns_to(target, b);
                         let sp = m.sp_value()?;
                         let switched = sp.wrapping_sub(call_sp).wrapping_add(STACK_SWITCH) > 2 * STACK_SWITCH;
@@ -830,6 +864,11 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                         }
                         if elsewhere && (switched || env.code_mapped(target & !1)) {
                             return Err(Halt::Unsupported(format!("a callee returned to {target:#x}, not to {b:#x} after its call")));
+                        }
+                        if elsewhere && verify && m.stubs == entry_stubs {
+                            return Err(Halt::UnexpectedReturn(format!(
+                                "a callee returned to unmapped address {target:#x}; its call resumes at {b:#x}"
+                            )));
                         }
                     }
                     return Ok(Exit::Return);
@@ -892,11 +931,13 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<(
                         m.followed.push((addr, target));
                     }
                     let inner = if mode == Mode::Opaque { Mode::Opaque } else { Mode::Inline };
-                    let back = Some((addr.wrapping_add(insn.len), m.sp_value()?));
+                    let sp = m.sp_value()?;
+                    let back = Some(m.continuation(addr, target, sp, &insn));
                     match exec(m, target, inner, depth + 1, back)? {
                         Exit::NoReturn => return Ok(Exit::NoReturn),
                         e @ (Exit::Leave | Exit::Unwind(_)) => return Ok(e),
                         Exit::Return => {}
+                        Exit::Checkpoint => unreachable!("only the top frame has a checkpoint"),
                     }
                 } else if mode != Mode::Opaque {
                     if m.call(addr, Some(target), indirect)? {
@@ -1053,6 +1094,13 @@ pub struct WithArgs {
     pub kill_salt: u32,
 }
 
+/// The entry to the Nth execution of a machine instruction.
+#[derive(Clone, Copy)]
+pub(crate) struct Checkpoint {
+    pub(crate) at: u64,
+    pub(crate) visit: usize,
+}
+
 pub fn run<'e, 'p>(
     env: &'e Env<'p>,
     run: u32,
@@ -1061,8 +1109,38 @@ pub fn run<'e, 'p>(
     calls: &Calls,
     with_args: Option<&WithArgs>,
 ) -> Result<Outcome<'e, 'p>, Halt> {
+    run_inner(env, run, entry, budget, calls, with_args, None)
+}
+
+pub(crate) fn run_before_copy<'e, 'p>(
+    env: &'e Env<'p>,
+    run: u32,
+    entry: u64,
+    budget: u64,
+    calls: &Calls,
+    with_args: Option<&WithArgs>,
+    stop: Checkpoint,
+) -> Result<Outcome<'e, 'p>, Halt> {
+    let out = run_inner(env, run, entry, budget, calls, with_args, Some(stop))?;
+    if out.stopped_before_copy {
+        Ok(out)
+    } else {
+        Err(Halt::Unsupported(format!("the machine did not reach copy {} at {:#x}", stop.visit, stop.at)))
+    }
+}
+
+fn run_inner<'e, 'p>(
+    env: &'e Env<'p>,
+    run: u32,
+    entry: u64,
+    budget: u64,
+    calls: &Calls,
+    with_args: Option<&WithArgs>,
+    stop_before: Option<Checkpoint>,
+) -> Result<Outcome<'e, 'p>, Halt> {
     let mut m = Machine {
         with_args,
+        stop_before,
         env,
         calls,
         state: State::new(env, run),
@@ -1095,5 +1173,5 @@ pub fn run<'e, 'p>(
         }
     }
     let exit = exec(&mut m, entry, Mode::Top, 0, None)?;
-    Ok(m.finish(matches!(exit, Exit::NoReturn)))
+    Ok(m.finish(exit))
 }

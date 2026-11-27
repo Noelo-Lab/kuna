@@ -1,7 +1,7 @@
 //! Typed contracts: the function's real return type, read from C source.
 //!
 //! Only what the return comparison needs is parsed: the declared return type of
-//! the named function, through the file's typedefs, as a size and signedness.
+//! the named function, through the file's typedefs.
 
 use std::collections::BTreeMap;
 
@@ -21,14 +21,20 @@ pub struct CSizes {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CKind {
+    Integer,
+    Boolean,
+    Pointer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CType {
     /// The type as written in the source.
     pub spelling: String,
     /// `0` for `void`.
     pub size: u32,
     pub signed: bool,
-    /// A pointer, which some conventions return in an address register.
-    pub pointer: bool,
+    pub kind: CKind,
 }
 
 impl CType {
@@ -92,7 +98,6 @@ fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
     let fixed = |w: &str| -> Option<(u32, bool)> {
         Some(match w {
             "void" => (0, false),
-            "_Bool" | "bool" => (1, false),
             "int8_t" => (1, true),
             "uint8_t" => (1, false),
             "int16_t" => (2, true),
@@ -131,11 +136,11 @@ fn base_type(words: &[&str], sizes: CSizes) -> Option<(u32, bool)> {
     Some((size, if plain_char { sizes.char_signed } else { !unsigned }))
 }
 
-/// `(size, signed, pointer)` of a spelled type, through typedefs; an error
+/// The size, signedness and kind of a spelled type, through typedefs; an error
 /// names a typedef defined more than one way.
-fn resolve(spelling: &str, defs: &BTreeMap<String, Option<String>>, sizes: CSizes, depth: u32) -> Result<Option<(u32, bool, bool)>, String> {
+fn resolve(spelling: &str, defs: &BTreeMap<String, Option<String>>, sizes: CSizes, depth: u32) -> Result<Option<(u32, bool, CKind)>, String> {
     if spelling.contains('*') {
-        return Ok(Some((sizes.pointer, false, true)));
+        return Ok(Some((sizes.pointer, false, CKind::Pointer)));
     }
     let words: Vec<&str> = spelling
         .split_whitespace()
@@ -148,7 +153,10 @@ fn resolve(spelling: &str, defs: &BTreeMap<String, Option<String>>, sizes: CSize
             None => {}
         }
     }
-    Ok(base_type(&words, sizes).map(|(size, signed)| (size, signed, false)))
+    if matches!(words.as_slice(), ["_Bool" | "bool"]) {
+        return Ok(Some((1, false, CKind::Boolean)));
+    }
+    Ok(base_type(&words, sizes).map(|(size, signed)| (size, signed, CKind::Integer)))
 }
 
 /// Read `function`'s return type from C source.
@@ -172,11 +180,11 @@ pub fn from_source(src: &str, function: &str, source: &str, sizes: CSizes) -> Re
     if let Some(other) = found.iter().map(words).find(|o| *o != first) {
         return Err(format!("{source}: {function} is declared returning both `{first}` and `{other}`"));
     }
-    let (size, signed, pointer) = resolve(&spelling, &defs, sizes, 0)
+    let (size, signed, kind) = resolve(&spelling, &defs, sizes, 0)
         .map_err(|e| format!("{source}: return type of {function}: {e}"))?
         .ok_or_else(|| format!("{source}: cannot size return type `{spelling}` of {function}"))?;
     let declaration = format!("{} {}({})", spelling, function, caps[3].split_whitespace().collect::<Vec<_>>().join(" "));
-    Ok(Contract { ret: CType { spelling, size, signed, pointer }, declaration, source: source.to_string() })
+    Ok(Contract { ret: CType { spelling, size, signed, kind }, declaration, source: source.to_string() })
 }
 
 #[cfg(test)]
@@ -189,7 +197,7 @@ mod tests {
     fn return_types_resolve_through_typedefs() {
         let src = "typedef unsigned long long u64;\n/* u32 f() */\nu64 ins16(unsigned a, unsigned short b) { return 0; }\n";
         let c = from_source(src, "ins16", "ins16.c", ARM).unwrap();
-        assert_eq!(c.ret, CType { spelling: "u64".into(), size: 8, signed: false, pointer: false });
+        assert_eq!(c.ret, CType { spelling: "u64".into(), size: 8, signed: false, kind: CKind::Integer });
         assert_eq!(c.declaration, "u64 ins16(unsigned a, unsigned short b)");
     }
 
@@ -199,8 +207,8 @@ mod tests {
         assert_eq!(from_source(src, "f", "s", ARM).unwrap().ret.size, 4);
         assert!(from_source(src, "f", "s", ARM).unwrap().ret.signed);
         assert_eq!(from_source(src, "g", "s", ARM).unwrap().ret.size, 4);
-        assert!(from_source(src, "g", "s", ARM).unwrap().ret.pointer);
-        assert!(!from_source(src, "f", "s", ARM).unwrap().ret.pointer);
+        assert_eq!(from_source(src, "g", "s", ARM).unwrap().ret.kind, CKind::Pointer);
+        assert_eq!(from_source(src, "f", "s", ARM).unwrap().ret.kind, CKind::Integer);
         assert!(from_source(src, "h", "s", ARM).unwrap().ret.is_void());
         assert_eq!(from_source(src, "k", "s", ARM).unwrap().ret.size, 4);
         assert!(from_source(src, "missing", "s", ARM).is_err());

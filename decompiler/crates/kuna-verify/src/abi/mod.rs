@@ -14,7 +14,7 @@ use kuna_base::space::spacetype;
 use kuna_decomp::funcdata::Funcdata;
 use kuna_num::opcodes::OpCode;
 
-use crate::contract::{CSizes, CType};
+use crate::contract::{CKind, CSizes, CType};
 use crate::state::{Env, Extension};
 use crate::storage::Storage;
 use crate::value::mask;
@@ -106,17 +106,21 @@ pub fn c_sizes(prog: &ConsoleProgram) -> CSizes {
 pub fn return_storage(prog: &ConsoleProgram, fd: &Funcdata, ty: &CType) -> Result<Storage, String> {
     let arch = prog.arch();
     let types = arch.types();
-    let dt = if ty.pointer {
+    let dt = if ty.kind == CKind::Pointer {
         let word = arch.manage().get_default_data_space().map_or(1, |s| s.get_word_size());
         types
             .get_type_void()
             .and_then(|v| types.get_type_pointer(ty.size as i32, v, word))
             .map_err(|e| format!("no {}-byte pointer type: {}", ty.size, e.explain()))?
     } else {
-        let meta = if ty.signed { type_metatype::TYPE_INT } else { type_metatype::TYPE_UINT };
+        let meta = match (&ty.kind, ty.signed) {
+            (CKind::Boolean, _) => type_metatype::TYPE_BOOL,
+            (_, true) => type_metatype::TYPE_INT,
+            (_, false) => type_metatype::TYPE_UINT,
+        };
         types
             .get_base(ty.size as i32, meta)
-            .map_err(|e| format!("no {}-byte integer type: {}", ty.size, e.explain()))?
+            .map_err(|e| format!("no {}-byte scalar type: {}", ty.size, e.explain()))?
     };
     model_output(prog, fd, dt, ty.size).map_err(|e| format!("`{}`: {e}", ty.spelling))
 }

@@ -347,7 +347,7 @@ pub(crate) fn machine_differs(
     if a.noreturn != b.noreturn {
         return Some("run differs in whether it returns".into());
     }
-    if let Some(out) = claim.storage.as_ref().filter(|_| !a.noreturn) {
+    if let Some(out) = claim.storage.as_ref().filter(|_| !a.noreturn && !a.stopped_before_copy) {
         let (mut sa, mut sb) = (a.state.clone(), b.state.clone());
         if let (Ok(x), Ok(y)) = (sa.read_storage(&out.space, out.off, out.size), sb.read_storage(&out.space, out.off, out.size)) {
             if x != y {

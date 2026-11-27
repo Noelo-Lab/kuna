@@ -4020,6 +4020,14 @@ held back at a time, and bisects the limit of each rule it agrees without, to
 name the application after which it differs. Unarmed, the pool reads one
 thread-local flag per rule attempt and nothing else changes.
 
+Tier C of the checker compares the machine run with the final IR. For a
+`_Bool` return contract it tests the full recovered value for zero before
+comparing the ABI byte. If a forward overlapping `rep movs` was replaced by
+`memcpy`, the checker compares memory and call traces at the corresponding
+instruction visit before recording the divergence. When the checker models the
+outer return address and knows the call's continuation, a concrete callee that
+returns to an unexpected unmapped address yields `UNKNOWN(unsupported-op)`.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the
