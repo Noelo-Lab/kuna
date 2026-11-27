@@ -48,9 +48,6 @@ Three tiers:
 | "Could not verify finally blocks" comment with a semaphore variable | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
 | cleanup code duplicated after every return | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
 | catch (Throwable var) { ...; throw var; } instead of finally (option is off) | [`jvm_decompile_finally`](#jvm_decompile_finally----on--off-default-on) |
-| need the interface method a lambda implements | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
-| output must compile with Java 7 | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
-| x -> ... where an anonymous class is wanted | [`jvm_lambda_to_anonymous_class`](#jvm_lambda_to_anonymous_class----on--off-default-off) |
 | $VF: Couldn't be decompiled with RuntimeException: Constructor ... not found | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
 | method fails on a new expression in a patched class | [`jvm_ignore_invalid_bytecode`](#jvm_ignore_invalid_bytecode----on--off-default-off) |
 | a ? true : b where a logical or was written | [`jvm_ternary_constant_simplification`](#jvm_ternary_constant_simplification----on--off-default-off) |
@@ -153,15 +150,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** p7_regions/finally_processor · vineflower · vineflower-option
 - **Also spelled:** `decompile-finally`, `fdi`
 - **Example:** `kuna decompile app.jar com.ex.Io --option jvm_decompile_finally off`
-
-### `jvm_lambda_to_anonymous_class` -- on | off, default `off`
-
-- **Symptoms:** need the interface method a lambda implements; output must compile with Java 7; x -> ... where an anonymous class is wanted.
-- **What it does:** Write each lambda and method reference as an anonymous class implementing its functional interface (new Runnable() { public void run() { .. } }) instead of -> or :: syntax.
-- **When to flip:** Turn on when the functional interface and method a lambda implements matter, or for Java 7-style output.
-- **Where / provenance:** p8_structure/nested_class_processor, new_exprent, class_writer · vineflower · vineflower-option
-- **Also spelled:** `lambda-to-anonymous-class`, `lac`
-- **Example:** `kuna decompile app.jar com.ex.Handlers --option jvm_lambda_to_anonymous_class on`
 
 ### `jvm_ignore_invalid_bytecode` -- on | off, default `off`
 

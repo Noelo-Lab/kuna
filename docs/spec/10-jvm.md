@@ -861,8 +861,7 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    and lambda, the enclosing variables it captures (the `val$x` fields and synthetic
    constructor parameters javac adds), rewrites their uses into uses of the enclosing
    method's variables, and places each local class's definition in the statement where it
-   is first used. `jvm_lambda_to_anonymous_class` writes every lambda as an anonymous class
-   instead. `jvm_synthetic_not_set` recognizes compiler-generated members (outer-instance
+   is first used. `jvm_synthetic_not_set` recognizes compiler-generated members (outer-instance
    and captured-variable fields, accessors, `class$` caches) by their shape even without
    the `ACC_SYNTHETIC` flag, which some compilers and obfuscators omit.
 4. **Synthetic accessors.** `decompiler/nonnative/kuna-jvm/src/p4_calls/nested_member_access.rs

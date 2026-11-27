@@ -208,27 +208,12 @@ impl NestedClassProcessor {
         let vars_count = md_content.params.len() as i32 - md_lambda.params.len() as i32;
         let is_static_lambda_content = lambda_information.is_content_method_static;
 
-        let parent_class_name = parent_wrapper.get_class_struct().qualified_name();
         let lambda_class_name = child_simple_name;
 
         let lambda_class_type = VarType::new_signature_cl(
             lambda_class_name.as_deref().expect("lambda class name"),
             true,
         );
-
-        if !is_static_lambda_content
-            && DecompilerContext::get_option(IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS)
-        {
-            var_proc
-                .get_this_vars()
-                .borrow_mut()
-                .put(VarVersionPair::new(0, 0), parent_class_name.clone());
-            let parent_simple_name = parent.with(|d| d.simple_name.clone());
-            var_proc.set_var_name(
-                VarVersionPair::new(0, 0),
-                format!("{}.this", parent_simple_name.as_deref().unwrap_or("null")),
-            );
-        }
 
         let enclosing_var_proc = enclosing_method.with(|d| d.varproc);
         let mut used_before: JHashSet<String> = JHashSet::from_collection(

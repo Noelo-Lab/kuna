@@ -232,28 +232,6 @@ tier = "transform"
 symptoms = "\"Could not verify finally blocks\" comment with a semaphore variable|cleanup code duplicated after every return|catch (Throwable var) { ...; throw var; } instead of finally (option is off)"
 
 [[option]]
-option = "jvm_lambda_to_anonymous_class"
-vineflower = "lambda-to-anonymous-class"
-short = "lac"
-aliases = ["lambda-to-anonymous-class", "lac"]
-values = "on|off"
-default = "off"
-destructive = false
-phase = "p8_structure"
-subphase = "nested_class_processor, new_exprent, class_writer"
-strength = "HARD"
-rewind = "p8_structure"
-issue = ""
-summary = "Write each lambda and method reference as an anonymous class implementing its functional interface (new Runnable() { public void run() { .. } }) instead of -> or :: syntax."
-use_when = "Turn on when the functional interface and method a lambda implements matter, or for Java 7-style output."
-example = "kuna decompile app.jar com.ex.Handlers --option jvm_lambda_to_anonymous_class on"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IFernflowerPreferences.LAMBDA_TO_ANONYMOUS_CLASS (lambda-to-anonymous-class, -lac)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "need the interface method a lambda implements|output must compile with Java 7|x -> ... where an anonymous class is wanted"
-
-[[option]]
 option = "jvm_ignore_invalid_bytecode"
 vineflower = "ignore-invalid-bytecode"
 short = "iib"

@@ -385,9 +385,6 @@ impl ClassWriter {
             return;
         };
 
-        let lambda_to_anonymous =
-            DecompilerContext::get_option(IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS);
-
         let outer_node = DecompilerContext::get_current_class_node();
         DecompilerContext::set_current_class_node(Some(node));
 
@@ -449,186 +446,184 @@ impl ClassWriter {
                 let mut simple_lambda = false;
                 let mut written = false;
 
-                if !lambda_to_anonymous {
-                    let root = wrapper
-                        .get_method_wrapper(&mt.get_name(), &mt.get_descriptor())
-                        .expect("NullPointerException: lambda method wrapper")
-                        .with(|d| d.root);
-                    if DecompilerContext::get_option(
-                        IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS,
-                    ) {
-                        buffer
-                            .append("/* ")
-                            .append_method(
-                                &li.content_method_name,
-                                true,
-                                &li.content_class_name,
-                                &li.content_method_name,
-                                &li.content_method_descriptor,
-                            )
-                            .append(" */ ");
-                    }
-                    if md_lambda.params.len() == 1
-                        && md_lambda.params[0].equals(&VarType::VARTYPE_INT())
-                        && md_lambda.ret.array_dim > 0
+                let root = wrapper
+                    .get_method_wrapper(&mt.get_name(), &mt.get_descriptor())
+                    .expect("NullPointerException: lambda method wrapper")
+                    .with(|d| d.root);
+                if DecompilerContext::get_option(
+                    IFernflowerPreferences::MARK_CORRESPONDING_SYNTHETICS,
+                ) {
+                    buffer
+                        .append("/* ")
+                        .append_method(
+                            &li.content_method_name,
+                            true,
+                            &li.content_class_name,
+                            &li.content_method_name,
+                            &li.content_method_descriptor,
+                        )
+                        .append(" */ ");
+                }
+                if md_lambda.params.len() == 1
+                    && md_lambda.params[0].equals(&VarType::VARTYPE_INT())
+                    && md_lambda.ret.array_dim > 0
+                {
+                    let first = root.expect("NullPointerException: root").get_first();
+                    if first.is_some_and(|f| f.is_basic_block())
+                        && first.unwrap().get_exprents().expect("exprents").len() == 1
                     {
-                        let first = root.expect("NullPointerException: root").get_first();
-                        if first.is_some_and(|f| f.is_basic_block())
-                            && first.unwrap().get_exprents().expect("exprents").len() == 1
-                        {
-                            let exp = first.unwrap().get_exprents().expect("exprents").get(0);
-                            if let Some(exit) = exp.try_as_exit() {
-                                let return_value = exit.get_value();
-                                if let Some(new_exp) = return_value.and_then(|v| v.try_as_new()) {
-                                    if new_exp.get_new_type().array_dim > 0
-                                        && !new_exp.is_direct_array_init()
-                                        && new_exp.get_lst_array_elements().is_empty()
-                                        && !new_exp.get_lst_dims().is_empty()
-                                    {
-                                        let dims = new_exp.get_lst_dims();
-                                        let size = dims.get(dims.len() - 1);
-                                        if let Some(size_var) = size.try_as_var() {
-                                            let expected =
-                                                if li.is_content_method_static { 0 } else { 1 };
-                                            if size_var.get_index() == expected {
-                                                let return_type = md_lambda.ret.clone();
-                                                buffer.append_cast_type_name(&return_type);
-                                                buffer.append("::new");
-                                                written = true;
-                                            }
+                        let exp = first.unwrap().get_exprents().expect("exprents").get(0);
+                        if let Some(exit) = exp.try_as_exit() {
+                            let return_value = exit.get_value();
+                            if let Some(new_exp) = return_value.and_then(|v| v.try_as_new()) {
+                                if new_exp.get_new_type().array_dim > 0
+                                    && !new_exp.is_direct_array_init()
+                                    && new_exp.get_lst_array_elements().is_empty()
+                                    && !new_exp.get_lst_dims().is_empty()
+                                {
+                                    let dims = new_exp.get_lst_dims();
+                                    let size = dims.get(dims.len() - 1);
+                                    if let Some(size_var) = size.try_as_var() {
+                                        let expected =
+                                            if li.is_content_method_static { 0 } else { 1 };
+                                        if size_var.get_index() == expected {
+                                            let return_type = md_lambda.ret.clone();
+                                            buffer.append_cast_type_name(&return_type);
+                                            buffer.append("::new");
+                                            written = true;
                                         }
                                     }
                                 }
-                            }
-                        }
-                    }
-                    if !written {
-                        let lambda_parameters_need_parentheses = md_lambda.params.len() != 1;
-
-                        if lambda_parameters_need_parentheses {
-                            buffer.append("(");
-                        }
-
-                        let mut first_parameter = true;
-                        let mut index: i32 = if li.is_content_method_static { 0 } else { 1 };
-                        let start_index =
-                            md_content.params.len() as i32 - md_lambda.params.len() as i32;
-
-                        for i in 0..md_content.params.len() {
-                            if i as i32 >= start_index {
-                                if !first_parameter {
-                                    buffer.append(", ");
-                                }
-                                let mw =
-                                    method_wrapper.expect("NullPointerException: methodWrapper");
-                                let varproc = mw.with(|d| d.varproc);
-                                let clashing_name =
-                                    varproc.get_clashing_name(VarVersionPair::new(index, 0));
-                                let mut parameter_name =
-                                    varproc.get_var_name(VarVersionPair::new(index, 0));
-                                if parameter_name.is_none() {
-                                    parameter_name = Some(format!("param{index}"));
-                                }
-                                if clashing_name.is_some() {
-                                    parameter_name = clashing_name;
-                                }
-                                let parameter_name = parameter_name
-                                    .expect("NullPointerException: parameter name");
-                                buffer.append_variable_descriptor(
-                                    &parameter_name,
-                                    true,
-                                    true,
-                                    &li.content_class_name,
-                                    &li.content_method_name,
-                                    &md_content,
-                                    index,
-                                    &parameter_name,
-                                );
-
-                                first_parameter = false;
-                            }
-
-                            index += md_content.params[i].stack_size;
-                        }
-
-                        if lambda_parameters_need_parentheses {
-                            buffer.append(")");
-                        }
-                        buffer.append(" ->");
-
-                        let inline = method_wrapper
-                            .expect("NullPointerException: methodWrapper")
-                            .with(|d| d.decompile_error.is_none());
-                        if let Some(root) = root.filter(|_| inline) {
-                            let first_stat = root.get_first();
-                            let is_basic_block = first_stat.is_some_and(|s| s.is_basic_block());
-                            let exprents = if is_basic_block {
-                                first_stat.unwrap().get_exprents()
-                            } else {
-                                None
-                            };
-                            if is_basic_block && exprents.as_ref().is_some_and(|e| e.len() == 1) {
-                                let first_expr = exprents.unwrap().get(0);
-                                let is_expression = asserts::is_lambda_expression_body(first_expr);
-
-                                if is_expression {
-                                    simple_lambda = true;
-                                    let mw = method_wrapper.unwrap();
-                                    let outer_wrapper =
-                                        DecompilerContext::get_current_method_wrapper();
-                                    DecompilerContext::set_current_method_wrapper(Some(mw));
-                                    let _finally = RestoreMethodWrapper(outer_wrapper);
-                                    let node_class_name =
-                                        node.with(|d| d.class_struct).qualified_name();
-                                    let result = try_catch(|| {
-                                        let mut code_buffer = first_expr.to_java(indent);
-
-                                        if first_expr.is_exit() {
-                                            code_buffer.set_start(6);
-                                        } else {
-                                            code_buffer.prepend(" ");
-                                        }
-
-                                        code_buffer.add_bytecode_mapping(
-                                            root.get_dummy_exit().bytecode().as_ref(),
-                                        );
-                                        let method_struct = mw.with(|d| d.method_struct);
-                                        buffer.append_buffer_mapped(
-                                            &code_buffer,
-                                            Some(&node_class_name),
-                                            Some(&InterpreterUtil::make_unique_key(
-                                                &method_struct.get_name(),
-                                                &method_struct.get_descriptor(),
-                                            )),
-                                        );
-                                    });
-                                    if let Err(ex) = result {
-                                        DecompilerContext::get_logger().write_message_ex(
-                                            &format!(
-                                                "Method {} {} in class {} couldn't be written.",
-                                                mt.get_name(),
-                                                mt.get_descriptor(),
-                                                node_class_name
-                                            ),
-                                            Severity::Warn,
-                                            &ex,
-                                        );
-                                        mw.with_mut(|d| d.decompile_error = Some(ex));
-                                        kuna_spans::method_failed(mw);
-                                        buffer.append(" // $VF: Couldn't be decompiled");
-                                    }
-                                }
-                            } else if is_basic_block
-                                && exprents.as_ref().is_some_and(|e| e.is_empty())
-                            {
-                                buffer.append(" {}");
-                                simple_lambda = true;
                             }
                         }
                     }
                 }
+                if !written {
+                    let lambda_parameters_need_parentheses = md_lambda.params.len() != 1;
 
-                if (!simple_lambda && !written) || lambda_to_anonymous {
+                    if lambda_parameters_need_parentheses {
+                        buffer.append("(");
+                    }
+
+                    let mut first_parameter = true;
+                    let mut index: i32 = if li.is_content_method_static { 0 } else { 1 };
+                    let start_index =
+                        md_content.params.len() as i32 - md_lambda.params.len() as i32;
+
+                    for i in 0..md_content.params.len() {
+                        if i as i32 >= start_index {
+                            if !first_parameter {
+                                buffer.append(", ");
+                            }
+                            let mw =
+                                method_wrapper.expect("NullPointerException: methodWrapper");
+                            let varproc = mw.with(|d| d.varproc);
+                            let clashing_name =
+                                varproc.get_clashing_name(VarVersionPair::new(index, 0));
+                            let mut parameter_name =
+                                varproc.get_var_name(VarVersionPair::new(index, 0));
+                            if parameter_name.is_none() {
+                                parameter_name = Some(format!("param{index}"));
+                            }
+                            if clashing_name.is_some() {
+                                parameter_name = clashing_name;
+                            }
+                            let parameter_name = parameter_name
+                                .expect("NullPointerException: parameter name");
+                            buffer.append_variable_descriptor(
+                                &parameter_name,
+                                true,
+                                true,
+                                &li.content_class_name,
+                                &li.content_method_name,
+                                &md_content,
+                                index,
+                                &parameter_name,
+                            );
+
+                            first_parameter = false;
+                        }
+
+                        index += md_content.params[i].stack_size;
+                    }
+
+                    if lambda_parameters_need_parentheses {
+                        buffer.append(")");
+                    }
+                    buffer.append(" ->");
+
+                    let inline = method_wrapper
+                        .expect("NullPointerException: methodWrapper")
+                        .with(|d| d.decompile_error.is_none());
+                    if let Some(root) = root.filter(|_| inline) {
+                        let first_stat = root.get_first();
+                        let is_basic_block = first_stat.is_some_and(|s| s.is_basic_block());
+                        let exprents = if is_basic_block {
+                            first_stat.unwrap().get_exprents()
+                        } else {
+                            None
+                        };
+                        if is_basic_block && exprents.as_ref().is_some_and(|e| e.len() == 1) {
+                            let first_expr = exprents.unwrap().get(0);
+                            let is_expression = asserts::is_lambda_expression_body(first_expr);
+
+                            if is_expression {
+                                simple_lambda = true;
+                                let mw = method_wrapper.unwrap();
+                                let outer_wrapper =
+                                    DecompilerContext::get_current_method_wrapper();
+                                DecompilerContext::set_current_method_wrapper(Some(mw));
+                                let _finally = RestoreMethodWrapper(outer_wrapper);
+                                let node_class_name =
+                                    node.with(|d| d.class_struct).qualified_name();
+                                let result = try_catch(|| {
+                                    let mut code_buffer = first_expr.to_java(indent);
+
+                                    if first_expr.is_exit() {
+                                        code_buffer.set_start(6);
+                                    } else {
+                                        code_buffer.prepend(" ");
+                                    }
+
+                                    code_buffer.add_bytecode_mapping(
+                                        root.get_dummy_exit().bytecode().as_ref(),
+                                    );
+                                    let method_struct = mw.with(|d| d.method_struct);
+                                    buffer.append_buffer_mapped(
+                                        &code_buffer,
+                                        Some(&node_class_name),
+                                        Some(&InterpreterUtil::make_unique_key(
+                                            &method_struct.get_name(),
+                                            &method_struct.get_descriptor(),
+                                        )),
+                                    );
+                                });
+                                if let Err(ex) = result {
+                                    DecompilerContext::get_logger().write_message_ex(
+                                        &format!(
+                                            "Method {} {} in class {} couldn't be written.",
+                                            mt.get_name(),
+                                            mt.get_descriptor(),
+                                            node_class_name
+                                        ),
+                                        Severity::Warn,
+                                        &ex,
+                                    );
+                                    mw.with_mut(|d| d.decompile_error = Some(ex));
+                                    kuna_spans::method_failed(mw);
+                                    buffer.append(" // $VF: Couldn't be decompiled");
+                                }
+                            }
+                        } else if is_basic_block
+                            && exprents.as_ref().is_some_and(|e| e.is_empty())
+                        {
+                            buffer.append(" {}");
+                            simple_lambda = true;
+                        }
+                    }
+                }
+
+                if !simple_lambda && !written {
                     buffer.append(" {").append_line_separator();
 
                     ClassWriter::method_lambda_to_java(
@@ -637,7 +632,6 @@ impl ClassWriter {
                         mt,
                         buffer,
                         indent + 1,
-                        !lambda_to_anonymous,
                     );
 
                     buffer.append_indent(indent).append("}");
@@ -1465,72 +1459,14 @@ impl ClassWriter {
         mt: StructMethod,
         buffer: &mut TextBuffer,
         indent: i32,
-        code_only: bool,
     ) {
-        let mut indent = indent;
         let method_wrapper = class_wrapper.get_method_wrapper(&mt.get_name(), &mt.get_descriptor());
 
         let outer_wrapper = DecompilerContext::get_current_method_wrapper();
         DecompilerContext::set_current_method_wrapper(method_wrapper);
 
         let _finally = RestoreMethodWrapper(outer_wrapper);
-        let li = lambda_information(lambda_node);
-        let method_name = li.method_name.clone();
-        let md_content = MethodDescriptor::parse_descriptor(&li.content_method_descriptor);
-        let md_lambda = MethodDescriptor::parse_descriptor(&li.method_descriptor);
         let class_name = class_wrapper.get_class_struct().qualified_name();
-
-        if !code_only {
-            buffer.append_indent(indent);
-            buffer.append("public ");
-            buffer.append(&method_name);
-            buffer.append("(");
-
-            let mut first_parameter = true;
-            let mut index: i32 = if li.is_content_method_static { 0 } else { 1 };
-            let start_index = md_content.params.len() as i32 - md_lambda.params.len() as i32;
-
-            for i in 0..md_content.params.len() {
-                if i as i32 >= start_index {
-                    if !first_parameter {
-                        buffer.append(", ");
-                    }
-
-                    let type_ = &md_content.params[i];
-                    let mut type_name = ExprProcessor::get_cast_type_name(type_);
-                    if ExprProcessor::UNDEFINED_TYPE_STRING == type_name {
-                        type_name = ExprProcessor::get_cast_type_name(&VarType::VARTYPE_OBJECT());
-                    }
-
-                    buffer.append_cast_type_name_str(&type_name, type_);
-                    buffer.append(" ");
-
-                    let mw = method_wrapper.expect("NullPointerException: methodWrapper");
-                    let varproc = mw.with(|d| d.varproc);
-                    let parameter_name = varproc
-                        .get_var_name(VarVersionPair::new(index, 0))
-                        .unwrap_or_else(|| format!("param{index}"));
-                    buffer.append_variable_descriptor(
-                        &parameter_name,
-                        true,
-                        true,
-                        &class_name,
-                        &method_name,
-                        &md_content,
-                        index,
-                        &parameter_name,
-                    );
-
-                    first_parameter = false;
-                }
-
-                index += md_content.params[i].stack_size;
-            }
-
-            buffer.append(") {").append_line_separator();
-
-            indent += 1;
-        }
 
         let root = class_wrapper
             .get_method_wrapper(&mt.get_name(), &mt.get_descriptor())
@@ -1566,14 +1502,6 @@ impl ClassWriter {
 
         if mw.with(|d| d.decompile_error.is_some()) {
             ClassWriter::dump_error(buffer, mw, indent);
-        }
-
-        if !code_only {
-            indent -= 1;
-            buffer
-                .append_indent(indent)
-                .append("}")
-                .append_line_separator();
         }
     }
 

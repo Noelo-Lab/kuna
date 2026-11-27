@@ -48,25 +48,6 @@ opt	new-line-separator	1
 opt	error-message	
 opt	include-runtime	
 javadoc	plain
-set	Lambda to Anonymous Class	lambda-to-anonymous-class
-opt	log-level	warn
-opt	decompile-generics	1
-opt	remove-synthetic	1
-opt	remove-bridge	1
-opt	keep-literals	1
-opt	__unit_test_mode__	1
-opt	new-line-separator	1
-opt	error-message	
-opt	include-runtime	
-opt	bytecode-source-mapping	1
-opt	__dump_original_lines__	1
-opt	dump-exception-on-error	0
-opt	ignore-invalid-bytecode	1
-opt	verify-anonymous-classes	1
-opt	include-classpath	0
-opt	force-jsr-inline	1
-opt	lambda-to-anonymous-class	1
-opt	verify-pre-post-merges	1
 set	Literals	literals
 opt	log-level	warn
 opt	decompile-generics	1
@@ -1274,10 +1255,6 @@ case	default/v11/TestInnerClassConstructor	Default	classes/custom/v11/TestInnerC
 kuna	ca99a4bfd62046c0
 case	javadoc/pkg/TestJavadoc	Javadoc	classes/java8/pkg/TestJavadoc
 kuna	537f34ce29395ab0
-case	lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass	Lambda to Anonymous Class	classes/java8/pkg/TestLambdaToAnonymousClass
-kuna	9da7c75fa552c8d7
-case	lambda-to-anonymous-class/pkg/TestLambdaToAnonymousClass2	Lambda to Anonymous Class	classes/java8/pkg/TestLambdaToAnonymousClass2
-kuna	201ce6fb43ac2cb7
 case	literals/pkg/TestConstantUninlining	Literals	classes/java8/pkg/TestConstantUninlining
 kuna	03cd8a10da9954a3
 case	literals/pkg/TestFloatPrecision	Literals	classes/java8/pkg/TestFloatPrecision

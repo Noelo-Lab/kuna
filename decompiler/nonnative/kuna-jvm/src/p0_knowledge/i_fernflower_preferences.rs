@@ -21,7 +21,6 @@ impl IFernflowerPreferences {
     pub const USE_DEBUG_VAR_NAMES: &str = "use-lvt-names";
     pub const USE_METHOD_PARAMETERS: &str = "use-method-parameters";
     pub const FINALLY_DEINLINE: &str = "decompile-finally";
-    pub const LAMBDA_TO_ANONYMOUS_CLASS: &str = "lambda-to-anonymous-class";
     pub const BYTECODE_SOURCE_MAPPING: &str = "bytecode-source-mapping";
     pub const DUMP_CODE_LINES: &str = "dump-code-lines";
     pub const IGNORE_INVALID_BYTECODE: &str = "ignore-invalid-bytecode";
@@ -89,7 +88,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::USE_DEBUG_VAR_NAMES, "1".to_string()),
             (IFernflowerPreferences::USE_METHOD_PARAMETERS, "1".to_string()),
             (IFernflowerPreferences::FINALLY_DEINLINE, "1".to_string()),
-            (IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS, "0".to_string()),
             (IFernflowerPreferences::BYTECODE_SOURCE_MAPPING, "0".to_string()),
             (IFernflowerPreferences::DUMP_CODE_LINES, "0".to_string()),
             (IFernflowerPreferences::IGNORE_INVALID_BYTECODE, "0".to_string()),
@@ -181,7 +179,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "USE_DEBUG_VAR_NAMES", key: IFernflowerPreferences::USE_DEBUG_VAR_NAMES, short_name: Some("udv"), name: Some("Use LVT Names"), description: Some("Use LVT names for local variables and parameters instead of var<index>_<version>."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "USE_METHOD_PARAMETERS", key: IFernflowerPreferences::USE_METHOD_PARAMETERS, short_name: Some("ump"), name: Some("Use Method Parameters"), description: Some("Use method parameter names, as given in the MethodParameters attribute."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "FINALLY_DEINLINE", key: IFernflowerPreferences::FINALLY_DEINLINE, short_name: Some("fdi"), name: Some("Decompile Finally"), description: Some("Decompile finally blocks."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "LAMBDA_TO_ANONYMOUS_CLASS", key: IFernflowerPreferences::LAMBDA_TO_ANONYMOUS_CLASS, short_name: Some("lac"), name: Some("Decompile Lambdas as Anonymous Classes"), description: Some("Decompile lambda expressions as anonymous classes."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "BYTECODE_SOURCE_MAPPING", key: IFernflowerPreferences::BYTECODE_SOURCE_MAPPING, short_name: Some("bsm"), name: Some("Bytecode to Source Mapping"), description: Some("Map Bytecode to source lines."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_CODE_LINES", key: IFernflowerPreferences::DUMP_CODE_LINES, short_name: Some("dcl"), name: Some("Dump Code Lines"), description: Some("Dump line mappings to output archive zip entry extra data."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "IGNORE_INVALID_BYTECODE", key: IFernflowerPreferences::IGNORE_INVALID_BYTECODE, short_name: Some("iib"), name: Some("Ignore Invalid Bytecode"), description: Some("Ignore bytecode that is malformed."), type_: Some(OptionType::Boolean), dynamic_default_value: None },

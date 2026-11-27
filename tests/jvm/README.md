@@ -85,10 +85,10 @@ Line oriented, tab separated; fields escape `\\`, `\t`, `\n`, `\r`; `#` starts a
 
 ## Counts
 
-- Vendored: **889 runs** in all, each of which must match: the 599 Vineflower-oracle cases (the
+- Vendored: **887 runs** in all, each of which must match: the 597 Vineflower-oracle cases (the
   Java cases here, the plugin and Kotlin cases below) against kuna's text (their `kuna` digests), and
   the 290 kuna-fixes cases (below).
-- Java cases: **526** (Complex Condys 1, Default 505, Javadoc 1, Lambda to Anonymous Class 2, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2), 845 class files (874 KiB); 989 KiB in all
+- Java cases: **524** (Complex Condys 1, Default 505, Javadoc 1, Literals 4, LVT 5, Markdown Javadoc 1, No LVT 1, Renaming 1, Synthetics Marking 3, Ternary Constant Simplification 2), 845 class files (874 KiB); 989 KiB in all
   with `cases.tsv`.
 - Of the oracle corpus's 594 runnable tests, **68 are not vendored** because their
   output depends on a particular JDK's class library; run them from the external corpus (below).
