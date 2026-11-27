@@ -3609,10 +3609,13 @@ and a restart lifts the same p-code again (it follows the same flow; only the id
 of call specifications differ, and no check reads them).
 
 So the install's slot of a pass with no record for its function keeps a flat copy
-of that p-code, when the function has two conditional branches: the basic blocks
-in order with their edges and ops, every varnode an op reads or writes, the
-prototype and the jump tables
-(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchrestart.rs (RawSnapshot)`).
+of that p-code (`decompiler/crates/kuna-decomp/src/p2_lift/kuna_switchrestart.rs (RawSnapshot)`):
+the basic blocks in order with their edges and ops, every varnode an op reads or
+writes, the prototype and the jump tables. Copying costs a fraction of a percent
+of the function, so only a function with a cascade's shape gets a copy
+(`kuna_switchrestart.rs (worth_capturing)`): three blocks ending in a conditional
+branch that compare the same register or memory location against a constant. A
+cascade found in any other function restarts as before.
 The install's checks take a read-only view that the function and the copy both
 implement (`kuna_switchrestart.rs (RawIr)`), and for the first record of the pass
 detection runs them on the copy (`kuna_switchrestart.rs (install_declines)`) when
@@ -3630,7 +3633,12 @@ when it finds a cascade the function restarts after all, and the restarted pass
 declines and retries as it always did. At the end of a pass that does not
 restart, `kuna_loweredswitchkeep.rs (ActionLowerSwitchKeep)` withdraws that
 record, as the install would have; a pass that restarts for any other reason
-leaves it to the restarted pass's install. The output does not change.
+leaves it to the restarted pass's install. An unoptimized function whose return
+statements `decompiler/crates/kuna-decomp/src/p8_structure/kuna_o0returns.rs (record)`
+recorded always restarts:
+that record groups a return's in-edges by the prototype's output storage, which a
+restarted pass inherits from the first one, so the restart can change how its
+epilogue is duplicated. The output does not change.
 
 ### Bound extensions: rescuing an unboundable table
 

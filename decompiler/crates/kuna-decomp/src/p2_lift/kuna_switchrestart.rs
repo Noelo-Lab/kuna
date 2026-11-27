@@ -399,23 +399,78 @@ impl RawIr for RawSnapshot {
     }
 }
 
-/// Whether the function's raw p-code has the two conditional branches a cascade
-/// needs, so a snapshot of it can matter.
+/// Whether the function's raw p-code has a cascade's shape: three blocks ending
+/// in a conditional branch that compare the same register or stack location
+/// against a constant. Only such a function is worth a [`RawSnapshot`]; one
+/// without gets none, and a cascade detection still finds in it restarts.
 pub(crate) fn worth_capturing(data: &Funcdata) -> bool {
     if data.bblocks_ref().root.is_none() {
         return false;
     }
-    let mut cbranches = 0;
+    let mut counts: Vec<((int4, uintb, int4), u32)> = Vec::new();
+    let mut keys: Vec<(int4, uintb, int4)> = Vec::new();
     for i in 0..data.bblocks_get_size() {
-        let tail = data.bb_op_tail(data.bblocks_get_block(i));
-        if tail.and_then(|op| data.obank().get(op)).is_some_and(|o| o.code() == OpCode::CPUI_CBRANCH) {
-            cbranches += 1;
-            if cbranches >= 2 {
-                return true;
+        let b = data.bblocks_get_block(i);
+        let tail = data.bb_op_tail(b).and_then(|op| data.obank().get(op));
+        if !tail.is_some_and(|o| o.code() == OpCode::CPUI_CBRANCH) {
+            continue;
+        }
+        keys.clear();
+        let mut cur = data.bb_op_head(b);
+        while let Some(op) = cur {
+            let Some(o) = data.obank().get(op) else { break };
+            cur = o.basic_neighbours().1;
+            if let Some(key) = compared_against_constant(data, o) {
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+        }
+        for key in &keys {
+            match counts.iter_mut().find(|(k, _)| k == key) {
+                Some((_, n)) => {
+                    *n += 1;
+                    if *n >= 3 {
+                        return true;
+                    }
+                }
+                None => counts.push((*key, 1)),
             }
         }
     }
     false
+}
+
+/// The storage a comparison compares against a constant, when it is a register
+/// or a memory location rather than a temporary.
+fn compared_against_constant(data: &Funcdata, o: &PcodeOp) -> Option<(int4, uintb, int4)> {
+    if !matches!(
+        o.code(),
+        OpCode::CPUI_INT_EQUAL
+            | OpCode::CPUI_INT_NOTEQUAL
+            | OpCode::CPUI_INT_LESS
+            | OpCode::CPUI_INT_LESSEQUAL
+            | OpCode::CPUI_INT_SLESS
+            | OpCode::CPUI_INT_SLESSEQUAL
+            | OpCode::CPUI_INT_SBORROW
+            | OpCode::CPUI_INT_CARRY
+            | OpCode::CPUI_INT_SCARRY
+    ) || o.num_input() != 2
+    {
+        return None;
+    }
+    let a = data.vbank().get(o.get_in(0)?)?;
+    let b = data.vbank().get(o.get_in(1)?)?;
+    let v = match (a.is_constant(), b.is_constant()) {
+        (true, false) => b,
+        (false, true) => a,
+        _ => return None,
+    };
+    let space = v.get_addr().get_space()?;
+    if space.get_type() == kuna_base::space::spacetype::IPTR_INTERNAL {
+        return None;
+    }
+    Some((space.get_index(), v.get_offset(), v.get_size()))
 }
 
 /// The basic block whose last op is at `addr`.

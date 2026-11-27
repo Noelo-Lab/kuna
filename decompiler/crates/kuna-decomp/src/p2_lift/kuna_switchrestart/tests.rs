@@ -242,11 +242,14 @@ fn the_pass_counts_its_detection_calls() {
 }
 
 #[test]
-fn a_function_without_two_branches_keeps_no_snapshot() {
+fn a_function_without_three_compares_of_one_location_keeps_no_snapshot() {
     let mut fd = build_fd();
     let b = new_block(&mut fd, 0x1000);
     wide_call(&mut fd, b, 0x1000);
     assert!(!worth_capturing(&fd));
+    let mut cascade_fd = build_fd();
+    cascade(&mut cascade_fd, true);
+    assert!(worth_capturing(&cascade_fd), "four compares of the selector");
     let store = new_shared_store();
     store.borrow_mut().begin_pass(&fd);
     assert!(store.borrow_mut().take_raw(&fd).is_none());

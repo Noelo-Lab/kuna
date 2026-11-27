@@ -1476,10 +1476,14 @@ impl ActionLowerSwitchDetect {
     /// on the first record of a pass whose raw p-code was kept, a switch the
     /// install's checks decline on that p-code is stored as the restarted pass
     /// would leave it, and the function restarts only if the restarted pass's
-    /// retry would find another cascade.
+    /// retry would find another cascade. An unoptimized function whose return
+    /// statements [`kuna_o0returns`](crate::p8_structure::kuna_o0returns) records
+    /// always restarts: the record reads the prototype's storage, which a
+    /// restarted pass inherits from the first, so its text can change.
     fn record(&mut self, data: &mut Funcdata, rec: KunaLoweredSwitchRecord) {
         let raw = self.store.borrow_mut().take_raw(data);
         let decided = !rec.retry
+            && data.kuna_o0returns.is_none()
             && raw.is_some_and(|(calls, snap)| (rec.base_shape || calls == 1) && install_declines(&*snap, &rec));
         let retries = decided && !rec.base_shape;
         let mut store = self.store.borrow_mut();
