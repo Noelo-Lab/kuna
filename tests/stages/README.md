@@ -272,6 +272,17 @@ register-save prologue folds: they print `...` after their named parameters
 saved `xmm0` slot itself and `dsum` indexes the save area through a register,
 so both keep the stores. The off run prints `report` with fourteen parameters.
 
+`kuna-homespill-win64.xml` checks that a Windows x64 function keeps the
+parameters it spills to their home slots in MSVC /Od's prologue. `caller`
+stores `ecx`, `edx`, `r8d` and `r9b` and reloads only the `r9b` slot, to pass it
+fifth of nine arguments; it keeps four parameters, also after `map prototype`
+declares the callee with four and the reload is dead (it printed `void` then).
+`unused2` spills two parameters and reads neither. `negatives` stores `rbx`,
+`r8` into `rcx`'s slot and a zeroed `r9`, and `reused` spills `rdx` and then
+keeps a local in its slot; both stay `void`. `vararg` (MSVC /Od, taking the
+address of `rdx`'s slot for `va_start`) and `spillhigh` (gcc -O2, saving `rdx`,
+`r8` and `r9` without one) keep only their named `char *` parameter.
+
 `kuna-condexe-heritage.xml` checks that conditional execution removes a re-test
 whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the

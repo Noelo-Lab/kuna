@@ -60,7 +60,7 @@ collections (named in the document's `omitted`), keeping it near the size of the
 | `index.jsonl` | Search this streaming index first: `name`, `addr`, `size`, `error`, and the C block's byte span, `c_offset`/`c_len`. |
 | `<name>.c` | Function bodies under `// Function: <name> @ <addr>` headers. |
 | `<name>.h` | Prototypes and recompile prelude; recovered type definitions arrive at finalization. |
-| `<name>.asm` | Disassembly and data bytes; often much larger than the C. Search by symbol or address. |
+| `<name>.asm` | Disassembly and data bytes; often much larger than the C, unless `--functions`/`--addr` narrowed it to the selected code. Search by symbol or address. |
 | `README.md` | Image details, progress, and success/failure counts. |
 | `.streaming` | Live status and operational failures while exporting. |
 

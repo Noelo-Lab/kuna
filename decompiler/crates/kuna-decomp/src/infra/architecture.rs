@@ -3852,6 +3852,8 @@ impl Architecture {
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.vararg_save = self.vararg_save; // varargsave
+        ctx.win64_home_slots = self.archid.starts_with("x86:LE:64:")
+            && crate::kuna_fastfailnoreturn::archid_is_windows(&self.archid);
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.octeon_effects = self.octeon_effects; // octeoneffects

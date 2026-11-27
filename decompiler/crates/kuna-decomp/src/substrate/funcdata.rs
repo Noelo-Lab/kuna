@@ -172,6 +172,9 @@ pub struct Funcdata {
     /// (kuna `varargsave`) Set when the first heritage pass folded this
     /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
     pub(crate) kuna_vararg_save: bool,
+    /// (kuna) The argument registers the first heritage saw spilled to their
+    /// Windows x64 home slots (`p4_calls/kuna_homespill.rs`).
+    pub(crate) kuna_home_spills: Vec<(Address, int4)>,
     /// (kuna `coverage`) The bytes of every instruction the flow decoded
     /// ([`crate::flow::decoded_ranges`]).
     pub(crate) kuna_flow_ranges: Vec<(u64, u64)>,
@@ -846,6 +849,7 @@ impl Funcdata {
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             kuna_vararg_save: false,
+            kuna_home_spills: Vec::new(),
             kuna_flow_ranges: Vec::new(),
             kuna_unoptimized: None,
             kuna_latch_joins: 0,
@@ -4632,6 +4636,7 @@ impl Funcdata {
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;
+        self.kuna_home_spills.clear();
         self.kuna_flow_ranges.clear();
         self.kuna_unoptimized = None;
         self.kuna_frame_pointer = false;
