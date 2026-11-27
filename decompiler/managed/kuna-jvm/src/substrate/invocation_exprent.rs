@@ -21,6 +21,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::kt_calls::kt_explicit_type_arguments;
 use crate::fixes::kt_calls::kt_mapped_java_member::{self, Form as MappedForm};
 use crate::fixes::kt_util::writing_kotlin;
+use crate::fixes::lambdas;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::fixes::kt_java_syntax::kt_unboxing_cast_type;
 use crate::fixes::lambdas::lambda_argument_overload;
@@ -1457,6 +1458,12 @@ impl InvocationExprent {
                         );
                     } else if let Some(remapped_inst_type) = remapped_inst_type {
                         self.append_inst_cast(&mut buf, &remapped_inst_type, res);
+                    } else if lambdas::receiver_cast(instance) {
+                        self.append_inst_cast(
+                            &mut buf,
+                            &VarType::new_value(CodeType::Object, 0, &classname),
+                            res,
+                        );
                     } else if instance.get_precedence() > self.0.get_precedence()
                         && !self.can_skip_paren_enclose(instance)
                     {

@@ -519,7 +519,7 @@ kuna	9cd2596cb0abee2b
 case	default/pkg/TestInterfaceFields	Default	classes/java8/pkg/TestInterfaceFields
 kuna	e70b6688930f6d41
 case	default/pkg/TestInterfaceLambdaCast	Default	classes/java8/pkg/TestInterfaceLambdaCast
-kuna	9acbc9e371ba66a2
+kuna	45105283c0651f72
 case	default/pkg/TestInterfaceMethods	Default	classes/java8/pkg/TestInterfaceMethods
 kuna	8ef89f752d6ba060
 case	default/pkg/TestInterfaceNullInvoc	Default	classes/java8/pkg/TestInterfaceNullInvoc
@@ -617,7 +617,7 @@ kuna	7d683c67973014cc
 case	default/pkg/TestMethodReferenceLetterClass	Default	classes/java8/pkg/TestMethodReferenceLetterClass
 kuna	229aa73c2ea47cb2
 case	default/pkg/TestMethodReferenceSameName	Default	classes/java8/pkg/TestMethodReferenceSameName
-kuna	359920a9d15130f9
+kuna	62b81cbaa6ab042a
 case	default/pkg/TestMissingConstructorCallBad	Default	classes/jasm/pkg/TestMissingConstructorCallBad
 kuna	4597c1c5e776c676
 case	default/pkg/TestMissingConstructorCallGood	Default	classes/jasm/pkg/TestMissingConstructorCallGood
@@ -2026,3 +2026,5 @@ case	kuna-fixes/pkg/TestConstantCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestCo
 case	kuna-fixes/pkg/TestBoxedIncrementOperand	Kuna Fixes	kuna-fixes/classes/pkg/TestBoxedIncrementOperand
 # kuna-fixes/src/pkg/TestNullLocalType.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestNullLocalType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullLocalType
+# kuna-fixes/src/pkg/TestLambdaReceiver.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLambdaReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaReceiver

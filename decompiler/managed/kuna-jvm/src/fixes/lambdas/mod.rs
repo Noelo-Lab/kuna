@@ -1,7 +1,8 @@
 //! Fix family `lambdas`: lambdas and method references: their inference,
 //! overloads and recursion. In this file, `serializable_lambda` writes the
 //! interfaces javac's `altMetafactory` adds to a lambda as an intersection
-//! cast (`(Comparator & Serializable) (a, b) -> 1`).
+//! cast (`(Comparator & Serializable) (a, b) -> 1`), and `receiver_cast`
+//! casts a lambda or method reference that is the receiver of a call.
 
 pub(crate) mod lambda_argument_overload;
 pub(crate) mod lambda_pertinence;
@@ -11,6 +12,7 @@ pub(crate) mod self_referencing_lambda;
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
+use crate::exprent::Exprent;
 use crate::pooled_constant::PooledConstant;
 use crate::primitive_constant::ConstValue;
 use crate::text_buffer::TextBuffer;
@@ -75,4 +77,23 @@ pub fn intersection_cast(added: &[String], iface: &VarType, inferred: Option<&Va
     }
     buf.append(")");
     Some(buf)
+}
+
+/// Whether `instance`, the receiver of a call, is a lambda or method reference
+/// with no cast of its own: Java gives it no type there, so it needs a cast
+/// to the class of the invoked method (`((Func) () -> 1).get()`).
+pub fn receiver_cast(instance: Exprent) -> bool {
+    instance.try_as_new().is_some_and(|n| {
+        n.is_lambda()
+            && DecompilerContext::get_class_processor()
+                .get_map_root_classes()
+                .borrow()
+                .get(&n.get_new_type().value_str().to_string())
+                .copied()
+                .is_some_and(|node| {
+                    node.with(|d| {
+                        d.lambda_information.as_ref().is_some_and(|l| l.added_interfaces.is_empty())
+                    })
+                })
+    })
 }

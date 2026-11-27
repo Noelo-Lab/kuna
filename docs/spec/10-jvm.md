@@ -992,7 +992,9 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    (`lambdas::added_interfaces`), and the lambda is written under the intersection cast,
    naming its inferred parameterized type, or the interface itself when that is known not to
    be generic; otherwise it is written as before. Without the cast the recompiled lambda is
-   not serializable.
+   not serializable. A lambda or method reference that is the receiver of a call has no
+   target type in Java, so it is written cast to the class of the invoked method
+   (`lambdas::receiver_cast`): `((Func) () -> 1).get()` had printed `(() -> 1).get()`.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 10.4-10.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.
