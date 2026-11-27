@@ -1,0 +1,232 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7">
+<!--
+    ARM hard-float doubles passed to a callee nothing in the image describes
+    (kuna_armfloatreturn.rs (opaque_callee)): an undefined symbol in a
+    relocatable object, an import behind a PLT stub in a linked shared object,
+    and a function pointer.
+
+    armfloatargs_opaque_{arm,thumb}.o and armfloatargs_opaque.so (gcc -O2,
+    recipes in armfloatargs_opaque.c). A d-register argument needed a stated
+    or decoded callee contract, so a double the caller computed for such a call
+    was dropped with the computation: `sink_d(d * 3.0)` printed `sink_d()`.
+    With armfloatargs on, such a call scores the d-register as it scores s0
+    and r0: scale_d, load_d, conv_d, two_d, mixed_id, indirect_d, moved_d and
+    mixed_fd pass the doubles they write for the call. As for s0 and r0, an
+    earlier call's result (chain_d), the caller's own entry d0 (forward_d) and a
+    double the caller also stores (after_store) are not passed; the first two
+    are limitations shared with every register. ign's body returns without
+    reading d0, so call_ign passes it nothing. mixed_fd passes a float in s0
+    and a double in d1; s1, the AAPCS-VFP back-fill slot, still holds half of
+    the caller's entry d0 and is no argument.
+
+    armfloatargs_opaque_split.o (authored, recipe in its .s) holds what such a
+    call must not take: pieced_f, glibc's acospif shape, computes a float into
+    s0 for invalidf while it writes d0 whole elsewhere, so the call's d0 is a
+    piece of that float and the s1 the caller left; guard_d and guard_spin,
+    glibc's drand48 shape, call __stack_chk_fail and spin, which never return,
+    with the double they return still in d0. None of those is a double
+    argument, and each function keeps its own prototype.
+
+    Stage / sub-stage: P4 "input-prototype", option armfloatargs. Pass 1
+    (ARM object, armfloatargs off) pins the dropped arguments; passes 2 (ARM
+    object), 3 (Thumb object), 4 (linked ARM shared object) and 5 (authored
+    object) run the default.
+-->
+<bytechunk space="ram" offset="0x1000">1eff2fe1</bytechunk>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque_arm.o</com>
+  <com>option armfloatargs off</com>
+  <com>read symbols</com>
+  <com>lo fu scale_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu load_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu conv_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_id</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu moved_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_ign</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque_arm.o</com>
+  <com>read symbols</com>
+  <com>lo fu scale_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu load_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu conv_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_id</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu moved_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_ign</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque_thumb.o</com>
+  <com>read symbols</com>
+  <com>lo fu scale_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu load_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu conv_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_id</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu moved_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_ign</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque.so</com>
+  <com>read symbols</com>
+  <com>lo fu scale_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu load_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu conv_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_id</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu indirect_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu moved_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu chain_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu after_store</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_ign</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed_fd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/armfloatargs_opaque_split.o</com>
+  <com>read symbols</com>
+  <com>lo fu pieced_f</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guard_d</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu guard_spin</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="arm-opaque-double #1: off, scale_d loses the double it computes" min="1" max="1">^void scale_d\(void\)$</stringmatch>
+<stringmatch name="arm-opaque-double #2: off, scale_d, load_d and conv_d pass nothing; forward_d passes no entry d0 in any pass" min="7" max="7">^  sink_d\(\);$</stringmatch>
+<stringmatch name="arm-opaque-double #3: off, the pair is dropped" min="1" max="1">^  sink_dd\(\);$</stringmatch>
+<stringmatch name="arm-opaque-double #4: scale_d passes the double it computes" min="3" max="3">^  sink_d\(a0 \* 3\.0\);$</stringmatch>
+<stringmatch name="arm-opaque-double #5: load_d passes the double it loads, also through the GOT" min="3" max="3">^  sink_d\((gx|\*dat_[0-9a-f]+)\);$</stringmatch>
+<stringmatch name="arm-opaque-double #6: conv_d passes the double it converts" min="3" max="3">^  sink_d\(\(float8\)\(int8\)a0\);$</stringmatch>
+<stringmatch name="arm-opaque-double #7: two_d passes both doubles in order" min="3" max="3">^  sink_dd\(a1 \+ a1,a0 \* 3\.0\);$</stringmatch>
+<stringmatch name="arm-opaque-double #8: mixed_id passes the double beside the int" min="3" max="3">^  sink_id\(a0 \+ a0,a1 \+ 1\);$</stringmatch>
+<stringmatch name="arm-opaque-double #9: indirect_d passes the double through the pointer" min="3" max="3">^  \(\*a1\)\(a0 \+ a0\);$</stringmatch>
+<stringmatch name="arm-opaque-double #10: moved_d passes the result it moved back into d0" min="3" max="3">^  gd\(v1\); // tail-call$</stringmatch>
+<stringmatch name="arm-opaque-double #11: as for s0 and r0, chain_d passes on no earlier call's result (gd(fd()) compiles as fd(); gd() would), and off moved_d passes none" min="5" max="5">^  gd\(\); // tail-call$</stringmatch>
+<stringmatch name="arm-opaque-double #12: as for s0 and r0, forward_d takes and forwards no entry d0 (a known limitation)" min="4" max="4">^void forward_d\(void\)$</stringmatch>
+<stringmatch name="arm-opaque-double #13: after_store keeps its double" min="4" max="4">^void after_store\(float8 a0\)$</stringmatch>
+<stringmatch name="arm-opaque-double #14: after_store and moved_d pass g nothing" min="8" max="8">^  g\(\);$</stringmatch>
+<stringmatch name="arm-opaque-double #15: call_ign passes nothing to a body that never reads d0" min="4" max="4">^  ign\(\);$</stringmatch>
+<stringmatch name="arm-opaque-double #16: mixed_fd passes the float and the double, not the back-fill slot" min="3" max="3">^  sink_fd\(a1,a0 \+ a0\);$</stringmatch>
+<stringmatch name="arm-opaque-double #17: off, mixed_fd loses the double" min="1" max="1">^  sink_fd\(a2\);$</stringmatch>
+<stringmatch name="arm-opaque-double #18: pieced_f keeps its float parameter" min="1" max="1">^float4 pieced_f\(float4 a0,int4 a1\)$</stringmatch>
+<stringmatch name="arm-opaque-double #19: invalidf gets no double pieced from s0 and the caller's s1" min="1" max="1">^    return \(float4\)invalidf\(\); // tail-call$</stringmatch>
+<stringmatch name="arm-opaque-double #20: guard_d keeps returning its double" min="1" max="1">^float8 guard_d\(float8 a0,int4 a1\)$</stringmatch>
+<stringmatch name="arm-opaque-double #21: __stack_chk_fail gets no pending result" min="1" max="1">^    __stack_chk_fail\(\); // tail-call, no-return$</stringmatch>
+<stringmatch name="arm-opaque-double #22: guard_spin keeps returning its double" min="1" max="1">^float8 guard_spin\(float8 a0,int4 a1\)$</stringmatch>
+</decompilertest>

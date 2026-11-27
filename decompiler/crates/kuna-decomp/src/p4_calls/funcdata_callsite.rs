@@ -299,6 +299,13 @@ pub fn check_input_trial_use(
             trial.set_ancestor_realistic();
             trial.set_ancestor_solid();
             trial.mark_active();
+        } else if {
+            // (kuna `armfloatargs`) A double an opaque callee admits must be
+            // written whole for the call, not two floats or a pending result.
+            let t = data.get_call_specs(idx).active_input().get_trial(i);
+            crate::kuna_armfloatreturn::opaque_non_argument(data, idx, vn, t.get_address(), t.get_size())
+        } {
+            data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_no_use();
         } else if crate::p4_calls::kuna_stackaddrargtrial::carries_stack_address(data, vn) {
             let trial = data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i);
             trial.set_ancestor_realistic();

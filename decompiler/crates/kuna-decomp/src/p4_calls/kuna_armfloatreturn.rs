@@ -1020,8 +1020,11 @@ pub fn unused_vfp_type(
 }
 
 /// A widened call-argument trial needs a callee contract, a stated one or a
-/// body that reads the whole d-register ([`crate::p4_calls::kuna_calleefloatreads`]);
-/// a live d-register alone does not establish that an unknown call consumes a double.
+/// body that reads the whole d-register ([`crate::p4_calls::kuna_calleefloatreads`]),
+/// or, with `armfloatargs`, a callee nothing in the run answers for
+/// ([`opaque_callee`]). There the trial is scored as an s-register trial is: a
+/// double the caller writes for the call is an argument, while one it only
+/// forwards from its own entry or leaves from an earlier call is not.
 pub fn call_input_allowed(
     data: &Funcdata,
     call: &crate::fspec::FuncCallSpecs,
@@ -1049,6 +1052,90 @@ pub fn call_input_allowed(
                 })
         })
         || crate::p4_calls::kuna_calleefloatreads::reads(data, call, addr, size)
+        || (data.get_arch().arm_float_args && opaque_callee(data, call, addr, size))
+}
+
+/// Does nothing in this run answer for whether the callee of `call` reads
+/// `[addr, addr+size)`: an indirect call, or a direct one with no stated
+/// prototype whose body, as far as the entry decode reads it, neither reads the
+/// range, writes it first on every path, nor only returns without touching it?
+/// That is an undefined symbol, a PLT stub that jumps through its GOT slot, a
+/// wrapper that branches or calls on to such code with the range unwritten, or a
+/// body the decode cannot finish. A variadic call passes no VFP arguments.
+fn opaque_callee(data: &Funcdata, call: &crate::fspec::FuncCallSpecs, addr: &Address, size: i32) -> bool {
+    if call.is_dotdotdot() {
+        return false;
+    }
+    let entry = call.get_entry_address();
+    entry.is_invalid()
+        || (data.kuna_protoorder_types(entry).is_none()
+            && !data.kuna_callee_entry_dead(entry).is_some_and(|probe| {
+                probe.answers()
+                    && (probe.proves_read(addr, size)
+                        || probe.proves_dead(addr, size)
+                        || probe.never_takes(addr, size)
+                        || probe.returns_untouched(addr, size))
+            }))
+}
+
+/// Is the d-register value `vn` that call `index` holds in `[addr, addr+size)`
+/// one only an opaque callee admits ([`opaque_callee`]) and no argument? A
+/// piece of two single-precision words is a float written into s0 beside what
+/// the caller left in s1: glibc's `acospif` computes its NaN into s0 for
+/// `__math_invalidf` while it reads d0 whole elsewhere. A value that also
+/// reaches a RETURN is the caller's pending result, left in d0 at a call that
+/// does not return: glibc's `drand48` computes its double before it checks the
+/// stack guard and calls `__stack_chk_fail`.
+pub fn opaque_non_argument(data: &Funcdata, index: i32, vn: VarnodeId, addr: &Address, size: i32) -> bool {
+    let call = data.get_call_specs(index);
+    data.get_arch().arm_float_args
+        && size == 8
+        && !call.is_input_locked()
+        && call.proto().model().input().get_entry().iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) == 0
+        })
+        && opaque_callee(data, call, addr, size)
+        && (pieced(data, vn, 8) || returned(data, vn))
+}
+
+/// Does `vn`, through copies and merges, also reach a RETURN: the caller's
+/// pending result, left in the register on its way out, rather than an argument?
+fn returned(data: &Funcdata, vn: VarnodeId) -> bool {
+    let mut todo = vec![vn];
+    let mut seen = vec![vn];
+    while let Some(cur) = todo.pop() {
+        let Some(node) = data.vbank().get(cur) else { return false };
+        for id in node.descend_iter() {
+            let Some(op) = data.obank().get(id) else { continue };
+            match op.code() {
+                OpCode::CPUI_RETURN => return true,
+                OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => {
+                    if let Some(o) = op.get_out() {
+                        if !seen.contains(&o) && seen.len() < 32 {
+                            seen.push(o);
+                            todo.push(o);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+/// Is `vn`, through copies and merges, a PIECE of two smaller values?
+fn pieced(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(op) = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|id| data.obank().get(id)) else {
+        return false;
+    };
+    match op.code() {
+        OpCode::CPUI_PIECE => true,
+        OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL if depth > 0 => {
+            (0..op.num_input()).filter_map(|i| op.get_in(i)).any(|i| i != vn && pieced(data, i, depth - 1))
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]

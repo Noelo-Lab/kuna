@@ -405,6 +405,18 @@ and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
 
+`kuna-arm-opaque-double.xml` checks option `armfloatargs` at gcc -O2 calls whose
+callee nothing describes: undefined symbols in ARM and Thumb objects, imports
+behind PLT stubs in a linked shared object, and a function pointer. A double the
+caller computes, loads, converts or moves into a `d` register for the call is
+passed, which `armfloatargs off` drops with the computation, and the AAPCS-VFP
+back-fill slot below such a double is not filled. An earlier call's result, an
+entry `d0` the caller only forwards and a stored double are not passed, as for
+`s0` and `r0`, and a callee whose body never reads `d0` receives nothing. Authored
+glibc shapes keep their prototypes: a float computed into `s0` beside the
+caller's `s1` is no double, and a double the function returns is no argument of
+the no-return call it makes on another path.
+
 `kuna-calleefloatreads.xml` checks calls to callees with no prototype that
 read a float argument register: an x86-64 `xmm0` written after a `pxor`, an
 ARM hard-float double forwarded or computed in `d0`, and a variadic callee

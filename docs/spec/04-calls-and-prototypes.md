@@ -9830,6 +9830,35 @@ unknown call is not an argument. For that arity check a recovered VFP parameter
 reads the recovered list as closed, because a variadic callee receives even its
 fixed floats in `r0`-`r3`.
 
+With `armfloatargs`, a call whose callee nothing in the run answers for is scored
+as its `s` registers are (`kuna_armfloatreturn.rs (opaque_callee)`): an
+indirect call, or a direct one with no stated or declared prototype whose body,
+as far as the entry decode reads it, neither reads the register, writes it first,
+nor only returns without touching it. That is an undefined symbol in a
+relocatable object, an import behind a PLT stub that jumps through its GOT slot,
+a wrapper that branches or calls on to such code with the register unwritten, or
+a body the decode cannot finish, such as one kuna decodes in the wrong
+instruction set. There a double the caller computes, loads, converts or moves
+into a `d` register for the call is an argument, so `sink_d(d * 3.0)` keeps its
+argument and the multiply, and glibc's `ostream::_M_insert<double>` passes its
+double to the virtual `num_put::do_put`. As for `s0` and `r0`, a `d0` the caller
+only forwards from its own entry, an earlier call's result left in the register,
+and a value the caller also reads elsewhere are not; the first two are
+limitations those registers share (`gd(fd())` compiles exactly as `fd(); gd();`
+would). A callee whose decoded body never reads the register still answers for
+itself and receives nothing. Two values reach such a call without being a
+double argument (`kuna_armfloatreturn.rs (opaque_non_argument)`): a piece of two
+single-precision words, such as glibc's `acospif` computing a float into `s0`
+for `__math_invalidf` while it writes `d0` whole elsewhere, and a value that also
+reaches a RETURN, the caller's pending result left in `d0` at a call that does
+not return, as in glibc's `drand48` before `__stack_chk_fail`.
+
+At such a call, a single in the AAPCS-VFP back-fill slot below the doubles that
+holds only what the caller left there is that slot, and no later argument fills
+it (`fspec.rs (drop_held_backfill)`): `sink_fd(f, d * 2.0)` passes `f` in `s0` and
+the double in `d1`, and `s1`, still half of the caller's entry `d0`, is no
+argument.
+
 Declared prototypes and explicit return storage keep precedence throughout.
 This is scalar inference, not aggregate or vector ABI reconstruction: a
 homogeneous float aggregate returned in `d0`-`d3` (`struct { double a, b; }`,
