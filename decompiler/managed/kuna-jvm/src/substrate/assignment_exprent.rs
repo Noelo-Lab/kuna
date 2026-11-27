@@ -13,6 +13,7 @@ use crate::fixes::kt_operators::kt_compound_bitwise_assignment;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_util::writing_kotlin;
+use crate::fixes::nested_class_vars;
 use crate::fixes::numeric_types::{implicit_widening_arithmetic, ternary_numeric_arms};
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
@@ -210,6 +211,7 @@ impl AssignmentExprent {
                 &field.get_descriptor(),
             );
         } else if left.try_as_var().is_some_and(|v| v.is_definition()) {
+            nested_class_vars::unmark_constant_capture(left, self.get_right());
             buffer.append_buffer(&kt_unrepresentable_declared_type::initialized(|| {
                 left.to_java(indent)
             }));

@@ -763,7 +763,7 @@ kuna	740edc0624517c72
 case	default/pkg/TestPrimitiveTypeClasses	Default	classes/java8/pkg/TestPrimitiveTypeClasses
 kuna	a080da6ea3d08411
 case	default/pkg/TestPrivateClasses	Default	classes/java8/pkg/TestPrivateClasses
-kuna	fbe87151febc7798
+kuna	1ec8da3309ed1fbc
 case	default/pkg/TestPrivateEmptyConstructor	Default	classes/java8/pkg/TestPrivateEmptyConstructor
 kuna	dd08445eb8ad7335
 case	default/pkg/TestPrivateInterfaceMethod	Default	classes/java9/pkg/TestPrivateInterfaceMethod
@@ -2020,3 +2020,5 @@ case	kuna-fixes/pkg/TestFieldReadAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestRecordPatternNestedType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternNestedType
 # kuna-fixes/src/pkg/TestSerializableLambda.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestSerializableLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestSerializableLambda
+# kuna-fixes/src/pkg/TestConstantCapture.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestConstantCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestConstantCapture

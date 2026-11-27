@@ -997,7 +997,12 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    method's variables, and places each local class's definition in the statement where it
    is first used. `jvm_synthetic_not_set` recognizes compiler-generated members (outer-instance
    and captured-variable fields, accessors, `class$` caches) by their shape even without
-   the `ACC_SYNTHETIC` flag, which some compilers and obfuscators omit.
+   the `ACC_SYNTHETIC` flag, which some compilers and obfuscators omit. A captured variable
+   is declared `final`, except (kuna, `nested_class_vars::unmark_constant_capture`) in a
+   Java 8+ class when its initializer is a constant and its type a primitive or `String`:
+   `final String s = ""` is a constant variable, which javac inlines rather than captures,
+   so the recompiled class lost the `val$s` field and its constructor parameter; the
+   capture in the class file proves the local was not one.
 4. **Synthetic accessors.** `decompiler/managed/kuna-jvm/src/p4_calls/nested_member_access.rs
    (NestedMemberAccess::propagate_member_access)` replaces calls to the `access$NNN`
    methods javac generates for private members of nested classes with the field access or
