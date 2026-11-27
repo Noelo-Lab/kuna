@@ -14,6 +14,7 @@ use crate::fixes::kt_operators::kt_compound_bitwise_assignment;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_util::writing_kotlin;
+use crate::fixes::lambdas::explicit_lambda_parameters;
 use crate::fixes::nested_class_vars;
 use crate::fixes::numeric_types::{implicit_widening_arithmetic, ternary_numeric_arms};
 use crate::rt::{BitSet, JavaEq, JavaHash};
@@ -201,6 +202,7 @@ impl AssignmentExprent {
         if hidden_field {
             return TextBuffer::new();
         }
+        explicit_lambda_parameters::mark_assigned(&left_type, self.get_right());
 
         let mut buffer = TextBuffer::new();
 

@@ -25,6 +25,7 @@ use crate::fixes::constructor_calls;
 use crate::fixes::lambdas;
 use crate::fixes::kt_java_syntax::kt_java_reference_cast;
 use crate::fixes::kt_java_syntax::kt_unboxing_cast_type;
+use crate::fixes::lambdas::explicit_lambda_parameters;
 use crate::fixes::lambdas::lambda_argument_overload;
 use crate::fixes::lambdas::lambda_pertinence;
 use crate::fixes::lambdas::lambda_type_variable_target;
@@ -1838,6 +1839,7 @@ impl InvocationExprent {
         }
 
         lambda_type_variable_target::mark(self);
+        explicit_lambda_parameters::mark(self);
 
         let start: usize = if is_enum { 2 } else { 0 };
         let mut parameters: Vec<Exprent> = lst_parameters.to_vec();

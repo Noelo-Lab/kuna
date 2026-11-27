@@ -1113,7 +1113,21 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    call site names. It is used only when every type variable is determined and a parameter
    is more specific than `Object` (where the raw type would serve), for the receiver cast
    when no inferred type is stored, and by `initializer_local_type` as the type of a lambda
-   value.
+   value. (kuna) Vineflower writes a lambda's parameters without types, so a lambda whose
+   target leaves a parameter's type open printed text whose parameter is an `Object`:
+   `g(s -> s.length())` for `g(Function<?, ?>)` (the wildcard's bound, JLS 9.9),
+   `h(s -> s.length())` for `<T> h(Function<T, ?>)` (an implicitly typed lambda does not take
+   part in inferring `T`), and with a LocalVariableTable `Function<?, ?> f = s -> s.length()`.
+   `explicit_lambda_parameters` marks a lambda passed to a call or assigned to a variable or
+   field whose target type gives a parameter that is a type variable of the interface
+   another type than the instantiated one, through a wildcard or a type variable of the
+   called method that neither another parameter nor the result mentions; the lambda is
+   then written with every parameter declared with its implementation method's type
+   (`(String s) -> s.length()`), which inference from explicit parameter types (JLS 18.5.3)
+   accepts for these targets. A parameter whose target type argument is a class with type
+   arguments, or whose type in the interface method is generic, leaves the lambda as it
+   was: a declared type must equal the target's exactly, and the class file holds only its
+   erasure.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.

@@ -52,6 +52,9 @@ pub struct NewExprentData {
     /// kuna fix `implicit_outer_instance`: javac's outer-instance null check
     /// of this creation was removed (a qualified `x.new Inner()`).
     pub outer_checked: bool,
+    /// kuna fix `explicit_lambda_parameters`: the lambda declares its
+    /// parameters' types.
+    pub explicit_lambda_params: bool,
 }
 
 java_subclass!(pub NewExprent: Exprent, ExprentKind::New(NewExprentData),
@@ -149,6 +152,7 @@ impl NewExprent {
                 generic_args: Vec::new(),
                 inferred_lambda_type: None,
                 outer_checked: false,
+                explicit_lambda_params: false,
             }),
         );
         e.add_bytecode_offsets(bytecode_offsets);
@@ -714,6 +718,7 @@ impl NewExprent {
                     &mut buf,
                     method_object,
                     indent,
+                    self.d(|d| d.explicit_lambda_params),
                 );
             } else if !self_reference {
                 ClassWriter::new().write_class(
@@ -1401,6 +1406,10 @@ impl NewExprent {
 
     pub fn is_outer_checked(self) -> bool {
         self.d(|d| d.outer_checked)
+    }
+
+    pub fn set_explicit_lambda_params(self) {
+        self.d_mut(|d| d.explicit_lambda_params = true)
     }
 
     pub fn set_outer_checked(self) {

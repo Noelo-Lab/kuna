@@ -2056,3 +2056,5 @@ case	kuna-fixes/pkg/TestAnonymousVarReceiver	Kuna Fixes	kuna-fixes/classes/pkg/T
 case	kuna-fixes/pkg/TestListedInnerMember	Kuna Fixes	kuna-fixes/classes/pkg/TestListedInnerMember
 # kuna-fixes/src/pkg/TestLambdaInstantiatedType.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestLambdaInstantiatedType	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaInstantiatedType
+# kuna-fixes/src/pkg/TestExplicitLambdaParams.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestExplicitLambdaParams	Kuna Fixes	kuna-fixes/classes/pkg/TestExplicitLambdaParams

@@ -4,6 +4,7 @@
 //! cast (`(Comparator & Serializable) (a, b) -> 1`), and `receiver_cast`
 //! casts a lambda or method reference that is the receiver of a call.
 
+pub(crate) mod explicit_lambda_parameters;
 pub(crate) mod lambda_argument_overload;
 pub(crate) mod lambda_pertinence;
 pub(crate) mod lambda_return_type_argument;
