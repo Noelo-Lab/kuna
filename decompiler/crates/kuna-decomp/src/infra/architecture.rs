@@ -2996,7 +2996,7 @@ impl Architecture {
         self.cond_stmts = crate::p8_structure::kuna_condstmts::DEFAULT_CAP; // (kuna) condstmts default-on: a folded condition operand prints at most 3 statements before its test (0/675 ablation)
         self.cond_fold_chain = crate::p8_structure::kuna_fatalchain::ChainFold::Auto; // (kuna) condfold default `auto`: a chain of tests into one no-return call folds into one condition, and in an optimized function a chain into any block it alone enters
         self.cond_fold = 0; // (kuna) default-OFF opt-in (angr Phoenix MultiStatementExpression short-circuit relaxation: fold `A || B` across a sibling carrying a bounded prefix, rendered as a comma expression; OFF is byte-identical)
-        self.goto_reduce = crate::p8_structure::kuna_gotoreduce::GotoReduceMode::On; // (kuna) gotoreduce default `on`: call-free return tails and return tails with a call (angr SAILR ReturnDuplicator/ReturnDuplicatorLow; 0/675 ablation)
+        self.goto_reduce = crate::p8_structure::kuna_gotoreduce::GotoReduceMode::Auto; // (kuna) gotoreduce default `auto`: `on` (call-free return tails and return tails with a call), except an unoptimized function keeps the gotos to its labels
         self.flatten_ifelse = true; // (kuna) DIV-13 default-on (angr IfElseFlattener; 0/675 ablation)
         self.revert_cross_jumps = true; // (kuna) DIV-13 default-on (angr SAILR CrossJumpReverter; 0/675 ablation)
         self.dedup_ite_tail = true; // (kuna) DIV-13 default-on (angr structurer ITE region-dedup — merge duplicated if/else tails; 0/675 ablation)
