@@ -3079,7 +3079,7 @@ pub(crate) fn parse_args_with_filters(
             "--functions" => {
                 let v = take(argv, &mut i, "--functions")?;
                 let list = names.get_or_insert_with(Vec::new);
-                match lists.read("--functions", &v)? {
+                match lists.read_names("--functions", &v)? {
                     Listed::Inline(v) => list.extend(
                         v.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
                     ),

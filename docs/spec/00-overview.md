@@ -2437,16 +2437,19 @@ selection of 300,000 addresses is a file, not 600,000 arguments. `--functions`,
 (`decompiler/crates/kuna-cli/src/listfile.rs (ListReader)`). The format is the
 `--define-function` file format: one entry per line, `#` comments, blank lines
 skipped. A line is one whole entry, so a name may hold the spaces and commas the
-inline comma list splits on. An address line may also be a `--define-function`
-declaration, which selects its start, so a single boundaries file declares and selects.
+inline comma list splits on. In a name list a `#` opens a comment only at the start
+of a line or after a blank, because a name kuna prints can hold one (a Swift
+`vtable#2` thunk, a Rust v0 `{closure#0}`). An address line may also be a
+`--define-function` declaration, which selects its start, so a single boundaries
+file declares and selects.
 Repeated flags add up. `--functions` used to keep only its last occurrence, which a
 second list would have dropped without a word. The escapes keep every earlier value
 spellable. `@@` stands for a literal leading `@`, which a decorated MSVC name needs.
 `@-` is standard input, read once per command line. `kuna decompile`'s single target
 is forwarded to the shared parser with its `@` doubled, so a name stays a name there.
-An empty list is an error rather than an empty selection, because an empty selection
-means the whole binary. The selection resolves one entry at a time, which is why an
-address lookup is a binary search of the cached, address-ordered inventory
+An empty list is an error rather than an empty selection, because an empty `--addr`
+selection means the whole binary. The selection resolves one entry at a time, which
+is why an address lookup is a binary search of the cached, address-ordered inventory
 (`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::find_entry_at)`)
 rather than a scan of a fresh copy of it. The copy cost every address the size of the
 whole inventory, about 40 ms per address on a 98,598-function library, so a list of

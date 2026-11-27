@@ -5,9 +5,11 @@
 //! fits a command line. The format is the `--define-function @FILE` one: an entry
 //! per line, surrounding blanks trimmed, `#` to the end of a line a comment, blank
 //! lines skipped. A line is one whole entry, so a `--functions` file can hold a
-//! name with spaces or commas that the inline comma list cannot. `@-` reads
-//! standard input, once per command line. A value starting `@@` is that value with
-//! one `@` removed, which keeps a name that starts with `@` expressible.
+//! name with spaces or commas that the inline comma list cannot; there a `#` starts
+//! a comment only at the start of a line or after a blank, because names kuna
+//! prints hold one. `@-` reads standard input, once per command line. A value
+//! starting `@@` is that value with one `@` removed, which keeps a name that starts
+//! with `@` expressible.
 
 use std::io::{IsTerminal as _, Read as _};
 
@@ -45,7 +47,28 @@ pub(crate) struct ListReader {
 }
 
 impl ListReader {
+    /// An address list, where any `#` starts a comment.
     pub(crate) fn read<'a>(&mut self, flag: &str, value: &'a str) -> Result<Listed<'a>, String> {
+        self.read_with(flag, value, |line| line.find('#'))
+    }
+
+    /// A name list, where a `#` starts a comment only at the start of a line or
+    /// after a blank: a Swift or Rust v0 name such as `M.T.vtable#2.method` or
+    /// `f::{closure#0}` holds one.
+    pub(crate) fn read_names<'a>(&mut self, flag: &str, value: &'a str) -> Result<Listed<'a>, String> {
+        self.read_with(flag, value, |line| {
+            line.match_indices('#')
+                .map(|(at, _)| at)
+                .find(|&at| line[..at].chars().next_back().is_none_or(char::is_whitespace))
+        })
+    }
+
+    fn read_with<'a>(
+        &mut self,
+        flag: &str,
+        value: &'a str,
+        comment: impl Fn(&str) -> Option<usize>,
+    ) -> Result<Listed<'a>, String> {
         let Some(source) = value.strip_prefix('@') else {
             return Ok(Listed::Inline(value));
         };
@@ -63,10 +86,12 @@ impl ListReader {
             })?
         };
         let entries: Vec<(usize, String)> = text
+            .strip_prefix('\u{feff}')
+            .unwrap_or(&text)
             .lines()
             .enumerate()
             .filter_map(|(n, line)| {
-                let entry = line.split('#').next().unwrap_or("").trim();
+                let entry = line[..comment(line).unwrap_or(line.len())].trim();
                 (!entry.is_empty()).then(|| (n + 1, entry.to_string()))
             })
             .collect();
@@ -122,6 +147,19 @@ mod tests {
             got,
             vec![(2, "main".into()), (4, "parse".into()), (5, "operator new".into())]
         );
+    }
+
+    #[test]
+    fn a_name_keeps_a_hash_that_follows_no_blank() {
+        let (_keep, value) =
+            file("\u{feff}M.T.vtable#2.method\n#x\nf::{closure#0}  # a closure\nmain\t#tab\n");
+        let got = entries(ListReader::default().read_names("--functions", &value).unwrap());
+        assert_eq!(
+            got,
+            vec![(1, "M.T.vtable#2.method".into()), (3, "f::{closure#0}".into()), (4, "main".into())]
+        );
+        let got = entries(ListReader::default().read("--addr", &value).unwrap());
+        assert_eq!(got, vec![(1, "M.T.vtable".into()), (3, "f::{closure".into()), (4, "main".into())]);
     }
 
     #[test]

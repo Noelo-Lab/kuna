@@ -1722,10 +1722,12 @@ The file holds one entry per line. Blank lines are skipped, `#` starts a comment
 that runs to the end of its line, and the spaces around an entry are trimmed. A line
 is one whole entry: a `--functions` file is not split on commas, so it can name
 `operator new` or a demangled name that contains a comma, which the inline list
-cannot. A line of an `--addr` file is anything `--addr` takes, or a
-`--define-function` line (`start[-end][=name]`), which selects its start. The
-boundaries file kept for `--define-function @FILE` therefore also selects the
-functions it declares:
+cannot. In a `--functions` file a `#` starts a comment only at the start of a line
+or after a space or tab, because a name kuna prints can hold one: the Swift thunk
+`M.T.vtable#2.method`, the Rust closure `f::{closure#0}`. A line of an `--addr`
+file is anything `--addr` takes, or a `--define-function` line
+(`start[-end][=name]`), which selects its start. The boundaries file kept for
+`--define-function @FILE` therefore also selects the functions it declares:
 
 ```bash
 kuna decompile-project ./packed.exe -o proj --define-function @bounds.txt --addr @bounds.txt

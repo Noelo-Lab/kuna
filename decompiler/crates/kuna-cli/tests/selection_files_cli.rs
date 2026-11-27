@@ -70,6 +70,18 @@ fn decompile_all_reads_names_and_addresses_from_a_file() {
     assert_eq!(ok(&with(&run, &["--addr", "@-"]), Some("0x40071d\n0x400664\n")), addrs);
 }
 
+/// A name kuna prints can hold a `#`, as this Swift vtable thunk's does, and a
+/// `--functions` file keeps it whole: there a `#` opens a comment only after a blank.
+#[test]
+fn a_name_list_keeps_a_hash_inside_a_name() {
+    let bin = common::fixture("macho_swift_objcthunk_arm64");
+    let run = ["decompile-all", bin.as_str(), "--json"];
+    let inline = ok(&with(&run, &["--functions", "objcfix.Replay.vtable#2.modify"]), None);
+    assert!(inline.contains("\"count\": 1"), "{inline}");
+    let (_keep, file) = list("# Swift thunks\nobjcfix.Replay.vtable#2.modify  # the setter\n");
+    assert_eq!(ok(&with(&run, &["--functions", &file]), None), inline);
+}
+
 /// The issue's invocation: the file `--define-function` reads is also the
 /// `--addr` list, and the export is the one the same flags written out make,
 /// its `.asm` scoped to the two declared functions.
