@@ -1,4 +1,7 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "cxx_allocation_operators.rs"]
+mod cxx_allocation_operators;
+
 #[path = "ppc32_computed_lr.rs"]
 mod ppc32_computed_lr;
 #[path = "mips_elf_selection.rs"]
@@ -397,6 +400,8 @@ mod narrow_extension;
 
 #[path = "narrow_switch_labels.rs"]
 mod narrow_switch_labels;
+#[path = "narrow_compare_emission.rs"]
+mod narrow_compare_emission;
 #[path = "narrow_multiply_emission.rs"]
 mod narrow_multiply_emission;
 

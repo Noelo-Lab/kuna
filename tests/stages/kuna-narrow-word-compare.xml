@@ -1,0 +1,18 @@
+<decompilertest>
+<binaryimage arch="x86:LE:16:Real Mode">
+<!-- A 16-bit ADD followed by TEST AX,AX checks the word, not the full
+     sum that C computes when `int` is wider. P9 keeps the result width. -->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+5589e58b460403460685c00f94c00fb6c05dc3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="sum_is_zero"/>
+</binaryimage>
+<script>
+  <com>parse line extern uint2 sum_is_zero(uint2 x, uint2 y);</com>
+  <com>lo fu sum_is_zero</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="NARROW WORD COMPARE: wrap before testing for zero" min="1" max="1">\((uint2|ushort|unsigned short)\)\([^)]+ \+ [^)]+\) == 0</stringmatch>
+</decompilertest>
