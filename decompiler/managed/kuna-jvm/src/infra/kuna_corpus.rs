@@ -2,8 +2,7 @@
 //! an option map and the Java or Kotlin text pinned for the main class.
 //!
 //! A case is run the way Vineflower's `SingleClassesTest` fixture runs it: the option pairs go to
-//! [`Fernflower::new`] (which overlays them on the defaults) with no plugin loaded (`jvm_plugins`
-//! off unless the case sets it; see [`engine_options`]), every class file is added as a source
+//! [`Fernflower::new`] (which overlays them on the defaults), every class file is added as a source
 //! in manifest order, the context is decompiled and then cleared. The fixture's saver writes every
 //! class of a class-file source flat into one directory, so the compared text is the *last*
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
@@ -20,7 +19,6 @@ use crate::class_writer::{FabricJavadocStyle, IFabricJavadocProvider};
 use crate::decompiler_context::DecompilerContext;
 use crate::fernflower::{DecompiledClass, Fernflower};
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
-use crate::kuna_plugins::JVM_PLUGINS;
 use crate::rt::{self, try_catch, Caught};
 use crate::struct_class::StructClass;
 use crate::struct_field::StructField;
@@ -121,16 +119,6 @@ struct RawCase {
     expected: Option<String>,
     compare: Vec<String>,
     digest: Option<String>,
-}
-
-/// The option pairs the engine runs `case` with: the fixture registers no plugin, so
-/// `jvm_plugins` is off unless the case sets it.
-pub fn engine_options(case: &Case) -> Vec<(String, String)> {
-    let mut options = vec![(JVM_PLUGINS.to_string(), "0".to_string())];
-    for (key, value) in &case.options {
-        overlay_option(&mut options, key, value);
-    }
-    options
 }
 
 /// Puts `key=value` into `options`, replacing an earlier value of `key` in place.
@@ -521,7 +509,7 @@ pub fn execute(case: &Case) -> EngineRun {
     });
     let mut units = Vec::new();
     let outcome = try_catch(|| {
-        let mut fernflower = Fernflower::new(&engine_options(case), logger.clone());
+        let mut fernflower = Fernflower::new(&case.options, logger.clone());
         if let Some(provider) = case
             .javadoc
             .as_deref()

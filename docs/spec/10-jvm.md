@@ -131,8 +131,7 @@ method pipeline and the class writer for the classes it claims. Plugins are
 not discovered on a class path: the engine carries the plugins `java -jar vineflower.jar`
 bundles, in its registration order, in
 `decompiler/managed/kuna-jvm/src/infra/kuna_plugins.rs`, and the custom property
-`jvm_plugins` (on unless set; the corpus runner turns it off for Vineflower's test fixture,
-which loads none) decides whether they load. It is not a catalog option: off gives what
+`jvm_plugins` (on unless set) decides whether they load. It is not a catalog option: off gives what
 `jvm_kt_enable off` gives, without the IdeaNotNull pass. Each plugin's options join the option
 map with the plugin's defaults when the plugins initialize, and an option a caller set
 keeps its value. Of the two Java plugins, IdeaNotNull is ported, in
@@ -1027,8 +1026,7 @@ of comments (`ClassWriter::dump_error`): `$VF: Couldn't be decompiled`, then the
 `error-message` note (a request to report the class to kuna's tracker; section 10.16), the
 exception text and its throw location, and a listing of
 the method's bytecode. The class around it is written normally. (Vineflower's
-`dump-exception-on-error`, which the corpus fixture turns off, drops the note and the
-exception.)
+`dump-exception-on-error` off drops the note and the exception.)
 
 **Layout.** The buffer is a tree of line groups; after a class is written,
 `decompiler/managed/kuna-jvm/src/p9_emit/text_buffer.rs (TextBuffer::reformat)` breaks
@@ -1062,8 +1060,8 @@ it. A method span further carries the method's `$VF:` comments when its wrapper'
 **Failure granularity.** A method failure becomes the comment block above and the class
 survives. A class whose processing throws (section 10.11) is written as
 `// $VF: Couldn't be decompiled` followed by the exception, in place of its body. A class
-whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment
-(not at all under the corpus fixture's `dump-exception-on-error=0`). Nothing
+whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment.
+Nothing
 else stops the run: the other classes of the input are still written. A Java
 `RuntimeException` and an ordinary Rust panic (an index out of bounds, an `unwrap` on
 `None`) are caught at these boundaries alike (section 10.13), and so is recursion deeper
@@ -1270,7 +1268,7 @@ chooser is asked once more while statements are written, to decide whether they 
 semicolon.) With `jvm_kt_enable`
 off, a Kotlin class takes the Java pipeline and is written as Java, the `@Metadata`
 annotation printed like any other annotation, and its metadata is not parsed.
-With no plugin loaded (`jvm_plugins=0`, the corpus fixture) every class is Java.
+With no plugin loaded (`jvm_plugins=0`) every class is Java.
 
 **Metadata.** Asking the chooser also parses the class's metadata, once
 (`KotlinChooser::parse_metadata_for`). The annotation's `k` (the kind), `d1` (the data)
@@ -1461,7 +1459,7 @@ mechanisms groups of them share. A fix longer than a few lines lives in its fami
 gate: its code takes the place of the Java's at its site, and the engine has one mode.
 `Fernflower::new` (`decompiler/managed/kuna-jvm/src/p0_knowledge/fernflower.rs`) sets the
 `error-message` default to kuna's note (`report_to_kuna`). The regression corpus's runner
-(`decompiler/managed/kuna-jvm/src/infra/kuna_corpus.rs (engine_options)`) runs every case
+(`decompiler/managed/kuna-jvm/src/infra/kuna_corpus.rs (execute)`) runs every case
 with the defaults: the cases from Vineflower's own test suite against a digest of the text kuna
 printed when last reviewed, and kuna's cases (`decompiler/managed/kuna-jvm/corpus/kuna-fixes/`) against kuna's
 reviewed text.
