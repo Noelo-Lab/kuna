@@ -488,7 +488,7 @@ impl Array {
         let (prefix, suffix) = template
             .split_once("[%s]")
             .or_else(|| template.split_once("%s"))?;
-        Some(name.strip_prefix(prefix)?.strip_suffix(suffix)?)
+        name.strip_prefix(prefix)?.strip_suffix(suffix)
     }
 
     fn matches_template(template: &str, name: &str) -> bool {
