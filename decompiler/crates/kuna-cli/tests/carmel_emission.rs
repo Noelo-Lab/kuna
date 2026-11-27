@@ -1866,6 +1866,64 @@ fn carmel_sequential_ff2_store_separates_pointer_and_writeback() {
 }
 
 #[test]
+fn carmel_sequential_subc_flags_only_gate_the_late_intbase_store() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("sequential-subc.bin");
+    let source = scratch.path().join("sequential-subc.c");
+    let executable = scratch.path().join("sequential-subc");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut code = vec![NOP; 6];
+    code.push([0x21, 0xac, 0x20, 0x2b, 0xec, 0]);
+    code.extend([NOP; 5]);
+    code.extend([[0x8e, 0x7c, 0xe3, 0x31, 0x5f, 0x0d], NOP, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], NOP]);
+    fs::write(&binary, code.as_flattened()).unwrap();
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n\
+        static volatile unsigned short lhs_cell, rhs_cell;\n");
+    let mut checks = String::new();
+    for (row, (r7, r0, a1, cecfg, table, ecfg, new_r7, new_r0, flags, left, right)) in [
+        (0xc048, 0x4040, 0xc048, 0x0888, 0x0080, 0, 0xc04c, 0x403f, 0x1009, 0, 0xd135),
+        (0xc048, 0x4040, 0x1234, 0x0888, 0x0080, 0, 0xc04c, 0x403f, 0, 0x51ec, 0x2143),
+        (0xc048, 0x4040, 0x1234, 0x1000, 0, 0, 0xc04c, 0x403f, 9, 0x2143, 0x2143),
+        (0xffff, 0x4040, 0x7fff, 0, 0xffff, 0x20, 3, 0x403f, 0x3024, 0x4000, 0xe89a),
+        (0xc048, 0xc048, 0x1234, 0, 0xffff, 0, 0xc04c, 0xc047, 0x3000, 0xd135, 0x2143),
+    ].into_iter().enumerate() {
+        let specs = scratch.path().join(format!("subc-specs-{row}"));
+        tracked_carmel_entry_specs(&specs, &[
+            ("R7", r7), ("R0", r0), ("RN7", 4), ("PACFG", 0), ("EST", 0), ("A0L", 0xffff),
+            ("A1L", a1), ("CECFG2", 0), ("INTBASE", 0xd135),
+        ], 0, 0);
+        for (reg, expected) in [("R7", new_r7), ("R0", new_r0), ("EST", flags)] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "param 0 %CECFG1 unsigned short ce", "--assert", "param 1 %CETBL unsigned short table",
+                "--assert", "param 2 %ECFG unsigned short ecfg",
+                "--assert", &format!("data [data,{r7:#x}] volatile unsigned short lhs_cell"),
+            ]);
+            if r7 != r0 {
+                kuna.args(["--assert", &format!("data [data,{r0:#x}] volatile unsigned short rhs_cell")]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let name = format!("subc_{row}_{reg}");
+            writeln!(c, "#define sub_0 {name}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+            writeln!(checks, "lhs_cell = rhs_cell = 0x2143; \
+                if ({name}({cecfg}, {table}, {ecfg}) != {expected} || lhs_cell != {left} || rhs_cell != {right}) \
+                    return {};", row + 1).unwrap();
+        }
+    }
+    writeln!(c, "int main(void) {{\n{checks}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

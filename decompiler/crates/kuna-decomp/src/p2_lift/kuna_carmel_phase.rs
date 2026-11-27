@@ -36,6 +36,7 @@ pub(crate) struct PhaseDecode<'a> {
     delay_tick: Option<u64>,
     delay_mask: Option<u64>,
     fixed_read_tick: Option<u64>,
+    fixed_store: Option<u64>,
     end_unmodeled: Option<u64>,
     idle_tick: Option<u64>,
     reset: Option<u64>,
@@ -60,6 +61,7 @@ impl<'a> PhaseDecode<'a> {
         let delay_tick = index(b"carmel_delay_slot_admission");
         let delay_mask = index(b"carmel_modeled_delay_mask");
         let fixed_read_tick = index(b"carmel_fixed_read_admission");
+        let fixed_store = index(b"carmel_single_data_store");
         let end_unmodeled = index(b"carmel_end_unmodeled_issue");
         let idle_tick = index(b"carmel_record_idle_admission");
         let reset = index(b"carmel_d2_reset");
@@ -83,7 +85,8 @@ impl<'a> PhaseDecode<'a> {
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
-            fixed_read_tick, end_unmodeled, idle_tick, reset, register_ex, data_ex, address_ex, operand_fetch, reset_ex_end,
+            fixed_read_tick, fixed_store, end_unmodeled, idle_tick, reset, register_ex, data_ex, address_ex,
+            operand_fetch, reset_ex_end,
             staged_data, ff })
     }
 
@@ -133,6 +136,8 @@ impl<'a> PhaseDecode<'a> {
                 markers.push((op_id, offset, Mark::Slot));
             } else if Some(index) == self.end_unmodeled {
                 markers.push((op_id, offset, Mark::EndUnmodeled));
+            } else if Some(index) == self.fixed_store {
+                markers.push((op_id, offset, Mark::FixedStore));
             } else if Some(index) == self.delay_mask {
                 delay_queries.push((op_id, offset));
             } else if index == self.admission {
@@ -207,7 +212,7 @@ impl<'a> PhaseDecode<'a> {
                 cleanup.push(marker);
             } else {
                 known.insert(offset);
-                if kind == Mark::EndUnmodeled {
+                if matches!(kind, Mark::EndUnmodeled | Mark::FixedStore) {
                     cleanup.push(marker);
                 }
             }
@@ -299,7 +304,7 @@ impl<'a> PhaseDecode<'a> {
         dual_reads: &BTreeSet<u64>, ff_regs: &[Address], block: BlockId,
     ) -> Trace {
         let mut trace = Trace::default();
-        let mut fixed_read = false;
+        let mut fixed_bus = None;
         let mut current = fd.bb_op_head(block);
         while let Some(id) = current {
             let op = fd.obank().get(id).unwrap();
@@ -313,7 +318,7 @@ impl<'a> PhaseDecode<'a> {
                 trace.first.get_or_insert_with(|| addr.clone());
                 trace.last = Some(addr.clone());
                 trace.redirect_edges = 0;
-                fixed_read = false;
+                fixed_bus = None;
             }
             let marker = userop(fd, op);
             match marker {
@@ -323,7 +328,10 @@ impl<'a> PhaseDecode<'a> {
                 }
                 Some(index) if Some(index) == self.fixed_read_tick => {
                     trace.events.push(Event::Tick(id, false));
-                    fixed_read = true;
+                    fixed_bus = Some(OpCode::CPUI_LOAD);
+                }
+                Some(index) if Some(index) == self.fixed_store => {
+                    fixed_bus = Some(OpCode::CPUI_STORE);
                 }
                 Some(index) if self.ff.is_some_and(|ff| index == ff.late_tick) => {
                     trace.events.push(Event::Tick(id, true));
@@ -334,14 +342,14 @@ impl<'a> PhaseDecode<'a> {
                 Some(index) if Some(index) == self.redirect => {
                     trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
                 }
-                _ if op.code() == OpCode::CPUI_LOAD && fixed_read => fixed_read = false,
+                _ if fixed_bus == Some(op.code()) => fixed_bus = None,
                 _ if op.code() == OpCode::CPUI_LOAD && dual_reads.contains(&addr.get_offset()) => {}
                 _ if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN
                     | OpCode::CPUI_LOAD | OpCode::CPUI_STORE) => {
                     // Bus effects and opaque transfers can change the spacing
                     // of the next sample. Prove its age again after this op.
                     trace.events.push(Event::Barrier);
-                    fixed_read = false;
+                    fixed_bus = None;
                 }
                 _ => {}
             }
@@ -410,6 +418,7 @@ enum Mark {
     Slot,
     Redirect,
     EndUnmodeled,
+    FixedStore,
     Copy,
 }
 

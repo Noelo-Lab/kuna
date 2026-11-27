@@ -191,6 +191,7 @@ define pcodeop carmel_known_redirect;
 define pcodeop carmel_delay_slot_admission;
 define pcodeop carmel_modeled_delay_mask;
 define pcodeop carmel_fixed_read_admission;
+define pcodeop carmel_single_data_store;
 define pcodeop carmel_end_unmodeled_issue;
 define pcodeop carmel_capture_ff_before_ex;
 define pcodeop carmel_sample_ff_at_of;
@@ -8369,6 +8370,48 @@ macro compact_store_saved_lea(pointer, step) {
     raw_mac_flags(flags, active, 0:4);
   <publish>
     publish_alu_ce(flags);
+    carmel_end_unmodeled_issue();
+}
+
+:SUBC "CE1" "*R7+=RN7","A1L","R7" is $(SHIFT_SEQ) & slot_0_22=0x0e7ce3
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local flags:2 = EST & 0xcfff;
+    if (admitted == 0) goto <publish>;
+    local address:2 = R7;
+    modify_native_agu(R7, RN7, RM6, RL6, RM6_ALIGN, 14:4, 1:2);
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <publish>;
+    local left:8 = sext(A1L) << 16;
+    local right:8 = sext(address) << 16;
+    local carry_in:8 = zext(EST & 1) << 16;
+    local result:8;
+    local active:2;
+    raw_mac_finish(left - right + carry_in - 1, (left & 0xffffffffff) + (~right & 0xffffffffff) + carry_in,
+                   1:1, 1:1, 1:1, result, active);
+    local signed_result:8 = (result ^ 0x8000000000) - 0x8000000000;
+    local shifted:8 = signed_result s>> ((ECFG >> 5) & 1);
+    carmel_single_data_store();
+    *[data]:2 address = shifted(2);
+    raw_mac_flags(flags, active, 0:4);
+  <publish>
+    publish_alu_ce(flags);
+    record_ce_admission();
+}
+
+:MOVE "CE1" "*R0--","INTBASE" is $(SHIFT_SEQ) & slot_0_22=0x315f0d
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    if (admitted == 0) goto <feedback>;
+    local address:2 = R0;
+    modify_native_agu(R0, -1:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <feedback>;
+    compact_store_word(address, INTBASE);
+  <feedback>
+    clock_ce();
     carmel_end_unmodeled_issue();
 }
 

@@ -4150,6 +4150,15 @@ without modifying `Rn`. `SR1` shifts the zero-extended 24-bit saved
 address as one value before storing the low and high words. The two
 16-bit word addresses wrap independently.
 
+Sequential `SUBC CE1,*R7+=RN7,A1L,R7` uses old `R7` as both the
+right operand and the DATA destination. It subtracts the incoming
+borrow, sets flags before limiting, and applies `SR1` to the full
+signed result before extracting the stored word. This single DATA
+write does not interrupt the established issue history. The next
+`MOVE CE1,*R0--,INTBASE` uses its own early admission to decrement
+`R0` and the newer flags to decide whether to write. If the two
+addresses alias, the right store retires last.
+
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
