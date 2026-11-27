@@ -80,6 +80,7 @@ define register offset=0x10a size=2 [ RM0_ALIGN ];
 define register offset=0x10c size=2 [ RM2 ];
 define register offset=0x10e size=2 [ RM2_ALIGN ];
 define register offset=0x110 size=2 [ RM4 ];
+define register offset=0x112 size=2 [ RM4_ALIGN ];
 define register offset=0x114 size=2 [ RM6 ];
 define register offset=0x116 size=2 [ RM6_ALIGN ];
 define register offset=0x118 size=2 [ RN0 ];
@@ -2632,6 +2633,7 @@ macro compact_bank_ports(selected) {
     if ((mask & 0x400) == 0) goto <rm6>;
     swap16(RM4, RM4S);
     swap16(RL4, RL4S);
+    refresh_modulo_alignment(RM4, RM4_ALIGN);
   <rm6>
     if ((mask & 0x800) == 0) goto <done>;
     swap16(RM6, RM6S);
@@ -3429,9 +3431,11 @@ macro compact_move_write_ff(port) {
 
 compact_rm_destination: "RM0" is slot_9_22=0x1842 { export RM0; }
 compact_rm_destination: "RM2" is slot_9_22=0x1843 { export RM2; }
+compact_rm_destination: "RM4" is slot_9_22=0x1846 { export RM4; }
 compact_rm_destination: "RM6" is slot_9_22=0x1847 { export RM6; }
 compact_rm_alignment: is slot_9_22=0x1842 { export RM0_ALIGN; }
 compact_rm_alignment: is slot_9_22=0x1843 { export RM2_ALIGN; }
+compact_rm_alignment: is slot_9_22=0x1846 { export RM4_ALIGN; }
 compact_rm_alignment: is slot_9_22=0x1847 { export RM6_ALIGN; }
 
 :MOVU compact_rm_destination,compact_rm_literal "||" nop_right is
@@ -8672,21 +8676,13 @@ macro compact_check_long_short_write(low, high, word) {
     carmel_end_unmodeled_issue();
 }
 
-macro compact_parallel_advance_r4() {
-    local alignment:2 = 0;
-    if ((PACFG & 0x300) != 0x200) goto <advance>;
-    refresh_modulo_alignment(RM4, alignment);
-  <advance>
-    modify_native_agu(R4, RN4, RM4, RL4, alignment, 8:4, 1:2);
-}
-
 :MPYSU "*R1:long","*R4+=RN4","R7" "||" "MPYSU" "*R0:long","A0H","A0H" is
     (carmel_issue=1 & slot_mode=0 & carmel_phase_emit=1 & carmel_single_issue=0 &
      hw_loop_actions=0 & slot_0_22=0x44850e); (slot_mode=0 & slot_0_22=0x440188) {
     local left:2 = R1;
     local right:2 = R0;
     local source:2 = R4;
-    compact_parallel_advance_r4();
+    modify_native_agu(R4, RN4, RM4, RL4, RM4_ALIGN, 8:4, 1:2);
     X1 = *[data]:2 source;
     local left_next:2 = left + 1;
     local right_next:2 = right + 1;
@@ -8713,7 +8709,7 @@ macro compact_parallel_advance_r4() {
 
 compact_parallel_borrow_dst: "*R4+=RN4" is slot_0_22=0x0c6761 {
     local address:2 = R4;
-    compact_parallel_advance_r4();
+    modify_native_agu(R4, RN4, RM4, RL4, RM4_ALIGN, 8:4, 1:2);
     export address;
 }
 compact_parallel_borrow_dst: "*R6+=RN6" is slot_0_22=0x0c7761 {

@@ -91,6 +91,60 @@ cliw_dm_second: is wide_3_7=16 { local addr:2 = R4 + RF4; export addr; }
     publish_alu_ce((EST & 0xc13f) | (flags & 4) | (mac_flags << 6));
 }
 
+@define CLIW_DM_WORD_MPY "$(CLIW_DM) & wide_0_0=0 & index_high_0=0 & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_3_23=0xfffff & tpl_91_95=16 & tpl_78_82=31 & tpl_73_77>=16 & tpl_73_77<=21 & mac_lo & mac_hi & mac_guard"
+
+cliw_mac1_continuation: is cliw_address_bank=13 & cliw_terminal_ma3_condition=24 & cliw_terminal_ma4=24 &
+    wide_10_14=28 & wide_3_7=8 & tpl_83_86=9 & (tpl_87_90=9 | tpl_87_90=12) {
+    local base:2 = R0;
+    modify_native_agu(R0, 2:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    export base;
+}
+cliw_mac1_continuation: is cliw_address_bank=13 & cliw_terminal_ma3_condition=28 & cliw_terminal_ma4=8 &
+    wide_10_14=24 & wide_3_7=24 & tpl_83_86=11 & (tpl_87_90=11 | tpl_87_90=12) {
+    local base:2 = R4;
+    modify_native_agu(R4, 2:2, RM4, RL4, RM4_ALIGN, 8:4, 4:2);
+    export base;
+}
+
+cliw_mac1_first_is_ff: is tpl_87_90=9 | tpl_87_90=11 { export 0:1; }
+cliw_mac1_first_is_ff: is tpl_87_90=12 { export 1:1; }
+
+macro cliw_dm_word_multiply(lo, hi, guard, first, second) {
+    X1 = first;
+    local flags:2;
+    signed_product_result(lo, hi, guard, first, second, flags);
+    cliw_mac1_status(flags);
+}
+
+# A short request for the long operand's continuation is a separate RA
+# reservation. Only the short result feeds the MAC operand mux.
+:CLIW template_index is $(CLIW_DM_WORD_MPY) & wide_8_9=1 & wide_1_2=1 & cliw_mac1_continuation & cliw_mac1_first_is_ff {
+    build cliw_mac1_continuation;
+    local address:2 = cliw_mac1_continuation;
+    local continuation:2 = address + 1;
+    compact_mpy_three_reads(address, continuation, continuation);
+    local second:2 = *[data]:2 continuation;
+    cliw_read_discarded(address);
+    cliw_read_discarded(continuation);
+    local first:2 = second;
+    if (!cliw_mac1_first_is_ff) goto <product>;
+    first = FF1;
+  <product>
+    cliw_dm_word_multiply(mac_lo, mac_hi, mac_guard, first, second);
+}
+
+# Both postincrements are live even though only MA1 reserves a DATA read.
+:CLIW template_index is $(CLIW_DM_WORD_MPY) & cliw_address_bank=15 &
+    cliw_terminal_ma3_condition=24 & cliw_terminal_ma4=24 &
+    wide_10_14=8 & wide_3_7=9 & wide_8_9=0 & wide_1_2=0 & tpl_87_90=12 & tpl_83_86=8 {
+    local address:2 = R0;
+    modify_native_agu(R0, 1:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    modify_native_agu(R1, 1:2, RM0, RL0, RM0_ALIGN, 2:4, 4:2);
+    local second:2 = *[data]:2 address;
+    cliw_dm_word_multiply(mac_lo, mac_hi, mac_guard, FF1, second);
+}
+@undef CLIW_DM_WORD_MPY
+
 @define CLIW_DM_LONG "$(CLIW_DM) & cliw_address_bank=13 & wide_34_46=0x318 & wide_0_0=0 & wide_10_14=28 & wide_3_7=8 & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_18_23=31"
 :CLIW template_index is $(CLIW_DM_LONG) & wide_8_9=1 & wide_1_2=1 &
     tpl_67_72=36 & tpl_64_66=6 & tpl_62_63=0 & tpl_52_56=16 {

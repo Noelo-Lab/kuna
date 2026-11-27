@@ -5462,6 +5462,17 @@ becomes FF1; an ALU in the same issue reads the old FF1:FF2 pair.
 Inactive address selectors, including the alternate unbound encoding,
 do not introduce DATA effects.
 
+With a MAC1 short input on the continuation of a long access, the
+invocation reserves the short read as well as the whole long pair. The
+two-word address update precedes arbitration. The admitted multiply uses
+the short continuation word, not the low word of the pair; `X1` captures
+the selected first factor, whether it came from that same word or `FF1`.
+In the bank-15 single-read form, the other pointer still postincrements
+without reserving a DATA read.
+In implicit modulo mode, the update uses the same cached alignment as
+other native R4 address generators. A compact RM4 write or a bank
+exchange that replaces RM4 recalculates that alignment.
+
 Bank-14 CLIW terminal addressing separates the template's DATA source from
 the terminal selector. A normal MA4 suffix completes the long MA3 input
 at MA3's base; a long MA4 prefix supplies its own base. The admitted ALU1

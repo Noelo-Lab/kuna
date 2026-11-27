@@ -8724,6 +8724,83 @@ fn carmel_cliw_parallel_reads_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_cliw_mac1_fetches_the_selected_continuation() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let target = "Carmel:BE:24:default:default";
+    let image = common::scratch_file("carmel-cliw-second-mac", "xml");
+    let source = image.with_extension("c");
+    let executable = image.with_extension("exe");
+    let mut c = String::from("#include <stdbool.h>\n\
+        volatile unsigned short first_word = 0xa123, continuation = 3, short_word = 0xfffd;\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (row, (prefix, packet, template, out_pointer, low, high, latch, pointer)) in [
+        ("80ffffc64280", "8c6000dd7142", "864fe0fffff03fffff7ffff8", "R0", 0x369c, 0, 0x1234, 1),
+        ("80ffffc64280", "8c6000dd7142", "84cfe0fffff03fffff7ffff8", "R0", 9, 0, 3, 1),
+        ("80ffffc64290", "8e2000dd61c2", "865fe0fffff03fffff7ffff8", "R4", 0x369c, 0, 0x1234, 1),
+        ("800040c64280804041c64284", "8c6000df2048", "8647e0fffff03fffff7ffff8", "R1",
+         0xc964, 0xffff, 0x1234, 0x4042),
+        ("80ffffc64290308c0e2bec00", "8e2000dd61c2", "865fe0fffff03fffff7ffff8", "R4", 0x369c, 0, 0x1234, 1),
+    ].into_iter().enumerate() {
+        let gap = "2bec002bec00".repeat(6);
+        let (rm, rl, align) = if out_pointer == "R4" {
+            ("RM4", "RL4", "RM4_ALIGN")
+        } else {
+            ("RM0", "RL0", "RM0_ALIGN")
+        };
+        fs::write(&image, format!(
+            "<binaryimage arch=\"{target}\">\n\
+             <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">{prefix}{gap}{packet}2bd8002bec00</bytechunk>\n\
+             <bytechunk space=\"cliw\" offset=\"0\" readonly=\"true\">{template}</bytechunk>\n\
+             <symbol space=\"code\" offset=\"0\" name=\"cliw_mac\"/>\n</binaryimage>\n"
+        )).unwrap();
+        for (column, (reg, expected)) in [("A0L", low), ("A0H", high), ("X1", latch), (out_pointer, pointer)]
+            .into_iter().enumerate()
+        {
+            let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+                .arg("decompile").arg(&image).args(["cliw_mac", "--target", target, "--assert-strict",
+                    "--assert", "param 0 %ECFG unsigned short ecfg",
+                    "--assert", "param 1 %FF1 unsigned short factor",
+                    "--assert", "param 2 %PACFG unsigned short address_mode",
+                    "--assert", &format!("param 3 %{rm} unsigned short modulo"),
+                    "--assert", &format!("param 4 %{rl} unsigned short bound"),
+                    "--assert", &format!("param 5 %{align} unsigned short alignment"),
+                    "--assert", "data [data,0xffff] volatile unsigned short first_word",
+                    "--assert", "data [data,0] volatile unsigned short continuation",
+                    "--assert", "data [data,0x40] volatile unsigned short short_word",
+                    "--assert", &format!("return %{reg} unsigned short")]));
+            let code = String::from_utf8(output.stdout).unwrap();
+            assert!(!code.contains("halt_") && !code.to_lowercase().contains("warning:"), "{code}");
+            let name = format!("project_{row}_{column}");
+            writeln!(c, "#define cliw_mac {name}\n{code}\n#undef cliw_mac").unwrap();
+            writeln!(calls, "if ({name}(0, 0x1234, 0, 7, 0xfff8, 0) != {expected:#x}) return {};",
+                     row * 4 + column + 1).unwrap();
+            if row < 3 && column == 0 {
+                let doubled = expected * 2;
+                writeln!(calls, "if ({name}(1, 0x1234, 0, 7, 0xfff8, 0) != {doubled:#x}) return {};",
+                         row * 4 + column + 17).unwrap();
+            }
+            if row < 3 && column == 3 {
+                let shift = if out_pointer == "R4" { 8 } else { 0 };
+                writeln!(calls, "if ({name}(0, 0x1234, {:#x}, 7, 0xfff8, 0) != 0xfff9) return {};",
+                         3 << shift, row * 4 + column + 29).unwrap();
+            }
+            if row == 4 && column == 3 {
+                writeln!(calls, "if ({name}(0, 0x1234, 0x200, 0, 0, 0) != 0xfff9) return 41;").unwrap();
+            }
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+    for file in [image, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_cliw_unmarked_ma1_uses_the_trailing_address_width() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
