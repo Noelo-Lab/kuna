@@ -309,16 +309,35 @@ impl Funcdata {
     /// Refresh the (member-varnode) covers a HighVariable's cover read depends
     /// on, then re-derive the high's cover across the bank field-split.  The
     /// member-varnode rebuild (`Varnode::updateCover`) is the C++ side effect of
-    /// `HighVariable::updateCover` reading `vn->getCover()`.
+    /// `HighVariable::updateCover` reading `vn->getCover()`, which for a piece
+    /// of a VariableGroup includes the members of every piece it overlaps.
     fn refresh_high_cover(&mut self, high: HighVariableId) {
-        let members: Vec<VarnodeId> = {
-            match self.high_bank().get(high) {
-                Some(h) => (0..h.num_instances()).map(|i| h.get_instance(i)).collect(),
-                None => return,
+        self.sync_cover_dirty_highs();
+        let mut highs = vec![high];
+        if let Some(piece) = self.high_bank().high_piece_id(high) {
+            self.high_bank_mut().update_piece_intersections(piece);
+            for i in 0..self.high_bank().piece_num_intersection(piece) {
+                let other = self.high_bank().piece_get_intersection(piece, i);
+                if let Some(h) = other.and_then(|p| self.high_bank().piece_high(p)) {
+                    highs.push(h);
+                }
             }
-        };
-        for vn in members {
-            self.update_varnode_cover(vn);
+        }
+        for h in highs {
+            let members: Vec<VarnodeId> = match self.high_bank().get(h) {
+                Some(hv) => (0..hv.num_instances()).map(|i| hv.get_instance(i)).collect(),
+                None => continue,
+            };
+            let mut rebuilt = false;
+            for vn in members {
+                if self.vbank().get(vn).is_some_and(|v| v.is_cover_dirty_flag()) {
+                    self.update_varnode_cover(vn);
+                    rebuilt = true;
+                }
+            }
+            if rebuilt {
+                self.high_bank_mut().cover_dirty(h);
+            }
         }
         self.high_update_cover(high);
     }
@@ -447,6 +466,12 @@ impl MergeContext for Funcdata {
     }
     fn bank_update_cover_for(&mut self, high: HighVariableId) {
         self.refresh_high_cover(high);
+    }
+    fn sync_cover_dirty(&mut self) {
+        self.sync_cover_dirty_highs();
+    }
+    fn vn_refresh_cover(&mut self, vn: VarnodeId) {
+        self.update_varnode_cover(vn);
     }
 
     // --- Bank-mediated piece introspection --------------------------------

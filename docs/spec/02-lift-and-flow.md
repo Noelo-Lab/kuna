@@ -4603,6 +4603,17 @@ bytechunks of the real check, the same compare, a `mov x30` forgery in the
 guard block and in an earlier block, an `x30` load from a non-frame address, and
 a guard that traps when the bits agree).
 
+## 2.11 Recovered bodies
+
+Before the `FlowInfo` is built, `decompile_drive.rs (generate_flow_once)` asks
+the deobfuscation plane whether the function is lifted from a recovered body
+instead of its bytes, and after the plain flow `generate_flow` asks it once
+more (chapter [10](10-deobfuscation.md), §10.1). When a body is recovered, the
+flow follower lifts its overlay through the ordinary translator calls, its
+mapped-byte checks accept overlay addresses, and the instruction bound is at
+least 4,000,000. VM devirtualization (the `devirtualize` technique of `option deobfuscate`) is the plane's first
+deobfuscator (§10.2).
+
 ## Darwin AArch64 stack probes
 
 Apple clang calls `___chkstk_darwin` before it allocates a frame larger than a

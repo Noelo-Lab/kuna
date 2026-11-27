@@ -3929,6 +3929,7 @@ impl Action for ActionBlockStructure {
         // tests apart left gotos, structure once more without that and keep
         // the form with fewer.
         use crate::p8_structure::kuna_o0jumps as o0j;
+        crate::kuna_body::begin_structure(data);
         let saved = data.kuna_o0jumps.is_some().then(|| o0j::orientation(data));
         self.region_failed = [false; 2];
         o0j::set_gate(true);
@@ -4037,9 +4038,10 @@ impl ActionBlockStructure {
                     // `negateCondition`s the region structurer recorded (the same
                     // CBRANCH `boolean_flip`/`fallthru_true` toggle the
                     // CollapseStructure path applies via `take_pending_flips`).
-                    for bb in flips {
+                    for &bb in &flips {
                         data.block_basic_negate_lastop(bb);
                     }
+                    crate::kuna_body::record_structure_flips(data, &flips);
                     // Structured by the region structurer; report a single change so
                     // the ActionPool sees progress (spirit of `getChangeCount() > 0`).
                     self.base_mut().count += 1;
@@ -4179,9 +4181,10 @@ impl ActionBlockStructure {
         // `fallthru_true` toggled (XOR-reduced — even flips cancel).  This must run
         // whether or not `collapse_all` Err'd, because the flips that were already
         // recorded reflect topology changes the collapse committed before aborting.
-        for bb in flips {
+        for &bb in &flips {
             data.block_basic_negate_lastop(bb);
         }
+        crate::kuna_body::record_structure_flips(data, &flips);
         if let Err(e) = collapse_res {
             // A still-un-ported collapse sub-stub (switch/node-creation) aborts;
             // surface it as "no change made" rather than taking down the run, the

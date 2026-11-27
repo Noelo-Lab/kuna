@@ -694,7 +694,12 @@ impl Funcdata {
         // net-negative).  Cloned out the alias list + alias_block_level so the
         // `&mut ScopeLocal` borrow does not alias the `&self` arch read.
         if aliasyes {
-            let alias: Vec<uintb> = state.get_alias().to_vec();
+            let mut alias: Vec<uintb> = state.get_alias().to_vec();
+            if !self.kuna_body().escapes.is_empty() {
+                alias.extend(self.kuna_body().escapes.iter().map(|&o| space.wrap_offset(o as uintb)));
+                alias.sort_unstable();
+                alias.dedup();
+            }
             let abl = self.get_arch().alias_block_level;
             if let Some(lm) = self.get_scope_local_mut() {
                 lm.mark_unaliased(&alias, abl);
@@ -1353,7 +1358,7 @@ impl Funcdata {
             });
 
             let mut ct: Option<Rc<crate::dtype::Datatype>> = None;
-            let fl: uint4;
+            let mut fl: uint4;
             // Whether the resolved SymbolEntry is a join-piece sub-entry (precislo/
             // precishi extra-flags, NOT `mapped`) — the extra maps `Scope::addMap`
             // registers per piece of a join-address Symbol (database.cc:1161-1180).
@@ -1401,12 +1406,16 @@ impl Funcdata {
                         ex_addr.get_space().map(|spc|
                             lm.is_unmapped_unaliased(spc, ex_addr.get_offset())))
                         .unwrap_or(false);
-                    fl = if unaliased { varnode_flags::nolocalalias } else { 0 };
+                    let escaped = crate::kuna_body::frame_escaped(self, &ex_addr, ex_size);
+                    fl = if unaliased && !escaped { varnode_flags::nolocalalias } else { 0 };
                 } else {
                     fl = 0;
                 }
             }
 
+            if crate::kuna_body::holds_escape(self, &ex_addr, ex_size) {
+                fl &= !varnode_flags::nolocalalias;
+            }
             if self.sync_varnodes_with_symbol(&group, fl, ct.as_ref(), entry_is_join_piece) {
                 update_occurred = true;
             }

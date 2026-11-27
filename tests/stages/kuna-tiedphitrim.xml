@@ -293,18 +293,17 @@ v2 = &amp;v2\[1\];
 v1 \+= \(uint4\)v3;
 v3 = \*v2;
 \} while \(v3\);</stringmatch>
-<stringmatch name="TIEDPHITRIM #7: store_loop's live store of each fetched byte into buf[0] is printed" min="1" max="1">strncpy\(&amp;v4,a0,0x3f\);
-v3 = 0;
-if \(v4\) \{
-v2 = v5;
+<stringmatch name="TIEDPHITRIM #7: store_loop's live store of each fetched byte into buf[0] is printed" min="1" max="1">strncpy\(&amp;v3,a0,0x3f\);
+v2 = 0;
+if \(v3\) \{
+v1 = v4;
 do \{
-v1 = &amp;v2\[1\];
-v3 \+= \(uint4\)v4;
-v4 = \*v2;
-v2 = v1;
-\} while \(v4\);
+v2 \+= \(uint4\)v3;
+v3 = \*v1;
+v1 = &amp;v1\[1\];
+\} while \(v3\);
 \}
-strncpy\(&amp;v4\);</stringmatch>
+strncpy\(&amp;v3\);</stringmatch>
 <stringmatch name="TIEDPHITRIM #8: store_join's store of the joined byte into buf[0] is printed" min="1" max="1">strncpy\(v1,a1,0x3f\);
 if \(a1\)
 v1\[0\] = \*a0;
