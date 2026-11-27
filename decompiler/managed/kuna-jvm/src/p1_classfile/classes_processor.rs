@@ -682,10 +682,6 @@ impl ClassesProcessor {
                     if DecompilerContext::get_option(IFernflowerPreferences::DUMP_ORIGINAL_LINES) {
                         buffer.dump_original_line_numbers(&mapper.get_original_lines_mapping());
                     }
-                    if DecompilerContext::get_option(IFernflowerPreferences::UNIT_TEST_MODE) {
-                        buffer.append_line_separator();
-                        mapper.dump_mapping(buffer, true);
-                    }
                 }
             }
         });

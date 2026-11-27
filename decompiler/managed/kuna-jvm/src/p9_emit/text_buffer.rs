@@ -1399,16 +1399,12 @@ impl TextBuffer {
     pub fn check_leaks() {}
 }
 
-/// `toString()`: discouraged, so it warns (or fails in unit-test mode) first.
+/// `toString()`: discouraged, so it warns first.
 impl std::fmt::Display for TextBuffer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if !ALLOW_TO_STRING {
-            if DecompilerContext::get_option(IFernflowerPreferences::UNIT_TEST_MODE) {
-                exception::throw("AssertionError", "Usage of TextBuffer.toString");
-            } else {
-                DecompilerContext::get_logger()
-                    .write_message("Usage of TextBuffer.toString", Severity::Warn);
-            }
+            DecompilerContext::get_logger()
+                .write_message("Usage of TextBuffer.toString", Severity::Warn);
         }
         f.write_str(&self.convert_to_string_and_allow_data_discard())
     }

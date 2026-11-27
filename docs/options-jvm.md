@@ -17,7 +17,6 @@ Vineflower keys kuna sets itself, so they are not options:
 - `dump-code-lines` -- line data of Vineflower's archive saver; kuna writes no archives
 - `skip-extra-files` -- kuna copies no resources
 - `decompile-preview` -- read nowhere in Vineflower 1.12.0: it has no effect
-- `__unit_test_mode__` -- corpus runner only
 - `__dump_original_lines__` -- corpus runner only
 - `indent-string` -- fixed at Vineflower's default, three spaces
 - `preferred-line-length` -- fixed at Vineflower's default, 160 columns; the corpus runner sets it for Vineflower's own tests

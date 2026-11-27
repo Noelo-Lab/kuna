@@ -4,7 +4,7 @@
 //! runs that schedule on a watchdog thread (`run`, `lock`, `getResult`,
 //! `isFinished`) to enforce `MAX_PROCESSING_METHOD`; kuna calls
 //! [`MethodProcessor::code_to_java`] directly, as Vineflower itself does when
-//! the limit is 0 or in unit-test mode.
+//! the limit is 0.
 //!
 //! kuna (`kuna_javac_layout`): the Java schedule
 //! names its method to the layout decisions, which apply only there.

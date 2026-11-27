@@ -41,7 +41,6 @@ impl IFernflowerPreferences {
     pub const ERROR_MESSAGE: &str = "error-message";
     pub const THREADS: &str = "thread-count";
     pub const DUMP_ORIGINAL_LINES: &str = "__dump_original_lines__";
-    pub const UNIT_TEST_MODE: &str = "__unit_test_mode__";
     pub const LINE_SEPARATOR_WIN: &str = "\r\n";
     pub const LINE_SEPARATOR_UNX: &str = "\n";
     pub const SKIP_EXTRA_FILES: &str = "skip-extra-files";
@@ -102,7 +101,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::INDENT_STRING, "   ".to_string()),
             (IFernflowerPreferences::PREFERRED_LINE_LENGTH, "160".to_string()),
             (IFernflowerPreferences::ERROR_MESSAGE, "Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)".to_string()),
-            (IFernflowerPreferences::UNIT_TEST_MODE, "0".to_string()),
             (IFernflowerPreferences::DUMP_ORIGINAL_LINES, "0".to_string()),
             (IFernflowerPreferences::THREADS, available_processors().to_string()),
             (IFernflowerPreferences::SKIP_EXTRA_FILES, "0".to_string()),
@@ -191,7 +189,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "ERROR_MESSAGE", key: IFernflowerPreferences::ERROR_MESSAGE, short_name: Some("erm"), name: Some("Error Message"), description: Some("Message to display when an error occurs in the decompiler."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "THREADS", key: IFernflowerPreferences::THREADS, short_name: Some("thr"), name: Some("Thread Count"), description: Some("How many threads to use to decompile."), type_: Some(OptionType::Integer), dynamic_default_value: Some("all available processors") },
     PreferenceOption { field: "DUMP_ORIGINAL_LINES", key: IFernflowerPreferences::DUMP_ORIGINAL_LINES, short_name: None, name: None, description: None, type_: None, dynamic_default_value: None },
-    PreferenceOption { field: "UNIT_TEST_MODE", key: IFernflowerPreferences::UNIT_TEST_MODE, short_name: None, name: None, description: None, type_: None, dynamic_default_value: None },
     PreferenceOption { field: "SKIP_EXTRA_FILES", key: IFernflowerPreferences::SKIP_EXTRA_FILES, short_name: Some("sef"), name: Some("Skip Extra Files"), description: Some("Skip copying non-class files from the input folder or file to the output"), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_BYTECODE_ON_ERROR", key: IFernflowerPreferences::DUMP_BYTECODE_ON_ERROR, short_name: Some("dbe"), name: Some("Dump Bytecode On Error"), description: Some("Put the bytecode in the method body when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "DUMP_EXCEPTION_ON_ERROR", key: IFernflowerPreferences::DUMP_EXCEPTION_ON_ERROR, short_name: Some("dee"), name: Some("Dump Exceptions On Error"), description: Some("Put the exception message in the method body or source file when an error occurs."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
