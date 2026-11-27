@@ -230,16 +230,16 @@ pub fn run_region_structurer(
     // cross-arena copy).  Precompute the bblocks `BlockId → start offset` map here
     // (while we hold `&Funcdata`) so the structurer can resolve a live component's
     // front-leaf back to its address.  Skipped (empty) when refinement is off.
-    let bb_addr: std::collections::BTreeMap<BlockId, uintb> = if loop_refine {
+    let bb_addr: FxHashMap<BlockId, uintb> = if loop_refine {
         let nbb = data.bblocks_get_size();
-        let mut m = std::collections::BTreeMap::new();
+        let mut m = FxHashMap::default();
         for i in 0..nbb {
             let bb = data.bblocks_get_block(i);
             m.insert(bb, data.bblocks_block_start(bb).get_offset());
         }
         m
     } else {
-        std::collections::BTreeMap::new()
+        FxHashMap::default()
     };
 
     // ---- 2. Structure the seeded sblocks graph -------------------------------
@@ -411,7 +411,7 @@ struct RegionStructurer<'a> {
     /// front-leaf `BlockCopy` (whose `copy` is a bblocks id) resolves to its
     /// address — the key the `cyclic_loops` body/exit sets use.  Populated only
     /// when `loop_refine` is on.
-    bb_addr: std::collections::BTreeMap<BlockId, uintb>,
+    bb_addr: FxHashMap<BlockId, uintb>,
     /// (kuna SAILR P2) Last-resort edge-virtualization ORDERING gate
     /// (`Architecture::region_edge_order`, option `regionedgeorder`, default-OFF).
     /// When set, [`virtualize_one_edge`](Self::virtualize_one_edge) orders the edges
@@ -458,7 +458,7 @@ impl<'a> RegionStructurer<'a> {
             loop_refine: false,
             cyclic_loops: std::collections::BTreeMap::new(),
             region_id: None,
-            bb_addr: std::collections::BTreeMap::new(),
+            bb_addr: FxHashMap::default(),
             edge_order: false,
             pending_inf_loops: std::collections::BTreeSet::new(),
             pending_body_addrs: std::collections::BTreeMap::new(),
@@ -488,7 +488,7 @@ impl<'a> RegionStructurer<'a> {
         mut self,
         loop_refine: bool,
         region_id: Option<(crate::p7_regions::kuna_regionid::KunaRegionIdentifier, bool)>,
-        bb_addr: std::collections::BTreeMap<BlockId, uintb>,
+        bb_addr: FxHashMap<BlockId, uintb>,
     ) -> Self {
         self.loop_refine = loop_refine;
         self.region_id = region_id;
@@ -1834,7 +1834,7 @@ impl<'a> RegionStructurer<'a> {
     /// dominator info (`immed_dom`/`index`) copied from `bblocks`.
     fn natural_loop_body(&self, head: BlockId) -> Vec<BlockId> {
         let mut body: Vec<BlockId> = vec![head];
-        let mut in_body = std::collections::BTreeSet::new();
+        let mut in_body = crate::kuna_fasthash::FxHashSet::default();
         in_body.insert(head);
         // Seed with latches (back-edge sources into head).
         let hb = self.graph.block(head);
@@ -2479,7 +2479,10 @@ impl<'a> RegionStructurer<'a> {
         // dominated switch-case successors a structural natural-loop walk misses).
         // The loop is keyed by its head's basic-block start address.
         let head_addr = self.component_addr(head);
-        let ri_loop = head_addr.and_then(|a| self.cyclic_loops().get(&a).cloned());
+        if head_addr.is_some() {
+            self.cyclic_loops();
+        }
+        let ri_loop = head_addr.and_then(|a| self.cyclic_loops.get(&a));
 
         // Build the live loop-body component set + exit-address set, either from the
         // RI projection (preferred) or the structural natural-loop walk (fallback,
@@ -2487,8 +2490,8 @@ impl<'a> RegionStructurer<'a> {
         // sees).  A live component is "in the body" when its front-leaf address is
         // in the RI body set.
         let dbg = std::env::var_os("KUNA_RS_DEBUG").is_some();
-        let (in_body, exit_addrs): (std::collections::BTreeSet<BlockId>, Option<std::collections::BTreeSet<uintb>>) =
-            match &ri_loop {
+        let in_body: std::collections::BTreeSet<BlockId> =
+            match ri_loop {
                 Some(l) => {
                     let mut s = std::collections::BTreeSet::new();
                     let n = self.size();
@@ -2502,12 +2505,9 @@ impl<'a> RegionStructurer<'a> {
                     }
                     // `head` must be in the body set (it carries the head address).
                     s.insert(head);
-                    (s, Some(l.exits.clone()))
+                    s
                 }
-                None => {
-                    let body = self.natural_loop_body(head);
-                    (body.into_iter().collect(), None)
-                }
+                None => self.natural_loop_body(head).into_iter().collect(),
             };
 
         // (1) Latch edges: back-edges into `head` from a body component.
@@ -2565,7 +2565,7 @@ impl<'a> RegionStructurer<'a> {
         //     normal-exit is the post-order-earliest successor; lowest address is a
         //     deterministic, region-grounded surrogate).  Without RI data, fall
         //     back to the most-targeted exit (ties by index).
-        let normal_exit = self.choose_normal_exit_grounded(&exit_edges, &exit_addrs);
+        let normal_exit = self.choose_normal_exit_grounded(&exit_edges, ri_loop.map(|l| &l.exits));
 
         if dbg {
             eprintln!(
@@ -2699,7 +2699,7 @@ impl<'a> RegionStructurer<'a> {
     fn choose_normal_exit_grounded(
         &self,
         exit_edges: &[(BlockId, int4, BlockId)],
-        exit_addrs: &Option<std::collections::BTreeSet<uintb>>,
+        exit_addrs: Option<&std::collections::BTreeSet<uintb>>,
     ) -> Option<BlockId> {
         if let Some(addrs) = exit_addrs {
             if !addrs.is_empty() {
