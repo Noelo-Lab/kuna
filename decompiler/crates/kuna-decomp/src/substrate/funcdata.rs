@@ -4621,7 +4621,11 @@ impl Funcdata {
     /// its locked parts, so a restarted analysis starts where a fresh decompile
     /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
     /// the flag/index reset are faithful. Buffered comments survive; the
-    /// restart drive drops the warnings (`refollow_flow`).
+    /// restart drive drops the warnings (`refollow_flow`) and the prototype
+    /// store the analysis attached (`run_pipeline`). What the passes of one
+    /// analysis carry to each other (frame slots and records, latch joins, the
+    /// type plateau, return notes for callers) goes too; what the drive seeded
+    /// before the first pass stays.
     pub fn clear(&mut self) {
         self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
@@ -4661,7 +4665,16 @@ impl Funcdata {
         self.kuna_condstmts_hits.clear();
         self.kuna_fatalchain_relaxed.clear();
         self.kuna_chainfold_any = false;
+        self.kuna_chainfold_given_up = false;
         self.kuna_restart_now = false;
+        self.kuna_infertypes_settled = false;
+        self.kuna_latch_joins = 0;
+        self.kuna_latch_blocks.clear();
+        self.kuna_float_bits_return = false;
+        self.kuna_callret_returned.clear();
+        self.frame_slots.borrow_mut().clear();
+        self.stack_records.borrow_mut().clear();
+        self.cast_objects.borrow_mut().clear();
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow() (funcdata.cc:95):
         // a restart re-derives every symbol the analysis recovered, as a fresh

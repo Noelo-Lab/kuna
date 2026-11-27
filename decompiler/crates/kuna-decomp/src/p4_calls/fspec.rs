@@ -5694,6 +5694,11 @@ impl FuncProto {
             self.store = Some(Box::new(ProtoStoreInternal::new(void_type)));
         }
     }
+    /// Drop the backing store, leaving the prototype as it was before any
+    /// store was attached.
+    pub fn detach_store(&mut self) {
+        self.store = None;
+    }
     /// Borrow the store (panics if none).
     fn store(&self) -> &dyn ProtoStore {
         self.store.as_deref().expect("FuncProto::store: null")

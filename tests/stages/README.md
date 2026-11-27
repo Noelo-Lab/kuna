@@ -51,6 +51,14 @@ bytes. A three-case switch over a struct field that gcc loads into a register
 once re-rolls too: the install reads the switch value from that load through
 the register copy and its zero extension.
 
+`kuna-restartproto.xml` checks that a function prints the same whether or not
+its analysis restarted, on gcc -O0 x86-64. `pick`'s three-case `switch`, whose
+cases jump to an epilogue that loads the returned frame slot itself, re-rolls
+by restarting; the restarted pass prints the cases breaking to one
+`return v1;`, as the copy decompiled under `option loweredswitch off` (no
+restart) returns once too. It used to see the prototype store the first pass
+attached and split the epilogue into one `return K;` per case.
+
 `kuna-loopcondhoist.xml` checks option `loopcondhoist` (default `on`) on
 gcc x86-64. In three -O0 functions the loop's condition, read from the layout,
 is the loop's exit: a `for` whose `break` carries two stores keeps them in the

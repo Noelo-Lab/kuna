@@ -774,10 +774,13 @@ the retired region-structurer roadmap, git history) and made the default S8 engi
 by DIV-12 under `option regionstructure`.
 
 **Input.** When `regionlooprefine` is on, `region_structurer.rs
-(run_region_structurer)` first runs the loop half of the chapter-07 region
-identifier fresh over the real CFG
+(run_region_structurer)` first builds the chapter-07 region identifier fresh
+over the real CFG, runs its loop half
 (`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regionid.rs
-(KunaRegionIdentifier::compute_cyclic)`) and consumes its `kuna_regionid.rs
+(KunaRegionIdentifier::compute_cyclic)`) the first time a loop needs refining
+(`region_structurer.rs (RegionStructurer::cyclic_loops)`; the identifier reads
+only the basic blocks, which structuring leaves alone, and most attempts never
+get that far), and consumes its `kuna_regionid.rs
 (KunaRegionIdentifier::cyclic_loops)` projection: each loop's refined body
 and exit frontier keyed by block start address, which absorbs
 dominated switch-case successors that a purely structural natural-loop walk
@@ -855,6 +858,21 @@ on a large goto-heavy function, which declines once per `structure_reset` the
 CFG passes take: Bash's `declare_internal` declines 18 times in one `kuna
 decompile`, and each attempt strands a component within its first ~100 of
 ~800 rounds.
+
+Most declines are foreseeable from the shape alone. Without a switch, every
+fold takes one entry component plus members reached only from inside it,
+gives the result its members' out-edges (a sequence those of its last
+member), and adds no edge; only a switch absorbs cases that have no
+successor, and only the switch-loop absorb merges by address. So once no live
+component ends in a switch and no absorb is pending, two components without
+out-edges (two `return`s that no switch gathers) or two without in-edges stay
+apart for good: `region_structurer.rs (components_stay_apart)`. Each round
+asks `region_structurer.rs (RegionStructurer::cannot_converge)` beside the
+stranded test, and `run_region_structurer` asks before any setup and declines
+at once; there it still runs the attempt when the function has recorded jump
+statements, because the short-circuit pre-pass counts the folds the
+`loopcontinue auto` gate refuses and `ActionBlockStructure` reads that count.
+On the decbench O2 `bash`, 3,897 of 6,930 attempts decline before any setup.
 
 **Edge virtualization and its ordering.** When forced to emit a goto, the
 choice of edge is the whole quality game. Candidates are every structured,
@@ -2017,7 +2035,10 @@ in-edges are re-pointed at its successor with their labels
 (`BlockGraph::remove_from_flow`), so the tags reach the RETURN block's in-edges
 after simplification; edge flags are only ever cleared by mask. Which reading
 applies, and whether the join computed the returned register, is decided when
-`returndup` runs, against the recovered output storage.
+`returndup` runs, against the storage the RETURN op returns
+(`kuna_o0returns.rs (groups)`). The prototype's output is recovered only after
+`returndup`, so at that point it holds a declared output, which is the RETURN's
+own storage, or nothing.
 
 At `returndup` time `kuna_o0returns.rs (split)` groups the RETURN block's
 in-edges by tag and gives each group its own copy of the epilogue with
