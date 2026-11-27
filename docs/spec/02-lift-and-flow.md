@@ -3895,6 +3895,12 @@ the guard; a write to either 16-bit FF register leaves it unchanged.
 In the qualified sequential form, the two operand captures can update
 `X1` even when their later result gates veto the FF or accumulator
 write. The following word `MOVE` samples only `FF2` at execution.
+The two-DATA form captures both old addresses before the next sequential
+slot stores. Same-parity reads from one interleaved DATA bank stop
+before the MAC result. The following word `ADDC` consumes the MAC carry;
+it publishes flags before limiting and shifting the value for DATA.
+The `R2` and `R3` postmodifiers use the cached `RM2` alignment in implicit
+modulo mode. An instruction that writes `RM2` also refreshes that cache.
 
 For compact `ADD` with a half result and a first operand selector `30` or
 `31`, the unbound input is zero and the other word supplies the result.

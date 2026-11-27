@@ -78,6 +78,7 @@ define register offset=0x104 size=2 [ RL6 ];
 define register offset=0x108 size=2 [ RM0 ];
 define register offset=0x10a size=2 [ RM0_ALIGN ];
 define register offset=0x10c size=2 [ RM2 ];
+define register offset=0x10e size=2 [ RM2_ALIGN ];
 define register offset=0x110 size=2 [ RM4 ];
 define register offset=0x114 size=2 [ RM6 ];
 define register offset=0x116 size=2 [ RM6_ALIGN ];
@@ -2619,6 +2620,7 @@ macro compact_bank_ports(selected) {
     if ((mask & 0x200) == 0) goto <rm4>;
     swap16(RM2, RM2S);
     swap16(RL2, RL2S);
+    refresh_modulo_alignment(RM2, RM2_ALIGN);
   <rm4>
     if ((mask & 0x400) == 0) goto <rm6>;
     swap16(RM4, RM4S);
@@ -3419,8 +3421,10 @@ macro compact_move_write_ff(port) {
 }
 
 compact_rm_destination: "RM0" is slot_9_22=0x1842 { export RM0; }
+compact_rm_destination: "RM2" is slot_9_22=0x1843 { export RM2; }
 compact_rm_destination: "RM6" is slot_9_22=0x1847 { export RM6; }
 compact_rm_alignment: is slot_9_22=0x1842 { export RM0_ALIGN; }
+compact_rm_alignment: is slot_9_22=0x1843 { export RM2_ALIGN; }
 compact_rm_alignment: is slot_9_22=0x1847 { export RM6_ALIGN; }
 
 :MOVU compact_rm_destination,compact_rm_literal "||" nop_right is
@@ -4584,8 +4588,8 @@ macro write_ff_pair(bits) {
     FFG = value(4);
 }
 
-macro shifted_ff_addend(value) {
-    value = sext(FFG) * 0x10000 + zext(FF2);
+macro shifted_ff_addend(high, value) {
+    value = sext(FFG) * 0x10000 + zext(high);
 }
 
 macro compact_long_finish(bits, carry_out, overflow, data_result, mixed, result, flags) {
@@ -6969,7 +6973,7 @@ macro parallel_logic_ff12_pair() {
 macro parallel_logic_mac_ff12(latch, mac_shift, word_shift) {
     local direct_word:2 = A4L | A0L;
     local incoming:8;
-    shifted_ff_addend(incoming);
+    shifted_ff_addend(FF2, incoming);
     local operand:2 = *[data]:2 R7;
     local product:8 = sext(operand) * zext(R7) * (1 + zext(ECFG & 1));
     local mask:8 = 0xffffffffff;
@@ -9534,6 +9538,20 @@ compact_mpy_ff: "FF2" is slot_9_9=1 { export FF2; }
 @define COMPACT_FF_MPY "slot_10_22=0x11f3 & slot_6_8=3 & slot_1_5=0x1a & slot_0_0=1 & compact_mpy_ff"
 @define COMPACT_FF_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
 
+macro shifted_ff_mac_exec(word, factor, flags) {
+    local high:2 = carmel_sample_ff_at_ex(FF2);
+    local addend:8;
+    shifted_ff_addend(high, addend);
+    local product:8;
+    raw_mac_product(word, factor, 0:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(addend + product, (addend & 0xffffffffff) + (product & 0xffffffffff),
+                         0:1, 0:1, 0:1, 0:1, result, active);
+    write_ff_pair(result);
+    raw_mac_flags(flags, active, 0:4);
+}
+
 :MACHUS "CE1" "FF12","*R3","RN1" is $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & slot_0_22=0x5338d3 {
     local admitted:1 = carmel_read_address_admission(1:1);
     local flags:2 = EST & 0xcfff;
@@ -9544,16 +9562,7 @@ compact_mpy_ff: "FF2" is slot_9_9=1 { export FF2; }
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
     if (enabled == 0) goto <feedback>;
-    local addend:8;
-    shifted_ff_addend(addend);
-    local product:8;
-    raw_mac_product(word, RN1, 0:1, 1:1, product);
-    local result:8;
-    local active:2;
-    raw_mac_finish_limit(addend + product, (addend & 0xffffffffff) + (product & 0xffffffffff),
-                         0:1, 0:1, 0:1, 0:1, result, active);
-    write_ff_pair(result);
-    raw_mac_flags(flags, active, 0:4);
+    shifted_ff_mac_exec(word, RN1, flags);
   <feedback>
     publish_alu_ce(flags);
     record_ce_admission();
@@ -9575,6 +9584,39 @@ compact_mpy_ff: "FF2" is slot_9_9=1 { export FF2; }
     A0L = result(2);
     raw_mac_flags(flags, active, 0:4);
   <feedback>
+    publish_alu_ce(flags);
+    record_ce_admission();
+}
+
+:MACHUS "FF12","*R4(RN4)","*R2++" is $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & slot_0_22=0x53ad24 {
+    local first_address:2 = R4 + RN4;
+    local second_address:2 = R2;
+    modify_native_agu(R2, 1:2, RM2, RL2, RM2_ALIGN, 4:4, 4:2);
+    compact_pair_read_check(first_address, second_address);
+    carmel_single_data_load();
+    local first:2 = *[data]:2 first_address;
+    carmel_single_data_load();
+    local second:2 = *[data]:2 second_address;
+    X1 = first;
+    local flags:2 = EST & 0xcfff;
+    shifted_ff_mac_exec(first, second, flags);
+    publish_alu_ce(flags);
+    record_ce_admission();
+}
+
+:ADDC "*R3+=RN3","A2H","X2" is $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & slot_0_22=0x166f5e {
+    local address:2 = R3;
+    modify_native_agu(R3, RN3, RM2, RL2, RM2_ALIGN, 6:4, 1:2);
+    local carry_in:4 = zext(EST & 1);
+    local raw:4 = zext(A2H) + zext(X2) + carry_in;
+    local exact:4 = sext(A2H) + sext(X2) + carry_in;
+    local aligned:8 = (sext(exact) << 16) & 0xffffffffff;
+    local result:8;
+    local active:2;
+    compact_long_finish(aligned, raw > 0xffff, 0:1, 1:1, 0:1, result, active);
+    carmel_single_data_store();
+    *[data]:2 address = result(2);
+    local flags:2 = (EST & 0xcfc4) | active;
     publish_alu_ce(flags);
     record_ce_admission();
 }
@@ -12553,6 +12595,7 @@ macro paired_pop_fallback(long_result, active) {
     local word:2;
     paired_pop_top(word);
     RM2 = word & 0x0fff;
+    refresh_modulo_alignment(RM2, RM2_ALIGN);
     publish_alu_ce(EST & 0xcfff);
 }
 

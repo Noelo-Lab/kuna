@@ -1979,6 +1979,71 @@ fn carmel_compact_shifted_mac_uses_guard_and_separates_qualification() {
 }
 
 #[test]
+fn carmel_indexed_shifted_mac_feeds_carry_to_the_serial_data_store() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("indexed-mac.bin");
+    let source = scratch.path().join("indexed-mac.c");
+    let executable = scratch.path().join("indexed-mac");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n\
+        static volatile unsigned short indexed, post, other;\n\
+        #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n");
+    let mut calls = String::new();
+    for (i, (writer, pacfg, r3, ff2, rhs, a2h, x2, ecfg, new_r2, new_r3, low, high, stored)) in [
+        (false, 0, 0x0049, 1, 0xffff, 0x13, 0x27, 0, 0x8043, 0x004d, 0, 0, 0x003b),
+        (false, 0x80, 0xc041, 0, 0xffff, 0x13, 0x27, 0, 0x8043, 0xc03d, 0xffff, 0xffff, 0x003a),
+        (false, 0x20, 0x8042, 0, 1, 0x7fff, 2, 0x24, 0x803b, 0x8046, 1, 0, 0x3fff),
+        (true, 0x20, 0x8042, 0, 1, 0x7fff, 2, 0x24, 0x8043, 0x8046, 1, 0, 0x3fff),
+        (true, 0x80, 0xc041, 0, 1, 0x7fff, 2, 0x28, 0x8043, 0xc045, 1, 0, 0x4000),
+    ].into_iter().enumerate() {
+        let mut code = vec![NOP; 6];
+        if writer {
+            code.push([0x30, 0x86, 0x0e, 0x2b, 0xec, 0]);
+            code.extend([NOP; 6]);
+        }
+        code.extend([
+            [0xd3, 0xad, 0x24, 0x16, 0x6f, 0x5e], [0x31, 0xaa, 0x4e, 0x2b, 0xec, 0],
+            NOP, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], NOP,
+        ]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let specs = scratch.path().join(format!("indexed-mac-specs-{i}"));
+        tracked_carmel_entry_specs(&specs, &[
+            ("R2", 0x8042), ("R3", r3), ("R4", 0x48), ("RN3", 4), ("RN4", 1),
+            ("PACFG", pacfg), ("RM2", 7), ("RM2_ALIGN", 0), ("RL2", 0), ("FFG", 0), ("FF2", ff2),
+            ("A2H", a2h), ("X2", x2), ("ECFG", ecfg), ("EST", 1),
+            ("CECFG1", 0), ("CECFG2", 0), ("CETBL", 0xffff),
+        ], 0, 0);
+        for (reg, expected) in [("FF1", low), ("A2L", high), ("R2", new_r2), ("R3", new_r3)] {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "data [data,0x0049] volatile unsigned short indexed",
+                "--assert", "data [data,0x8042] volatile unsigned short post",
+                "--assert", "data [data,0xc041] volatile unsigned short other",
+            ]);
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let f = &json["functions"][0];
+            assert!(f["error"].is_null(), "{f}");
+            let name = format!("indexed_mac_{i}_{reg}");
+            writeln!(c, "#define sub_0 {name}\n{}\n#undef sub_0", f["code"].as_str().unwrap()).unwrap();
+            let [first, second, third] = [(0x0049, 1), (0x8042, rhs), (0xc041, 0xbeef)]
+                .map(|(addr, initial)| if addr == r3 { stored } else { initial });
+            writeln!(calls, "indexed = 1; post = {rhs}; other = 0xbeef;\n\
+                if ({name}() != {expected} || indexed != {first} || post != {second} || other != {third}) return {};",
+                i + 1).unwrap();
+        }
+    }
+    writeln!(c, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
