@@ -1403,6 +1403,13 @@ impl Action for ActionActiveParam {
         // aliascheck.gather(&data, getStackSpace(), true): deferred local-alias
         // checker for the spacebase-parameter branch.
         let mut aliascheck = data.build_alias_checker_deferred();
+        // (kuna deobf) A recovered body may ask for its input trials to be
+        // judged by their data flow alone.
+        if data.kuna_body().policy.inputs_by_dataflow {
+            if let Some(c) = aliascheck.as_mut() {
+                c.assume_no_pointers();
+            }
+        }
         let mut held = crate::p4_calls::kuna_calleestackargs::Contenders::default();
         let manager_rc = data.get_arch().manage.clone();
         // (kuna) `calleearityfwd`: call sites that finalize with an empty argument
@@ -1931,6 +1938,7 @@ impl Action for ActionReturnRecovery {
             }
         }
 
+        crate::p4_calls::kuna_epiloguepop::note_pops(data, &mut active, &return_ops);
         crate::p4_calls::kuna_voidret::score_forced(data, &mut active, &return_ops, maxancestor);
         crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_failed);
         active.finish_pass();
@@ -1946,6 +1954,7 @@ impl Action for ActionReturnRecovery {
             crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
             crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
             crate::p4_calls::kuna_quotientreturn::drop_quotient(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_epiloguepop::yield_to_other_class(data, &mut active);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             crate::p4_calls::kuna_callwide::retain_pair(data, &mut active, &return_ops);
             crate::kuna_bejoin::keep_proven_pair(data, &mut active, &return_ops);

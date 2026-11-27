@@ -998,9 +998,12 @@ pub mod param_trial_flags {
     /// (kuna) `passthrough`: the caller forwards its own incoming register
     /// here untouched and the callee takes it, so the slot is filled.
     pub const FORWARDED: uint4 = 0x4000;
+    /// (kuna) The value at every live RETURN is the register an epilogue pop
+    /// wrote.
+    pub const EPILOGUE_POP: uint4 = 0x8000;
     /// (kuna) `armfloatargs`: the AAPCS-VFP back-fill slot, holding only what
     /// the caller left there; no later argument fills it.
-    pub const BACKFILL_HOLE: uint4 = 0x8000;
+    pub const BACKFILL_HOLE: uint4 = 0x10000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1180,6 +1183,9 @@ impl ParamTrial {
     /// (kuna) `passthrough`: the caller forwards the callee's parameter here.
     pub fn set_forwarded(&mut self) { self.flags |= param_trial_flags::FORWARDED; }
     pub fn is_forwarded(&self) -> bool { self.flags & param_trial_flags::FORWARDED != 0 }
+    /// (kuna) The value at every live RETURN is the register an epilogue pop wrote.
+    pub fn set_epilogue_pop(&mut self) { self.flags |= param_trial_flags::EPILOGUE_POP; }
+    pub fn has_epilogue_pop(&self) -> bool { self.flags & param_trial_flags::EPILOGUE_POP != 0 }
     /// (kuna) `armfloatargs`: this is the back-fill slot below doubles.
     pub fn set_backfill_hole(&mut self) { self.flags |= param_trial_flags::BACKFILL_HOLE; }
     pub fn is_backfill_hole(&self) -> bool { self.flags & param_trial_flags::BACKFILL_HOLE != 0 }
@@ -5725,6 +5731,11 @@ impl FuncProto {
         if self.store.is_none() {
             self.store = Some(Box::new(ProtoStoreInternal::new(void_type)));
         }
+    }
+    /// Drop the backing store, leaving the prototype as it was before any
+    /// store was attached.
+    pub fn detach_store(&mut self) {
+        self.store = None;
     }
     /// Borrow the store (panics if none).
     fn store(&self) -> &dyn ProtoStore {

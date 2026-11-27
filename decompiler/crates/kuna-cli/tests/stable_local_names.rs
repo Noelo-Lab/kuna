@@ -350,7 +350,7 @@ fn a_structure_pointer_retype_keeps_its_name() {
     let fixture = "retypeptr_x86_64";
     let typedef = "typedef struct S { long a; long b; } S;";
     for (function, directive, decl) in
-        [("walk", "type v2 S *v2", "  S *v2;"), ("walk", "type v2 S *", "  S *v2;"), ("squeeze", "type v1 S *v1", "  S *v1;")]
+        [("walk", "type v2 S *v2", "  S *v2;"), ("walk", "type v2 S *", "  S *v2;"), ("squeeze", "type v2 S *v2", "  S *v2;")]
     {
         let code = decompile_in(fixture, function, &[], &[typedef, directive]);
         assert!(code.contains(decl), "{function} {directive}:\n{code}");
@@ -483,16 +483,17 @@ fn an_address_only_local_takes_its_retype() {
     }
 }
 
-/// A stack local read whole and by halves is three locals under one Symbol,
-/// printed by one declaration, and the retype goes to the whole one: a half
-/// that tied with it took the type, and the declaration kept its old one.
+/// A variadic argument saved to its stack slot and read back whole and by
+/// halves is one variable with the parameter it arrived in, and a retype
+/// types the whole variable, not one of its halves.
 #[test]
-fn a_stack_local_read_by_halves_is_retyped_whole() {
+fn a_saved_argument_read_by_halves_is_retyped_whole() {
     let fixture = "retypehalves_x86_64";
     let plain = decompile_in(fixture, "control", &[], &[]);
-    assert!(plain.contains("  unsigned long v6; // rdx | stack - 0x38"), "{plain}");
-    let code = decompile_in(fixture, "control", &[], &["type v6 long"]);
-    assert!(code.contains("  long v6; // rdx | stack - 0x38"), "{code}");
+    assert!(plain.contains("int control(int a0,int a1,unsigned long a2)"), "{plain}");
+    let code = decompile_in(fixture, "control", &[], &["type a2 long"]);
+    assert!(code.contains("int control(int a0,int a1,long a2)"), "{code}");
+    assert!(!code.contains("unsigned long a2"), "{code}");
     assert_eq!(declared(&code), declared(&plain), "{code}");
 }
 

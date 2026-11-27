@@ -58,7 +58,7 @@ b6128810488b45f80fb60084c075d8488b45e8c60000905dc3
   <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="hideshadow #1: the same value is never copied into the variable twice" min="0" max="0">v3 = a2, v4 = a0, v4 = a0, v5 = a1</stringmatch>
-<stringmatch name="hideshadow #2: the redundant copy is consolidated away" min="1" max="1">v3 = a2, v4 = a0, v5 = a1</stringmatch>
-<stringmatch name="hideshadow #3: two copies on exclusive branches are left alone" min="2" max="2">v3 = a2;</stringmatch>
+<stringmatch name="hideshadow #1: the same value is never copied into the variable twice" min="0" max="0">v\d+ = a2, v\d+ = a0, v\d+ = a0, v\d+ = a1</stringmatch>
+<stringmatch name="hideshadow #2: the redundant copy is consolidated away" min="1" max="1">v\d+ = a2, v\d+ = a0, v\d+ = a1</stringmatch>
+<stringmatch name="hideshadow #3: two copies on exclusive branches are left alone" min="2" max="2">v1 = a2;</stringmatch>
 </decompilertest>

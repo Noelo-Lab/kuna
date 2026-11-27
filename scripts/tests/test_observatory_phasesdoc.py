@@ -26,7 +26,7 @@ class PhasesDocTests(unittest.TestCase):
             self.assertTrue(phase["artifact"])
             self.assertTrue(phase["readsAs"])
         extra = {entry["folder"] for entry in self.doc["extraFolders"]}
-        self.assertEqual(extra, {"substrate", "infra"})
+        self.assertEqual(extra, {"substrate", "infra", "deobf"})
 
 
 if __name__ == "__main__":

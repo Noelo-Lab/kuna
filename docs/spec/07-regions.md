@@ -513,8 +513,15 @@ its argument. An x86-32 check only has an argument to match through
 `Funcdata::block_remove_internal` uses for a CALL inside a deleted block and
 `cleanupcode` (chapter 02) uses for a Rust drop call. Because this exact
 recognition happens after chapter 03 has already guarded the checker call, the
-destructive arm records the first match's instruction address in the function's
-P0 override store and requests a full pipeline restart. When `msvcstackguard`
+destructive arm records the instruction address of every match whose pop is
+stated in the function's P0 override store and requests a full pipeline
+restart. A function whose epilogue was duplicated (each return path its own
+copy, as a devirtualized body has) holds one check per copy, all reading the
+same frame slot; once every one of them is recorded, one application removes
+them all and only then releases the slot. Removing them one at a time would
+release the slot after the first, and the checks left behind would read an
+unmapped slot whose scramble no longer matches, so they would survive with
+their argument. When `msvcstackguard`
 is off, the recognizer instead collects every
 exact checker whose output is locked `void`, records the full set, and requests
 one restart; this remains complete beyond the driver's eight-reflow limit. On
@@ -664,6 +671,7 @@ when `regionlooprefine` is on, the `cyclic_loops()` projection — the
 identifier's refined loop bodies and exit frontiers keyed by block start
 address — as the read side of the omitted `force_loop_single_exit`
 refinement. With the option off it builds no identifier. With it on it runs
+the identifier only when the structurer first refines a loop, and then
 only the preprocessing and the cyclic phase
 (`kuna_regionid.rs (KunaRegionIdentifier::compute_cyclic)`): the acyclic phase
 only wraps nodes that are already there in new acyclic regions, removing each

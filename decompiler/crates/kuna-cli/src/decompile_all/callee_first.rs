@@ -166,14 +166,14 @@ pub(crate) fn decompile_callee_first(
 /// once the wrapper returns.
 const VOID_READ_ROUNDS: usize = 10;
 
-/// (kuna `voidret`) When each function was last decompiled, and when a redo
-/// last changed each function's recovered return, in decompiles counted from
-/// the start of the run.
+/// (kuna `voidret`) When each function was last decompiled, in decompiles
+/// counted from the start of the run, and the readers each redo that changed a
+/// function's recovered return may leave stale.
 #[derive(Default)]
 struct VoidReads {
     stamp: usize,
     stamp_of: BTreeMap<(i32, u64), usize>,
-    changed: BTreeMap<(i32, u64), usize>,
+    owed: kuna_decomp::kuna_voidret::Owed,
 }
 
 impl VoidReads {
@@ -206,7 +206,7 @@ impl VoidReads {
         for _ in 0..VOID_READ_ROUNDS {
             let mut redo = kuna_decomp::kuna_voidret::due(prog.arch_mut());
             redo.extend(kuna_decomp::kuna_voidret::withdrawals(prog.arch_mut()));
-            redo.extend(kuna_decomp::kuna_voidret::stale_readers(prog.arch(), &self.stamp_of, &self.changed));
+            redo.extend(kuna_decomp::kuna_voidret::stale_readers(prog.arch(), &self.stamp_of, &mut self.owed));
             if redo.is_empty() {
                 redo = kuna_decomp::kuna_gottailcall::due(prog.arch_mut());
             }
@@ -255,7 +255,7 @@ impl VoidReads {
                     kuna_decomp::kuna_narrowret::statement(prog.arch(), k).as_deref(),
                 )
             {
-                self.changed.insert(k, self.stamp);
+                self.owed.changed(prog.arch(), k, self.stamp, &self.stamp_of);
             }
         }
     }

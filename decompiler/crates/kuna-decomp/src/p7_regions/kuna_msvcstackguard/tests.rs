@@ -781,6 +781,32 @@ fn enabled_action_seeds_then_removes_the_exact_call() {
 }
 
 #[test]
+fn duplicated_epilogue_checks_are_marked_and_removed_together() {
+    let mut fd = build_fd_with_option(true);
+    let mut calls = Vec::new();
+    let mut sites = Vec::new();
+    for i in 0..3u64 {
+        let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);
+        let (call, _) = checker_call_at(&mut fd, &[arg], OpCode::CPUI_CALL, 0x30 + i * 0x100);
+        let entry = ram_addr(&fd, 0x2000);
+        fd.push_call_specs(FuncCallSpecs::new(call, entry));
+        sites.push(fd.obank().get(call).unwrap().get_addr().clone());
+        calls.push(call);
+    }
+    let mut act = ActionStripMsvcStackGuard::new(false, "returnsplit");
+    let mut ctx = ActionContext::default();
+
+    assert_eq!(act.apply(&mut fd, &mut ctx), 0);
+    assert!(fd.has_restart_pending());
+    assert!(sites.iter().all(|site| fd.get_override().is_msvc_cookie_call(site)));
+
+    fd.set_restart_pending(false);
+    assert_eq!(act.apply(&mut fd, &mut ctx), 3);
+    assert!(calls.iter().all(|call| fd.obank().get(*call).unwrap().is_dead()));
+    assert_eq!(fd.num_calls(), 0);
+}
+
+#[test]
 fn locked_void_checker_is_marked_but_not_removed_when_stripping_is_off() {
     let mut fd = build_fd();
     let (arg, _) = build_cancel(&mut fd, -0x48, -0x48);

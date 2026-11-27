@@ -204,6 +204,43 @@ as live nowhere and an overlapping merge is accepted. This bites the trim COPYs
 joined a high — the merged variable then holds two values that are live at the
 same instant.
 
+The forward also covers the ordinary data-flow edits. Setting or clearing a
+Varnode's definition and adding or removing one of its reads go through the
+`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank)`, which
+records the member's HighVariable; `funcdata.rs
+(Funcdata::sync_cover_dirty_highs)` marks those variables dirty before every
+intersection test (`merge.rs (MergeIntersect::update_high)`), the effect C++ gets
+from `Varnode::setFlags` notifying the high directly. A piece of a VariableGroup
+is tested with its *extended* Cover, the union of its own members and the members
+of every piece it overlaps, so rebuilding a piece first rebuilds the stale member
+Covers of those overlapping pieces too (`funcdata_merge.rs
+(Funcdata::refresh_high_cover)`), as reading `Varnode::getCover` would upstream.
+Without it a piece created late (a split byte copy, a field store) still held the
+empty Cover it was allocated with. A copy of a 4-byte slot made to keep its old
+value across byte writes into that slot was then merged back into the slot, and
+the printed C read the slot after the bytes had replaced it. The opposite error
+came from Covers left over from an edited function: a loop pointer kept a stale
+range across its own increment and printed through a temporary
+(`v1 = &p[1]; … p = v1;`).
+
+`merge.rs (Merge::inflate_test)`, the arm of `ActionMarkImplied` that asks
+whether an operand is overwritten while an expression waits to be printed at its
+use, reads the Cover of every instance of the operand's variable and of every
+piece overlapping it. It rebuilds each stale one first
+(`MergeContext::vn_refresh_cover`), as `Varnode::getCover` does upstream. A piece written after
+the merge settled still held its old range, so a wider write of a slot between
+an expression over two halfwords of that slot and the expression's use went
+unseen: the C printed `CONCAT22` of halfwords 3 and 1 after the write that
+replaced halfword 1.
+
+Overlapping pieces that hold the same bytes do not collide.
+`funcdata.rs (Funcdata::varnode_partial_copy_shadow)` recognizes a piece copied out
+of a whole and a whole assembled from its pieces. Its COPY-chain walk treats a
+SUBPIECE that keeps every byte of its input as a COPY, and a piece and a whole
+whose COPY chains start at the same Varnode are shadows of each other, so a call
+result stored to a stack struct and also split into its fields, or a revisited
+range rebuilt by `SUB88(CONCAT53(…),0)`, keeps one variable per slot.
+
 The call/store crossing test snapshots operation identities, block indices and
 order positions in `PcodeOpSet`. Those positions are valid only for the IR
 revision at which they were collected. `MergeIntersect::intersection` checks
@@ -1750,6 +1787,53 @@ escaping address print as two variables, `v1 = …; consume(&Stack00000000000000
 With the spec's ranges the escaping address makes the slot an open range up to
 the end of the home area, the `code *local_res18 [2]` the stock decompiler
 prints, and a spill there that nothing reads is a dead local store.
+
+**An address-taken slot no parameter claims
+(`decompiler/crates/kuna-decomp/src/p6_variables/kuna_paramareaslot.rs`, always
+on).** Clearing the parameter range out of `MapState` leaves every slot there to
+a parameter symbol, so a slot the final prototype does not claim had no symbol
+at all. That is an incoming stack slot past the recovered parameters which the
+function uses as scratch, typically as an out-parameter it hands a callee: the
+`PTRSUB(spacebase, #off)` that takes its address printed as raw storage while
+its reads and writes printed as a separate, never-assigned variable,
+`fill(a0,0,0x10,&Stack0000000000000038); v1 = *(code **)(*v2 + 8);`. Once
+`ActionInputPrototype` has fixed the prototype, `name_local_highs_angr` maps
+each such slot as a local, right after `link_proto_params` and before any high
+is named. A slot qualifies when a stack `PTRSUB` resolves to it and every use of
+every such address hands it on whole, as a call argument or as a stored value
+(an address that feeds arithmetic or a comparison indexes an object whose extent
+the slot's own accesses do not show, such as an `fd_set` walked a word at a
+time). The slot must lie in the parameter range and in the local scope's window,
+no symbol (a parameter's included) may overlap it, and some Varnode starting
+there must be defined or read by an op other than an `INDIRECT`, so the body
+prints it. Every variable holding such a Varnode must take its name from the
+slot: its name representative is stored there, so the naming walk binds it to
+the new symbol rather than to a register it was merged with. It must also keep
+its declared type: a variable with no symbol is declared at its merged type
+representative's type, a mapped one at its first address-tied member's, and a
+slot whose variable would switch between the two (a register-merged value that
+holds a string in one place and a `re_pattern_buffer *` in another) stays
+unmapped. And the slot must be one scalar: no Varnode straddles either end of
+it, and no other Varnode or other referenced address starts inside it. Two
+`int`s initialized by one 8-byte store and passed as `&optval, &optlen`
+therefore stay unmapped rather than becoming one 8-byte local with a reference
+into its middle. The test sees only the body's own accesses, not the callee's:
+a record whose other fields only the callee touches, or that the body writes
+one field at a time with each store ending where the next begins, maps as its
+first field (a `struct timeval` filled by two 8-byte stores before `select`
+maps `tv_sec`, and `tv_usec` keeps its own name). The symbol is as wide as the widest Varnode starting there and
+takes the declared type of the one variable stored there when that type has the
+same width (otherwise it is an `undefined<N>`), so the reference and the
+accesses bind to one name, `&v2` and `*v2`, and `variables` reports the slot. A
+variadic prototype maps nothing: its unclaimed slots are the variadic arguments,
+and `va_start` takes the address of the first one as the start of the overflow
+area (printed from the CFA on System V x86-64), not of a scratch local. The
+decision waits for the final prototype because during `mainloop` the parameter
+list is not yet known, and mapping the slot then would claim a stack parameter's
+storage as a local. A reference to the start of an object whose accesses all lie
+past its first byte (the callee fills a record, the body reads only a later
+field) maps nothing: there the reference keeps its storage name, as an open
+range in the local frame keeps its own.
 
 **RangeHint gathering.** Each `mainloop` pass,
 `decompiler/crates/kuna-decomp/src/p9_emit/coreaction_render.rs

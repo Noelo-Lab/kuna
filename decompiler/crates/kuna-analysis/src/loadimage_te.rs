@@ -680,6 +680,10 @@ impl LoadImage for TeLoadImage {
             .collect()
     }
 
+    fn kuna_section_names(&self) -> Vec<(u64, u64, String)> {
+        self.section_metadata().into_iter().map(|s| (s.vma, s.size, s.name)).collect()
+    }
+
     fn kuna_overlay_bytes(&mut self, addr: &Address, data: &[u8]) -> KunaResult<()> {
         let space = addr
             .get_space()
