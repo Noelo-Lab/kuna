@@ -174,7 +174,7 @@ define register offset=0x2a0 size=4 [ LOOP_FIRST_AT1 LOOP_FIRST_AT2 LOOP_FIRST_A
 define register offset=0x2b0 size=4 [ LOOP_LAST_AT1 LOOP_LAST_AT2 LOOP_LAST_AT3 LOOP_LAST_AT4 ];
 define register offset=0x2c0 size=4 [ LOOP_FIRST_WORD1 LOOP_FIRST_WORD2 LOOP_FIRST_WORD3 LOOP_FIRST_WORD4 ];
 define register offset=0x2d0 size=4 [ LOOP_LAST_WORD1 LOOP_LAST_WORD2 LOOP_LAST_WORD3 LOOP_LAST_WORD4 ];
-define register offset=0x2e0 size=2 [ RM0S RM2S RM4S RM6S RL0S RL2S RL4S RL6S ESTS ];
+define register offset=0x2e0 size=2 [ RM0S RM2S RM4S RM6S RL0S RL2S RL4S RL6S ESTS ECFGS ];
 
 # Private storage for the CFG lift, not an architectural input.
 define register offset=0x300 size=1 [
@@ -193,6 +193,8 @@ define pcodeop carmel_capture_ff_before_ex;
 define pcodeop carmel_sample_ff_at_of;
 define pcodeop carmel_sample_ff_at_ex;
 define pcodeop carmel_record_ff_late_admission;
+define pcodeop carmel_record_idle_admission;
+define pcodeop carmel_d2_reset;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -2416,13 +2418,22 @@ macro clock_conditional_redirect(mask) {
 ce_marked_load_tick: is wide_left_mode=0 { }
 ce_marked_load_tick: is wide_left_mode=1 & ce_tick { build ce_tick; }
 
-:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left & ce_single_tick {
-    clock_ce();
+ce_idle_tick: is carmel_phase_emit=1 & hw_loop_actions=0 & carmel_single_issue=0 {
+    local sample:1;
+    ce_admission(sample);
+    carmel_record_idle_admission(sample);
+}
+ce_idle_tick: is (carmel_phase_emit=0 | hw_loop_actions=1 | carmel_single_issue=1) & ce_single_tick {
     build ce_single_tick;
 }
-:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick); (slot_mode=0 & nop_right) {
+
+:^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left & ce_idle_tick {
     clock_ce();
-    build ce_single_tick;
+    build ce_idle_tick;
+}
+:^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_idle_tick); (slot_mode=0 & nop_right) {
+    clock_ce();
+    build ce_idle_tick;
 }
 
 compact_cmpu: "CMPU" cmpu_lhs,cmpu_rhs is slot_0_0=0 & slot_10_22=0x82e
@@ -4104,6 +4115,36 @@ macro load_ce_ports(prefix, config, truth, low, high, invert) {
 :"LOADCE.NOT" wide_ce_prefix ce_config_value,ce_truth_value is $(WIDE_LOADCE) & wide_9_10=3 {
     build wide_ce_prefix;
     load_ce_ports(wide_ce_prefix, ce_config_value, ce_truth_value, 1:1, 1:1, 0xff:2);
+}
+
+macro reset_control_fields() {
+    EST = 0;
+    ESTS = 0;
+    ECFG = ECFG & 0x3fc0;
+    ECFGS = 0;
+    INTBASE = INTBASE & 0xe000;
+    USER_IO = USER_IO & 0xfff0;
+    PSTATUS = (PSTATUS & 0xfff0) | 0x10;
+    CECFG1 = (CECFG1 & 0xc000) | 0x1000;
+    CECFG2 = (CECFG2 & 0xc000) | 0x1000;
+    CETBL = 0;
+    PACFG = 0;
+    ASTATUS = 0;
+    LSA = 0;
+    LEA = 0;
+    LSA1 = LSA1 & 0xfffffe;
+    LSA2 = LSA2 & 0xfffffe;
+    LSA3 = LSA3 & 0xfffffe;
+    LEA1 = 0;
+    LEA2 = 0;
+    LEA3 = 0;
+}
+
+:RESET is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x129
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+    carmel_d2_reset();
+    reset_control_fields();
+    carmel_end_unmodeled_issue();
 }
 
 # LOAD's fixed word/long stride uses the old mode field, not the

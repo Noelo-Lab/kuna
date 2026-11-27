@@ -1632,6 +1632,65 @@ int main(void) {
 }
 
 #[test]
+fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("reset.bin");
+    let source = scratch.path().join("reset.c");
+    let executable = scratch.path().join("reset");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let sequential = [0xab, 0xec, 0, 0x2b, 0xec, 0];
+    let warm = [sequential; 2];
+    let reset = [0xb4, 0xd1, 0x1d, 0xca, 0x74, 0x52];
+    let decode = |entry: &str, prefix: &[[u8; 6]], storage: &str| -> Value {
+        let mut bytes = prefix.to_vec();
+        bytes.push(reset);
+        bytes.extend([nop; 6]);
+        bytes.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        bytes.extend([nop; 2]);
+        fs::write(&binary, bytes.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            entry, "--addr", "--raw-image", "--base", entry, "--target", "Carmel:BE:24:default:default",
+            "--json", "--assert-strict", "--assert", &format!("return %{storage} unsigned short"),
+        ]);
+        for (n, input) in ["EST", "ECFG", "PACFG", "INTBASE", "PSTATUS", "CECFG1", "CECFG2", "CETBL", "A0L"]
+            .into_iter().enumerate()
+        {
+            kuna.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+        }
+        let output = kuna.output().unwrap();
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap_or_else(|err| {
+            panic!("{err}: {}", String::from_utf8_lossy(&output.stderr));
+        });
+        report["functions"][0].clone()
+    };
+    let mut generated = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut calls = String::new();
+    let rows = [("EST", 0), ("ECFG", 0x3fc0), ("PACFG", 0), ("INTBASE", 0xe000),
+        ("PSTATUS", 0xe010), ("CECFG1", 0xd000), ("CECFG2", 0x5000), ("CETBL", 0), ("A0L", 0x4321)];
+    for (i, (storage, expected)) in rows.into_iter().enumerate() {
+        let (entry, prefix) = if i & 1 == 0 { ("0", &[][..]) } else { ("0x1000", &warm[..]) };
+        let fun = decode(entry, prefix, storage);
+        assert!(fun["error"].is_null(), "{entry} {storage}: {fun}");
+        let symbol = fun["name"].as_str().unwrap();
+        let text = fun["code"].as_str().unwrap();
+        let name = format!("reset_{i}");
+        writeln!(generated, "#define {symbol} {name}\n{text}\n#undef {symbol}").unwrap();
+        writeln!(calls, "if ({name}(0x7fff,0x3fff,0x8765,0xeabc,0xe00f,0xffff,0x4fff,0xffff,0x4321) != {expected:#x}) return {};", i + 1).unwrap();
+    }
+    writeln!(generated, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+    for prefix in [&[][..], &[[0x21, 0xac, 0x20, 0x2b, 0xec, 0]][..]] {
+        let fun = decode("0x1000", prefix, "EST");
+        assert!(fun["error"].to_string().contains("Unproved Carmel RESET retirement window"), "{fun}");
+    }
+}
+
+#[test]
 fn carmel_indexed_word_copy_captures_addresses_before_the_late_store() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

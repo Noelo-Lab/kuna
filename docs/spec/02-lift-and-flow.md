@@ -4080,6 +4080,13 @@ still publishes flags. CE-qualified writes to `A0L` and `A1L` use the
 retired result predicate, not AEN. An immediate write to `EST` changes
 only the transient EX view.
 
+Unqualified wide `RESET` applies control-field masks at D2. For a
+quiescent reset, Kuna proves that the earlier issue slots are either
+empty at physical CODE zero or already filled by four inert issues.
+It follows decoded issue boundaries, not a fixed byte count: the two
+slots of a sequential fetch are separate issues. An unproved window
+is not lifted as a serial register clear.
+
 The compact signed DATA `MOVE` with indexed destination and fixed
 source postincrement captures both old addresses. The address stage
 advances the two distinct pointers even if late CE blocks the store.

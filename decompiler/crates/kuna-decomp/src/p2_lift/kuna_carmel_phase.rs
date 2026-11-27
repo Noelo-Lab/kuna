@@ -35,6 +35,8 @@ pub(crate) struct PhaseDecode<'a> {
     delay_mask: Option<u64>,
     fixed_read_tick: Option<u64>,
     end_unmodeled: Option<u64>,
+    idle_tick: Option<u64>,
+    reset: Option<u64>,
     ff: Option<FfOps>,
 }
 
@@ -51,6 +53,8 @@ impl<'a> PhaseDecode<'a> {
         let delay_mask = index(b"carmel_modeled_delay_mask");
         let fixed_read_tick = index(b"carmel_fixed_read_admission");
         let end_unmodeled = index(b"carmel_end_unmodeled_issue");
+        let idle_tick = index(b"carmel_record_idle_admission");
+        let reset = index(b"carmel_d2_reset");
         let ff = (|| Some(FfOps {
             capture: index(b"carmel_capture_ff_before_ex")?,
             fetch: index(b"carmel_sample_ff_at_of")?,
@@ -64,7 +68,8 @@ impl<'a> PhaseDecode<'a> {
         let translate = arch.translate();
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
-        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask, fixed_read_tick, end_unmodeled, ff })
+        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
+            fixed_read_tick, end_unmodeled, idle_tick, reset, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -74,6 +79,7 @@ impl<'a> PhaseDecode<'a> {
         let mut dual_reads = BTreeSet::new();
         let mut ff_fetches = false;
         let mut reads = false;
+        let mut resets = Vec::new();
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
             if op.get_parent().is_none() { continue; }
@@ -81,6 +87,10 @@ impl<'a> PhaseDecode<'a> {
             let offset = op.get_addr().get_offset();
             if index == self.tick || Some(index) == self.fixed_read_tick {
                 markers.push((op_id, offset, Mark::Tick));
+            } else if Some(index) == self.idle_tick {
+                markers.push((op_id, offset, Mark::Idle));
+            } else if Some(index) == self.reset {
+                resets.push(op_id);
             } else if self.ff.is_some_and(|ff| index == ff.late_tick) {
                 dual_reads.insert(offset);
                 markers.push((op_id, offset, Mark::Tick));
@@ -99,6 +109,14 @@ impl<'a> PhaseDecode<'a> {
                 delay_queries.push((op_id, offset));
             } else if index == self.admission {
                 reads = true;
+            }
+        }
+        if !resets.is_empty() {
+            let idle: BTreeSet<_> = markers.iter().filter_map(|&(_, offset, kind)|
+                (kind == Mark::Idle).then_some(offset)).collect();
+            super::kuna_carmel_reset::prove_quiescent(fd, visits, &resets, |offset| idle.contains(&offset))?;
+            for reset in resets {
+                fd.op_destroy(reset);
             }
         }
         let mut delayed = BTreeMap::new();
@@ -242,7 +260,8 @@ impl<'a> PhaseDecode<'a> {
             }
             let marker = userop(fd, op);
             match marker {
-                Some(index) if index == self.tick || Some(index) == self.delay_tick => {
+                Some(index) if index == self.tick || Some(index) == self.delay_tick
+                    || Some(index) == self.idle_tick => {
                     trace.events.push(Event::Tick(id, false));
                 }
                 Some(index) if Some(index) == self.fixed_read_tick => {
@@ -316,6 +335,7 @@ fn sample_error(fd: &Funcdata, op: OpId, sample: &str) -> KunaError {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mark {
     Tick,
+    Idle,
     Slot,
     Redirect,
     EndUnmodeled,
