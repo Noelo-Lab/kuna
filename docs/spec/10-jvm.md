@@ -928,6 +928,15 @@ canonical constructor and hides the accessors, `equals`, `hashCode` and `toStrin
 match the generated ones. A failure here writes the class as `$VF: Couldn't be decompiled`
 (section 10.12).
 
+**A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
+outer instance of an inner member superclass prints as `super()`, the outer instance being
+a synthetic argument, so `hideEmptySuper` took it for the implicit call and dropped it. It
+keeps the call, written `o.super()` by `qualified_super_call`, when the class file proves the
+qualifier: javac's null check of the instance, which it emits only for a written qualifier,
+or an instance that is no class's `this`, which is all an unqualified call ever passes. An
+enclosing `this` without the check stays implicit even where a supertype outside the input
+hides whether the call's class is a member of that enclosing class.
+
 Two class-level facts come from outside the class. **Varargs (kuna).**
 `decompiler/managed/kuna-jvm/src/substrate/invocation_exprent.rs` needs to know
 whether a called method is varargs, to print `f(a, b)` instead of
