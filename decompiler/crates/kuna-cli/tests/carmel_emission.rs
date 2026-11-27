@@ -5691,6 +5691,56 @@ fn carmel_compact_move_literal_and_ff_ports_execute_in_emitted_c() {
 }
 
 #[test]
+fn carmel_compact_saved_lea_store_uses_an_unmodified_word_address() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("saved-lea.bin");
+    let source = scratch.path().join("saved-lea.c");
+    let executable = scratch.path().join("saved-lea");
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(&specs, &[("R1", 0x4043), ("R7", 0xffff)], 0, 0);
+    let nop = [0x2b, 0xec, 0];
+    let mut c = String::from(
+        "#include <stdint.h>\n\
+         typedef uint32_t undefined3;\n\
+         #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+         volatile unsigned short lo, hi;\n",
+    );
+    let mut calls = String::new();
+    for (row, (packet, address)) in [
+        ([[0x31, 0xe4, 0x26], nop], 0x4043u16),
+        ([[0xab, 0xec, 0], [0x31, 0xe4, 0xe6]], 0xffff),
+        ([nop, [0x31, 0xe4, 0x26]], 0x4043),
+    ].into_iter().enumerate() {
+        fs::write(&binary, [packet[0], packet[1], [0x2b, 0xd8, 0], nop].as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict",
+            "--assert", "param 0 %LEA1H unsigned char saved_hi",
+            "--assert", "param 1 %LEA1L unsigned short saved_lo",
+            "--assert", "param 2 %ECFG unsigned short ecfg",
+            "--assert", &format!("data [data,{address:#x}] volatile unsigned short lo"),
+            "--assert", &format!("data [data,{:#x}] volatile unsigned short hi", address.wrapping_add(1)),
+        ]);
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        writeln!(c, "#define sub_0 saved_lea_{row}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+        writeln!(calls, "lo = hi = 0x1111; saved_lea_{row}(0x80, 0xabcd, 0); \
+                        if (lo != 0xabcd || hi != 0x80) return {}; \
+                        lo = hi = 0x1111; saved_lea_{row}(0x80, 0xabcd, 0x20); \
+                        if (lo != 0x55e6 || hi != 0x40) return {};", 2 * row + 1, 2 * row + 2).unwrap();
+    }
+    writeln!(c, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_compact_shift_lane_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
@@ -5795,6 +5845,23 @@ fn carmel_compact_shift_lane_ports_execute_in_emitted_c() {
         (&shifted, 0x3011, None), (&left_large, 0x3008, None),
         (&right_large, 0x3011, None), (&limited, 0x3035, None),
     ], None);
+    let inputs = ["A0H", "A2H", "A2L", "GB2", "ECFG", "EST"];
+    let negative = [0x8001, 0xb008, 0x4b74, 0x87, 4, 0x3202];
+    let positive = [0x7001, 0xb008, 0x4b74, 0x87, 4, 0x3202];
+    let shift = [0x3d, 0xac, 0x0e];
+    for (packet, negative_result, positive_result, flags) in [
+        ([[0xbd, 0xac, 0x0e], NOP], 0x8000, 0x7fff, 0x3236),
+        ([SEQUENTIAL_NOP, shift], 0x8000, 0x7fff, 0x3236),
+        ([shift, NOP], 0x8000, 0x7fff, 0x3236),
+        ([NOP, shift], 0xb008, 0xb008, 0x3202),
+    ] {
+        project(packet, "A2H", &inputs, &[(&negative, negative_result, None), (&positive, positive_result, None)], None);
+        project(packet, "EST", &inputs, &[(&negative, flags, None)], None);
+    }
+    let arithmetic_right = [[0x3d, 0xac, 0x7e], NOP];
+    project(arithmetic_right, "A2H", &inputs, &[(&negative, 0xc000, None)], None);
+    project(arithmetic_right, "A2L", &inputs, &[(&negative, 0x4b74, None)], None);
+    project(arithmetic_right, "GB2", &inputs, &[(&negative, 0x87, None)], None);
     project(DATA_SHIFT, "EST", &["RN1", "FF1", "EST", "CECFG1", "CETBL"], &[
         (&[2, 32, 0x3000, 0, 0xffff], 0x3008, Some((1, 0))),
         (&[2, 64, 0x3000, 0, 0xffff], 0x3008, Some((1, 0))),

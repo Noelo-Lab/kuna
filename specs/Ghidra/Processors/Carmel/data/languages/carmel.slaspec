@@ -478,6 +478,7 @@ define token slot (24)
     slot_3_7 = (3,7)
     slot_4_7 = (4,7)
     slot_5_7 = (5,7)
+    saved_lea_store_ptr = (5,7)
     shift_8_dst = (11,13)
     shift_8_dst_lo = (11,13)
     shift_8_dst_hi = (11,13)
@@ -1002,6 +1003,7 @@ attach variables [short_alu_dst_lo] [A0L A1L A2L A3L A4L A5L _ _];
 attach variables [short_alu_dst_hi] [A0H A1H A2H A3H A4H A5H _ _];
 attach variables [short_alu_dst_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [short_alu_dst_ptr short_alu_src_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
+attach variables [saved_lea_store_ptr] [R0 R1 R2 R3 R4 R5 R6 R7];
 attach variables [short_alu_src_step short_alu_rhs_step] [RN0 RN1 RN2 RN3 RN4 RN5 RN6 RN7];
 attach variables [short_alu_dst_modulo wide_logic_lhs_modulo wide_logic_rhs_modulo] [RM0 RM0 RM2 RM2 RM4 RM4 RM6 RM6];
 attach variables [short_alu_dst_bound wide_logic_lhs_bound wide_logic_rhs_bound] [RL0 RL0 RL2 RL2 RL4 RL4 RL6 RL6];
@@ -2238,6 +2240,22 @@ macro compact_word_arithmetic(destination, source, count) {
     EST = (EST & 0xffc6) | flags;
 }
 
+macro compact_arithmetic_immediate(destination, source, bits) {
+    local incoming:2 = EST;
+    local input:4 = sext(source);
+    local n:4 = (bits ^ 32) - 32;
+    local result:8;
+    local flags:2;
+    compact_shift_word(input, n, result, flags);
+    local word:2 = result(2);
+    if ((ECFG & 4) == 0 || (flags & 0x20) == 0) goto <publish>;
+    word = 0x7fff + zext((flags & 0x10) != 0);
+    flags = flags | 4;
+  <publish>
+    destination = word;
+    publish_ce_feedback((incoming & 0xcfc6) | flags, incoming);
+}
+
 macro compact_word_logical_store(pointer, source, count) {
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0, enabled);
@@ -2283,7 +2301,9 @@ macro compact_long_logical_ce(lo, hi, guard, source, count) {
 }
 
 @define SHIFT_SEQ "((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))"
-@define SHIFT_WORD_IMM "slot_16_22=0x39 & slot_0_0=0 & (slot_13_14=0 | slot_13_14=1 | slot_13_14=2) & shift_literal_dst & slot_11_11=1 & (slot_8_9=0 | slot_8_9=1 | slot_8_9=2) & shift_literal_src & shift_word_literal"
+@define SHIFT_WORD_LITERAL "slot_0_0=0 & (slot_13_14=0 | slot_13_14=1 | slot_13_14=2) & shift_literal_dst & slot_11_11=1 & (slot_8_9=0 | slot_8_9=1 | slot_8_9=2) & shift_literal_src & shift_word_literal"
+@define SHIFT_WORD_IMM "slot_16_22=0x39 & $(SHIFT_WORD_LITERAL)"
+@define SHIFT_WORD_IMM_AS "slot_16_22=0x3d & $(SHIFT_WORD_LITERAL)"
 @define SHIFT_RN_IMM "slot_16_22=0x38 & slot_0_0=1 & (slot_15_15=0 | slot_14_15=2) & shift_0_dst & slot_11_12=1 & shift_rn_src & shift_count"
 @define SHIFT_WORD_AS "slot_14_22=0xfb & slot_0_0=0 & (slot_11_12=0 | slot_11_12=1 | slot_11_12=2) & shift_word_dst & slot_9_9=1 & (slot_6_7=0 | slot_6_7=1 | slot_6_7=2) & shift_word_src & slot_1_4=6"
 @define SHIFT_WORD_DATA "slot_14_22=0xec & slot_0_0=1 & slot_13_13=0 & shift_word_r & slot_7_9=2 & shift_word_src & slot_1_4=6"
@@ -2296,6 +2316,23 @@ macro compact_long_logical_ce(lo, hi, guard, source, count) {
     compact_word_logical(shift_literal_dst, shift_literal_src, shift_word_literal_bits:4);
 }
 :^nop_left "||" "LSHIFT" shift_literal_dst,shift_literal_src,shift_word_literal is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SHIFT_WORD_IMM)) { }
+
+:ASHIFT shift_literal_dst,shift_literal_src,shift_word_literal is
+    $(SHIFT_SEQ) & $(SHIFT_WORD_IMM_AS) & shift_word_literal_bits & ce_single_tick {
+    compact_arithmetic_immediate(shift_literal_dst, shift_literal_src, shift_word_literal_bits:4);
+    build ce_single_tick;
+}
+:ASHIFT shift_literal_dst,shift_literal_src,shift_word_literal "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(SHIFT_WORD_IMM_AS) & shift_word_literal_bits & ce_single_tick);
+    (slot_mode=0 & nop_right) {
+    compact_arithmetic_immediate(shift_literal_dst, shift_literal_src, shift_word_literal_bits:4);
+    build ce_single_tick;
+}
+:^nop_left "||" "ASHIFT" shift_literal_dst,shift_literal_src,shift_word_literal is
+    (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick); (slot_mode=0 & $(SHIFT_WORD_IMM_AS)) {
+    publish_ce_feedback(EST & 0xcfff, EST);
+    build ce_single_tick;
+}
 
 :LSHIFT shift_0_dst,shift_rn_src,shift_count is $(SHIFT_SEQ) & $(SHIFT_RN_IMM) & shift_count_encoding & shift_0_dst_lo & shift_0_dst_hi & shift_0_dst_guard {
     compact_long_logical_ce(shift_0_dst_lo, shift_0_dst_hi, shift_0_dst_guard, shift_rn_src, shift_count_encoding:4);
@@ -8189,6 +8226,28 @@ macro compact_pair_long_store(address, result) {
     local upper:2 = address + 1;
     *[data]:2 address = result:2;
     *[data]:2 upper = result(2);
+}
+
+macro compact_store_saved_lea(pointer) {
+    local address:2 = pointer;
+    local saved:4 = (zext(LEA1H) << 16) | zext(LEA1L);
+    local value:4 = saved >> ((ECFG >> 5) & 1);
+    compact_pair_long_store(address, value);
+    clock_ce();
+}
+
+@define SAVED_LEA_STORE "slot_8_22=0x31e4 & slot_1_4=3 & slot_0_0=0 & saved_lea_store_ptr"
+
+:MOVE "long *"^saved_lea_store_ptr,"LEA1" is $(SHIFT_SEQ) & $(SAVED_LEA_STORE) {
+    compact_store_saved_lea(saved_lea_store_ptr);
+}
+:MOVE "long *"^saved_lea_store_ptr,"LEA1" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(SAVED_LEA_STORE)); (slot_mode=0 & nop_right) {
+    compact_store_saved_lea(saved_lea_store_ptr);
+}
+:^nop_left "||" "MOVE" "long *"^saved_lea_store_ptr,"LEA1" is
+    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & $(SAVED_LEA_STORE)) {
+    compact_store_saved_lea(saved_lea_store_ptr);
 }
 
 macro compact_pair_shift(value, count, result, flags) {

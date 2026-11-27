@@ -4124,6 +4124,11 @@ which physical FF register the active slot uses. The store postmodifies
 `R6`, writes its old address with the `ECFG.SR1` word shift, and leaves
 the arithmetic flags intact, as does the load.
 
+A compact long `MOVE` from saved `LEA1` uses the unmodified selected
+`R0`–`R7` as its DATA address. `SR1` shifts the zero-extended 24-bit saved
+address as one value before storing the low and high words. The second
+word uses the next 16-bit address, including wrap at `0xffff`.
+
 For covered compact long arithmetic with an inactive peer, the widened
 result determines status before limiting. A long DATA write publishes two
 16-bit words and wraps its second address in the DATA bank. A qualified
@@ -5092,6 +5097,13 @@ result and status only when CE1 is enabled. The same compact opcode in
 the parallel right lane of a NOP pair does not shift or write DATA, but
 the indexed long DATA form still updates its pointer; a sequential right
 slot instead executes its admitted shifter form.
+
+The unqualified compact half-register immediate `ASHIFT` clips a left
+shift at 24 bits and a sign-filled right shift at 17 bits. It updates
+only the destination half and uses the pre-limit extension flag to
+select saturation, retaining the guard, the other half, and the other
+ALU's flags. The secondary slot of a parallel NOP pair does not shift;
+both positions of a sequential pair execute on the primary word shifter.
 
 For covered wide signed/unsigned multiply-subtract forms, the result bank
 selects the extended addend and result width. The first multiplier source
