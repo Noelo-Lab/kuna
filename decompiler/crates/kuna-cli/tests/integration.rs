@@ -394,6 +394,8 @@ mod narrow_extension;
 
 #[path = "narrow_switch_labels.rs"]
 mod narrow_switch_labels;
+#[path = "narrow_multiply_emission.rs"]
+mod narrow_multiply_emission;
 
 #[path = "narrow_zext_returns.rs"]
 mod narrow_zext_returns;
@@ -964,6 +966,8 @@ mod nullable_relocations;
 
 #[path = "call_site_prototype.rs"]
 mod call_site_prototype;
+#[path = "homespill_assert.rs"]
+mod homespill_assert;
 
 #[path = "xrefs_immutable_got.rs"]
 mod xrefs_immutable_got;

@@ -137,4 +137,6 @@ pub(crate) mod kuna_constantshift;
 
 pub mod kuna_widenedadd;
 
+mod kuna_narrowmultiply;
+
 pub mod kuna_returnselector;
