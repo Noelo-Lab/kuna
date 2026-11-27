@@ -375,7 +375,7 @@ kuna	30edca3a144f43e9
 case	default/pkg/TestEnumStaticField2	Default	classes/jasm/pkg/TestEnumStaticField2
 kuna	d24cf424007e0535
 case	default/pkg/TestEnumSwitchEmpty	Default	classes/java8/pkg/TestEnumSwitchEmpty
-kuna	aea7da8d6685184e
+kuna	8b87869ff230aabc
 case	default/pkg/TestExceptionElse	Default	classes/java8/pkg/TestExceptionElse
 kuna	f8472b8b72c062aa
 case	default/pkg/TestExtendingSubclass	Default	classes/java8/pkg/TestExtendingSubclass
@@ -2062,3 +2062,5 @@ case	kuna-fixes/pkg/TestStaticInitAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/Te
 case	kuna-fixes/pkg/TestNestedAlreadyCaught	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedAlreadyCaught
 # kuna-fixes/src/pkg/TestFinallyRethrowOutside.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestFinallyRethrowOutside	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyRethrowOutside
+# kuna-fixes/src/pkg/TestEmptyEnumSwitch.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestEmptyEnumSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEmptyEnumSwitch	kuna-fixes/classes/pkg/EmptySwitchColor

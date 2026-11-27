@@ -622,7 +622,14 @@ When a full pass of the loop changes nothing, the tail runs once, in this order:
   by `equals` tests into a second switch) back into one switch over the strings; the
   helper statements this leaves are marked hidden and are not written. If that produced a
   switch expression, switch expressions, stack
-  variables and versions are processed once more.
+  variables and versions are processed once more. (kuna) javac compiles `switch (e) {}` on
+  an enum of another class to a read of the switch map at `e.ordinal()` whose value it
+  discards, with no switch instruction, which Vineflower wrote as
+  `int var10000 = <unrepresentable>.$SwitchMap$..[e.ordinal()];`; such a read
+  (`empty_enum_switches`: a stack variable nothing reads, set from an array of a
+  `$SwitchMap` field indexed by `ordinal()`) is written as the call `e.ordinal();`, which
+  checks `e` the same way. The source's `switch (e) {}` would also bring back the synthetic
+  map class; it is not written.
 - `ExitHelper::adjust_return_type` and `ExitHelper::remove_redundant_returns` (a trailing
   `return;` of a `void` method is dropped).
 - secondary functions once more, then

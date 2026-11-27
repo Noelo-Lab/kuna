@@ -41,6 +41,9 @@ impl SwitchHelper {
         if let Some(switch_stat) = stat.try_as_switch() {
             ret = Self::simplify(switch_stat, mt, root);
         }
+        if let Some(exprents) = stat.get_exprents() {
+            ret |= Self::empty_enum_switches(&exprents, root);
+        }
 
         let mut i = 0;
         while i < stat.get_stats().borrow().len() {
@@ -821,6 +824,44 @@ impl SwitchHelper {
         }
 
         false
+    }
+
+    /// kuna: javac compiles `switch (e) {}` on an enum of another class to a read of the
+    /// synthetic switch map at `e.ordinal()` whose value it pops, which Vineflower wrote as an
+    /// assignment to an unused stack variable from a field of a class it cannot name. The read
+    /// becomes the `e.ordinal()` call it indexes with, which runs the same check of `e`.
+    fn empty_enum_switches(exprents: &JList<Exprent>, root: RootStatement) -> bool {
+        let mut reads: Vec<(usize, VarExprent, Exprent)> = Vec::new();
+        for i in 0..exprents.len() {
+            let Some(assign) = exprents.get(i).try_as_assignment() else {
+                continue;
+            };
+            let (Some(var), Some(arr)) =
+                (assign.get_left().try_as_var(), assign.get_right().try_as_array())
+            else {
+                continue;
+            };
+            let index = arr.get_index();
+            if var.is_stack()
+                && index.try_as_invocation().is_some_and(|i| i.get_name() == "ordinal")
+                && arr
+                    .get_array()
+                    .try_as_field()
+                    .is_some_and(|f| f.get_name().starts_with("$SwitchMap"))
+                && Self::is_enum_array(arr.0)
+            {
+                reads.push((i, var, index));
+            }
+        }
+        let targets: Vec<VarExprent> = reads.iter().map(|r| r.1).collect();
+        let mut ret = false;
+        for (i, var, index) in reads {
+            if !var.is_var_referenced(root.0, &targets) {
+                exprents.set(i, index);
+                ret = true;
+            }
+        }
+        ret
     }
 
     fn is_enum_array(exprent: Exprent) -> bool {
