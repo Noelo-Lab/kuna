@@ -2343,12 +2343,13 @@ mod tests {
         // and kuna-ptrfromuse-faroffset / a parameter read only at field offsets of 0x1000 or more is a pointer
         // and kuna-homespill-win64 / a Windows x64 argument register spilled to its home slot is a parameter
         // and gh1883-quotientreturn-x64 / a div quotient beside a float computed from its remainder is no return
+        // and kuna-epiloguepop(-sysv, -x87) / a register the epilogue pops is not the return beside a float
         // and kuna-devirtualize / a VM-protected entry stub devirtualized (deobfuscate devirtualize)
         // and kuna-devirtualize-sound / a devirtualized body says nothing false about its program
         // and kuna-devirtualize-interp / an in-function bytecode interpreter devirtualized (deobfuscate devirtualize)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
-        assert_eq!(count, 947, "corpus file count drifted");
+        assert_eq!(count, 950, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

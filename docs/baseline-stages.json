@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5656,
-    5656
+    5669,
+    5669
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -898,6 +898,19 @@
     "data:ENTRYTHUMBFLOW #1: the Thumb entry never decodes as A32 returning nothing",
     "data:ENTRYTHUMBFLOW #2: the entry is walked as Thumb and returns its constant",
     "data:ENTRYTHUMBFLOW #3: the constant the Thumb body returns appears exactly once",
+    "data:EPILOGUE-POP #1: halfsel takes the index",
+    "data:EPILOGUE-POP #2: halfsel returns the element the index selects",
+    "data:EPILOGUE-POP #3: no function returns the popped double",
+    "data:EPILOGUE-POP #4: scaled returns a float by index",
+    "data:EPILOGUE-POP #5: a pop with no rival still returns the flags",
+    "data:EPILOGUE-POP #6: xmm0 only stored leaves the popped argument returned",
+    "data:EPILOGUE-POP #7: a struct built in the frame keeps its rax return",
+    "data:EPILOGUE-POP-SYSV #1: twice returns the doubled float",
+    "data:EPILOGUE-POP-SYSV #2: halfsel reads as its red-zone build",
+    "data:EPILOGUE-POP-SYSV #3: no function returns the popped slot",
+    "data:EPILOGUE-POP-SYSV #4: a constant pushed and popped stays the return",
+    "data:EPILOGUE-POP-X87 #1: twice returns ST0",
+    "data:EPILOGUE-POP-X87 #2: twice returns the doubled float",
     "data:EVALCURRENTPROTO #1: the __stdcall default model never sees only the stack argument",
     "data:EVALCURRENTPROTO #2: the ECX argument never survives as an undefined local",
     "data:EVALCURRENTPROTO #3: the spec's merged model resolves to __fastcall and recovers all three arguments",
