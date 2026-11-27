@@ -29,6 +29,7 @@ use crate::if_exprent::{IfExprent, IfExprentData};
 use crate::invocation_exprent::{InvocationExprent, InvocationExprentData};
 use crate::k_dispatch::{self, KExprentExt};
 use crate::fixes::generics;
+use crate::fixes::numeric_types;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
 use crate::method_wrapper::MethodWrapper;
@@ -251,6 +252,8 @@ impl Exprent {
             ExprentType::Function => FunctionExprent::get_precedence(self.as_function()),
             ExprentType::New => NewExprent::get_precedence(self.as_new()),
             ExprentType::Switch => SwitchExprent::get_precedence(self.as_switch()),
+            ExprentType::Invocation => numeric_types::bare_unboxed_assignment(self.as_invocation())
+                .map_or_else(|| Exprent::get_precedence_base(self), |a| a.get_precedence()),
             _ => Exprent::get_precedence_base(self),
         }
     }

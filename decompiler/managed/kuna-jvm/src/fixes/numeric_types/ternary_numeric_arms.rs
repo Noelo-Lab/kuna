@@ -1,10 +1,27 @@
 //! Fix `ternary_numeric_arms`: a reference conditional whose arms print as
 //! numeric operands of different types gets an arm cast to its type, so it
-//! stays a reference conditional.
+//! stays a reference conditional. A conditional typed `int` lowers the type
+//! of the variable it is assigned to only when its arms are constants.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;
+use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::var_type::VarType;
+
+/// Whether every value arm of the conditional `func`, through nested
+/// conditionals, is a constant: only then is its `int` type the default of
+/// its constants, which a narrower variable may hold (`byte v = b ? 0 : 1`),
+/// rather than the type of a value it can yield.
+pub fn constant_arms(func: FunctionExprent) -> bool {
+    let operands = func.get_lst_operands();
+    (1..3).all(|i| {
+        let arm = operands.get(i);
+        arm.try_as_const().is_some()
+            || arm
+                .try_as_function()
+                .is_some_and(|f| f.get_func_type() == FunctionType::Ternary && constant_arms(f))
+    })
+}
 
 /// The exprent `expr` is written as: a boxing call printed without its
 /// `valueOf` is written as its argument.

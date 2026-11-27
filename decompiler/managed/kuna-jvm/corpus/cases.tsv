@@ -203,7 +203,7 @@ kuna	d54805ae79860693
 case	default/pkg/TestArrayNull1	Default	classes/java8nodebug/pkg/TestArrayNull1
 kuna	6c534cb7157e3a02
 case	default/pkg/TestArrayNull2	Default	classes/java8nodebug/pkg/TestArrayNull2
-kuna	4f982dabda0b6127
+kuna	72efeb1b33b6fd39
 case	default/pkg/TestArrayNullAccess	Default	classes/java8/pkg/TestArrayNullAccess
 kuna	0fa13027fb4e0741
 case	default/pkg/TestArrayPPMM	Default	classes/java8/pkg/TestArrayPPMM
@@ -289,7 +289,7 @@ kuna	a8e71f5a39e9d179
 case	default/pkg/TestClashName	Default	classes/java8/pkg/TestClashName	classes/java8/pkg/SharedName1	classes/java8/pkg/SharedName2	classes/java8/pkg/SharedName3	classes/java8/pkg/SharedName4	classes/java8/pkg/NonSharedName	classes/java8/pkg/TestClashNameParent	classes/java8/ext/TestClashNameParent	classes/java8/pkg/TestClashNameIface	classes/java8/ext/TestClashNameIface
 kuna	7fdc0118e81cb17f
 case	default/pkg/TestClassFields	Default	classes/java8/pkg/TestClassFields
-kuna	ceb82c30a4314f00
+kuna	c63fd07a1e7e3201
 case	default/pkg/TestClassLambda	Default	classes/java8/pkg/TestClassLambda
 kuna	b1c65d1fdf0c4d43
 case	default/pkg/TestClassLoop	Default	classes/java8/pkg/TestClassLoop
@@ -519,7 +519,7 @@ kuna	9cd2596cb0abee2b
 case	default/pkg/TestInterfaceFields	Default	classes/java8/pkg/TestInterfaceFields
 kuna	e70b6688930f6d41
 case	default/pkg/TestInterfaceLambdaCast	Default	classes/java8/pkg/TestInterfaceLambdaCast
-kuna	9acbc9e371ba66a2
+kuna	45105283c0651f72
 case	default/pkg/TestInterfaceMethods	Default	classes/java8/pkg/TestInterfaceMethods
 kuna	8ef89f752d6ba060
 case	default/pkg/TestInterfaceNullInvoc	Default	classes/java8/pkg/TestInterfaceNullInvoc
@@ -617,7 +617,7 @@ kuna	7d683c67973014cc
 case	default/pkg/TestMethodReferenceLetterClass	Default	classes/java8/pkg/TestMethodReferenceLetterClass
 kuna	229aa73c2ea47cb2
 case	default/pkg/TestMethodReferenceSameName	Default	classes/java8/pkg/TestMethodReferenceSameName
-kuna	359920a9d15130f9
+kuna	62b81cbaa6ab042a
 case	default/pkg/TestMissingConstructorCallBad	Default	classes/jasm/pkg/TestMissingConstructorCallBad
 kuna	4597c1c5e776c676
 case	default/pkg/TestMissingConstructorCallGood	Default	classes/jasm/pkg/TestMissingConstructorCallGood
@@ -677,7 +677,7 @@ kuna	c5fa9e1738cc4db6
 case	default/pkg/TestOldECJInner	Default	classes/jasm/pkg/TestOldECJInner
 kuna	7e4779737eb93a33
 case	default/pkg/TestOperatorPrecedence	Default	classes/java8/pkg/TestOperatorPrecedence
-kuna	cd668806872a1584
+kuna	d28054e8e1a5afdd
 case	default/pkg/TestOverloadedNull	Default	classes/java8/pkg/TestOverloadedNull
 kuna	4f632a5878762411
 case	default/pkg/TestOverrideIndirect	Default	classes/java8/pkg/TestOverrideIndirect
@@ -763,7 +763,7 @@ kuna	740edc0624517c72
 case	default/pkg/TestPrimitiveTypeClasses	Default	classes/java8/pkg/TestPrimitiveTypeClasses
 kuna	a080da6ea3d08411
 case	default/pkg/TestPrivateClasses	Default	classes/java8/pkg/TestPrivateClasses
-kuna	fbe87151febc7798
+kuna	1ec8da3309ed1fbc
 case	default/pkg/TestPrivateEmptyConstructor	Default	classes/java8/pkg/TestPrivateEmptyConstructor
 kuna	dd08445eb8ad7335
 case	default/pkg/TestPrivateInterfaceMethod	Default	classes/java9/pkg/TestPrivateInterfaceMethod
@@ -803,7 +803,7 @@ kuna	b08d85166d477120
 case	default/pkg/TestRecordPatterns5	Default	classes/java21/pkg/TestRecordPatterns5
 kuna	3141226b5166a334
 case	default/pkg/TestRecordPatterns6	Default	classes/java21/pkg/TestRecordPatterns6
-kuna	54c381101e899790
+kuna	a9c8936f5a256121
 case	default/pkg/TestRecordPatterns7	Default	classes/java21/pkg/TestRecordPatterns7
 kuna	ceafb9a7e35d64b5
 case	default/pkg/TestRecordPatterns8	Default	classes/java21/pkg/TestRecordPatterns8
@@ -855,7 +855,7 @@ kuna	917f4f456a4c64d8
 case	default/pkg/TestSplitColorComponents	Default	classes/java8/pkg/TestSplitColorComponents
 kuna	d3ebbc3d109ab7f3
 case	default/pkg/TestStackCastParam	Default	classes/java8/pkg/TestStackCastParam
-kuna	658b1e0f4662dc2c
+kuna	347138d88642b5ca
 case	default/pkg/TestStaticBlockFinalField	Default	classes/java8/pkg/TestStaticBlockFinalField
 kuna	d540829304f031bd
 case	default/pkg/TestStaticBlockNull	Default	classes/java8/pkg/TestStaticBlockNull
@@ -1069,7 +1069,7 @@ kuna	732a821e5f189175
 case	default/pkg/TestUnknownCastJ17	Default	classes/java17preview/pkg/TestUnknownCastJ17
 kuna	21e1e1efee29a1bc
 case	default/pkg/TestUnnamedVar1	Default	classes/java25/pkg/TestUnnamedVar1
-kuna	1d8d295bf3eaaa7f
+kuna	095f9bedff24a1e9
 case	default/pkg/TestVarHandles	Default	classes/java9/pkg/TestVarHandles
 kuna	372e00877f3d94b6
 case	default/pkg/TestVarIndex	Default	classes/java8nodebug/pkg/TestVarIndex
@@ -2006,3 +2006,25 @@ case	kuna-fixes/pkg/TestParameterNamesNoDebug	Kuna Fixes	kuna-fixes/classes/pkg/
 case	kuna-fixes/pkg/TestStaticFieldBehindLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticFieldBehindLambda
 # kuna-fixes/src/pkg/TestNarrowLocalIncrement.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestNarrowLocalIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowLocalIncrement
+# kuna-fixes/src/pkg/TestTernaryIntLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestTernaryIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTernaryIntLocal
+# kuna-fixes/src/pkg/TestCompoundIntLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCompoundIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundIntLocal
+# kuna-fixes/src/pkg/TestIncrementBeforeCondition.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestIncrementBeforeCondition	Kuna Fixes	kuna-fixes/classes/pkg/TestIncrementBeforeCondition
+# kuna-fixes/src/pkg/TestStaticInitializerOrder.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitializerOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitializerOrder
+# kuna-fixes/src/pkg/TestFieldReadAfterCall.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFieldReadAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestFieldReadAfterCall
+# kuna-fixes/src/pkg/TestRecordPatternNestedType.java, javac 21.0.13.1 (-g:none --release 21)
+case	kuna-fixes/pkg/TestRecordPatternNestedType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternNestedType
+# kuna-fixes/src/pkg/TestSerializableLambda.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSerializableLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestSerializableLambda
+# kuna-fixes/src/pkg/TestConstantCapture.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestConstantCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestConstantCapture
+# kuna-fixes/src/pkg/TestBoxedIncrementOperand.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBoxedIncrementOperand	Kuna Fixes	kuna-fixes/classes/pkg/TestBoxedIncrementOperand
+# kuna-fixes/src/pkg/TestNullLocalType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullLocalType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullLocalType
+# kuna-fixes/src/pkg/TestLambdaReceiver.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLambdaReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaReceiver

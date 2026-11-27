@@ -703,6 +703,9 @@ impl SecondaryFunctionsHelper {
                             {
                                 asexpr.set_right(cond);
                                 asexpr.set_cond_type(Some(func.get_func_type()));
+                                if midlayer.is_none() {
+                                    asexpr.mark_int_result(func.0);
+                                }
                                 ret = Some(exprent);
                             }
                         }
@@ -883,6 +886,7 @@ impl SecondaryFunctionsHelper {
                         let lhs_var_func = func_params[0].as_var();
 
                         if lhs_var.get_index() == lhs_var_func.get_index() {
+                            assignment.mark_int_result(rhs);
                             assignment.set_cond_type(Some(rhs_func.get_func_type()));
                             assignment.set_right(func_params[1]);
 

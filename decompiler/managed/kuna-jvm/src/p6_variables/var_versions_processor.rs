@@ -10,6 +10,7 @@ use crate::direct_graph::DirectGraph;
 use crate::fixes::numeric_types::constant_local_int;
 use crate::exprent::Exprent;
 use crate::flatten_statements_helper::FlattenStatementsHelper;
+use crate::function_exprent::FunctionType;
 use crate::method_descriptor::MethodDescriptor;
 use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet, Shared};
@@ -58,7 +59,7 @@ impl VarVersionsProcessor {
 
         constant_local_int::widen(type_processor, graph, method, previous_versions_processor);
 
-        Self::eliminate_non_java_types(type_processor);
+        Self::eliminate_non_java_types(type_processor, &Self::cast_operands(graph));
 
         self.set_new_var_indices(type_processor, graph, previous_versions_processor);
     }
@@ -120,7 +121,30 @@ impl VarVersionsProcessor {
         });
     }
 
-    fn eliminate_non_java_types(type_processor: VarTypeProcessor) {
+    /// The variables a reference cast reads: javac writes a `checkcast` only
+    /// where the value's type is not already the target's, so the cast type is
+    /// no type of the variable.
+    fn cast_operands(graph: DirectGraph) -> JHashSet<VarVersionPair> {
+        let mut operands = JHashSet::new();
+        graph.iterate_exprents(|exprent: Exprent| {
+            for e in exprent.get_all_exprents_rec_self(true, true) {
+                let Some(cast) = e.try_as_function().filter(|f| f.get_func_type() == FunctionType::Cast) else {
+                    continue;
+                };
+                let ops = cast.get_lst_operands();
+                let target = ops.get(1).get_expr_type();
+                if target.type_ == CodeType::Object || target.array_dim > 0 {
+                    if let Some(var) = ops.get(0).try_as_var() {
+                        operands.add(VarVersionPair::from_var(var));
+                    }
+                }
+            }
+            0
+        });
+        operands
+    }
+
+    fn eliminate_non_java_types(type_processor: VarTypeProcessor, cast_operands: &JHashSet<VarVersionPair>) {
         let map_exprent_max_types = type_processor.get_upper_bounds();
         let map_exprent_min_types = type_processor.get_lower_bounds();
 
@@ -142,9 +166,11 @@ impl VarVersionsProcessor {
                 };
                 map_exprent_min_types.borrow_mut().put(paar, type_);
             } else if type_.type_ == CodeType::Null {
-                map_exprent_min_types
-                    .borrow_mut()
-                    .put(paar, VarType::VARTYPE_OBJECT());
+                let type_ = max_type
+                    .filter(|t| t.type_ == CodeType::Object || t.array_dim > 0)
+                    .filter(|_| !cast_operands.contains(&paar))
+                    .unwrap_or_else(VarType::VARTYPE_OBJECT);
+                map_exprent_min_types.borrow_mut().put(paar, type_);
             }
         }
     }

@@ -298,13 +298,10 @@ impl PPandMMHelper {
                     old = Some(var);
                     found = true;
                 }
-            } else if let Some(func_ex) = ex.try_as_function() {
-                if func_ex.get_func_type() == FunctionType::BooleanAnd
-                    || func_ex.get_func_type() == FunctionType::BooleanOr
-                {
-                    return false;
-                }
             }
+        }
+        if old.is_some_and(|var| !Self::always_evaluated(if_func.0, var.0)) {
+            return false;
         }
 
         if found && !kuna_source_increments::own_statement(expr, inner_var, if_expr) {
@@ -333,6 +330,23 @@ impl PPandMMHelper {
         }
 
         res
+    }
+
+    /// Whether `target`, inside `expr`, is evaluated whenever `expr` is: it is
+    /// not under a right operand of `&&` or `||` or an arm of `?:`.
+    fn always_evaluated(expr: Exprent, target: Exprent) -> bool {
+        if expr == target {
+            return true;
+        }
+        let conditional = expr.try_as_function().is_some_and(|f| {
+            matches!(
+                f.get_func_type(),
+                FunctionType::BooleanAnd | FunctionType::BooleanOr | FunctionType::Ternary
+            )
+        });
+        let children = expr.get_all_exprents();
+        let children = if conditional { &children[..1.min(children.len())] } else { &children[..] };
+        children.iter().any(|&c| Self::always_evaluated(c, target))
     }
 
     fn find_if_successor(stat: Statement) -> Option<IfStatement> {

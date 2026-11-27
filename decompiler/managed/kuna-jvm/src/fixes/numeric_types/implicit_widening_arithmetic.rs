@@ -1,11 +1,13 @@
 //! Fix `implicit_widening_arithmetic`: an operation whose operands, as written,
 //! promote to a narrower type than its own gets the widening conversion nearest
-//! its left operand written.
+//! its left operand written; a variable assigned an integer operation's result
+//! with no narrowing conversion is at least an `int`.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;
 use crate::fixes::util::promoted;
 use crate::function_exprent::{FunctionExprent, FunctionType};
+use crate::type_family::TypeFamily;
 
 fn numeric(t: CodeType) -> bool {
     matches!(
@@ -18,6 +20,22 @@ fn numeric(t: CodeType) -> bool {
             | CodeType::Float
             | CodeType::Double
     )
+}
+
+/// Whether `expr` is an integer operation (`+`, `&`, `<<`, unary `-`, ...):
+/// its value is an `int`, which javac stores into a `byte`, `short` or `char`
+/// only through a narrowing conversion (`i2b`, `i2s`, `i2c`).
+pub fn computes_int(expr: Exprent) -> bool {
+    use FunctionType::*;
+    expr.try_as_function().is_some_and(|f| {
+        matches!(
+            f.get_func_type(),
+            Add | Sub | Mul | Div | Rem | And | Or | Xor | Shl | Shr | Ushr | Neg | BitNot
+        ) && f
+            .get_lst_operands()
+            .iter()
+            .all(|o| o.get_expr_type_opt().is_some_and(|t| t.type_family == TypeFamily::Integer))
+    })
 }
 
 /// The primitive type of `expr` (`Object` for references and arrays).

@@ -476,10 +476,21 @@ alternates two views of the variables:
   swept twice; the second sweep, which also inlines across the boundaries between
   expressions on the operand stack, is what
   turns chains of temporaries back into `a = b = c`, `arr[i++] = v` and chained calls.
+  A stack variable's value is copied into a use further than the next statement only when
+  it is a constant, a variable or a field read whose evaluation has no other effect
+  (kuna: Vineflower also moved a field read whose receiver calls a method, so
+  `step().sink.accept(s, count, count)` with an `int` `count` passed as `float` printed
+  `float var10002 = this.count;` before the call, reading `count` before `step()` runs;
+  `stack_var_inlining::has_effect`).
 
 Both forms are reverted (all versions back to zero) after each use, so each round
 re-derives them from the current tree. Then, once: `++`/`--` inside conditions is inlined
-(`PPandMMHelper::inline_pp_iand_mmi_if`); for Java 9+ class files,
+(`PPandMMHelper::inline_pp_iand_mmi_if`), but only into a read the condition always
+evaluates: not under the right operand of `&&` or `||` or an arm of `?:` (kuna,
+`always_evaluated`; Vineflower refused any `&&` or `||` below the condition's top operator and
+none at it, so without a LineNumberTable `j -= 1; if (i > 3) { if (j == -2) .. }` became `if
+(i > 3 && --j == -2)`, which decrements only when `i > 3`, while `while (--i >= start &&
+index == -1)` stays folded); for Java 9+ class files,
 `decompiler/managed/kuna-jvm/src/p3_dataflow/concatenation_helper.rs` turns
 `invokedynamic` string concatenation back into `+`; and
 `decompiler/managed/kuna-jvm/src/p8_structure/assert_processor.rs` rebuilds `assert`
@@ -523,7 +534,12 @@ and most changes restart the loop from the top, so the order below is a priority
    (IfPatternMatchProcessor::match_instanceof)` turns `instanceof` followed by a cast into
    an `instanceof` pattern, record patterns included. (kuna) Only from javac's compiled
    pattern (fix `pattern_binding_shape`, section 11.16), and not where the line table shows
-   the cast as a statement (source patterns, section 11.10).
+   the cast as a statement (source patterns, section 11.10). (kuna) A record component matched
+   by a nested type test (`R(String s)` for `record R(Object o)`: javac tests the accessor's
+   value with `instanceof String`, and on failure goes on to the next case) is bound with the
+   tested type, not the component's: without a LocalVariableTable, or for an unnamed `_`,
+   the binding had the type `Object`, so the pattern printed as `R(Object var4)`, which
+   matches every `R`.
 7. When the method has switches:
    `decompiler/managed/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs`
    rebuilds pattern switches from `SwitchBootstraps.typeSwitch` dispatch (also gated by
@@ -785,6 +801,33 @@ increment or decrement writes (`b++` on a `byte` is `iadd`, `i2b`, `istore`, fol
 expression before types are computed) is not constant-only and keeps its narrow type:
 `int b = 0; take(b++)` would not select `take(byte)`.
 
+**A local that only holds `null` (kuna).** Vineflower types a variable whose every value is
+`null` as `Object` (`eliminateNonJavaTypes`), so without a LocalVariableTable `Source s =
+null; take(s);` printed `Object var0 = null; take((Source)var0);`. Such a variable now takes
+its upper bound when that is a class or array type: the type an argument, a store or a return
+of it requires, which the descriptors in the class file give. A variable that a reference cast
+reads keeps `Object`: javac writes a `checkcast` only where the value's type is not already
+the target's, so `Object o = null; accept((Integer) o)` must keep both.
+
+**An `int` conditional assigned to a local (kuna).** Vineflower lowers the `int` type of a
+conditional on the right of an assignment to `bytechar`, so that `byte v = b ? 0 : 1` keeps its
+narrow variable: the arms are constants and the conditional is `int` only by their default.
+The lowering applies only when every arm, through nested conditionals, is a constant
+(`ternary_numeric_arms::constant_arms`). An arm that is a value, such as an `int` variable,
+gives the conditional the type of what it can yield: without a LocalVariableTable,
+`int result = logical != 0 ? logical : sum` after a loop printed `byte var4 = (byte)(..)`,
+truncating a result the class file stores and returns with no `i2b`.
+
+**A compound assignment to an `int` local (kuna).** javac stores an integer operation's
+result into a `byte`, `short` or `char` only through `i2b`, `i2s` or `i2c`, and `x op= y` on
+such a local keeps that conversion; on an `int` it has none. Folding `x = x op y` into
+`x op= y` (`SecondaryFunctionsHelper`) drops the store's shape, so without a
+LocalVariableTable a local initialised with a small constant and then only updated by
+compound assignments was typed by the constant: `int res = 0; ... res += sz;` printed `byte
+var2 = 0; ... var2 += var3;`, which truncates. The fold now marks an assignment it makes
+from an operation stored with no narrowing conversion (`AssignmentExprent::mark_int_result`),
+and the type pass gives such a variable `int` as its lower bound.
+
 **Generic locals without a LocalVariableTable (kuna).** Without the table a local has its
 erased type, so `Set keys = settings.keySet(); keys.removeIf(k -> k.startsWith(p))` did not
 compile (the lambda's parameter is an `Object`) and a for-each over a raw `List` cast it.
@@ -944,7 +987,16 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    (LambdaProcessor::process_class)` reads the `BootstrapMethods` of every class of the
    tree (Java 8+) and gives each `invokedynamic` to `LambdaMetafactory.metafactory` or
    `altMetafactory` a lambda class node, which is written later as a lambda or a method
-   reference.
+   reference. (kuna) `altMetafactory` also takes flags: `FLAG_SERIALIZABLE` and
+   `FLAG_MARKERS` add `Serializable` and marker interfaces to the lambda, which the source
+   wrote as an intersection cast (`(Comparator & Serializable) (a, b) -> 1`). The node
+   records the interfaces its functional interface is not known to extend
+   (`lambdas::added_interfaces`), and the lambda is written under the intersection cast,
+   naming its inferred parameterized type, or the interface itself when that is known not to
+   be generic; otherwise it is written as before. Without the cast the recompiled lambda is
+   not serializable. A lambda or method reference that is the receiver of a call has no
+   target type in Java, so it is written cast to the class of the invoked method
+   (`lambdas::receiver_cast`): `((Func) () -> 1).get()` had printed `(() -> 1).get()`.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.
@@ -955,7 +1007,12 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    method's variables, and places each local class's definition in the statement where it
    is first used. `jvm_synthetic_not_set` recognizes compiler-generated members (outer-instance
    and captured-variable fields, accessors, `class$` caches) by their shape even without
-   the `ACC_SYNTHETIC` flag, which some compilers and obfuscators omit.
+   the `ACC_SYNTHETIC` flag, which some compilers and obfuscators omit. A captured variable
+   is declared `final`, except (kuna, `nested_class_vars::unmark_constant_capture`) in a
+   Java 8+ class when its initializer is a constant and its type a primitive or `String`:
+   `final String s = ""` is a constant variable, which javac inlines rather than captures,
+   so the recompiled class lost the `val$s` field and its constructor parameter; the
+   capture in the class file proves the local was not one.
 4. **Synthetic accessors.** `decompiler/managed/kuna-jvm/src/p4_calls/nested_member_access.rs
    (NestedMemberAccess::propagate_member_access)` replaces calls to the `access$NNN`
    methods javac generates for private members of nested classes with the field access or
@@ -975,6 +1032,19 @@ Java 1.4 class-literal cache into `X.class`;
 canonical constructor and hides the accessors, `equals`, `hashCode` and `toString` that
 match the generated ones. A failure here writes the class as `$VF: Couldn't be decompiled`
 (section 11.12).
+
+**Static initializers keep their order (kuna).** Field initializers and `static` blocks run
+in the order the source declares them, and the fields are written in class-file order, so
+moving a `<clinit>` assignment into its field's declaration changes when it runs relative to
+the other moved assignments. `extract_static_initializers` moves an assignment only when
+that keeps every value it reads: its value may not read a field of the class that an
+earlier moved assignment set and that is declared after it (`static int[] sizes = new
+int[names.length];` ahead of `names = {..}` read `null`), and no earlier moved assignment to
+a field declared after it may read its field (`next = base + 1; base = 5;` moved as `base =
+5` ahead of `next = base + 1`). Such an assignment stays in the `static` block, and so does
+every later assignment that reads its field. A class written as Kotlin is exempt: its writer
+places an object's or companion's instance (assigned first, declared last) and the
+properties that read it itself.
 
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being
@@ -1570,7 +1640,11 @@ javac resolves the written call afresh (JLS 15.12.2): `vararg_array_length`,
 `unboxed_argument_type` and `reference_unboxing` correct the type each argument is written
 as wherever javac would otherwise pick another overload, box to another type, or keep a box
 or an identity comparison the bytecode lacks. For a class outside the input, the
-descriptors the input calls stand in for its methods.
+descriptors the input calls stand in for its methods. An unboxing call left unwritten
+whose instance is an assignment (`++a` on an `Integer` is `(a = a + 1).intValue()`) has the
+assignment's precedence (kuna, `numeric_types::bare_unboxed_assignment`), so an operator
+around it parenthesizes it: `++a + ++a` printed `a = a + 1 + Integer.valueOf(a + 1)`,
+which assigns the whole sum, and `--b * 2` printed `b = b - 1 * 2`.
 
 **Casts that select an overload (kuna).** `getAmbiguousParameters` finds no ambiguity when
 no overload takes the argument types exactly, so `f(m)` for a `Member` that is both a `Decl`
@@ -1639,6 +1713,12 @@ javac emits, judged by offsets, operand-stack identity, LocalVariableTable names
 LineNumberTable lines and the switch instruction's targets (javac sorts keys but lays
 bodies out in source order, and points a `tableswitch`'s gaps at the default by
 `Gen.visitSwitch`'s cost rule); otherwise the code is printed as the bytecode has it.
+For `x.CONST`, a constant instance field read through an expression, javac emits the null
+check of `x` and then loads the constant: removing the check alone printed `return 3;` for
+`return b.k;`, which no longer throws for a null `b`. `synthetic_null_check_shape` records
+the offset of the loaded constant, and `restore_field_read` writes the constant at that
+offset as the read of the first instance field of `x`'s class (or a superclass) that holds
+its value; where it finds no such constant, the check stays written.
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and

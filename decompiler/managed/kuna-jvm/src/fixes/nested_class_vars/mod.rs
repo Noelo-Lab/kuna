@@ -5,12 +5,17 @@
 //! table name its uses are written by; `refresh_printed_var_names` makes
 //! `refreshVarNames` take the clashing names first and rename only the
 //! variables without one; `header_parameter_names` keeps a parameter the
-//! method header declares by its `MethodParameters` name under that name.
+//! method header declares by its `MethodParameters` name under that name;
+//! `constant_capture_final` writes a captured local with a constant
+//! initializer without `final`.
 
 pub(crate) mod captured_var_clash_name;
 pub(crate) mod captured_var_through_cast;
 
 use crate::code_constants::ACC_STATIC;
+use crate::code_type::CodeType;
+use crate::exprent::Exprent;
+use crate::var_type_processor::FinalType;
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::method_descriptor::MethodDescriptor;
@@ -107,5 +112,33 @@ pub fn refresh(
         if !kept(&key, &value) {
             varproc.set_var_name_opt(key, vc.get_free_name_opt(value.as_deref()));
         }
+    }
+}
+
+/// The declaration `left = right` of a local a nested class captures, which
+/// is marked `final`: when `right` is a constant of a primitive or `String`
+/// type, `final` would make the local a constant variable, which javac
+/// inlines instead of capturing. The capture in the class file proves it is
+/// not one, so from Java 8 on (where effectively final suffices) it is written
+/// without `final`.
+pub fn unmark_constant_capture(left: Exprent, right: Exprent) {
+    let Some(var) = left.try_as_var().filter(|v| v.is_definition()) else {
+        return;
+    };
+    let Some(processor) = var.get_processor() else {
+        return;
+    };
+    let pair = var.get_var_version_pair();
+    let constant = |t: &crate::var_type::VarType| {
+        t.array_dim == 0
+            && (t.type_ != CodeType::Object && t.type_ != CodeType::Null
+                || t.value.as_deref() == Some("java/lang/String"))
+    };
+    if processor.get_var_final(pair) == FinalType::ExplicitFinal
+        && processor.get_method().get_bytecode_version().has_lambdas()
+        && right.try_as_const().is_some_and(|c| constant(&c.get_const_type()))
+        && constant(&var.get_definition_var_type())
+    {
+        processor.set_var_final(pair, FinalType::Final);
     }
 }

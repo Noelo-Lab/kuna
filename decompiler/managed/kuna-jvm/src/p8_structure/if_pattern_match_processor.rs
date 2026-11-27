@@ -421,7 +421,8 @@ impl IfPatternMatchProcessor {
         let comp = cl.get_record_components().expect("record components");
 
         let mut vars: JLinkedHashMap<StructRecordComponent, Exprent> = JLinkedHashMap::new();
-        for c in comp {
+        let mut bounds: Vec<(usize, VarType)> = Vec::new();
+        for (ci, c) in comp.into_iter().enumerate() {
             if stat_count(branch) <= st_idx {
                 return None;
             }
@@ -572,6 +573,7 @@ impl IfPatternMatchProcessor {
                                     &variable.get_expr_type(),
                                     variable,
                                 ));
+                                bounds.push((ci, operands.get(1).get_expr_type()));
                                 vars.put(c, variable.0);
                                 ok = true;
                             } else if let Some(pattern) = store.try_as_pattern() {
@@ -684,6 +686,11 @@ impl IfPatternMatchProcessor {
             type_.clone(),
             vars.value_vec(),
         );
+        for (ci, bound) in bounds {
+            if pattern.get_exprents().get(ci).is_var() {
+                pattern.get_bound_types().set(ci, Some(bound));
+            }
+        }
         Some(PatternData::new(pattern, branch, st_idx))
     }
 

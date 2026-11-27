@@ -959,6 +959,15 @@ impl SimplifyExprentsHelper {
                 } else {
                     invocation.get_instance()
                 };
+                if target.is_some_and(|t| {
+                    !synthetic_null_check_shape::restore_field_read(
+                        invocation.get_kuna_null_check_shape(),
+                        t,
+                        second,
+                    )
+                }) {
+                    return false;
+                }
                 if let Some(target) = target {
                     implicit_outer_instance::mark_checked(target, second);
                 }

@@ -19,6 +19,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
 use crate::java_subclass;
 use crate::fixes::generics;
+use crate::fixes::lambdas;
 use crate::fixes::constructor_calls::implicit_outer_instance;
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::overloads::vararg_spread_resolution;
@@ -694,6 +695,19 @@ impl NewExprent {
             if lambda {
                 buf.set_length(0);
                 self.set_lambda_generic_types();
+                let child_node = child.expect("NullPointerException: child");
+                let (added, iface) = child_node.with(|d| {
+                    (
+                        d.lambda_information.as_ref().map(|l| l.added_interfaces.clone()).unwrap_or_default(),
+                        d.anonymous_class_type.clone(),
+                    )
+                });
+                let inferred = self.d(|d| d.inferred_lambda_type.clone());
+                if let Some(cast) = iface.and_then(|iface| {
+                    lambdas::intersection_cast(&added, &iface, inferred.as_ref())
+                }) {
+                    buf.append_buffer(&cast);
+                }
                 let method_object = constructor.and_then(|c| c.get_instance());
                 ClassWriter::new().class_lambda_to_java(
                     child.expect("NullPointerException: child"),

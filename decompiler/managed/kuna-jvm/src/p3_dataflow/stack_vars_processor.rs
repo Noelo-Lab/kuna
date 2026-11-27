@@ -631,7 +631,9 @@ impl StackVarsProcessor {
                 && !kt_keeps_read
                 && (right.is_const()
                     || right.is_var()
-                    || (right.is_field() && !keeps_single_read)
+                    || (right.is_field()
+                        && !keeps_single_read
+                        && !stack_var_inlining::has_effect(right))
                     || set_next_vars
                         .as_ref()
                         .is_none_or(|next_vars| next_vars.contains(&usedver)))
