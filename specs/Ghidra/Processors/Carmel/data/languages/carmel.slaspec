@@ -1594,8 +1594,8 @@ with : hw_loop_phase=1 {
     local incoming:2 = EST;
     build complete_left;
     publish_ce_feedback(EST & 0xcfff, incoming);
-    build ce_single_tick;
   <canceled>
+    build ce_single_tick;
 }
 :^nop_left "||" complete_right is (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick);
     (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right & register_ex_live) {
@@ -1604,8 +1604,8 @@ with : hw_loop_phase=1 {
     local incoming:2 = EST;
     build complete_right;
     publish_ce_feedback(EST & 0xcfff, incoming);
-    build ce_single_tick;
   <canceled>
+    build ce_single_tick;
 }
 
 # Sample and compute both lanes before publishing either lane's result.
@@ -10969,6 +10969,40 @@ wide_lshift_intbase_src: "PACFG" is wide_shift_source_tail=0x1d5 { export PACFG;
 }
 
 @undef WIDE_LSHIFT_R1
+
+wide_discard_shift_count: "*(R0+"^wide_shift_dst_disp^")" is
+    wide_40_45=0x20 & wide_shift_source_tail=0x1dc & wide_shift_dst_disp {
+    local address:2 = R0 + sext(wide_shift_dst_disp:1);
+    export address;
+}
+wide_discard_shift_count: "*R1++" is wide_40_45=0x11 & (wide_shift_source_tail=0x1c0 | wide_shift_source_tail=0x1ee) {
+    local address:2 = R1;
+    modify_ptr_scaled_window(R1, 0:2, RM0, RL0, 2:4, 2:2, 1:2, 0xffff:2);
+    export address;
+}
+:LSHIFT "discard",bitfield_descriptor,wide_discard_shift_count is
+    carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_shift_opcode=0x38
+    & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & wide_shift_destination=0x8f & bitfield_descriptor & wide_discard_shift_count & ce_tick {
+    local admitted:1 = carmel_read_address_admission(2:1);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    if (admitted == 0) goto <feedback>;
+    build wide_discard_shift_count;
+    local count:2 = *[data]:2 wide_discard_shift_count;
+    local enabled:2;
+    unary_ce(CECFG2, incoming, CETBL, 1:2, enabled);
+    local n:2 = count & 127;
+    local from_high:1 = n < 64;
+    local tap:2 = ((n ^ 15) + zext(from_high)) & 15;
+    local literal:2 = bitfield_descriptor;
+    local active:2 = zext(enabled != 0 && n != 0);
+    local carry_bit:2 = (literal >> tap) & zext(n <= 16 || n >= 112);
+    flags = (flags & ~active) | (carry_bit & active);
+  <feedback>
+    publish_ce_feedback(flags, incoming);
+    build ce_tick;
+}
 
 @undef WIDE_LSHIFT_LONG
 @undef WIDE_LSHIFT_ROUTED

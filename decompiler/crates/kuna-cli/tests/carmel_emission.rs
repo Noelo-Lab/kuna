@@ -1022,6 +1022,81 @@ fn carmel_compact_bank_exchange_executes_in_emitted_c() {
 }
 
 #[test]
+fn carmel_wide_discarded_literal_shift_still_reads_its_count() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("discard-shift.bin");
+    let source = scratch.path().join("discard-shift.c");
+    let executable = scratch.path().join("discard-shift");
+    let specs = scratch.path().join("specs");
+    tracked_carmel_entry_specs(&specs, &[("R0", 0x40), ("R1", 0x4040), ("PACFG", 0)], 0, 0);
+    let explicit = scratch.path().join("specs-explicit");
+    tracked_carmel_entry_specs(
+        &explicit,
+        &[("R1", 0x4005), ("RM0", 0x1007), ("RL0", 0), ("PACFG", 12), ("A0L", 1), ("ECFG", 0)],
+        0,
+        0,
+    );
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nstatic volatile unsigned short value;\nstatic unsigned reads;\n\
+         static volatile unsigned short *count_port(void) { ++reads; return &value; }\n\
+         #define count_word (*count_port())\n",
+    );
+    let mut calls = String::new();
+    for (row, (packet, address, profile, reg)) in [
+        ([0x60, 0xd5, 0xb7, 0xf1, 0x1f, 0xdc], 0xfff7, &specs, "EST"),
+        ([0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xc0], 0x4040, &specs, "EST"),
+        ([0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xee], 0x4040, &specs, "EST"),
+        ([0x51, 0xd5, 0xb7, 0xf1, 0x1f, 0xc0], 0x4005, &explicit, "R1"),
+    ].into_iter().enumerate() {
+        let first = if reg == "R1" { [0x21, 0xac, 0x20, 0x2b, 0xec, 0] } else { nop };
+        fs::write(
+            &binary,
+            [first, nop, nop, nop, nop, packet, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], nop].as_flattened(),
+        ).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.env("KUNA_SPECS", profile).arg("decompile").arg(&binary).args([
+            "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+            "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            "--assert", &format!("data [data,{address:#x}] volatile unsigned short count_word"),
+        ]);
+        for (n, reg) in ["EST", "CECFG1", "CECFG2", "CETBL"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {n} %{reg} unsigned short in_{n}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        writeln!(c, "#define sub_0 discard_{row}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+        for (arm, (table, cfg, reads, count, incoming, carry)) in [
+            (0, 0, 0, 0xfff8, 0x269, 1),
+            (0xff, 0, 0, 0x11, 0x269, 1),
+            (0xff00, 0, 1, 0xfff8, 0x268, 1),
+            (0, 0x1000, 1, 0x11, 0x269, 1),
+            (0xffff, 0, 1, 0x11, 0x269, 0),
+            (0xffff, 0, 1, 0, 0x269, 1),
+            (0xffff, 0, 1, 1, 0x268, 1),
+            (0xffff, 0, 1, 0x70, 0x268, 1),
+            (0xffff, 0, 1, 0x6f, 0x269, 0),
+            (0xffff, 0, 1, 0x40, 0x269, 0),
+        ].into_iter().enumerate() {
+            let expected = if reg == "EST" {
+                0x268 | carry | ((table & 1) << 12) | ((table & 0x100) << 5)
+            } else if reads == 0 { 0x4005 } else { 0x2ffe };
+            writeln!(calls, "value = {count:#x}; reads = 0; \
+                             if (discard_{row}({incoming:#x}, 0, {cfg:#x}, {table:#x}) != {expected:#x} \
+                                 || reads != {reads} || value != {count:#x}) return {};", row * 10 + arm + 1).unwrap();
+        }
+    }
+    writeln!(c, "int main(void) {{\n{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_wide_shift_result_lane_selects_carry_and_zero() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

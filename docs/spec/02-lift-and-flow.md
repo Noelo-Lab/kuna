@@ -5085,6 +5085,14 @@ for the aligned DATA word and bit 39 for the full accumulator; right
 carry is relative to bit 16 for both. `Z`, `M`, and `E` describe bits
 16–39 of the pre-limit result. `ALIM` clamps on `E` and sets sticky `L`.
 
+The wide literal `LSHIFT` with no connected result still fetches one
+DATA count word when early CE2 admission permits it. The count routes
+use either `R0` plus a signed byte without modifying `R0`, or old `R1`
+followed by its configured one-word postincrement. A veto suppresses
+the read and the address update. Only carry can change, and only when
+the later CE2 predicate executes the shift; count zero holds carry.
+Neither route writes DATA.
+
 Covered compact word shifts align their input to the upper word of the
 40-bit shifter. They publish the selected word but set `Z`, `M`, and `E`
 from the entire aligned result, and select carry from the 16-bit input
