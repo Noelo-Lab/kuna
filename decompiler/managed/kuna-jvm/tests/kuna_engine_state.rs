@@ -100,7 +100,7 @@ fn the_class_reference_patterns_take_no_expression_ids() {
 #[test]
 fn a_batch_leaves_no_marks_for_the_next_one() {
     let dir = scratch("companion-marks");
-    let fixes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/kuna-fixes/classes/pkg");
+    let fixes = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/corpus/kuna-fixes/classes/pkg");
     let data = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/kt_companion_marks/pkg");
     std::fs::create_dir_all(dir.join("pkg")).unwrap();
     for name in [

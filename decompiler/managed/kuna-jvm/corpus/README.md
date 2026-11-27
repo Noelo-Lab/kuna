@@ -75,7 +75,7 @@ as `NEW/<id>.java` (or `.kt`). The `FAILURES` list names each red case (a digest
 both digests). An expected-text case is read against its file:
 
 ```sh
-diff -u tests/jvm/kuna-fixes/expected/pkg/TestFoo.java NEW/kuna-fixes/pkg/TestFoo.java
+diff -u decompiler/managed/kuna-jvm/corpus/kuna-fixes/expected/pkg/TestFoo.java NEW/kuna-fixes/pkg/TestFoo.java
 ```
 
 A digest case's previous text is not stored: write it with a build of the base commit and diff
@@ -89,7 +89,7 @@ case, copy the new text over its expected file.
 A new case is a kuna case: a small source, its class files and kuna's reviewed text.
 
 ```sh
-javac -g --release 17 -d tests/jvm/kuna-fixes/classes tests/jvm/kuna-fixes/src/pkg/TestFoo.java
+javac -g --release 17 -d decompiler/managed/kuna-jvm/corpus/kuna-fixes/classes decompiler/managed/kuna-jvm/corpus/kuna-fixes/src/pkg/TestFoo.java
 ```
 
 Append its records to `cases.tsv` after the last `kuna-fixes/` case, with the comment that
@@ -104,9 +104,9 @@ case	kuna-fixes/pkg/TestFoo	Kuna Fixes	kuna-fixes/classes/pkg/TestFoo
 Then create its expected file empty, write kuna's text, review it, and pin it:
 
 ```sh
-touch tests/jvm/kuna-fixes/expected/pkg/TestFoo.java
+touch decompiler/managed/kuna-jvm/corpus/kuna-fixes/expected/pkg/TestFoo.java
 decompiler/target/release/kuna test --jvm --name kuna-fixes/pkg/TestFoo --out NEW
-cp NEW/kuna-fixes/pkg/TestFoo.java tests/jvm/kuna-fixes/expected/pkg/TestFoo.java
+cp NEW/kuna-fixes/pkg/TestFoo.java decompiler/managed/kuna-jvm/corpus/kuna-fixes/expected/pkg/TestFoo.java
 ```
 
 A case pinned by digest instead gets the record `kuna	-` and `--save-digests`. The counts

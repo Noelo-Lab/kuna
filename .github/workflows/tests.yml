@@ -139,7 +139,7 @@ jobs:
           fi
 
       # The same freshness check for the JVM engine's catalog, generated from
-      # decompiler/nonnative/kuna-jvm/options.toml.
+      # decompiler/managed/kuna-jvm/options.toml.
       - name: docs/options-jvm.md is the generator's bytes
         run: |
           ./decompiler/target/release/kuna catalog --markdown --engine jvm > /tmp/options-jvm.generated.md

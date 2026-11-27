@@ -13,7 +13,7 @@ use crate::common;
 const NO_JDK: [&str; 3] = ["--option", "jvm_include_runtime", "off"];
 
 fn fixtures() -> PathBuf {
-    common::repo_root().join("tests/fixtures/jvm")
+    common::repo_root().join("decompiler/managed/kuna-jvm/fixtures")
 }
 
 fn jar() -> String {
@@ -28,7 +28,7 @@ fn main_class() -> String {
     fixtures().join("classes/com/ex/Main.class").display().to_string()
 }
 
-/// `tests/fixtures/jvm/kotlin/classes`: `Counter.kt` and `Counters.kt` compiled by kotlinc 2.0.0.
+/// `decompiler/managed/kuna-jvm/fixtures/kotlin/classes`: `Counter.kt` and `Counters.kt` compiled by kotlinc 2.0.0.
 fn kotlin_dir() -> String {
     fixtures().join("kotlin/classes").display().to_string()
 }
@@ -284,7 +284,7 @@ fn decompile_all_json_lists_methods_and_units() {
 
 #[test]
 fn worker_count_does_not_change_a_byte() {
-    let dir = common::repo_root().join("tests/jvm/classes/java17").display().to_string();
+    let dir = common::repo_root().join("decompiler/managed/kuna-jvm/corpus/classes/java17").display().to_string();
     let one = ok(&jvm(&["decompile-all", &dir, "--json", "--jobs", "1"]));
     let eight = ok(&jvm(&["decompile-all", &dir, "--json", "--jobs", "8"]));
     assert!(one == eight, "--jobs 1 and --jobs 8 differ");
@@ -453,7 +453,7 @@ fn the_other_subcommands_answer_with_capability_errors() {
     assert!(stderr(&out).contains("no call graph yet"), "{}", stderr(&out));
 }
 
-/// `tests/fixtures/jvm/dex`: the `src/` programs compiled by d8 (see `regen.sh`).
+/// `decompiler/managed/kuna-jvm/fixtures/dex`: the `src/` programs compiled by d8 (see `regen.sh`).
 fn dex(name: &str) -> String {
     fixtures().join("dex").join(name).display().to_string()
 }
@@ -570,10 +570,10 @@ fn catalog_lists_jvm_rows_on_request() {
     assert_eq!(miss.status.code(), Some(1));
 }
 
-/// The kuna-fixes case of fix `lambda_wildcard_return` (`tests/jvm/kuna-fixes/`).
+/// The kuna-fixes case of fix `lambda_wildcard_return` (`decompiler/managed/kuna-jvm/corpus/kuna-fixes/`).
 fn kuna_fix_class() -> String {
     common::repo_root()
-        .join("tests/jvm/kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class")
+        .join("decompiler/managed/kuna-jvm/corpus/kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class")
         .display()
         .to_string()
 }
@@ -623,7 +623,7 @@ fn test_jvm_runs_corpus_cases() {
 #[test]
 fn test_jvm_writes_texts_and_re_records_kuna_digests() {
     let id = "default/pkg/TestEnhancedForLoops";
-    let tests_jvm = common::repo_root().join("tests/jvm");
+    let tests_jvm = common::repo_root().join("decompiler/managed/kuna-jvm/corpus");
     let text = std::fs::read_to_string(tests_jvm.join("cases.tsv")).unwrap();
     let at = text.find(&format!("case\t{id}\t")).unwrap();
     let digest_at = |record: &str| at + text[at..].find(&format!("\n{record}\t")).unwrap() + record.len() + 2;
@@ -655,7 +655,7 @@ fn test_jvm_writes_texts_and_re_records_kuna_digests() {
 
 #[test]
 fn a_reader_that_walks_away_is_not_a_panic() {
-    let dir = common::repo_root().join("tests/jvm/classes/java8").display().to_string();
+    let dir = common::repo_root().join("decompiler/managed/kuna-jvm/corpus/classes/java8").display().to_string();
     let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
         .args(["functions", &dir])
         .args(NO_JDK)
@@ -842,7 +842,7 @@ fn warnings(out: &Output) -> Vec<String> {
 
 #[test]
 fn a_flagged_vf_comment_is_a_warning_not_a_failure() {
-    let class = common::repo_root().join("tests/jvm/classes/java25/pkg/TestAssertsEnabled.class").display().to_string();
+    let class = common::repo_root().join("decompiler/managed/kuna-jvm/corpus/classes/java25/pkg/TestAssertsEnabled.class").display().to_string();
     let out = jvm(&["decompile", &class, "pkg.TestAssertsEnabled.test7"]);
     assert_eq!(out.status.code(), Some(0));
     assert_eq!(warnings(&out), ["warning: pkg.TestAssertsEnabled.test7()V: $VF: Could not resugar all assert statements!"]);
@@ -855,7 +855,7 @@ fn a_flagged_vf_comment_is_a_warning_not_a_failure() {
 }
 
 
-/// `tests/fixtures/jvm/failures/classes`: class files broken by construction (its `README.md`).
+/// `decompiler/managed/kuna-jvm/fixtures/failures/classes`: class files broken by construction (its `README.md`).
 fn failures_dir() -> String {
     fixtures().join("failures/classes").display().to_string()
 }

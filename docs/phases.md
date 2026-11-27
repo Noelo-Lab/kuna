@@ -65,7 +65,7 @@ discovery, …) live in their own crate, `kuna-analysis` (P0/P1), organized as `
 
 ## Non-native engines
 
-`decompiler/nonnative/` holds engines for managed bytecode, which never becomes p-code.
+`decompiler/managed/` holds engines for managed bytecode, which never becomes p-code.
 The one today is `kuna-jvm` (JVM class files and jars to Java, Kotlin classes to Kotlin, a
 port of Vineflower and its bundled plugins; `docs/jvm.md`). It **shares the taxonomy, not the schedule**: its source folders carry
 the same phase names, so a stage is found by its phase, but the order its passes run in

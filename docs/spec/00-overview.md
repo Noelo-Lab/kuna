@@ -259,7 +259,7 @@ caller's decision; a failed launch is not converted into a skip.
 share nothing below the CLI. Before a subcommand reads its input,
 `decompiler/crates/kuna-cli/src/main.rs` hands the command line to the CLI's non-native
 dispatch, which takes the input operand (the first argument that is neither a flag nor
-a flag's value) and asks `decompiler/nonnative/kuna-jvm/src/p0_knowledge/kuna_input.rs
+a flag's value) and asks `decompiler/managed/kuna-jvm/src/p0_knowledge/kuna_input.rs
 (sniff)` whether it is JVM input: a directory, a class file (`CA FE BA BE` and a
 class-file major version at bytes 6-7, which a fat Mach-O with the same magic does not
 have), a zip archive, a `.jmod`, a jimage or a DEX file, or a `.jar`/`.war`/`.ear`/`.zip`

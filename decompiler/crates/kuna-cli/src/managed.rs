@@ -29,7 +29,7 @@ mod run;
 mod toy;
 
 #[cfg(feature = "jvm")]
-#[path = "nonnative/jvm/corpus.rs"]
+#[path = "managed/jvm/corpus.rs"]
 pub(crate) mod corpus;
 
 /// The managed engines compiled into this kuna.

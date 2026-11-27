@@ -19,11 +19,11 @@ is not needed for day-to-day work.
 | Path | What |
 |---|---|
 | `decompiler/` | The engine — a cargo workspace. `kuna-decomp` is the decompiler (`src/` is phase-foldered: `p0_knowledge/`…`p9_emit/`, plus `substrate/` and `infra/`); `kuna-analysis` the loader/analyzer tier (ELF markup, strings, DWARF, function discovery); `kuna-sleigh`/`kuna-slacomp` the SLEIGH runtime/compiler (binary `slacomp`); `kuna-console` the `decomp_dbg`/`decomp_test_dbg` binaries; `kuna-cli` the user-facing `kuna` binary; `kuna-ghidra` and `kuna-wasm` the Ghidra and browser front-ends; `kuna-base`/`kuna-num`/`kuna-harness`/`kuna-lift-diff` support. |
-| `decompiler/nonnative/` | Non-native engines, outside the p-code pipeline: `kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins (class files and jars to Java, Kotlin classes to Kotlin), same phase-folder taxonomy, its own schedule and IR; `kuna-cli` routes JVM inputs to it. |
+| `decompiler/managed/` | Non-native engines, outside the p-code pipeline: `kuna-jvm`, a Rust port of Vineflower 1.12.0 and its bundled plugins (class files and jars to Java, Kotlin classes to Kotlin), same phase-folder taxonomy, its own schedule and IR; `kuna-cli` routes JVM inputs to it. |
 | `tests/datatests/` | Vendored XML regression corpus (83 files / 675 assertions) — what `make test` runs. |
 | `tests/stages/` | kuna-owned issue testcases — `make test-stages`. Conventions: `tests/stages/README.md`. |
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`). |
-| `tests/jvm/` | The JVM engine's regression corpus (class files + kuna's pinned text, `tests/jvm/README.md`); what `make test-jvm` runs. |
+| `decompiler/managed/kuna-jvm/corpus/` | The JVM engine's regression corpus (class files + kuna's pinned text, `decompiler/managed/kuna-jvm/corpus/README.md`); what `make test-jvm` runs. |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH specs. `.sla` files are built artifacts (gitignored), produced by `slacomp`. |
 | `scripts/` + `tools/pipeline/` | Python helpers (`decompile.py` library shim, `paths.py`, `pipeline/`, `decbench/`, `javabench/`) + driver for the improvement pipeline (`docs/improvement-pipeline.md`) and the decbench campaign (`docs/decbench-loop.md`). |
 | `scripts/repipe/` + `tools/repipe/` | The RE-friction loop (`docs/re-pipeline.md`): Codex Sol-low testers reverse-engineer crackmes with kuna and record where it fails them; Codex Sol-high-or-above builders close those gaps and self-merge. Durable backlog in `docs/re-needs/`; promoted regression probes in `tests/cli/`. |
@@ -143,7 +143,7 @@ phases are **settable assertions/options** (`--option NAME VALUE`, discovered vi
 - **Default-ON needs evidence**: only if the flip changes 0/675 datatest assertions and
   passes the speed budget. Record what the default now does in the option's `phases.toml`
   row and its `docs/spec/` chapter — there is no separate registry to update.
-- **JVM engine options** are `jvm_*` rows in `decompiler/nonnative/kuna-jvm/options.toml`
+- **JVM engine options** are `jvm_*` rows in `decompiler/managed/kuna-jvm/options.toml`
   (not `phases.toml`; no catalog counts to bump). Its Vineflower rows stay one-to-one with
   `IFernflowerPreferences` and the bundled plugins' options (`kuna-jvm/tests/kuna_options.rs`); a kuna-only behavior is a
   new row with `source_decompiler = "kuna"`, default-on only if `make test-jvm` still

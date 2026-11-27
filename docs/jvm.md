@@ -1,6 +1,6 @@
 # The JVM engine
 
-`kuna-jvm` (`decompiler/nonnative/kuna-jvm`) decompiles JVM class files, jars and
+`kuna-jvm` (`decompiler/managed/kuna-jvm`) decompiles JVM class files, jars and
 directories of classes to Java, and the classes the Kotlin compiler emitted to Kotlin. It
 began as a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 with
 two of the plugins Vineflower bundles (Kotlin, IDEA not-null) and has
@@ -23,7 +23,7 @@ kuna catalog --engine jvm                     # the jvm_* options
 | `docs/cli.md`, "JVM inputs" | every command, flag, output shape and error on JVM inputs |
 | `docs/spec/10-jvm.md` | what the engine computes, stage by stage, and how its code is organised |
 | `docs/options-jvm.md` | the generated `jvm_*` option catalog (`kuna catalog --markdown --engine jvm`) |
-| `tests/jvm/README.md` | the regression corpus: what a case is, how to add one, how to investigate a red one |
+| `decompiler/managed/kuna-jvm/corpus/README.md` | the regression corpus: what a case is, how to add one, how to investigate a red one |
 | `docs/jvm-benchmark.md` | the benchmark against Vineflower on five large Java projects: what it scores, how to run it, the result |
 
 ## Inputs
@@ -54,7 +54,7 @@ used (`runtime: {path, version}`); when none is found, one note on stderr says s
 run continues without one.
 
 **What changes without one.** Every class is still decompiled, but whatever needs a JDK
-class's members or hierarchy degrades. `kuna decompile tests/fixtures/jvm/app.jar
+class's members or hierarchy degrades. `kuna decompile decompiler/managed/kuna-jvm/fixtures/app.jar
 com.ex.Main` with `--option jvm_include_runtime off`, then with a JDK 21:
 
 ```diff
@@ -101,11 +101,11 @@ source to `<package path>/<Class>.kt`, every other unit as Java to `.java`. A to
 function lives in a file class named after its source file (`Counters.kt` compiles to
 `CountersKt`), and so does its unit. The spec's section 10.15 has the algorithm.
 
-**What the output looks like.** `tests/fixtures/jvm/kotlin` holds two small Kotlin files
+**What the output looks like.** `decompiler/managed/kuna-jvm/fixtures/kotlin` holds two small Kotlin files
 compiled with kotlinc 2.0.0 (`src/` has the source):
 
 ```
-$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.CountersKt
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/kotlin/classes com.ex.kt.CountersKt
 package com.ex.kt
 
 public fun total(counters: List<Counter>): Int {
@@ -193,7 +193,7 @@ that call a synthetic `$$$reportNull$$$0`. The engine removes them and keeps the
 annotations:
 
 ```
-$ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1
+$ kuna decompile decompiler/managed/kuna-jvm/corpus/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1
 public void test1(@NotNull String s) {
    System.out.println(s);
 }
@@ -205,7 +205,7 @@ A DEX file (`classes.dex`) or an APK (any zip whose root holds `classes.dex`,
 `classes2.dex`, ... and no class files) is an input like a jar: `kuna decompile app.apk
 com.ex.Main`, `functions`, `decompile-all`, `decompile-project`, selection, spans, JSON and
 Kotlin output work unchanged. The engine never sees Dalvik bytecode. When the input is
-loaded, `decompiler/nonnative/kuna-dex` translates each DEX class into a JVM class file in
+loaded, `decompiler/managed/kuna-dex` translates each DEX class into a JVM class file in
 memory and `src/p0_knowledge/kuna_input.rs` (`dex_unit`) registers the bytes exactly as it
 registers a jar's entries: every `classes*.dex` of an APK in order, the first definition of
 a class winning, on up to eight threads. A zip with both class files and DEX is a jar (the
@@ -245,7 +245,7 @@ interface call only for a short list of JDK interfaces. Class files are written 
 50 (52 for interfaces with code, lambdas and `invoke-custom`, 51 for method-handle constants), so
 version-gated sugar the engine reconstructs from newer javac output does not apply.
 
-**How it is checked.** `tests/fixtures/jvm/dex/src` holds small Java and Kotlin programs
+**How it is checked.** `decompiler/managed/kuna-jvm/fixtures/dex/src` holds small Java and Kotlin programs
 that together execute every Dalvik instruction family; `regen.sh` compiles them with javac,
 kotlinc and d8 (versions in `TOOLCHAIN.txt`) and records their output. Translated to
 class files at version 50 (the `verifiable` option), all six run under `java -Xverify:all`
@@ -390,11 +390,11 @@ out.
 
 | Command | Checks |
 |---|---|
-| `make test-jvm` (= `kuna test --jvm`) | the gate: every case of the regression corpus prints the text pinned for it (`tests/jvm/README.md`). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
+| `make test-jvm` (= `kuna test --jvm`) | the gate: every case of the regression corpus prints the text pinned for it (`decompiler/managed/kuna-jvm/corpus/README.md`). Needs no SLEIGH specs, no JDK and no Kotlin compiler. |
 | `cd decompiler && cargo test -p kuna-jvm --test integration` | the engine's suite (part of `make rust-test`): the driver, deadlines, determinism, failures, spans, inventory, input classification, options, the class-file and archive readers and the runtime kernel against a real JDK |
 
 `kuna test --jvm --name SUBSTR --out DIR` writes the text of the matching cases; `--save-digests`
-re-records their digests once a change of text is reviewed. `tests/jvm/README.md` has the
+re-records their digests once a change of text is reviewed. `decompiler/managed/kuna-jvm/corpus/README.md` has the
 commands for adding a case and for investigating a red one. `kuna decompile <class|jar|dir>
 [<class>] [--option NAME VALUE]...` reruns a class under any option set.
 
@@ -407,7 +407,7 @@ commands for adding a case and for investigating a red one. `kuna decompile <cla
 - **What was ported.** 242 of the 273 Java files under `org/jetbrains/java/decompiler/` in
   Vineflower's `src/`, and its bundled Kotlin and IDEA not-null plugins (`src/kotlin/`,
   `src/plugins/`), were ported one to one; each names its original in its first line, so
-  `grep -r '^//! Port of' decompiler/nonnative/kuna-jvm/src` is the manifest. The rest
+  `grep -r '^//! Port of' decompiler/managed/kuna-jvm/src` is the manifest. The rest
   needed a JVM and is replaced by kuna's own code: the jar, directory and `jrt:` sources
   (`context_source`, `jdk_runtime`, `zip_reader`), reflection (an embedded table of
   OpenJDK 21's varargs methods, `src/p4_calls/classpath_helper_jdk.txt`), the thread pool
@@ -415,4 +415,4 @@ commands for adding a case and for investigating a red one. `kuna decompile <cla
   `include-classpath` and third-party plugin jars are not supported.
 - **Since the port.** kuna's own code is in the `kuna_*` modules, in `src/fixes/` (the
   corrections of Vineflower's defects, one module per family). The regression corpus
-  (`tests/jvm/`) began as Vineflower's own test suite and pins kuna's text, not Vineflower's.
+  (`decompiler/managed/kuna-jvm/corpus/`) began as Vineflower's own test suite and pins kuna's text, not Vineflower's.

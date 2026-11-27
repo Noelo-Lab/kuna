@@ -180,7 +180,7 @@ kuna test --datatests --datatests-dir tests/stages \
 kuna test --jvm                                        # the JVM engine's corpus (= make test-jvm)
 ```
 
-`--jvm` runs the JVM engine's regression corpus (`tests/jvm/cases.tsv`, `tests/jvm/README.md`)
+`--jvm` runs the JVM engine's regression corpus (`decompiler/managed/kuna-jvm/corpus/cases.tsv`, `decompiler/managed/kuna-jvm/corpus/README.md`)
 in process: each case decompiles its class files with its pinned options and must print
 its pinned text, by a digest of kuna's text or by an expected file of kuna's reviewed text.
 It has no baseline: every case must match, and
@@ -190,7 +190,7 @@ contains `N`, `--jobs N|auto` sets how many run at once (default: the core count
 16), `--manifest FILE` runs another manifest, `--out DIR` (new or empty) writes each run's compared text as
 `DIR/<id>.java` or `.kt`, and `--save-digests` re-records in the manifest the `kuna`
 digest of each run it made, once a change of kuna's text is reviewed. A digest
-mismatch prints both digests; `tests/jvm/README.md`, "Running a case and investigating a
+mismatch prints both digests; `decompiler/managed/kuna-jvm/corpus/README.md`, "Running a case and investigating a
 red one", has the commands. The datatest flags (`--all`, `--unittests`,
 `--datatests`, `--datatests-dir`, `--binary`, `--sleighpath`) are refused next to it, and
 `--jobs`, `--manifest`, `--out` and `--save-digests` without it (exit `2`). The summary line reads
@@ -4901,7 +4901,7 @@ $ kuna decompile-project app.jar -o out
 wrote out: 2 .java files (1380 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
 ```
 
-(`app.jar` is `tests/fixtures/jvm/app.jar`, built from `tests/fixtures/jvm/src/`.)
+(`app.jar` is `decompiler/managed/kuna-jvm/fixtures/app.jar`, built from `decompiler/managed/kuna-jvm/fixtures/src/`.)
 
 `decompile-project` prints one summary line,
 `wrote DIR: N .java files (B bytes); classes: K ok, F failed; methods: M ok, G failed`,
@@ -4986,21 +4986,21 @@ engine does not write. A Kotlin property name is an error that names its accesso
 same `code` and `line`:
 
 ```
-$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.getLabel
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/kotlin/classes com.ex.kt.Counter.getLabel
 public final var label: String
-$ kuna decompile-all tests/fixtures/jvm/kotlin/classes --filter Label
+$ kuna decompile-all decompiler/managed/kuna-jvm/fixtures/kotlin/classes --filter Label
 // Method: com.ex.kt.Counter.getLabel()Ljava/lang/String;, com.ex.kt.Counter.setLabel(Ljava/lang/String;)V  (com/ex/kt/Counter.kt:7)
 public final var label: String
 
-$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.label
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/kotlin/classes com.ex.kt.Counter.label
 error: no method "com.ex.kt.Counter.label" in com.ex.kt.Counter; a Kotlin property is selected by its JVM accessors: "com.ex.kt.Counter.getLabel", "com.ex.kt.Counter.setLabel"
-$ kuna decompile tests/fixtures/jvm/kotlin/classes 'com.ex.kt.Counter.bump$default'
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/kotlin/classes 'com.ex.kt.Counter.bump$default'
 error: could not decompile com.ex.kt.Counter: com.ex.kt.Counter.bump$default has no declaration of its own in the Kotlin source of com.ex.kt.Counter: the Kotlin writer puts a primary constructor in the class header and folds lambda bodies, $default methods and @JvmStatic forwarders into the declarations they serve; --language java (jvm_kt_enable off) writes the class as Java, method by method, and --option jvm_remove_synthetic off adds its synthetic methods
-$ kuna decompile-project tests/fixtures/jvm/kotlin/classes -o out
+$ kuna decompile-project decompiler/managed/kuna-jvm/fixtures/kotlin/classes -o out
 wrote out: 2 .kt files (848 bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed
 ```
 
-(`tests/fixtures/jvm/kotlin/` holds the classes and their Kotlin source.)
+(`decompiler/managed/kuna-jvm/fixtures/kotlin/` holds the classes and their Kotlin source.)
 
 **`--language`** picks the output language. `auto` (the default) writes each class in the
 language the engine picks for it: Kotlin for a class compiled from Kotlin, Java for every
@@ -5011,7 +5011,7 @@ already does, so `--language kotlin` is refused, with that reason, like any othe
 (exit `2`). `functions` accepts the flag and has nothing to apply it to.
 
 ```
-$ kuna decompile tests/fixtures/jvm/kotlin/classes com.ex.kt.Counter.bump --language java
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/kotlin/classes com.ex.kt.Counter.bump --language java
 public final int bump(int by) {
    this.count += by;
    return this.count;
@@ -5100,14 +5100,14 @@ failed inside it), and `decompile` prints one `warning:` line per failed body, u
 own record when that is selected, else under the selected method that holds it:
 
 ```
-$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested.escape ; echo $?
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/failures/classes com.ex.fail.Nested.escape ; echo $?
 warning: com.ex.fail.Nested.escape(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
 static Runnable escape(int c) {
    IntFunction<Runnable> make = x -> // $VF: Couldn't be decompiled;
    return make.apply(c);
 }
 1
-$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Nested >/dev/null
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/failures/classes com.ex.fail.Nested >/dev/null
 warning: com.ex.fail.Nested.escape(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
 warning: com.ex.fail.Nested.both(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$both$2(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
 warning: com.ex.fail.Nested.both(I)Ljava/lang/Runnable;: in com.ex.fail.Nested.lambda$both$3(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
@@ -5115,17 +5115,17 @@ warning: com.ex.fail.Nested.later(Ljava/lang/StringBuilder;)Ljava/lang/Runnable;
 warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0(I)Ljava/lang/Runnable;: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
 ```
 
-(`tests/fixtures/jvm/failures/` holds class files broken by construction: its `README.md`
+(`decompiler/managed/kuna-jvm/fixtures/failures/` holds class files broken by construction: its `README.md`
 says how.) A class the engine gives up on is failed on every surface:
 
 ```
-$ kuna decompile tests/fixtures/jvm/failures/classes com.ex.fail.Whole.size
+$ kuna decompile decompiler/managed/kuna-jvm/fixtures/failures/classes com.ex.fail.Whole.size
 error: could not decompile com.ex.fail.Whole: Class com/ex/fail/Whole couldn't be fully decompiled: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
-$ kuna decompile-all tests/fixtures/jvm/failures/classes --json 2>/dev/null | jq -c '.classes[] | {name, status, error}'
+$ kuna decompile-all decompiler/managed/kuna-jvm/fixtures/failures/classes --json 2>/dev/null | jq -c '.classes[] | {name, status, error}'
 {"name":"com.ex.fail.Mark","status":"decompiled","error":null}
 {"name":"com.ex.fail.Nested","status":"decompiled","error":null}
 {"name":"com.ex.fail.Whole","status":"failed","error":"Class com/ex/fail/Whole couldn't be fully decompiled: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer"}
-$ kuna decompile-project tests/fixtures/jvm/failures/classes -o out
+$ kuna decompile-project decompiler/managed/kuna-jvm/fixtures/failures/classes -o out
 warning: could not decompile com.ex.fail.Whole: Class com/ex/fail/Whole couldn't be fully decompiled: ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer
 wrote out: 3 .java files (1743 bytes); classes: 2 ok, 1 failed; methods: 2 ok, 3 failed; outside methods: 1 failed
 ```
@@ -5147,7 +5147,7 @@ monitorexit`, `Could not fully resugar string concatentation!`, `Compiled from`,
 `renamed from`, `Class flags could not be determined`.
 
 ```
-$ kuna decompile tests/jvm/classes/java25/pkg/TestAssertsEnabled.class pkg.TestAssertsEnabled.test7 >/dev/null
+$ kuna decompile decompiler/managed/kuna-jvm/corpus/classes/java25/pkg/TestAssertsEnabled.class pkg.TestAssertsEnabled.test7 >/dev/null
 warning: pkg.TestAssertsEnabled.test7()V: $VF: Could not resugar all assert statements!
 ```
 
@@ -5301,7 +5301,7 @@ cross-checks the selected catalog against this `kuna` build's
 The catalog holds two engines' options, and lists the native ones by default: without
 `--engine` (or with the older spellings `--engine cpp|rust`) the text and `--json`
 listings are the native catalog exactly as above. `--engine jvm` lists the JVM engine's
-`jvm_*` rows instead (generated from `decompiler/nonnative/kuna-jvm/options.toml`),
+`jvm_*` rows instead (generated from `decompiler/managed/kuna-jvm/options.toml`),
 `--engine all` the native rows followed by the JVM rows, and `--engine native` the native
 rows. With any of these three, every JSON row ends with `aliases` and `engine`
 (`"native"` or `"jvm"`); a JVM row's `aliases` are Vineflower's long and three-letter

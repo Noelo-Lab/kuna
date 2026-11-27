@@ -141,7 +141,7 @@ Five gates, all expected green before every commit:
 ```bash
 make test        # the 675/675 decompiler regression parity (tests/datatests/ vs docs/baseline.json)
 make test-stages # the kuna-owned issue testcases (tests/stages/ vs docs/baseline-stages.json)
-make test-jvm    # the JVM engine's Vineflower-derived corpus (tests/jvm/: every case matches)
+make test-jvm    # the JVM engine's Vineflower-derived corpus (decompiler/managed/kuna-jvm/corpus/: every case matches)
 make rust-test   # the full cargo workspace suite (ported unit tests, golden differential
                  # vectors, SLEIGH-compiler .sla content-parity, docs/options.md freshness, ...)
 make check-spec  # docs/spec/ honesty: anchors and inline code paths resolve, and each
@@ -156,11 +156,11 @@ corpus (`tests/datatests/`, 83 files / 675 assertions) with the Rust decompiler.
 | Path | What it is |
 |---|---|
 | `decompiler/` | The engine — a cargo workspace. `kuna-decomp` (the decompiler, phase-foldered `p0_knowledge/`…`p9_emit/`), `kuna-analysis` (the loader/analyzer tier), `kuna-sleigh`/`kuna-slacomp` (SLEIGH runtime + compiler, binary `slacomp`), `kuna-console` (the `decomp_dbg`/`decomp_test_dbg` binaries), `kuna-cli` (the `kuna` binary), `kuna-ghidra`/`kuna-wasm` (the Ghidra and browser front-ends), plus support crates |
-| `decompiler/nonnative/` | Non-native engines: `kuna-jvm`, a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 and its bundled plugins that decompiles JVM class files and jars to Java, and Kotlin classes to Kotlin (`docs/jvm.md`) |
+| `decompiler/managed/` | Non-native engines: `kuna-jvm`, a Rust port of [Vineflower](https://github.com/Vineflower/vineflower) 1.12.0 and its bundled plugins that decompiles JVM class files and jars to Java, and Kotlin classes to Kotlin (`docs/jvm.md`) |
 | `tests/datatests/` | Upstream XML decompilation regression tests (83 files → 675 assertions); the corpus `make test` runs |
 | `tests/stages/` | kuna-owned issue testcases; the corpus `make test-stages` runs |
 | `tests/golden/` | Differential golden vectors for the workspace suite (`make rust-test`) |
-| `tests/jvm/` | The JVM engine's regression corpus: class files and Vineflower's exact output for each; the corpus `make test-jvm` runs |
+| `decompiler/managed/kuna-jvm/corpus/` | The JVM engine's regression corpus: class files and Vineflower's exact output for each; the corpus `make test-jvm` runs |
 | `specs/Ghidra/Processors/` | Vendored SLEIGH processor specs; `.sla` are build artifacts produced by `slacomp` |
 | `integrations/` | Front-ends embedding the engine: `ghidra/` (kuna as stock Ghidra's decompiler core) and `web/` (the project site + in-browser decompiler) |
 | `scripts/` + `tools/` | Python helpers and drivers for the improvement pipeline (`docs/improvement-pipeline.md`) and the decbench campaign (`docs/decbench-loop.md`) |

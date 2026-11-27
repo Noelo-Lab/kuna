@@ -39,7 +39,7 @@ pub(crate) fn check(name: &str) -> Result<(), String> {
         return Ok(());
     }
     let mut msg = format!("option {name}: Unknown option");
-    let managed = crate::nonnative::ENGINES.iter().find(|e| name.starts_with(&format!("{}_", e.name())));
+    let managed = crate::managed::ENGINES.iter().find(|e| name.starts_with(&format!("{}_", e.name())));
     if let Some(e) = managed {
         msg.push_str(&format!(
             "; {0}_* options apply to {1} inputs ({2}), which `kuna catalog --engine {0}` lists",

@@ -1,5 +1,5 @@
 //! The corpus harness: manifest parsing, the fixture's comparison, digests, failure keys, and the
-//! vendored corpus under `tests/jvm/`.
+//! vendored corpus under `decompiler/managed/kuna-jvm/corpus/`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -403,21 +403,21 @@ fn failure_keys() {
     r.error = Some(thrown(
         None,
         "index out of bounds: the len is 3 but the index is 5",
-        "nonnative/kuna-jvm/src/p8_structure/if_helper.rs:120",
+        "managed/kuna-jvm/src/p8_structure/if_helper.rs:120",
     ));
     assert_eq!(key(&r), "panic: src/p8_structure/if_helper.rs:120");
 
     r.error = Some(thrown(
         Some("RuntimeException"),
         "RuntimeException: Not a constant",
-        "nonnative/kuna-jvm/src/a.rs:9",
+        "managed/kuna-jvm/src/a.rs:9",
     ));
     assert_eq!(key(&r), "RuntimeException: src/a.rs:9");
 
     r.error = Some(thrown(
         Some("RuntimeException"),
         "RuntimeException: java.util.concurrent.ExecutionException: NullPointerException: x",
-        "nonnative/kuna-jvm/src/p0_knowledge/context_unit.rs:326",
+        "managed/kuna-jvm/src/p0_knowledge/context_unit.rs:326",
     ));
     r.log = vec![LogLine {
         severity: Severity::Error,
@@ -425,7 +425,7 @@ fn failure_keys() {
         throwable: Some(thrown(
             Some("NullPointerException"),
             "NullPointerException: x",
-            "nonnative/kuna-jvm/src/b.rs:4",
+            "managed/kuna-jvm/src/b.rs:4",
         )),
     }];
     assert_eq!(key(&r), "NullPointerException: src/b.rs:4");
@@ -450,7 +450,7 @@ fn failure_keys() {
         throwable: Some(thrown(
             Some("NullPointerException"),
             "NullPointerException: x",
-            "nonnative/kuna-jvm/src/f.rs:3",
+            "managed/kuna-jvm/src/f.rs:3",
         )),
     }];
     assert_eq!(key(&m), "NullPointerException: src/f.rs:3");
@@ -473,8 +473,8 @@ fn failure_keys() {
 }
 
 fn vendored() -> Vec<Case> {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
-    load_cases(&path).expect("tests/jvm/cases.tsv loads")
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/corpus/cases.tsv");
+    load_cases(&path).expect("decompiler/managed/kuna-jvm/corpus/cases.tsv loads")
 }
 
 /// A kuna-fixes case in Kotlin: it runs with the plugins and compares `<Stem>.kt` (or `.java`), then

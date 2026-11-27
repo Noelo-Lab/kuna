@@ -15,11 +15,11 @@ source language rather than over p-code.
 
 What the engines do share with the native side is the front door: the `kuna` CLI, its option
 catalog and its output formats. `kuna-cli` picks the engine from the input file: the dispatch
-and the registry of engines are `decompiler/crates/kuna-cli/src/nonnative.rs`, and the command
+and the registry of engines are `decompiler/crates/kuna-cli/src/managed.rs`, and the command
 lines, output shapes and catalog rows every managed engine shares are under
-`decompiler/crates/kuna-cli/src/nonnative/`. The JVM engine's side of the contract (its
+`decompiler/crates/kuna-cli/src/managed/`. The JVM engine's side of the contract (its
 selection grammar, the JDK a run reads, its messages) is
-`decompiler/nonnative/kuna-jvm/src/infra/kuna_engine.rs`; its documentation is `docs/jvm.md`
+`decompiler/managed/kuna-jvm/src/infra/kuna_engine.rs`; its documentation is `docs/jvm.md`
 (`kuna docs jvm`), its algorithm `docs/spec/10-jvm.md`.
 
 `kuna-dex` is not an engine: it is how the JVM engine reads Android input. Given DEX bytes it
@@ -33,7 +33,7 @@ APK input*) says what it translates and loses, `docs/spec/10-jvm.md` 10.17 how.
 ## Adding an engine
 
 An engine implements the two traits of `kuna-managed` in its own crate and is added to
-`ENGINES` in `kuna-cli/src/nonnative.rs` (one line, behind its cargo feature).
+`ENGINES` in `kuna-cli/src/managed.rs` (one line, behind its cargo feature).
 
 - `Engine`: its name (the `--engine` value, catalog tag, option prefix and `kuna docs` topic)
   and label; a cheap `sniff`, run on every invocation; `classify`, naming an input's kind or

@@ -32,7 +32,7 @@ def load_manifest(text: str) -> dict:
     return config
 
 
-CRATE_DIRS = ("decompiler/crates", "decompiler/nonnative")
+CRATE_DIRS = ("decompiler/crates", "decompiler/managed")
 
 
 def manifests(root: Path) -> list[Path]:

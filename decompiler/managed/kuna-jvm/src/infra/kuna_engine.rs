@@ -143,7 +143,7 @@ impl Engine for Jvm {
             rows: kuna_options::rows().iter().map(|r| r.row).collect(),
             preamble: format!(
                 "# kuna JVM option catalog\n\n**Generated** by `kuna catalog --markdown --engine jvm` from \
-                 `decompiler/nonnative/kuna-jvm/options.toml` -- do not edit by hand; edit the \
+                 `decompiler/managed/kuna-jvm/options.toml` -- do not edit by hand; edit the \
                  table row and regenerate.\n\nThese options steer the JVM engine (`kuna-jvm`, a port of \
                  Vineflower 1.12.0), which decompiles class files, jars and directories of classes to Java, \
                  and classes compiled from Kotlin to Kotlin. They apply to those inputs only, as the options \

@@ -1,4 +1,4 @@
-//! Runner for the regression corpus (`tests/jvm/cases.tsv`): one case is a set of class files,
+//! Runner for the regression corpus (`decompiler/managed/kuna-jvm/corpus/cases.tsv`): one case is a set of class files,
 //! an option map and the Java or Kotlin text pinned for the main class.
 //!
 //! A case is run the way Vineflower's `SingleClassesTest` fixture runs it: the option pairs go to
@@ -9,7 +9,7 @@
 //! delivered unit whose file name is the case's `compare` name; it is compared with the expected
 //! text after the fixture's `getContent` normalization (`\r\n` to `\n`, then `String.trim()`), or,
 //! for a case with a `kuna` record, its normalized text must have that digest ([`text_digest`]).
-//! The manifest format is described in `tests/jvm/README.md`.
+//! The manifest format is described in `decompiler/managed/kuna-jvm/corpus/README.md`.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use kuna_jvm::kuna_corpus::{count_failed_methods, load_cases, run_case, with_engine_stack, Case};
 
 fn fix_case(id: &str) -> Case {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/cases.tsv");
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/corpus/cases.tsv");
     load_cases(&manifest)
         .unwrap()
         .into_iter()

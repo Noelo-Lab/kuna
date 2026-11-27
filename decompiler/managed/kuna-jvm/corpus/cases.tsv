@@ -1,4 +1,4 @@
-# kuna-jvm corpus manifest; format, layout and how to add a case: tests/jvm/README.md
+# kuna-jvm corpus manifest; format, layout and how to add a case: decompiler/managed/kuna-jvm/corpus/README.md
 kuna-jvm-corpus	1
 set	Default	default
 opt	log-level	warn

@@ -1,4 +1,4 @@
-//! `kuna test --jvm`: the JVM engine's regression corpus (`tests/jvm/cases.tsv`, or `--manifest`),
+//! `kuna test --jvm`: the JVM engine's regression corpus (`decompiler/managed/kuna-jvm/corpus/cases.tsv`, or `--manifest`),
 //! run in this process, one case per big-stack engine thread, several at a time. The exit status
 //! is nonzero on any case that does not match. `--out DIR` writes each run's compared text as
 //! `DIR/<id>.java|.kt`; `--save-digests` re-records the manifest's `kuna` record of each
@@ -102,7 +102,7 @@ fn save_digests(manifest: &Path, results: &[CaseResult]) -> Result<Vec<String>, 
 pub(crate) fn run(args: &JvmTestArgs) -> i32 {
     let manifest: PathBuf = match &args.manifest {
         Some(m) => PathBuf::from(m),
-        None => crate::paths::repo_root().join("tests").join("jvm").join("cases.tsv"),
+        None => crate::paths::repo_root().join("decompiler/managed/kuna-jvm/corpus/cases.tsv"),
     };
     let manifest = std::fs::canonicalize(&manifest).unwrap_or(manifest);
     let cases = match load_cases(&manifest) {

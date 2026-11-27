@@ -2,7 +2,7 @@
 //! (`rt::stack`): input nested deeper than an engine thread's stack fails one
 //! method or class with `StackOverflowError`, and the run goes on. The method
 //! budget counts polls; a three-letter option name is its long name.
-//! Fixtures in `tests/jvm/stackguard/`: `TestDeepExpression` (javac 21.0.12
+//! Fixtures in `decompiler/managed/kuna-jvm/corpus/stackguard/`: `TestDeepExpression` (javac 21.0.12
 //! `--release 17 -g`, a sum 300 terms deep), `TestDeepField` (javac 21.0.13.1
 //! `--release 17 -g`, the same depth in a field initializer) and `TestLambdaCycle`
 //! (asmtools-core 7.0.b10-ea jasm on JDK 17.0.20.1: two synthetic lambda
@@ -21,7 +21,7 @@ use kuna_jvm::kuna_input::{self, LoadOptions};
 use crate::kuna_support::{options, scratch, RecordingLogger};
 
 fn fixture(dir: &str, classes: &[&str]) -> PathBuf {
-    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/stackguard/classes/pkg");
+    let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/corpus/stackguard/classes/pkg");
     let to = scratch(dir).join("pkg");
     std::fs::create_dir_all(&to).unwrap();
     for class in classes {

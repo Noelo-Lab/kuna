@@ -177,7 +177,7 @@ fn write_tree(args: &Args, display: fn(&str) -> String, out_dir: &Path, outcome:
 mod tests {
     use super::super::{args, toy};
     use super::{safe_relative, write_tree};
-    use crate::nonnative::run::Outcome;
+    use crate::managed::run::Outcome;
     use kuna_managed::Unit;
     use std::path::PathBuf;
 

@@ -2,7 +2,7 @@
 
 [workspace]
 resolver = "2"
-members = ["crates/*", "nonnative/*"]
+members = ["crates/*", "managed/*"]
 
 [workspace.package]
 version = "0.1.0"
@@ -34,9 +34,9 @@ kuna-decomp = { path = "crates/kuna-decomp" }
 kuna-analysis = { path = "crates/kuna-analysis" }
 kuna-console = { path = "crates/kuna-console" }
 kuna-slacomp = { path = "crates/kuna-slacomp" }
-kuna-jvm = { path = "nonnative/kuna-jvm" }
-kuna-managed = { path = "nonnative/kuna-managed" }
-kuna-dex = { path = "nonnative/kuna-dex" }
+kuna-jvm = { path = "managed/kuna-jvm" }
+kuna-managed = { path = "managed/kuna-managed" }
+kuna-dex = { path = "managed/kuna-dex" }
 
 [workspace.lints.clippy]
 # Ordered collections keep output decisions deterministic; see clippy.toml.

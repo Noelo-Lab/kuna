@@ -32,7 +32,7 @@ Portions of the structuring and region-recovery code are ported from angr
 ported algorithms are tagged with their source decompiler in
 decompiler/crates/kuna-decomp/phases.toml and docs/spec/.
 
-The JVM engine (decompiler/nonnative/kuna-jvm) is a Rust port of Vineflower
+The JVM engine (decompiler/managed/kuna-jvm) is a Rust port of Vineflower
 1.12.0 (https://github.com/Vineflower/vineflower), released under the Apache
 License, Version 2.0. Vineflower is a fork of JetBrains' Fernflower,
 MinecraftForge's ForgeFlower and FabricMC's fork of Fernflower, and a
@@ -62,7 +62,7 @@ metadata Flags), copyright JetBrains s.r.o. and Kotlin Programming Language
 contributors, released under the Apache License, Version 2.0, which the plugin
 ships shaded in plugins/kotlin/libs/metadata.jar together with the Protocol
 Buffers lite runtime it runs on. kuna-jvm's decoder
-(decompiler/nonnative/kuna-jvm/src/kotlin/kt_proto.rs and kt_flags.rs) is a
+(decompiler/managed/kuna-jvm/src/kotlin/kt_proto.rs and kt_flags.rs) is a
 port of that schema and runtime. Protocol Buffers
 (https://github.com/protocolbuffers/protobuf) is released under the BSD
 3-Clause License:
@@ -95,17 +95,17 @@ port of that schema and runtime. Protocol Buffers
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-The JVM regression corpus (tests/jvm/) is derived from Vineflower's test data
+The JVM regression corpus (decompiler/managed/kuna-jvm/corpus/) is derived from Vineflower's test data
 and its plugins' test data (copyright JetBrains s.r.o. and the Vineflower
 contributors, Apache License, Version 2.0): class files compiled or assembled
 from their testData sources (the Kotlin ones with kotlinc 2.0.0 against
 kotlin-stdlib, copyright JetBrains s.r.o. and Kotlin Programming Language
 contributors, Apache License, Version 2.0, whose inline functions the compiler
 copies into them) and the class files they ship there; its provenance is
-recorded in tests/jvm/README.md. A few listings in the engine's own test data
-(decompiler/nonnative/kuna-jvm/tests/data/) were recorded from the released
+recorded in decompiler/managed/kuna-jvm/corpus/README.md. A few listings in the engine's own test data
+(decompiler/managed/kuna-jvm/tests/data/) were recorded from the released
 vineflower-1.12.0.jar. The Kotlin fixture of the CLI tests
-(tests/fixtures/jvm/kotlin/) is compiled the same way, from kuna's own sources.
+(decompiler/managed/kuna-jvm/fixtures/kotlin/) is compiled the same way, from kuna's own sources.
 
 The PKLITE unpacker (decompiler/crates/kuna-analysis/src/pklite) is ported
 from deark (https://github.com/jsummers/deark), released under the MIT

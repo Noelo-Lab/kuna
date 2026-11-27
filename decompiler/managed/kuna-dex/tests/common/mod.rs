@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 pub fn fixture(name: &str) -> Vec<u8> {
-    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/fixtures/jvm/dex").join(name);
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/fixtures/dex").join(name);
     std::fs::read(&p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
 }
 

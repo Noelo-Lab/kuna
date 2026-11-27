@@ -12,10 +12,10 @@ use kuna_jvm::kuna_corpus::{reset_engine_thread, with_engine_stack};
 use kuna_jvm::kuna_input::InputSet;
 use kuna_jvm::rt::Caught;
 
-/// A corpus class file or directory (`tests/jvm/classes/<rel>`).
+/// A corpus class file or directory (`decompiler/managed/kuna-jvm/corpus/classes/<rel>`).
 pub fn corpus(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../tests/jvm/classes")
+        .join("../../../decompiler/managed/kuna-jvm/corpus/classes")
         .join(rel)
 }
 

@@ -3,7 +3,7 @@
 
 Checks (run from the repo root; exit 1 on any failure):
   1. Anchor paths resolve: every path inside a chapter's ```yaml Anchors:``` block,
-     and every `decompiler/crates/...` or `decompiler/nonnative/...` path mentioned
+     and every `decompiler/crates/...` or `decompiler/managed/...` path mentioned
      anywhere in docs/spec/ prose, exists on disk.
   2. Folder coverage: every top-level directory under kuna-decomp/src,
      kuna-analysis/src and the JVM engine's kuna-jvm/src is owned by exactly one
@@ -40,11 +40,11 @@ def anchor_block(text):
 
 
 # --- 1. anchors + inline paths resolve -------------------------------------
-inline_path = re.compile(r"\bdecompiler/(?:crates|nonnative)/[A-Za-z0-9_\-./]+")
+inline_path = re.compile(r"\bdecompiler/(?:crates|managed)/[A-Za-z0-9_\-./]+")
 SRC_ROOTS = (
     "decompiler/crates/kuna-decomp/src",
     "decompiler/crates/kuna-analysis/src",
-    "decompiler/nonnative/kuna-jvm/src",
+    "decompiler/managed/kuna-jvm/src",
 )
 owned = {}  # top-level dir -> [chapter]
 for name, text in chapters():
@@ -94,7 +94,7 @@ if STRICT:
             opt = line.split('"')[1]
             if opt not in spec_all:
                 failures.append(f"option not mentioned anywhere in docs/spec/: {opt}")
-    jvm_toml = open(os.path.join(ROOT, "decompiler/nonnative/kuna-jvm/options.toml"), encoding="utf-8").read()
+    jvm_toml = open(os.path.join(ROOT, "decompiler/managed/kuna-jvm/options.toml"), encoding="utf-8").read()
     in_option = False
     for line in jvm_toml.splitlines():
         if line.strip().startswith("[["):

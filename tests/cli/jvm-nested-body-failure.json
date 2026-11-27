@@ -16,11 +16,11 @@
   "timeout_s": 60,
   "repeat": 1,
   "target": {
-    "binary_rel": "tests/fixtures/jvm/failures/classes/com/ex/fail/Nested.class",
+    "binary_rel": "decompiler/managed/kuna-jvm/fixtures/failures/classes/com/ex/fail/Nested.class",
     "binary_sha256": "6f5b6c1c9df63ef5eceacb75c54045291512bd6d0e220ae10063a24a1c3167c4",
     "binary_size": 2359,
     "binary_source": "in-repo",
-    "in_repo_path": "tests/fixtures/jvm/failures/classes/com/ex/fail/Nested.class",
+    "in_repo_path": "decompiler/managed/kuna-jvm/fixtures/failures/classes/com/ex/fail/Nested.class",
     "selector": null,
     "selector_kind": "none"
   },
@@ -67,6 +67,6 @@
       }
     ]
   },
-  "notes": "A lambda that fails inside a method fails that method: decompile-all --json names the failed body in the enclosing method's nested_errors (and its error), and a failed field-initializer lambda in the class record's nested_errors. The fixture fails by construction (tests/fixtures/jvm/failures/README.md).",
+  "notes": "A lambda that fails inside a method fails that method: decompile-all --json names the failed body in the enclosing method's nested_errors (and its error), and a failed field-initializer lambda in the class record's nested_errors. The fixture fails by construction (decompiler/managed/kuna-jvm/fixtures/failures/README.md).",
   "probe_id": "p-91c1fc326a3c"
 }

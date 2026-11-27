@@ -54,7 +54,7 @@ test-stages: $(BINDIR)/kuna
 	cd $(ROOT) && $(BINDIR)/kuna test --datatests \
 	  --datatests-dir tests/stages --baseline docs/baseline-stages.json
 
-# The JVM engine's regression corpus (tests/jvm/README.md): every case must print its
+# The JVM engine's regression corpus (decompiler/managed/kuna-jvm/corpus/README.md): every case must print its
 # pinned text. Needs no SLEIGH specs and no JDK (the corpus pins its own options).
 test-jvm: $(BINDIR)/kuna
 	cd $(ROOT) && $(BINDIR)/kuna test --jvm

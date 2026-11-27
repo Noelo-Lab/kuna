@@ -27,7 +27,7 @@ mod jsonfmt;
 mod kuna_allocrelease;
 mod limits;
 mod loadtime;
-mod nonnative;
+mod managed;
 mod optname;
 mod output;
 mod paths;
@@ -86,7 +86,7 @@ fn main() -> ExitCode {
         paths::SLACOMP_SUBCOMMAND => return kuna_slacomp::slacompmain::main(args[1..].to_vec()),
         _ => {}
     }
-    if let Some(code) = nonnative::dispatch(nonnative::ENGINES, sub, &args[2..]) {
+    if let Some(code) = managed::dispatch(managed::ENGINES, sub, &args[2..]) {
         return ExitCode::from(code as u8);
     }
     let mut rest = args[2..].to_vec();
@@ -310,8 +310,8 @@ fn run_jvm_tests(
     out: Option<String>,
     save_digests: bool,
 ) -> Result<i32, String> {
-    let args = nonnative::corpus::JvmTestArgs { manifest, names, json, jobs, out, save_digests };
-    Ok(nonnative::corpus::run(&args))
+    let args = managed::corpus::JvmTestArgs { manifest, names, json, jobs, out, save_digests };
+    Ok(managed::corpus::run(&args))
 }
 
 #[cfg(not(feature = "jvm"))]
@@ -351,7 +351,7 @@ fn usage_test() {
          {{requested,matched,missing}}, each null when that half did not run.\n\
          \n\
          --jvm [--manifest F] [--jobs N|auto] [--out D] [--save-digests] runs the JVM\n\
-         engine's corpus (tests/jvm/cases.tsv, or F: kuna's text, pinned by digest or\n\
+         engine's corpus (decompiler/managed/kuna-jvm/corpus/cases.tsv, or F: kuna's text, pinned by digest or\n\
          expected file) in this process and fails on any case\n\
          that does not match; --name N keeps the cases whose id contains N; --out D\n\
          writes each run's text as D/<id>.java|.kt; --save-digests re-records the `kuna`\n\

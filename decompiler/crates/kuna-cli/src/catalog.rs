@@ -15,7 +15,7 @@ use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, emit_ca
 use kuna_decomp::options::KUNA_OPTION_NAMES;
 
 use crate::jsonfmt::{dumps_indent2, extract_json_span, parse, Json};
-use crate::nonnative::{catalog as managed, ENGINES};
+use crate::managed::{catalog as managed, ENGINES};
 use crate::paths;
 
 /// Read the local static catalog unless the caller selected an external console.

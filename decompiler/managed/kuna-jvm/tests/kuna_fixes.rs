@@ -201,7 +201,7 @@ mod catch_loop_back_successor {
 #[test]
 fn an_enclosing_class_without_a_signature_maps_as_its_empty_generic_type() {
     let classes =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/jvm/kuna-fixes/classes/pkg");
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/corpus/kuna-fixes/classes/pkg");
     with_engine_stack(move || {
         let guard = crate::common::install_default_context();
         for name in [

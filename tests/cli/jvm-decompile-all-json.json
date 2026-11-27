@@ -16,11 +16,11 @@
   "timeout_s": 60,
   "repeat": 1,
   "target": {
-    "binary_rel": "tests/fixtures/jvm/app.jar",
+    "binary_rel": "decompiler/managed/kuna-jvm/fixtures/app.jar",
     "binary_sha256": "e6b6dbdd90823010d81dd913a9c3301e52d902901532d42fe9fdde8b46247dd6",
     "binary_size": 3096,
     "binary_source": "in-repo",
-    "in_repo_path": "tests/fixtures/jvm/app.jar",
+    "in_repo_path": "decompiler/managed/kuna-jvm/fixtures/app.jar",
     "selector": null,
     "selector_kind": "none"
   },
