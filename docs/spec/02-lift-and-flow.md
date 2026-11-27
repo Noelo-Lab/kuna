@@ -4098,6 +4098,16 @@ at the 16-bit boundary, regardless of the rounding-mode bit.
 An unqualified signed `MOVE` from `X1` to `A3` sign-extends the
 published word into the whole accumulator.
 
+The unqualified saved-loop `ADDC2` routes zero-extend the full 24-bit
+saved address and add a signed word plus incoming carry 2. A word
+result tests zero above the low half; a long DATA result tests the
+whole sum. The word store samples DATA at `R7+RN7` without changing
+either register. DATA destinations are displaced from `R7` and apply
+the `SR1` shift after computing flags; a long store writes low then high.
+CE feedback uses incoming EST.
+An unqualified literal `MOVE` to `RN7` writes the full 16-bit index,
+without applying the DATA store shift or changing arithmetic flags.
+
 The supported CE-qualified wide `DIVIDE` forms distinguish a short absolute
 DATA operand from a literal and from a long absolute DATA operand. Long
 DATA contains the low word first; the second word address wraps. The trial

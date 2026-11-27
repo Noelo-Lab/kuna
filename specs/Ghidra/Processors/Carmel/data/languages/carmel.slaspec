@@ -4199,6 +4199,50 @@ macro wide_alias_add(left, right, word, result) {
     EST = (EST & 0xffc4) | flags | (zext(narrow_loss) << 2);
 }
 
+macro wide_saved_loop_add(saved, word, short_result, result) {
+    local incoming:2 = EST;
+    local right:4 = sext(word);
+    result = saved + right + zext((incoming >> 6) & 1);
+    local carry_out:1 = right s< 0 && result s>= 0;
+    local negative:1 = result s< 0;
+    local zero:1 = result == 0 || (short_result != 0 && (result >> 16) == 0);
+    local flags:2 = (incoming & 0xcfc4) | zext(carry_out) | (zext(zero) << 3) | (zext(negative) << 4);
+    publish_ce_feedback(flags, incoming);
+}
+
+@define WIDE_LOOP_ADDC2 "$(WIDE_ALIAS_ALU) & wide_alias_add_op=0xd"
+:ADDC2 "A0L","LEA1","A5L" is $(WIDE_LOOP_ADDC2) & wide_alias_add_dst=0x90
+    & wide_alias_add_lhs=0xd3 & wide_40_45=0x15 & wide_0_0=1 {
+    local saved:4 = (zext(LEA1H) << 16) | zext(LEA1L);
+    local result:4;
+    wide_saved_loop_add(saved, A5L, 1:1, result);
+    A0L = result(2);
+}
+:ADDC2 "*R7+"^wide_shift_dst_disp,"LSA1","*R7+RN7" is $(WIDE_LOOP_ADDC2)
+    & wide_alias_add_dst=0x27 & wide_alias_add_lhs=0xd2 & wide_40_45=0x2f
+    & wide_0_0=0 & wide_shift_dst_disp {
+    local saved:4 = (zext(LSA1H) << 16) | zext(LSA1L);
+    local source:2 = R7 + RN7;
+    local destination:2 = R7 + sext(wide_shift_dst_disp:1);
+    local word:2 = *[data]:2 source;
+    local result:4;
+    wide_saved_loop_add(saved, word, 1:1, result);
+    result = result s>> (ECFG >> 5 & 1);
+    *[data]:2 destination = result(2);
+}
+:ADDC2 "long *R7+"^wide_shift_dst_disp,"LEA1","A5L" is $(WIDE_LOOP_ADDC2)
+    & wide_alias_add_dst=0x67 & wide_alias_add_lhs=0xd3 & wide_40_45=0x15
+    & wide_0_0=1 & wide_shift_dst_disp {
+    local saved:4 = (zext(LEA1H) << 16) | zext(LEA1L);
+    local destination:2 = R7 + sext(wide_shift_dst_disp:1);
+    local result:4;
+    wide_saved_loop_add(saved, A5L, 0:1, result);
+    result = result s>> (ECFG >> 5 & 1);
+    local high:2 = destination + 1;
+    *[data]:2 destination = result:2;
+    *[data]:2 high = result(2);
+}
+
 :ADD "A1",alias_add_acc_input,"R0" is $(WIDE_ALIAS_ADD) & wide_alias_add_dst=0x89 & alias_add_acc_input & wide_40_45=0x20 & wide_0_0=1 {
     local rhs:8 = sext(R0) & 0xffffffffff;
     local result:8;
@@ -12727,6 +12771,10 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "RN3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xab & wide_14_22=0x119 & literal_word { RN3 = literal_word; }
 :MOVE "RN5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xad & wide_14_22=0x119 & literal_word { RN5 = literal_word; }
 :MOVE "RN6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xae & wide_14_22=0x119 & literal_word { RN6 = literal_word; }
+:MOVE "RN7",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xaf & wide_14_22=0x119 & literal_word {
+    RN7 = literal_word;
+    publish_alu_ce(EST & 0xcfff);
+}
 :MOVE "*R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word { local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }
 :MOVE "*R0",literal_word ";" "MOVE" data_load_dst,"*"^absolute_data_addr is carmel_single_issue=0 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x0 & wide_14_22=0x119 & literal_word ; (data_load_dst & absolute_data_addr) { local read_addr:2 = absolute_data_addr; local read_value:2 = *[data]:2 read_addr; local address:2 = R0; local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; data_load_dst = read_value; }
 :MOVE "*R0++",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x10 & wide_14_22=0x119 & literal_word { local address:2 = R0; modify_ptr(R0, RN0, RM0, RL0, 0, 2); local value:2 = literal_word s>> ((ECFG >> 5) & 1); *[data]:2 address = value; }

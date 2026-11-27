@@ -1731,6 +1731,52 @@ fn wide_product_machine(packet: u64) -> Machine {
 }
 
 #[test]
+fn wide_saved_loop_addc2_uses_full_loop_address_and_incoming_flags() {
+    for (packet, saved, word, ecfg, incoming, config, table, a0, data, est) in [
+        (0x9500009b21a7, 0, 0, 0, 0, 0x888, 0x0180, 0xea43380000, (0x1234, 0x5678), 0x2008),
+        (0x9582699b21a7, 0xffff, 0, 0, 0x240, 0x333, 0x0180, 0xea43380001, (0x1234, 0x5678), 0x1240),
+        (0xaf82699a4fa4, 0xfe2345, 0x8000, 0, 0, 0, 0, 0xea433809a4, (0xfd, 0x5678), 1),
+        (0x9582699acfa7, 0xffffff, 0, 0x20, 0, 0, 0, 0xea433809a4, (0xffff, 0x7f), 0),
+    ] {
+        let mut m = wide_product_machine(packet);
+        m.seed(&[("LSA1", saved), ("LEA1", saved), ("A5L", word), ("A0", 0xea433809a4),
+                 ("R7", 0xc048), ("RN7", 4), ("EST", incoming), ("ECFG", ecfg),
+                 ("CECFG1", config), ("CECFG2", config), ("CETBL", table)]);
+        m.seed_data(0xc048, 0x22b4);
+        m.seed_data(0xc04c, word);
+        m.seed_data(0xc0b1, 0x1234);
+        m.seed_data(0xc0b2, 0x5678);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A0"), m.reg("EST")), (a0, est), "{packet:x}");
+        assert_eq!((m.data(0xc0b1), m.data(0xc0b2)), data, "{packet:x}");
+        assert_eq!((m.reg("R7"), m.reg("RN7"), m.data(0xc048), m.data(0xc04c)),
+                   (0xc048, 4, 0x22b4, word), "{packet:x}");
+    }
+}
+
+#[test]
+fn wide_saved_loop_addc2_samples_rn7_literal_after_move() {
+    for rn7 in [4u16, 0x8000, 0xffff] {
+        let mut m = Machine::new(
+            0, &[(0x800000 | u32::from(rn7), 0xc642bc), (0xaf8269, 0x9a4fa4), (NOP, NOP)],
+            &[(0, 5, 6), (2, 5, 6), (4, 1, 0)], None,
+        );
+        m.seed(&[("LSA1", 0xfe2345), ("R7", 0xc048), ("RN7", 0x6666), ("RN6", 0x4444),
+                 ("CECFG1", 0x888), ("CECFG2", 0x888), ("CETBL", 0x0180)]);
+        m.seed_data(u64::from(0xc048u16.wrapping_add(rn7)), 0x8000);
+        m.seed_data(0xc048, 0x1234);
+        m.seed_data(0xc0b1, 0xcccc);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("RN7"), m.reg("RN6"), m.reg("R7"), m.reg("EST")),
+                   (u64::from(rn7), 0x4444, 0xc048, 0x2000));
+        assert_eq!(m.step(), 12);
+        assert_eq!((m.data(0xc0b1), m.reg("EST")), (0xfd, 0x2001));
+    }
+}
+
+#[test]
 fn wide_register_square_selects_one_input_and_preserves_incoming_ce_feedback() {
     for (packet, input, ecfg, incoming, table, result, latch, est) in [
         (0x910000b0888d, 0x9005, 0, 0, 0,      0x30fba019,  0xf234, 0),
