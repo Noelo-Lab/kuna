@@ -2312,6 +2312,11 @@ macro publish_alu_ce(flags) {
     publish_ce_feedback(flags, feedback);
 }
 
+# An idle redirect clock publishes the rails without changing other status bits.
+macro clock_ce() {
+    publish_ce_feedback(EST & 0xcfff, EST);
+}
+
 :ADDRUPDATE "R0" is carmel_issue=3 & carmel_addrupdate_right_r0=1 & agu_modifier_1
     & (slot_raw=0x2cb420 | slot_raw=0x2cb440 | slot_raw=0x2cb460 |
        slot_raw=0x2cf420 | slot_raw=0x2cf440 | slot_raw=0x2cf460) {
@@ -2320,10 +2325,10 @@ macro publish_alu_ce(flags) {
 }
 
 :^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left {
-    publish_alu_ce(EST & 0xcfff);
+    clock_ce();
 }
 :^nop_left "||" nop_right is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & nop_right) {
-    publish_alu_ce(EST & 0xcfff);
+    clock_ce();
 }
 
 compact_cmpu: "CMPU" cmpu_lhs,cmpu_rhs is slot_0_0=0 & slot_10_22=0x82e
@@ -11835,30 +11840,30 @@ resume_2_5: word_address is epsilon [ word_address = (inst_start + 12) & 0xfffff
 resume_2_6: word_address is epsilon [ word_address = (inst_start + 14) & 0xffffff; ] { export *[code]:3 word_address; }
 resume_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xffffff; ] { export *[code]:3 word_address; }
 
-:"GOTO" direct_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x0 & slot_13_22=0x158 & direct_target { goto direct_target; }
-:"GOTO" direct_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { goto direct_target; }
+:"GOTO" direct_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x0 & slot_13_22=0x158 & direct_target { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto direct_target; }
+:"GOTO" direct_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto direct_target; }
 :"GOTO" direct_target "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; goto direct_target; }
-:^nop_left "||" "GOTO" direct_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target) { goto direct_target; }
+:^nop_left "||" "GOTO" direct_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target) { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target) { build complete_left; goto direct_target; }
-:"GOTO" direct_target "delay 1" is carmel_next_issue_size=3 & ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x2 & slot_13_22=0x158 & direct_target { delayslot(3); goto direct_target; }
-:"GOTO" direct_target "delay 1" "||" nop_right is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { delayslot(3); goto direct_target; }
+:"GOTO" direct_target "delay 1" is carmel_next_issue_size=3 & ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x2 & slot_13_22=0x158 & direct_target { clock_ce(); delayslot(3); clock_ce(); clock_ce(); goto direct_target; }
+:"GOTO" direct_target "delay 1" "||" nop_right is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { clock_ce(); delayslot(3); clock_ce(); clock_ce(); goto direct_target; }
 :"GOTO" direct_target "delay 1" "||" complete_right is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; delayslot(3); goto direct_target; }
-:^nop_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { delayslot(3); goto direct_target; }
+:^nop_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { clock_ce(); delayslot(3); clock_ce(); clock_ce(); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { build complete_left; delayslot(3); goto direct_target; }
-:"GOTO" direct_target "delay 1" is carmel_next_issue_size=6 & ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x2 & slot_13_22=0x158 & direct_target { delayslot(6); goto direct_target; }
-:"GOTO" direct_target "delay 1" "||" nop_right is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { delayslot(6); goto direct_target; }
+:"GOTO" direct_target "delay 1" is carmel_next_issue_size=6 & ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x2 & slot_13_22=0x158 & direct_target { clock_ce(); delayslot(6); clock_ce(); clock_ce(); goto direct_target; }
+:"GOTO" direct_target "delay 1" "||" nop_right is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { clock_ce(); delayslot(6); clock_ce(); clock_ce(); goto direct_target; }
 :"GOTO" direct_target "delay 1" "||" complete_right is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; delayslot(6); goto direct_target; }
-:^nop_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { delayslot(6); goto direct_target; }
+:^nop_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { clock_ce(); delayslot(6); clock_ce(); clock_ce(); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target "delay 1" is carmel_next_issue_size=6 & (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target) { build complete_left; delayslot(6); goto direct_target; }
-:"GOTO" direct_target "delay 2" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x4 & slot_13_22=0x158 & direct_target [ carmel_counted_delay=1; ] { delayslot(2); goto direct_target; }
-:"GOTO" direct_target "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { delayslot(2); goto direct_target; }
+:"GOTO" direct_target "delay 2" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x4 & slot_13_22=0x158 & direct_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(2); clock_ce(); goto direct_target; }
+:"GOTO" direct_target "delay 2" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { clock_ce(); delayslot(2); clock_ce(); goto direct_target; }
 :"GOTO" direct_target "delay 2" "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) [ carmel_counted_delay=1; ] { build complete_right; delayslot(2); goto direct_target; }
-:^nop_left "||" "GOTO" direct_target "delay 2" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { delayslot(2); goto direct_target; }
+:^nop_left "||" "GOTO" direct_target "delay 2" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { clock_ce(); delayslot(2); clock_ce(); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target "delay 2" is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x4 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { build complete_left; delayslot(2); goto direct_target; }
-:"GOTO" direct_target "delay 3" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x6 & slot_13_22=0x158 & direct_target [ carmel_counted_delay=1; ] { delayslot(3); goto direct_target; }
-:"GOTO" direct_target "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { delayslot(3); goto direct_target; }
+:"GOTO" direct_target "delay 3" is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x6 & slot_13_22=0x158 & direct_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto direct_target; }
+:"GOTO" direct_target "delay 3" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto direct_target; }
 :"GOTO" direct_target "delay 3" "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) [ carmel_counted_delay=1; ] { build complete_right; delayslot(3); goto direct_target; }
-:^nop_left "||" "GOTO" direct_target "delay 3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { delayslot(3); goto direct_target; }
+:^nop_left "||" "GOTO" direct_target "delay 3" is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target "delay 3" is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x6 & slot_13_22=0x158 & direct_target) [ carmel_counted_delay=1; ] { build complete_left; delayslot(3); goto direct_target; }
 :"CALL" direct_target is (((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x0 & slot_13_22=0x159 & direct_target) & link_1_0 { push_link(link_1_0); call direct_target; }
 :"CALL" direct_target "||" nop_right is ((carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x159 & direct_target); (slot_mode=0 & nop_right)) & link_2_0 { push_link(link_2_0); call direct_target; }
@@ -11908,28 +11913,28 @@ wide_call_target: word_address is wide_call_offset_0 & wide_call_offset_22 [ wor
 :CALL wide_call_target "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27dd & wide_call_target & link_2_7 & resume_2_7 [ carmel_counted_delay=1; ] { push_link(link_2_7); delayslot(3); call wide_call_target; goto resume_2_7; }
 wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 [ wide_word_address = (inst_start + (wide_goto_offset_0 | (wide_goto_offset_22 << 22))) & 0xffffff; ] { export *[code]:3 wide_word_address; }
 :"GOTO NC1" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_2_22=0x139001 & wide_goto_target { if ((EST & 1) == 0) goto wide_goto_target; }
-:"GOTO" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c0 & wide_goto_target { goto wide_goto_target; }
+:"GOTO" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c0 & wide_goto_target { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto wide_goto_target; }
 :"GOTO" wide_goto_target "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27c0 & wide_goto_target { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27c0 & wide_goto_target { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); if (taken) goto wide_goto_target; }
-:"GOTO" wide_goto_target "delay 1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c4 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(1); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 1" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c4 & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(1); clock_ce(); clock_ce(); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 1" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27c4 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(1); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 1" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27c4 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(1); if (taken) goto wide_goto_target; }
-:"GOTO" wide_goto_target "delay 2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c8 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(2); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27c8 & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(2); clock_ce(); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 2" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27c8 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(2); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 2" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27c8 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(2); if (taken) goto wide_goto_target; }
-:"GOTO" wide_goto_target "delay 3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27cc & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 3" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27cc & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 3" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27cc & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 3" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27cc & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
-:"GOTO" wide_goto_target "delay 4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d0 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 4" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d0 & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 4" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27d0 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 4" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27d0 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
-:"GOTO" wide_goto_target "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d4 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d4 & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 5" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27d4 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 5" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27d4 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
-:"GOTO" wide_goto_target "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d8 & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d8 & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 6" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27d8 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 6" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27d8 & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
-:"GOTO" wide_goto_target "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { delayslot(3); goto wide_goto_target; }
+:"GOTO" wide_goto_target "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { clock_ce(); delayslot(3); goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 7" "CE1" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); local taken:1 = (enabled != 0) || ((CECFG1 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
 :"GOTO" wide_goto_target "delay 7" "CE2" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_9_22=0x27dc & wide_goto_target [ carmel_counted_delay=1; ] { local enabled:2; unary_ce(CECFG2, EST, CETBL, 1, enabled); local taken:1 = (enabled != 0) || ((CECFG2 & 0x1000) != 0); delayslot(3); if (taken) goto wide_goto_target; }
 :"GOABS A0" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_1=0x2 & wide_10_22=0x13d0 & wide_24_45=0x80000 { local target:4 = A0:4; goto [target]; }

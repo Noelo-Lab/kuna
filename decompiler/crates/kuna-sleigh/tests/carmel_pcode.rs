@@ -671,6 +671,37 @@ fn wide_goto_saturates_delay_and_counts_sequential_slots_separately() {
 }
 
 #[test]
+fn direct_goto_publishes_ce_on_idle_refill_clocks() {
+    for (wide, delay, sequential, est) in [
+        (false, 0, false, 0x2000),
+        (false, 1, false, 0x3009),
+        (false, 1, true, 0x2000),
+        (false, 2, true, 0x1009),
+        (false, 3, true, 0x1009),
+        (true, 0, false, 0x2000),
+        (true, 1, false, 0x3009),
+        (true, 1, true, 0x2000),
+        (true, 2, true, 0x1009),
+        (true, 7, true, 0x1009),
+    ] {
+        let branch = if wide { (0x80000c, 0xcf8000 | delay << 11) } else { (goto(12, delay, false), NOP) };
+        let (slot, mode, size, right_mode) = if sequential { ((SEQUENTIAL | NOP, INC_A0), 2, 3, 3) }
+            else { ((INC_A0, NOP), 1, 6, 0) };
+        let mut fetches = [(NOP, NOP); 8];
+        fetches[0] = branch;
+        fetches[1] = slot;
+        let mut m = Machine::new(0, &fetches,
+            &[(0, if wide { 5 } else { 1 }, size), (2, mode, size), (3, right_mode, 6),
+              (4, 1, 6), (6, 1, 6), (12, 1, 6), (14, 1, 0)], None);
+        m.seed(&[("A0L", 0xffff), ("CECFG1", 0x08ed), ("CECFG2", 0x08cd), ("CETBL", 0xe132)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 36);
+        let a0 = if delay > u32::from(sequential) { 0 } else { 0xffff };
+        assert_eq!((m.reg("EST"), m.reg("A0L")), (est, a0), "{wide}, {delay}, {sequential}");
+    }
+}
+
+#[test]
 fn qualified_wide_goto_samples_address_enable_before_the_delay() {
     for (config, next) in [(0, 18), (0x1000, 24)] {
         let mut m = Machine::new(

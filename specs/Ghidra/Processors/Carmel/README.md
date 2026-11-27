@@ -61,6 +61,9 @@ selected backtrace port only when its predicate allows it.
 Compact unconditional and wide relative GOTO execute up to three following
 issues, counting sequential slots individually. For the qualified wide form,
 the address-enable bit can admit a transfer even when the predicate is false.
+Unqualified wide relative GOTO and compact relative GOTO with no arithmetic
+peer publish condition feedback across all three delay clocks, including
+idle clocks that do not execute a CODE issue.
 The undelayed wide `GOTO NC1` tests the incoming carry flag.
 Unconditional wide `GOABS A0` samples the accumulator's low 32 bits before
 retiring up to five delay issues. The guard byte does not enter the target.
