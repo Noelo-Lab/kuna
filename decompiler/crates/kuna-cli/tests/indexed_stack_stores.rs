@@ -11,6 +11,8 @@ use crate::common::process::Capped;
 #[derive(Clone, Copy, Debug)]
 enum Case {
     Byte,
+    Saved,
+    Pushed,
     SecondByte,
     WordRead,
     Disjoint,
@@ -22,11 +24,24 @@ enum Case {
 impl Case {
     fn expected(self) -> &'static str {
         match self {
-            Self::Byte => "(first & 255) != 0",
+            Self::Byte | Self::Saved | Self::Pushed => "(first & 255) != 0",
             Self::WordRead => "(bytes[0] | bytes[1] | bytes[2]) != 0",
             Self::SecondByte => "bytes[1] != 0",
             Self::Direct => "bytes[2] != 0",
             Self::Disjoint | Self::External | Self::Overwritten => "0",
+        }
+    }
+
+    /// The parameters of `inspect_bytes`, the arguments the C passes it after
+    /// the buffer, and the parameters of `helper`. Saved's and Pushed's frames
+    /// hold the second argument above the buffer, and their helper takes the
+    /// byte it tests, which the call leaves in `r0`.
+    fn params(self) -> (&'static str, &'static str, &'static str) {
+        match self {
+            Self::Saved | Self::Pushed => {
+                ("unsigned char *,unsigned int", ", first", "unsigned int")
+            }
+            _ => ("unsigned char *", "", "void"),
         }
     }
 }
@@ -34,6 +49,9 @@ impl Case {
 fn image(case: Case) -> Vec<u8> {
     // push; reserve; set pointer; zero slot; copy three elements; read slot;
     // test; conditional helper call; restore. scan.s documents the byte form.
+    // Saved stores the incoming r1 in the word above the buffer. Pushed reserves
+    // an 8-byte frame by pushing r0 and r1 instead of `sub sp`, so that word
+    // holds r1 as well.
     let mut words: Vec<u32> = vec![
         0xe92d4010, 0xe24dd010, 0xe1a0100d, 0xe3a02000, 0xe58d2000, 0xe3a03003, 0xe4d02001,
         0xe4c12001, 0xe2533001, 0x1afffffb, 0xe5dd0000, 0xe3500000, 0x0a000000, 0xeb000002,
@@ -49,6 +67,12 @@ fn image(case: Case) -> Vec<u8> {
         Case::Direct => words[7] = 0xe5cd2000,
         Case::External => words[2] = 0xe1a01000,
         Case::Overwritten => words.insert(10, 0xe58d3000),
+        Case::Saved => words.insert(2, 0xe58d1004),
+        Case::Pushed => {
+            words[0] = 0xe92d4013;
+            words[14] = 0xe28dd008;
+            words.remove(1);
+        }
         Case::Byte => (),
     }
     let helper = words.len() as u64 * 4;
@@ -84,6 +108,7 @@ fn indexed_stack_writes_preserve_the_dependent_call() {
     );
     for case in [
         Case::Byte,
+        Case::Saved,
         Case::SecondByte,
         Case::WordRead,
         Case::Disjoint,
@@ -94,11 +119,20 @@ fn indexed_stack_writes_preserve_the_dependent_call() {
         let input = common::scratch_file("indexed-stack-store", "o");
         std::fs::write(&input, image(case)).unwrap();
         for full in [false, true] {
-            if full && !matches!(case, Case::Byte | Case::SecondByte | Case::WordRead) {
+            if full
+                && !matches!(
+                    case,
+                    Case::Byte | Case::Saved | Case::SecondByte | Case::WordRead
+                )
+            {
                 continue;
             }
             let mut cmd = Command::new(env!("CARGO_BIN_EXE_kuna"));
-            let param = "unsigned char";
+            let (params, args, helper) = case.params();
+            let helper_def = match helper {
+                "void" => "void".to_string(),
+                ty => format!("{ty} byte"),
+            };
             cmd.args([
                 "decompile",
                 input.to_str().unwrap(),
@@ -109,9 +143,9 @@ fn indexed_stack_writes_preserve_the_dependent_call() {
                 "reliable",
                 "--assert-strict",
                 "--assert",
-                &format!("prototype inspect_bytes void inspect_bytes({param} *)"),
+                &format!("prototype inspect_bytes void inspect_bytes({params})"),
                 "--assert",
-                "prototype helper void helper(void)",
+                &format!("prototype helper void helper({helper})"),
             ]);
             if full {
                 cmd.args(["--option", "indexaliasguard", "full"]);
@@ -136,7 +170,7 @@ typedef unsigned short uint2;
 typedef unsigned int uint4;
 typedef int int4;
 static unsigned calls;
-void helper(void) {{ ++calls; }}
+void helper({helper_def}) {{ ++calls; }}
 {printed}
 int main(void) {{
     unsigned extra[] = {{0x100, 0x10000, 0x80000000, 0xffffffff}};
@@ -144,7 +178,7 @@ int main(void) {{
         unsigned first = i < 256 ? i : extra[i - 256];
         {prepare}
         calls = 0;
-        inspect_bytes(bytes);
+        inspect_bytes(bytes{args});
         if (calls != ({expected})) return 1;
     }}
     return 0;
@@ -213,6 +247,41 @@ fn the_broad_guard_and_off_levels_remain_available() {
         let text = String::from_utf8(output.stdout).unwrap();
         assert_eq!(text.contains("helper();"), call, "{level}: {text}");
     }
+    std::fs::remove_file(input).unwrap();
+}
+
+/// The pushed frame's walk shares the push's word pointer, so the C steps it
+/// through an `int4` cast that runs only where pointers are 32 bits wide; the
+/// executed Saved case covers the same layout.
+#[test]
+fn a_pushed_frame_keeps_the_dependent_call() {
+    let input = common::scratch_file("stack-store-pushed", "o");
+    std::fs::write(&input, image(Case::Pushed)).unwrap();
+    let (params, _, helper) = Case::Pushed.params();
+    let output = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args([
+            "decompile",
+            input.to_str().unwrap(),
+            "inspect_bytes",
+            "--isa",
+            "arm",
+            "--mode",
+            "reliable",
+            "--assert-strict",
+            "--assert",
+            &format!("prototype inspect_bytes void inspect_bytes({params})"),
+            "--assert",
+            &format!("prototype helper void helper({helper})"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.contains("helper("), "{text}");
     std::fs::remove_file(input).unwrap();
 }
 
