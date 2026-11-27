@@ -890,16 +890,18 @@ the port of `phoenix._last_resort_refinement` +
 components, compute forward immediate dominators, and bucket the candidates —
 *crossing* edges (neither endpoint dominates the other) are virtualized
 before *secondary* edges (destination dominates source); a forward tree edge
-is never chosen. Candidate dominance queries use an iterative dominator-tree
-interval index (`p8_structure/kuna_domindex.rs`) built once per immutable
-snapshot. Subtree containment replaces repeated parent-chain walks; absent
-nodes retain the chain walk's self-dominance behavior. The index is discarded
-with the snapshot, so graph changes cannot leave stale intervals. Interval
-slots are arrays indexed by node arena id (each snapshot has a fresh pool, so
-ids are dense): building costs one immediate-dominator lookup per node plus
-linear array work, and each query is two array reads independent of
-dominator-tree depth, so the index is cheaper than the chain walk even on the
-shallow trees of ordinary functions. Candidate order and ranking are unchanged.
+is never chosen. Each call builds the snapshot afresh as a dense graph
+(`p8_structure/kuna_compgraph.rs`): node `i` is the `i`-th live component,
+parallel edges count once and self-loops count (as in a `networkx.DiGraph`),
+and a synthetic head points at every component without predecessors. One
+deterministic depth-first walk from the head (successors in address-then-index
+order, the largest explored first) gives both the post-order the
+immediate-dominator computation runs over and the `node_seq` tiebreak below.
+Dominance queries read pre-order intervals of the dominator tree, two array
+reads each, and a component the head cannot reach dominates only itself. A
+dominator tree is unique, so the arrays answer exactly what a map-keyed graph
+library would; they only drop its per-node map and allocation work, which
+had made the ordering about a tenth of a small binary's run.
 Within the winning bucket (`sailr_order_within_bucket`): H1;
 then H2 — remove each candidate, recompute post-dominators, and keep the
 edges whose removal yields the *most* post-dominators (most-linear result) —
