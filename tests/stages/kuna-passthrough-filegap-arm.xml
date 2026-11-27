@@ -1,0 +1,66 @@
+<decompilertest>
+<binaryimage arch="ARM:LE:32:v7:default">
+<!--
+    passthrough on ARM hard-float: a stated VFP parameter the wrapper does not
+    get must not cost it the core-register parameters after it.
+
+    GNU as 2.40 (Debian 12 arm-linux-gnueabihf), ARM mode, linked with
+    `ld -Ttext=0x10000 -e bits` without a build id:
+
+        bits:      vmov r3,s1; mov r2,r0; vmov r0,s0; lsr r3,r3,#20;
+                   str r3,[r2]; bx lr
+        bits_tail: b bits
+        sst:       vstr s0,[r0]; ldr r0,[r0]; bx lr
+        sst_tail:  b sst
+
+    `bits` is gcc 12.2 -O2 -marm for
+    `int bits(double x, int *p) { unsigned long long b; memcpy(&b,&x,8);
+    *p = b >> 52; return b; }`, and each `_tail` is the tail call of a
+    wrapper that forwards both arguments untouched.
+
+    The single-function drive states each tail callee's recovered prototype
+    before the wrapper (option protoorder). `bits` is recovered with integer
+    parameters in s0 and s1 before the pointer in r0, and passthrough does not
+    forward a VFP register stated as an integer. The extension of the call's
+    argument list then stopped at that first stated register, so the wrapper
+    printed `bits_tail(void)` with `return bits();` and lost r0, which the
+    callee reads. `sst` only stores s0, and the stated list is no arity claim,
+    so passthrough asked the body to take every register the list names; the
+    stored s0 refused the r0 the body reads, and `sst_tail` printed
+    `sst_tail(void)` the same way.
+
+    AAPCS-VFP allocates VFP and core argument registers independently, so a
+    gap in the VFP registers leaves r0 where it is: a stated register the call
+    does not get now stops only its own register file, and the body-take test
+    reads only the registers of the forwarded register's file. Both wrappers
+    take r0 and pass it on, as libasan's __interceptor_modf does with its
+    double *iptr.
+
+    Stage / sub-stage: P4 "active-input-trial-scoring" (passthrough's
+    extend_pending and stated_width). A strict correctness fix with no
+    option: one pass pins the fixed output.
+-->
+<bytechunk space="ram" offset="0x10000" readonly="true">
+903a10ee0020a0e1100a10ee233aa0e1003082e51eff2fe1f8ffffea000a80ed
+000090e51eff2fe1fbffffea
+</bytechunk>
+<symbol space="ram" offset="0x10000" name="bits"/>
+<symbol space="ram" offset="0x10018" name="bits_tail"/>
+<symbol space="ram" offset="0x1001c" name="sst"/>
+<symbol space="ram" offset="0x10028" name="sst_tail"/>
+</binaryimage>
+<script>
+  <com>lo fu bits_tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sst_tail</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="filegap arm #1: the bits wrapper takes the r0 it forwards" min="1" max="1">^unsigned int bits_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap arm #2: and passes it to bits" min="1" max="1">^  return bits\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap arm #3: the sst wrapper takes the r0 it forwards" min="1" max="1">^float4 sst_tail\([^,()]* \*?a0\)$</stringmatch>
+<stringmatch name="filegap arm #4: and passes it to sst" min="1" max="1">^  return sst\(a0\); // tail-call$</stringmatch>
+<stringmatch name="filegap arm #5: no tail call drops every argument" min="0" max="0">^  return (bits|sst)\(\); // tail-call$</stringmatch>
+</decompilertest>

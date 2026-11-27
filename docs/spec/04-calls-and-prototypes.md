@@ -7471,6 +7471,34 @@ argument, never an argument on its own), and the pass acts twice outside it:
   be a leading run of the stated one, and a list holding a stack argument is
   left alone.
 
+**A gap stops its own register file.** Parameters are positional within one
+register file, not across files the convention fills independently
+(`kuna_passthrough.rs (extension_past_gaps)`). AAPCS-VFP, AAPCS64 and SysV
+x86-64 allocate float and core argument registers apart, so a stated `d0` or
+`xmm0` parameter the call does not get -- typically one the callee recovered
+as an integer, which the evidence above declines to forward because a
+float-register parameter of integer type is no claim about its kind -- leaves
+every core register after it where it was. Stopping at that first stated
+register dropped every forwarded argument behind it: Debian 12 armhf
+libasan's `__interceptor_modf` is `b __interceptor_modf.part.0`, and with the
+callee recovered as `double part.0(unsigned long long a0,unsigned int a1)`
+(`a0` in `d0`) the wrapper printed `void modf(void)` and the call
+`__interceptor_modf.part.0()`, where `--option protoorder off` kept `r0`.
+gcc -O2 x86-64 `f(double x,int *p)` that moves `x` with `movq %xmm0,%rax` is
+recovered `(unsigned long a0,unsigned int *a1)`, and its tail-calling wrapper
+printed `f()` the same way. A register file is the type class of the model
+input entries the register overlaps, with grouped entries one file, as
+upstream's resource sections count them. So a stated register the call does
+not get stops the extension for the later stated registers of its own file
+only. A register of another file is taken only while the model assigns the
+list kept so far (the settled list included) to exactly its stated storage at
+the callee's stated types. Where a float slot also consumes a core one, the
+register sits elsewhere once the gap is removed, and the extension does not
+take it: Windows x64 groups `xmm0` with `rcx`, and MIPS o32 rules make a
+leading float consume `a0`/`a1`. The pass still never forwards the declined
+float register itself, so the wrapper prints `modf(unsigned int a0)` with
+`__interceptor_modf.part.0(a0)`, as with the option off.
+
 **A forwarded register fills its slot.** A register trial the scoring leaves
 inactive because it stands on the function's own value -- its input Varnode, or
 that value carried past calls, reassembled or handed on from an earlier call's
