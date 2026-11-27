@@ -849,8 +849,12 @@ constant fits says nothing about the source's declaration, so without a LocalVar
 looks at each slot all of whose stores are integer constants (parameters excluded) and at
 every read of it: a read as an operand, a condition, an index or an argument, store or
 return of `int` or wider accepts `int`; an argument, field or array store, return or array
-element of `byte`, `short` or `char` requires that type. When the reads accept `int` the
-slot's variables are `int`; when they also require one narrow type that every stored constant
+element of `byte`, `short` or `char` requires that type. An argument is also a value a
+creation passes to its constructor and a value a lambda or a local or anonymous class
+captures, whose type is the parameter's in the constructor's or the `invokedynamic` call
+site's descriptor: `int count = 7; return () -> count;` printed `byte var0 = 7;`, and the
+recompiled lambda boxed a `Byte` where the class file boxes an `Integer`. When the reads
+accept `int` the slot's variables are `int`; when they also require one narrow type that every stored constant
 fits, they have that type (`char c = 'q'` for a `char` field store, which kept a cast
 before); reads that require two types, or a read in any other context (a conditional, a
 string concatenation, a copy to another variable), leave Vineflower's types. A slot an
@@ -1059,6 +1063,12 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    not serializable. A lambda or method reference that is the receiver of a call has no
    target type in Java, so it is written cast to the class of the invoked method
    (`lambdas::receiver_cast`): `((Func) () -> 1).get()` had printed `(() -> 1).get()`.
+   The cast names the parameterized type the lambda was inferred to have when there is one
+   (`lambdas::receiver_cast_type`), because the call's result is typed by it and its own
+   cast is dropped: `String s = ((Supplier<String>) () -> "x").get()` under the raw
+   `(Supplier)` did not compile wherever the interface's signature is known (always, with a
+   Java runtime found). An inferred type that names a type variable out of scope is not
+   stored on the lambda, and the cast stays the raw class.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.

@@ -1459,11 +1459,8 @@ impl InvocationExprent {
                     } else if let Some(remapped_inst_type) = remapped_inst_type {
                         self.append_inst_cast(&mut buf, &remapped_inst_type, res);
                     } else if lambdas::receiver_cast(instance) {
-                        self.append_inst_cast(
-                            &mut buf,
-                            &VarType::new_value(CodeType::Object, 0, &classname),
-                            res,
-                        );
+                        let cast = lambdas::receiver_cast_type(&classname, instance);
+                        self.append_inst_cast(&mut buf, &cast, res);
                     } else if instance.get_precedence() > self.0.get_precedence()
                         && !self.can_skip_paren_enclose(instance)
                     {

@@ -353,7 +353,7 @@ kuna	151275ae22f91d0a
 case	default/pkg/TestDoubleForeach	Default	classes/java17/pkg/TestDoubleForeach
 kuna	98e28a880344a62d
 case	default/pkg/TestDoubleNestedClass	Default	classes/java8nodebug/pkg/TestDoubleNestedClass
-kuna	bf90da48ee40f9a5
+kuna	5c5e2d0b94889d64
 case	default/pkg/TestDoublePopAfterJump	Default	classes/jasm/pkg/TestDoublePopAfterJump
 kuna	e434ec54de2ac74c
 case	default/pkg/TestDuplicateAssignmentInSwitchExpr	Default	classes/java17/pkg/TestDuplicateAssignmentInSwitchExpr
@@ -2042,3 +2042,7 @@ case	kuna-fixes/pkg/TestBridgeEntryLoop	Kuna Fixes	kuna-fixes/classes/pkg/TestBr
 case	kuna-fixes/pkg/TestNullArrayLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNullArrayLocal
 # kuna-fixes/src/pkg/TestQualifiedInheritedInner.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestQualifiedInheritedInner	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedInheritedInner	kuna-fixes/classes/pkg/TestQualifiedInheritedInnerBase
+# kuna-fixes/src/pkg/TestLambdaReceiverGeneric.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLambdaReceiverGeneric	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaReceiverGeneric
+# kuna-fixes/src/pkg/TestCapturedConstantType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCapturedConstantType	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedConstantType

@@ -2,9 +2,12 @@
 //! slot whose every value is an integer constant holds an `int`: its locals
 //! are typed `int`, or the `byte`, `short` or `char` that a read requires
 //! (an argument, a store, a return of that type), instead of the narrowest
-//! type the constants fit. A slot read where the fix cannot judge, where
-//! reads require different types, or that an increment (`n++`) writes keeps
-//! Vineflower's types.
+//! type the constants fit. An argument is also a value a creation passes to
+//! its constructor or a lambda captures: the anonymous class's or lambda
+//! method's parameter has that type, and a `byte` in its place is boxed as a
+//! `Byte`. A slot read where the fix cannot judge, where reads require
+//! different types, or that an increment (`n++`) writes keeps Vineflower's
+//! types.
 
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;
@@ -12,6 +15,7 @@ use crate::direct_graph::DirectGraph;
 use crate::exit_exprent::Type as ExitType;
 use crate::exprent::Exprent;
 use crate::function_exprent::FunctionType;
+use crate::invocation_exprent::InvocationExprent;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::JHashMap;
 use crate::struct_method::StructMethod;
@@ -166,14 +170,17 @@ fn use_of(parent: Exprent, index: usize, ret: &VarType) -> Use {
         }
         return target(&assign.get_left().get_expr_type());
     }
-    if let Some(inv) = parent.try_as_invocation() {
+    let argument = |inv: InvocationExprent| {
         let args = inv.get_lst_parameters();
         let descriptor = inv.get_descriptor();
         let offset = parent.get_all_exprents().len() - args.len();
-        return match index.checked_sub(offset).and_then(|i| descriptor.params.get(i)) {
+        match index.checked_sub(offset).and_then(|i| descriptor.params.get(i)) {
             Some(p) if args.len() == descriptor.params.len() => target(p),
             _ => Use::Unknown,
-        };
+        }
+    };
+    if let Some(inv) = parent.try_as_invocation() {
+        return argument(inv);
     }
     if let Some(func) = parent.try_as_function() {
         return match func.get_func_type() {
@@ -192,6 +199,9 @@ fn use_of(parent: Exprent, index: usize, ret: &VarType) -> Use {
         return if index == 1 && array.get_index().is_var() { Use::Int } else { Use::Unknown };
     }
     if let Some(new) = parent.try_as_new() {
+        if new.get_new_type().array_dim == 0 {
+            return new.get_constructor().map_or(Use::Unknown, argument);
+        }
         let dims = new.get_lst_dims().len();
         return if index < dims {
             Use::Int

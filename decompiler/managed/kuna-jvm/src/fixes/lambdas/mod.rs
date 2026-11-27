@@ -79,6 +79,19 @@ pub fn intersection_cast(added: &[String], iface: &VarType, inferred: Option<&Va
     Some(buf)
 }
 
+/// The type of the cast [`receiver_cast`] asks for, for the receiver
+/// `instance` of a method of the class `classname`: the parameterized type
+/// the lambda was inferred to have, when it is of that class and names only
+/// types in scope, since the call's own result is typed by it and loses its
+/// cast (`String s = ((Supplier<String>) () -> "x").get()`); else the class.
+pub fn receiver_cast_type(classname: &str, instance: Exprent) -> VarType {
+    instance
+        .try_as_new()
+        .and_then(|n| n.d(|d| d.inferred_lambda_type.clone()))
+        .filter(|t| t.is_generic() && t.array_dim == 0 && t.value.as_deref() == Some(classname))
+        .unwrap_or_else(|| VarType::new_value(CodeType::Object, 0, classname))
+}
+
 /// Whether `instance`, the receiver of a call, is a lambda or method reference
 /// with no cast of its own: Java gives it no type there, so it needs a cast
 /// to the class of the invoked method (`((Func) () -> 1).get()`).
