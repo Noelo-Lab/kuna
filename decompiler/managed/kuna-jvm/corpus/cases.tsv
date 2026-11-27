@@ -1661,6 +1661,8 @@ case	kuna-fixes/pkg/TestFreeGenericArgument	Kuna Fixes	kuna-fixes/classes/pkg/Te
 # kuna-fixes/src/pkg/TestGeneratedConstructors.kt, kotlinc 2.0.0 (-jvm-target 17 -no-reflect, JDK 17)
 case	kuna-fixes/pkg/TestGeneratedConstructors	Kuna Fixes	kuna-fixes/classes/pkg/TestGeneratedConstructors
 opt	jvm_plugins	1
+# kuna-fixes/src/pkg/TestGenericPatternBinding.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestGenericPatternBinding	Kuna Fixes	kuna-fixes/classes/pkg/TestGenericPatternBinding
 # kuna-fixes/src/pkg/TestGenericSlotReuse.java, javac 17.0.21.0.3 (-g)
 case	kuna-fixes/pkg/TestGenericSlotReuse	Kuna Fixes	kuna-fixes/classes/pkg/TestGenericSlotReuse
 # kuna-fixes/src/pkg/TestHiddenEmptySuperCall.kt, kotlinc 2.0.0 -jvm-target 17

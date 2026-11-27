@@ -1549,7 +1549,12 @@ bodies out in source order, and points a `tableswitch`'s gaps at the default by
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and
-`unchecked_type_pattern`.
+`unchecked_type_pattern`; the latter takes a cast to a parameterized subtype as checked (JLS
+5.1.6.2) when the operand's type arguments fix every type argument of the target, matching the
+argument the target class gives the operand's class against the operand's argument by
+structure, so `Factory<Genotype<G>> f` tested as `f instanceof Genotype<G> gt` (where
+`Genotype<G>` implements `Factory<Genotype<G>>`) stays a pattern; a bare parameter is bound
+directly, a wildcard or array argument only when it names no parameter and is equal.
 `decompiler/managed/kuna-jvm/src/p8_structure/assert_processor.rs (AssertProcessor::replace_assertion)`
 finds an assert's `throw new AssertionError` in the `if`'s body, its else or the statement
 the body breaks to, and with `assert_dead_throw` and `assert_throw_after_if` consumes it
