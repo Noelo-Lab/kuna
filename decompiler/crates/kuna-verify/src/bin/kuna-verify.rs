@@ -38,7 +38,7 @@ const USAGE: &str = "usage:
   kuna-verify corpus <test.xml|dir>...  [--jobs N] [--file-seconds S] [--baseline FILE] [--save-baseline FILE]
   kuna-verify localize <test.xml|binary> <function> [--pass N] [--contract FILE.c] [--option NAME VALUE]...
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
-  kuna-verify oracle-case <x86-64-elf> <function|0xaddr> [--input-reg NAME HEX]... [--seed S] [--budget OPS] [--sleighpath DIR]
+  kuna-verify oracle-case <x86-64-elf> <function|0xaddr> [--input-reg NAME HEX]... [--external-entry ADDR ARITY]... [--seed S] [--budget OPS] [--sleighpath DIR]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --call-reruns N (4)  --json  --trace  --sleighpath DIR";
 
@@ -62,6 +62,7 @@ struct Args {
     pass: Option<usize>,
     regs: Vec<String>,
     input_regs: Vec<(String, String)>,
+    external_entries: BTreeMap<u64, u8>,
     flags: Vec<String>,
     canonical: bool,
     states: u32,
@@ -90,6 +91,7 @@ fn parse(argv: &[String]) -> Result<Args, String> {
         pass: None,
         regs: Vec::new(),
         input_regs: Vec::new(),
+        external_entries: BTreeMap::new(),
         flags: Vec::new(),
         canonical: false,
         states: 4,
@@ -159,6 +161,15 @@ fn parse(argv: &[String]) -> Result<Args, String> {
                 let name = it.next().ok_or("--input-reg needs NAME HEX")?;
                 let value = it.next().ok_or("--input-reg needs NAME HEX")?;
                 a.input_regs.push((name.clone(), value.clone()));
+            }
+            "--external-entry" => {
+                let address = num(it.next(), "--external-entry ADDR")?;
+                let arity = num(it.next(), "--external-entry ARITY")?;
+                let arity = u8::try_from(arity).ok().filter(|&n| n <= 6)
+                    .ok_or("--external-entry arity must be between 0 and 6")?;
+                if a.external_entries.insert(address, arity).is_some() {
+                    return Err(format!("external entry {address:#x} specified twice"));
+                }
             }
             "--states" => a.states = num(it.next(), "--states")?.max(1) as u32,
             "--canonical" => a.canonical = true,
@@ -813,7 +824,8 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     };
     let result = parse(rest).and_then(|a| match cmd.as_str() {
-        cmd if cmd != "oracle-case" && !a.input_regs.is_empty() => Err("--input-reg is for oracle-case".into()),
+        cmd if cmd != "oracle-case" && (!a.input_regs.is_empty() || !a.external_entries.is_empty()) =>
+            Err("--input-reg and --external-entry are for oracle-case".into()),
         "check" => run_check(&a),
         "corpus" => run_corpus(&a),
         "shard" => run_shard(&a),
@@ -838,7 +850,11 @@ fn run_oracle_case(a: &Args) -> Result<ExitCode, String> {
         return Err("oracle-case needs an ELF and a function".into());
     };
     let roots = spec_roots(a.sleighpath.as_deref());
-    let case = kuna_verify::oracle::capture(path, function, &a.options, &roots, a.opts.seed, a.opts.budget, &a.input_regs)?;
+    let config = kuna_verify::oracle::RunConfig {
+        seed: a.opts.seed, budget: a.opts.budget, input_regs: &a.input_regs,
+        external_entries: &a.external_entries,
+    };
+    let case = kuna_verify::oracle::capture(path, function, &a.options, &roots, config)?;
     println!("{case}");
     Ok(ExitCode::SUCCESS)
 }

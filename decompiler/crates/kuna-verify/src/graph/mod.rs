@@ -458,6 +458,12 @@ impl Run<'_, '_, '_> {
                 let wide = target.is_some_and(|t| self.state.env.code_mapped(t));
                 let writes = self.state.writes_at_call(&args, wide);
                 crate::calls::record(&mut self.records, Record { at, target, indirect, args, writes, effect: None, frame_reads: None, live_in: None, stack_in: None })?;
+                if target.is_some_and(|t| self.state.env.explicit.as_ref().is_some_and(|case| case.external_entries.contains_key(&t))) {
+                    self.events.push(crate::calls::UserEvent {
+                        at, name: "external-call".to_owned(), ins: Vec::new(), file: Vec::new(),
+                    });
+                    return Ok(Flow::NoReturn);
+                }
                 let site = self.calls.site(at);
                 if site.noreturn {
                     return Ok(Flow::NoReturn);

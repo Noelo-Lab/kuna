@@ -397,6 +397,7 @@ dependencies = [
  "object",
  "regex",
  "serde_json",
+ "sha2",
  "slotmap",
 ]
 

@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use kuna_console::engine::ConsoleProgram;
 use kuna_decomp::funcdata::Funcdata;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use crate::state::{ExplicitState, Region, State, Writes};
 use crate::storage::Storage;
@@ -30,17 +31,32 @@ const FLAGS: [&str; 21] = [
     "RF", "VM", "AC", "VIF", "VIP", "ID",
 ];
 
+pub struct RunConfig<'a> {
+    pub seed: u64,
+    pub budget: u64,
+    pub input_regs: &'a [(String, String)],
+    pub external_entries: &'a BTreeMap<u64, u8>,
+}
+
 /// Run the Kuna interpreters and export the exact input for the external runner.
 pub fn capture(
     path: &str,
     function: &str,
     options: &[(String, String)],
     spec_roots: &[String],
-    seed: u64,
-    budget: u64,
-    input_regs: &[(String, String)],
+    config: RunConfig<'_>,
 ) -> Result<Value, String> {
-    let inputs = parse_inputs(input_regs)?;
+    let inputs = parse_inputs(config.input_regs)?;
+    if config
+        .external_entries
+        .iter()
+        .any(|(&at, &arity)| at >= 1 << 47 || at == RETURN || arity > 6)
+    {
+        return Err(
+            "external entries require a low canonical address and at most six integer arguments"
+                .into(),
+        );
+    }
     let image = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
     let mut regions = elf::regions(&image)?;
     let mut stack = vec![0; (SP - STACK) as usize];
@@ -87,11 +103,12 @@ pub fn capture(
     let commands = session::binary_script(path, &[function.to_owned()], options);
     session::drive(commands, None, spec_roots, |prog, fd| {
         if let Some(regions) = regions.take() {
-            result = Some(observe(prog, fd, seed, budget, regions, &inputs));
+            result = Some(observe(prog, fd, &config, regions, &inputs));
         }
     })?;
     let mut capture = result.ok_or_else(|| "no decompiled function is available".to_string())??;
     capture["decompile_options"] = json!(options);
+    capture["provenance"]["elf_sha256"] = json!(bytes_hex(Sha256::digest(image).iter().copied()));
     Ok(capture)
 }
 
@@ -201,17 +218,26 @@ fn initial_state(
 fn observe(
     prog: &ConsoleProgram,
     fd: &Funcdata,
-    seed: u64,
-    budget: u64,
+    config: &RunConfig<'_>,
     regions: Vec<Region>,
     inputs: &BTreeMap<&str, u128>,
 ) -> Result<Value, String> {
+    let (seed, budget) = (config.seed, config.budget);
     let mut env = Env::new(prog, seed).map_err(|e| e.render())?;
     let entry = fd.get_address().get_offset();
+    if config.external_entries.contains_key(&entry) {
+        return Err("an external entry cannot be the function entry".into());
+    }
     env.sp0 = SP;
     env.ret_addr = Some(RETURN);
     env.ret_slot = 8;
-    let (explicit, registers) = initial_state(&env, entry, regions, inputs)?;
+    let (mut explicit, registers) = initial_state(&env, entry, regions, inputs)?;
+    explicit.external_entries = config.external_entries.clone();
+    let external_calls: BTreeMap<_, _> = config
+        .external_entries
+        .iter()
+        .map(|(&at, &arity)| (format!("{at:#x}"), arity))
+        .collect();
     let memory: Vec<_> = explicit
         .regions
         .iter()
@@ -312,10 +338,15 @@ fn observe(
 
     Ok(json!({
         "version": 1, "function": fd.get_name(), "seed": format!("{seed:#x}"),
+        "provenance": {
+            "language": prog.arch().archid,
+            "sla_sha256": prog.arch().decode_recipe().map(|recipe| bytes_hex(Sha256::digest(recipe.sla.as_ref()).iter().copied())),
+        },
         "pcode_budget": budget, "case": {
             "version": 1, "architecture": "x86-64", "abi": "sysv-amd64", "cpu_model": "qemu64",
             "entry": format!("{entry:#x}"), "return_address": format!("{RETURN:#x}"),
             "registers": registers, "memory": memory,
+            "external_entries": external_calls.keys().collect::<Vec<_>>(), "external_calls": external_calls,
         },
         "observations": {"raw": raw, "ir": ir},
     }))

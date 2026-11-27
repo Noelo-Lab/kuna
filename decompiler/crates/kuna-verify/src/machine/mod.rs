@@ -530,6 +530,9 @@ impl<'e, 'p, 'c> Machine<'e, 'p, 'c> {
     }
 
     fn tail_call(&mut self, at: u64, target: u64, indirect: bool) -> Result<Exit, Halt> {
+        if self.stop_at_external(at, target, indirect)? {
+            return Ok(Exit::NoReturn);
+        }
         let args = self.record(at, Some(target), indirect)?;
         if self.calls.site(at).noreturn {
             return Ok(match self.stops_at(at, target, &args)? {
@@ -548,6 +551,17 @@ impl<'e, 'p, 'c> Machine<'e, 'p, 'c> {
         self.guess_if_frame(in_image, &args);
         self.stub(at, &args)?;
         Ok(Exit::Return)
+    }
+
+    fn stop_at_external(&mut self, at: u64, target: u64, indirect: bool) -> Result<bool, Halt> {
+        if !self.env.explicit.as_ref().is_some_and(|case| case.external_entries.contains_key(&target)) {
+            return Ok(false);
+        }
+        self.record(at, Some(target), indirect)?;
+        self.events.push(crate::calls::UserEvent {
+            at, name: "external-call".to_owned(), ins: Vec::new(), file: Vec::new(),
+        });
+        Ok(true)
     }
 
     /// Record a call and give it the stub's effect. `true` when it does not
@@ -1043,6 +1057,9 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
                     i = 0;
                     m.state.end_instruction();
                     continue;
+                }
+                if top && m.stop_at_external(addr, target, indirect)? {
+                    return Ok(Exit::NoReturn);
                 }
                 let in_image = env.code_mapped(target) && !(m.checking_noreturn && leads_out(env, target));
                 if own {

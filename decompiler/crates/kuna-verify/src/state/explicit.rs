@@ -27,6 +27,7 @@ impl Region {
 pub(crate) struct ExplicitState {
     pub regions: Vec<Region>,
     pub registers: BTreeMap<u64, u8>,
+    pub external_entries: BTreeMap<u64, u8>,
 }
 
 impl ExplicitState {

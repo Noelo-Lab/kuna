@@ -12,11 +12,10 @@ from dataclasses import dataclass
 
 import unicorn as uc
 from unicorn import x86_const as x86
+from oracle_protocol import DEFAULT_LIMITS, MAX_MAPPED, case_digest, load_request
 
 VERSION = 1
 PAGE = 4096
-MAX_MAPPED = 16 * 1024 * 1024
-MAX_REQUEST = 6 * MAX_MAPPED + 2 * 1024 * 1024
 MAX_USER_ADDRESS = 1 << 47
 GPR = ("RAX", "RBX", "RCX", "RDX", "RSI", "RDI", "RBP", "RSP", *(f"R{i}" for i in range(8, 16)))
 PRESERVED = ("RBX", "RBP", "R12", "R13", "R14", "R15")
@@ -143,8 +142,8 @@ class Case:
         if entry in external or sentinel in external:
             raise ValueError("external entries cannot coincide with the entry or return address")
         limit = spec.get("limits", {})
-        instructions = count(limit.get("instructions", 10_000), 1, 1_000_000, "instruction limit")
-        timeout_us = count(limit.get("timeout_us", 1_000_000), 1, 10_000_000, "timeout_us")
+        instructions = count(limit.get("instructions", DEFAULT_LIMITS["instructions"]), 1, 1_000_000, "instruction limit")
+        timeout_us = count(limit.get("timeout_us", DEFAULT_LIMITS["timeout_us"]), 1, 10_000_000, "timeout_us")
         return cls(entry, sentinel, registers, tuple(regions), external, instructions, timeout_us)
 
 
@@ -291,17 +290,14 @@ def main():
     args = parser.parse_args()
     try:
         if args.case == "-":
-            data = sys.stdin.buffer.read(MAX_REQUEST + 1)
+            request = load_request(sys.stdin.buffer)
         else:
             with open(args.case, "rb") as file:
-                data = file.read(MAX_REQUEST + 1)
-        if len(data) > MAX_REQUEST:
-            raise ValueError("case exceeds the request byte limit")
-        request = json.loads(data)
-        if not isinstance(request, dict):
-            raise ValueError("case must be a JSON object")
-        case = Case.parse(request.get("case", request))
-        print(json.dumps(UnicornBackend().run(case), sort_keys=True))
+                request = load_request(file)
+        spec = request.get("case", request)
+        observation = UnicornBackend().run(Case.parse(spec))
+        observation["case_sha256"] = case_digest(spec)
+        print(json.dumps(observation, sort_keys=True))
     except (AttributeError, KeyError, TypeError, ValueError, OSError, uc.UcError) as error:
         parser.exit(2, f"function oracle: {error}\n")
 

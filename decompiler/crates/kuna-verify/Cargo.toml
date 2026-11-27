@@ -17,6 +17,7 @@ kuna-console.workspace = true
 object.workspace = true
 regex.workspace = true
 serde_json = "1"
+sha2 = "0.11"
 slotmap.workspace = true
 
 [dev-dependencies]

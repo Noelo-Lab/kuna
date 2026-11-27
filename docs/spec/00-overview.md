@@ -4093,6 +4093,10 @@ checks fetched instruction bytes against the exported ELF image. The same
 map and architectural state can run in Unicorn without SLEIGH. Each backend
 reports its return, visible memory and execution boundaries with the state
 it could observe. These observations leave the Tier C verdicts unchanged.
+The three-way comparison uses an explicit return projection and observes
+call targets and integer inputs at a declared external boundary. It keeps
+incomplete observations and only compares a call prefix when all three
+executions stop before modeling the call's effects.
 See `docs/features/diffverify/function-oracle.md` for the input model.
 
 ## 0.7 Feedback edges
