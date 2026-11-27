@@ -1128,7 +1128,10 @@ decbench O0 corpus but printed gotos in four more functions whose source has
 none (else-if arm ends and switch breaks), and was left out. The
 recogniser does not know a `switch` lowered to a compare tree, so a bare
 `case K: break;` reached from such a dispatch counts as a `goto` (bash
-`man2html` `change_to_font`). @@RESULT@@
+`man2html` `change_to_font`). On the decbench gcc -O0 corpus `auto` makes 45
+more functions match the source's control flow than `on` (45 gained, none
+lost; no -O2 function changes); five functions whose source text has no `goto`
+gain one, three of them through rsyslog's `CHKiRet` macro, which is a `goto`.
 
 ### Releasing a label the duplication passes converted away
 
