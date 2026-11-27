@@ -68,7 +68,7 @@ test targets.
 
 The Rust test profile uses optimization level 1 for real-image tests, with debug
 assertions and integer-overflow checks enabled. Ordinary development builds retain
-Cargo's unoptimized default.
+Cargo's unoptimized default. Release builds use thin link-time optimization.
 
 Most crates build their integration tests into one `integration` binary. Register a
 new `tests/x.rs` in that crate's `tests/integration.rs` (`#[path = "x.rs"] mod x;`,

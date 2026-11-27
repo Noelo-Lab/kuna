@@ -614,9 +614,10 @@ pub struct AnalysisOutput {
     /// analysis recovers (`kuna_decomp::kuna_elfmaindecl`). The full
     /// three-parameter pieces, named argc/argv/envp.
     pub main_decl_at: Vec<(u64, kuna_decomp::fspec::PrototypePieces)>,
-    /// The names a PE imports from a C runtime DLL, whose functions are `__cdecl`
-    /// whatever the image's default convention is. The commit boundary declares
-    /// the prototypes parked under these names with that model.
+    /// The names a PE imports from a C runtime DLL, plus the Itanium allocation
+    /// operators the image names, whose functions are `__cdecl` whatever the
+    /// image's default convention is. The commit boundary declares the
+    /// prototypes parked under these names with that model.
     pub c_runtime_imports: Vec<String>,
     /// Processor-context decode-mode paints (the kuna analog of ARM's
     /// `ARM_ElfExtension`/`ArmSymbolAnalyzer` `programContext.setValue(TMode,…)`).

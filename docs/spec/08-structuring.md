@@ -909,9 +909,15 @@ bounded by `region_structurer.rs (POSTDOM_MAX_EDGES)` = 10 candidate edges
 and `(POSTDOM_MAX_GRAPH_SIZE)` = 50 nodes, exactly angr's caps, because
 post-dominator recomputation per edge is super-linear; then H3; then the
 post-order `node_seq` tiebreak. `regionedgeorder` only changes *which* edge
-is cut when the structurer is already forced to virtualize, so reducible
-code is byte-identical either way; it remains an opt-in (no DIV has flipped
-it — see the catalog).
+is cut when the structurer is already forced to virtualize, but that happens
+in reducible code too, and an edge cut into the function's exit prints as a
+guard `return` rather than a goto. So the ordering also decides which tail
+prints wrapped and which becomes a guard return, in functions that print no
+goto either way: with it on, `if (a) x = 2; else if (!x) x = 1;` prints its
+inner test as `if (x) return; x = 1;`. It is off in every mode. The
+`aggressive` preset turned it on until the decbench corpus showed the default
+ordering matching the source's control flow in 9 more O2 and 82 more O0
+functions, and in none fewer; `option regionedgeorder on` still selects it.
 
 **Loop refinement (angr, `option regionlooprefine`, flipped on by DIV-14).**
 The base cyclic schemas fold only the clean shape: single entry, one

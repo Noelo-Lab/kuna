@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    The aggressive preset leaves option `regionedgeorder` (SAILR's ordering of
+    the edge the region structurer cuts when no schema applies) at its catalog
+    default, off. `auto` selects that preset for every file under 500 KiB, so
+    the ordering used to be the default output of small binaries.
+
+    Stage / sub-stage: P8 structure, goto-quality. P0 assertions: `mode
+    aggressive`, then `option regionedgeorder on`.
+
+    Source, gcc 11 -O0 x86-64 (after coreutils `ls` set_exit_status), with the
+    global's three rip-relative displacements pointed at 0x404000:
+
+        int exit_status;
+        void set_exit_status(bool serious)
+        {
+          if (serious)
+            exit_status = 2;
+          else if (exit_status == 0)
+            exit_status = 1;
+        }
+
+    The ordering cuts the edge from the `exit_status == 0` test into the
+    function's exit, which prints as a guard return. The catalog defaults and
+    `mode aggressive` print the source's `else if`; `option regionedgeorder on`
+    prints the inner test as `if (dat_404000) return;`, as `mode aggressive`
+    did while it carried the option.
+-->
+<bytechunk space="ram" offset="0x401000" readonly="true">
+554889e589f88845fc807dfc00740cc705e72f000002000000eb148b05df2f000085c0750ac705d12f00000100000090
+5dc3
+</bytechunk>
+<bytechunk space="ram" offset="0x404000">00000000</bytechunk>
+<symbol space="ram" offset="0x401000" name="set_exit_status"/>
+</binaryimage>
+<script>
+  <com>lo fu set_exit_status</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>mode aggressive</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option regionedgeorder on</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="regionedgeorder preset #1: the defaults and mode aggressive print the source's else if" min="2" max="2">  else if \(!dat_404000\)$</stringmatch>
+<stringmatch name="regionedgeorder preset #2: option regionedgeorder on prints a guard return" min="1" max="1">    if \(dat_404000\)$</stringmatch>
+<stringmatch name="regionedgeorder preset #3: only the ordering returns early" min="1" max="1">      return;$</stringmatch>
+<stringmatch name="regionedgeorder preset #4: every pass stores 2 and 1" min="6" max="6">dat_404000 = [12];$</stringmatch>
+</decompilertest>

@@ -102,7 +102,7 @@ build failure. The options it enables:
   `unrolledguard` (speed-costly), `sparcstructret`,
   `globalarrayanchor` (retain mapped array bases in negatively biased element indices),
   `opaquepredicate` (fold a comparison proven constant for every input),
-  `regionedgeorder`, `returndup`, `iteexpr`,
+  `returndup`, `iteexpr`,
   `devectorize` (a proven vectorized integer reduction re-rolled into its scalar
   loop; off by default only because the rewrite hides the stride and the
   duplicated body), `ctypes`, `partialaccess` (a partial access prints as a
@@ -214,6 +214,15 @@ are inert off their target). These are not, and the invariant test's
   the preset would make a near-neutral judgment call the default output under
   500 KiB.
 
+- **`regionedgeorder`** — SAILR's ordering of the edge the region structurer
+  turns into a goto when no schema applies. It changes which edge is cut, and
+  with it which tail prints wrapped and which becomes a guard return, so it
+  moves functions whose output has no goto at all. On the decbench corpus
+  (O2 without inlining, and O0) the default ordering matches the source's
+  control flow in 9 more O2 and 82 more O0 functions than this one, and in
+  none fewer; the preset carried it until then, which made it the default
+  under 500 KiB.
+
 - **`libgccsigs`** — the SPARC32 `long long __divdi3(long long, long long)`
   contract fixes a caller that stores only the quotient's low word, but a caller
   that returns arithmetic on the quotient (`a / b + 1`, `-(a / b)`,
@@ -223,7 +232,7 @@ are inert off their target). These are not, and the invariant test's
 These therefore stay manual per-run opt-ins (`--option dwarf_lines on`,
 `--option formatstring full`,
 `--option msvcstrappend on`, `--option bejoin on`, `--option regsigned on`,
-`--option libgccsigs on`)
+`--option regionedgeorder on`, `--option libgccsigs on`)
 even under `--mode aggressive`; a named `--option` still wins over the preset by
 last-write precedence. For `formatstring` only the `full` loop above is excluded:
 its `static` default reads the same format constants out of the image at load, so
