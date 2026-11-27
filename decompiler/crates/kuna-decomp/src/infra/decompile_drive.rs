@@ -1373,6 +1373,12 @@ fn run_jumptable_pipeline(
 /// The action root owns the restart loop (C++ non-virtual `Action::perform`,
 /// already ported in `action.rs`); this drives it through the engine-side
 /// [`ActionContext`] so the warning-emission points are observable.
+///
+/// A restarted pass starts from the prototype store the drive handed the first
+/// one: `ActionOutputPrototype` attaches a store late in every pass and
+/// `Funcdata::clear` keeps it (with its output cleared), so without the detach a
+/// restarted pass would see a store from its first action on where a fresh pass
+/// sees none.
 fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> {
     let _load = arch.load_scope();
     // C++ allacts.setCurrent("decompile") derives the filtered decompile root
@@ -1398,6 +1404,7 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
     // root is current, and the caller's tree is paused mid-pass.
     let mut contract_root: Option<Box<dyn Action>> = None;
     let mut contract_budget = MAX_CONTRACT_CALLEES;
+    let seeded_store = fd.get_func_proto().has_store();
     loop {
         let res = {
             let deadline = arch.kuna_fn_deadline;
@@ -1502,6 +1509,9 @@ fn run_pipeline(arch: &mut Architecture, fd: &mut Funcdata) -> KunaResult<int4> 
         let armed = fd.kuna_callee_contract_armed();
         refollow_flow(arch, fd)?;
         fd.kuna_set_callee_contract_armed(armed);
+        if !seeded_store {
+            fd.get_func_proto_mut().detach_store();
+        }
         // (kuna `rustabi`) The re-flow hands back a FRESH Funcdata, so the
         // callee-body evidence has to be taken again or the call-output seam
         // silently loses its veto on every restarted function.  Cached, so this
