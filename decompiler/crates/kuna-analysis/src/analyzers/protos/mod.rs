@@ -19,9 +19,11 @@
 //! `ApplyDataArchiveAnalyzer` matching archive entries to program symbols); a
 //! table entry with no matching function is simply not emitted. The commit seam
 //! (`engine.rs::commit_analysis_output`) keeps the compatible by-name park and
-//! also parks imports at every concrete address reported by the format resolver.
-//! The latter is required when an IAT slot and its code veneer share a name:
-//! `ActionDefaultParams` reads the prototype back by the resolved entry address.
+//! also parks imports at every concrete address reported by the format resolver,
+//! and on ELF at each code import's `GLOB_DAT` slot ([`loaded_import_addrs`]).
+//! The latter is required when an IAT slot and its code veneer share a name, as
+//! a GOT slot and its `.plt.got` stub do: `ActionDefaultParams` reads the
+//! prototype back by the resolved entry address.
 //! If an image both imports and defines/exports the same spelling, the ambiguous
 //! by-name park is suppressed while the genuine import addresses remain typed.
 
@@ -545,7 +547,14 @@ fn unambiguous_defined_function_names(
     defined
 }
 
-/// Extend resolver addresses with proven ELF code externs retained by `reloc_symbols`.
+/// Extend resolver addresses with each ELF code import's `GLOB_DAT` slot and with
+/// the proven code externs retained by `reloc_symbols`.
+///
+/// `elfgotimports` registers the slot as the import's `FunctionSymbol`, so a call
+/// through it (`-fno-plt`, a `.plt.got` stub's own jump) reads its facts by the
+/// slot's address. The by-name park reaches the slot only while no stub shares
+/// its name, and no-return facts have no by-name route at all. The second list
+/// holds the reloc externs alone.
 pub(crate) fn loaded_import_addrs(
     file: &object::File,
     bytes: &[u8],
@@ -553,10 +562,17 @@ pub(crate) fn loaded_import_addrs(
 ) -> (Vec<(String, u64)>, Vec<(String, u64)>) {
     let mut imports = resolved_import_addrs(file, bytes);
     let mut reloc_imports = Vec::new();
-    if file.format() != object::BinaryFormat::Elf || image.reloc_symbols().is_empty() {
+    if file.format() != object::BinaryFormat::Elf {
         return (imports, reloc_imports);
     }
     let mut seen: HashSet<_> = imports.iter().cloned().collect();
+    for (slot, name) in crate::loader::kuna_elfgotimports::function_slots(file) {
+        if let Ok(name) = String::from_utf8(name) {
+            if seen.insert((name.clone(), slot)) {
+                imports.push((name, slot));
+            }
+        }
+    }
     for sym in image.reloc_symbols().iter().filter(|sym| sym.undefined) {
         let name = crate::loader::elf_plt::strip_version(sym.name.as_bytes());
         let imported = (String::from_utf8_lossy(&name).into_owned(), sym.vma);
@@ -624,6 +640,27 @@ impl AnalysisPass for LibProtoPass {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_got_slot_is_an_import_address_beside_its_plt_got_stub() {
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/got-slot-imports/shared_x86_64.so"
+        ))
+        .unwrap();
+        let file = object::File::parse(bytes.as_slice()).unwrap();
+        let image =
+            crate::loadimage_object::ObjectLoadImage::from_bytes_silent("shared_x86_64.so", &bytes).unwrap();
+        let (imports, reloc_imports) = loaded_import_addrs(&file, &bytes, &image);
+        for (name, stub, slot) in
+            [("memcmp", 0x1010, 0x3fb8), ("exit", 0x1020, 0x3fc8), ("strlen", 0x1030, 0x3fd0), ("free", 0x1040, 0x3fe0)]
+        {
+            assert!(imports.contains(&(name.to_string(), stub)), "{name} stub: {imports:?}");
+            assert!(imports.contains(&(name.to_string(), slot)), "{name} slot: {imports:?}");
+        }
+        assert!(!imports.iter().any(|(name, _)| name == "counter" || name == "seen"), "{imports:?}");
+        assert!(reloc_imports.is_empty());
+    }
 
     #[test]
     fn notype_call_imports_gain_prototypes_but_data_relocations_do_not() {

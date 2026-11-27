@@ -18,7 +18,7 @@
 
 use kuna_decomp::kuna_symbolnamechars::{sanitize_symbol_name_bytes, symbolnamechars_mode, NameChars};
 use object::read::{Object, ObjectSymbol};
-use object::{RelocationFlags, RelocationTarget};
+use object::{RelocationFlags, RelocationTarget, SymbolKind};
 
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 
@@ -26,6 +26,20 @@ use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
 /// in this image. Empty for a non-ELF input, a relocatable object, or a machine
 /// `dynrelocs` does not handle.
 pub(crate) fn resolve(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+    resolve_where(file, |_| true)
+}
+
+/// [`resolve`]'s slots that may hold a function: the symbol is a function or
+/// untyped, not a data object or a TLS entity. A call or tail jump through such
+/// a slot (`call *f@GOTPCREL(%rip)` in a `-fno-plt` build, a `.plt.got` stub's
+/// own `jmp`) resolves to the `FunctionSymbol` [`ElfGotImportPass`] registers at
+/// the slot, so the import facts keyed by entry address are emitted at the slot
+/// as well as at the import's stub (`protos::loaded_import_addrs`, `noreturn`).
+pub(crate) fn function_slots(file: &object::File) -> Vec<(u64, Vec<u8>)> {
+    resolve_where(file, |kind| !matches!(kind, SymbolKind::Data | SymbolKind::Tls))
+}
+
+fn resolve_where(file: &object::File, keep: impl Fn(SymbolKind) -> bool) -> Vec<(u64, Vec<u8>)> {
     let mut out = Vec::new();
     if file.format() != object::BinaryFormat::Elf || file.kind() == object::ObjectKind::Relocatable {
         return out;
@@ -38,7 +52,7 @@ pub(crate) fn resolve(file: &object::File) -> Vec<(u64, Vec<u8>)> {
     };
     let imports: std::collections::HashMap<usize, Vec<u8>> = file
         .dynamic_symbols()
-        .filter(|s| s.is_undefined())
+        .filter(|s| s.is_undefined() && keep(s.kind()))
         .filter_map(|s| {
             let name = crate::loader::elf_plt::strip_version(s.name_bytes().ok()?);
             (!name.is_empty()).then_some((s.index().0, name))
@@ -104,10 +118,33 @@ impl AnalysisPass for ElfGotImportPass {
 mod tests {
     use object::read::{Object, ObjectSection};
 
-    use super::{minted_name, ranged, resolve, slots, NameChars};
+    use super::{function_slots, minted_name, ranged, resolve, slots, NameChars};
 
     fn fixture() -> Vec<u8> {
         std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/elf_gotdata_x86_64.so")).unwrap()
+    }
+
+    #[test]
+    fn a_function_slot_is_any_undefined_slot_but_a_typed_data_one() {
+        let bytes = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../tests/fixtures/got-slot-imports/shared_x86_64.so"
+        ))
+        .unwrap();
+        let file = object::File::parse(&*bytes).unwrap();
+        let named = |slots: Vec<(u64, Vec<u8>)>| {
+            let mut slots: Vec<_> =
+                slots.into_iter().map(|(slot, name)| (slot, String::from_utf8(name).unwrap())).collect();
+            slots.sort();
+            slots
+        };
+        let functions = named(function_slots(&file));
+        let expected = [(0x3fb8, "memcmp"), (0x3fc8, "exit"), (0x3fd0, "strlen"), (0x3fe0, "free")];
+        assert_eq!(functions, expected.map(|(slot, name)| (slot, name.to_string())));
+        assert!(named(resolve(&file)).contains(&(0x3fc0, "counter".to_string())));
+        let untyped_bytes = fixture();
+        let untyped = object::File::parse(&*untyped_bytes).unwrap();
+        assert_eq!(function_slots(&untyped), resolve(&untyped));
     }
 
     #[test]

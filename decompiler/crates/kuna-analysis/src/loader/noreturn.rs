@@ -260,7 +260,7 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
 
     // 2. PLT stubs (`elf_plt::resolve_plt_imports`): a dynamic import like `exit`
     //    or `_ZSt9terminatev` has a UND (`address()==0`) `.dynsym` entry — its
-    //    only real FunctionSymbol is the PLT stub `elf_plt` names. Emitting the
+    //    code FunctionSymbol is the PLT stub `elf_plt` names. Emitting the
     //    STUB address (not 0) is what lets the address path resolve a *demangled*
     //    import: `_ZSt9terminatev` is installed at the stub as `std::terminate`,
     //    so a name lookup of the raw mangled string misses, but the stub address
@@ -270,11 +270,21 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
         let Ok(n) = String::from_utf8(p.name) else { continue };
         emit(&mut out, p.addr, n);
     }
+    // 3. GOT slots (`elfgotimports`): the import's other FunctionSymbol, which a
+    //    `-fno-plt` call or tail jump through the slot resolves to. The commit
+    //    resolves each fact by address, so the stub's fact never reaches the
+    //    slot, and without a stub the slot has no fact at all.
+    for (slot, name) in super::kuna_elfgotimports::function_slots(file) {
+        let Ok(n) = String::from_utf8(name) else { continue };
+        emit(&mut out, slot, n);
+    }
     out
 }
 
 /// (kuna `armfuncmode`) The addresses (Thumb bit cleared) of the image's
-/// functions and PLT stubs the base ELF list names as never returning.
+/// functions, PLT stubs and import GOT slots the base ELF list names as never
+/// returning. A slot is data and never a direct branch target, so it stops no
+/// A32 run.
 pub(crate) fn known_noreturn_addrs(file: &object::File) -> std::collections::BTreeSet<u64> {
     scan_noreturn(file, &[], Compiler::Unknown).noreturn.iter().map(|fact| fact.addr & !1).collect()
 }
@@ -614,6 +624,21 @@ mod tests {
 
         // an ordinary Rust function (no panic/abort) is never flagged
         assert!(!name_matches("ZN5nostd1m12rusty_helper17h76f46bb3af543e7bE", &e_rust, &w_rust));
+    }
+
+    #[test]
+    fn an_imports_got_slot_is_no_return_beside_its_stub_and_without_one() {
+        for (image, expected) in [("shared_x86_64.so", vec![0x1020, 0x3fc8]), ("noplt_x86_64.so", vec![0x3fc8])] {
+            let path =
+                format!("{}/../../../tests/fixtures/got-slot-imports/{image}", env!("CARGO_MANIFEST_DIR"));
+            let bytes = std::fs::read(&path).expect("read GOT slot fixture");
+            let file = object::File::parse(bytes.as_slice()).expect("parse GOT slot fixture");
+            let out = scan_noreturn(&file, &bytes, Compiler::Gcc);
+            let mut exits: Vec<u64> = out.noreturn.iter().filter(|f| f.name == "exit").map(|f| f.addr).collect();
+            exits.sort_unstable();
+            assert_eq!(exits, expected, "{image}");
+            assert!(out.noreturn.iter().all(|f| f.name == "exit"), "{image}: {:?}", out.noreturn);
+        }
     }
 
     #[test]

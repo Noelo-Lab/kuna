@@ -6700,7 +6700,9 @@ fn commit_analysis_output(
     //     through and the `FF 25` thunk veneer a direct `call` targets), the
     //     global by-name query of step 5 answers with the slot, and
     //     `ActionDefaultParams` reads `callee_proto_pieces(entry)` at whichever
-    //     one the call actually resolves to. Applied after 5 so an address-keyed
+    //     one the call actually resolves to. An ELF import with a GOT slot (step
+    //     1-) is registered twice too, and there step 5 answers with the PLT or
+    //     `.plt.got` stub the loader named first. Applied after 5 so an address-keyed
     //     signature wins over a by-name one for the same function, and before the
     //     C++ streams below so DWARF ground truth still wins over both.
     for (addr, pieces) in out.prototypes_at {
