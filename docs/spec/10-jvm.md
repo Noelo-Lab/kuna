@@ -1720,6 +1720,11 @@ javac emits, judged by offsets, operand-stack identity, LocalVariableTable names
 LineNumberTable lines and the switch instruction's targets (javac sorts keys but lays
 bodies out in source order, and points a `tableswitch`'s gaps at the default by
 `Gen.visitSwitch`'s cost rule); otherwise the code is printed as the bytecode has it.
+(kuna) A creation `Outer.this.new Inner(..)` whose outer instance javac checks with a
+`requireNonNull` the creation's next argument follows keeps its qualifier also when the check
+already reads the outer instance and the creation still the stack variable holding it
+(`implicit_outer_instance::mark_checked`, which matched only an equal argument): it printed
+`new Base.Inner(..)`, which javac compiles without the check.
 Three recognisers get the same treatment.
 `decompiler/managed/kuna-jvm/src/p8_structure/if_pattern_match_processor.rs (IfPatternMatchProcessor::check_branch)`
 makes a pattern only under the preconditions of `pattern_variable_scope` and

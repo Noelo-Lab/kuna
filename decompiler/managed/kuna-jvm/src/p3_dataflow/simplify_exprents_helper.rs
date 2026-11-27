@@ -960,7 +960,9 @@ impl SimplifyExprentsHelper {
                     invocation.get_instance()
                 };
                 if let Some(target) = target {
-                    implicit_outer_instance::mark_checked(target, second);
+                    implicit_outer_instance::mark_checked(target, second, &|params| {
+                        Self::is_unambiguously_same_param(invocation.is_static(), target, params)
+                    });
                 }
                 return true;
             }
