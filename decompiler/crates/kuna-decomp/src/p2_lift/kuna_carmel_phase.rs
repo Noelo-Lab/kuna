@@ -23,6 +23,7 @@ pub(crate) struct PhaseDecode<'a> {
     delay_tick: Option<u64>,
     delay_mask: Option<u64>,
     fixed_read_tick: Option<u64>,
+    end_unmodeled: Option<u64>,
 }
 
 impl<'a> PhaseDecode<'a> {
@@ -36,6 +37,7 @@ impl<'a> PhaseDecode<'a> {
         let delay_tick = arch.userops.get_op_by_name(b"carmel_delay_slot_admission").map(|op| op.get_index() as u64);
         let delay_mask = arch.userops.get_op_by_name(b"carmel_modeled_delay_mask").map(|op| op.get_index() as u64);
         let fixed_read_tick = arch.userops.get_op_by_name(b"carmel_fixed_read_admission").map(|op| op.get_index() as u64);
+        let end_unmodeled = arch.userops.get_op_by_name(b"carmel_end_unmodeled_issue").map(|op| op.get_index() as u64);
         let (word, bits) = arch.with_context_db(|db| {
             let field = db.get_variable(b"carmel_phase_emit").ok()?;
             Some((field.get_word() as usize, field.get_mask() << field.get_shift()))
@@ -43,7 +45,7 @@ impl<'a> PhaseDecode<'a> {
         let translate = arch.translate();
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
-        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask, fixed_read_tick })
+        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask, fixed_read_tick, end_unmodeled })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -63,6 +65,8 @@ impl<'a> PhaseDecode<'a> {
             } else if Some(index) == self.delay_tick {
                 *slot_clocks.entry(offset).or_default() += 1;
                 markers.push((op_id, offset, Mark::Slot));
+            } else if Some(index) == self.end_unmodeled {
+                markers.push((op_id, offset, Mark::EndUnmodeled));
             } else if Some(index) == self.delay_mask {
                 delay_queries.push((op_id, offset));
             } else if index == self.admission {
@@ -84,15 +88,18 @@ impl<'a> PhaseDecode<'a> {
             return Ok(());
         }
         let mut known = BTreeSet::new();
-        let mut redirects = Vec::new();
+        let mut cleanup = Vec::new();
         for (marker, offset, kind) in markers {
             let modeled = delayed.get(&offset).copied();
             if modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
                 fd.op_destroy(marker);
             } else if kind == Mark::Redirect {
-                redirects.push(marker);
+                cleanup.push(marker);
             } else {
                 known.insert(offset);
+                if kind == Mark::EndUnmodeled {
+                    cleanup.push(marker);
+                }
             }
         }
         // structure_reset has assigned dense block numbers in this order.
@@ -140,8 +147,8 @@ impl<'a> PhaseDecode<'a> {
                 }
             }
         }
-        for redirect in redirects {
-            fd.op_destroy(redirect);
+        for marker in cleanup {
+            fd.op_destroy(marker);
         }
         Ok(())
     }
@@ -176,6 +183,7 @@ impl<'a> PhaseDecode<'a> {
                     fixed_read = true;
                 }
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
+                Some(index) if Some(index) == self.end_unmodeled => trace.events.push(Event::Barrier),
                 Some(index) if Some(index) == self.redirect => {
                     trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
                 }
@@ -212,6 +220,7 @@ enum Mark {
     Tick,
     Slot,
     Redirect,
+    EndUnmodeled,
 }
 
 #[derive(Clone, Copy)]

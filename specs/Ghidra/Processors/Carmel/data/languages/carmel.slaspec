@@ -187,6 +187,7 @@ define pcodeop carmel_known_redirect;
 define pcodeop carmel_delay_slot_admission;
 define pcodeop carmel_modeled_delay_mask;
 define pcodeop carmel_fixed_read_admission;
+define pcodeop carmel_end_unmodeled_issue;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -8936,6 +8937,55 @@ macro wide_add_r4_post(left, shift, displacement) {
 @define RAW_MAC_A4_ROUND "slot_16_22=0x51 & slot_14_15=0 & slot_11_13=4 & slot_6_10=10 & slot_1_5=31 & slot_0_0=1"
 @define RAW_MAC_A3_ROUND "slot_16_22=0x51 & slot_13_15=5 & slot_9_11=3 & slot_6_8=2 & slot_1_5=8 & slot_0_0=1"
 
+compact_round_ff: "FF1" is slot_6_6=0 { export FF1; }
+compact_round_ff: "FF2" is slot_6_6=1 { export FF2; }
+
+@define COMPACT_FF_ROUND "slot_7_22=0xad7f & slot_1_5=0x16 & slot_0_0=1 & compact_round_ff"
+@define COMPACT_FF_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
+
+macro compact_ff_round_store(first, latch, cfg, bank, lane, gate) {
+    local admitted:1 = carmel_read_address_admission(gate);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    if (admitted == 0) goto <publish>;
+    local address:2 = R7;
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    local left:2 = first;
+    latch = left;
+    local enabled:2;
+    unary_ce(cfg, incoming, CETBL, bank, enabled);
+    if (enabled == 0) goto <publish>;
+    local product:8;
+    raw_mac_product(left, FF1, 1:1, 1:1, product);
+    local scale:4 = zext((ECFG >> 5) & 1);
+    local quantum:8 = 0x10000 << scale;
+    local bias:8 = quantum >> 1;
+    local rounded:8 = (product + bias) & -quantum;
+    local adder:8 = (product & 0xffffffffff) + bias;
+    local result:8;
+    local active:2;
+    raw_mac_finish(rounded, adder, 1:1, 1:1, 1:1, result, active);
+    result = result >> scale;
+    *[data]:2 address = result(2);
+    raw_mac_flags(flags, active, lane);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+    carmel_end_unmodeled_issue();
+}
+
+:MPYR "CE1" "*R7+=RN7",compact_round_ff,"FF1" is
+    $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & $(COMPACT_FF_ROUND) {
+    compact_ff_round_store(compact_round_ff, X1, CECFG1, 0:2, 0:4, 1:1);
+}
+:MPYR "CE1" "*R7+=RN7",compact_round_ff,"FF1" "||" nop_right is
+    ($(RAW_MAC_PAR) & $(COMPACT_FF_PHASE) & $(COMPACT_FF_ROUND)); (slot_mode=0 & nop_right) {
+    compact_ff_round_store(compact_round_ff, X1, CECFG1, 0:2, 0:4, 1:1);
+}
+:^nop_left "||" "MPYR" "CE2" "*R7+=RN7",compact_round_ff,"FF1" is
+    ($(RAW_MAC_PAR) & $(COMPACT_FF_PHASE) & nop_left); (slot_mode=0 & $(COMPACT_FF_ROUND)) {
+    compact_ff_round_store(compact_round_ff, X2, CECFG2, 1:2, 6:4, 2:1);
+}
+
 :MACSU "A4","*R7+=RN7","OP2" is $(RAW_MAC_SEQ) & $(RAW_MAC_A4_SHIFT) {
     local address:2 = R7;
     modify_ptr(R7, RN7, RM6, RL6, 14, 1);
@@ -12895,9 +12945,15 @@ macro wide_smove_sr1(value, shifted) {
     publish_ce_feedback(flags, EST);
 }
 
+wide_smove_latch_clock: is wide_left_mode=0 | wide_40_45!=0x10 | wide_2_9!=0x97 { }
+wide_smove_latch_clock: is wide_left_mode=1 & wide_40_45=0x10 & wide_2_9=0x97 & ce_tick {
+    build ce_tick;
+}
+
 :MOVE wide_ce_prefix wide_smove_reg_dst,wide_smove_reg_src is $(WIDE_SIGNED_MOVE_REG)
     & wide_0_1=2 & ($(SIGNED_MOVE_LATCH_DST)) & wide_smove_reg_dst
-    & ((wide_40_45>=16 & wide_40_45<=21) | (wide_40_45>=24 & wide_40_45<=29)) & wide_smove_reg_src {
+    & ((wide_40_45>=16 & wide_40_45<=21) | (wide_40_45>=24 & wide_40_45<=29))
+    & wide_smove_reg_src & wide_smove_latch_clock {
     build wide_ce_prefix;
     local execute:2;
     local agu:2;
@@ -12906,6 +12962,7 @@ macro wide_smove_sr1(value, shifted) {
     wide_smove_reg_dst = wide_smove_reg_src;
   <publish>
     publish_ce_feedback(EST & 0xcfff, EST);
+    build wide_smove_latch_clock;
 }
 
 wide_smove_latch_source: wide_smove_word_src is wide_smove_word_src { build wide_smove_word_src; }

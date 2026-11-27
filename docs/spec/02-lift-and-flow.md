@@ -4050,6 +4050,16 @@ clock: admission uses the pre-load rails, while the low 15 bits of the
 loaded word replace `EST` for subsequent clocks. The marker authorizes
 only that one read, not arbitrary DATA effects.
 
+For the compact qualified rounded `FF1`/`FF2` multiply to a DATA word,
+admission reserves the old `R7` address, advances the pointer, and
+samples the first factor into the lane's X register. The later EX
+predicate gates the DATA write. The covered unqualified wide
+`MOVE FF2,A0L` supplies its new value to this operand-fetch stage
+without an intervening issue. The rounded port uses a 16-bit quantum,
+or 17 bits with `ECFG.SR1`, and rounds ties upward.
+This store can consume a proved incoming address sample, but does not
+contribute to the proof of a later sample.
+
 Signed immediate `MOVE` distinguishes the early address-qualified ports
 from late DATA or accumulator results. The indexed store captures the old
 address and updates the pointer when AEN permits it, even if the late

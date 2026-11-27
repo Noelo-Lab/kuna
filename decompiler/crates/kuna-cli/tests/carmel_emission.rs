@@ -1632,6 +1632,91 @@ int main(void) {
 }
 
 #[test]
+fn carmel_rounded_ff_store_uses_early_address_and_of_samples() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("round.bin");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const ROUND: [u8; 6] = [0x56, 0xbf, 0xed, 0x2b, 0xec, 0];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+        volatile unsigned short sample, status = 8;\n",
+    );
+    for (layout, instruction, output) in [
+        ("move", [0x90, 0x29, 0x83, 0xc3, 0x66, 0x5e], "X1"),
+        ("status", [0xbf, 0x12, 0x34, 0xc3, 0x63, 0x04], "R7"),
+    ] {
+        let mut code = vec![[0x80, 0xc0, 0x80, 0xc6, 0x42, 0x9c]]; // MOVE R7,0xc080
+        code.extend([NOP; 6]);
+        code.extend([instruction, ROUND]);
+        code.extend([NOP; 4]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([NOP; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+            "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+            "--assert", &format!("return %{output} unsigned short"),
+            "--assert", "data [data,0xc080] volatile unsigned short sample",
+        ]);
+        if layout == "status" {
+            kuna.args(["--assert", "data [data,0x1234] volatile unsigned short status"]);
+        }
+        let inputs = ["A0L", "FF1", "FF2", "X1", "EST", "CECFG1", "CECFG2", "CETBL", "ECFG",
+                      "RN7", "PACFG", "RM6", "RL6"];
+        for (i, port) in inputs.into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{port} unsigned short in_{}", port.to_ascii_lowercase())]);
+        }
+        let result = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        assert!(json["assertions"].as_array().unwrap().iter().all(|row| row["status"] == "applied"), "{json}");
+        let code = function["code"].as_str().unwrap().replace("sub_1000", &format!("check_{layout}"));
+        writeln!(generated, "{code}").unwrap();
+    }
+    generated.push_str(r"
+int main(void) {
+    sample = 0x1357;
+    /* The very next OF sees the early FF2 MOVE. The stored word uses that value too. */
+    if (check_move(0x8000,0x8000,0x1111,0x3333,0,0,0,0xffff,1,3,0,0,0) != 0x8000 ||
+        sample != 0x8000) return 1;
+    if (check_move(0x8000,0x8000,0x1111,0x3333,0,0,0,0xffff,5,3,0,0,0) != 0x8000 ||
+        sample != 0x7fff) return 2;
+    if (check_move(0x8000,0x8000,0x1111,0x3333,0,0,0,0xffff,0x29,3,0,0,0) != 0x8000 ||
+        sample != 0x4000) return 3;
+    sample = 0x1357;
+    /* AEN is off. The old CE admits the address, then the loaded Z vetoes the store. */
+    if (check_status(0,0x8000,0x8000,0x3333,0,0x0ee8,0x0ee8,0x0101,0,3,0,0,0) != 0xc083 ||
+        sample != 0x1357 || status != 8) return 4;
+    if (check_status(0,0x8000,0x8000,0x3333,0,0x0ee8,0x0ee8,0x0202,0,3,0,0,0) != 0xc080 ||
+        sample != 0x1357 || status != 8) return 5;
+    return 0;
+}
+");
+    let source = scratch.path().join("round.c");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &scratch.path().join("round.exe"), &generated);
+
+    let mut code = vec![NOP; 6];
+    code.push(ROUND);
+    code.extend([NOP; 4]);
+    code.push([0x13, 0x34, 0x68, 0xc2, 0x2f, 0x50]); // NOT CE1 LC1,*R3++
+    code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+    code.extend([NOP; 2]);
+    fs::write(&binary, code.as_flattened()).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_kuna")).arg("decompile").arg(&binary).args([
+        "0x1000", "--addr", "--raw-image", "--base", "0x1000", "--json",
+        "--target", "Carmel:BE:24:default:default",
+    ]).output().unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("Unproved Carmel address admission at CODE 0x1016"));
+}
+
+#[test]
 fn carmel_qualified_bank_exchange_preserves_independent_address_and_result_effects() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
