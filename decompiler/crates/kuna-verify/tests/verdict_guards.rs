@@ -580,7 +580,7 @@ fn a_call_before_an_overlapping_copy_is_still_compared() {
 
 /// The first store is outside both copy ranges, with no call to snapshot it.
 #[test]
-fn a_store_before_an_overlapping_copy_is_compared_without_a_call() {
+fn memory_and_operands_of_an_overlapping_copy_are_compared_without_a_call() {
     let text = [
         0xc7, 0x47, 0x40, 7, 0, 0, 0, 0x83, 0xe2, 0x07, 0x48, 0x89, 0xfe, 0x48, 0x8d, 0x7c, 0x17, 0x01, 0xb9, 16, 0, 0, 0, 0xf3, 0xa4, 0xc3,
     ];
@@ -595,18 +595,38 @@ fn a_store_before_an_overlapping_copy_is_compared_without_a_call() {
         let env = kuna_verify::state::Env::new(prog, opts.seed).unwrap();
         let calls = kuna_verify::calls::sites(fd, &env);
         let program = kuna_verify::program::compile(prog, fd, &calls);
-        let store = kuna_verify::mutate::mutants(&program, &calls)
-            .into_iter()
+        let mutants = kuna_verify::mutate::mutants(&program, &calls);
+        let store = mutants.iter().copied()
             .find(|m| m.operator == kuna_verify::mutate::Operator::DropStore)
             .expect("a mutant that drops the first store");
         let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &opts, store).unwrap();
-        checked = true;
         assert!(reached);
         assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
         assert!(r.lines.iter().any(|l| l.starts_with("memory before overlapping copy")), "{}", r.render());
+
+        let mask = mutants.into_iter().find(|m| {
+            m.operator == kuna_verify::mutate::Operator::Constant
+                && matches!(program.blocks[m.block].ops[m.op].kind, kuna_verify::program::Kind::Eval(kuna_num::opcodes::OpCode::CPUI_INT_AND))
+        }).expect("a mutant that changes the destination mask");
+        let (r, _, reached) = kuna_verify::check::check_mutant(prog, fd, &opts, mask).unwrap();
+        assert!(reached);
+        assert_eq!(r.verdict.label(), "DIFFERS", "{}", r.render());
+        assert!(r.lines.iter().any(|l| l.starts_with("overlapping copy at")), "{}", r.render());
+        checked = true;
     })
     .unwrap();
     assert!(checked);
+}
+
+#[test]
+fn a_wide_copy_counts_bytes_instead_of_elements() {
+    let text = [
+        0x83, 0xe2, 0x07, 0x48, 0x89, 0xfe, 0x48, 0x8d, 0x7c, 0x17, 0x01,
+        0xb9, 2, 0, 0, 0, 0xf3, 0x48, 0xa5, 0xc3,
+    ];
+    let path = object("overlap_wide", &text, &[("g", 0, text.len() as u64)], &[]);
+    let r = &check(&path, &["g"], &Options { runs: 16, ..Options::default() })[0];
+    assert_eq!(r.verdict.label(), "DIVERGES(copy-overlap)", "{}", r.render());
 }
 
 #[test]
@@ -671,6 +691,29 @@ fn a_concrete_callee_returning_to_unmapped_code_does_not_resume_its_caller() {
     let path = object("nested_return", &text, &[("caller", 0, 19), ("helper", 19, 9)], &[]);
     let r = &check(&path, &["caller"], &Options { runs: 1, ..Options::default() })[0];
     assert!(r.verdict.label().starts_with("UNKNOWN(unsupported-op: a callee returned to unmapped address 0x500000"), "{}", r.render());
+}
+
+#[test]
+fn a_wrong_return_after_a_concrete_call_does_not_count_as_agreement() {
+    let text = [
+        0x48, 0x83, 0xec, 0x08, 0xe8, 0x0c, 0, 0, 0, 0x48, 0x83, 0xc4, 0x08,
+        0x83, 0xc0, 0x04, 0x48, 0x83, 0xc4, 0x08, 0xc3, 0xb8, 3, 0, 0, 0, 0xc3,
+    ];
+    let path = object("caller_return", &text, &[("caller", 0, 21), ("helper", 21, 6)], &[]);
+    let r = &check(&path, &["caller"], &Options { runs: 1, ..Options::default() })[0];
+    assert!(r.verdict.label().starts_with("UNKNOWN(unsupported-op: return at"), "{}", r.render());
+    assert!(r.verdict.label().contains("not to the return address"), "{}", r.render());
+}
+
+#[test]
+fn a_wrong_return_does_not_hide_an_earlier_call_difference() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/datatests/injectoverride.xml");
+    let opts = Options { runs: 16, ..Options::default() };
+    let result = kuna_verify::check_datatest(&path.to_string_lossy(), &[specs()], &opts);
+    assert!(result.error.is_none(), "{:?}", result.error);
+    let report = result.reports.iter().find(|r| r.function == "callind_inject").unwrap();
+    assert_eq!(report.verdict.label(), "DIFFERS", "{}", report.render());
+    assert!(report.lines.iter().any(|l| l.starts_with("call 1 ")), "{}", report.render());
 }
 
 #[test]

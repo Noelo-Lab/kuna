@@ -347,7 +347,10 @@ pub(crate) fn machine_differs(
     if a.noreturn != b.noreturn {
         return Some("run differs in whether it returns".into());
     }
-    if let Some(out) = claim.storage.as_ref().filter(|_| !a.noreturn && !a.stopped_before_copy) {
+    if a.bad_return.is_some() != b.bad_return.is_some() {
+        return Some("run differs in whether it reaches the return address".into());
+    }
+    if let Some(out) = claim.storage.as_ref().filter(|_| !a.noreturn && a.copy_operands.is_none() && a.bad_return.is_none()) {
         let (mut sa, mut sb) = (a.state.clone(), b.state.clone());
         if let (Ok(x), Ok(y)) = (sa.read_storage(&out.space, out.off, out.size), sb.read_storage(&out.space, out.off, out.size)) {
             if x != y {
@@ -360,6 +363,9 @@ pub(crate) fn machine_differs(
     }
     if let Some(l) = compare_events(prog, &a.events, &b.events) {
         return Some(format!("system calls differ: {}", l.join("; ")));
+    }
+    if a.copy_operands != b.copy_operands {
+        return Some("overlapping copy operands differ".to_string());
     }
     compare_writes(env, run, &a.state.writes(), &b.state.writes(), None).map(|d| format!("memory at exit differs: {d}"))
 }

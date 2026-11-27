@@ -13,6 +13,7 @@ use kuna_base::space::AddrSpace;
 use kuna_num::opcodes::get_opname;
 
 use crate::calls::{Calls, Record};
+use crate::machine::{Checkpoint, CopyOperands};
 use crate::program::{Arg, Effect, Kind, Op, Operand, Out, Program};
 use crate::state::{Env, State, Writes};
 use crate::value::{eval, mask, Halt};
@@ -21,13 +22,19 @@ use crate::value::{eval, mask, Halt};
 /// value.
 pub type Returned = Option<u128>;
 
+#[derive(Clone, Copy)]
+pub(crate) struct CopyOverlap {
+    pub(crate) checkpoint: Checkpoint,
+    pub(crate) operands: CopyOperands,
+}
+
 /// How the decompiled run ended.
 pub struct Outcome {
     pub ret: Returned,
     /// A switch met a selector no row of its table carries.
     pub unmatched_switch: bool,
     /// The run stopped before a forward overlapping copy.
-    pub(crate) overlapping_copy: Option<crate::machine::Checkpoint>,
+    pub(crate) overlapping_copy: Option<CopyOverlap>,
     pub calls: Vec<Record>,
     /// The run ended in a call kuna says does not return.
     pub noreturn: bool,
@@ -98,7 +105,7 @@ struct Run<'e, 'p, 'c> {
 enum Flow {
     Next,
     Edge(i32),
-    Overlap(crate::machine::Checkpoint),
+    Overlap(CopyOverlap),
     Return(Returned),
     NoReturn,
 }
@@ -318,7 +325,10 @@ impl Run<'_, '_, '_> {
                 *visits += 1;
                 if dst > src && dst - src < bytes {
                     self.charged = 0;
-                    return Ok(Flow::Overlap(crate::machine::Checkpoint { at, visit: *visits }));
+                    return Ok(Flow::Overlap(CopyOverlap {
+                        checkpoint: Checkpoint { at, visit: *visits },
+                        operands: CopyOperands { dest: dst, src, bytes: u128::from(bytes), backwards: false },
+                    }));
                 }
                 let mut data = Vec::with_capacity(bytes as usize);
                 for i in 0..bytes {
@@ -538,7 +548,7 @@ impl Run<'_, '_, '_> {
         }
     }
 
-    fn finish(self, ret: Returned, noreturn: bool, overlapping_copy: Option<crate::machine::Checkpoint>) -> Outcome {
+    fn finish(self, ret: Returned, noreturn: bool, overlapping_copy: Option<CopyOverlap>) -> Outcome {
         Outcome {
             ret,
             unmatched_switch: self.unmatched_switch,

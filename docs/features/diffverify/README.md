@@ -65,10 +65,11 @@ ins16  DIFFERS  (run 1 of 256)
 
   An in-image callee that, run for real, returns without going through a stub proves
   kuna wrong. A run that ends on kuna's word alone is not counted (`noreturn-unverified`).
-- **Where a function returns.** In a run that made no call, a `RETURN` at the top level
-  to anything but the return address the run started with is not a return: the run is
-  `UNKNOWN(unsupported-op)`. That is a function that moved its own stack or return
-  address (`add rsp, 8; ret`). In a run with calls the same return still counts (§9).
+- **Where a function returns.** With a modelled outer return address, a run that
+  reaches a top-level `RETURN` to an unexpected address is `UNKNOWN(unsupported-op)`
+  when the calls ran without stubs. This catches functions that move their own
+  stack or return address (`add rsp, 8; ret`) even after a real callee returns.
+  Differences in earlier calls and system calls can still give `DIFFERS`.
   With a modelled outer return address, a callee run without a stub that returns
   to an unexpected unmapped address makes the run `UNKNOWN(unsupported-op)`.
   This check applies to direct calls and indirect calls to known function entries.
@@ -89,7 +90,7 @@ ins16  DIFFERS  (run 1 of 256)
 |---|---|
 | `AGREES(n)` | `n` runs agreed. Runs that trapped on both sides, or ran past `--budget` ops on both sides, are not counted, and the report says how many. A run past the budget on one side only makes the function `UNKNOWN(budget)`: one side may loop where the other does not. |
 | `DIFFERS` | one run gave a difference. The report says which run and what differed. |
-| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call cuts the call trace at its site. An overlapping copy cuts the run at that instruction, after comparing the earlier calls, system calls and memory. A doubt about a callee's recovered prototype before that copy is still `UNKNOWN`. |
+| `DIVERGES(id)` | the difference is one kuna makes on purpose, a declared divergence (`src/abi/divergence.rs`): `switchrunon-cut-row`, `synthesized-call`, `gowritebarrier`, `panic-check`, `ptrauth-trap`, `copy-overlap`, `divide-by-zero`, `nan-quieting`, `syscall-result`. Each one names the option that makes the trade, and the pattern the difference has to match. Any other difference under the same option is still `DIFFERS`. A declared call cuts the call trace at its site. An overlapping copy cuts the run at that instruction after comparing the earlier calls, system calls and memory, and the source, destination, byte count and direction of the copy. Unavailable machine operands or doubt about a callee's recovered prototype before the copy give `UNKNOWN`. |
 | `UNKNOWN(reason)` | the check could not decide. `budget`: a side ran past `--budget` ops. `unsupported-op`: an op or user op the model does not run, or a system call whose registers kuna passes with a gap (§9). `trap`: only one side trapped, or both trapped in every run. `harness`: the model failed. `no switch row`: a switch value no row of kuna's table takes. `prototype-suspect`: the difference rests on a callee prototype kuna recovered and may have wrong. `uninitialized-local`: kuna's result depends on a local nothing assigned. `guessed-callee`: a callee whose effect the model had to guess. `noreturn-unverified`: every run ended at a call only kuna says does not return (§2). `call-reruns`: every run had more calls whose callee reads an argument kuna passes otherwise than `--call-reruns` lets the machine rerun with kuna's value. `assumed-domain`: it agrees only while a parameter kuna's recovered prototype types `bool` holds 0 or 1 (§5). `abi-violation`: a callee run for real changed a register the calling convention says it preserves, and the run depends on that change (§2). `timeout`: no verdict within `--fn-seconds`. |
 | `SKIPPED(reason)` | reserved for Tier S. |
 
@@ -303,14 +304,11 @@ run yet.
   with extended values, which is right only when the inferred width is. Checking those
   with any value too gave false `UNKNOWN`s (MIPS O32 `negative`), so it waits for a
   rule that tells a width kuna inferred from one the ABI fixes.
-- **A wrong return address after calls.** Once a run has made a call, a top-level
-  return to another address still counts as a return, because a stub's stack effect
-  can be what moved the stack pointer (the Go functions of `kuna-gobounds`, whose
-  return value is still compared correctly). Refusing it there turned 31 agreements of
-  the corpus into `UNKNOWN`, among them a fragment that jumps to a return address it
-  never restored (`jal`, then `jr ra`), runs that a made-up function pointer threw off,
-  SEH helpers following a random `fs:[0]` chain, and exit system calls the run goes past.
-  Each of those needs its own fix in the harness first.
+- **A wrong return address after stubs.** If a run has used a stub, the checker
+  still accepts a top-level `RETURN` to an unexpected, unmapped address. The
+  stub's guessed stack cleanup can move the stack pointer, as in
+  `kuna-gobounds`. Checking this case requires tracking which stub effects
+  the return address depends on.
 - **A function pointer the harness made up.** A pointer argument is an input like any
   other, so an indirect call through one can land in the middle of some function in the
   image, and the machine runs that code as the callee. The run then usually ends in a

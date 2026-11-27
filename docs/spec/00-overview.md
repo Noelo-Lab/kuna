@@ -4023,10 +4023,13 @@ thread-local flag per rule attempt and nothing else changes.
 Tier C of the checker compares the machine run with the final IR. For a
 `_Bool` return contract it tests the full recovered value for zero before
 comparing the ABI byte. If a forward overlapping `rep movs` was replaced by
-`memcpy`, the checker compares memory and call traces at the corresponding
-instruction visit before recording the divergence. When the checker models the
-outer return address and knows the call's continuation, a concrete callee that
-returns to an unexpected unmapped address yields `UNKNOWN(unsupported-op)`.
+`memcpy`, the checker compares memory, call traces and the copy's source,
+destination, byte count and direction at the corresponding instruction visit
+before recording the divergence. When the checker models the outer return
+address and knows the call's continuation, a concrete callee that returns to
+an unexpected unmapped address yields `UNKNOWN(unsupported-op)`. A top-level
+return to an unexpected address also yields `UNKNOWN` after calls that ran
+without a stub.
 
 ## 0.7 Feedback edges
 

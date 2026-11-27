@@ -393,7 +393,7 @@ fn check_runs(
         }
         let overlap = g.as_ref().ok().and_then(|go| go.overlapping_copy);
         let rerun_machine = |with_args: Option<&machine::WithArgs>| match overlap {
-            Some(stop) => machine::run_before_copy(&env, run, entry, opts.budget, &machine_calls, with_args, stop),
+            Some(copy) => machine::run_before_copy(&env, run, entry, opts.budget, &machine_calls, with_args, copy.checkpoint),
             None => machine::run(&env, run, entry, opts.budget, &machine_calls, with_args),
         };
         if overlap.is_some() && m.is_ok() {
@@ -509,7 +509,12 @@ fn check_runs(
             diverged.get_or_insert(divergence::PTRAUTH_TRAP.id);
             continue;
         }
-        let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, &go.calls);
+        let (graph_calls, graph_events) = if mo.bad_return.is_some() {
+            (&go.calls[..go.calls.len().min(mo.calls.len())], &go.events[..go.events.len().min(mo.events.len())])
+        } else {
+            (go.calls.as_slice(), go.events.as_slice())
+        };
+        let mut cc = compare_calls(prog, &env, run, &calls, &mo.calls, graph_calls);
         let mut rerun_failed = None;
         let unchecked = go.call_inputs.len().saturating_sub(opts.call_reruns as usize) + go.unkept_inputs;
         for ci in go.call_inputs.iter().take(opts.call_reruns as usize) {
@@ -538,10 +543,14 @@ fn check_runs(
             continue;
         }
         if cc.differs.is_none() && !cc.stop {
-            cc.differs = compare_events(prog, &mo.events, &go.events);
-            if cc.differs.is_none() && overlap.is_some() {
+            cc.differs = compare_events(prog, &mo.events, graph_events);
+            if let Some((copy, actual)) = overlap.zip(mo.copy_operands).filter(|_| cc.differs.is_none()) {
                 cc.differs = compare_writes(&env, run, &mo.state.writes(), &go.writes, None)
-                    .map(|d| vec![format!("memory before overlapping copy: {d}")]);
+                    .map(|d| vec![format!("memory before overlapping copy: {d}")])
+                    .or_else(|| (actual != copy.operands).then(|| vec![format!(
+                        "overlapping copy at {:#x}: machine {actual}; kuna {}",
+                        copy.checkpoint.at, copy.operands,
+                    )]));
             }
         }
         let canary = cc.suspects.iter().any(|s| s.starts_with("canary: "));
@@ -581,6 +590,14 @@ fn check_runs(
                 continue;
             }
             return finish(Verdict::Differs { run, of: opts.runs }, differs(lines), call_suspects);
+        }
+        if let Some(halt) = mo.bad_return {
+            unknown.get_or_insert(halt);
+            unsupported_runs += 1;
+            if unsupported_runs >= UNSUPPORTED_RUNS {
+                break;
+            }
+            continue;
         }
         if let Some(gap) = crate::compare::observe::event_gap(prog, &mo.events, &go.events) {
             unknown.get_or_insert(Halt::Unsupported(gap));

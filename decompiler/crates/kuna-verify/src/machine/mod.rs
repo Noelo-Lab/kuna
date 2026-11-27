@@ -10,7 +10,10 @@
 //! function returns. Where kuna has no call, a callee in the image is run for
 //! real, and its RETURN comes back to the caller.
 
+mod rep_copy;
 mod thunk;
+
+pub(crate) use rep_copy::CopyOperands;
 pub use thunk::*;
 
 use std::rc::Rc;
@@ -243,7 +246,8 @@ pub struct Outcome<'e, 'p> {
     pub calls: Vec<Record>,
     /// The run ended in a call kuna says does not return.
     pub noreturn: bool,
-    pub(crate) stopped_before_copy: bool,
+    pub(crate) copy_operands: Option<CopyOperands>,
+    pub(crate) bad_return: Option<Halt>,
     /// It ended in one only kuna says does not return: no known name, no
     /// layout evidence, and no in-image callee that ran to its return.
     pub unverified_noreturn: bool,
@@ -639,7 +643,14 @@ impl<'e, 'p> Machine<'e, 'p, '_> {
             indirect: self.indirect,
             calls: self.records,
             noreturn: matches!(exit, Exit::NoReturn),
-            stopped_before_copy: matches!(exit, Exit::Checkpoint),
+            copy_operands: match exit {
+                Exit::Checkpoint(operands) => Some(operands),
+                _ => None,
+            },
+            bad_return: match exit {
+                Exit::BadReturn { at, target } => Some(wrong_return(at, target)),
+                _ => None,
+            },
             unverified_noreturn: self.unverified_noreturn,
             followed: self.followed,
             guessed: self.guessed,
@@ -684,7 +695,8 @@ const MAX_DEPTH: u32 = 32;
 enum Exit {
     Return,
     NoReturn,
-    Checkpoint,
+    Checkpoint(CopyOperands),
+    BadReturn { at: u64, target: u64 },
     /// A callee returned to where an enclosing call returns (libgcc's float
     /// routines reach a shared tail with `bl` and pop their caller's frame):
     /// every frame up to that call's ends.
@@ -741,6 +753,10 @@ fn returns_to(target: u64, back: u64) -> bool {
     (target & !1).wrapping_sub(back & !1) <= RETURN_SLACK
 }
 
+fn wrong_return(at: u64, target: u64) -> Halt {
+    Halt::Unsupported(format!("return at {at:#x} to {target:#x}, not to the return address, where kuna returns"))
+}
+
 fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<Continuation>) -> Result<Exit, Halt> {
     let top = mode == Mode::Top;
     if depth > MAX_DEPTH {
@@ -761,7 +777,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
                 if i == 0 && addr == stop.at && previous_addr != Some(addr) {
                     stop.visit -= 1;
                     if stop.visit == 0 {
-                        return Ok(Exit::Checkpoint);
+                        return rep_copy::operands(&mut m.state, addr, &insn).map(Exit::Checkpoint);
                     }
                 }
                 previous_addr = Some(addr);
@@ -877,10 +893,16 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
                     return m.tail_call(addr, target, true);
                 }
                 if !calls.branches.contains(&addr) || !env.code_mapped(target) {
-                    if env.ret_addr.is_none_or(|r| r == target) || !m.records.is_empty() {
+                    if env.ret_addr.is_none() {
                         return Ok(Exit::Return);
                     }
-                    return Err(Halt::Unsupported(format!("return at {addr:#x} to {target:#x}, not to the return address, where kuna returns")));
+                    if m.records.is_empty() {
+                        return Err(wrong_return(addr, target));
+                    }
+                    if m.stubs == entry_stubs {
+                        return Ok(Exit::BadReturn { at: addr, target });
+                    }
+                    return Ok(Exit::Return);
                 }
                 addr = target;
                 insn = lift(env, addr)?;
@@ -937,7 +959,7 @@ fn exec_body(m: &mut Machine, entry: u64, mode: Mode, depth: u32, back: Option<C
                         Exit::NoReturn => return Ok(Exit::NoReturn),
                         e @ (Exit::Leave | Exit::Unwind(_)) => return Ok(e),
                         Exit::Return => {}
-                        Exit::Checkpoint => unreachable!("only the top frame has a checkpoint"),
+                        Exit::Checkpoint(_) | Exit::BadReturn { .. } => unreachable!("only the top frame can stop here"),
                     }
                 } else if mode != Mode::Opaque {
                     if m.call(addr, Some(target), indirect)? {
@@ -1122,7 +1144,7 @@ pub(crate) fn run_before_copy<'e, 'p>(
     stop: Checkpoint,
 ) -> Result<Outcome<'e, 'p>, Halt> {
     let out = run_inner(env, run, entry, budget, calls, with_args, Some(stop))?;
-    if out.stopped_before_copy {
+    if out.copy_operands.is_some() {
         Ok(out)
     } else {
         Err(Halt::Unsupported(format!("the machine did not reach copy {} at {:#x}", stop.visit, stop.at)))
