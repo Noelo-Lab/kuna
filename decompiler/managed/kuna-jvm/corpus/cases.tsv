@@ -2228,3 +2228,5 @@ case	kuna-fixes/pkg/TestStaticInitExit	Kuna Fixes	kuna-fixes/classes/pkg/TestSta
 case	kuna-fixes/pkg/TestNarrowConstLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowConstLocal
 # kuna-fixes/src/pkg/TestCapturedListAdd.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestCapturedListAdd	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedListAdd
+# kuna-fixes/src/pkg/TestLocalGenericNoDebug.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestLocalGenericNoDebug	Kuna Fixes	kuna-fixes/classes/pkg/TestLocalGenericNoDebug

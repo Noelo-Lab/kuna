@@ -13,6 +13,7 @@ use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
 use crate::fixes::generic_casts::disjoint_generic_cast;
+use crate::fixes::generic_casts::initializer_local_type;
 use crate::class_reference14_processor::ClassReference14Processor;
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
@@ -337,6 +338,11 @@ impl ClassWriter {
                     if mw.with(|d| d.method_struct).get_name() == CLINIT_NAME {
                         control_flow::initializer_return_break(root);
                     }
+                    initializer_local_type::type_locals(
+                        root,
+                        mw.with(|d| d.method_struct),
+                        mw.with(|d| d.varproc),
+                    );
                     mw.with(|d| d.varproc).rerun_clashing(root);
                 }
             }

@@ -789,6 +789,23 @@ fits, they have that type (`char c = 'q'` for a `char` field store, which kept a
 before); reads that require two types, or a read in any other context (a conditional, a
 string concatenation, a copy to another variable), leave Vineflower's types.
 
+**Generic locals without a LocalVariableTable (kuna).** Without the table a local has its
+erased type, so `Set keys = settings.keySet(); keys.removeIf(k -> k.startsWith(p))` did not
+compile (the lambda's parameter is an `Object`) and a for-each over a raw `List` cast it.
+Before a Java class is written,
+`decompiler/managed/kuna-jvm/src/fixes/generic_casts/initializer_local_type.rs` declares a
+local of a generic class with the type of its value when the method has no
+LocalVariableTable, the local is assigned exactly once and is no parameter, that value's
+inferred type is a parameterization of the local's class whose arguments are all class
+types (no wildcard or type variable, to any depth), and every read is either the receiver
+of a call whose arguments the class's type variables do not type (a lambda or method
+reference may take one) or the iterable of a for-each whose variable's class the element
+type extends. Any other read (an argument, a store, a capture by a lambda, a call such as
+`add(x)` whose argument the type arguments would constrain) keeps the erased type, since
+the source may have declared it raw; the class file cannot tell, but the declared type is
+the value's own, so every accepted read compiles as it did. The type is the local's in
+every inference that reads it (`raw_receiver_erasure` included).
+
 **Declarations.** `VarProcessor::set_var_definitions` runs
 `decompiler/managed/kuna-jvm/src/p6_variables/var_definition_helper.rs
 (VarDefinitionHelper::set_var_definitions)`: each variable is declared at the innermost

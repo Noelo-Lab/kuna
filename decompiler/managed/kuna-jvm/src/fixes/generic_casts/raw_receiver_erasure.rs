@@ -113,7 +113,7 @@ fn declared_var_type(var: VarExprent) -> Option<VarType> {
         return Some(var.get_inferred_expr_type(None));
     }
     if method.get_local_variable_attr().is_none() {
-        return Some(var.get_var_type());
+        return Some(var.kuna_typed().unwrap_or_else(|| var.get_var_type()));
     }
     None
 }

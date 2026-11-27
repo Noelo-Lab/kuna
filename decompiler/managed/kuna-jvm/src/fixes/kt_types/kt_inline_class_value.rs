@@ -1003,7 +1003,7 @@ impl Walk {
                     }
                     _ => declared(class),
                 };
-                processor.set_kuna_typed(*index, KunaLocalType { type_, mutable: false, nullable: Vec::new() });
+                processor.set_kuna_typed(*index, KunaLocalType { type_, mutable: false, nullable: Vec::new(), java: false });
             }
         }
     }
