@@ -117,18 +117,13 @@ fn record(logger: &CollectingLogger, message: &str) -> Option<LogRecord> {
 #[test]
 fn options_overlay_defaults_by_long_and_short_name() {
     let logger = Rc::new(CollectingLogger::new());
+    logger.set_severity(Severity::Warn);
     let fernflower = Fernflower::new(
         &options(&[
             (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("log", "warn"),
             ("ind", "\t"),
         ]),
         logger.clone(),
-    );
-    assert_eq!(logger.severity().get(), Severity::Warn);
-    assert_eq!(
-        DecompilerContext::get_property(IFernflowerPreferences::LOG_LEVEL).as_deref(),
-        Some("warn")
     );
     assert_eq!(
         DecompilerContext::get_property(IFernflowerPreferences::INDENT_STRING).as_deref(),
@@ -445,19 +440,3 @@ fn delivers_each_root_class_in_entry_order() {
     fernflower.clear_context();
     assert!(DecompilerContext::get_current_context().is_none());
 }
-
-#[test]
-fn unknown_log_level_keeps_the_logger_severity() {
-    let logger: Rc<dyn IFernflowerLogger> = Rc::new(CollectingLogger::new());
-    logger.set_severity(Severity::Error);
-    let mut fernflower = Fernflower::new(
-        &options(&[
-            (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("log-level", "debug"),
-        ]),
-        logger.clone(),
-    );
-    assert_eq!(logger.severity().get(), Severity::Error);
-    fernflower.clear_context();
-}
-

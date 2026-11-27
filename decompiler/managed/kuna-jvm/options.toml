@@ -530,10 +530,6 @@ vineflower = "method-to-decompile"
 kuna = "method selection (decompile <class>.<method>) slices the class by its method spans"
 
 [[driver_owned]]
-vineflower = "log-level"
-kuna = "kuna's own logger"
-
-[[driver_owned]]
 vineflower = "user-renamer-class"
 kuna = "not supported: a renamer class needs a JVM to load"
 

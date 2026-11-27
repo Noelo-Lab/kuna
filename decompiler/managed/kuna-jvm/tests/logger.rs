@@ -31,9 +31,6 @@ fn severities_filter_and_parse() {
             },
         ]
     );
-    assert_eq!(Severity::value_of("WARN"), Some(Severity::Warn));
-    assert_eq!(Severity::value_of("DEBUG"), None);
-    assert_eq!(Severity::value_of("warn"), None);
     assert!(Severity::Trace < Severity::Info && Severity::Warn.ordinal() == 2);
 
     let silent = <dyn IFernflowerLogger>::NO_OP();

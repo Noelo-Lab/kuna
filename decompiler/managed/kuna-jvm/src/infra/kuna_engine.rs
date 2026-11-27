@@ -347,9 +347,7 @@ impl Program for JvmProgram {
                 memory,
             }) as Rc<dyn IFernflowerLogger>
         });
-        let mut options = vec![("log-level".to_string(), "warn".to_string())];
-        options.extend(self.options.iter().cloned());
-        let mut config = DriverConfig::new(options, logger);
+        let mut config = DriverConfig::new(self.options.clone(), logger);
         config.jobs = settings.jobs.map_or(Jobs::Auto, Jobs::Exactly);
         config.available_memory = settings.available_memory;
         config.runtime = self.runtime.clone();

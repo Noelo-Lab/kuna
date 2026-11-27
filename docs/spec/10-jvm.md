@@ -1203,7 +1203,7 @@ Vineflower's three-letter option names as their long names (`mpm` is
 turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as a user
 writes it into the Vineflower key and value; the table is generated from `options.toml` by
 the crate's build script. Keys the front end sets itself (thread count, time limit, method
-selection, logging, line separator, line mapping, class-path keys a JVM would serve), and
+selection, class-path keys a JVM would serve), and
 the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
 there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
 their own names; `Fernflower::new` takes `jvm_plugins` (no row) off the property list before the rest becomes Vineflower's option map (section

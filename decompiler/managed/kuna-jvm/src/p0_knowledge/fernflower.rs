@@ -118,13 +118,6 @@ impl Fernflower {
             }
         }
 
-        let level = properties.get_cloned(&IFernflowerPreferences::LOG_LEVEL.to_string());
-        if let Some(level) = level {
-            if let Some(severity) = Severity::value_of(&level.to_uppercase()) {
-                logger.set_severity(severity);
-            }
-        }
-
         let data = Rc::new(FernflowerDecompiledData {
             class_processor: OnceCell::new(),
             has_converter: Cell::new(false),
