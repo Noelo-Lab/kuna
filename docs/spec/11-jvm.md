@@ -882,6 +882,18 @@ bound is evidence from javac, which names the receiver's compile-time type (JLS 
 `null` local has no other type the call could compile with. The receiver of `arraylength`
 names no element type and keeps the `Object[]` cast.
 
+**A `var` local of an anonymous class (kuna).** An anonymous class creation has the type of
+the class it extends or implements (`anonymous_class_type`), so a local assigned one is
+declared with that type. Java 10's `var` declares the local with the anonymous class
+itself, and its members are then reachable through it: `var c = new Object() { int n; void
+bump() {..} }; c.bump();`, which javac compiles to an `invokevirtual` naming the anonymous
+class. Without a LocalVariableTable that printed `Object var0 = ..; var0.bump();` and
+`((<unrepresentable>)var0).n`, neither of which compiles. In a class file of version 54 or
+later, `VarVersionsProcessor::type_anonymous_receivers` gives a variable that a call or a
+field access reads as an instance of an anonymous class (the class the instruction names
+is one) that class as its type, which prints as `var`; such a variable can hold no other
+value, since no other type could be the call's qualifying type (JLS 13.1).
+
 **An `int` conditional assigned to a local (kuna).** Vineflower lowers the `int` type of a
 conditional on the right of an assignment to `bytechar`, so that `byte v = b ? 0 : 1` keeps its
 narrow variable: the arms are constants and the conditional is `int` only by their default.
