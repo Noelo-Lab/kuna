@@ -930,13 +930,36 @@ version-gated sugar the engine reconstructs from newer javac output does not app
 **How it is checked.** `tests/fixtures/jvm/dex/src` holds small Java and Kotlin programs
 that together execute every Dalvik instruction family; `regen.sh` compiles them with javac,
 kotlinc and d8 (versions in `TOOLCHAIN.txt`) and records their output. Translated to
-class files at version 50, all six run under `java -Xverify:all` (the JVM's type-inferring
-verifier checks every method) and print exactly what the javac-compiled programs print,
-from debug and release d8 at min-api 21; at min-api 26 and 30 (one interface with a default
-method needs version 52, which does not verify without stack maps) they match unverified.
+class files at version 50 (the `verifiable` option), all six run under `java -Xverify:all`
+(the JVM's type-inferring verifier checks every method) and print exactly what the
+javac-compiled programs print, from debug and release d8 at min-api 21; in the default mode
+(lambdas as `invokedynamic`, version 52, which does not verify without stack maps) and at
+min-api 26 and 30 they match unverified.
 d8-compiled Guava 33.8 (min-api 21, release and debug) verifies in full: 16,417 of 16,417
 methods. The crate's own tests (`cargo test -p kuna-dex`) need no JDK or d8: parser,
 structural and garbled-file tests over the committed fixtures.
+
+**Measured.** The JVM benchmark (`docs/jvm-benchmark.md`, all 110,238 scored methods),
+with each project's jar compiled by d8 8.13.25 (`--debug --min-api 26`) and scored against
+the same sources, methods perfect on all metrics:
+
+| project | from the jar | from DEX, kuna | from DEX, jadx 1.5.3 |
+|---|---|---|---|
+| Guava | 98.78% | 79.35% | 42.65% |
+| spring-boot | 99.29% | 51.93% | 57.40% |
+| spring-framework | 99.03% | 54.33% | 62.92% |
+| Ghidra | 98.71% | 64.16% | 56.59% |
+| Elasticsearch | 98.89% | 34.36% | 36.05% |
+| all | 98.88% | 47.38% | 44.31% |
+
+Most of the loss is d8's: calls into classes the sources do not have (API backports
+`$$ExternalSyntheticBackport`, record desugaring onto `com.android.tools.r8.RecordTag`), code
+d8 moved before a `super(...)` or `this(...)` call, and code shapes that differ from
+javac's (shared comparisons and constants, merged returns); kuna's engine also fails 709
+methods on d8's `try`/`finally` and `synchronized` layouts (`FinallyProcessor`). Loading is
+cheap: on Elasticsearch's APK (21,939 classes in three DEX files, 19.8 MB) `functions` takes
+1.6 s (0.5 s for the jar) and `decompile-all --jobs 8` 92 s at 6.4 GB peak (63 s and 5.0 GB
+for the jar's 10,371 classes; d8 adds a class per lambda).
 
 Not read yet: the binary manifest and resources, ODEX/VDEX/OAT/CDEX, native libraries
 inside an APK, and protected (packed or encrypted) APKs.
