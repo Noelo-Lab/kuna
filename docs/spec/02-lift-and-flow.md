@@ -4999,8 +4999,9 @@ Lifted compact delayed `EQ` reads the incoming `EST` condition before any
 delay issue executes. The delay runs on both paths, including when the
 transfer itself is the right slot of a sequential fetch.
 
-Direct DATA-count wide `REP` reads the unsigned count once and then runs
-three setup issues. Its replay endpoint is encoded in fetches, not in
+Direct-count wide `REP` takes an unsigned 16-bit count from the encoded
+literal or one DATA word. The literal form does not access DATA. Both run
+three setup issues. The replay endpoint is encoded in fetches, not in
 issues. A sequential fetch can put both slots in the replay range or
 only its left slot if that fetch is the endpoint. Positive counts repeat
 the range only when the endpoint has not already passed; zero skips the

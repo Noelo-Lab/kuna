@@ -12401,28 +12401,33 @@ repeat_tail: is carmel_direct_repeat=11 { delayslot(9); }
 repeat_tail: is carmel_direct_repeat=12 { delayslot(10); }
 repeat_tail: is carmel_direct_repeat=13 { delayslot(11); }
 
-@define REPEAT_DATA "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13c & wide_0_10=0 & wide_40_45=0x38 & absolute_data_addr & wide_repeat_delay & repeat_setup"
-
-macro direct_repeat_count(address, count) {
-    local source:2 = address;
-    count = *[data]:2 source;
-    publish_alu_ce(EST & 0xcfff);
+direct_rep_count: "*"^absolute_data_addr is wide_0_10=0 & absolute_data_addr {
+    local address:2 = absolute_data_addr;
+    local count:2 = *[data]:2 address;
+    export count;
+}
+direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
+    export *[const]:2 absolute_data_addr;
 }
 
-:"REP" "*"^absolute_data_addr "delay" wide_repeat_delay^repeat_setup is $(REPEAT_DATA)
+@define REPEAT_DIRECT "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13c & wide_40_45=0x38 & direct_rep_count & wide_repeat_delay & repeat_setup"
+
+:"REP" direct_rep_count "delay" wide_repeat_delay^repeat_setup is $(REPEAT_DIRECT)
     & carmel_direct_repeat=1 [ carmel_counted_delay=1; carmel_split_delay=1; ] {
-    local count:2;
-    direct_repeat_count(absolute_data_addr, count);
+    build direct_rep_count;
+    local count:2 = direct_rep_count;
+    publish_alu_ce(EST & 0xcfff);
     build repeat_setup;
     if (count == 0) goto <exit>;
     delayslot(1);
   <exit>
 }
 
-:"REP" "*"^absolute_data_addr "delay" wide_repeat_delay^repeat_setup is $(REPEAT_DATA)
+:"REP" direct_rep_count "delay" wide_repeat_delay^repeat_setup is $(REPEAT_DIRECT)
     & carmel_direct_repeat=2 [ carmel_counted_delay=1; carmel_split_delay=1; ] {
-    local count:2;
-    direct_repeat_count(absolute_data_addr, count);
+    build direct_rep_count;
+    local count:2 = direct_rep_count;
+    publish_alu_ce(EST & 0xcfff);
     build repeat_setup;
     if (count == 0) goto <exit>;
   <again>
@@ -12432,10 +12437,11 @@ macro direct_repeat_count(address, count) {
   <exit>
 }
 
-:"REP" "*"^absolute_data_addr "delay" wide_repeat_delay^repeat_setup^repeat_first^repeat_tail is $(REPEAT_DATA)
+:"REP" direct_rep_count "delay" wide_repeat_delay^repeat_setup^repeat_first^repeat_tail is $(REPEAT_DIRECT)
     & repeat_first & repeat_tail [ carmel_counted_delay=1; carmel_split_delay=1; ] {
-    local count:2;
-    direct_repeat_count(absolute_data_addr, count);
+    build direct_rep_count;
+    local count:2 = direct_rep_count;
+    publish_alu_ce(EST & 0xcfff);
     build repeat_setup;
     if (count == 0) goto <tail>;
   <again>
@@ -12447,6 +12453,7 @@ macro direct_repeat_count(address, count) {
     goto <again>;
   <exit>
 }
+@undef REPEAT_DIRECT
 
 # The extended count selects an implicit DATA word; the encoded address is
 # disconnected. The console guard proves the first replay issue is the end.

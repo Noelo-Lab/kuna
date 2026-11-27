@@ -550,22 +550,25 @@ fn dynamic_register_repeat_samples_before_the_setup_and_modifies_r1_once() {
 }
 
 #[test]
-fn dynamic_data_repeat_zero_skips_only_the_first_of_the_selected_issues() {
-    for (delay, count, expected) in [
-        (2u32, 3, [1, 1, 1]), (3, 3, [3, 1, 1]), (4, 3, [3, 3, 1]),
-        (5, 0, [0, 1, 1]), (5, 3, [3, 3, 3]), (7, 3, [3, 3, 3]),
+fn direct_repeat_zero_skips_only_the_first_of_the_selected_issues() {
+    for (delay, count, expected, literal) in [
+        (2u32, 3u32, [1, 1, 1], false), (3, 3, [3, 1, 1], false), (4, 3, [3, 3, 1], false),
+        (5, 0, [0, 1, 1], false), (5, 3, [3, 3, 3], false), (7, 3, [3, 3, 3], false),
+        (3, 3, [3, 1, 1], true), (5, 0, [0, 1, 1], true), (5, 3, [3, 3, 3], true),
     ] {
         let body = delay.saturating_sub(2);
+        let (left, right) = if literal { (0xb80000 | count, 0xcf0400) } else { (0xb84100, 0xcf0000) };
+        let (address, data) = if literal { (u64::from(count), 7) } else { (0x4100, u64::from(count)) };
         let mut m = Machine::with_root_context(
             0,
-            &[(0xb84100, 0xcf0000 | delay << 11), (INC_A0, NOP), (INC_A1, NOP), (INC_A2, NOP),
+            &[(left, right | delay << 11), (INC_A0, NOP), (INC_A1, NOP), (INC_A2, NOP),
               (0x21ace6, NOP), (0x21ad28, NOP), (0x21ad6a, NOP), (NOP, NOP), (NOP, NOP), (NOP, NOP)],
             &[(0, 5, 6), (2, 1, 6), (4, 1, 6), (6, 1, 6), (8, 1, 6),
               (10, 1, 6), (12, 1, 6), (14, 1, 6), (16, 1, 6), (18, 1, 0)],
             None,
             &[(b"carmel_direct_repeat", body + 1)],
         );
-        m.seed_data(0x4100, count);
+        m.seed_data(address, data);
         m.start(0).unwrap();
         let end = 2 + 2 * (3 + body.max(1));
         assert_eq!(m.step(), u64::from(end) * 3);
@@ -574,7 +577,7 @@ fn dynamic_data_repeat_zero_skips_only_the_first_of_the_selected_issues() {
         }
         assert_eq!([m.reg("A0L"), m.reg("A1L"), m.reg("A2L")], [1, 1, 1]);
         assert_eq!([m.reg("A3L"), m.reg("A4L"), m.reg("A5L")], expected);
-        assert_eq!(m.data(0x4100), count);
+        assert_eq!(m.data(address), data);
     }
 }
 

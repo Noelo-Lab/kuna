@@ -1,4 +1,4 @@
-//! The direct DATA-count REP resumes after three issues, but its end is a fetch address.
+//! Direct-count REP resumes after three issues, but its end is a fetch address.
 
 use super::{FETCH, Fetch};
 
@@ -8,7 +8,7 @@ pub(super) struct DirectRepeat(u8);
 
 impl DirectRepeat {
     pub(super) fn parse(fetch: &Fetch) -> Option<Self> {
-        (fetch[0] == 0xb8 && fetch[3] == 0xcf && fetch[4] & 0xc7 == 0 && fetch[5] == 0)
+        (fetch[0] == 0xb8 && fetch[3] == 0xcf && fetch[4] & 0xc3 == 0 && fetch[5] == 0)
             .then(|| Self(fetch[4] >> 3))
     }
 
