@@ -64,8 +64,8 @@ pub type ProgressFn = Arc<dyn Fn(&Progress) + Send + Sync>;
 
 pub struct DriverConfig {
     /// Vineflower options as `(key, value)`; later pairs win. The driver sets
-    /// `include-runtime`, `include-classpath`, `thread-count` and
-    /// `new-line-separator` itself. kuna's `jvm_plugins` pair reaches every
+    /// `include-runtime`, `include-classpath` and `thread-count` itself.
+    /// kuna's `jvm_plugins` pair reaches every
     /// instance (the bundled plugins are on when it is absent).
     pub options: Vec<(String, String)>,
     pub jobs: Jobs,
@@ -530,7 +530,6 @@ fn engine_options(config: &DriverConfig) -> Vec<(String, String)> {
         "0".to_string(),
     );
     set(IFernflowerPreferences::THREADS, "1".to_string());
-    set(IFernflowerPreferences::NEW_LINE_SEPARATOR, "1".to_string());
     set(
         IFernflowerPreferences::MAX_PROCESSING_METHOD,
         config.max_method_seconds.to_string(),

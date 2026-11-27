@@ -14,7 +14,6 @@ use crate::class_writer::IFabricJavadocProvider;
 use crate::classes_processor::{ClassNode, ClassesProcessor};
 use crate::counter_container::CounterContainer;
 use crate::i_fernflower_logger::IFernflowerLogger;
-use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::import_collector::ImportCollector;
 use crate::method_wrapper::MethodWrapper;
 use crate::pool_interceptor::PoolInterceptor;
@@ -169,11 +168,7 @@ impl DecompilerContext {
     }
 
     pub fn get_new_line_separator() -> &'static str {
-        if Self::get_option(IFernflowerPreferences::NEW_LINE_SEPARATOR) {
-            IFernflowerPreferences::LINE_SEPARATOR_UNX
-        } else {
-            IFernflowerPreferences::LINE_SEPARATOR_WIN
-        }
+        "\n"
     }
 
     pub fn get_logger() -> Rc<dyn IFernflowerLogger> {

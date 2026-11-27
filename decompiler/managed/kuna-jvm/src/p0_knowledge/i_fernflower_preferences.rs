@@ -34,13 +34,10 @@ impl IFernflowerPreferences {
     pub const MAX_PROCESSING_METHOD: &str = "max-time-per-method";
     pub const RENAME_ENTITIES: &str = "rename-members";
     pub const USER_RENAMER_CLASS: &str = "user-renamer-class";
-    pub const NEW_LINE_SEPARATOR: &str = "new-line-separator";
     pub const INDENT_STRING: &str = "indent-string";
     pub const PREFERRED_LINE_LENGTH: &str = "preferred-line-length";
     pub const ERROR_MESSAGE: &str = "error-message";
     pub const THREADS: &str = "thread-count";
-    pub const LINE_SEPARATOR_WIN: &str = "\r\n";
-    pub const LINE_SEPARATOR_UNX: &str = "\n";
     pub const SKIP_EXTRA_FILES: &str = "skip-extra-files";
     pub const DUMP_BYTECODE_ON_ERROR: &str = "dump-bytecode-on-error";
     pub const DUMP_EXCEPTION_ON_ERROR: &str = "dump-exception-on-error";
@@ -94,7 +91,6 @@ impl IFernflowerPreferences {
             (IFernflowerPreferences::LOG_LEVEL, Severity::Info.name().to_string()),
             (IFernflowerPreferences::MAX_PROCESSING_METHOD, "0".to_string()),
             (IFernflowerPreferences::RENAME_ENTITIES, "0".to_string()),
-            (IFernflowerPreferences::NEW_LINE_SEPARATOR, "1".to_string()),
             (IFernflowerPreferences::INDENT_STRING, "   ".to_string()),
             (IFernflowerPreferences::PREFERRED_LINE_LENGTH, "160".to_string()),
             (IFernflowerPreferences::ERROR_MESSAGE, "Please report this to the Vineflower issue tracker, at https://github.com/Vineflower/vineflower/issues with a copy of the class file (if you have the rights to distribute it!)".to_string()),
@@ -178,7 +174,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "MAX_PROCESSING_METHOD", key: IFernflowerPreferences::MAX_PROCESSING_METHOD, short_name: Some("mpm"), name: Some("[DEPRECATED] Max time to process method"), description: Some("Maximum time in seconds to process a method. This is deprecated, do not use."), type_: Some(OptionType::Integer), dynamic_default_value: None },
     PreferenceOption { field: "RENAME_ENTITIES", key: IFernflowerPreferences::RENAME_ENTITIES, short_name: Some("ren"), name: Some("Rename Members"), description: Some("Rename classes, fields, and methods with a number suffix to help in deobfuscation."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
     PreferenceOption { field: "USER_RENAMER_CLASS", key: IFernflowerPreferences::USER_RENAMER_CLASS, short_name: Some("urc"), name: Some("User Renamer Class"), description: Some("Path to a class that implements IIdentifierRenamer."), type_: Some(OptionType::String), dynamic_default_value: None },
-    PreferenceOption { field: "NEW_LINE_SEPARATOR", key: IFernflowerPreferences::NEW_LINE_SEPARATOR, short_name: Some("nls"), name: Some("[DEPRECATED] New Line Seperator"), description: Some("Use \\n instead of \\r\\n for new lines. Deprecated, do not use."), type_: Some(OptionType::Boolean), dynamic_default_value: Some("Disabled on Windows, enabled on other systems") },
     PreferenceOption { field: "INDENT_STRING", key: IFernflowerPreferences::INDENT_STRING, short_name: Some("ind"), name: Some("Indent String"), description: Some("A string of spaces or tabs that is placed for each indent level."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "PREFERRED_LINE_LENGTH", key: IFernflowerPreferences::PREFERRED_LINE_LENGTH, short_name: Some("pll"), name: Some("Preferred line length"), description: Some("Max line length before formatting is applied."), type_: Some(OptionType::Integer), dynamic_default_value: None },
     PreferenceOption { field: "ERROR_MESSAGE", key: IFernflowerPreferences::ERROR_MESSAGE, short_name: Some("erm"), name: Some("Error Message"), description: Some("Message to display when an error occurs in the decompiler."), type_: Some(OptionType::String), dynamic_default_value: None },
