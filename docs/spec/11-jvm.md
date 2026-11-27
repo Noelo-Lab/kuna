@@ -960,6 +960,22 @@ is of a raw type for a parameter with type arguments (that unchecked conversion 
 result, JLS 15.12.2.6: `V v = this.operate(k, v, rawDecisionMaker)` does not compile);
 javac's `checkcast` of such a value to its erasure is a value of the variable
 (`U u = (U)io.mutate(t)`).
+A local whose value is a lambda takes the parameterization its `invokedynamic` instantiates
+(section 11.11), and for it a call on the local whose arguments the interface's type
+variables type is also accepted, the common `f.apply(x)`, when the local's class declares
+no other method of that name and arity (the parameterized signatures could select another)
+and each such argument is a lambda or method reference, or is passed for a parameter that
+is one of those variables bare and fits the type argument: `null`, or of a class or array
+type, by its instruction, that is that type argument or a subtype of it. The instantiated
+type argument is the erasure of the one the source had, so an argument that fitted the
+source's `A` fits `|A|` as far as it is written with a type assignable to `|A|`; the
+instruction's type (javac's `checkcast` of the argument included) is never more specific
+than the type the argument is written with (that class, a parameterization of it, or a type
+variable bounded by it), so this decides it soundly, and a primitive argument counts as its
+boxing call's class. `Fn var2 = s -> s.length() + 1; .. (Integer) var2.apply(x)` is now
+`Fn<String, Integer> var2 = ..; .. var2.apply(x)`, and a lambda value's parameterization may
+have array arguments (`Bi<String, int[], Integer>`). A read that passes the local, stores it
+or captures it in another lambda still keeps the local raw.
 The pass, like every fix that asks which method a call names before the call is written,
 looks the method up without recording it (`InvocationExprent::find_desc`). The ported
 `get_desc` records what it finds, and a call with a recorded method is written without the
