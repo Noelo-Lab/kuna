@@ -1354,7 +1354,11 @@ fn run_in_process(req: &SingleRequest) -> i32 {
         });
     } else {
         argv.push("--functions".into());
-        argv.push(req.target.to_string());
+        argv.push(if req.target.starts_with('@') {
+            format!("@{}", req.target)
+        } else {
+            req.target.to_string()
+        });
     }
     if req.raw_image {
         argv.push("--raw-image".into());
