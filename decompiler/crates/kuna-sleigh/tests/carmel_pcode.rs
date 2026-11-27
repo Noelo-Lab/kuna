@@ -3291,3 +3291,31 @@ fn compact_direct_stack_checks_the_connected_high_word_and_publishes_ce() {
     assert_eq!((m.reg("SP"), m.reg("R0"), m.reg("R4"), m.reg("EST")),
                (0x8032, 0xffff, 0x8000, 0x6024));
 }
+
+#[test]
+fn wide_extract_cetbl_publishes_feedback_before_table_writeback() {
+    let packets = [
+        (0x8f0e00, 0xf589c1), (NOP, NOP),
+        (0x8f0e00, 0xf589c5), (NOP, NOP),
+        (0x8f0e00, 0xf589cb), (NOP, NOP),
+        (0x8f0000, 0xf589c1), (NOP, NOP), (NOP, NOP),
+    ];
+    let issues = [(0, 5, 6), (2, 1, 6), (4, 5, 6), (6, 1, 6), (8, 5, 6), (10, 1, 6),
+                  (12, 5, 6), (14, 1, 6), (16, 1, 0)];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (pc, table, cecfg1, cecfg2, est, expected) in [
+        (0, 0x0001, 0x0666, 0x0666, 0, (0xe000, 0x1010, 0x2010)),
+        (0, 0xffff, 0x0225, 0x1000, 0x3009, (0xe000, 0x3011, 0x0011)),
+        (4, 0x0000, 0x0225, 0x1000, 0, (0x0225, 0x0000, 0x1000)),
+        (8, 0xffff, 0x0225, 0x1000, 0, (0x0264, 0x3000, 0x0000)),
+        (12, 0x0000, 0x0225, 0x1000, 0, (0x0000, 0x0008, 0x0008)),
+    ] {
+        m.seed(&[("ECFG", 0x2000), ("FFTV", 0x0264), ("CETBL", table), ("CECFG1", cecfg1),
+                 ("CECFG2", cecfg2), ("EST", est)]);
+        m.start(pc).unwrap();
+        assert_eq!(m.step(), 3 * (pc + 2));
+        assert_eq!((m.reg("CETBL"), m.reg("EST")), (expected.0, expected.1));
+        assert_eq!(m.step(), 3 * (pc + 4));
+        assert_eq!(m.reg("EST"), expected.2);
+    }
+}

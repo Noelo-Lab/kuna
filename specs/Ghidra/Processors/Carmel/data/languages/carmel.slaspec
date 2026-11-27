@@ -9988,6 +9988,26 @@ macro wide_extract_zero(source, width, offset, result) {
     result = (source s>> start) & mask;
 }
 
+wide_extract_cetbl_source: "ECFG" is wide_0_22=0x7589c1 { export ECFG; }
+wide_extract_cetbl_source: "CECFG1" is wide_0_22=0x7589c5 { export CECFG1; }
+wide_extract_cetbl_source: "FFTV" is wide_0_22=0x7589cb { export FFTV; }
+
+:EXTRACTS "CETBL",wide_extract_cetbl_source,bitfield_descriptor is
+    $(WIDE_ORIGINAL_BITS) & wide_40_45=0xf & wide_extract_cetbl_source & bitfield_descriptor {
+    local field:2 = bitfield_descriptor;
+    local count:4 = zext((field >> 8) & 31);
+    local offset:4 = zext(field & 31);
+    local mask:4 = 0x7fffffff >> (31 - count);
+    local source:4 = sext(wide_extract_cetbl_source);
+    local bits:4 = (source s>> offset) & mask;
+    local negative:1 = (bits & ((mask + 1) >> 1)) != 0;
+    local value:4 = bits - (mask + 1) * zext(negative);
+    local flags:2 = (EST & 0xcfe7) | (zext(bits == 0) << 3) | (zext(negative) << 4);
+    # EX samples the incoming feedback; WB commits the new truth table.
+    publish_ce_feedback(flags, EST);
+    CETBL = value:2;
+}
+
 wide_bitfield_data: "*"^short_alu_src_ptr is packed_lhs_group=0 & short_alu_src_ptr {
     local low:2 = *[data]:2 short_alu_src_ptr;
     local source:4 = sext(low);

@@ -4008,6 +4008,11 @@ static bank retains its latch. A pure `NOP` takes one further feedback
 step for dynamic banks without changing arithmetic flags or static
 latches.
 
+Wide signed `EXTRACT` into `CETBL` takes a signed word from `ECFG`,
+`CECFG1`, or `FFTV` and writes the low word of the sign-extended field.
+It updates Z and M, but both CE banks sample the incoming flags and old
+table. The next issue can use the new table.
+
 Unqualified compact `BANKXCHG` swaps selected `R`/`RN` pairs and
 their two-bit `PACFG` fields, and selected `RM`/`RL` pairs, with the
 shadow bank. It does not access DATA. Bit 1 additionally exchanges the
