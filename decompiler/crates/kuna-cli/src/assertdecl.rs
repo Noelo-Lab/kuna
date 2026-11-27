@@ -50,22 +50,29 @@ use kuna_console::assertions::{Body, Directive};
 pub(crate) use kuna_console::assertsyntax::parse_directive as parse_one;
 pub(crate) use kuna_console::assertsyntax::parse_directive_flag as parse_flag;
 
-/// The run's directives with the `--types` declarations ahead of the caller's
-/// own, so an `--assert` on the same function is applied last and wins.
-pub(crate) fn with_types(
+/// Load header declarations and peripheral registers ahead of explicit assertions.
+pub(crate) fn with_imports(
     types: &[String],
     cpp: Option<&str>,
-    assertions: Vec<Directive>,
+    svd: Option<&str>,
+    mut assertions: Vec<Directive>,
 ) -> Result<Vec<Directive>, String> {
-    if types.is_empty() {
-        return match cpp {
-            Some(_) => Err("--types-cpp needs a --types <file.h|dir> to preprocess".into()),
-            None => Ok(assertions),
-        };
+    let mut imported = if types.is_empty() {
+        if cpp.is_some() {
+            return Err("--types-cpp needs a --types <file.h|dir> to preprocess".into());
+        }
+        if svd.is_none() {
+            return Ok(assertions);
+        }
+        Vec::new()
+    } else {
+        kuna_console::kuna_cheader::load_types(types, cpp)?
+    };
+    if let Some(path) = svd {
+        imported.extend(crate::kuna_svd::load(path)?);
     }
-    let mut all = kuna_console::kuna_cheader::load_types(types, cpp)?;
-    all.extend(assertions);
-    Ok(all)
+    imported.append(&mut assertions);
+    Ok(imported)
 }
 
 /// Where a directive's console line goes in the generated script.
@@ -164,6 +171,9 @@ pub(crate) fn console_form(
                 None => format!("map address {addr:#x} {decl}"),
             };
             (Slot::Program, line)
+        }
+        Body::MmioMask { addr, size, mask, name } => {
+            (Slot::Program, format!("map mmio-mask {addr:#x} {size} {mask:#x} {name}"))
         }
         Body::Param { func, index, storage, decl } => match names_another(func, target) {
             Some(f) => (Slot::Program, format!("map param {f}::{index} {storage} {decl}")),

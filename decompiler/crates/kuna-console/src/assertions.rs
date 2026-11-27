@@ -119,6 +119,8 @@ pub enum Body {
     Prototype { func: String, decl: String },
     /// `data <addr|[space,addr]> <C typedeclaration>` — a named, typed global.
     Data { addr: u64, space: Option<String>, decl: String },
+    /// A symbolic mask tied to an exact volatile register address and width.
+    MmioMask { addr: u64, size: int4, mask: u64, name: String },
     /// `param [<func>::]<i> <storage> <C typedeclaration>` — a locked input.
     Param { func: Option<String>, index: int4, storage: String, decl: String },
     /// `return [<func>::]<storage> <C typedeclaration>` — a locked return.
@@ -187,6 +189,7 @@ impl Body {
             Body::Typedef { .. } => ("typedef", "P5", "type-propagation"),
             Body::Prototype { .. } => ("prototype", "P4", "prototype-source"),
             Body::Data { .. } => ("data", "P5", "const-pointer"),
+            Body::MmioMask { .. } => ("mmio-mask", "P9", "literal-format"),
             Body::Param { .. } => ("param", "P4", "prototype-source"),
             Body::Return { .. } => ("return", "P4", "prototype-source"),
             Body::Comment { .. } => ("comment", "P9", "external-refinement"),
@@ -477,7 +480,7 @@ pub fn apply_program_scoped(prog: &mut ConsoleProgram) {
     }
 }
 
-fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<(), String> {
+pub(crate) fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<(), String> {
     match body {
         Body::Function { start, end, name } => {
             let addr = code_addr(prog, *start)?;
@@ -512,6 +515,11 @@ fn apply_one_program_scoped(prog: &mut ConsoleProgram, body: &Body) -> Result<()
         Body::Prototype { func, decl } => apply_prototype(prog, func, decl),
         Body::JumpTable { addr, targets } => crate::jump_targets::install(prog, *addr, targets),
         Body::Data { addr, space, decl } => apply_data(prog, space.as_deref(), *addr, decl),
+        Body::MmioMask { addr, size, mask, name } => {
+            let offset = data_addr(prog, *addr)?.get_offset();
+            prog.arch_mut().mmio_field_masks.insert((offset, *size, *mask), name.clone());
+            Ok(())
+        }
         Body::Readonly { addr, size } => {
             let first = data_addr(prog, *addr)?;
             paint_property(prog, first, *size, kuna_decomp::varnode::varnode_flags::readonly)

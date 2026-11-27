@@ -4669,7 +4669,17 @@ must agree with the mapping; split or uncertain mappings are not guessed. The
 per-function collection resets at each print and excludes substituted literals,
 stack objects, and function symbols. Project extraction includes these facts even
 when synthetic address naming is disabled. Whole symbol types describe the
-object declaration, rather than the scalar type of a partial access.
+object declaration, rather than the scalar type of a partial access. A volatile
+read or write through an annotation also records the symbol at its storage
+base, so an imported MMIO register that the body names gets its declared
+volatile type in the project header.
+
+For SVD fields, `kuna_mmiomask` names a C `INT_AND` constant only when the
+other operand traces through copies or same-width casts to a volatile read
+of the matching address and width. The macro expands to the literal the C
+printer would otherwise emit. It is defined before the statements and
+undefined at the end of the function. The rule changes no load, store, mask,
+or comparison.
 
 An integer `INT_ADD` of a constant and a non-pointer offset can still compute a
 pointer: a declared pointer member stores it, or a CAST or COPY consumes it at a

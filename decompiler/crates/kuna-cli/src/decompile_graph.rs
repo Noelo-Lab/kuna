@@ -194,6 +194,14 @@ fn export(args: &Args, label: &str) -> Result<String, String> {
         };
         decompile_targets_with(&mut prog, targets, &opts)
     };
+    let outcomes = prog.assertion_outcomes();
+    let rejected = crate::decompile_all::report_rejected_assertions(&outcomes);
+    if crate::decompile_all::any_refused_assertion(&outcomes) {
+        return Err("the pipeline refused an assertion".into());
+    }
+    if args.assert_strict && rejected {
+        return Err("one or more assertions were rejected (--assert-strict)".into());
+    }
     for result in &results {
         if let Some(error) = &result.error {
             eprintln!(
@@ -481,6 +489,7 @@ fn usage() {
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20                   [--svd FILE] \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \n\
          The whole program as one JSON document (schema 4): every discovered\n\

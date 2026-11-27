@@ -3030,6 +3030,7 @@ pub(crate) fn parse_args_with_filters(
     let mut assert_strict = false;
     let mut types: Vec<String> = Vec::new();
     let mut types_cpp: Option<String> = None;
+    let mut svd: Option<String> = None;
     let mut mode: Option<String> = None;
     let mut slice: Option<String> = None;
     let mut target: Option<String> = None;
@@ -3100,6 +3101,11 @@ pub(crate) fn parse_args_with_filters(
             "--assert-strict" => assert_strict = true,
             "--types" => types.push(take(argv, &mut i, "--types")?),
             "--types-cpp" => types_cpp = Some(take(argv, &mut i, "--types-cpp")?),
+            "--svd" if cmd != "functions" => {
+                if svd.replace(take(argv, &mut i, "--svd")?).is_some() {
+                    return Err("only one --svd file is allowed per image".into());
+                }
+            }
             "--jobs" if jobs_flag => {
                 let v = take(argv, &mut i, "--jobs")?;
                 (jobs, jobs_auto) = jobs::parse_jobs(&v)?;
@@ -3215,7 +3221,7 @@ pub(crate) fn parse_args_with_filters(
     }
 
     let binary = binary.ok_or_else(|| format!("{cmd} requires <binary>"))?;
-    let assertions = crate::assertdecl::with_types(&types, types_cpp.as_deref(), assertions)?;
+    let assertions = crate::assertdecl::with_imports(&types, types_cpp.as_deref(), svd.as_deref(), assertions)?;
     if filters.rust_signature_manifest.is_some() {
         if apply_rust_signatures.is_some() {
             return Err("--rust-signature-manifest and --apply-rust-signatures are exclusive".into());
@@ -3332,6 +3338,9 @@ pub(crate) fn parse_args_with_filters(
                 "--jobs does not apply to --raw-image input (the entry seeds are the load)"
                     .into(),
             );
+        }
+        if svd.is_some() {
+            return Err("--svd requires --jobs 1".into());
         }
         if !assertions.is_empty() && (cmd != "decompile-all" || assertions.iter().any(|directive|
             !matches!(directive.body, kuna_console::assertions::Body::JumpTable { .. })))
@@ -3460,6 +3469,7 @@ fn usage_decompile_all() {
          \x20                   [--filter REGEX] [--min-size N] [--max-size N] \\\n\
          \x20                   [--reachable-from <name|0xaddr>] [--sort addr|size|name] [--limit N] \\\n\
          \x20                   [--summary] [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20                   [--svd FILE] \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
@@ -3517,6 +3527,8 @@ fn usage_decompile_all() {
          --define-function <start[-end][=name] | @file> (repeatable) declares where a\n\
          function starts and ends: start names an entry discovery missed, the\n\
          exclusive end bounds its flow so it stops swallowing its neighbours.\n\
+         --svd FILE maps CMSIS-SVD peripheral registers as named volatile globals\n\
+         in a serial decompilation (--jobs 1).\n\
          \n\
          Triage (narrows the run BEFORE decompiling, so it is also what makes it\n\
          cheap): --filter REGEX matches the name or any alias; --min-size/--max-size\n\

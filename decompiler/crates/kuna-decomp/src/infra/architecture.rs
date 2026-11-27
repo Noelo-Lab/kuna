@@ -275,6 +275,8 @@ pub struct Architecture {
     pub loader_glibc_imports: Rc<std::collections::BTreeMap<Address, String>>,
     pub nullable_relocations: Rc<std::collections::BTreeMap<u64, Vec<crate::kuna_nullable_reloc::NullableRelocation>>>,
     pub nullable_literal_values: Rc<std::collections::BTreeSet<u64>>,
+    /// Caller-supplied field constants keyed by (register byte address, byte width, mask).
+    pub mmio_field_masks: std::collections::BTreeMap<(u64, int4, u64), String>,
 
     // --- Configuration data (architecture.hh:170-208) ---------------------
     /// How many levels to let parameter trims recurse (C++ `trim_recurse_max`).
@@ -2440,6 +2442,7 @@ impl Architecture {
             loader_glibc_imports: Rc::default(),
             nullable_relocations: Rc::default(),
             nullable_literal_values: Rc::default(),
+            mmio_field_masks: std::collections::BTreeMap::new(),
 
             symbol_snapshots: RefCell::new(SymbolSnapshots::default()),
             kuna_snapshot_cache: std::env::var_os("KUNA_NO_SYMBOL_SNAPSHOT_CACHE").is_none(),

@@ -625,6 +625,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `function <start>[-<end>][=<name>]` | the `--define-function` spelling, on this plane |
 | `readonly <addr>+<size>` | the bytes in this range never change at run time |
 | `volatile <addr>+<size>` | device memory: every access is a real access |
+| `mmio-mask <addr> <bytes> <hex-mask> <name_Msk>` | name an exact mask of a volatile register read in C; the width is decimal (1, 2, 4, or 8 bytes) |
 | `bytes <addr> <hex\|@FILE>` | the bytes mapped here are these, whatever the file holds |
 
 Storage is a register name (`RDI`), the console's `%RDI`, or its address grammar
@@ -1318,6 +1319,37 @@ and reported as rejected: `sizeof` in a constant expression, a flexible array
 member, an anonymous struct or union member, and an empty parameter list
 (`int f()`). Accepted wherever `--assert` is, with its limits: not with
 `--jobs` above 1 on a whole-binary run, and not with `--stream`.
+
+**`--svd <device.svd>`** names and types memory-mapped peripheral registers in
+`decompile`, `decompile-all`, `decompile-project`, and `decompile-graph`. Use
+the SVD for the exact device. For example, for a Thumb image linked at
+`0x08000000` with an entry at `0x08000100`:
+
+```bash
+kuna decompile firmware.bin 0x08000100 --svd device.svd \
+  --raw-image --target ARM:LE:32:v8:default --base 0x08000000 --isa thumb
+```
+
+Kuna expands `derivedFrom` and peripheral, cluster, register, and field arrays. It
+imports byte-addressed 8-, 16-, 32-, and 64-bit registers as unsigned volatile
+globals, named from their peripheral, clusters, and register (for example,
+`RCC_CR`). Read-only hardware registers are still volatile: their values can
+change between reads. For aliases at the same address, Kuna prefers the first
+non-alternate definition. An explicit `--assert 'data …'` at the same address
+can override the imported name and type.
+
+In C output, an exact `&` mask on a proven full-width register read can use
+the field name, for example `RCC_CR & RCC_CR_HSERDY_Msk`. Kuna defines the
+macro with the original literal in the function's output and undefines it
+at the end. A mask stays numeric if register views at that address disagree,
+if more than one field matches, or if the value came from another source. Kuna
+does not emit C bitfield lvalues, infer field writes, or interpret enumerated
+field values, interrupts, reset values, or device-specific side effects.
+The SVD does not set the firmware's image base or identify literal pools.
+Kuna names accesses when it can resolve their addresses. If a known flash
+literal stays unresolved in a raw image, use a `readonly` assertion for the
+literal's bytes, not for the device register. Use one SVD per run, with
+`--jobs 1` and without `--stream`.
 
 **Paths containing spaces work (DIV-100).** This is the one surface that reaches the engine
 through a console *script* rather than an in-process call, and the console reads a

@@ -1654,6 +1654,7 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
         Box::new(crate::ifacedecomp::IfcOverrideIndirect),
         &["override", "indirect"],
     );
+    status.register_com(Box::new(crate::ifacedecomp::IfcMmioMask), &["map", "mmio-mask"]);
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.
