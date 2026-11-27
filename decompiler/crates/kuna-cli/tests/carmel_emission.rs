@@ -1717,6 +1717,79 @@ int main(void) {
 }
 
 #[test]
+fn carmel_late_ff_writeback_does_not_reach_the_next_operand_fetch() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("ff.bin");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const ROUND: [u8; 6] = [0x56, 0xbf, 0xed, 0x2b, 0xec, 0];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         volatile unsigned short factor_signed = 0x8001;\n\
+         volatile unsigned short factor_unsigned = 0x5678;\n\
+         volatile unsigned short stored;\n",
+    );
+    for (label, gap, consumer, output) in [
+        ("adjacent", false, ROUND, "X1"),
+        ("gap", true, ROUND, "X1"),
+        ("move", false, [0x97, 0x29, 0x83, 0xc3, 0x66, 0x22], "A0H"),
+        ("or", false, [0xe0, 0x72, 0x25, 0xe2, 0x22, 0x5e], "A0L"),
+    ] {
+        let mut code = vec![
+            [0x80, 0xc0, 0x80, 0xc6, 0x42, 0x9c], // MOVE R7,0xc080
+            [0x80, 0, 3, 0xc6, 0x42, 0xbc],       // MOVE RN7,3
+            [0x80, 0, 2, 0xc6, 0x42, 0x88],       // MOVE R2,2
+            [0xa2, 0xfa, 2, 0xc2, 0x7a, 0xaa],   // MOVE RN2,R2
+            [0x80, 0x80, 0x40, 0xc6, 0x42, 0x88], // MOVE R2,0x8040
+            [0x80, 0, 0, 0xc6, 0x43, 0x68],       // MOVE PACFG,0
+        ];
+        code.extend([NOP; 6]);
+        code.push([0x47, 0xce, 0xf5, 0x2b, 0xec, 0]); // MPYSU CE1 FF2, *R7+=RN7, *R2+RN2
+        if gap {
+            code.push(NOP);
+        }
+        code.push(consumer);
+        code.extend([NOP; 4]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([NOP; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+            "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+            "--assert", &format!("return %{output} unsigned short"),
+            "--assert", "data [data,0xc080] volatile unsigned short factor_signed",
+            "--assert", "data [data,0x8042] volatile unsigned short factor_unsigned",
+            "--assert", "data [data,0xc083] volatile unsigned short stored",
+        ]);
+        for (i, port) in ["FF1", "FF2", "X1", "EST", "CECFG1", "CECFG2", "CETBL", "ECFG", "R0"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{port} unsigned short in_{}", port.to_ascii_lowercase())]);
+        }
+        let result = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let code = function["code"].as_str().unwrap().replace("sub_1000", &format!("seen_{label}"));
+        writeln!(generated, "{code}").unwrap();
+    }
+    generated.push_str(r"
+#define ARGS 0x4000,0xf678,0xba98,0,0,0,0xffff,0,0x40
+int main(void) {
+    if (seen_adjacent(ARGS) != 0xf678 || stored != 0xfd9e) return 1;
+    if (seen_gap(ARGS) != 0xd4c4 || stored != 0xf531) return 2;
+    if (seen_move(ARGS) != 0xffff) return 3;
+    if (seen_or(ARGS) != 0xf678) return 4;
+    return 0;
+}
+");
+    let source = scratch.path().join("ff.c");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &scratch.path().join("ff.exe"), &generated);
+}
+
+#[test]
 fn carmel_qualified_bank_exchange_preserves_independent_address_and_result_effects() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

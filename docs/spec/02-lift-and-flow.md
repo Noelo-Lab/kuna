@@ -4060,6 +4060,15 @@ or 17 bits with `ECFG.SR1`, and rounds ties upward.
 This store can consume a proved incoming address sample, but does not
 contribute to the proof of a later sample.
 
+The mixed signed/unsigned compact multiply fetches a signed word at
+old `R7` and an unsigned word at `R2+RN2`. Address admission advances
+`R7`, but the later predicate alone writes the product's high word
+to `FF1` or `FF2`. A following operand-fetch consumer sees the older
+FF value, while an EX consumer sees the completed write. One intervening
+idle issue makes the new value visible to operand fetch. Lowering
+binds the operand to a proved phase on every incoming path rather
+than assuming textual instruction order.
+
 Signed immediate `MOVE` distinguishes the early address-qualified ports
 from late DATA or accumulator results. The indexed store captures the old
 address and updates the pointer when AEN permits it, even if the late

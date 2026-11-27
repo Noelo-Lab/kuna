@@ -181,6 +181,7 @@ define register offset=0x300 size=1 [
     __CE_ADDRESS_HISTORY __CE_ADDRESS_HISTORY_1 __CE_ADDRESS_HISTORY_2
     __CE_ADDRESS_HISTORY_3 __CE_ADDRESS_HISTORY_4
 ];
+define register offset=0x308 size=2 [ __FF1_BEFORE_EX __FF2_BEFORE_EX ];
 define pcodeop carmel_record_admission;
 define pcodeop carmel_read_address_admission;
 define pcodeop carmel_known_redirect;
@@ -188,6 +189,10 @@ define pcodeop carmel_delay_slot_admission;
 define pcodeop carmel_modeled_delay_mask;
 define pcodeop carmel_fixed_read_admission;
 define pcodeop carmel_end_unmodeled_issue;
+define pcodeop carmel_capture_ff_before_ex;
+define pcodeop carmel_sample_ff_at_of;
+define pcodeop carmel_sample_ff_at_ex;
+define pcodeop carmel_record_ff_late_admission;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -8939,24 +8944,31 @@ macro wide_add_r4_post(left, shift, displacement) {
 
 compact_round_ff: "FF1" is slot_6_6=0 { export FF1; }
 compact_round_ff: "FF2" is slot_6_6=1 { export FF2; }
+compact_round_before: is slot_6_6=0 { export __FF1_BEFORE_EX; }
+compact_round_before: is slot_6_6=1 { export __FF2_BEFORE_EX; }
 
-@define COMPACT_FF_ROUND "slot_7_22=0xad7f & slot_1_5=0x16 & slot_0_0=1 & compact_round_ff"
+compact_mpy_ff: "FF1" is slot_9_9=0 { export FF1; }
+compact_mpy_ff: "FF2" is slot_9_9=1 { export FF2; }
+
+@define COMPACT_FF_ROUND "slot_7_22=0xad7f & slot_1_5=0x16 & slot_0_0=1 & compact_round_ff & compact_round_before"
+@define COMPACT_FF_MPY "slot_10_22=0x11f3 & slot_6_8=3 & slot_1_5=0x1a & slot_0_0=1 & compact_mpy_ff"
 @define COMPACT_FF_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
 
-macro compact_ff_round_store(first, latch, cfg, bank, lane, gate) {
+macro compact_ff_round_store(first, before, latch, cfg, bank, lane, gate) {
     local admitted:1 = carmel_read_address_admission(gate);
     local incoming:2 = EST;
     local flags:2 = incoming & 0xcfff;
     if (admitted == 0) goto <publish>;
     local address:2 = R7;
     modify_ptr(R7, RN7, RM6, RL6, 14, 1);
-    local left:2 = first;
+    local left:2 = carmel_sample_ff_at_of(first, before);
+    local right:2 = carmel_sample_ff_at_of(FF1, __FF1_BEFORE_EX);
     latch = left;
     local enabled:2;
     unary_ce(cfg, incoming, CETBL, bank, enabled);
     if (enabled == 0) goto <publish>;
     local product:8;
-    raw_mac_product(left, FF1, 1:1, 1:1, product);
+    raw_mac_product(left, right, 1:1, 1:1, product);
     local scale:4 = zext((ECFG >> 5) & 1);
     local quantum:8 = 0x10000 << scale;
     local bias:8 = quantum >> 1;
@@ -8975,15 +8987,81 @@ macro compact_ff_round_store(first, latch, cfg, bank, lane, gate) {
 
 :MPYR "CE1" "*R7+=RN7",compact_round_ff,"FF1" is
     $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & $(COMPACT_FF_ROUND) {
-    compact_ff_round_store(compact_round_ff, X1, CECFG1, 0:2, 0:4, 1:1);
+    compact_ff_round_store(compact_round_ff, compact_round_before, X1, CECFG1, 0:2, 0:4, 1:1);
 }
 :MPYR "CE1" "*R7+=RN7",compact_round_ff,"FF1" "||" nop_right is
     ($(RAW_MAC_PAR) & $(COMPACT_FF_PHASE) & $(COMPACT_FF_ROUND)); (slot_mode=0 & nop_right) {
-    compact_ff_round_store(compact_round_ff, X1, CECFG1, 0:2, 0:4, 1:1);
+    compact_ff_round_store(compact_round_ff, compact_round_before, X1, CECFG1, 0:2, 0:4, 1:1);
 }
 :^nop_left "||" "MPYR" "CE2" "*R7+=RN7",compact_round_ff,"FF1" is
     ($(RAW_MAC_PAR) & $(COMPACT_FF_PHASE) & nop_left); (slot_mode=0 & $(COMPACT_FF_ROUND)) {
-    compact_ff_round_store(compact_round_ff, X2, CECFG2, 1:2, 6:4, 2:1);
+    compact_ff_round_store(compact_round_ff, compact_round_before, X2, CECFG2, 1:2, 6:4, 2:1);
+}
+
+macro compact_ff_multiply(dst, latch, cfg, bank, lane, gate) {
+    local admitted:1 = carmel_read_address_admission(gate);
+    __FF1_BEFORE_EX = carmel_capture_ff_before_ex(FF1);
+    __FF2_BEFORE_EX = carmel_capture_ff_before_ex(FF2);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    if (admitted == 0) goto <publish>;
+    local first:2 = R7;
+    local second:2 = R2 + RN2;
+    modify_ptr(R7, RN7, RM6, RL6, 14, 1);
+    compact_pair_read_check(first, second);
+    local signed_word:2 = *[data]:2 first;
+    local unsigned_word:2 = *[data]:2 second;
+    latch = signed_word;
+    local enabled:2;
+    unary_ce(cfg, incoming, CETBL, bank, enabled);
+    if (enabled == 0) goto <publish>;
+    local product:8;
+    raw_mac_product(signed_word, unsigned_word, 1:1, 0:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 1:1, 0:1, 0:1, result, active);
+    dst = result(2);
+    raw_mac_flags(flags, active, lane);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+    local rails:1;
+    ce_admission(rails);
+    carmel_record_ff_late_admission(rails);
+}
+
+:MPYSU "CE1" compact_mpy_ff,"*R7+=RN7","*R2+RN2" is
+    $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & $(COMPACT_FF_MPY) {
+    compact_ff_multiply(compact_mpy_ff, X1, CECFG1, 0:2, 0:4, 1:1);
+}
+:MPYSU "CE1" compact_mpy_ff,"*R7+=RN7","*R2+RN2" "||" nop_right is
+    ($(RAW_MAC_PAR) & $(COMPACT_FF_PHASE) & $(COMPACT_FF_MPY)); (slot_mode=0 & nop_right) {
+    compact_ff_multiply(compact_mpy_ff, X1, CECFG1, 0:2, 0:4, 1:1);
+}
+:^nop_left "||" "MPYSU" "CE2" compact_mpy_ff,"*R7+=RN7","*R2+RN2" is
+    ($(RAW_MAC_PAR) & $(COMPACT_FF_PHASE) & nop_left); (slot_mode=0 & $(COMPACT_FF_MPY)) {
+    compact_ff_multiply(compact_mpy_ff, X2, CECFG2, 1:2, 6:4, 2:1);
+}
+
+:MOVE "A0","FF2" is $(COMPACT_FF_PHASE) & carmel_issue=5 & wide_left_mode=1
+    & wide_right_mode=1 & wide_24_45=0x172983 & wide_0_22=0x436622 & ce_tick {
+    local word:2 = carmel_sample_ff_at_ex(FF2);
+    local result:8 = sext(word);
+    write_accumulator40(A0L, A0H, GB0, result);
+    local flags:2 = (EST & 0xcfc4) | (zext(word == 0) << 3) | (zext(word s< 0) << 4);
+    publish_ce_feedback(flags, EST);
+    build ce_tick;
+}
+
+:OR "A0","FF2","R0" is $(COMPACT_FF_PHASE) & carmel_issue=5 & wide_left_mode=1
+    & wide_right_mode=1 & wide_24_45=0x207225 & wide_0_22=0x62225e & ce_tick {
+    local ff:2 = carmel_sample_ff_at_of(FF2, __FF2_BEFORE_EX);
+    local value:2 = ff | R0;
+    A0L = value;
+    A0H = 0;
+    GB0 = 0;
+    local flags:2 = (EST & 0xcfc7) | (zext(value == 0) << 3);
+    publish_ce_feedback(flags, EST);
+    build ce_tick;
 }
 
 :MACSU "A4","*R7+=RN7","OP2" is $(RAW_MAC_SEQ) & $(RAW_MAC_A4_SHIFT) {

@@ -1,4 +1,4 @@
-//! Bind Carmel's D1 address admission to a proved older issue clock before SSA.
+//! Bind Carmel's address-admission and FF operand-fetch samples before SSA.
 
 use std::{collections::{BTreeMap, BTreeSet, VecDeque}, rc::Rc};
 
@@ -12,6 +12,17 @@ use crate::{
 };
 
 const CLOCKS: usize = 5;
+const FF_UNKNOWN: u8 = 1;
+const FF_LIVE: u8 = 2;
+const FF_OLDER: u8 = 4;
+
+#[derive(Clone, Copy)]
+struct FfOps {
+    capture: u64,
+    fetch: u64,
+    execute: u64,
+    late_tick: u64,
+}
 
 pub(crate) struct PhaseDecode<'a> {
     translate: &'a dyn EngineTranslate,
@@ -24,6 +35,7 @@ pub(crate) struct PhaseDecode<'a> {
     delay_mask: Option<u64>,
     fixed_read_tick: Option<u64>,
     end_unmodeled: Option<u64>,
+    ff: Option<FfOps>,
 }
 
 impl<'a> PhaseDecode<'a> {
@@ -31,13 +43,20 @@ impl<'a> PhaseDecode<'a> {
         if !arch.archid.starts_with("Carmel:") {
             return None;
         }
-        let tick = arch.userops.get_op_by_name(b"carmel_record_admission")?.get_index() as u64;
-        let admission = arch.userops.get_op_by_name(b"carmel_read_address_admission")?.get_index() as u64;
-        let redirect = arch.userops.get_op_by_name(b"carmel_known_redirect").map(|op| op.get_index() as u64);
-        let delay_tick = arch.userops.get_op_by_name(b"carmel_delay_slot_admission").map(|op| op.get_index() as u64);
-        let delay_mask = arch.userops.get_op_by_name(b"carmel_modeled_delay_mask").map(|op| op.get_index() as u64);
-        let fixed_read_tick = arch.userops.get_op_by_name(b"carmel_fixed_read_admission").map(|op| op.get_index() as u64);
-        let end_unmodeled = arch.userops.get_op_by_name(b"carmel_end_unmodeled_issue").map(|op| op.get_index() as u64);
+        let index = |name: &[u8]| arch.userops.get_op_by_name(name).map(|op| op.get_index() as u64);
+        let tick = index(b"carmel_record_admission")?;
+        let admission = index(b"carmel_read_address_admission")?;
+        let redirect = index(b"carmel_known_redirect");
+        let delay_tick = index(b"carmel_delay_slot_admission");
+        let delay_mask = index(b"carmel_modeled_delay_mask");
+        let fixed_read_tick = index(b"carmel_fixed_read_admission");
+        let end_unmodeled = index(b"carmel_end_unmodeled_issue");
+        let ff = (|| Some(FfOps {
+            capture: index(b"carmel_capture_ff_before_ex")?,
+            fetch: index(b"carmel_sample_ff_at_of")?,
+            execute: index(b"carmel_sample_ff_at_ex")?,
+            late_tick: index(b"carmel_record_ff_late_admission")?,
+        }))();
         let (word, bits) = arch.with_context_db(|db| {
             let field = db.get_variable(b"carmel_phase_emit").ok()?;
             Some((field.get_word() as usize, field.get_mask() << field.get_shift()))
@@ -45,13 +64,15 @@ impl<'a> PhaseDecode<'a> {
         let translate = arch.translate();
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
-        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask, fixed_read_tick, end_unmodeled })
+        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask, fixed_read_tick, end_unmodeled, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
         let mut markers = Vec::new();
         let mut delay_queries = Vec::new();
         let mut slot_clocks = BTreeMap::<u64, usize>::new();
+        let mut dual_reads = BTreeSet::new();
+        let mut ff_fetches = false;
         let mut reads = false;
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
@@ -60,6 +81,13 @@ impl<'a> PhaseDecode<'a> {
             let offset = op.get_addr().get_offset();
             if index == self.tick || Some(index) == self.fixed_read_tick {
                 markers.push((op_id, offset, Mark::Tick));
+            } else if self.ff.is_some_and(|ff| index == ff.late_tick) {
+                dual_reads.insert(offset);
+                markers.push((op_id, offset, Mark::Tick));
+            } else if self.ff.is_some_and(|ff| index == ff.fetch) {
+                ff_fetches = true;
+            } else if self.ff.is_some_and(|ff| index == ff.capture || index == ff.execute) {
+                markers.push((op_id, offset, Mark::Copy));
             } else if Some(index) == self.redirect {
                 markers.push((op_id, offset, Mark::Redirect));
             } else if Some(index) == self.delay_tick {
@@ -81,18 +109,25 @@ impl<'a> PhaseDecode<'a> {
             fd.op_set_opcode(query, type_op_for(OpCode::CPUI_COPY));
             fd.op_set_input(query, mask, 0)?;
         }
-        if !reads {
-            for (marker, _, _) in markers {
-                fd.op_destroy(marker);
+        if !reads && !ff_fetches && dual_reads.is_empty() {
+            for (marker, _, kind) in markers {
+                if kind == Mark::Copy {
+                    lower_copy(fd, marker, 1);
+                } else {
+                    fd.op_destroy(marker);
+                }
             }
             return Ok(());
         }
         let mut known = BTreeSet::new();
         let mut cleanup = Vec::new();
+        let mut copies = Vec::new();
         for (marker, offset, kind) in markers {
             let modeled = delayed.get(&offset).copied();
             if modeled == Some(false) || (kind == Mark::Slot && modeled.is_none()) {
                 fd.op_destroy(marker);
+            } else if kind == Mark::Copy {
+                copies.push(marker);
             } else if kind == Mark::Redirect {
                 cleanup.push(marker);
             } else {
@@ -104,48 +139,79 @@ impl<'a> PhaseDecode<'a> {
         }
         // structure_reset has assigned dense block numbers in this order.
         let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|n| fd.bblocks_get_block(n)).collect();
-        let traces: Vec<_> = blocks.iter().map(|&block| self.trace(fd, visits, &known, &delayed, block)).collect();
-        let inputs = incoming_ages(fd, visits, &blocks, &traces);
-        for (trace, mut age) in traces.iter().zip(inputs) {
-            for event in &trace.events {
-                if let Event::Read(op) = *event {
-                    if age != CLOCKS {
+        let ff_regs = if dual_reads.is_empty() {
+            None
+        } else {
+            let reg_addr = |name: &[u8]| {
+                let reg = self.translate.get_register_varnode(name)
+                    .map_err(|_| KunaError::lowlevel("Carmel FF register storage is missing"))?;
+                Ok::<_, KunaError>(Address::new(reg.space.unwrap(), reg.offset))
+            };
+            Some([reg_addr(b"FF1")?, reg_addr(b"FF2")?])
+        };
+        let traces: Vec<_> = blocks.iter().map(|&block| {
+            let ports = ff_regs.as_ref().map_or(&[][..], |ports| &ports[..]);
+            self.trace(fd, visits, &known, &delayed, &dual_reads, ports, block)
+        }).collect();
+        let inputs = incoming_proofs(fd, visits, &blocks, &traces);
+        for (trace, mut proof) in traces.iter().zip(inputs.iter().copied()) {
+            for &event in &trace.events {
+                match event {
+                    Event::Read(op) if proof.age != CLOCKS => {
                         let addr = fd.obank().get(op).unwrap().get_addr();
                         return Err(KunaError::lowlevel(format!(
-                            "Unproved Carmel address admission at CODE {:#x}: {age} of {CLOCKS} clocks",
-                            addr.get_offset() / 3,
+                            "Unproved Carmel address admission at CODE {:#x}: {} of {CLOCKS} clocks",
+                            addr.get_offset() / 3, proof.age,
                         )));
                     }
+                    Event::FfFetch(op) if !matches!(proof.ff, FF_LIVE | FF_OLDER) => {
+                        return Err(sample_error(fd, op, "FF operand fetch"));
+                    }
+                    Event::RawFfRead(op) if proof.ff & FF_OLDER != 0 => {
+                        return Err(sample_error(fd, op, "FF input stage after late write"));
+                    }
+                    _ => {}
                 }
-                age = event.advance(age);
+                proof = event.advance(proof);
             }
         }
-        let scratch = self.translate.get_register_varnode(b"__CE_ADDRESS_HISTORY")
-            .map_err(|_| KunaError::lowlevel("Carmel phase history storage is missing"))?;
-        let space = scratch.space.as_ref().unwrap();
-        let slots: [Address; CLOCKS] = std::array::from_fn(|i| Address::new(Rc::clone(space), scratch.offset + i as u64));
-        for trace in traces {
+        let slots = if reads {
+            let scratch = self.translate.get_register_varnode(b"__CE_ADDRESS_HISTORY")
+                .map_err(|_| KunaError::lowlevel("Carmel phase history storage is missing"))?;
+            let space = scratch.space.as_ref().unwrap();
+            Some(std::array::from_fn::<_, CLOCKS, _>(|i| Address::new(Rc::clone(space), scratch.offset + i as u64)))
+        } else {
+            None
+        };
+        for (trace, mut proof) in traces.into_iter().zip(inputs) {
             for event in trace.events {
                 match event {
-                    Event::Tick(mark) => {
-                        for i in (1..CLOCKS).rev() {
-                            let previous = fd.new_varnode(1, &slots[i - 1], None);
-                            copy_before(fd, mark, previous, &slots[i])?;
+                    Event::Tick(mark, _) => {
+                        if let Some(slots) = &slots {
+                            for i in (1..CLOCKS).rev() {
+                                let previous = fd.new_varnode(1, &slots[i - 1], None);
+                                copy_before(fd, mark, previous, &slots[i])?;
+                            }
+                            fd.op_remove_input(mark, 0);
+                            fd.op_set_opcode(mark, type_op_for(OpCode::CPUI_COPY));
+                            fd.new_varnode_out(1, &slots[0], mark)?;
+                        } else {
+                            fd.op_destroy(mark);
                         }
-                        // Keep the marker's existing pre-SSA input: a free
-                        // varnode may only feed one operation.
-                        fd.op_remove_input(mark, 0);
-                        fd.op_set_opcode(mark, type_op_for(OpCode::CPUI_COPY));
-                        fd.new_varnode_out(1, &slots[0], mark)?;
                     }
                     Event::Read(read) => {
-                        let sample = fd.new_varnode(1, &slots[CLOCKS - 1], None);
+                        let sample = fd.new_varnode(1, &slots.as_ref().unwrap()[CLOCKS - 1], None);
                         fd.op_set_opcode(read, type_op_for(OpCode::CPUI_INT_AND));
                         fd.op_set_input(read, sample, 0)?;
                     }
-                    Event::Barrier => {}
+                    Event::FfFetch(read) => lower_copy(fd, read, if proof.ff == FF_OLDER { 2 } else { 1 }),
+                    _ => {}
                 }
+                proof = event.advance(proof);
             }
+        }
+        for marker in copies {
+            lower_copy(fd, marker, 1);
         }
         for marker in cleanup {
             fd.op_destroy(marker);
@@ -155,7 +221,7 @@ impl<'a> PhaseDecode<'a> {
 
     fn trace(
         &self, fd: &Funcdata, visits: &VisitedMap, known: &BTreeSet<u64>, delayed: &BTreeMap<u64, bool>,
-        block: BlockId,
+        dual_reads: &BTreeSet<u64>, ff_regs: &[Address], block: BlockId,
     ) -> Trace {
         let mut trace = Trace::default();
         let mut fixed_read = false;
@@ -174,20 +240,26 @@ impl<'a> PhaseDecode<'a> {
                 trace.redirect_edges = 0;
                 fixed_read = false;
             }
-            match userop(fd, op) {
+            let marker = userop(fd, op);
+            match marker {
                 Some(index) if index == self.tick || Some(index) == self.delay_tick => {
-                    trace.events.push(Event::Tick(id));
+                    trace.events.push(Event::Tick(id, false));
                 }
                 Some(index) if Some(index) == self.fixed_read_tick => {
-                    trace.events.push(Event::Tick(id));
+                    trace.events.push(Event::Tick(id, false));
                     fixed_read = true;
                 }
+                Some(index) if self.ff.is_some_and(|ff| index == ff.late_tick) => {
+                    trace.events.push(Event::Tick(id, true));
+                }
+                Some(index) if self.ff.is_some_and(|ff| index == ff.fetch) => trace.events.push(Event::FfFetch(id)),
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
                 Some(index) if Some(index) == self.end_unmodeled => trace.events.push(Event::Barrier),
                 Some(index) if Some(index) == self.redirect => {
                     trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
                 }
                 _ if op.code() == OpCode::CPUI_LOAD && fixed_read => fixed_read = false,
+                _ if op.code() == OpCode::CPUI_LOAD && dual_reads.contains(&addr.get_offset()) => {}
                 _ if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN
                     | OpCode::CPUI_LOAD | OpCode::CPUI_STORE) => {
                     // Bus effects and opaque transfers can change the spacing
@@ -196,6 +268,11 @@ impl<'a> PhaseDecode<'a> {
                     fixed_read = false;
                 }
                 _ => {}
+            }
+            let typed_ff = self.ff.zip(marker)
+                .is_some_and(|(ff, index)| index == ff.capture || index == ff.fetch || index == ff.execute);
+            if !typed_ff && op_reads_ff(fd, op, ff_regs) {
+                trace.events.push(Event::RawFfRead(id));
             }
             current = fd.bb_op_next(id);
         }
@@ -215,27 +292,69 @@ fn userop(fd: &Funcdata, op: &PcodeOp) -> Option<u64> {
     index.is_constant().then(|| index.get_offset())
 }
 
+fn op_reads_ff(fd: &Funcdata, op: &PcodeOp, ff: &[Address]) -> bool {
+    !ff.is_empty() && (0..op.num_input()).any(|i| op.get_in(i)
+        .and_then(|id| fd.vbank().get(id))
+        .is_some_and(|vn| ff.iter().any(|addr| vn.overlap_range(addr, 2) >= 0)))
+}
+
+fn lower_copy(fd: &mut Funcdata, op: OpId, input: i32) {
+    let n = fd.obank().get(op).unwrap().num_input();
+    for i in (0..n).rev() {
+        if i != input {
+            fd.op_remove_input(op, i);
+        }
+    }
+    fd.op_set_opcode(op, type_op_for(OpCode::CPUI_COPY));
+}
+
+fn sample_error(fd: &Funcdata, op: OpId, sample: &str) -> KunaError {
+    let addr = fd.obank().get(op).unwrap().get_addr();
+    KunaError::lowlevel(format!("Unproved Carmel {sample} at CODE {:#x}", addr.get_offset() / 3))
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mark {
     Tick,
     Slot,
     Redirect,
     EndUnmodeled,
+    Copy,
 }
 
 #[derive(Clone, Copy)]
 enum Event {
     Barrier,
-    Tick(OpId),
+    Tick(OpId, bool),
     Read(OpId),
+    FfFetch(OpId),
+    RawFfRead(OpId),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Proof {
+    age: usize,
+    ff: u8,
+}
+
+impl Proof {
+    const ENTRY: Self = Self { age: 0, ff: FF_UNKNOWN };
+    const TOP: Self = Self { age: CLOCKS, ff: 0 };
+
+    fn join(self, other: Self) -> Self {
+        Self { age: self.age.min(other.age), ff: self.ff | other.ff }
+    }
 }
 
 impl Event {
-    fn advance(self, age: usize) -> usize {
+    fn advance(self, proof: Proof) -> Proof {
         match self {
-            Self::Barrier => 0,
-            Self::Tick(_) => (age + 1).min(CLOCKS),
-            Self::Read(_) => age,
+            Self::Barrier => Proof { age: 0, ff: FF_UNKNOWN | (proof.ff & FF_OLDER) },
+            Self::Tick(_, late) => Proof {
+                age: (proof.age + 1).min(CLOCKS),
+                ff: if late { FF_OLDER } else { FF_LIVE },
+            },
+            _ => proof,
         }
     }
 }
@@ -252,9 +371,9 @@ fn contiguous(visits: &VisitedMap, from: &Address, to: &Address) -> bool {
     from == to || visits.get(from).is_some_and(|visit| from + i64::from(visit.size) == *to)
 }
 
-fn incoming_ages(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces: &[Trace]) -> Vec<usize> {
+fn incoming_proofs(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces: &[Trace]) -> Vec<Proof> {
     let graph = fd.bblocks_ref();
-    let mut inputs = vec![CLOCKS; blocks.len()];
+    let mut inputs = vec![Proof::TOP; blocks.len()];
     let mut exits = inputs.clone();
     let mut queue: VecDeque<_> = (0..blocks.len()).collect();
     let mut queued = vec![true; blocks.len()];
@@ -262,8 +381,8 @@ fn incoming_ages(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces:
         queued[i] = false;
         let block = graph.block(blocks[i]);
         let trace = &traces[i];
-        let age = if i == 0 || block.size_in() == 0 {
-            0
+        let proof = if i == 0 || block.size_in() == 0 {
+            Proof::ENTRY
         } else {
             (0..block.size_in()).map(|edge| {
                 let source = graph.block(block.get_in(edge));
@@ -274,13 +393,13 @@ fn incoming_ages(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces:
                 } else {
                     match prior.last.as_ref().zip(trace.first.as_ref()) {
                         Some((from, to)) if contiguous(visits, from, to) => exits[predecessor],
-                        _ => 0,
+                        _ => Proof::ENTRY,
                     }
                 }
-            }).min().unwrap()
+            }).fold(Proof::TOP, Proof::join)
         };
-        inputs[i] = age;
-        let exit = trace.events.iter().fold(age, |age, event| event.advance(age));
+        inputs[i] = proof;
+        let exit = trace.events.iter().fold(proof, |p, event| event.advance(p));
         if exit != exits[i] {
             exits[i] = exit;
             for edge in 0..block.size_out() {
