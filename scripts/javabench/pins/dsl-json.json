@@ -1,0 +1,30 @@
+{
+ "artifacts": {
+  "com.dslplatform:dsl-json:2.1.0": {
+   "sha256": "de8360187ed086c7809c5108d383b18461337c877dbb1e7574423153e2d7c358",
+   "url": "https://repo1.maven.org/maven2/com/dslplatform/dsl-json/2.1.0/dsl-json-2.1.0.jar"
+  },
+  "com.dslplatform:dsl-json:2.1.0:sources": {
+   "sha256": "8b215c7fb9934518e7491d25b8cefa887774219248b23255b6c3ca5cc6c74c97",
+   "url": "https://repo1.maven.org/maven2/com/dslplatform/dsl-json/2.1.0/dsl-json-2.1.0-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "com.google.code.findbugs:jsr305:3.0.2",
+   "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+  },
+  {
+   "coord": "com.thoughtworks.paranamer:paranamer:2.8",
+   "sha256": "688cb118a6021d819138e855208c956031688be4b47a24bb615becc63acedf07"
+  },
+  {
+   "coord": "javax.json.bind:javax.json.bind-api:1.0",
+   "sha256": "cd3be391f599d4bef59bfb155257ad6b91e4521d19b8e972b0dfb52dfb0c5fc1"
+  },
+  {
+   "coord": "javax.json:javax.json-api:1.1.2",
+   "sha256": "228759defdf40d1cb94112c81e4ae505a4c7c26dc217723be4f7d48a5579703d"
+  }
+ ]
+}

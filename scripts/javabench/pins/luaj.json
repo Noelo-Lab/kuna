@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "org.luaj:luaj-jse:3.0.1": {
+   "sha256": "9b1f0a3e8f68427c6d74c2bf00ae0e6dbfce35994d3001fed4cef6ecda50be55",
+   "url": "https://repo1.maven.org/maven2/org/luaj/luaj-jse/3.0.1/luaj-jse-3.0.1.jar"
+  },
+  "org.luaj:luaj-jse:3.0.1:sources": {
+   "sha256": "e9fc8eb5593ef489bafb79b5561b49114e8a233834f160c4657efe927a613f53",
+   "url": "https://repo1.maven.org/maven2/org/luaj/luaj-jse/3.0.1/luaj-jse-3.0.1-sources.jar"
+  }
+ },
+ "deps": []
+}

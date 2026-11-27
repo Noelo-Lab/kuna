@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "org.hsqldb:hsqldb:2.7.4": {
+   "sha256": "5fab2bb4384ac06b762638c8fa2740c944b8d080e4796c0c6c2af8b90dd4e5ad",
+   "url": "https://repo1.maven.org/maven2/org/hsqldb/hsqldb/2.7.4/hsqldb-2.7.4.jar"
+  },
+  "org.hsqldb:hsqldb:2.7.4:sources": {
+   "sha256": "9e65fd82d140edc029604553ba3c92e5d3637c57e1551824b899730e289cbad0",
+   "url": "https://repo1.maven.org/maven2/org/hsqldb/hsqldb/2.7.4/hsqldb-2.7.4-sources.jar"
+  }
+ },
+ "deps": []
+}

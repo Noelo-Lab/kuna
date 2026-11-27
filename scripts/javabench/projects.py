@@ -1,5 +1,5 @@
 """Pinned dataset definition: the five most-starred real Java projects on GitHub,
-the eleven held-out projects, and where the benchmark keeps its files.
+the two held-out sets, and where the benchmark keeps its files.
 
 Selection (``gh api search/repositories -f q='language:java stars:>20000'
 -f sort=stars``, queried 2026-11-09) is documented in ``docs/dataset.md``; this
@@ -224,9 +224,9 @@ def _held_out(name: str, repo: str, modules: list[str], deps: tuple[str, ...] = 
                    release_mode=mode, build_jdk_note="javac chosen by source-oracle calibration (docs/dataset.md)")
 
 
-# The held-out set: eleven projects no fix was developed against, chosen by a rule written
-# before any decompiler ran on them (docs/dataset.md, "The held-out set").
-HELDOUT: dict[str, Project] = {
+# The first held-out set: eleven projects chosen by a rule written before any decompiler ran on
+# them; fixes were later developed against them (docs/dataset.md, "The first held-out set").
+HELDOUT1: dict[str, Project] = {
     "antlr4": _held_out("antlr4", "antlr/antlr4", ["org.antlr:antlr4-runtime:4.13.2"]),
     "h2": _held_out("h2", "h2database/h2database", ["com.h2database:h2:2.5.252"], (
         "org.apache.lucene:lucene-core:9.12.0", "org.apache.lucene:lucene-analysis-common:9.12.0",
@@ -252,8 +252,28 @@ HELDOUT: dict[str, Project] = {
     "jenetics": _held_out("jenetics", "jenetics/jenetics", ["io.jenetics:jenetics:9.1.0"], jdk=25),
     "nashorn": _held_out("nashorn", "openjdk/nashorn", ["org.openjdk.nashorn:nashorn-core:15.7"]),
 }
-GROUPS: dict[str, dict[str, Project]] = {"insample": PROJECTS, "heldout": HELDOUT}
-KNOWN: dict[str, Project] = {**PROJECTS, **HELDOUT}
+
+# The second held-out set: one project per style slot, chosen by a rule written before any
+# decompiler ran on them, measured once (docs/dataset.md, "The second held-out set").
+HELDOUT2: dict[str, Project] = {
+    "parboiled": _held_out("parboiled", "sirthias/parboiled", ["org.parboiled:parboiled-java:1.4.1"]),
+    "hsqldb": _held_out("hsqldb", "sourceforge.net/projects/hsqldb", ["org.hsqldb:hsqldb:2.7.4"]),
+    "undertow": _held_out("undertow", "undertow-io/undertow", ["io.undertow:undertow-core:2.4.4.Final"]),
+    "dsl-json": _held_out("dsl-json", "ngs-doo/dsl-json", ["com.dslplatform:dsl-json:2.1.0"], (
+        "javax.json.bind:javax.json.bind-api:1.0", "javax.json:javax.json-api:1.1.2",
+        "com.thoughtworks.paranamer:paranamer:2.8", "com.google.code.findbugs:jsr305:3.0.2"), jdk=21),
+    "jasypt": _held_out("jasypt", "jasypt/jasypt", ["org.jasypt:jasypt:1.9.3"], (
+        "com.ibm.icu:icu4j:3.4.4", "javax.servlet:servlet-api:2.4")),
+    "ecj": _held_out("ecj", "eclipse-jdt/eclipse.jdt.core", ["org.eclipse.jdt:ecj:3.46.100"], jdk=25,
+                     mode="source-target"),
+    "luaj": _held_out("luaj", "luaj/luaj", ["org.luaj:luaj-jse:3.0.1"]),
+    "junit4": _held_out("junit4", "junit-team/junit4", ["junit:junit:4.13.2"]),
+    "ojalgo": _held_out("ojalgo", "optimatika/ojAlgo", ["org.ojalgo:ojalgo:58.0.0"], jdk=25),
+    "langchain4j": _held_out("langchain4j", "langchain4j/langchain4j", ["dev.langchain4j:langchain4j-core:1.24.1"],
+                             jdk=25),
+}
+GROUPS: dict[str, dict[str, Project]] = {"insample": PROJECTS, "heldout1": HELDOUT1, "heldout2": HELDOUT2}
+KNOWN: dict[str, Project] = {**PROJECTS, **HELDOUT1, **HELDOUT2}
 
 
 def get(name: str) -> Project:
@@ -264,7 +284,7 @@ def get(name: str) -> Project:
 
 def selected(names: list[str] | None) -> list[Project]:
     """The projects ``--project`` names: project names and the sets ``insample`` (the
-    default), ``heldout`` and ``all``, in the order given, each project once."""
+    default), ``heldout1``, ``heldout2`` and ``all``, in the order given, each project once."""
     out: dict[str, Project] = {}
     for n in names or ["insample"]:
         group = KNOWN if n == "all" else GROUPS.get(n)

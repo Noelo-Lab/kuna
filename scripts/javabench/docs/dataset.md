@@ -56,12 +56,14 @@ only 99.13% of sampled methods byte-exactly (JDK-8272564: javac >= 18 emits
 `invokeinterface` for `Object` methods called on interfaces), javac 21 99.97%,
 javac 25 100.0% -- so javac 25 is used.
 
-## The held-out set (`--project heldout`)
+## The first held-out set (`--project heldout1`)
 
 The five projects above are where kuna's fixes were developed, so their score says how the
 fixes do where they were tuned. Eleven more projects were chosen by a rule written on
 2026-11-26, before any decompiler had run on any candidate, and nothing was dropped, added
-or swapped after a decompiler's output on them had been seen:
+or swapped after a decompiler's output on them had been seen. They were measured out of
+sample once; fixes were later developed against what they showed, so this set is no longer
+held out (the second set below is):
 
 1. A Maven Central artifact with a binary jar and a `-sources.jar`, at the newest stable
    release in `maven-metadata.xml` on that day.
@@ -114,6 +116,82 @@ perfect on all metrics and recompiles every class. Every jar and dependency is p
 A held-out set stays held out only until someone fixes what it shows. The result recorded
 in `docs/jvm-benchmark.md` says for each number whether it was measured before or after
 fixes were developed against these projects.
+
+## The second held-out set (`--project heldout2`)
+
+Fixes were then developed against the first held-out set, so a second set was chosen on
+2026-11-27 by a rule written before any decompiler had run on any candidate. It is measured
+once, on the final binary of that round, and no fix is developed against it in that round.
+Nothing was dropped, added or swapped after a decompiler's output on it had been seen. The
+rule is the first set's, with the first set added to the exclusions:
+
+1. A Maven Central artifact with a binary jar and a `-sources.jar`, at the newest stable
+   release in `maven-metadata.xml` on 2026-11-27 (alpha, beta, RC, CR, milestone, snapshot
+   and preview versions skipped). If that release has no `-sources.jar`, the candidate fails;
+   there is no fallback to an older release.
+2. Not seen before: everything the first rule excluded, the eleven projects of the first set
+   with their modules and dependencies (antlr4-runtime, h2, httpcore5, fastjson2, tink, janino,
+   commons-compiler, rhino, nashorn, joda-time, commons-math3, jenetics, lucene, conscrypt,
+   google-http-client, ant, joda-convert, JTS, OSGi, the servlet APIs), and the four Kotlin
+   libraries measured with it. A candidate's own dependencies may be seen code (Guava, ASM,
+   Netty); they are only on the classpath.
+3. One project per style slot: the first candidate that passes. Only the named artifact is
+   scored; its sibling modules are dependencies.
+
+| slot | style | candidates in order |
+|---|---|---|
+| 1 | parser-generator runtime or parsing library | `org.parboiled:parboiled-java`; `com.github.javaparser:javaparser-core` |
+| 2 | database engine | `org.hsqldb:hsqldb`; `org.apache.derby:derby` |
+| 3 | network stack | `io.undertow:undertow-core`; `org.asynchttpclient:async-http-client` |
+| 4 | JSON or serialization library | `com.dslplatform:dsl-json`; `com.squareup.moshi:moshi` |
+| 5 | cryptography | `org.jasypt:jasypt`; `org.bitbucket.b_c:jose4j` |
+| 6 | compiler front end | `org.eclipse.jdt:ecj`; `com.google.googlejavaformat:google-java-format` |
+| 7 | language runtime | `org.luaj:luaj-jse`; `org.mvel:mvel2` |
+| 8 | pre-Java-8 code base (every class file major 50 or lower) | `junit:junit` 4.13.2; `com.jcraft:jsch` |
+| 9 | numerical code | `org.ejml:ejml-ddense`; `org.ojalgo:ojalgo` |
+| 10 | Java 17+ with records, sealed types or pattern switches (at least 10 class files with a `Record` or `PermittedSubclasses` attribute or a `SwitchBootstraps.typeSwitch` call site) | `dev.langchain4j:langchain4j-core`; `org.junit.jupiter:junit-jupiter-engine`; `io.avaje:avaje-jsonb` |
+
+4. Feasibility, decided without a decompiler: the fetch, the index and the `source`
+   pseudo-decompiler run with javac 17, 21 and 25, each with `--release` and with
+   `-source`/`-target`. The project uses the most byte-exact combination (ties: more classes
+   recompile, then the older javac, then `--release`). A candidate fails with fewer than 300
+   scored methods, or if the source oracle recompiles under 90% of its top-level classes once
+   the compile-only (`provided` or optional) dependencies its pom declares are added.
+5. Size: 40,000 to 120,000 scored methods in total. Over the top, the largest project is
+   replaced by its slot's next candidate; under the bottom, the second candidates of slots 2,
+   6 and 3 are added in that order.
+
+What happened: Derby 10.17.1.0 has no `-sources.jar` on Maven Central. `ejml-ddense` 0.46.1
+failed feasibility: 42 of its 112 classes import `org.jetbrains.annotations`, a Gradle
+`compileOnly` dependency its pom does not declare, so its own source recompiles 62.5% of its
+classes with any javac. Slot 9 went to ojalgo. The ten winners have 51,458 scored methods,
+inside the size target, so the size rule changed nothing. dsl-json and jasypt got their pom's
+`provided` dependencies (dsl-json: JSON-B API 1.0, JSON-P API 1.1.2, paranamer 2.8, jsr305
+3.0.2; jasypt: icu4j 3.4.4, servlet-api 2.4).
+
+| project | version | scored methods | top-level classes | class files | debug info | javac used for recompilation | source oracle all perfect / classes recompile |
+|---|---|---:|---:|---|---|---|---|
+| parboiled | `parboiled-java` 1.4.1 | 348 | 33 | 55 (major 55) | lines, no local-variable tables | 17 `--release` | 98.85% / 100% |
+| hsqldb | 2.7.4 | 9,959 | 405 | 686 (677 at 55, 9 at 49) | none (no line numbers, no local-variable tables) | 17 `--release` | 98.43% / 99.75% |
+| undertow | `undertow-core` 2.4.4.Final | 7,542 | 569 | 1,510 (major 61) | full | 17 `--release` | 99.87% / 100% |
+| dsl-json | 2.1.0 | 1,074 | 80 | 254 (major 52) | full | 21 `--release` | 100% / 100% |
+| jasypt | 1.9.3 | 673 | 78 | 113 (major 50) | full | 17 `--release` | 98.96% / 100% |
+| ecj | 3.46.100 | 10,886 | 512 | 811 (major 61), compiled by ECJ itself | full | 25 `-source 17 -target 17` | 70.19% / 99.80% |
+| luaj | `luaj-jse` 3.0.1 | 2,218 | 97 | 350 (336 at 47, 14 at 49) | none | 17 `--release` | 91.30% / 98.97% |
+| junit4 | `junit` 4.13.2 | 1,473 | 165 | 350 (major 49) | full | 17 `--release` | 98.64% / 100% |
+| ojalgo | 58.0.0 | 13,686 | 629 | 1,715 (major 66) | full | 25 `--release` | 99.68% / 100% |
+| langchain4j | `langchain4j-core` 1.24.1 | 3,599 | 384 | 685 (major 61): 8 records, 10 sealed types | full | 25 `--release` | 99.08% / 100% |
+
+51,458 scored methods in 2,952 top-level classes. The source oracle reaches 92.79% of them
+perfect on all metrics and recompiles 2,944 of the 2,947 source files it compiles (five ECJ
+and undertow files declare two top-level classes each). The three failures are dependencies
+no pom declares: hsqldb's `DatabaseManagerSwing` needs hsqldb's
+separate transfer tool, ECJ's `JDTCompilerAdapter` needs Ant, and luaj's `JavaBuilder` needs
+BCEL. The ceiling is lower than for the other sets for two reasons, and both apply to every
+decompiler equally. ECJ is compiled by ECJ, so no javac reproduces its bytecode: about 70% of
+its methods can be byte-exact. luaj was compiled for Java 1.3 (class files major 47), and
+javac's `--release 8` output differs from it in 9% of its methods. Every jar and dependency is
+pinned in `pins/<project>.json`.
 
 ## Scored set
 
