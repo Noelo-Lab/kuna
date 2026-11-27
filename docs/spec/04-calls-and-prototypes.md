@@ -6136,7 +6136,10 @@ result depends on, becomes a parameter, and the `__fastcall` model puts the
 `tests/stages/kuna-epiloguepop.xml` pins the issue's function, a Win64 float
 array returned by index and the two controls; `kuna-epiloguepop-sysv.xml` pins
 `twice` and the issue's function without a red zone, which must read as its
-red-zone build; `kuna-epiloguepop-x87.xml` pins the i386 `twice`.
+red-zone build; `kuna-epiloguepop-x87.xml` pins the i386 `twice`. In
+`decompile-all`, clang's `float v1(void) { return (float)geti(); }`
+(`floatparam_retreg_clang_O2`) printed `unsigned long sub_11c0(void)` returning
+the popped slot and now prints `float sub_11c0(void)`.
 
 #### (kuna, rustc) The two-register `ScalarPair` return (`rustabi`)
 
