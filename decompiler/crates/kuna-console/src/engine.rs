@@ -3301,6 +3301,9 @@ impl ConsoleProgram {
                 };
                 let _import_proofs =
                     kuna_analysis::loader::ImportProofScope::resume(&bytes, Some(import_proofs));
+                if self.arch().android_jni {
+                    crate::kuna_androidjni::collect(self.arch(), &bytes, &mut merged);
+                }
                 let image_path = std::path::Path::new(&path);
                 let image_path = image_path.exists().then_some(image_path);
                     // Deferred entry-discovery passes FIRST: their entries must be
@@ -5314,6 +5317,7 @@ pub(crate) fn bootstrap_object(
     // conflict #4, analysis-port-log.md). Bound to the real-ELF path ONLY — the
     // XML <binaryimage> bootstrap never runs these, so the datatest parity oracle
     // is structurally untouched.
+    let android_jni = crate::kuna_androidjni::load(sleigh.base().unwrap(), &bytes)?;
     let mut pending_analysis = kuna_analysis::passes::run_default_analyses_per_pass(
         &bytes,
         &loader,
@@ -5324,6 +5328,10 @@ pub(crate) fn bootstrap_object(
         // `Listing::build` can decode through it. Default-off ⇒ unused.
         sleigh.base().unwrap().translate(),
     );
+    if let Some(facts) = android_jni {
+        sleigh.base_mut().unwrap().android_jni = true;
+        pending_analysis.insert(0, ("android_jni", facts));
+    }
     pending_analysis.extend(input_isa_stash(input_context_paints));
     let mut nullable = std::collections::BTreeMap::<u64, Vec<_>>::new();
     for record in loader.nullable_relocations() {

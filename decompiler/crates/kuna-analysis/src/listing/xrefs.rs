@@ -87,6 +87,7 @@ use super::kuna_pltstub::PltStubs;
 use super::kuna_poolref::PoolImage;
 use super::kuna_regcarry::{self, Machine as CarryMachine};
 use super::kuna_calltable;
+use super::kuna_switchflow;
 use super::kuna_switchtable;
 use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
@@ -611,9 +612,9 @@ impl XrefIndex {
 /// carry the addresses.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) struct FullOp {
-    pub(super) opcode: OpCode,
-    pub(super) out: Option<VarnodeData>,
-    pub(super) ins: Vec<VarnodeData>,
+    pub(crate) opcode: OpCode,
+    pub(crate) out: Option<VarnodeData>,
+    pub(crate) ins: Vec<VarnodeData>,
 }
 
 /// A capturing [`PcodeEmit`] that keeps every emitted op whole.
@@ -902,6 +903,7 @@ fn descend(
         settled: false,
         named: Some(&named),
         next_table: arch.switch_extent.then_some(&next_table),
+        entered: None,
     };
     let arm = file.architecture() == object::Architecture::Arm;
     let pic_image = pool.as_ref().map(|pool| kuna_picpool::Image {
@@ -1283,7 +1285,7 @@ fn descend(
                         translate,
                         &code_space,
                         data_space.as_ref(),
-                        &st.decoded,
+                        &st,
                         vma,
                         Some(&branch),
                         p,
@@ -1491,6 +1493,9 @@ fn descend(
                 } else {
                     let target_mode = walk_context.as_ref()
                         .and_then(|context| context.successor(target, mode, &commits));
+                    if pool.is_some() {
+                        st.entries.record(target, vma);
+                    }
                     insn_queue.push_back((target, target_mode));
                 }
             }
@@ -1544,7 +1549,7 @@ fn descend(
                             translate,
                             &code_space,
                             data_space.as_ref(),
-                            &st.decoded,
+                            &st,
                             vma,
                             branch,
                             p,
@@ -1997,6 +2002,9 @@ struct State {
     /// files a `Jump` only when `to` is then another function's entry, and only
     /// then is `from` rendered, in the `mode` the walk decoded it in.
     skips: Vec<(u64, u64, u64, Option<u32>)>,
+    /// (kuna `switchflow`) The decoded branches and switch cases into each
+    /// address, for the table reads that step back across a block boundary.
+    entries: kuna_switchflow::Entries,
 }
 
 impl State {
@@ -2015,6 +2023,7 @@ impl State {
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
+            entries: kuna_switchflow::Entries::default(),
         }
     }
 
@@ -2044,6 +2053,7 @@ impl State {
             flow.jumps.extend(cases.iter().map(|&to| (vma, to)));
         }
         for &target in cases {
+            self.entries.record(target, vma);
             self.carry.enter(target);
             self.file(vma, target, XrefKind::Jump, text);
         }
@@ -2196,7 +2206,7 @@ fn branch_cases(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
     data_space: Option<&Rc<AddrSpace>>,
-    decoded: &HashSet<u64>,
+    st: &State,
     vma: u64,
     branch: Option<&VarnodeData>,
     pool: &PoolImage,
@@ -2204,10 +2214,14 @@ fn branch_cases(
     reach: &kuna_switchtable::Reach,
     thumb_tables: Option<&super::kuna_thumbswitch::HalfwordTables<'_>>,
 ) -> kuna_switchtable::TableRead {
-    let decoded = |at: u64| decoded.contains(&at);
+    let decoded = |at: u64| st.decoded.contains(&at);
+    let entered = |at: u64| {
+        if st.funcs.contains(&at) { kuna_switchflow::Entry::Several } else { st.entries.at(at) }
+    };
+    let reach = kuna_switchtable::Reach { entered: Some(&entered), ..*reach };
     let mut read = match branch {
         Some(branch) => kuna_switchtable::register_targets(
-            translate, code_space, data_space, &decoded, vma, branch, pool, exec, reach,
+            translate, code_space, data_space, &decoded, vma, branch, pool, exec, &reach,
         ),
         None => kuna_switchtable::TableRead::default(),
     };
@@ -3098,6 +3112,7 @@ mod tests {
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
+            entries: kuna_switchflow::Entries::default(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -3158,6 +3173,7 @@ mod tests {
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
+            entries: kuna_switchflow::Entries::default(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new(), false);
@@ -3196,6 +3212,7 @@ mod tests {
             refused: HashSet::new(),
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
+            entries: kuna_switchflow::Entries::default(),
         };
         let index = st.finish(BTreeMap::new(), true);
         assert_eq!(index.function_containing(0x1001), Some(0x1000));

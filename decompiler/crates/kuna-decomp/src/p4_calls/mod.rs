@@ -5,6 +5,7 @@
 
 pub mod funcdata_callsite;
 pub mod fspec;
+pub(crate) mod kuna_jnigetenv;
 pub(crate) mod kuna_joincalloutput;
 pub mod modelrules;
 mod kuna_aggregateabi;
@@ -13,6 +14,7 @@ pub mod kuna_calleedeadarg;
 pub mod kuna_hiddenretarg; // (kuna) a value left in the hidden-return register is no argument a callee cannot take
 pub mod kuna_calleereadarg; // (kuna) keep a refused argument the callee's own body reads
 pub mod kuna_calleefloatreads; // (kuna) pass a float argument register an unstated callee's body reads
+pub mod kuna_quotientreturn; // (kuna) a division's quotient is no return value when the float return is computed from its remainder
 pub mod kuna_zerofillreturn; // (kuna) the zero a narrow write leaves in a returned q register's upper half is no part of the value
 pub mod kuna_zerocallregs; // (kuna) a register a -fzero-call-used-regs epilogue clears is no part of the return value
 pub mod kuna_calleepreserves; // (kuna) the decoded callee's writes narrow the cspec killedbycall set
@@ -40,6 +42,7 @@ pub mod kuna_retinputhalf;
 pub mod kuna_retcallhalf; // (kuna) a call's result handed back beside a computed second return register
 pub mod kuna_retsysreg; // (kuna) a register set for a system register is not the high word of the return
 pub mod kuna_retpushedhalf;
+pub mod kuna_epiloguepop; // (kuna) a register the epilogue pops to release the frame is not the return beside a float
 pub mod kuna_reloadarg; // (kuna) a register reloaded from the caller's frame is re-scored once the frame is heritaged
 pub mod kuna_directalias; // (kuna) a direct access at a known stack offset aliases only the bytes it touches
 pub mod kuna_returnuncomputed;
@@ -89,6 +92,7 @@ pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only 
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
 pub mod kuna_lockedreturnarg; // (kuna) a stated return register stays an input trial of the call
 pub mod kuna_varargsave; // (kuna) the x86-64 System V register-save prologue is va_start, not code
+pub mod kuna_homespill; // (kuna) a Windows x64 argument register spilled to its home slot is a parameter
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard
 pub mod kuna_varargformat;
 pub mod kuna_varargtransfer;

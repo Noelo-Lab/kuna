@@ -658,6 +658,8 @@ Three tiers:
 | memcpy and printf in a static binary have no names | [`flirt`](#flirt----on--off-default-off) |
 | msvc c++ class names missing and vftables left as unnamed data | [`rtti`](#rtti----on--off-default-on) |
 | no Class::vftable or RTTI_ labels in a windows pe with polymorphic classes | [`rtti`](#rtti----on--off-default-on) |
+| Android native methods appear as sub_<addr> despite a RegisterNatives table | [`jniregister`](#jniregister----on--off-default-on) |
+| registered JNI methods have generic integer parameters instead of Java types | [`jniregister`](#jniregister----on--off-default-on) |
 | gcc/clang c++ class names missing and vtables left as unnamed DAT_ data | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | no Class::vtable or typeinfo labels in a stripped elf or mach-o with polymorphic classes | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
 | virtual dispatch slot resolves to sub_<addr> with no class | [`itaniumrtti`](#itaniumrtti----on--off-default-on) |
@@ -2303,6 +2305,14 @@ Program-prep enablement: what is discovered, decoded, and named before any funct
 - **When to flip:** On by default: a Windows PE built by MSVC (or clang -target ...-windows-msvc) carrying polymorphic C++ classes gets its C++ class names recovered and the RTTI/vftable metadata graph labelled (the raw .rdata bytes / unnamed DAT_* vtable become `Box`/`Shape` class names + `<Class>::vftable` / `<Class>::RTTI_*` labels). Inert on every non-PE image and on a PE with no shared type_info vftable. Flip off to see the raw .rdata without the recovered labels.
 - **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-analysis-rtti
 - **Example:** `option rtti on`
+
+### `jniregister` -- on | off, default `on`
+
+- **Symptoms:** Android native methods appear as sub_<addr> despite a RegisterNatives table; registered JNI methods have generic integer parameters instead of Java types.
+- **What it does:** Android ELF libraries can bind Java native methods by passing a table of names, descriptors, and implementation addresses to RegisterNatives. Recover methods from a resolved registration table and bind their names and supported signatures at the implementation addresses.
+- **When to flip:** On by default. Set off to ignore dynamic registration records. Standard JNI interfaces and types established by exported JNI names still apply.
+- **Where / provenance:** P1/external-refinement · kuna · analysis-enablement · kuna-android-jni
+- **Example:** `kuna decompile libexample.so 0x1200 --addr --option jniregister off`
 
 ### `itaniumrtti` -- on | off, default `on`
 

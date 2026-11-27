@@ -575,8 +575,10 @@ fn a_global_larger_than_the_load_window_is_dumped_whole() {
 /// string. `tests/bug-repro/sort` carries a 604-byte usage string at `0x16600`,
 /// and reading it took the export down before `create_dir_all` ran, so the run
 /// wrote nothing at all -- the same failure `/bin/ls` and 52 of the 219 ELF
-/// binaries in `/usr/bin` hit. `--addr` selects one function; the `.asm` data
-/// tail, where the read happens, is emitted for the whole image regardless.
+/// binaries in `/usr/bin` hit. The read happens in the `.asm` data tail.
+/// `--addr` selects `usage` (`sub_be50`), whose C prints the string as a
+/// literal; a selected tail still labels it because the swept `lea` points at
+/// it.
 #[test]
 fn a_binary_with_a_string_over_the_load_window_still_exports() {
     let bin = repo_root().join("tests/bug-repro/sort");
@@ -587,7 +589,7 @@ fn a_binary_with_a_string_over_the_load_window_still_exports() {
         "-o",
         dir.to_str().unwrap(),
         "--addr",
-        "0x3000",
+        "0xbe50",
         "--sleighpath",
         &specs(),
     ]);
@@ -1954,4 +1956,114 @@ fn a_struct_name_means_the_same_record_in_the_export_and_in_decompile_all() {
         }
         let _ = std::fs::remove_dir_all(dir);
     }
+}
+
+// --- a selected export's `.asm` (kuna #1978) ----------------------------------
+
+/// The sweep half of a `.asm` (everything before its first tail) and the
+/// `; --- code ...` lines that open its blocks.
+fn asm_sweep(dir: &std::path::Path, file_name: &str) -> (String, Vec<String>) {
+    let asm = std::fs::read_to_string(dir.join(format!("{file_name}.asm"))).unwrap();
+    let sweep = asm.split("\n; --- data ---\n").next().unwrap();
+    let sweep = sweep.split("\n; --- variables ---\n").next().unwrap().to_string();
+    let blocks = sweep.lines().filter(|l| l.starts_with("; --- code ")).map(str::to_string).collect();
+    (sweep, blocks)
+}
+
+/// The labels a `.asm` data tail carries.
+fn tail_labels(dir: &std::path::Path, file_name: &str) -> Vec<String> {
+    let asm = std::fs::read_to_string(dir.join(format!("{file_name}.asm"))).unwrap();
+    let Some((_, tail)) = asm.split_once("\n; --- data ---\n") else { return Vec::new() };
+    tail.lines().filter_map(|l| l.split_once(":  ; 0x")).map(|(name, _)| name.to_string()).collect()
+}
+
+/// A `--functions`/`--addr` export writes the `.c` of the selected functions,
+/// but its `.asm` was the disassembly of every code section and a label for
+/// every named global: four bodies out of a 120 MB image cost 1.66 GB of
+/// `.asm`. It now sweeps the selected code, where it reads as the whole-image
+/// sweep does, and labels the globals that code names or points at: `main`'s
+/// prompts are C literals, but its `mov edi` operands are their addresses.
+#[test]
+fn a_selected_project_disassembles_only_the_selection() {
+    let bin = fixture("fauxware");
+    let whole = project("fauxware", "asm_whole");
+    let selected = out_dir("asm_selected");
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-project", &bin, "-o", selected.to_str().unwrap(), "--functions",
+        "main,authenticate", "--sleighpath", &specs(),
+    ]);
+    assert!(ok, "selected project export failed: {stderr}");
+    let (sweep, blocks) = asm_sweep(&selected, "fauxware");
+    assert_eq!(
+        blocks,
+        ["; --- code range 0x400664..0x4006ed ---", "; --- code range 0x40071d..0x4007e0 ---"],
+        "{sweep}"
+    );
+    for unselected in ["00400580", "004006ed", "004004e0"] {
+        assert!(!sweep.contains(&format!("\n  {unselected}:")), "swept {unselected}:\n{sweep}");
+    }
+    let (whole_sweep, whole_blocks) = asm_sweep(&whole, "fauxware");
+    assert!(whole_blocks.iter().all(|b| b.starts_with("; --- code section ")), "{whole_blocks:?}");
+    let block = |text: &str, label: &str| {
+        let start = text.find(&format!("\n{label}:")).expect("label");
+        let end = text[start + 1..].find("\n\n").map_or(text.len(), |at| start + 1 + at);
+        text[start..end].trim_end().to_string()
+    };
+    for label in ["main", "authenticate"] {
+        assert_eq!(block(&sweep, label), block(&whole_sweep, label), "{label} moved");
+    }
+    assert_eq!(
+        tail_labels(&selected, "fauxware"),
+        ["s_400915", "s_400920", "sneaky"],
+        "authenticate names `sneaky`; main's operands point at the prompts"
+    );
+    assert!(tail_labels(&whole, "fauxware").contains(&"s_400238".to_string()));
+    let tail = |dir: &std::path::Path| {
+        let asm = std::fs::read_to_string(dir.join("fauxware.asm")).unwrap();
+        asm.split_once("\n; --- data ---\n").unwrap().1.to_string()
+    };
+    for label in ["s_400915", "s_400920", "sneaky"] {
+        assert_eq!(block(&tail(&selected), label), block(&tail(&whole), label), "{label} reads differently");
+    }
+    let readme = std::fs::read_to_string(selected.join("README.md")).unwrap();
+    assert!(readme.contains("labeled linear disassembly of the selected functions' code"), "{readme}");
+    let readme = std::fs::read_to_string(whole.join("README.md")).unwrap();
+    assert!(readme.contains("labeled linear disassembly of every code section"), "{readme}");
+    for dir in [whole, selected] {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// gcc lays `pick`'s cold path out as `pick.cold`, below the rest of the
+/// program, and the decompile of `pick` decodes it. The selected `.asm` carries
+/// those bytes as a range of their own, unlabeled because `pick.cold` was not
+/// selected, and a streamed export sweeps the same code once its decompile is
+/// done.
+#[test]
+fn a_selected_project_disassembles_what_its_decompile_decoded() {
+    let bin = fixture("rangetest_gcc_O2_x86_64");
+    let name = "rangetest_gcc_O2_x86_64";
+    let serial = out_dir("asm_cold");
+    let (_, stderr, ok) = run_kuna(&[
+        "decompile-project", &bin, "-o", serial.to_str().unwrap(), "--functions", "pick",
+        "--max-fn-seconds", "0", "--sleighpath", &specs(),
+    ]);
+    assert!(ok, "selected project export failed: {stderr}");
+    let (sweep, blocks) = asm_sweep(&serial, name);
+    assert_eq!(
+        blocks,
+        ["; --- code range 0x1040..0x1044 ---", "; --- code range 0x1300..0x1390 ---"],
+        "{sweep}"
+    );
+    assert!(sweep.contains("\n  00001040: 83 c8 ff "), "the cold block is missing:\n{sweep}");
+    assert!(sweep.contains("\npick:  ; 0x1300\n") && !sweep.contains("pick.cold:"), "{sweep}");
+
+    for jobs in ["1", "2"] {
+        let stream = stream_project(name, "asm_cold_stream", &["--functions", "pick", "--jobs", jobs]);
+        assert_stream_matches_serial(&stream, &serial, name, true);
+        let readme = std::fs::read_to_string(stream.join("README.md")).unwrap();
+        assert!(readme.contains("The disassembly is swept once the decompile"), "{readme}");
+        let _ = std::fs::remove_dir_all(stream);
+    }
+    let _ = std::fs::remove_dir_all(serial);
 }

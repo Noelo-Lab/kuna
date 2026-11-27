@@ -5,6 +5,7 @@
 //! paths stay `kuna_analysis::<analyzer>` (e.g. `kuna_analysis::dwarf`).
 
 pub mod addrtable;
+pub mod android_jni;
 pub mod aif;
 pub mod blobs;
 pub mod callfixup;

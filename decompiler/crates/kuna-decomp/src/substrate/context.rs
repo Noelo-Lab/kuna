@@ -951,6 +951,8 @@ pub struct ArchContext {
     /// type metadata. Copied from
     /// [`Architecture::analysis_valuewitness`](crate::architecture::Architecture).
     pub analysis_valuewitness: bool,
+    /// Android ELF with the NDK JNI type declarations installed.
+    pub android_jni: bool,
     /// (kuna `elemptr`) Declare a pointer used only as an array of one element
     /// type as that pointer; option `elemptr on|off`.  Copied from
     /// [`Architecture::elem_ptr`](crate::architecture::Architecture).  The rule
@@ -1205,6 +1207,9 @@ pub struct ArchContext {
     /// (kuna) `option varargsave`: fold the x86-64 System V variadic
     /// register-save prologue (`p4_calls/kuna_varargsave.rs`).
     pub vararg_save: bool,
+    /// (kuna) The language is x86-64 under a Windows compiler spec, whose
+    /// argument registers have home slots (`p4_calls/kuna_homespill.rs`).
+    pub win64_home_slots: bool,
     /// (kuna) `option linuxsyscall`: rewrite a 32-bit Linux `int 0x80` from an
     /// indirect call through the `swi` userop into a named call on the syscall
     /// the number in `EAX` selects.  Read by
@@ -1741,6 +1746,7 @@ impl ArchContext {
             cast_index: false, // (kuna) option castindex
             ptr_from_use: crate::p5_types::kuna_ptrfromuse::PtrFromUseMode::Void, // (kuna) option ptrfromuse (default void)
             char_ptr: false, // (kuna) option charptr (default off)
+            android_jni: false,
             analysis_valuewitness: true, // (kuna) option valuewitness
             elem_ptr: false, // (kuna) option elemptr, copied from Architecture
             elem_ptr_ranges: std::rc::Rc::new(Vec::new()), // (kuna) elemptr
@@ -1811,6 +1817,7 @@ impl ArchContext {
             outline_spec: String::new(), // outline (opt-in default-off; empty = off)
             remove_cleanup_code: true,   // cleanupcode (DIV-81 default-on; inert on a non-Rust binary)
             vararg_save: true, // varargsave (default-on; x86-64 System V only)
+            win64_home_slots: false,
             linux_syscall: false,        // linuxsyscall (the mode resolves against the Linux-ELF fact in build_arch_handle)
             msvc_str_append: false,      // msvcstrappend (opt-in default-off)
             x64_syscall: crate::p2_lift::kuna_x64syscall::X64SyscallMode::Off, // x64syscall (Architecture::reset_defaults sets the shipped default: on)

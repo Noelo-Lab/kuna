@@ -654,6 +654,8 @@ pub struct Architecture {
     /// Mapped ELF x86 flow recovery: load-time container/target eligibility;
     /// XML, raw, and remote images abstain.
     pub mapped_flow_boundary_image: bool,
+    /// Android ELF with the NDK JNI type declarations installed.
+    pub android_jni: bool,
     /// (kuna `overlapbranch`) Truncate a conditional branch's fall-through when the
     /// branch's own target lies strictly inside that fall-through instruction's
     /// encoding — the anti-disassembly junk-lead-byte idiom, where the fall-through
@@ -1925,6 +1927,8 @@ pub struct Architecture {
     /// (output-changing: it adds named data and function symbols);
     /// `--option itaniumrtti on` enables it.
     pub analysis_itaniumrtti: bool,
+    /// Recover methods registered by Android JNI libraries.
+    pub analysis_jniregister: bool,
     /// (kuna `panicloc`) Rust images only: type and name the panic `Location`
     /// records (`kuna-analysis` `strings/kuna_panicloc.rs`). Default on.
     pub analysis_panicloc: bool,
@@ -2533,6 +2537,7 @@ impl Architecture {
             tail_call_frame: false, // (kuna) option tailcallframe; reset_defaults sets the shipped default
             funcbound_flow: false, // (kuna) option funcboundflow; reset_defaults sets the shipped default
             mapped_flow_boundary_image: false,
+            android_jni: false,
             overlap_branch: false, // (kuna) option overlapbranch; reset_defaults sets the shipped default
             remove_cleanup_code: false, // (kuna) option cleanupcode; reset_defaults sets the shipped default
             vararg_save: false, // (kuna) option varargsave; reset_defaults sets the shipped default
@@ -2789,6 +2794,7 @@ impl Architecture {
             analysis_flirt: false,
             analysis_rtti: false,
             analysis_itaniumrtti: false,
+            analysis_jniregister: true,
             analysis_panicloc: false,
             analysis_aif: crate::kuna_aif::AifMode::Off,
             analysis_aifpoolslide: true,
@@ -3167,6 +3173,7 @@ impl Architecture {
         self.analysis_fid = false; // FID fingerprint matcher consumer default-off
         self.analysis_fid_strict = false;
         self.analysis_flirt = false;
+        self.analysis_jniregister = true;
         self.analysis_rtti = true; // MSVC RTTI / vftable recovery (PE-only pass)
         self.analysis_panicloc = true; // (kuna) default-on, Rust images only: the pass is registered for a rustc-detected image and the XML datatest path never runs an analysis pass (0/675)
         self.analysis_itaniumrtti = true; // (kuna, NOVEL) Itanium RTTI / vtable recovery (ELF-only pass)
@@ -3779,6 +3786,7 @@ impl Architecture {
         ctx.cast_index = self.cast_index && self.print.out_lang() == crate::kuna_lang::OutLang::C; // (kuna) castindex
         ctx.ptr_from_use = self.ptr_from_use; // (kuna) ptrfromuse
         ctx.char_ptr = self.char_ptr; // (kuna) charptr
+        ctx.android_jni = self.android_jni;
         ctx.analysis_valuewitness = self.analysis_valuewitness; // (kuna) valuewitness
         ctx.elem_ptr = self.elem_ptr; // (kuna) elemptr
         ctx.elem_ptr_ranges = std::rc::Rc::clone(&self.globalref_ranges); // (kuna) elemptr
@@ -3832,6 +3840,8 @@ impl Architecture {
         ctx.outline_spec = self.outline_spec.clone(); // outline
         ctx.remove_cleanup_code = self.remove_cleanup_code; // cleanupcode
         ctx.vararg_save = self.vararg_save; // varargsave
+        ctx.win64_home_slots = self.archid.starts_with("x86:LE:64:")
+            && crate::kuna_fastfailnoreturn::archid_is_windows(&self.archid);
         ctx.linux_syscall = self.linux_syscall.fires(self.image_linux_elf); // (kuna) linuxsyscall
         ctx.msvc_str_append = self.msvc_str_append; // msvcstrappend
         ctx.octeon_effects = self.octeon_effects; // octeoneffects

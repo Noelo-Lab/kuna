@@ -1432,6 +1432,7 @@ impl Action for ActionDeindirect {
                     .and_then(|ty| ty.get_code_prototype().cloned())
                     .and_then(|proto| crate::kuna_typedcallabi::admit(data, proto));
                 if let Some(proto) = proto {
+                    let proto = crate::p4_calls::kuna_jnigetenv::specialized(data, op, &proto).unwrap_or(proto);
                     let pending = data.has_restart_pending();
                     let mut fc = data.replace_call_specs(i);
                     let mut recovered = crate::fspec::FuncProto::new();

@@ -165,7 +165,7 @@ impl Code {
 
 /// `ranges` with the empty ones dropped, ascending, and joined where they touch
 /// or overlap.
-fn joined(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
+pub(crate) fn joined(mut ranges: Vec<(u64, u64)>) -> Vec<(u64, u64)> {
     ranges.retain(|&(start, end)| start < end);
     ranges.sort_unstable();
     let mut out: Vec<(u64, u64)> = Vec::with_capacity(ranges.len());

@@ -3355,6 +3355,36 @@ the two is a usage error.
 
 ## 1.4 Metadata analyzers
 
+Android ELF images with an Android identification note or an Android dynamic
+linker use the Android NDK r30 JNI declarations on AArch64, ARM, x86-64 and
+i386. The public C layout describes calls made from both C and C++. Each
+JNIEnv and JavaVM function pointer occupies its NDK-defined slot at the
+target pointer width. The types preserve the JNI scalar and reference names,
+the jvalue union, and the target ABI for variadic and va_list calls. The
+loader binds the NDK's named functions to actual definitions and imports.
+The header and its ABI verification are maintained with
+`scripts/gen_android_jni.py`. An installed Kuna uses the embedded declarations.
+
+`jniregister` is on by default. Starting with the JavaVM supplied to
+JNI_OnLoad, a bounded instruction walk follows the environment through
+GetEnv or AttachCurrentThread and the class through FindClass. At a proven
+RegisterNatives call it resolves the constant table and count, checks the
+relocated name and descriptor and the executable implementation address, and
+binds each unambiguous Java method at that address. The walk stays inside
+JNI_OnLoad, so a registration made by a helper it calls is not recovered. A
+table, or a class, name or descriptor string, that the walk stores into or
+whose address it passes to code it does not model is not read from the image,
+because its contents may differ at run time. The entries are available
+to function enumeration and to single-function decompilation in a fresh
+process. A managed reference in the descriptor establishes the ordinary JNI
+ABI. A descriptor consisting entirely of primitives can also describe an
+Android critical native method, so the recovered name alone does not fix its
+native parameter list. An ordinary method's second implicit parameter is a
+generic object reference until the static/instance distinction is known.
+A JNI long export with a reference argument supplies input types while its
+return is recovered from code. A short export name alone supplies neither the
+Java descriptor nor the static/instance flag.
+
 The always-on core, in pass order (`passes.rs (passes_for)`):
 
 - **Strings** (`strings`, the `StringsAnalyzer` port,
@@ -5144,7 +5174,9 @@ moves.
   to a pointer of any depth, a primitive (at its LP64/ILP32 width and with the
   sign C++ gives it, so `char16_t` is `unsigned short`), or — as a POINTEE only —
   a named opaque structure carrying the bare innermost class name (upstream's
-  placeholder structure). An aggregate passed **by value**, an array, a function pointer, a
+  placeholder structure). A struct or union the program's types already hold under
+  that name is the pointee instead, so an Android image's C++ helper that takes a
+  `_JNIEnv *` points at the NDK's `_JNIEnv`. An aggregate passed **by value**, an array, a function pointer, a
   pointer-to-member or an overloaded operator refuses the whole signature: the
   mangling carries no layout, and a wrong width shifts every following parameter.
   The **return type is deliberately not applied**. Itanium encodes one only for a
@@ -11244,6 +11276,54 @@ call no longer ends it when everything it still wants is a register the default
 prototype model lists as unaffected, and the fold keeps only those values
 across the call. Stepping back over an instruction that does not fall through
 (a `jmp`, a `ret`) leaves the block, so the slice stops there.
+
+*Past the straight run* (`decompiler/crates/kuna-analysis/src/listing/kuna_switchflow.rs`,
+always on in the reference walk). Three shapes x86-64 compilers emit for an
+ordinary `switch` put the base or the range check where the straight step back
+never reaches, and each lost the whole switch: `kuna xrefs --to` a function only
+a case body calls answered `count: 0`, with nothing in `coverage`. clang and MSVC
+hoist the base above a loop and dispatch after an `if/else` whose taken arm is
+laid out after the other arm's `jmp`; MSVC keeps one `LEA RDI,[__ImageBase]` for
+two switches and dispatches the second after the first one's case bodies end in
+`jmp`; and `if (op < 8) { ...; switch (op) }` puts the check forty instructions
+up. The walk now records, for each address, the decoded branches that enter it:
+a conditional branch's taken side, a `jmp`, a switch case. Where the slice steps
+back to the head of a block that no decoded instruction falls into, and exactly
+one decoded branch enters that head, the slice goes on from that branch. It does
+so only when the instructions it has gathered read no table as they are and
+would read one if every register they still want held a constant. The base is
+then the one thing missing, so a jump through a pointer or a virtual call is
+followed no further than before, and a dispatch the straight slice already reads
+is read the same. A function entry is never crossed. A read that crossed is held
+to a stricter range check than the near window's. The check must compare the
+register the table is indexed by, followed up from the table-address sum through
+copies, extensions and scaling by a constant, and past a call only in a register
+the calling convention preserves; no decoded branch may enter the run
+between the check and the jump; the branch-into-the-block form is not used; and
+the count is exact. The condition is evaluated a third time, with the selector
+equal to the constant (a `<` false, a `<=` true, the equality flag set), so `ja`
+after `cmp $c` admits `c + 1` cases and `jae` admits `c`. Without such a check
+only a mask bounds the table. The same rule admits a check past the sixteen
+instructions, up to 128 above the jump in one straight run, which is where clang
+leaves `if (op < 8)`'s and where AArch64 `va_start` code puts the `cmp` of a
+variadic function's `switch`, nine stores above its `b.hi`. MSVC copies the
+selector before such a check and indexes the table by the copy (`mov r10d,ecx;
+cmp ecx,8; jae default; ...; mov ecx,[rdx+r10*4+rvas]`), so a copy made in the
+straight run just above the comparison, with neither register written in
+between, counts as the selector. A check inside the near window is read as
+before, the nearest one counted with the comparison's constant in range.
+
+Over 831 binaries (decbench x86-64, ARM and i386 PE at three optimization
+levels, MSVC and MinGW x64 PEs, Rust, AArch64 and system libraries up to
+libavcodec) the reference walk reads 154 more switches in 33 binaries and no
+switch fewer; nothing changes at `-O0`, on 32-bit ARM or on i386. Each new table's count is its range check's or its mask's, every
+entry of it was read, and where `kuna decompile` renders the switch its case
+values agree with that count. One reference is lost: in cargo a case body now jumps back above a `call
+*%rbp`, so the load of `%rbp` it follows is a join and the call through it is no
+longer filed, which is the carried-value rule above. gcc's `-fipa-ra` keeps a
+hoisted base in a caller-saved register across calls whose bodies it has seen,
+which the calling-convention model does not admit; `kuna decompile` does not read
+those tables either.
 
 *Order.* The walk is breadth-first, and a `.cold` fragment that sorts ahead of
 its parent jumps back into the parent's loop, so a dispatch can be decoded

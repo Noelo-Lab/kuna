@@ -99,10 +99,41 @@ pub fn is_linux_image(bytes: &[u8]) -> bool {
     match bytes[7] {
         ELFOSABI_GNU => true,
         ELFOSABI_NONE => elf
-            .os_note_owner()
+            .os_note_owner(&OS_NOTE_OWNERS)
             .map_or(true, |owner| LINUX_NOTE_OWNERS.contains(&owner)),
         _ => false,
     }
+}
+
+/// A linked Android ELF identifies itself by its NDK ABI note or its program interpreter.
+pub fn is_android_image(bytes: &[u8]) -> bool {
+    let Some(elf) = Elf::parse(bytes) else {
+        return false;
+    };
+    if !matches!(elf.u16(16), Some(2 | 3)) || elf.big {
+        return false;
+    }
+    elf.os_note_owner(&[b"Android"]).is_some()
+        || (0..elf.phnum).any(|i| {
+            let ph = elf.phoff.saturating_add(i * elf.phentsize);
+            if elf.u32(ph) != Some(PT_INTERP) {
+                return false;
+            }
+            let Some((start, end)) = elf
+                .word(ph, 8, 4)
+                .zip(elf.word(ph, 32, 16))
+                .and_then(|(off, size)| elf.range(off, size))
+            else {
+                return false;
+            };
+            matches!(
+                &bytes[start..end],
+                b"/system/bin/linker\0"
+                    | b"/system/bin/linker64\0"
+                    | b"/apex/com.android.runtime/bin/linker\0"
+                    | b"/apex/com.android.runtime/bin/linker64\0"
+            )
+        })
 }
 
 /// The header fields the checks read, and the image to read the rest from.
@@ -235,12 +266,19 @@ impl<'a> Elf<'a> {
     /// Does the note area at `[offset, offset + size)` hold a type-1 note of a
     /// system's owner? Entries are padded to `align`, 4 or 8.
     fn has_os_note(&self, offset: u64, size: u64, align: u64) -> bool {
-        self.note_owner(offset, size, align).is_some()
+        self.note_owner(offset, size, align, &OS_NOTE_OWNERS)
+            .is_some()
     }
 
     /// The owner of the first type-1 note of a system's owner in the note area
     /// at `[offset, offset + size)`. Entries are padded to `align`, 4 or 8.
-    fn note_owner(&self, offset: u64, size: u64, align: u64) -> Option<&'static [u8]> {
+    fn note_owner(
+        &self,
+        offset: u64,
+        size: u64,
+        align: u64,
+        owners: &[&'static [u8]],
+    ) -> Option<&'static [u8]> {
         let (start, end) = self.range(offset, size)?;
         let pad = if align == 8 { 8 } else { 4 };
         let up = |n: usize| n.checked_add(pad - 1).map(|n| n & !(pad - 1));
@@ -249,15 +287,19 @@ impl<'a> Elf<'a> {
             let (namesz, descsz, kind) = (self.u32(at)?, self.u32(at + 4)?, self.u32(at + 8)?);
             let name_at = at + 12;
             let name_end = name_at.checked_add(namesz as usize)?;
-            let name = self.bytes.get(name_at..name_end.min(end))?;
+            let desc_at = up(name_end)?;
+            let desc_end = desc_at.checked_add(descsz as usize)?;
+            if desc_end > end {
+                return None;
+            }
+            let name = self.bytes.get(name_at..name_end)?;
             let owner = name.strip_suffix(b"\0").unwrap_or(name);
-            if kind == 1 {
-                if let Some(known) = OS_NOTE_OWNERS.iter().copied().find(|o| *o == owner) {
+            if kind == 1 && (owner != b"Android" || (name == b"Android\0" && descsz >= 4)) {
+                if let Some(known) = owners.iter().copied().find(|o| *o == owner) {
                     return Some(known);
                 }
             }
-            let desc_at = up(name_end)?;
-            let next = desc_at.checked_add(descsz as usize).and_then(up)?;
+            let next = up(desc_end)?;
             if next <= at {
                 return None;
             }
@@ -268,16 +310,19 @@ impl<'a> Elf<'a> {
 
     /// The owner of the first system ABI-tag note in any `PT_NOTE` segment or
     /// `SHT_NOTE` section.
-    fn os_note_owner(&self) -> Option<&'static [u8]> {
+    fn os_note_owner(&self, owners: &[&'static [u8]]) -> Option<&'static [u8]> {
         for i in 0..self.phnum {
             let ph = self.phoff.saturating_add(i * self.phentsize);
             if self.u32(ph) != Some(PT_NOTE) {
                 continue;
             }
-            let (offset, filesz, align) =
-                (self.word(ph, 8, 4), self.word(ph, 32, 16), self.word(ph, 48, 28));
+            let (offset, filesz, align) = (
+                self.word(ph, 8, 4),
+                self.word(ph, 32, 16),
+                self.word(ph, 48, 28),
+            );
             if let (Some(offset), Some(filesz)) = (offset, filesz) {
-                if let Some(owner) = self.note_owner(offset, filesz, align.unwrap_or(4)) {
+                if let Some(owner) = self.note_owner(offset, filesz, align.unwrap_or(4), owners) {
                     return Some(owner);
                 }
             }
@@ -287,10 +332,13 @@ impl<'a> Elf<'a> {
             if self.u32(sh.saturating_add(4)) != Some(SHT_NOTE) {
                 continue;
             }
-            let (offset, size, align) =
-                (self.word(sh, 24, 16), self.word(sh, 32, 20), self.word(sh, 48, 32));
+            let (offset, size, align) = (
+                self.word(sh, 24, 16),
+                self.word(sh, 32, 20),
+                self.word(sh, 48, 32),
+            );
             if let (Some(offset), Some(size)) = (offset, size) {
-                if let Some(owner) = self.note_owner(offset, size, align.unwrap_or(4)) {
+                if let Some(owner) = self.note_owner(offset, size, align.unwrap_or(4), owners) {
                     return Some(owner);
                 }
             }

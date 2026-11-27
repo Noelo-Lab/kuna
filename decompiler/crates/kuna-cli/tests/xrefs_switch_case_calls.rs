@@ -81,3 +81,24 @@ fn a_far_dispatch_reaches_its_case_callees() {
         assert_eq!(callers(path, callee, &[]), ["o0_dispatch"], "{callee}");
     }
 }
+
+/// Issue #1824 on fixed bytes (`switchflow_x86_64`): a table base hoisted above
+/// an if/else `jmp`, the second of two switches on one base, a range check
+/// twenty instructions up and one on a copy of the selector each give the case
+/// callees their dispatcher, and a far check of another register, one a branch
+/// bypasses, one a call separates from the index, and a base above a block
+/// boundary under a check of another value give none.
+#[test]
+fn a_base_or_check_past_a_block_boundary_reaches_the_case_callees() {
+    let binary = common::fixture("switchflow_x86_64");
+    let path = std::path::Path::new(&binary);
+    for (dispatcher, prefix) in [("hoisted", "t_h"), ("shared", "t_s2"), ("far_guard", "t_f"), ("far_copy", "t_c")] {
+        for n in 0..4 {
+            let callee = format!("{prefix}_{n}");
+            assert_eq!(callers(path, &callee, &[]), [dispatcher], "{callee}");
+        }
+    }
+    for callee in ["t_o_0", "t_j_0", "t_x_0", "t_k_0"] {
+        assert!(callers(path, callee, &[]).is_empty(), "{callee}");
+    }
+}

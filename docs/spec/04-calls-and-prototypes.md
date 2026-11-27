@@ -4187,7 +4187,8 @@ In the one-shot tail, after merge has built HighVariables:
 **`ActionInputPrototype`** (`coreaction_protos.rs (ActionInputPrototype)`)
 re-derives the function's own parameter list from its input Varnodes — each
 input that the model admits as a possible parameter becomes a trial, active
-iff it has readers; `fillin_map` orders them (with the (kuna) own-input
+iff it has readers (or, on Windows x64, the body spilled it to its home slot:
+see the (kuna) home-slot section in 4.4); `fillin_map` orders them (with the (kuna) own-input
 gap-tolerance above, which applies only to this call of it); recovered-but-unreferenced
 parameters get fresh input Varnodes unless something already overlaps the
 slot; and the store is rewritten with each parameter typed from its
@@ -4404,6 +4405,17 @@ why an existing lock wins: a user `override prototype` at the call address, or
 a prototype an earlier pass already forced, is never replaced. A target with no
 declared prototype (an untyped `void *` field, or a code type without one)
 leaves the site on its model-recovered argument list.
+
+On an Android ELF, a typed call through the GetEnv field of JNIInvokeInterface
+still carries the header's generic output parameter, `void **`. When the
+version argument is a constant JNI version supported by Android, the call site
+refines this parameter to `JNIEnv **`. A successful call then leaves an
+environment pointer in the caller's output slot. Loads through that pointer
+can identify fields such as FindClass and RegisterNatives and apply their
+declared parameter types. A call requesting another interface, such as JVMTI,
+keeps the generic parameter. When another indirect call passes the same output
+address without a known JNI version, the shared location retains its generic
+type. The receiver type and field must both agree with the loaded JNI declaration (`kuna_jnigetenv.rs`).
 
 A prototype whose storage puts a parameter or the return value in one of its
 model's floating-point entries is forced only where the image states a
@@ -6051,6 +6063,91 @@ it pushed. What it cannot separate is a function that pushes an argument registe
 purely to preserve it across a call and pops it into a *different* register that
 it then returns; nothing local distinguishes that from the alignment idiom, and
 this rule reads it as maintenance.
+
+#### (kuna) The register an epilogue pops to release the frame (`kuna_epiloguepop.rs`)
+
+`float f(void *p, unsigned i) { double d = *(double *)((char *)p + 0x108);
+return ((float *)&d)[i]; }` is, from clang for Win64 (and for x86-64 System V
+without a red zone), `push rax; vmovsd xmm0,[rcx+0x108]; vmovsd [rsp],xmm0; mov
+eax,edx; vmovss xmm0,[rsp+rax*4]; pop rax; ret` (GH-1969). The `push rax` and
+`pop rax` are the function's eight-byte frame, and the spill overwrote the
+pushed slot, so at the RETURN `rax` holds the double's bits and `xmm0` the
+selected float. Both trials pass ancestor realism and `ancestorOpUse`, and the
+output model's fallback prefers the general class, so the function printed
+`unsigned long long f(void *a0) { return ((unsigned long long *)a0)[0x21]; }`:
+the index parameter and the indexed read were dead. The same happens to every
+float function clang gives an eight-byte frame and a call: `float twice(float x)
+{ g(); return x * 2.0f; }` is `push rax; movss [rsp+4],xmm0; call g; movss
+xmm0,[rsp+4]; addss xmm0,xmm0; pop rax; ret` and printed `unsigned long
+twice(unsigned int a0)` returning the spill slot, and i386's `push eax` ...
+`pop eax` around an x87 result returned the argument's bits from `eax`.
+
+GCC and LLVM pop into a register to release stack, and choose one that is dead
+there. The one pop they aim at a live register is clang's minimum-size (`-Oz`)
+constant, `push imm8; pop rax` for `return 5`. `kuna_epiloguepop::note_pops`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_epiloguepop.rs`) runs right
+after `ActionReturnRecovery` scores the output trials for the first time, while
+each RETURN still reads the register the instruction wrote, and marks a trial
+when:
+
+* its value at every live RETURN is the write of a single-register pop: copied
+  out of the instruction's temporary, or written directly, by a LOAD whose
+  address is the stack pointer, in an instruction that also adds the loaded
+  width to that same stack pointer (`kuna_epiloguepop.rs (popped)`), and that
+  stack pointer was not set by a `push` of an immediate, an instruction that
+  STOREs a constant through it (`kuna_epiloguepop.rs (pushed_constant)`); and
+* another trial, in an output entry of a different storage class (`xmm0`,
+  `ST0`), is already active on that pass (`kuna_epiloguepop.rs (rival)`).
+
+The first pass still sees the frame's stores. A float the function stores into
+the slot the pop reads, as when an eight-byte `struct { float f; int i; }` is
+built in the frame and returned in `rax`, has a STORE among its uses and is not
+active yet, so nothing is marked and the struct keeps its return.
+
+After the last scoring pass, before the output map,
+`kuna_epiloguepop::yield_to_other_class` makes a marked trial inactive when its
+rival is still active and the output model, given the trials without it,
+returns something. The float then stands alone: `unsigned int f(void *a0,unsigned
+int a1)` returns `((unsigned int *)&v1)[a1]`, as the red-zone build of the same
+function always did, `twice` is `float twice(float a0) { g(); return a0 + a0; }`,
+and the i386 one returns `ST0`.
+
+A pop with no rival is unchanged: `pushfq; pop rax; ret` still returns the flags,
+and a function that only moves a double through `xmm0` to memory before `pop rax`
+keeps `rax`, since that `xmm0` is not active. A popped second register of an
+`edx:eax` or `rdx:rax` pair with no float beside it is left to the pair rules
+above. Beside an active `ST0`, the popped `edx` of MSVC's x87 CRT helpers (`push
+edx; fstcw [esp]; ... pop edx; ret`) is dropped as well, and `eax`, which those
+helpers set as a status, still outranks `ST0` in the model's fallback. The rule
+is always on. A constant popped into `rax` stays the return beside an active
+`xmm0`: clang `-Oz` builds `int f(volatile float *p) { (void)*p; return 5; }`
+as `movss xmm0,[rdi]; push 5; pop rax; ret`, and the discarded read leaves an
+active `xmm0` that would otherwise take the return. What the rule cannot
+separate is hand-written code that leaves a dead float in `xmm0` while returning
+a register value it pushed and popped back into `rax`.
+
+GCC keeps its frames with `sub`/`add`, so over the decbench x86-64 binaries at
+O0 and O2 and the ARM firmware at O2 (497 images) the rule never fires. Built by
+clang, zlib, SQLite and SDL's libm (shared objects, Win64 and i386 COFF objects)
+change nothing; 83 SDL sources at O2, O1, Os and O2 without a red zone change 24
+functions, all float returns that printed the popped slot (`SDL_acos`,
+`SDL_round`, `SDL_GetDisplayContentScale`, `SDL_GetSurfaceHDRHeadroom`, i386
+`SDL_sqrtf`), and the parameter lists of the 22 System V ones match their DWARF
+before and after. Over 240 PE images (148,269 functions) 22 functions change in
+four i386 images, all MSVC x87 CRT helpers: the `fprem` and truncation helpers
+now return `ST0`, and the `cos`-style helpers drop the popped `edx` half. Where
+`ST0` becomes the return, the helper's `edx` flag argument, which the `ST0`
+result depends on, becomes a parameter, and the `__fastcall` model puts the
+`ecx` the helper only saves before it.
+
+`tests/stages/kuna-epiloguepop.xml` pins the issue's function, a Win64 float
+array returned by index, the two controls and the frame-built struct; `kuna-epiloguepop-sysv.xml` pins
+`twice`, the issue's function without a red zone, which must read as its
+red-zone build, and the `-Oz` constant beside a discarded float read;
+`kuna-epiloguepop-x87.xml` pins the i386 `twice`. In
+`decompile-all`, clang's `float v1(void) { return (float)geti(); }`
+(`floatparam_retreg_clang_O2`) printed `unsigned long sub_11c0(void)` returning
+the popped slot and now prints `float sub_11c0(void)`.
 
 #### (kuna, rustc) The two-register `ScalarPair` return (`rustabi`)
 
@@ -8316,6 +8413,75 @@ is not recognised. `protoorder` still declines a variadic recovered prototype
 function. `tests/stages/kuna-varargsave.xml` checks two folded functions, the two refused
 shapes and the option off. Windows x64 and every other target are untouched.
 
+### (kuna) A Windows x64 argument register spilled to its home slot (`kuna_homespill.rs`)
+
+(kuna) On Windows x64, an `x86:LE:64` language under the `windows` or
+`clangwindows` compiler spec, a function that stores an argument register's
+incoming value into the home slot the convention reserves for that register
+takes that argument. This is always on and inert on every other target
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_homespill.rs (record)`).
+Every Windows x64 call leaves 32 bytes above the return address, one 8-byte
+slot per argument register: `RCX`/`XMM0` at entry `RSP+0x8`, `RDX`/`XMM1` at
+`+0x10`, `R8`/`XMM2` at `+0x18`, `R9`/`XMM3` at `+0x20`. Unoptimized MSVC, gcc
+and clang store each declared parameter there at its declared width (`mov
+byte ptr [rsp+0x20],r9b` for a `char`) and read it back from the slot. The
+slot is in the caller's frame and nothing reads it after the return, so a
+parameter the body never reloads leaves only a dead store, which is gone
+before `ActionInputPrototype` scores the inputs: `int f(int a,int b) { return
+0; }` printed `f(void)` while its callers printed `f(1,2)`. How many
+parameters survived also depended on which reloads stayed live, so a fact
+about another function could take them away: a caller that reloaded its
+home-slotted `char` only to pass it as the fifth of nine arguments printed
+`void` once a `prototype` assertion declared that callee with four.
+
+`record` runs from `ActionHeritage` right after the first heritage pass, when
+the registers are in SSA form and the stack is not: a spill is still the raw
+`STORE` of an incoming register, or of its low piece (`SUBPIECE` at offset 0,
+through copies), to the entry stack pointer plus a constant, which is read back
+through copies and constant additions and subtractions, so `push rbp; mov
+rbp,rsp; mov [rbp+0x10],ecx` reaches `RSP+0x8`. It notes the register and the
+stored width when the constant is that register's own home offset and no other
+store of the function writes any byte of that slot; a slot the function also
+uses for something else says nothing (MSVC /O2 keeps locals in home slots, and
+one such function in a C++ crackme spills `rdx`, which its only caller never
+sets, and then keeps a local in the same slot). `mark` (`kuna_homespill.rs (mark)`), called by `ActionInputPrototype`
+once the input Varnodes are registered as trials, makes the trial covering each
+noted register active, or registers an unreferenced active trial at the stored
+width when none does; `fillin_map` keeps it and the unreferenced-trial path
+gives it a fresh input Varnode. The parameter takes the stored width, so four
+spills of `ecx`, `edx`, `r8d` and `r9b` print `(unsigned int a0,unsigned int
+a1,unsigned int a2,char a3)` where the unreferenced fillers printed eight-byte
+integers. A store of one argument register into another's slot (the CRT's
+`_NLG_Notify` lays a record over the home area), of a value the function
+computed, or of a callee-saved register (MSVC /O2 saves `rbx` and `rsi` in home
+slots) is not noted, the function's model must still accept the storage
+(`possible_input_param`), and a declared prototype for the function itself
+skips the recovery as before. A variadic function's register save is not noted
+either (`kuna_homespill.rs (vararg_save)`). Every compiler stores the whole
+registers that may carry varargs, from the first unnamed argument's slot
+through `R9`'s, and `va_start` takes the address of that first slot; gcc also
+stores them in a variadic function that never calls `va_start`, leaving the
+named parameters' slots unwritten when it optimizes. So when the address of a
+home slot is used other than to load or store through it (`va_start`, or an
+out-parameter pointer into the slot), the run of whole-register spills that
+starts at such a slot and reaches `R9`'s slot is a save of varargs, and when no
+slot's address is taken, so is a run that reaches `R9`'s slot above slots the
+function never writes. A narrower spill, such as zlib's `uncompress` storing
+`r9d` and passing the slot's address as `&sourceLen`, stays a parameter.
+Without this, `int f(const char *fmt,...)` printed four parameters, and gcc's
+`snprintf.constprop.0` filled `r8`, which it never reads, below the `r9`
+vararg. An unoptimized variadic function that never calls `va_start` still
+shows its four registers: its prologue is that of a function declaring them.
+Call sites are untouched, except where a rule
+that reads the callee's recovered parameter list now finds the register in it:
+`protoorder` states the spilled parameter's type to callers, so a constant
+passed in it prints as that type (`__DestructExceptionObject(a0,1)` where the
+low byte of a leftover register was merged in before). `tests/stages/kuna-homespill-win64.xml`
+checks the spills, the refusals, both variadic saves and an asserted callee;
+`decompiler/crates/kuna-cli/tests/homespill_assert.rs` checks that a
+`prototype` assertion repeating the callee's own declaration changes only that
+call on `decompile-all` and in the `decompile-project` header.
+
 ### (kuna) `callbacktype` — the prototype of the slot a callback is passed to
 
 `protoorder` carries a callee's types out to its callers and `calleevote`
@@ -9431,6 +9597,66 @@ a floating output entry that a narrow write fills, so the rule changes nothing
 elsewhere. The stage test
 `tests/stages/gh873-zerofillreturn-a64.xml` runs clang and gcc AArch64 code.
 
+### (kuna) The quotient beside a floating return (`kuna_quotientreturn.rs`)
+
+x86 `div` and `idiv` write the quotient to `eax`/`rax` and the remainder to
+`edx`/`rdx` in one instruction, so `float f(int a, int b) { return a % b; }`
+compiles to `mov eax,edi; cdq; idiv esi; cvtsi2ss xmm0,edx; ret` and leaves a
+quotient nothing reads in `rax`. `ActionReturnRecovery` scores both `rax` and
+`xmm0` as holding a value only the RETURN reads, and with both active the output
+fill-in prefers the general register (`TYPECLASS_GENERAL` sorts before
+`TYPECLASS_FLOAT`). The function printed `unsigned long f(int a0, int a1)` with
+`return (long)a0 / a1 & 0xffffffff;`, the quotient in place of the remainder,
+and dead-code removal dropped the conversion. One such path is enough: a
+callback whose other arm returns `(float)rng() * k` lost that arm as well.
+
+The rule (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_quotientreturn.rs`,
+always on) runs in `ActionReturnRecovery` once the trials are fully checked,
+before the output fill-in. While a trial in the first floating output entry
+(`xmm0`) is active, `drop_quotient` marks inactive each active trial in a
+non-floating entry whose value at every normal RETURN is made only of
+byproducts. A later floating entry alone is no return: with only `xmm1` active,
+the second half of a pair of doubles, retiring the quotient left the function
+`void` with no parameters, so the quotient stays the return there. The value
+is followed through COPYs, zero extensions, truncations to the low bytes, the
+low half of a PIECE that holds all the bytes still wanted, and each input of a
+MULTIEQUAL, and each value reached must be one of:
+
+- the result of an INT_DIV or INT_SDIV whose remainder, the INT_REM or INT_SREM
+  of the same two operands, is among the values the floating trials' values at
+  that RETURN are computed from (a bounded backward slice through any op);
+- one of those values itself: the arm of the callback that converts the integer
+  `rng()` returned in `rax` reads it into the float;
+- the incoming value of the trial's own storage, which the function never wrote
+  on that path (`if (c) return (float)(a % b); return 2.0f;`).
+
+At least one must be a quotient. The float is then the return:
+`float f(int a0, int a1)` with `return (float)(a0 % a1);`, and a 64-bit
+`div rsi; cvtsi2sd xmm0,rdx` returns a `double`. A declared or DWARF output is
+never touched, nor is storage that the run's callers are seen to read after the
+call. A quotient beside a remainder that the float is not computed from stays
+the return: `*out = (float)(a % b); return a / b;` stores the float, so `xmm0`
+is not active, and `g = a % b; return a / b;` writes no `xmm0` at all.
+
+The binary cannot tell everything apart. A function returning the SysV
+aggregate `struct { long q; double r; }` built from `a / b` and `a % b`
+compiles to the same instructions as `return (double)(a % b);`; kuna recovers
+no mixed-class pair without a declared type, and the function decompiled alone
+now returns the `double` member where it returned the `long` one. In
+`decompile-all` a caller that reads `rax` after the call makes `rax` forced
+storage, so the `long` member stays the return there, as before. `void f(int
+a, int b, float *o) { *o = a % b; }` has the same code as the stored-float case
+above and still returns the quotient. MSVC converts an `int` with `movd xmm0,r32; cvtdq2ps
+xmm0,xmm0`, which rebuilds `xmm0` as four 4-byte lanes after a 16-byte write.
+Return recovery does not score `xmm0` as returned there at all, so no floating
+trial is active and those functions keep their quotient (or `void`) return.
+32-bit x86 returns a float in `ST0`, loaded with `fild` from the stack slot the
+remainder is stored to, and is unchanged: `float f(int a, int b) { return a %
+b; }` built with `gcc -m32 -O2` still prints `return a0 / a1;`. A divide that
+writes one register (AArch64 `sdiv` and `msub`) leaves no quotient beside the
+remainder, so those targets are unchanged too. The stage test
+`tests/stages/gh1883-quotientreturn-x64.xml` covers the shapes above.
+
 ### (kuna) The registers a zeroing epilogue clears (`kuna_zerocallregs.rs`)
 
 gcc's `-fzero-call-used-regs` (openssh-portable's hardened builds use `=all`,
@@ -9740,7 +9966,12 @@ callee-first plan, not once the plan is done: a wrapper is redone as soon as its
 first reader is decompiled, so every later reader reads the wrapper's return
 the first time it is decompiled. A reader decompiled later that reads the
 wrapper wider forces it again at that width, and one that reads another
-register withdraws it: it returns nothing again, as before.
+register withdraws it: it returns nothing again, as before. Settling after
+every function does not walk every callee's claims each time: `due` looks only
+at the callees left unsettled since its last look, those whose claims, recovered
+return, return storage, forced storage or withdrawal changed, and those it last
+forced or withdrew. A callee's verdict reads nothing else, and one that acts
+leaves nothing to do the next time, so every other callee would come out empty.
 
 Callers that read a register pair and callers that read only its least
 significant register agree on that register (`kuna_voidret.rs
@@ -9932,7 +10163,11 @@ function whose redo changed either has every reader decompiled before that redo
 decompiled again (`kuna_voidret.rs (stale_readers)`) when it now states a return
 to `callrettype`, returns a float, or had its float return withdrawn; a callee
 that states nothing has nothing to hand a reader, and only a wrapper still
-waiting on it is redone. Such a reader typed the
+waiting on it is redone. The readers and callers a change can name are listed
+when the redo makes it (`kuna_voidret.rs (Owed)`): a function is filed as one
+only by its own decompile, which comes after, so the list never grows, and each
+settling drops the functions decompiled since and forgets a change with none
+left. Such a reader typed the
 call's result itself, against a callee it saw return nothing, and kept that
 text: cp's callers printed `unsigned long v10 = sub_18a0f(4,a1)` beside `void
 *sub_18a0f(..)`, which is not C, and find's printed `*(unsigned int

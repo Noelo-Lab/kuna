@@ -1931,6 +1931,7 @@ impl Action for ActionReturnRecovery {
             }
         }
 
+        crate::p4_calls::kuna_epiloguepop::note_pops(data, &mut active, &return_ops);
         crate::p4_calls::kuna_voidret::score_forced(data, &mut active, &return_ops, maxancestor);
         crate::p4_calls::kuna_condexeret::end_pass(&mut active, cond_failed);
         active.finish_pass();
@@ -1945,6 +1946,8 @@ impl Action for ActionReturnRecovery {
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
             crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_quotientreturn::drop_quotient(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_epiloguepop::yield_to_other_class(data, &mut active);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             crate::p4_calls::kuna_callwide::retain_pair(data, &mut active, &return_ops);
             crate::kuna_bejoin::keep_proven_pair(data, &mut active, &return_ops);
@@ -2123,6 +2126,7 @@ impl Action for ActionInputPrototype {
                     triallist.push(vn);
                 }
             }
+            crate::kuna_homespill::mark(data, &mut active);
             crate::kuna_armfloatargs::mark_own_reads(&mut active, data);
             let manager = data.get_arch().manage.clone();
             let _ = data.get_func_proto_mut().resolve_model(&active);

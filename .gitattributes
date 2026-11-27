@@ -1,0 +1,14 @@
+# Checked out with LF on every platform, whatever core.autocrlf says: the test
+# harness, the Ghidra oracle dumps, the include_str! goldens and the generated
+# docs/options.md compare bytes, and a CRLF checkout makes them fail on Windows.
+* text=auto eol=lf
+
+# Captured tool output stored with its own CRLF or mixed line endings: left
+# exactly as stored.
+docs/decbench/typecampaign/final-*/moved.csv -text
+docs/features/elfmain/optsweep-moved.csv -text
+docs/features/orchain/sweep-o0/moved.csv -text
+docs/features/rustfmtpieces/native-*.stderr -text
+
+# Raw binary fixtures with no NUL byte, which git's own detection reads as text.
+*.bin -text
