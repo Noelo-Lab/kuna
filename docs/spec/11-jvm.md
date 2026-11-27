@@ -858,9 +858,9 @@ whose `finally` assigns `n` returned the value from before the `finally`.
 walks from the place of the copy to the statement the jump leaves and refuses the copy when it
 passes a protected body the exit could run differently in: a `try` with a `catch` or a
 `synchronized` body unless the exit is a `return` of nothing, a constant or a variable (which
-cannot throw), and the `try` of a `finally` unless it returns nothing or a constant (the
-`finally` runs after the value is computed). The `break` then stays, labelled where it leaves
-an outer statement.
+cannot throw), and the `try` of a `finally` unless it returns nothing, a constant, or a local
+the `finally` does not assign (the `finally` runs after the value is computed, and nothing
+else can change a local). The `break` then stays, labelled where it leaves an outer statement.
 
 **ECJ's layout (kuna).** In a class the Eclipse compiler wrote (section 11.3) the rules above
 read ECJ's code, which places an `if`'s branches, its exits and its `continue` and `break`

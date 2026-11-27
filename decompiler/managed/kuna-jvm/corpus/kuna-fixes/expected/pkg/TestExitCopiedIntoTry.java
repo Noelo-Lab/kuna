@@ -45,4 +45,26 @@ public class TestExitCopiedIntoTry {
 
       return n;
    }
+
+   public static int breakToReturnFinallyReads(int[] a) {
+      int n = 0;
+
+      for (int x : a) {
+         try {
+            switch (x) {
+               case 0:
+                  break;
+               case 1:
+                  n = x;
+                  return n;
+               default:
+                  return n;
+            }
+         } finally {
+            System.out.println(n);
+         }
+      }
+
+      return n;
+   }
 }
