@@ -30,6 +30,7 @@ use crate::fixes::lambdas::lambda_argument_overload;
 use crate::fixes::lambdas::lambda_pertinence;
 use crate::fixes::lambdas::lambda_type_variable_target;
 use crate::fixes::lambdas::raw_target_cast;
+use crate::fixes::generic_casts::argument_checkcast;
 use crate::fixes::generic_casts::raw_receiver_erasure;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
@@ -2040,6 +2041,7 @@ impl InvocationExprent {
             buf.push_newline_group(indent, 0);
         }
 
+        let raw_receiver = self.get_functype() == Type::General && raw_receiver_erasure::has_raw_receiver(self);
         let arg_names = self.d(|d| d.kuna_arg_names.clone());
         let skip_arg = self.d(|d| d.kuna_skip_arg);
         let continuation_arg = self
@@ -2081,6 +2083,7 @@ impl InvocationExprent {
             if let Some(cast) = raw_target {
                 raw_target_cast::write(&mut buff, lst_parameters.get(i), &cast, indent);
             } else {
+                let _erased = (raw_receiver && !writing_kotlin()).then(argument_checkcast::mark_erased_parameter);
                 ExprProcessor::get_casted_argument(
                     lst_parameters.get(i),
                     &types[i],

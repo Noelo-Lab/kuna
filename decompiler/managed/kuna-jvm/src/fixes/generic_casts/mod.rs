@@ -4,6 +4,7 @@
 //! supertype outside the input from the generic supertypes the known classes'
 //! signatures declare.
 
+pub(crate) mod argument_checkcast;
 pub(crate) mod argument_generic_cast;
 pub(crate) mod bounded_inference_cast;
 pub(crate) mod disjoint_generic_cast;

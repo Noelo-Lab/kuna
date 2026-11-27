@@ -23,6 +23,7 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::fixes::generic_casts::unchecked_generic_cast;
 use crate::fixes::generic_casts::bounded_inference_cast;
+use crate::fixes::generic_casts::argument_checkcast;
 use crate::fixes::generic_casts::argument_generic_cast;
 use crate::fixes::generic_casts::receiver_type_arguments;
 use crate::fixes::generic_casts::disjoint_generic_cast;
@@ -1368,6 +1369,7 @@ impl ExprProcessor {
         argument_target: Option<VarType>,
     ) -> bool {
         let declared_target = disjoint_generic_cast::take_declared_target();
+        let erased_parameter = argument_checkcast::take_erased_parameter();
         let mut exprent = exprent;
         let mut left_type = left_type.clone();
 
@@ -1388,6 +1390,9 @@ impl ExprProcessor {
         }
 
         let right_type = exprent.get_inferred_expr_type(Some(&left_type));
+        if erased_parameter {
+            argument_checkcast::keep(exprent, &left_type);
+        }
         exprent = Self::narrow_generic_cast_type(exprent, &left_type);
 
         let do_cast = !left_type.higher_equal_in_lattice_than(&right_type)

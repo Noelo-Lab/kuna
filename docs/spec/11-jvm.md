@@ -1892,6 +1892,17 @@ parameter's type
 read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
 inferred type stays, since a constructor infers its class's type arguments from it (a diamond
 inferred from the erasure would not compile).
+Vineflower drops a cast whose operand's inferred type is already of the cast's class, which
+holds where javac inserts the `checkcast` again: javac casts an argument to the erasure of
+its parameter's type in the call's instantiated method type and nowhere else. On a receiver
+of raw type that type is the erasure of the declared one, so `keys.add((Spatial)
+page.getKey(i))` on an `ArrayList keys` written without a LocalVariableTable lost its cast
+(`add` takes `Object`) and the recompiled call its `checkcast`. `InvocationExprent` marks each
+argument of a call on a raw receiver (`argument_checkcast::mark_erased_parameter`), and
+`ExprProcessor::get_casted_argument` then writes a dropped cast of a class (no array) when the
+operand's own erased type is not of that class and the erased parameter type is not of it
+either (`decompiler/managed/kuna-jvm/src/fixes/generic_casts/argument_checkcast.rs (keep)`):
+`keys.add((String) p.key)`, `values.add((Integer) p.pick(3))`.
 The declared type of a call looks past a bridge (`desc_of`): javac gives a public class a public
 forwarder, without a signature, for each public method it inherits from a superclass that is not
 public, and its erased result made a for-each over the call one over a raw iterable, cast to its
