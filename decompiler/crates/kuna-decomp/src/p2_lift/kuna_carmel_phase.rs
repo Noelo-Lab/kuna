@@ -24,6 +24,7 @@ struct FfOps {
     fetch: u64,
     execute: u64,
     late_tick: u64,
+    visibility: u64,
 }
 
 pub(crate) struct PhaseDecode<'a> {
@@ -80,6 +81,7 @@ impl<'a> PhaseDecode<'a> {
             fetch: index(b"carmel_sample_ff_at_of")?,
             execute: index(b"carmel_sample_ff_at_ex")?,
             late_tick: index(b"carmel_record_ff_late_admission")?,
+            visibility: index(b"carmel_record_ff_visibility")?,
         }))();
         let (word, bits) = arch.with_context_db(|db| {
             let field = db.get_variable(b"carmel_phase_emit").ok()?;
@@ -100,6 +102,7 @@ impl<'a> PhaseDecode<'a> {
         let mut slot_clocks = BTreeMap::<u64, usize>::new();
         let mut dual_reads = BTreeSet::new();
         let mut ff_fetches = false;
+        let mut ff_late_visibility = false;
         let mut reads = false;
         let mut resets = Vec::new();
         let mut address_ex = Vec::new();
@@ -129,6 +132,9 @@ impl<'a> PhaseDecode<'a> {
             } else if self.ff.is_some_and(|ff| index == ff.late_tick) {
                 dual_reads.insert(offset);
                 markers.push((op_id, offset, Mark::Tick));
+            } else if self.ff.is_some_and(|ff| index == ff.visibility) {
+                ff_late_visibility |= ff_is_late(fd, op);
+                markers.push((op_id, offset, Mark::FfVisibility));
             } else if self.ff.is_some_and(|ff| index == ff.fetch) {
                 ff_fetches = true;
             } else if self.ff.is_some_and(|ff| index == ff.capture || index == ff.execute) {
@@ -195,7 +201,7 @@ impl<'a> PhaseDecode<'a> {
             fd.op_set_opcode(query, type_op_for(OpCode::CPUI_COPY));
             fd.op_set_input(query, mask, 0)?;
         }
-        if !reads && !ff_fetches && dual_reads.is_empty() {
+        if !reads && !ff_fetches && !ff_late_visibility && dual_reads.is_empty() {
             for (marker, _, kind) in markers {
                 match kind {
                     Mark::Copy => lower_copy(fd, marker, 1),
@@ -205,7 +211,7 @@ impl<'a> PhaseDecode<'a> {
             }
             return Ok(());
         }
-        let mut known = BTreeSet::new();
+        let mut known = BTreeMap::<u64, Boundary>::new();
         let mut cleanup = Vec::new();
         let mut copies = Vec::new();
         for (marker, offset, kind) in markers {
@@ -219,8 +225,11 @@ impl<'a> PhaseDecode<'a> {
                 copies.push(marker);
             } else if kind == Mark::Redirect {
                 cleanup.push(marker);
+            } else if kind == Mark::FfVisibility {
+                known.entry(offset).or_default().ff = true;
+                cleanup.push(marker);
             } else {
-                known.insert(offset);
+                known.entry(offset).or_default().address = true;
                 if matches!(kind, Mark::EndUnmodeled | Mark::FixedAccess | Mark::Omitted) {
                     cleanup.push(marker);
                 }
@@ -228,7 +237,7 @@ impl<'a> PhaseDecode<'a> {
         }
         // structure_reset has assigned dense block numbers in this order.
         let blocks: Vec<_> = (0..fd.bblocks_get_size()).map(|n| fd.bblocks_get_block(n)).collect();
-        let ff_regs = if dual_reads.is_empty() {
+        let ff_regs = if dual_reads.is_empty() && !ff_late_visibility {
             None
         } else {
             let reg_addr = |name: &[u8]| {
@@ -309,7 +318,7 @@ impl<'a> PhaseDecode<'a> {
     }
 
     fn trace(
-        &self, fd: &Funcdata, visits: &VisitedMap, known: &BTreeSet<u64>, delayed: &BTreeMap<u64, bool>,
+        &self, fd: &Funcdata, visits: &VisitedMap, known: &BTreeMap<u64, Boundary>, delayed: &BTreeMap<u64, bool>,
         dual_reads: &BTreeSet<u64>, ff_regs: &[Address], block: BlockId,
     ) -> Trace {
         let mut trace = Trace::default();
@@ -319,10 +328,10 @@ impl<'a> PhaseDecode<'a> {
             let op = fd.obank().get(id).unwrap();
             let addr = op.get_addr();
             if trace.last.as_ref() != Some(addr) {
-                if !known.contains(&addr.get_offset())
-                    || trace.last.as_ref().is_some_and(|previous| !contiguous(visits, previous, addr))
-                {
-                    trace.events.push(Event::Barrier);
+                let boundary = known.get(&addr.get_offset()).copied().unwrap_or_default();
+                let discontinuity = trace.last.as_ref().is_some_and(|previous| !contiguous(visits, previous, addr));
+                if !boundary.address || discontinuity {
+                    trace.events.push(Event::Barrier(boundary.ff && !discontinuity));
                 }
                 trace.first.get_or_insert_with(|| addr.clone());
                 trace.last = Some(addr.clone());
@@ -348,9 +357,12 @@ impl<'a> PhaseDecode<'a> {
                 Some(index) if self.ff.is_some_and(|ff| index == ff.late_tick) => {
                     trace.events.push(Event::Tick(id, true));
                 }
+                Some(index) if self.ff.is_some_and(|ff| index == ff.visibility) => {
+                    trace.events.push(Event::FfVisibility(ff_is_late(fd, op)));
+                }
                 Some(index) if self.ff.is_some_and(|ff| index == ff.fetch) => trace.events.push(Event::FfFetch(id)),
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
-                Some(index) if Some(index) == self.end_unmodeled => trace.events.push(Event::Barrier),
+                Some(index) if Some(index) == self.end_unmodeled => trace.events.push(Event::Barrier(false)),
                 Some(index) if Some(index) == self.redirect => {
                     trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
                 }
@@ -360,7 +372,7 @@ impl<'a> PhaseDecode<'a> {
                     | OpCode::CPUI_LOAD | OpCode::CPUI_STORE) => {
                     // Bus effects and opaque transfers can change the spacing
                     // of the next sample. Prove its age again after this op.
-                    trace.events.push(Event::Barrier);
+                    trace.events.push(Event::Barrier(false));
                     fixed_bus = None;
                 }
                 _ => {}
@@ -386,6 +398,12 @@ fn userop(fd: &Funcdata, op: &PcodeOp) -> Option<u64> {
     if op.code() != OpCode::CPUI_CALLOTHER { return None }
     let index = fd.vbank().get(op.get_in(0)?)?;
     index.is_constant().then(|| index.get_offset())
+}
+
+fn ff_is_late(fd: &Funcdata, op: &PcodeOp) -> bool {
+    let mode = fd.vbank().get(op.get_in(1).unwrap()).unwrap();
+    debug_assert!(mode.is_constant() && mode.get_offset() <= 1);
+    mode.get_offset() == 1
 }
 
 fn op_reads_ff(fd: &Funcdata, op: &PcodeOp, ff: &[Address]) -> bool {
@@ -431,6 +449,7 @@ enum Mark {
     Redirect,
     EndUnmodeled,
     FixedAccess,
+    FfVisibility,
     Omitted,
     Copy,
 }
@@ -491,12 +510,19 @@ fn prove_omitted_prefix(fd: &Funcdata, visits: &VisitedMap, markers: &[(OpId, u6
     Ok(())
 }
 
+#[derive(Clone, Copy, Default)]
+struct Boundary {
+    address: bool,
+    ff: bool,
+}
+
 #[derive(Clone, Copy)]
 enum Event {
-    Barrier,
+    Barrier(bool),
     Tick(OpId, bool),
     Read(OpId),
     FfFetch(OpId),
+    FfVisibility(bool),
     RawFfRead(OpId),
 }
 
@@ -518,7 +544,11 @@ impl Proof {
 impl Event {
     fn advance(self, proof: Proof) -> Proof {
         match self {
-            Self::Barrier => Proof { age: 0, ff: FF_UNKNOWN | (proof.ff & FF_OLDER) },
+            Self::Barrier(keep_ff) => Proof {
+                age: 0,
+                ff: if keep_ff { proof.ff } else { FF_UNKNOWN | (proof.ff & FF_OLDER) },
+            },
+            Self::FfVisibility(late) => Proof { ff: if late { FF_OLDER } else { FF_LIVE }, ..proof },
             Self::Tick(_, late) => Proof {
                 age: (proof.age + 1).min(CLOCKS),
                 ff: if late { FF_OLDER } else { FF_LIVE },
@@ -550,7 +580,11 @@ fn incoming_proofs(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], trace
         queued[i] = false;
         let block = graph.block(blocks[i]);
         let trace = &traces[i];
-        let proof = if i == 0 || block.size_in() == 0 {
+        let proof = if i == 0 && block.size_in() == 0 && trace.first.as_ref() == Some(fd.get_address()) {
+            // A real function entry observes its supplied register values,
+            // unlike an unproved intra-function redirect or loop backedge.
+            Proof { ff: FF_LIVE, ..Proof::ENTRY }
+        } else if i == 0 || block.size_in() == 0 {
             Proof::ENTRY
         } else {
             (0..block.size_in()).map(|edge| {

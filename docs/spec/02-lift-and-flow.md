@@ -4251,6 +4251,11 @@ product zero-extends its first word, sign-extends its second, and
 bypasses ALIM. The signed accumulating pair uses the full signed `A1`
 addend and enables ALIM.
 
+The register forms sample `FF1` at operand fetch. An adjacent early
+`MOVE` or `LOAD` forwards its new value; a late `EXTRACTZ` does not.
+With one intervening issue, the late value is visible as well. Only
+the first multiplier input can latch `FF1` into `X1`.
+
 The short absolute DATA product writes the high word; its EQ test
 examines the entire product above the low word, including the guard
 bits. A long absolute DATA product tests the full product for zero,

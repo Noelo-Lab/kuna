@@ -5510,6 +5510,69 @@ fn carmel_wide_mac_data_ports_separate_latching_and_writeback() {
 }
 
 #[test]
+fn carmel_wide_mixed_multiply_samples_ff_at_operand_fetch() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let image = scratch.path().join("ff.xml");
+    let specs = scratch.path().join("specs");
+    let source = scratch.path().join("ff.c");
+    let executable = scratch.path().join("ff");
+    tracked_carmel_entry_specs(&specs, &[("R0", 0x100), ("ECFG", 0), ("EST", 0),
+        ("CECFG1", 0), ("CECFG2", 0), ("CETBL", 0xffff)], 0, 0);
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n\
+        #define CONCAT12(h,l) (((uint32_t)(uint8_t)(h) << 16) | (uint16_t)(l))\n\
+        #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h) << 16) | (uint16_t)(l))\n\
+        volatile unsigned short data_r0 = 0x65;\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (row, (prefix, ff)) in [
+        ("", 0x8516_u16),
+        ("8f1800f77dc5", 0x8516),
+        ("8f1800f77dc52bec002bec00", 0x7123),
+        ("312f802bec00", 0x65),
+        ("10fa02c27a5a", 0x4117),
+    ].into_iter().enumerate() {
+        for (reversed, packet) in [(false, "d20cd6b288ad"), (true, "d60cd6b288a5")] {
+            let product = 9 * if reversed { i64::from(ff as i16) } else { i64::from(ff) };
+            fs::write(&image, format!(
+                "<binaryimage arch=\"Carmel:BE:24:default:default\">\n\
+                 <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">{prefix}{packet}2bd8002bec00</bytechunk>\n\
+                 <symbol space=\"code\" offset=\"0\" name=\"wide_ff\"/>\n</binaryimage>\n"
+            )).unwrap();
+            for (column, (reg, expected, typ)) in [
+                ("A0L", product as u16, "unsigned short"),
+                ("A0H", (product >> 16) as u16, "unsigned short"),
+                ("GB0", u16::from((product >> 32) as u8), "unsigned char"),
+                ("X1", if reversed { 0x11 } else { ff }, "unsigned short"),
+            ].into_iter().enumerate() {
+                let output = common::process::required_output(Command::new(env!("CARGO_BIN_EXE_kuna"))
+                    .env("KUNA_SPECS", &specs).arg("decompile").arg(&image)
+                    .args(["wide_ff", "--target", "Carmel:BE:24:default:default", "--assert-strict",
+                        "--assert", "param 0 %FF1 unsigned short old_ff",
+                        "--assert", "param 1 %RM0 unsigned short bounds",
+                        "--assert", "param 2 %A0L unsigned short old_a0",
+                        "--assert", "param 3 %A2L unsigned short factor",
+                        "--assert", "param 4 %X1 unsigned short latch",
+                        "--assert", "data [data,0x100] volatile unsigned short data_r0",
+                        "--assert", &format!("return %{reg} {typ}")]));
+                let code = String::from_utf8(output.stdout).unwrap();
+                assert!(!code.contains("halt_") && !code.to_lowercase().contains("warning:"), "{code}");
+                let index = row * 8 + usize::from(reversed) * 4 + column + 1;
+                let name = format!("ff_{index}");
+                writeln!(c, "#define wide_ff {name}\n{code}\n#undef wide_ff").unwrap();
+                writeln!(calls, "if ({name}(0x8516,0x7123,0x4117,9,0x11) != {expected:#x}) return {index};")
+                    .unwrap();
+            }
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_wide_mac_guard_and_control_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
