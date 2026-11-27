@@ -13,6 +13,7 @@ use crate::fixes::kt_operators::kt_compound_bitwise_assignment;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_util::writing_kotlin;
+use crate::fixes::numeric_types::ternary_numeric_arms;
 use crate::rt::{BitSet, JavaEq, JavaHash};
 use crate::s_forms_constructor::SFormsConstructor;
 use crate::statement::Statement;
@@ -122,6 +123,7 @@ impl AssignmentExprent {
             if let Some(func) = right.try_as_function() {
                 if func.get_func_type() == FunctionType::Ternary
                     && VarType::VARTYPE_INT().equals(&type_right)
+                    && ternary_numeric_arms::constant_arms(func)
                 {
                     type_right = VarType::VARTYPE_BYTECHAR();
                 }

@@ -785,6 +785,15 @@ increment or decrement writes (`b++` on a `byte` is `iadd`, `i2b`, `istore`, fol
 expression before types are computed) is not constant-only and keeps its narrow type:
 `int b = 0; take(b++)` would not select `take(byte)`.
 
+**An `int` conditional assigned to a local (kuna).** Vineflower lowers the `int` type of a
+conditional on the right of an assignment to `bytechar`, so that `byte v = b ? 0 : 1` keeps its
+narrow variable: the arms are constants and the conditional is `int` only by their default.
+The lowering applies only when every arm, through nested conditionals, is a constant
+(`ternary_numeric_arms::constant_arms`). An arm that is a value, such as an `int` variable,
+gives the conditional the type of what it can yield: without a LocalVariableTable,
+`int result = logical != 0 ? logical : sum` after a loop printed `byte var4 = (byte)(..)`,
+truncating a result the class file stores and returns with no `i2b`.
+
 **Generic locals without a LocalVariableTable (kuna).** Without the table a local has its
 erased type, so `Set keys = settings.keySet(); keys.removeIf(k -> k.startsWith(p))` did not
 compile (the lambda's parameter is an `Object`) and a for-each over a raw `List` cast it.
