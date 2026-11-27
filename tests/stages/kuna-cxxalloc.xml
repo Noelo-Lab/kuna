@@ -1,0 +1,53 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+    The built-in libc table gives the C++ allocation operators their Itanium
+    signatures, and on 32-bit x86 they are __cdecl whichever DLL exports them.
+
+    Stage / sub-stage: P1 load-time library prototypes
+    (`analyzers/protos/mod.rs`, LibProtoPass), declared `__cdecl` at the
+    analysis commit (`kuna-console/src/engine.rs (commit_analysis_output)`).
+
+    `cxx_alloc_pe_i386.exe` (assembled from `cxx_alloc_pe_i386.asm`, see the
+    fixtures README) is a MinGW-style fixed frame that imports _Znaj, _ZdaPv,
+    _Znwj and _ZdlPvj from libstdc++-6.dll. 0x401000 is
+    `t = new char[n]; copy3(t, a, n); r = cmp3(t, b, n); delete[] t;` and
+    0x401050 is `v = new Node; fill2(v, x); delete v;`. Read under the PE's
+    default __stdcall, each locked operator pops its own argument, every later
+    `[esp+k]` moves by 4, copy3 takes `b`, cmp3 takes `n` and roundtrip grows a
+    second parameter. `cxx_alloc_x86_64` imports `delete[]` through its PLT;
+    without a signature its tail call printed `operator delete[]()`.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cxx_alloc_pe_i386.exe</com>
+  <com>read symbols</com>
+  <com>load addr 0x401000</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>load addr 0x401050</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/cxx_alloc_x86_64</com>
+  <com>read symbols</com>
+  <com>load function drop_array</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CXXALLOC #1: new[] takes the size" min="1" max="1">= operator new\[\]\(a2\);</stringmatch>
+<stringmatch name="CXXALLOC #2: copy3 is handed the first parameter" min="1" max="1">sub_401090\(v2,a0,a2\);</stringmatch>
+<stringmatch name="CXXALLOC #3: cmp3 is handed the second" min="1" max="1">= sub_4010b0\(v2,a1,v1\);</stringmatch>
+<stringmatch name="CXXALLOC #4: delete[] takes the pointer" min="1" max="1">operator delete\[\]\(v2\);</stringmatch>
+<stringmatch name="CXXALLOC #5: roundtrip keeps its one parameter" min="1" max="1">void sub_401050\(unsigned int a0\)</stringmatch>
+<stringmatch name="CXXALLOC #6: fill2 is handed the new node and the parameter" min="1" max="1">sub_4010d0\(v1,a0\);</stringmatch>
+<stringmatch name="CXXALLOC #7: the sized delete keeps both arguments" min="1" max="1">operator delete\(v1,8\);</stringmatch>
+<stringmatch name="CXXALLOC #8: an imported delete[] keeps its pointer" min="1" max="1">operator delete\[\]\(a0\); // tail-call</stringmatch>
+<stringmatch name="CXXALLOC #9: no operator call drops all its arguments" min="0" max="0">operator (new|delete)(\[\])?\(\)</stringmatch>
+</decompilertest>

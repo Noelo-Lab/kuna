@@ -3632,7 +3632,13 @@ moves.
   constants — this typing, plus the read-only markup, is what turns `puts(0x400915)`
   into `puts("Username: ")`. LOSS: the built-in table is not a header archive, so
   it covers only the names it lists; every other libc callee leaves its caller's
-  argument an inferred integer. The compatible name-keyed prototype stream is
+  argument an inferred integer. The table also lists the C++ allocation
+  operators by their Itanium names (`_Znwm`, `_Znam`, `_ZdlPv`, `_ZdlPvm`,
+  `_ZdaPv`, their `nothrow_t` and `align_val_t` forms, and the `j` and `y`
+  spellings where `size_t` is `unsigned int` or MinGW-w64's `unsigned long
+  long`): mangling encodes no return type and `cppsig` refuses operator names,
+  so without the entries an imported `operator delete[]` lost its pointer. On an
+  i386 PE they are also declared `__cdecl` (below). The compatible name-keyed prototype stream is
   retained for ordinary symbols. For an imported table name the pass additionally
   emits the same signature at every concrete address the format resolver reports.
   This is required on PE, where the IAT slot and its `FF 25` veneer are separate
@@ -4288,8 +4294,15 @@ moves.
   model, whose stated `extrapop` of 4 leaves nothing for the declared-callee
   stack contract (chapter 04) to resolve. The DLL is the evidence, not the name: the BSD socket
   spellings the libc tables carry are `__stdcall` WinSock exports and keep the
-  default. Only where the default model's `extrapop` is unknown and the spec
-  registers a `__cdecl` model of its own, so x86-64 and every ELF are untouched.
+  default. The one exception is the C++ allocation operators: their Itanium name
+  is itself the evidence, since GCC and Clang compile a free function
+  `__cdecl` by default on 32-bit x86, so the pass reports each operator name the image
+  imports or defines whichever DLL exports it (MinGW's `libstdc++-6.dll`, or the
+  image itself when it links libstdc++ statically). Read as `__stdcall`, a locked
+  `operator new[](size_t)` popped its own argument and moved every later
+  `[esp+k]` in a GCC fixed frame by 4. Only where the default model's `extrapop`
+  is unknown and the spec registers a `__cdecl` model of its own, so x86-64 and
+  every ELF are untouched.
 - **(kuna) Declared names** (`declaredlibcproto`,
   `decompiler/crates/kuna-analysis/src/analyzers/protos/mod.rs (declared_libc_prototype)`,
   consulted from `decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_function)`):
