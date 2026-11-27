@@ -85,15 +85,14 @@ not discovered on a class path: the engine carries the plugins `java -jar vinefl
 bundles, in its registration order, in
 `decompiler/nonnative/kuna-jvm/src/infra/kuna_plugins.rs`, and the custom property
 `jvm_plugins` (on unless set; the corpus runner turns it off for Vineflower's test fixture,
-which loads none) decides whether they load. It is not a catalog option: a plugin's effect
-is gated by its own options, so off gives what `jvm_kt_enable off` and
-`jvm_resugar_idea_notnull off` give. Each plugin's options join the option
+which loads none) decides whether they load. It is not a catalog option: off gives what
+`jvm_kt_enable off` gives, without the IdeaNotNull pass. Each plugin's options join the option
 map with the plugin's defaults when the plugins initialize, and an option a caller set
 keeps its value. Of the two Java plugins, IdeaNotNull is ported, in
 `decompiler/nonnative/kuna-jvm/src/plugins`; VariableRenaming (JAD-style and tiny-style
 renamers of locals) is not, and every name stays as Vineflower's own pipeline gives it.
 **IdeaNotNull** registers one
-`MainLoop` pass that, while `jvm_resugar_idea_notnull` is on (the default), removes the
+`MainLoop` pass that removes the
 null checks IntelliJ IDEA's compiler instruments: an `if (p == null) $$$reportNull$$$0(n);`
 heading the method body for a parameter whose invisible parameter annotations carry
 `org/jetbrains/annotations/NotNull` (the annotation lists counted from the last parameter

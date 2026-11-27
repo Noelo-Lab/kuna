@@ -24,11 +24,6 @@ fn bundled_plugins_register_in_oracle_order_with_their_options() {
                 "kt-decompile-facades",
                 Some("0".to_string())
             ),
-            (
-                "IdeaNotNull".to_string(),
-                "resugar-idea-notnull",
-                Some("1".to_string())
-            ),
         ]
     );
 }

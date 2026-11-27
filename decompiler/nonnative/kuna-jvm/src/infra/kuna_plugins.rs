@@ -5,8 +5,8 @@
 //! that way, its test fixture none. Here the bundled list (Kotlin and
 //! IdeaNotNull; kuna drops VariableRenaming's JAD and tiny namers) is the one
 //! plugin source, on by default as in `java -jar`; the corpus fixture runner
-//! turns it off. Off is what `jvm_kt_enable off` and `jvm_resugar_idea_notnull
-//! off` give: each plugin's effect is gated by its option.
+//! turns it off. Off is what `jvm_kt_enable off` gives, without the IdeaNotNull
+//! pass.
 
 use std::rc::Rc;
 

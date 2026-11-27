@@ -140,7 +140,7 @@ pub use p9_emit::{
     variable_text_token,
 };
 pub use plugins::{
-    idea_not_null_options, idea_not_null_pass, idea_not_null_plugin,
+    idea_not_null_pass, idea_not_null_plugin,
 };
 pub use substrate::{
     annotation_exprent, array_exprent, array_helper, assert_exprent, assignment_exprent,

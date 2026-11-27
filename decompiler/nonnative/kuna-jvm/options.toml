@@ -606,28 +606,6 @@ tier = "analysis"
 symptoms = "inner and anonymous classes missing when decompiling one .class file|unrelated Name$x.class files nested into the class"
 
 [[option]]
-option = "jvm_resugar_idea_notnull"
-vineflower = "resugar-idea-notnull"
-short = "inn"
-aliases = ["resugar-idea-notnull", "inn"]
-values = "on|off"
-default = "on"
-destructive = false
-phase = "plugins"
-subphase = "idea_not_null_pass, idea_not_null_plugin"
-strength = "HARD"
-rewind = "plugins"
-issue = ""
-summary = "Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin)."
-use_when = "Turn off to see the checks IDEA instrumented into a method, e.g. to confirm which parameters are checked at run time."
-example = "kuna decompile app.jar com.ex.Service --option jvm_resugar_idea_notnull off"
-source_decompiler = "vineflower"
-inspiration = "Vineflower 1.12.0 IdeaNotNull plugin: IdeaNotNullOptions.IDEA_NOT_NULL_ANNOTATION (resugar-idea-notnull, -inn)"
-change_kind = "vineflower-option"
-tier = "transform"
-symptoms = "if (x == null) { $$$reportNull$$$0(0); } at the top of methods|explicit null checks on @NotNull parameters or before returns (option is off)"
-
-[[option]]
 option = "jvm_kt_enable"
 vineflower = "kt-enable"
 short = ""

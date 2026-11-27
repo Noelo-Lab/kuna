@@ -72,8 +72,6 @@ Three tiers:
 | VarHandle constant shown as an unresolved dynamic constant | [`jvm_decompile_complex_constant_dynamic`](#jvm_decompile_complex_constant_dynamic----on--off-default-off) |
 | method with jsr/ret fails to decompile in a modern class file | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
 | finally logic of a modern class built from subroutines | [`jvm_force_jsr_inline`](#jvm_force_jsr_inline----on--off-default-off) |
-| if (x == null) { $$$reportNull$$$0(0); } at the top of methods | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
-| explicit null checks on @NotNull parameters or before returns (option is off) | [`jvm_resugar_idea_notnull`](#jvm_resugar_idea_notnull----on--off-default-on) |
 | a facade class prints only This is a multifile facade and a list of files | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
 | functions of a @JvmMultifileClass facade are missing | [`jvm_kt_decompile_facades`](#jvm_kt_decompile_facades----on--off-default-off) |
 | Outer$Inner written as a separate class instead of nested | [`jvm_decompile_inner`](#jvm_decompile_inner----on--off-default-on) |
@@ -245,15 +243,6 @@ Each of these restructures, removes or inserts code, so each stays flippable.
 - **Where / provenance:** infra/method_processor · vineflower · vineflower-option
 - **Also spelled:** `force-jsr-inline`, `fji`
 - **Example:** `kuna decompile obf.jar a.b --option jvm_force_jsr_inline on`
-
-### `jvm_resugar_idea_notnull` -- on | off, default `on`
-
-- **Symptoms:** if (x == null) { $$$reportNull$$$0(0); } at the top of methods; explicit null checks on @NotNull parameters or before returns (option is off).
-- **What it does:** Remove the null checks IntelliJ IDEA's compiler inserts for @NotNull parameters and return values (if (x == null) { $$$reportNull$$$0(n); }), leaving the @NotNull annotations (IdeaNotNull plugin).
-- **When to flip:** Turn off to see the checks IDEA instrumented into a method, e.g. to confirm which parameters are checked at run time.
-- **Where / provenance:** plugins/idea_not_null_pass, idea_not_null_plugin · vineflower · vineflower-option
-- **Also spelled:** `resugar-idea-notnull`, `inn`
-- **Example:** `kuna decompile app.jar com.ex.Service --option jvm_resugar_idea_notnull off`
 
 ### `jvm_kt_decompile_facades` -- on | off, default `off`
 

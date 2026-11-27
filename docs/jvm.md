@@ -232,7 +232,7 @@ objects by creation in the arena; see the fidelity contract below.
   runs on; kuna ports the parts it reads as `src/kotlin/kt_proto.rs` and
   `src/kotlin/kt_flags.rs`. Plugins are not discovered on a class path: the bundle always
   loads, as with `java -jar`, and each plugin acts only through its options
-  (`jvm_kt_enable`, `jvm_resugar_idea_notnull`); the corpus runner
+  (`jvm_kt_enable`); the corpus runner
   alone runs the bare Java pipeline of Vineflower's test fixture (`jvm_plugins=0`).
 - **Not ported:** a user renamer class and Vineflower's `include-classpath` need a JVM and
   are refused (`options.toml`, `[[driver_owned]]`); third-party plugin jars cannot be
@@ -623,7 +623,7 @@ example):
    both decompilers *without a JDK* (the corpus runs without one): replace JDK types the
    failure needs by nested stand-ins, and compare `vf-decompile --fixture --opt
    dump-exception-on-error=1 ...` with `kuna decompile-project DIR --option include-runtime ''
-   --option jvm_kt_enable 0 --option jvm_resugar_idea_notnull 0 --option jvm_vineflower_compat 1
+   --option jvm_kt_enable 0 --option jvm_vineflower_compat 1
    -o NEW_DIR` (`--option` takes Vineflower's option names and kuna's own rows by their
    names). For the Rust backtrace of the caught
    throw, set `KUNA_JVM_BACKTRACE` to a piece of its message (`1` prints every caught
@@ -830,19 +830,11 @@ Kotlin, from its class file alone, under `// $VF: Class flags could not be deter
 
 **IDEA not-null.** IntelliJ IDEA's compiler instruments `@NotNull` parameters and return
 values with checks that call a synthetic `$$$reportNull$$$0`. The plugin removes them
-(`jvm_resugar_idea_notnull`, on by default) and keeps the annotations; `off` shows them:
+and keeps the annotations, which say the same:
 
 ```
 $ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1
 public void test1(@NotNull String s) {
-   System.out.println(s);
-}
-$ kuna decompile tests/jvm/classes/custom/TestIdeaNotNull.class pkg.TestIdeaNotNull.test1 --option jvm_resugar_idea_notnull off
-public void test1(@NotNull String s) {
-   if (s == null) {
-      $$$reportNull$$$0(2);
-   }
-
    System.out.println(s);
 }
 ```
