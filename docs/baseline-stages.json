@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5601,
-    5601
+    5603,
+    5603
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -1333,7 +1333,9 @@
     "data:GOMORESTACK #2: only the un-truncated off pass loops",
     "data:GOMORESTACK #3: the real body survives all four passes",
     "data:GOMORESTACK #4: one body return per pass, never a second arm",
-    "data:GOT slot imports #10: control: bail's exit through the stub is no-return",
+    "data:GOT slot imports #10: control: bail's exit through the stub is no-return, with importdata on and off",
+    "data:GOT slot imports #11: with importdata off no symbol sits at strlen's slot, so first's call through it stays unnamed",
+    "data:GOT slot imports #12: with importdata off the exit slot's no-return fact reaches no function at the slot, so check keeps main's output",
     "data:GOT slot imports #1: no call through a GOT slot loses its argument",
     "data:GOT slot imports #2: first's call through the slot keeps the pointer it forwards, with and without a .plt.got stub",
     "data:GOT slot imports #3: release's tail jump through the slot forwards its pointer, with and without a .plt.got stub",

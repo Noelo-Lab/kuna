@@ -641,6 +641,9 @@ pub struct ObjectLoadImage {
     plt_local: Vec<(u64, u64)>,
     /// MIPS ELF lazy-binding stubs and GOT-proven imports, found once at load.
     mips_linkage: Option<crate::loader::kuna_mipsstubs::MipsLinkage>,
+    /// Each code import's `GLOB_DAT` GOT slot, listed once at load
+    /// ([`crate::loader::kuna_elfgotimports::function_slots`]).
+    got_function_slots: Vec<(u64, Vec<u8>)>,
     elfv1: crate::loader::elfv1::Descriptors,
     elf_functions: ElfFunctionProvenance,
     /// The address space the file bytes map to (C++ `spaceid`, null until
@@ -1248,6 +1251,7 @@ impl ObjectLoadImage {
             built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
+            got_function_slots: crate::loader::kuna_elfgotimports::function_slots(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1433,6 +1437,7 @@ impl ObjectLoadImage {
             built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
+            got_function_slots: crate::loader::kuna_elfgotimports::function_slots(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1669,6 +1674,12 @@ impl ObjectLoadImage {
     /// Data-only external references have allocated VMAs but no record here.
     pub fn reloc_symbols(&self) -> &[crate::loader::reloc_object::RelocSymbolInfo] {
         &self.reloc_symbols
+    }
+
+    /// Each code import's `GLOB_DAT` GOT slot and import name
+    /// ([`crate::loader::kuna_elfgotimports::function_slots`]).
+    pub(crate) fn got_function_slots(&self) -> &[(u64, Vec<u8>)] {
+        &self.got_function_slots
     }
 
     /// The loader's **data** symbols as `(vma, name, size)` triples — the

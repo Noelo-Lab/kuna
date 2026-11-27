@@ -19,7 +19,11 @@
     keyed by entry address are now also emitted at the slot.
 
     Controls: the PLT callers (drop, len2, bail) and the no-PLT image's calls
-    to free and strlen were already right. A strict fix with one pass.
+    to free and strlen were already right. A last load of shared_x86_64.so
+    with importdata off registers no symbol at the slots, so the slot facts
+    park nowhere: the calls through the slots stay unnamed, as on main, and
+    the no-return fact falls back by name to the exit stub, which bail's call
+    already reaches. A strict fix with one pass.
 -->
 <bytechunk space="ram" offset="0x100000" readonly="true">c3</bytechunk>
 <symbol space="ram" offset="0x100000" name="harness_stub"/>
@@ -64,6 +68,19 @@
   <com>lo fu check</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/got-slot-imports/shared_x86_64.so</com>
+  <com>option importdata off</com>
+  <com>read symbols</com>
+  <com>lo fu first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu check</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu bail</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="GOT slot imports #1: no call through a GOT slot loses its argument" min="0" max="0">(strlen|free|memcmp)\(\)</stringmatch>
@@ -72,8 +89,10 @@
 <stringmatch name="GOT slot imports #4: length's tail jump through the shared slot passes its string" min="1" max="1">strlen\(a0\); // jump-as-call</stringmatch>
 <stringmatch name="GOT slot imports #5: same's tail jump through the shared slot passes LIBC_EXT memcmp's three arguments" min="1" max="1">memcmp\(a0,a1,a2\); // jump-as-call</stringmatch>
 <stringmatch name="GOT slot imports #6: exit through the slot is no-return, with and without a .plt.got stub" min="2" max="2">exit\(2\); // no-return</stringmatch>
-<stringmatch name="GOT slot imports #7: no flow runs past exit into the next function or unmapped memory" min="0" max="0">halt_missing|funcboundflow</stringmatch>
+<stringmatch name="GOT slot imports #7: no flow runs past exit into the next function or unmapped memory" min="0" max="0">halt_missing|exit\(2\); // warn</stringmatch>
 <stringmatch name="GOT slot imports #8: control: drop's tail call through the .plt.got stub keeps its argument" min="1" max="1">free\(a0\); // tail-call</stringmatch>
 <stringmatch name="GOT slot imports #9: control: len2's tail call through the stub keeps its argument" min="1" max="1">strlen\(a0\); // tail-call</stringmatch>
-<stringmatch name="GOT slot imports #10: control: bail's exit through the stub is no-return" min="1" max="1">exit\(1\); // no-return</stringmatch>
+<stringmatch name="GOT slot imports #10: control: bail's exit through the stub is no-return, with importdata on and off" min="2" max="2">exit\(1\); // no-return</stringmatch>
+<stringmatch name="GOT slot imports #11: with importdata off no symbol sits at strlen's slot, so first's call through it stays unnamed" min="1" max="1">= \(\*dat_3fd0\)\(\);</stringmatch>
+<stringmatch name="GOT slot imports #12: with importdata off the exit slot's no-return fact reaches no function at the slot, so check keeps main's output" min="1" max="1">\(\*dat_3fc8\)\(2\); // warn: funcboundflow</stringmatch>
 </decompilertest>

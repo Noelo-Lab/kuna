@@ -566,10 +566,10 @@ pub(crate) fn loaded_import_addrs(
         return (imports, reloc_imports);
     }
     let mut seen: HashSet<_> = imports.iter().cloned().collect();
-    for (slot, name) in crate::loader::kuna_elfgotimports::function_slots(file) {
-        if let Ok(name) = String::from_utf8(name) {
-            if seen.insert((name.clone(), slot)) {
-                imports.push((name, slot));
+    for (slot, name) in image.got_function_slots() {
+        if let Ok(name) = String::from_utf8(name.clone()) {
+            if seen.insert((name.clone(), *slot)) {
+                imports.push((name, *slot));
             }
         }
     }

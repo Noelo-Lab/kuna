@@ -184,11 +184,29 @@ pub(crate) fn name_matches(name: &str, exact: &[String], wildcard: &[String]) ->
 /// (`find_function_across_scopes`) and falls back to the name only when nothing is
 /// installed at that address. Shared by [`AnalysisPass::run`] and the unit tests.
 ///
+/// An import is also emitted at each of its `GLOB_DAT` GOT `slots`
+/// ([`super::kuna_elfgotimports::function_slots`]). `elfgotimports` registers the
+/// slot as the import's other FunctionSymbol, and a `-fno-plt` call or tail jump
+/// through the slot resolves to it. Because the commit resolves each fact by
+/// address, the stub's fact never reaches the slot, and without a stub the slot
+/// would have no fact at all.
+///
 /// `compiler` selects the extra per-compiler no-return list to fold into the base
 /// ELF list (faithful to `noReturnFunctionConstraints.xml`'s per-`<compiler>`
 /// arms): `Rustc` → `RustFunctionsThatDoNotReturn`, `Go` →
 /// `GolangFunctionsThatDoNotReturn`, everything else → base ELF list only.
 fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> AnalysisOutput {
+    scan_noreturn_with_slots(file, bytes, compiler, &super::kuna_elfgotimports::function_slots(file))
+}
+
+/// [`scan_noreturn`] with the image's GOT slots already listed (the load image
+/// lists them once per load).
+fn scan_noreturn_with_slots(
+    file: &object::File,
+    bytes: &[u8],
+    compiler: Compiler,
+    slots: &[(u64, Vec<u8>)],
+) -> AnalysisOutput {
     let mut out = AnalysisOutput::default();
     // Per-format base list (PR-10): an ELF gets the vendored ELF list (+ the
     // per-compiler Rust/Go widening); a PE/COFF/Mach-O gets the PE/Mac list
@@ -234,9 +252,11 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
         }
     };
 
-    // Mirror exactly the three FUNC streams `loadimage_object::from_bytes`
-    // installs as FunctionSymbols, so the emitted ADDRESS is the install address
-    // the commit's `find_function_across_scopes` resolves against.
+    // Mirror the FUNC streams `loadimage_object::from_bytes` installs as
+    // FunctionSymbols (arms 1 and 2), plus the GOT slot symbols `elfgotimports`
+    // registers, which exist only while `importdata` is on, so the emitted
+    // ADDRESS is the install address the commit's `find_function_across_scopes`
+    // resolves against.
     //
     // 1. `.symtab` + `.dynsym` **defined** functions (`sym.address()`). A defined
     //    C++ no-return method surfaces here at its real code address. A UND import
@@ -270,13 +290,9 @@ fn scan_noreturn(file: &object::File, bytes: &[u8], compiler: Compiler) -> Analy
         let Ok(n) = String::from_utf8(p.name) else { continue };
         emit(&mut out, p.addr, n);
     }
-    // 3. GOT slots (`elfgotimports`): the import's other FunctionSymbol, which a
-    //    `-fno-plt` call or tail jump through the slot resolves to. The commit
-    //    resolves each fact by address, so the stub's fact never reaches the
-    //    slot, and without a stub the slot has no fact at all.
-    for (slot, name) in super::kuna_elfgotimports::function_slots(file) {
-        let Ok(n) = String::from_utf8(name) else { continue };
-        emit(&mut out, slot, n);
+    for (slot, name) in slots {
+        let Ok(n) = String::from_utf8(name.clone()) else { continue };
+        emit(&mut out, *slot, n);
     }
     out
 }
@@ -299,7 +315,10 @@ impl AnalysisPass for NoReturnKnownPass {
     }
 
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
-        let mut out = scan_noreturn(ctx.file, ctx.bytes, self.compiler);
+        let mut out = match ctx.image {
+            Some(image) => scan_noreturn_with_slots(ctx.file, ctx.bytes, self.compiler, image.got_function_slots()),
+            None => scan_noreturn(ctx.file, ctx.bytes, self.compiler),
+        };
         if let Some(image) = ctx.image {
             let (imports, _) = crate::protos::loaded_import_addrs(ctx.file, ctx.bytes, image);
             out.noreturn.extend(

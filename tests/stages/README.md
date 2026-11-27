@@ -192,8 +192,10 @@ caller in the same link gives the import a `.plt.got` stub,
 
 Main printed `strlen()`, `free()` and `memcmp()`, and ran past `exit` into the
 next function or unmapped memory. The PLT callers and the no-stub image's
-calls stay unchanged. A strict fix with one pass. The fixtures and their
-recipe are in `tests/fixtures/got-slot-imports/`.
+calls stay unchanged. So do the slot calls of a last load with `option
+importdata off`: there no symbol sits at a slot, so its facts park nowhere. A
+strict fix with one pass. The fixtures and their recipe are in
+`tests/fixtures/got-slot-imports/`.
 
 `kuna-ppc64-plt-stubs.xml` checks PowerPC64 ELFv2 shared objects whose
 wrappers call `free` and `strlen` through each linker stub form: GNU ld's
