@@ -429,6 +429,10 @@ define token slot (24)
     compact_mul_right = (1,3)
     slot_9_22 = (9,22)
     compact_square_right = (1,5)
+    compact_square_acc = (8,10)
+    compact_square_lo = (8,10)
+    compact_square_hi = (8,10)
+    compact_square_guard = (8,10)
     compact_mac_left = (4,8)
     compact_mac_right = (1,3)
     compact_msu_left = (4,8)
@@ -1063,6 +1067,10 @@ attach variables [wide_lim8_pointer] [R0 R1 R2 R3 R4 R5 R6 R7 RN0 RN1 RN2 RN3 RN
 attach variables [compact_mul_left] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
 attach variables [compact_mul_right] [A0L A1L A2L A3L A0H A1H A2H A3H];
 attach variables [compact_square_right] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
+attach variables [compact_square_acc] [A0 A1 A2 A3 A4 A5 _ _];
+attach variables [compact_square_lo] [A0L A1L A2L A3L A4L A5L _ _];
+attach variables [compact_square_hi] [A0H A1H A2H A3H A4H A5H _ _];
+attach variables [compact_square_guard] [GB0 GB1 GB2 GB3 GB4 GB5 _ _];
 attach variables [compact_mac_left] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
 attach variables [compact_mac_right] [A0L A1L A2L A3L A0H A1H A2H A3H];
 attach variables [compact_msu_left] [_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ A0L A1L A2L A3L _ _ _ _ A0H A1H A2H A3H _ _ _ _];
@@ -7385,6 +7393,20 @@ macro compact_token_mpy_data(lo, hi, guard, ptr, modulo, bound, shift, latch, cf
                              compact_mul_right, CECFG2, 1:2, compact_token_ce2);
 }
 
+compact_mixed_square: "MPYSU" is slot_12_22=0x456 { }
+compact_mixed_square: "MPYUS" is slot_12_22=0x496 { }
+
+# The mixed-sign path has only one connected multiplier input.
+:^compact_mixed_square compact_aux_acc_dst,compact_token_left_mpy,compact_mul_right "||" nop_right is
+    ($(COMPACT_ROUTED_MPY) & compact_mixed_square & slot_9_11<6 & compact_aux_acc_dst &
+     compact_aux_dst_lo & compact_aux_dst_hi & compact_aux_dst_guard & compact_token_left_mpy & compact_mul_right);
+    (slot_mode=0 & nop_right) {
+    write_accumulator40(compact_aux_dst_lo, compact_aux_dst_hi, compact_aux_dst_guard, 0:8);
+    local flags:2 = EST & 0xcfff;
+    compact_token_flags(flags, 8:2, 0:2);
+    publish_alu_ce(flags);
+}
+
 :MPY compact_token_ce1 pair_acc_11,"*"^pair_ptr_6^"++",compact_token_right is
     $(COMPACT_TOKEN_SEQ) & $(COMPACT_TOKEN_MPY_DATA) & compact_token_ce1 {
     compact_token_mpy_data(pair_acc_11_lo, pair_acc_11_hi, pair_acc_11_gb, pair_ptr_6, pair_rm_6, pair_rl_6,
@@ -7559,6 +7581,24 @@ macro parallel_shift_fetch(a, b, copy_preg, word_result, first, second) {
     local operand:2 = *[data]:2 address;
     X1 = operand;
     compact_routed_mpy_acc(operand, operand);
+}
+
+:MPYUU compact_square_acc,"OP3","*"^pair_ptr_1^"++" "||" nop_right is
+    ($(COMPACT_ROUTED_MPY) & slot_14_22=0x137 & slot_11_13=2 & slot_4_7=6 &
+     compact_square_acc & compact_square_lo & compact_square_hi & compact_square_guard &
+     pair_ptr_1 & pair_rm_1 & pair_rl_1 & pair_bank_1); (slot_mode=0 & nop_right) {
+    local operand:2;
+    compact_token_read(pair_ptr_1, pair_rm_1, pair_rl_1, pair_bank_1, operand);
+    X1 = operand;
+    local product:8;
+    raw_mac_product(operand, operand, 0:1, 0:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 0:1, 0:1, 0:1, 0:1, result, active);
+    write_accumulator40(compact_square_lo, compact_square_hi, compact_square_guard, result);
+    local flags:2 = EST & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    publish_alu_ce(flags);
 }
 
 :MPY "X1","*R0","A2L" "||" nop_right is ($(COMPACT_ROUTED_MPY) & slot_6_22=0x109c0 & slot_1_5=18); (slot_mode=0 & nop_right) {

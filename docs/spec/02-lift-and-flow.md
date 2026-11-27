@@ -4299,6 +4299,12 @@ rule. A dual DATA fetch stops after address updates if both addresses
 request the same single-read bank. An explicit `X1` destination publishes
 the product's high word instead of the input latch, with zero and loss
 flags for the narrow result rather than the full accumulator.
+The corresponding unsigned `OP3` DATA form also fetches once and fills
+`X1`. Fractional mode doubles the unsigned product; automatic limiting
+does not clamp it. In the mixed-sign primary forms with first-position
+`OP1` or `OP2` and an accumulator-half source, the other multiplier
+input is disconnected. The whole destination becomes zero, the primary
+`Z` flag is set, and the `X1` latch is unchanged.
 
 The covered compact register-half `MPY` forms select signedness separately
 for their DATA input and `RN` factor. The DATA input uses the address before

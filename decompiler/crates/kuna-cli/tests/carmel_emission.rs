@@ -6431,13 +6431,13 @@ fn carmel_compact_mpy_samples_physical_inputs_and_publishes_x1() {
     let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
     let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
     let cells = [(0x100, 101), (0x101, 0x4444), (0x103, 104), (0x120, 117),
-                 (0x121, 0x5555), (0x124, 121), (0x140, 133), (0x141, 0x6666)];
+                 (0x121, 0x5555), (0x124, 121), (0x140, 0xffff), (0x141, 0x6666)];
     let seeds = [("A0L", 0x4321), ("A0H", 5), ("GB0", 0), ("A2L", 9), ("X1", 17), ("X2", 19),
                  ("R0", 0x100), ("R1", 0x120), ("R2", 0x140), ("RN2", 5), ("FF1", 11), ("FF2", 13),
                  ("EST", 0), ("ECFG", 0), ("CECFG1", 0), ("CECFG2", 0), ("CETBL", 0)];
     // Raw selector, tracked AGU seed, live register overrides, DATA[R0], product (or
     // preserved A0), X1, pointer updates as a bitmask, EST, and count of DATA reads.
-    let rows: [(u32, Registers, Registers, u16, u64, u16, u8, u16, u8); 19] = [
+    let rows: [(u32, Registers, Registers, u16, u64, u16, u8, u16, u8); 24] = [
         (0x416024, &[], &[], 101, 2880, 320, 0, 0, 0), // R2, not DATA[R2].
         (0x4160a4, &[], &[], 101, 45, 5, 0, 0, 0), // RN2.
         (0x416164, &[], &[], 101, 99, 11, 0, 0, 0), // FF1.
@@ -6450,7 +6450,12 @@ fn carmel_compact_mpy_samples_physical_inputs_and_publishes_x1() {
         (0x414024, &[("R0", 0x100), ("RN0", 3)], &[], 101, 936, 104, 0, 0, 1),
         (0x41f402, &[("R1", 0x120), ("RN1", 4)], &[], 101, 2057, 17, 0, 0, 1),
         (0x41506c, &[], &[], 101, 121, 11, 0, 0, 0), // OP3 squares FF1.
-        (0x41d064, R2_POST, &[], 101, 17689, 133, 4, 0, 1), // OP3 fetches and advances once.
+        (0x41d064, R2_POST, &[], 101, 1, 0xffff, 4, 0, 1), // Signed square of -1.
+        (0x4dd064, R2_POST, &[], 101, 0xfffe0001, 0xffff, 4, 0x20, 1),
+        (0x4dd064, R2_POST, &[("ECFG", 5)], 101, 0x1_fffc_0002, 0xffff, 4, 0x20, 1),
+        (0x4dd064, R2_POST, &[("EST", 0x4fff)], 101, 0xfffe0001, 0xffff, 4, 0x4fe4, 1),
+        (0x4561e4, &[], &[], 101, 0, 17, 0, 8, 0), // Mixed-sign OP1 does not connect the other input.
+        (0x4961f4, &[], &[("A2L", 0x8000)], 101, 0, 17, 0, 8, 0), // Neither does OP2.
         (0x427024, R0_INDIRECT, &[("A2L", 0x1234)], 101, 0x54321, 7, 0, 0, 1),
         (0x410400, R0_POST, &[("EST", 0x1b7)], 0xff00, 0xff_ffff_0000, 0xff00, 1, 0x10, 1),
         (0x410428, R0_POST, &[("EST", 0x1b7), ("X1", 0xffff)], 0xff00, 256, 0xff00, 1, 0, 1),
