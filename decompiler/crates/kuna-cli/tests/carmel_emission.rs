@@ -1632,6 +1632,63 @@ int main(void) {
 }
 
 #[test]
+fn carmel_qualified_bank_exchange_preserves_independent_address_and_result_effects() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-qualified-bank-exchange", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut code = vec![NOP; 6];
+    code.push([0x8c, 0, 1, 0xcd, 0xe4, 0x33]); // LOADCE 0x0ccc,1
+    code.extend([NOP; 3]);
+    code.push([0x2b, 0xb4, 7, 0x20, 0xba, 2]); // BANKXCHG CE1 || CMPU A0L,A1L
+    code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+    code.extend([NOP; 2]);
+    fs::write(&binary, code.as_flattened()).unwrap();
+    let mut generated = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for (register, bank) in [
+        ("R0", ["R0", "R0S"]), ("A2L", ["A2L", "A2LS"]),
+        ("ESTS", ["ESTS", "R0"]), ("EST", ["ESTS", "R0"]),
+    ] {
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+            "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+            "--assert", &format!("return %{register} unsigned short"),
+        ]);
+        for (i, input) in bank.into_iter().chain(["EST", "CECFG1", "CECFG2", "CETBL", "A0L", "A1L"]).enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let name = format!("bank_{}", register.to_ascii_lowercase());
+        writeln!(generated, "{}", function["code"].as_str().unwrap().replace("sub_1000", &name)).unwrap();
+    }
+    generated.push_str(r"
+#define CLOCK(seed) 0,0x1000,0x1000,seed,4,4
+int main(void) {
+    if (bank_r0(0x1234,0x4567,CLOCK(0)) != 0x4567 ||
+        bank_a2l(0x2222,0x3333,CLOCK(0)) != 0x3333 ||
+        bank_ests(0x0048,0,CLOCK(0)) != 0 || bank_est(0x0048,0,CLOCK(0)) != 0x0048) return 1;
+    if (bank_r0(0x1234,0x4567,CLOCK(0xffff)) != 0x4567 ||
+        bank_a2l(0x2222,0x3333,CLOCK(0xffff)) != 0x2222 ||
+        bank_ests(0x0048,0,CLOCK(0xffff)) != 0x0048 ||
+        bank_est(0x0048,0,CLOCK(0xffff)) != 0x3240) return 2;
+    return 0;
+}
+");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_logic_rmw_routes_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

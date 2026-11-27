@@ -4029,9 +4029,15 @@ and unqualified register `CMPU`. A result exchange saves the incoming
 `EST` and restores the shadow word in place of the same-issue compare
 flags. Without a result exchange, the comparison publishes its own
 C/Z. Compact `CMPU` updates CE using the incoming feedback, not the
-comparison's newly produced C/Z. Qualified bank exchanges are listed
-but not lifted: dispatch and result qualification can sample different
-feedback in a dependent stream.
+comparison's newly produced C/Z. For the qualified compact form with
+address mask `0xd01` and an accumulator/`EST` exchange, the address
+dispatch uses the rail and address bypass sampled five issue clocks
+earlier. The accumulator and shadow `EST` exchange additionally requires
+the current EX rail. On veto the incoming CE bits survive, and a
+parallel comparison still publishes its C/Z. The younger address gate
+sees the sampled rail, not the restored or retained `EST` bits.
+`kuna_carmel_phase.rs` binds the older sample before SSA; it rejects a
+qualified read if any incoming path lacks enough modeled issue clocks.
 
 Signed immediate `MOVE` distinguishes the early address-qualified ports
 from late DATA or accumulator results. The indexed store captures the old

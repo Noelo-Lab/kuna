@@ -2403,8 +2403,8 @@ macro bank_pointer(active, shadow, increment, shadow_increment, mask) {
     swap16(increment, shadow_increment);
 }
 
-compact_bank_address: "BANKXCHG" bank_exchange_mask is slot_14_22=0xae & slot_0_0=0 & bank_exchange_mask {
-    local mask:2 = bank_exchange_mask;
+macro compact_bank_ports(selected) {
+    local mask:2 = selected;
     if ((mask & 0x001) == 0) goto <r1>;
     bank_pointer(R0, R0S, RN0, RN0S, 0x0003);
   <r1>
@@ -2447,13 +2447,16 @@ compact_bank_address: "BANKXCHG" bank_exchange_mask is slot_14_22=0xae & slot_0_
   <done>
 }
 
+compact_bank_address: "BANKXCHG" bank_exchange_mask is slot_14_22=0xae & slot_0_0=0 & bank_exchange_mask {
+    compact_bank_ports(bank_exchange_mask);
+}
+
 bank_alu2: is bank_exchange_alu=0 { export 0:2; }
 bank_alu2: ",A2,EST" is bank_exchange_alu=1 { export 1:2; }
 bank_alu3: is bank_exchange_alu=0 { export 0:2; }
 bank_alu3: ",A3,EST" is bank_exchange_alu=1 { export 1:2; }
 
-macro compact_bank_result(exchange, low, low_shadow, high, high_shadow, guard, guard_shadow, flags) {
-    if (exchange == 0) goto <address_only>;
+macro compact_bank_swap(low, low_shadow, high, high_shadow, guard, guard_shadow) {
     swap16(low, low_shadow);
     swap16(high, high_shadow);
     local old_guard:1 = guard;
@@ -2461,6 +2464,11 @@ macro compact_bank_result(exchange, low, low_shadow, high, high_shadow, guard, g
     guard_shadow = old_guard;
     # Save the incoming word, not the peer's C/Z. The restore wins over the peer.
     swap16(EST, ESTS);
+}
+
+macro compact_bank_result(exchange, low, low_shadow, high, high_shadow, guard, guard_shadow, flags) {
+    if (exchange == 0) goto <address_only>;
+    compact_bank_swap(low, low_shadow, high, high_shadow, guard, guard_shadow);
     goto <done>;
   <address_only>
     publish_ce_feedback(flags, EST);
@@ -2493,6 +2501,54 @@ macro compact_bank_result(exchange, low, low_shadow, high, high_shadow, guard, g
     build compact_cmpu;
     build compact_bank_address;
     compact_bank_result(bank_alu3, A3L, A3LS, A3H, A3HS, GB3, GB3S, (EST & 0xcff6) | compact_cmpu);
+}
+
+# EX samples both rails before any bank or peer write. BANKXCHG retains the
+# incoming CE bits when vetoed, even though D1 still sees the sampled rails.
+macro compact_bank_phased(mask, gate, low, low_shadow, high, high_shadow, guard, guard_shadow, flags) {
+    local admitted:1 = carmel_read_address_admission(gate);
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, first);
+    unary_ce(CECFG2, EST, CETBL, 1:2, second);
+    local sampled:2 = first | (second << 1);
+    if (admitted == 0) goto <publish>;
+    compact_bank_ports(mask);
+    if ((sampled:1 & gate) == 0) goto <publish>;
+    compact_bank_swap(low, low_shadow, high, high_shadow, guard, guard_shadow);
+    goto <record>;
+  <publish>
+    EST = flags | (EST & 0x3000);
+  <record>
+    local bypass1:1 = (CECFG1 & 0x1000) != 0;
+    local bypass2:1 = (CECFG2 & 0x1000) != 0;
+    carmel_record_admission(sampled:1 | bypass1 | (bypass2 << 1));
+}
+
+@define PHASED_BANK "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
+phased_bank_ports: "BANKXCHG" "0xd01" is slot_14_22=0xae & slot_0_0=1
+    & bank_exchange_alu=1 & bank_exchange_mask=0xd01 {
+    export 0x0d01:2;
+}
+
+:^phased_bank_ports "CE1", "A2,EST" is
+    $(PHASED_BANK) & ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))
+    & phased_bank_ports {
+    compact_bank_phased(phased_bank_ports, 1:1, A2L, A2LS, A2H, A2HS, GB2, GB2S, EST & 0xcfff);
+}
+:^phased_bank_ports "CE1", "A2,EST" "||" nop_right is
+    ($(PHASED_BANK) & carmel_issue=1 & slot_mode=0 & phased_bank_ports); (slot_mode=0 & nop_right) {
+    compact_bank_phased(phased_bank_ports, 1:1, A2L, A2LS, A2H, A2HS, GB2, GB2S, EST & 0xcfff);
+}
+:^nop_left "||" phased_bank_ports "CE2", "A3,EST" is
+    ($(PHASED_BANK) & carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & phased_bank_ports) {
+    compact_bank_phased(phased_bank_ports, 2:1, A3L, A3LS, A3H, A3HS, GB3, GB3S, EST & 0xcfff);
+}
+:^phased_bank_ports "CE1", "A2,EST" "||" compact_cmpu is
+    ($(PHASED_BANK) & carmel_issue=1 & slot_mode=0 & phased_bank_ports); (slot_mode=0 & compact_cmpu) {
+    build compact_cmpu;
+    compact_bank_phased(phased_bank_ports, 1:1, A2L, A2LS, A2H, A2HS, GB2, GB2S,
+                        (EST & 0xcdbf) | (compact_cmpu << 6));
 }
 
 wide_ce_prefix: is wide_left_mode=1 { local kind:2 = 0; export kind; }
