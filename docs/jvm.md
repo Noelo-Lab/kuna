@@ -71,8 +71,8 @@ decompiling them.
 
 ## Options worth knowing
 
-`kuna catalog --engine jvm` lists every `jvm_*` option; each also answers to Vineflower's
-long and three-letter names. The ones a user reaches for:
+`kuna catalog --engine jvm` lists every `jvm_*` option; an option has that one name
+(Vineflower's long and three-letter names are not accepted). The ones a user reaches for:
 
 | Option | Default | Effect |
 |---|---|---|

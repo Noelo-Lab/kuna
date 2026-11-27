@@ -1,5 +1,5 @@
-//! The `Fernflower` driver over `data/fernflower_driver/`: option overlay (long and
-//! three-letter names), runtime registration, the renamer, per-class
+//! The `Fernflower` driver over `data/fernflower_driver/`: option overlay,
+//! runtime registration, the renamer, per-class
 //! failure handling in `ContextUnit.save` (pre-processing and writing errors,
 //! duplicate classes) and in `getClassContent`, and a root context that stays
 //! usable whatever the engine does.
@@ -115,13 +115,13 @@ fn record(logger: &CollectingLogger, message: &str) -> Option<LogRecord> {
 }
 
 #[test]
-fn options_overlay_defaults_by_long_and_short_name() {
+fn options_overlay_the_defaults() {
     let logger = Rc::new(CollectingLogger::new());
     logger.set_severity(Severity::Warn);
     let fernflower = Fernflower::new(
         &options(&[
             (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
-            ("ind", "\t"),
+            (IFernflowerPreferences::INDENT_STRING, "\t"),
         ]),
         logger.clone(),
     );

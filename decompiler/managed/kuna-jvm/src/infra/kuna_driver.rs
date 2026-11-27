@@ -510,11 +510,7 @@ struct Session {
 }
 
 fn engine_options(config: &DriverConfig) -> Vec<(String, String)> {
-    let mut options: Vec<(String, String)> = config
-        .options
-        .iter()
-        .map(|(k, v)| crate::fernflower::canonical_option(k, v))
-        .collect();
+    let mut options = config.options.clone();
     let mut set = |key: &str, value: String| {
         options.retain(|(k, _)| k != key);
         options.push((key.to_string(), value));

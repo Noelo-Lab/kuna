@@ -135,13 +135,9 @@ impl Engine for Jvm {
     }
 
     fn options(&self) -> Catalog {
-        let owned: String = kuna_options::driver_owned()
-            .iter()
-            .map(|owned| format!("- `{}` -- {}\n", owned.vineflower, owned.kuna))
-            .collect();
         Catalog {
             rows: kuna_options::rows().iter().map(|r| r.row).collect(),
-            preamble: format!(
+            preamble: String::from(
                 "# kuna JVM option catalog\n\n**Generated** by `kuna catalog --markdown --engine jvm` from \
                  `decompiler/managed/kuna-jvm/options.toml` -- do not edit by hand; edit the \
                  table row and regenerate.\n\nThese options steer the JVM engine (`kuna-jvm`, a port of \
@@ -149,11 +145,9 @@ impl Engine for Jvm {
                  and classes compiled from Kotlin to Kotlin. They apply to those inputs only, as the options \
                  of `docs/options.md` apply to native inputs only. Set any of them per run on `decompile`, \
                  `decompile-all`, `decompile-project` and `functions`: `kuna decompile app.jar com.ex.Main \
-                 --option <name> <value>` (repeatable). Every Vineflower option also answers \
-                 to Vineflower's long and three-letter names (its `aliases`). Booleans take \
-                 `on|off` (also `1|0|true|false`). Defaults are Vineflower 1.12.0's, its \
-                 bundled plugins' included. kuna's own rows have no Vineflower name.\n\n\
-                 Vineflower keys kuna sets itself, so they are not options:\n\n{owned}\nThree tiers:\n\n\
+                 --option <name> <value>` (repeatable). Booleans take `on|off` (also \
+                 `1|0|true|false`). Defaults are Vineflower 1.12.0's, its Kotlin plugin's included.\n\n\
+                 Three tiers:\n\n\
                  - **Toggleable transforms** -- restructure, remove, or insert code; the on/off control surface.\n\
                  - **Input & analysis** -- what the engine reads: the class universe, libraries, the JDK.\n\
                  - **Rendering defaults** -- how the text is written: Java or Kotlin, and how it is spelled.\n\n"
@@ -172,7 +166,7 @@ impl Engine for Jvm {
                      formatting, literals, comments.",
                 ),
             ],
-            tail: "## Programmatic use\n\n```bash\n# discover (machine-readable; includes tier, symptoms, aliases):\n\
+            tail: "## Programmatic use\n\n```bash\n# discover (machine-readable; includes tier and symptoms):\n\
                    kuna catalog --engine jvm --json\n\n# transforms only:\nkuna catalog --engine jvm --tier transform\n\n\
                    # decompile with an option flipped (repeatable):\n\
                    kuna decompile app.jar com.ex.Main --option jvm_decompile_finally off\n```\n",
@@ -180,11 +174,7 @@ impl Engine for Jvm {
     }
 
     fn check(&self) -> Vec<String> {
-        kuna_options::driver_owned()
-            .iter()
-            .filter(|owned| kuna_options::find(owned.vineflower).is_some())
-            .map(|owned| format!("driver-owned key {:?} is also an option row", owned.vineflower))
-            .collect()
+        Vec::new()
     }
 
     fn usage(&self, sub: &str) -> String {

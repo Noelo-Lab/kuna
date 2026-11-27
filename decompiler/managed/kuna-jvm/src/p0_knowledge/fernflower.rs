@@ -33,7 +33,7 @@ use crate::kotlin_plugin::KotlinPlugin;
 use crate::kuna_partition::RootSelection;
 use crate::language_spec::LanguageSpec;
 use crate::pool_interceptor::PoolInterceptor;
-use crate::rt::{try_catch, JHashMap, JavaStr};
+use crate::rt::{try_catch, JavaStr};
 use crate::struct_class::StructClass;
 use crate::struct_context::{qualified_name_of, StructContext};
 use crate::text_buffer::TextBuffer;
@@ -79,18 +79,14 @@ struct FernflowerDecompiledData {
 
 impl Fernflower {
     /// Java: Fernflower(IResultSaver, Map<String, Object>, IFernflowerLogger).
-    /// `custom_properties` overlay the defaults in order; three-letter keys are short names.
+    /// `custom_properties` overlay the defaults in order.
     pub fn new(
         custom_properties: &[(String, String)],
         logger: Rc<dyn IFernflowerLogger>,
     ) -> Fernflower {
         let mut properties = IFernflowerPreferences::DEFAULTS();
         for (key, value) in custom_properties {
-            if key.jlen() == 3 {
-                OptionParser::parse_short(&format!("-{key}={value}"), &mut properties);
-            } else {
-                properties.put(key.clone(), value.clone());
-            }
+            properties.put(key.clone(), value.clone());
         }
 
         let data = Rc::new(FernflowerDecompiledData {
@@ -419,85 +415,6 @@ fn equals_ignore_case(a: &str, b: &str) -> bool {
         })
 }
 
-/// The option a custom property `(key, value)` sets once the constructor has
-/// read it: a three-letter name becomes its long name (`mpm` is
-/// `max-time-per-method`), with `true`/`false` read as `1`/`0`.
-pub fn canonical_option(key: &str, value: &str) -> (String, String) {
-    if key.jlen() != 3 {
-        return (key.to_string(), value.to_string());
-    }
-    let mut parsed = JHashMap::new();
-    OptionParser::parse_short(&format!("-{key}={value}"), &mut parsed);
-    let canonical = parsed.iter().next().map(|(k, v)| (k.clone(), v.clone()));
-    canonical.unwrap_or_else(|| (key.to_string(), value.to_string()))
-}
-
-/// The part of `main/decompiler/OptionParser.java` the constructor uses to
-/// expand three-letter option names.
-struct OptionParser;
-
-impl OptionParser {
-    const CUSTOM_CHECKS: [&'static str; 6] = [
-        "-e=",
-        "--add-external=",
-        "-only=",
-        "--only=",
-        "-s",
-        "--silent",
-    ];
-
-    fn parse(arg: &str, options: &mut JHashMap<String, String>) -> bool {
-        for check in Self::CUSTOM_CHECKS {
-            if arg.starts_with(check) {
-                return false;
-            }
-        }
-
-        if !arg.starts_with("--") {
-            Self::parse_short(arg, options);
-            return true;
-        }
-
-        let arg = &arg[2..];
-        match arg.find('=') {
-            None => {
-                if let Some(rest) = arg.strip_prefix("no-") {
-                    options.put(rest.to_string(), "0".to_string());
-                } else {
-                    options.put(arg.to_string(), "1".to_string());
-                }
-            }
-            Some(index) => {
-                let key = &arg[..index];
-                let mut value = &arg[index + 1..];
-                if equals_ignore_case(value, "true") {
-                    value = "1";
-                } else if equals_ignore_case(value, "false") {
-                    value = "0";
-                }
-
-                options.put(key.to_string(), value.to_string());
-            }
-        }
-        true
-    }
-
-    fn parse_short(arg: &str, options: &mut JHashMap<String, String>) {
-        let short_name = arg.jsubstring(1, 4);
-        let value = arg.jsubstring_from(5);
-        let long_name = Self::short_to_long_name(&short_name).unwrap_or(short_name);
-        Self::parse(&format!("--{long_name}={value}"), options);
-    }
-
-    /// `SHORT_TO_LONG_NAME_MAP.get(shortName)`.
-    fn short_to_long_name(short_name: &str) -> Option<String> {
-        IFernflowerPreferences::all_options()
-            .iter()
-            .rev()
-            .find(|o| o.short_name == Some(short_name))
-            .map(|o| o.key.to_string())
-    }
-}
 
 impl DecompiledClass {
     /// The language the class was written in: `kotlin` when the Kotlin

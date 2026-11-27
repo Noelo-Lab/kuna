@@ -1188,21 +1188,19 @@ default-arguments constructor without its marker parameter).
 Results reach the caller in root order,
 whatever the number of workers, and the call returns after the last delivery while the
 workers drop their engines. Each engine instance runs on a thread with a 512 MiB
-stack, of which the recursion guard (section 10.13) lets it use 32 MiB. The driver reads
-Vineflower's three-letter option names as their long names (`mpm` is
-`max-time-per-method`) before setting the keys it owns.
+stack, of which the recursion guard (section 10.13) lets it use 32 MiB. The driver sets
+the keys it owns (runtime, thread count, time limit) over the caller's.
 
 **Options.** `decompiler/managed/kuna-jvm/src/p0_knowledge/kuna_options.rs (resolve)`
-turns a `jvm_*` name, or Vineflower's long or three-letter name, and a value as a user
-writes it into the Vineflower key and value; the table is generated from `options.toml` by
-the crate's build script. Keys the front end sets itself (thread count, time limit, method
-selection, class-path keys a JVM would serve), and
-the formatting and failure-comment keys kuna fixes at Vineflower's defaults, are listed
-there as `[[driver_owned]]` and refused as user options. kuna's own rows resolve to
-their own names; the rest becomes Vineflower's option map (section 10.16), so that map is
-the one Vineflower would build. Any other key, a `jvm_fix_*` name included, is not a
-switch: `resolve` refuses it as an unknown option, and given to the engine directly it
-stays in Vineflower's option map like any key Vineflower does not read.
+turns a `jvm_*` name and a value as a user writes it into the engine key (Vineflower's long
+name) and value; the table is generated from `options.toml` by the crate's build script,
+and each option has that one name. The keys the front end sets itself (thread count, time
+limit, method selection) and the formatting keys kuna fixes at Vineflower's defaults have no
+row, so `resolve` refuses them, like any other name, as unknown options. kuna's own rows
+resolve to their own names; the rest becomes Vineflower's option map (section 10.16).
+`decompiler/managed/kuna-jvm/src/p0_knowledge/i_fernflower_preferences.rs` tables the keys
+the engine reads and their defaults; given to the engine directly, any other key stays in
+the option map unread.
 
 **The CLI seam.** `kuna-cli` routes an input to this engine before any native code runs
 when the input operand is a class file, an archive or a directory (chapter 00, section
