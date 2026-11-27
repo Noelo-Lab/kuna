@@ -60,6 +60,9 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     stmts: Vec<(u32, u32)>,
     min_addr: u32,
     regions: Vec<crate::region::Region>,
+    /// The two `return true` / `return false` blocks (in layout order) of a
+    /// boolean method, which share one `ireturn` as javac's `return c;` does.
+    bool_ret: Option<(u32, u32, Label)>,
 }
 
 /// The `Code` attribute body for `m`.
@@ -130,6 +133,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             stmts: Vec::new(),
             min_addr: u32::MAX,
             regions: Vec::new(),
+            bool_ret: None,
         }
     }
 
@@ -152,6 +156,40 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         let m = self.m;
         let reused = m.params.contains(&(reg, c)) && m.reused.contains(&m.root(v));
         self.slot(if reused { reg | REUSED } else { reg }, c)
+    }
+
+    /// A boolean method's two blocks that only return a constant, `true` in
+    /// one and `false` in the other, on one source line: d8's release build
+    /// gives each its own `return` where javac shares one for `return c;`
+    /// (returns on different lines were written as such).
+    fn boolean_returns(&mut self, order: &[u32]) -> Option<(u32, u32, Label)> {
+        let m = self.m;
+        if m.dex.type_desc(m.proto.ret).ok()? != b"Z" {
+            return None;
+        }
+        let mut found = Vec::new();
+        for &b in order {
+            let blk = &m.blocks[b as usize];
+            if !blk.handlers.is_empty() {
+                continue;
+            }
+            let ops: Vec<&Op> = m.ops[blk.start..blk.end].iter().filter(|o| o.kind != Kind::Absorbed && o.insn.op != 0x00).collect();
+            if let [c, r] = ops[..] {
+                let value = c.def.as_ref().map(|d| d.id);
+                if matches!(c.insn.op, 0x12..=0x15) && r.insn.op == 0x0f && value.is_some_and(|v| m.inline_const(v)) && r.uses[0].val == value? {
+                    found.push((b, c.insn.lit));
+                }
+            }
+        }
+        let line = |b: u32| {
+            let addr = m.ops[m.blocks[b as usize].start].insn.addr;
+            let i = m.debug.lines.partition_point(|&(a, _)| a <= addr);
+            i.checked_sub(1).map(|i| m.debug.lines[i].1)
+        };
+        match found[..] {
+            [(a, x), (b, y)] if x != y && (x | y) == 1 && line(a) == line(b) => Some((a, b, self.asm.label())),
+            _ => None,
+        }
     }
 
     fn candidate(&self, k: usize) -> bool {
@@ -282,6 +320,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         self.find_joins()?;
         let mut order = layout(m);
         self.regions = crate::region::arrange(m, &mut order);
+        self.bool_ret = self.boolean_returns(&order);
         for w in order.windows(2) {
             self.next_block[w[0] as usize] = w[1];
         }
@@ -780,7 +819,14 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             0x0f..=0x11 => {
                 self.push_use(k, 0)?;
                 let c = m.use_cat(o, 0);
-                self.asm.op(op::IRETURN + kind(c), &[], -size(c));
+                match self.bool_ret {
+                    Some((first, _, l)) if first == o.block => self.asm.branch(op::GOTO, l, 0),
+                    Some((_, second, l)) if second == o.block => {
+                        self.asm.bind(l);
+                        self.asm.op(op::IRETURN + kind(c), &[], -size(c));
+                    }
+                    _ => self.asm.op(op::IRETURN + kind(c), &[], -size(c)),
+                }
                 Ok(0)
             }
             0x12..=0x1c => {
@@ -979,6 +1025,12 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 self.asm.op(opc, &[], -2 - size(c));
                 Ok(0)
             }
+            0x62 if self.empty_collection(x.idx).is_some() => {
+                let (name, desc) = self.empty_collection(x.idx).expect("checked");
+                let r = self.sh.pool.method(b"java/util/Collections", name, desc, false);
+                self.asm.op_u16(op::INVOKESTATIC, r, 1);
+                Ok(L)
+            }
             0x52..=0x6d => {
                 self.push_uses(k)?;
                 let (f, c) = self.field_ref(x.idx)?;
@@ -1111,6 +1163,22 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 Ok(L)
             }
             _ => Err(err(format!("cannot translate opcode {:#04x} at {:#x}", x.op, x.addr))),
+        }
+    }
+
+    /// `Collections.EMPTY_LIST` (`_SET`, `_MAP`) as the `emptyList()` call
+    /// d8's release build replaced by it.
+    fn empty_collection(&self, field: u32) -> Option<(&'static [u8], &'static [u8])> {
+        let dex = self.m.dex;
+        let f = dex.field(field).ok()?;
+        if dex.type_desc(f.class).ok()? != b"Ljava/util/Collections;" {
+            return None;
+        }
+        match dex.string(f.name).ok()? {
+            b"EMPTY_LIST" => Some((b"emptyList", b"()Ljava/util/List;")),
+            b"EMPTY_SET" => Some((b"emptySet", b"()Ljava/util/Set;")),
+            b"EMPTY_MAP" => Some((b"emptyMap", b"()Ljava/util/Map;")),
+            _ => None,
         }
     }
 
@@ -1308,6 +1376,18 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                     nt += 1;
                 }
             }
+        }
+        let declared = &m.params[usize::from(!m.is_static)..];
+        for (i, (&(reg, c), &name)) in declared.iter().zip(&m.param_names).enumerate() {
+            let named = m.debug.locals.iter().any(|l| l.reg == reg && l.start == 0);
+            let (Some(&slot), Some(&ty)) = (self.slots.get(&(reg, c)), m.proto.params.get(i)) else { continue };
+            if name == NO_INDEX || named || code.is_empty() {
+                continue;
+            }
+            let ni = self.sh.pool.utf8(m.dex.string(name)?);
+            let di = self.sh.pool.utf8(m.dex.type_desc(ty)?);
+            lvt.u16(0).u16(code.len() as u16).u16(ni).u16(di).u16(slot);
+            n += 1;
         }
         for (name, count, body) in [(&b"LocalVariableTable"[..], n, lvt), (b"LocalVariableTypeTable", nt, lvtt)] {
             if count > 0 {

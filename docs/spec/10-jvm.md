@@ -1775,9 +1775,22 @@ the opcode its value's category picks, and `aconst_null` is accepted by every ar
 for another variable gets a second local for it, so the parameter's own local holds the
 parameter throughout and a copy of it can always read it. A value is the parameter's own
 when it is in the parameter's web, when its instruction (as d8 wrote it) reads the
-register's own value and writes it back (an update in place, `n--`), or when debug info
-names it as the parameter; everything else in that register is another variable. An
-`add-int/lit` becomes `iinc` only when the value it reads is in the local it writes. Blocks are laid
+register's own value and writes back one of the parameter's type (an update in place:
+arithmetic, `n--`, or another instruction but a cast whose value is read more than once,
+`n = Math.min(n, k)`), or when debug info names it as the parameter; everything else in that
+register is another variable (`char[] cs = s.toCharArray()` in `s`'s register). An
+`add-int/lit` becomes `iinc` only when the value it reads is in the local it writes. A
+parameter debug info does not name (a release build) gets a `LocalVariableTable` entry over
+the whole method with its `MethodParameters` name, as javac's `-g` writes one; the engine
+otherwise names a read of it apart from its declaration.
+
+**Release builds.** d8's release build also gives each `return` of a boolean method its own
+block where javac shares one `ireturn` for `return c;`: two blocks that only return `true`
+and `false`, on the same source line, share one `ireturn` again (the constant pushed in each,
+the first jumping to the second), so the engine prints the condition; returns on different
+lines were written as such and stay. And it reads `Collections.EMPTY_LIST`, `EMPTY_SET` and
+`EMPTY_MAP` where the code called `emptyList()`, `emptySet()` and `emptyMap()`; such a read
+is written as the call. Blocks are laid
 out in address order, a fall-through successor right after its block, and a block whose
 only predecessor jumps to it unconditionally right after that predecessor, with the `goto`
 dropped (so a handler's code is contiguous, as javac writes it); the regions below then

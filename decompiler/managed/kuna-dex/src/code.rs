@@ -152,6 +152,10 @@ pub struct Method<'d, 'a> {
     pub ref_type: BTreeMap<u32, Vec<u8>>,
     /// The declaring class's descriptor, for `this` in the local table.
     pub this_desc: Vec<u8>,
+    /// The declared parameters' `MethodParameters` names: a parameter that
+    /// debug info does not name (a release build) gets a local-variable entry
+    /// with it over the whole method, as javac's `-g` writes one.
+    pub param_names: Vec<u32>,
     /// `(block, register, predecessor)` to the constant or `move` def arriving on that edge.
     pub edge_const: BTreeMap<(u32, u32, u32), u32>,
     /// Registers live into some exception handler (a bit per register).
@@ -250,6 +254,7 @@ impl<'d, 'a> Method<'d, 'a> {
             direct_uses: Vec::new(),
             ref_type: BTreeMap::new(),
             this_desc: Vec::new(),
+            param_names: Vec::new(),
             edge_const: BTreeMap::new(),
             handler_live: Vec::new(),
             clean_param: Vec::new(),
@@ -984,7 +989,9 @@ impl<'d, 'a> Method<'d, 'a> {
     }
 
     /// Which values in a parameter's register are the parameter (its web,
-    /// an update of it in place, or a value debug info names as it) and
+    /// an update of it in place of its own type: arithmetic, or another op
+    /// but a cast whose value is read more than once; or a value debug info
+    /// names as it) and
     /// which are another variable d8 put there, from the instructions as
     /// d8 wrote them (before copies are forwarded).
     fn classify_params(&mut self) {
@@ -997,10 +1004,15 @@ impl<'d, 'a> Method<'d, 'a> {
             let name = name_at(self, r, 0);
             let mut clean = true;
             let mut own = BTreeSet::from([root]);
+            let ty = self.ref_desc(p as u32).map(<[u8]>::to_vec);
             for o in &self.ops {
                 let Some(d) = o.def.as_ref().filter(|d| d.reg == r) else { continue };
                 let web = self.root(d.id);
-                let in_place = o.uses.iter().any(|u| u.reg == r && u.val != UNDEF && own.contains(&self.root(u.val)));
+                let same = self.cat[d.id as usize] == self.cat[p] && self.ref_desc(d.id).map(<[u8]>::to_vec) == ty;
+                let reads = o.uses.iter().any(|u| u.reg == r && u.val != UNDEF && own.contains(&self.root(u.val)));
+                let arith = matches!(o.insn.op, 0x7b..=0xe2);
+                let kept = self.web_uses.get(&web).is_some_and(|w| w.0 > 1 || w.1);
+                let in_place = o.insn.op != 0x1f && same && reads && (arith || kept);
                 if web == root || in_place || (name.is_some() && name_at(self, r, o.end) == name) {
                     clean = false;
                     named.insert(web);
