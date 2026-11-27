@@ -4096,6 +4096,19 @@ its own DATA word. SR1 shifts the complete signed long before its
 two-word split. A long and a short can share a flexible-bank word
 when the bus has room; the right short retires after the long.
 
+For two compact `MPYSU` long stores, the left DATA operand is sampled
+into `X1` from the old `R4` before either write. The right multiply uses
+its own two `A0H` inputs. Four reservations need two ports on each bus:
+both pairs can straddle the seam, except when both claim the same
+interleaved ports.
+
+In the qualified `MAX` and `SUBC` pair, MAX compares unsigned 40-bit
+inputs and shifts a strict right selection into `BTR1` before DATA
+arbitration. The short subtract uses the incoming right carry and
+the DATA word captured before its source postincrement. A port stop
+can leave the trace and pointers updated without publishing either
+DATA result or the new `EST`.
+
 The mixed signed/unsigned compact multiply fetches a signed word at
 old `R7` and an unsigned word at `R2+RN2`. Address admission advances
 `R7`, but the later predicate alone writes the product's high word

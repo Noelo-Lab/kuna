@@ -8615,9 +8615,29 @@ macro compact_store_scale_40(bits, result) {
     result = signed_wide s>> ((ECFG >> 5) & 1);
 }
 
-# The primary long result takes RN6 and incoming X1, not the DATA input
-# sampled for the peer. Its flags are computed before SR1; its limiter
-# mask enables SR1 and FFT, but not ALIM or SAT.
+# This long multiplier result mask enables SR1 and FFT, but not ALIM or SAT.
+macro compact_parallel_su_long(left, right, lane, status, result) {
+    local product:8;
+    raw_mac_product(left, right, 1:1, 0:1, product);
+    local active:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 0:1, 0:1, 0:1, result, active);
+    raw_mac_flags(status, active, lane);
+    compact_store_scale_40(result, result);
+    compact_pair_fft(product, result, 0:1, status);
+}
+
+macro compact_check_long_short_write(low, high, word) {
+    if (((low ^ high) | (low ^ word)) < 0x8000) goto <stopped>;
+    local bank:2 = word & 0xc000;
+    if (bank == 0 || bank == 0xc000) goto <done>;
+    if (((low ^ word) & 0xc001) != 0 && ((high ^ word) & 0xc001) != 0) goto <done>;
+  <stopped>
+    carmel_data_write_conflict();
+    goto <stopped>;
+  <done>
+}
+
+# The long result takes RN6 and incoming X1, not the peer's DATA input.
 :MPYUS "CE1" "*R1+=RN1:long","X1","RN6" "||" "ADDABS" "*R5","*R0","A5H" is
     (carmel_issue=1 & slot_mode=0 & carmel_phase_emit=1 & carmel_single_issue=0 &
      hw_loop_actions=0 & slot_0_22=0x48291d); (slot_mode=0 & slot_0_22=0x1c2f40) {
@@ -8633,33 +8653,133 @@ macro compact_store_scale_40(bits, result) {
     if (admitted == 0) goto <right>;
     # Three reservations can share an address in a flexible bank; the
     # two-active-short alias check does not apply to a long plus a short.
-    if (((low ^ high) | (low ^ word)) < 0x8000) goto <stopped>;
-    local bank:2 = word & 0xc000;
-    if (bank == 0 || bank == 0xc000) goto <left>;
-    if (((low ^ word) & 0xc001) != 0 && ((high ^ word) & 0xc001) != 0) goto <left>;
-  <stopped>
-    carmel_data_write_conflict();
-    goto <stopped>;
-  <left>
+    compact_check_long_short_write(low, high, word);
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
     if (enabled == 0) goto <right>;
-    local product:8;
-    raw_mac_product(X1, RN6, 0:1, 1:1, product);
     local result:8;
-    local active:2;
-    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 0:1, 0:1, 0:1, result, active);
-    raw_mac_flags(status, active, 0);
-    compact_store_scale_40(result, result);
-    compact_pair_fft(product, result, 0:1, status);
+    compact_parallel_su_long(RN6, X1, 0, status, result);
     compact_pair_long_store(low, result);
   <right>
     local sum:8;
+    local active:2;
     compact_pair_addabs_word(input, A5H, 1:1, sum, result, active);
     raw_mac_flags(status, active, 6);
     compact_store_scale_40(result, result);
     compact_pair_fft(sum, result, 1:1, status);
     *[data]:2 word = result(2);
+    publish_alu_ce(status);
+    carmel_end_unmodeled_issue();
+}
+
+macro compact_parallel_advance_r4() {
+    local alignment:2 = 0;
+    if ((PACFG & 0x300) != 0x200) goto <advance>;
+    refresh_modulo_alignment(RM4, alignment);
+  <advance>
+    modify_native_agu(R4, RN4, RM4, RL4, alignment, 8:4, 1:2);
+}
+
+:MPYSU "*R1:long","*R4+=RN4","R7" "||" "MPYSU" "*R0:long","A0H","A0H" is
+    (carmel_issue=1 & slot_mode=0 & carmel_phase_emit=1 & carmel_single_issue=0 &
+     hw_loop_actions=0 & slot_0_22=0x44850e); (slot_mode=0 & slot_0_22=0x440188) {
+    local left:2 = R1;
+    local right:2 = R0;
+    local source:2 = R4;
+    compact_parallel_advance_r4();
+    X1 = *[data]:2 source;
+    local left_next:2 = left + 1;
+    local right_next:2 = right + 1;
+    local left_split:1 = ((left ^ left_next) & 0x8000) != 0;
+    local right_split:1 = ((right ^ right_next) & 0x8000) != 0;
+    if (left_split != right_split) goto <stopped>;
+    if (left_split == 0 && ((left ^ right) & 0x8000) == 0) goto <stopped>;
+    # Two split pairs use distinct ports unless both hit the interleaved
+    # seam. The ffff/0000 seam belongs to the flexible windows.
+    if (left != 0x7fff || right != 0x7fff) goto <execute>;
+  <stopped>
+    carmel_data_write_conflict();
+    goto <stopped>;
+  <execute>
+    local status:2 = EST & 0xcfff;
+    local result:8;
+    compact_parallel_su_long(X1, R7, 0, status, result);
+    compact_pair_long_store(left, result);
+    compact_parallel_su_long(A0H, A0H, 6, status, result);
+    compact_pair_long_store(right, result);
+    publish_alu_ce(status);
+    carmel_end_unmodeled_issue();
+}
+
+compact_parallel_borrow_dst: "*R4+=RN4" is slot_0_22=0x0c6761 {
+    local address:2 = R4;
+    compact_parallel_advance_r4();
+    export address;
+}
+compact_parallel_borrow_dst: "*R6+=RN6" is slot_0_22=0x0c7761 {
+    local address:2 = R6;
+    modify_native_agu(R6, RN6, RM6, RL6, RM6_ALIGN, 12:4, 1:2);
+    export address;
+}
+
+:MAX "CE1" "*R4:long","A1","A4" "||" "SUBC CE2" compact_parallel_borrow_dst,"*R0++","A5H" is
+    (carmel_issue=1 & slot_mode=0 & carmel_phase_emit=1 & carmel_single_issue=0 &
+     hw_loop_actions=0 & slot_0_22=0x266243); (slot_mode=0 & compact_parallel_borrow_dst) {
+    local admit_left:1 = carmel_read_address_admission(1:1);
+    local admit_right:1 = carmel_read_address_admission(2:1);
+    local low:2 = R4;
+    local high:2 = low + 1;
+    local source:2 = R0;
+    local input:2;
+    if (admit_right == 0) goto <qualify>;
+    build compact_parallel_borrow_dst;
+    local word:2 = compact_parallel_borrow_dst;
+    modify_native_agu(R0, 1:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    input = *[data]:2 source;
+  <qualify>
+    local ce1:2;
+    local ce2:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, ce1);
+    unary_ce(CECFG2, EST, CETBL, 1:2, ce2);
+    local status:2 = EST & 0xcfff;
+    local write_left:1 = admit_left != 0 && ce1 != 0;
+    local selected:8;
+    if (!write_left) goto <reserve>;
+    local a:8;
+    local b:8;
+    compact_long_sample(A1L, A1H, GB1, a);
+    compact_long_sample(A4L, A4H, GB4, b);
+    local second:1 = a < b;
+    selected = a;
+    if (!second) goto <trace>;
+    selected = b;
+  <trace>
+    # BTR belongs to EX, before the WB port decision. EST and DATA do not.
+    BTR1 = (BTR1 << 1) | zext(second);
+    status = (status & 0xfff6) | zext(a <= b) | (zext(a == b) << 3);
+    compact_store_scale_40(selected, selected);
+    compact_pair_fft(selected, selected, 0:1, status);
+  <reserve>
+    if (admit_left == 0 || admit_right == 0) goto <store>;
+    compact_check_long_short_write(low, high, word);
+  <store>
+    if (!write_left) goto <right>;
+    compact_pair_long_store(low, selected);
+  <right>
+    if (admit_right == 0 || ce2 == 0) goto <publish>;
+    local minuend:8 = sext(input) << 16;
+    local subtrahend:8 = sext(A5H) << 16;
+    local carry_word:8 = zext((EST >> 6) & 1) << 16;
+    local raw:8 = minuend - subtrahend + carry_word - 1;
+    local adder:8 = (minuend & 0xffffffffff) + ((~subtrahend) & 0xffffffffff) + carry_word;
+    local result:8;
+    local active:2;
+    raw_mac_finish(raw, adder, 1:1, 1:1, 1:1, result, active);
+    raw_mac_flags(status, active, 6);
+    compact_store_scale_40(result, result);
+    compact_pair_fft(raw, result, 1:1, status);
+    *[data]:2 word = result(2);
+  <publish>
     publish_alu_ce(status);
     carmel_end_unmodeled_issue();
 }

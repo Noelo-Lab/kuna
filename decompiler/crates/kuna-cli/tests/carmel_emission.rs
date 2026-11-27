@@ -2058,6 +2058,72 @@ fn carmel_parallel_long_short_stores_commit_after_shared_port_arbitration() {
 }
 
 #[test]
+fn carmel_parallel_long_stores_preserve_latch_and_full_width_extrema() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("long-stores.bin");
+    let source = scratch.path().join("long-stores.c");
+    let executable = scratch.path().join("long-stores");
+    type Regs = &'static [(&'static str, u16)];
+    type Words = &'static [(u16, u16, u16)];
+    let rows: [([u8; 6], Regs, Regs, Words); 2] = [
+        ([0x44, 0x85, 0x0e, 0x44, 0x01, 0x88],
+         &[("R0", 0xffff), ("R1", 0xffff), ("R4", 0x48), ("R7", 0xc048), ("RN4", 1),
+           ("A0H", 0x8123), ("X1", 0x6a5b), ("ECFG", 0)],
+         &[("R4", 0x49), ("X1", 0x5df9), ("EST", 0x3400)],
+         &[(0xffff, 0x9a3d, 0x4ac9), (0, 0x24ab, 0xc001), (0x48, 0x5df9, 0x5df9)]),
+        ([0x26, 0x62, 0x43, 0x0c, 0x77, 0x61],
+         &[("A1L", 2), ("A1H", 0x3401), ("GB1", 0xff), ("A4L", 1), ("A4H", 0x3401),
+           ("GB4", 0), ("A5H", 0xd1dd), ("BTR1", 0x8543), ("ECFG", 32),
+           ("R0", 0x40), ("R4", 0x48), ("R6", 0x8048), ("RN6", 3)],
+         &[("BTR1", 0x0a86), ("R0", 0x41), ("R6", 0x804b), ("EST", 0x3000)],
+         &[(0x48, 0xa12b, 0x8001), (0x49, 0x783c, 0x9a00), (0x8048, 0x9a3d, 0x2729),
+           (0x40, 0x2030, 0x2030)]),
+    ];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n\
+        static volatile unsigned short mem_0, mem_1, mem_2, mem_3;\n");
+    let mut checks = String::new();
+    for (i, (packet, seeds, outputs, words)) in rows.into_iter().enumerate() {
+        let mut code = vec![NOP; 6];
+        code.extend([packet, NOP, NOP, NOP, NOP, NOP, RET, NOP]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let specs = scratch.path().join(format!("long-store-specs-{i}"));
+        let mut tracked = vec![("EST", 0), ("PACFG", 0), ("FFTV", 0),
+                               ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("CETBL", 0xffff)];
+        tracked.extend_from_slice(seeds);
+        tracked_carmel_entry_specs(&specs, &tracked, 0, 0);
+        for &(reg, result) in outputs {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+            ]);
+            for (j, (address, seed, _)) in words.iter().enumerate() {
+                kuna.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short mem_{j}")]);
+                writeln!(checks, "mem_{j} = {seed};").unwrap();
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let f = &json["functions"][0];
+            assert!(f["error"].is_null(), "{f}");
+            let name = format!("long_store_{i}_{reg}");
+            writeln!(c, "#define sub_0 {name}\n{}\n#undef sub_0", f["code"].as_str().unwrap()).unwrap();
+            writeln!(checks, "if ({name}() != {result}) return {};", 1 + i).unwrap();
+            for (j, &(_, _, word)) in words.iter().enumerate() {
+                writeln!(checks, "if (mem_{j} != {word}) return {};", 3 + i).unwrap();
+            }
+        }
+    }
+    writeln!(c, "int main(void) {{\n{checks}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_compact_shifted_mac_uses_guard_and_separates_qualification() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
