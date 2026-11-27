@@ -86,10 +86,6 @@ pub fn install_context_with(options: &[(&str, &str)]) -> ContextGuard {
     );
     DecompilerContext::set_current_context(Some(context.clone()));
 
-    let plugins = struct_context.get_plugin_context();
-    plugins.find_plugins();
-    plugins.initialize();
-
     ContextGuard { context, logger }
 }
 

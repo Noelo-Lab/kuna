@@ -5,12 +5,18 @@ use std::path::Path;
 
 use kuna_jvm::i_fernflower_preferences::IFernflowerPreferences;
 use kuna_jvm::kuna_options::{self, driver_owned, find, resolve, rows, ValueKind};
-use kuna_jvm::kuna_plugins;
+use kuna_jvm::kotlin_options::KotlinOptions;
 
 #[test]
 fn table_is_one_to_one_with_vineflower_options() {
     let defaults = IFernflowerPreferences::DEFAULTS();
-    let plugin_options = kuna_plugins::bundled_plugin_options();
+    let plugin_options: Vec<_> = KotlinOptions::OPTIONS
+        .iter()
+        .map(|option| {
+            let default = KotlinOptions::DEFAULTS.iter().find(|(k, _)| *k == option.key);
+            (option, default.map(|(_, v)| v.to_string()))
+        })
+        .collect();
     let mut claimed: BTreeMap<&str, &str> = BTreeMap::new();
     for row in rows() {
         if row.is_kuna() {
@@ -37,18 +43,9 @@ fn table_is_one_to_one_with_vineflower_options() {
         .map(|o| o.key)
         .collect();
     let mut all = core.clone();
-    for plugin_option in &plugin_options {
-        assert!(
-            !core.contains(plugin_option.option.key),
-            "{} of plugin {} is also a core option",
-            plugin_option.option.key,
-            plugin_option.plugin
-        );
-        assert!(
-            all.insert(plugin_option.option.key),
-            "{} declared twice",
-            plugin_option.option.key
-        );
+    for (option, _) in &plugin_options {
+        assert!(!core.contains(option.key), "{} of Kotlin is also a core option", option.key);
+        assert!(all.insert(option.key), "{} declared twice", option.key);
     }
     let covered: BTreeSet<&str> = claimed.keys().copied().collect();
     assert_eq!(
@@ -60,11 +57,11 @@ fn table_is_one_to_one_with_vineflower_options() {
         let (option, default) = match IFernflowerPreferences::find_option(row.vineflower) {
             Some(option) => (option, defaults.get_cloned(&row.vineflower.to_string())),
             None => {
-                let plugin_option = plugin_options
+                let (option, default) = plugin_options
                     .iter()
-                    .find(|o| o.option.key == row.vineflower)
+                    .find(|(o, _)| o.key == row.vineflower)
                     .unwrap_or_else(|| panic!("{}: no such option", row.option));
-                (plugin_option.option, plugin_option.default.clone())
+                (*option, default.clone())
             }
         };
         assert_eq!(row.short, option.short_name.unwrap_or(""), "{}", row.option);
@@ -190,8 +187,6 @@ fn resolution_errors() {
     let err = resolve("decompile-finaly", "on").unwrap_err();
     assert!(err.contains("did you mean decompile-finally"), "{err}");
     let err = resolve("jvm_nothing_like_this_at_all", "on").unwrap_err();
-    assert!(err.contains("unknown JVM option"), "{err}");
-    let err = resolve(kuna_plugins::JVM_PLUGINS, "off").unwrap_err();
     assert!(err.contains("unknown JVM option"), "{err}");
     for name in [
         "thread-count",

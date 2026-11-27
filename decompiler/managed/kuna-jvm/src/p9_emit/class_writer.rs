@@ -44,7 +44,6 @@ use crate::if_helper::IfHelper;
 use crate::import_collector::ImportCollector;
 use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
-use crate::java_pass_location::JavaPassLocation;
 use crate::fixes::asserts;
 use crate::fixes::control_flow;
 use crate::fixes::nested_class_vars::captured_var_clash_name;
@@ -56,7 +55,6 @@ use crate::fixes::class_writing::EnumBodySeparator;
 use crate::fixes::class_writing;
 use crate::fixes::nested_class_vars;
 use crate::pair::Pair;
-use crate::pass_context::PassContext;
 use crate::pool_interceptor::PoolInterceptor;
 use crate::pooled_constant::PooledConstant;
 use crate::record_helper::RecordHelper;
@@ -272,8 +270,7 @@ impl ClassWriter {
 
         let methods = wrapper.get_methods().borrow().to_vec();
         for method in methods {
-            let (method_struct, class_struct, varproc) =
-                method.with(|d| (d.method_struct, d.class_struct, d.varproc));
+            let method_struct = method.with(|d| d.method_struct);
             let rec = DecompileRecord::new();
             DecompilerContext::reset_method(method);
 
@@ -286,18 +283,6 @@ impl ClassWriter {
                     if IfHelper::prettify_ifs(root.0) {
                         rec.add("FinalPrettifyIfs", Some(root));
                     }
-
-                    let mut pctx = PassContext::new(
-                        Some(root),
-                        None,
-                        method_struct,
-                        class_struct,
-                        varproc,
-                        rec,
-                    );
-                    DecompilerContext::get_struct_context()
-                        .get_plugin_context()
-                        .run_passes(JavaPassLocation::LateProcessing, &mut pctx);
                 });
                 if let Err(e) = result {
                     let qualified_name = node.with(|d| d.class_struct).qualified_name();

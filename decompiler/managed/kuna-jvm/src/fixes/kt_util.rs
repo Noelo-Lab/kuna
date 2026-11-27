@@ -6,17 +6,13 @@ use crate::const_exprent::ConstValue;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
 use crate::invocation_exprent::InvocationExprent;
-use crate::plugin_context::PluginContext;
+use crate::language_spec::LanguageSpec;
 use crate::statement::Statement;
 use crate::text_buffer::TextBuffer;
 
 /// Whether the class being written is written as Kotlin.
 pub(crate) fn writing_kotlin() -> bool {
-    DecompilerContext::get_current_class().is_some_and(|cl| {
-        PluginContext::get_current_context()
-            .get_language_spec(cl)
-            .is_some()
-    })
+    DecompilerContext::get_current_class().is_some_and(|cl| LanguageSpec::of(cl).is_some())
 }
 
 pub(crate) const INTRINSICS: &str = "kotlin/jvm/internal/Intrinsics";

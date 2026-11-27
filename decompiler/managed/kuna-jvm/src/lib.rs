@@ -49,15 +49,11 @@ pub mod rt;
 pub mod substrate;
 
 pub use infra::{
-    cancelation_manager, class_pass, class_pass_location, decompile_record, java_pass_location,
-    java_pass_registrar, kuna_corpus, kuna_driver, kuna_engine, kuna_partition, kuna_spans, looping_pass_builder,
-    main_pass_builder, method_processor, named_pass, pass, pass_context, plugin_context,
-    validation_helper, wrapped_pass,
+    cancelation_manager, class_pass, decompile_record, kuna_corpus, kuna_driver, kuna_engine,
+    kuna_partition, kuna_spans, looping_pass_builder, main_pass_builder, method_processor,
+    named_pass, pass, pass_context, validation_helper, wrapped_pass,
 };
-pub use infra::{
-    graph_parser, kuna_plugins, language_chooser, language_spec, plugin, plugin_options,
-    plugin_source, statement_writer,
-};
+pub use infra::{graph_parser, language_spec, statement_writer};
 pub use kotlin::{
     bit_encoding, kt_flags, kt_metadata, kt_proto, metadata_name_resolver,
 };
@@ -139,9 +135,7 @@ pub use p9_emit::{
     field_text_token, import_collector, method_text_token, text_buffer, text_token,
     variable_text_token,
 };
-pub use plugins::{
-    idea_not_null_pass, idea_not_null_plugin,
-};
+pub use plugins::idea_not_null_pass;
 pub use substrate::{
     annotation_exprent, array_exprent, array_helper, assert_exprent, assignment_exprent,
     basic_block_statement, byte_cursor, catch_all_statement, catch_statement, code_type,

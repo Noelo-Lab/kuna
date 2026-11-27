@@ -58,7 +58,5 @@ mod fix_helpers;
 mod kotlin_metadata;
 #[path = "logger.rs"]
 mod logger;
-#[path = "naming_plugins.rs"]
-mod naming_plugins;
 #[path = "switch_fixes.rs"]
 mod switch_fixes;

@@ -87,7 +87,7 @@ decompiling them.
 The Kotlin compiler emits ordinary class files, and the Java pipeline decompiles them to
 correct but noisy Java: property accessors, `Intrinsics` null checks, `$default` stubs,
 `Companion` fields and a `@Metadata(d1 = ...)` annotation full of encoded strings.
-Vineflower's Kotlin plugin, which kuna bundles and loads by default, writes them as Kotlin
+Vineflower's Kotlin plugin, which is part of kuna's pipeline, writes them as Kotlin
 instead.
 
 **What is detected, and how.** A class is Kotlin when it carries the `kotlin.Metadata`

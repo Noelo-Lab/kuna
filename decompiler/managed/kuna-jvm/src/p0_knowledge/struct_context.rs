@@ -18,8 +18,9 @@ use crate::generic_main::GenericMain;
 use crate::generic_method_descriptor::GenericMethodDescriptor;
 use crate::i_decompiled_data::IDecompiledData;
 use crate::i_fernflower_logger::Severity;
+use crate::kt_attrs::KtAttrs;
 use crate::kuna_partition::RootSelection;
-use crate::plugin_context::PluginContext;
+use crate::language_spec::LanguageSpec;
 use crate::rt::{rethrow, try_catch, Caught, JHashMap, JavaException};
 use crate::struct_class::StructClass;
 use crate::{arena_identity, arena_object, jthrow};
@@ -32,7 +33,8 @@ pub struct StructContextData {
     pub badly_placed_classes: JHashMap<String, String>,
     pub units_by_class_name: JHashMap<String, ContextUnit>,
     pub abstract_names: JHashMap<String, Vec<String>>,
-    pub plugin_context: PluginContext,
+    /// The Kotlin pipeline (`Fernflower::new` installs it).
+    pub language_spec: Option<Rc<LanguageSpec>>,
 }
 
 arena_object!(pub StructContext => StructContextData, Session);
@@ -49,7 +51,7 @@ impl StructContext {
             badly_placed_classes: JHashMap::new(),
             units_by_class_name: JHashMap::new(),
             abstract_names: JHashMap::new(),
-            plugin_context: PluginContext::new(),
+            language_spec: None,
         })
     }
 
@@ -326,9 +328,6 @@ impl StructContext {
         self.init_unit(unit);
     }
 
-    pub fn get_plugin_context(self) -> PluginContext {
-        self.with(|d| d.plugin_context)
-    }
 
     fn init_unit(self, unit: ContextUnit) {
         DecompilerContext::get_logger().write_message(
@@ -485,7 +484,7 @@ impl StructContext {
     }
 
     pub fn clear(self) {
-        self.get_plugin_context().close();
+        KtAttrs::clear();
 
         let units = self.with(|d| d.units.clone());
         for unit in units {

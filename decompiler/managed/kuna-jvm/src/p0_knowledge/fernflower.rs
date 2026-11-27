@@ -1,9 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/main/Fernflower.java`, adapted to
 //! kuna: finished classes are handed to a callback instead of an
-//! `IResultSaver`; plugins come from the bundled list (`kuna_plugins`, chosen
-//! by the custom property `jvm_plugins`) instead of the class path; renamer
-//! class loading and the class path (`include-classpath`) have no Rust
-//! counterpart.
+//! `IResultSaver`; Vineflower's bundled Kotlin and IdeaNotNull plugins are part
+//! of the pipeline (the Kotlin `LanguageSpec` is installed here, IdeaNotNull
+//! runs in the method schedule), so nothing is loaded; renamer class loading
+//! and the class path (`include-classpath`) have no Rust counterpart.
 //!
 //! Class-scope arenas are reset at the end of [`Fernflower::decompile_context`],
 //! once every class of every unit has been delivered: Vineflower emits all
@@ -29,10 +29,10 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
 use crate::jdk_runtime::JdkRuntime;
+use crate::kotlin_options::KotlinOptions;
+use crate::kotlin_plugin::KotlinPlugin;
 use crate::kuna_partition::RootSelection;
-use crate::kuna_plugins;
-use crate::plugin_context::PluginContext;
-use crate::plugin_source::PluginSource;
+use crate::language_spec::LanguageSpec;
 use crate::pool_interceptor::PoolInterceptor;
 use crate::rt::{try_catch, Caught, JHashMap, JavaException, JavaStr};
 use crate::struct_class::StructClass;
@@ -81,28 +81,10 @@ struct FernflowerDecompiledData {
 impl Fernflower {
     /// Java: Fernflower(IResultSaver, Map<String, Object>, IFernflowerLogger).
     /// `custom_properties` overlay the defaults in order; three-letter keys are short names.
-    /// The bundled plugins are loaded unless `jvm_plugins` is `0`.
     pub fn new(
         custom_properties: &[(String, String)],
         logger: Rc<dyn IFernflowerLogger>,
     ) -> Fernflower {
-        let (plugins, custom_properties) = kuna_plugins::take_switch(custom_properties);
-        Fernflower::new_with_plugin_sources(
-            &custom_properties,
-            logger,
-            kuna_plugins::plugin_sources(plugins),
-        )
-    }
-
-    /// [`Fernflower::new`] with `plugin_sources` as `PluginSources.PLUGIN_SOURCES`
-    /// (`jvm_plugins` is ignored).
-    pub fn new_with_plugin_sources(
-        custom_properties: &[(String, String)],
-        logger: Rc<dyn IFernflowerLogger>,
-        plugin_sources: Vec<Rc<dyn PluginSource>>,
-    ) -> Fernflower {
-        let (_, custom_properties) = kuna_plugins::take_switch(custom_properties);
-        let custom_properties = &custom_properties[..];
         let mut properties = IFernflowerPreferences::DEFAULTS();
         for (key, value) in custom_properties {
             if key.jlen() == 3 {
@@ -154,13 +136,13 @@ impl Fernflower {
         );
         DecompilerContext::set_current_context(Some(context.clone()));
 
-        let plugins = struct_context.get_plugin_context();
-        plugins.set_plugin_sources(plugin_sources);
-        let plugin_count = plugins.find_plugins();
-
-        logger.write_message(&format!("Loaded {plugin_count} plugins"), Severity::Info);
-
-        plugins.initialize();
+        context.with_mut(|d| {
+            for (key, value) in KotlinOptions::DEFAULTS {
+                d.properties.put_if_absent(key.to_string(), value.to_string());
+            }
+        });
+        let kotlin = Rc::new(KotlinPlugin::language_spec());
+        struct_context.with_mut(|d| d.language_spec = Some(kotlin));
 
         logger.write_message(
             &format!(
@@ -248,17 +230,13 @@ impl Fernflower {
         self.loaded = false;
     }
 
-    /// Tells the plugins decompilation starts, renames (when enabled, once
-    /// per engine, as Vineflower renames once per instance) and loads every
+    /// Renames (when enabled, once per engine, as Vineflower renames once
+    /// per instance) and loads every
     /// own class into class nodes, once per run;
     /// [`Fernflower::decompile_context`] does it itself when needed.
     pub fn load(&mut self) {
         if self.loaded {
             return;
-        }
-
-        for plugin in self.struct_context.get_plugin_context().get_plugins() {
-            plugin.before_decompile();
         }
 
         if let Some(mut converter) = self.converter.take() {
@@ -377,7 +355,7 @@ impl FernflowerDecompiledData {
 
 impl IDecompiledData for FernflowerDecompiledData {
     fn get_class_entry_name(&self, cl: StructClass, entry_name: &str) -> Option<String> {
-        let spec = PluginContext::get_current_context().get_language_spec(cl);
+        let spec = LanguageSpec::of(cl);
         let extension = spec.as_ref().map_or("java", |spec| spec.extension.as_str());
 
         let qualified_name = qualified_name_of(cl);
@@ -547,5 +525,16 @@ impl OptionParser {
             .rev()
             .find(|o| o.short_name == Some(short_name))
             .map(|o| o.key.to_string())
+    }
+}
+
+impl DecompiledClass {
+    /// The language the class was written in: `kotlin` when the Kotlin
+    /// pipeline claimed it (its `path` then ends in `.kt`), else `java`.
+    pub fn language(&self) -> &'static str {
+        match self.path.rsplit_once('.') {
+            Some((_, "kt")) => "kotlin",
+            _ => "java",
+        }
     }
 }

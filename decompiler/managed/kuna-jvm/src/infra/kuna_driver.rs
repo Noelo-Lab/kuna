@@ -65,8 +65,6 @@ pub type ProgressFn = Arc<dyn Fn(&Progress) + Send + Sync>;
 pub struct DriverConfig {
     /// Vineflower options as `(key, value)`; later pairs win. The driver sets
     /// `include-runtime` and `thread-count` itself.
-    /// kuna's `jvm_plugins` pair reaches every
-    /// instance (the bundled plugins are on when it is absent).
     pub options: Vec<(String, String)>,
     pub jobs: Jobs,
     /// The JDK whose classes give the engine context (`None`: no runtime).

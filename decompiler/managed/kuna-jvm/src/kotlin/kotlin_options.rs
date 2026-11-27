@@ -2,7 +2,6 @@
 //! fields Vineflower reads by reflection are the table `OPTIONS`.
 
 use crate::i_fernflower_preferences::{OptionType, PreferenceOption};
-use crate::plugin_options::AddDefaults;
 
 pub struct KotlinOptions;
 
@@ -34,8 +33,9 @@ impl KotlinOptions {
         },
     ];
 
-    pub fn add_defaults(cons: &mut dyn AddDefaults) {
-        cons.add_default(KotlinOptions::DECOMPILE_KOTLIN, "1");
-        cons.add_default(KotlinOptions::UNKNOWN_DEFAULT_ARG_STRING, "...");
-    }
+    /// What `Fernflower::new` puts for each key a caller did not set (`addDefaults`).
+    pub const DEFAULTS: [(&'static str, &'static str); 2] = [
+        (KotlinOptions::DECOMPILE_KOTLIN, "1"),
+        (KotlinOptions::UNKNOWN_DEFAULT_ARG_STRING, "..."),
+    ];
 }

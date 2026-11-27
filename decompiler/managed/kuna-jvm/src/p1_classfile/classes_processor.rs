@@ -5,7 +5,6 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::class_pass_location::ClassPassLocation;
 use crate::class_wrapper::ClassWrapper;
 use crate::class_writer::ClassWriter;
 use crate::code_constants::{
@@ -27,7 +26,6 @@ use crate::nested_member_access::NestedMemberAccess;
 use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
 use crate::fixes::anonymous_classes::unlisted_anonymous_class;
 use crate::fixes::overloads::unseen_class_overload;
-use crate::plugin_context::PluginContext;
 use crate::rt::{
     rethrow, try_catch, Caught, JHashMap, JHashSet, JLinkedHashSet, JList, JavaStr, Shared,
 };
@@ -569,14 +567,11 @@ impl ClassesProcessor {
         DecompilerContext::start_class(import_collector);
         let result = try_catch(|| {
             if !package_info && !module_info {
-                DecompilerContext::get_struct_context()
-                    .get_plugin_context()
-                    .run_class_passes(ClassPassLocation::BeforeProcessing, root);
                 LambdaProcessor::new().process_class(root);
 
                 Self::add_class_name_to_import(root, import_collector);
 
-                let spec = PluginContext::get_current_context().get_language_spec(cl);
+                let spec = LanguageSpec::of(cl);
 
                 Self::init_wrappers(root, spec.as_deref());
 
@@ -590,10 +585,6 @@ impl ClassesProcessor {
                         spec.root_processor.run(root);
                     }
                 }
-
-                DecompilerContext::get_struct_context()
-                    .get_plugin_context()
-                    .run_class_passes(ClassPassLocation::AfterProcessing, root);
             }
         });
         DecompilerContext::get_logger().end_processing_class();
@@ -635,16 +626,12 @@ impl ClassesProcessor {
 
                 buffer.append_buffer(&module_buffer);
             } else {
-                let spec = PluginContext::get_current_context().get_language_spec(cl);
+                let spec = LanguageSpec::of(cl);
                 let mut class_buffer = TextBuffer::with_capacity(Self::AVERAGE_CLASS_SIZE);
                 let writer: Rc<dyn StatementWriter> = match spec {
                     Some(spec) => spec.writer.clone(),
                     None => Rc::new(ClassWriter::new()),
                 };
-
-                DecompilerContext::get_struct_context()
-                    .get_plugin_context()
-                    .run_class_passes(ClassPassLocation::BeforeWriting, root);
 
                 writer.write_class(root, &mut class_buffer, 0);
                 class_buffer.reformat();

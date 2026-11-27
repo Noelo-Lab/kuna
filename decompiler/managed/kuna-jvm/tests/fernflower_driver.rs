@@ -167,13 +167,7 @@ fn constructor_logs_plugins_jvm_and_renamer() {
         .collect();
     assert_eq!(
         info,
-        vec![
-            format!(
-                "Loaded {} plugins",
-                kuna_jvm::kuna_plugins::bundled_plugins().len()
-            ),
-            "JVM info: missing vendor - missing java version - missing jvm version".to_string(),
-        ]
+        vec!["JVM info: missing vendor - missing java version - missing jvm version".to_string()]
     );
     fernflower.clear_context();
 }
