@@ -259,6 +259,10 @@ far is `devirtualize`, which recovers a function protected by a VM-based
 obfuscator (VMProtect, Themida, Tigress Virtualize) with the Pushan algorithm
 (NDSS 2027); the header of a function it recovered starts with `warn:
 devirtualize:`. An unknown technique is an error that lists the known ones.
+A recovery runs under its own work budget, which `--max-fn-seconds` does not
+count: over 48 protected test functions the decompile took 12 s at the median
+and five minutes at most, with up to 3.7 GiB resident. `--max-fn-memory` does
+stop it, and `--deobfuscate off` skips it.
 For an AArch64 target (any compiler spec with `<prefersplit>`), a single-function
 decompile also bootstraps its direct callees' recovered parameter types — at most
 32, no recursion, types only — so a split-register argument takes the callee's

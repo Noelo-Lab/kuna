@@ -863,17 +863,19 @@ impl<'a> Explorer<'a> {
     }
 
     /// The exploration's work budget, its memory bound or its wall-clock
-    /// backstop is spent: the round in progress is the last, cut short.
-    /// Checked between nodes and inside a node's instructions and merge, so
-    /// no single step runs on past a limit (a case split stops at the same
-    /// point, [`ExprArena::work_limit`]).
+    /// backstop is spent, or the drive's memory limit
+    /// ([`crate::kuna_fnmemory`]) is passed: the round in progress is the
+    /// last, cut short. Checked between nodes and inside a node's
+    /// instructions and merge, so no single step runs on past a limit (a case
+    /// split stops at the same point, [`ExprArena::work_limit`]).
     fn exhausted(&mut self) -> bool {
         if self.stopped.is_none() {
+            let now = std::time::Instant::now();
             let limit = if self.arena.work() >= self.config.max_work {
                 Limit::Work
-            } else if self.memory_estimate() >= self.config.max_memory {
+            } else if self.memory_estimate() >= self.config.max_memory || crate::kuna_fnmemory::over(now) {
                 Limit::Memory
-            } else if self.started.elapsed().as_secs() >= self.config.max_seconds {
+            } else if now.duration_since(self.started).as_secs() >= self.config.max_seconds {
                 Limit::Time
             } else {
                 return false;

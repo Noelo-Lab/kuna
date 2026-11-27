@@ -129,6 +129,9 @@ the recovery assumed, such as bytecode in writable memory being what the file ho
   or interpreter and cannot confirm it. A body can also be wrong with no warning (lost
   stack-array accesses are the known case), so confirm answer-critical logic by execution.
 - `--deobfuscate off` prints the protected code as it is, for studying the VM itself.
+- A recovery can take minutes and several GiB for one function, and `--max-fn-seconds`
+  does not count it (`--max-fn-memory` does stop it). For a quick first export of a
+  protected binary pass `--deobfuscate off`, then decompile the functions that matter.
 - `--deobfuscate devirtualize` runs the technique on the requested function without
   waiting for its detection. Try it with `kuna decompile` on a function that still prints
   as a stub or dispatch loop.

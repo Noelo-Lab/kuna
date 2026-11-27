@@ -758,6 +758,11 @@ fn import_thunk(target: &ArchTarget<'_>, addr: u64) -> bool {
     flow.is_some_and(|op| op.opc == OpCode::CPUI_BRANCHIND)
 }
 
+/// Why [`devirtualize`] gives a function up once its drive's memory limit
+/// ([`crate::kuna_fnmemory`]) stopped the exploration: the drive ends with
+/// that limit's error, so nothing is emitted for it.
+const OVER_FN_MEMORY: &str = "the per-function memory limit stopped the exploration";
+
 /// Run the whole pipeline for a function entry.  On x86 the emitted calls
 /// keep ECX and EDX as possible arguments besides the stack: `__fastcall` and
 /// `__thiscall` pass them, and MSVC's `__security_check_cookie` takes the
@@ -781,6 +786,9 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<DevirtProgram, St
     let mut explorer = Explorer::new(&target, abi.clone(), Config::default(), entry);
     explorer.probe = probe;
     let mut cfg = explorer.run();
+    if crate::kuna_fnmemory::tripped() {
+        return Err(OVER_FN_MEMORY.into());
+    }
     if explorer.stats.rep_copies > 0 && explorer.stats.copy_read_unfolded {
         // A copied array the program itself reads: run the copies.
         let mut first = std::mem::take(&mut explorer.log);
@@ -790,6 +798,9 @@ pub fn devirtualize(arch: &Architecture, entry: u64) -> Result<DevirtProgram, St
         explorer.probe = probe;
         explorer.rep_copies = false;
         cfg = explorer.run();
+        if crate::kuna_fnmemory::tripped() {
+            return Err(OVER_FN_MEMORY.into());
+        }
         first.append(&mut explorer.log);
         explorer.log = first;
     }

@@ -1095,7 +1095,11 @@ off kuna's per-function watchdog (`--max-fn-seconds`, 120 s by default on
 (`decompile_drive.rs (uncharge)`) and left out of the flow time a later drive
 is charged, so the watchdog covers only the decompilation of the recovered
 program. Their own limits bound them instead; a function whose exploration
-ends at one of them still prints, with the warning.
+ends at one of them still prints, with the warning. The per-function memory
+limit (`--max-fn-memory`, or its cgroup default) does reach the exploration,
+which asks it wherever it checks its own limits (`kuna_fnmemory.rs (over)`):
+once it is passed the exploration stops, nothing is emitted, and the drive ends
+with that limit's error.
 
 A function
 that is not devirtualized gets the overlay cleared. The program's call-kill
