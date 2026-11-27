@@ -904,11 +904,15 @@ fn a_failure_inside_a_lambda_fails_the_enclosing_method() {
     assert_eq!(class["status"], "decompiled");
     assert!(class["error"].is_null());
     assert_eq!(class["nested_errors"].as_array().unwrap().len(), 1, "the field initializer's lambda: {class}");
+    let broken = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == "com.ex.fail.Broken").unwrap();
+    assert_eq!(broken["status"], "decompiled", "bodies that fail while processed fail alone: {broken}");
+    assert_eq!(broken["nested_errors"].as_array().unwrap().len(), 1, "a failed method header in a field initializer: {broken}");
+    assert_eq!(record("com.ex.fail.Broken.lambda")["nested_errors"].as_array().unwrap().len(), 1);
 
     let out = scratch_dir("jvm-nested-failures");
     let summary = ok(&jvm(&["decompile-project", &dir, "-o", &out.display().to_string()]));
     assert!(
-        summary.ends_with("; classes: 2 ok, 1 failed; methods: 2 ok, 3 failed; outside methods: 1 failed\n"),
+        summary.ends_with("; classes: 3 ok, 1 failed; methods: 3 ok, 6 failed; outside methods: 2 failed\n"),
         "{summary}"
     );
 }

@@ -1021,11 +1021,17 @@ error paths, `class_failed` from `invoke_processors` and the Kotlin writer's fai
 path), and every open method span records it as a nested failure, as does the innermost
 open class span when no method of it is open (a field initializer); the failing body's own
 span keeps it as its own error. A closed span also closes those a throw left open inside
-it. A method span further carries the method's `$VF:` comments when its wrapper's
+it, and a writer that catches a body's failure (`write_method`'s body, the inline and block
+lambda bodies) first drops the spans the throw left open since it started (`depth`, `unwind`),
+so a field initializer's lambda whose anonymous class fails at a method header is recorded on
+the class span, not on the dangling span of that header. A method span further carries the method's `$VF:` comments when its wrapper's
 `add_error_comment` is set, the comments Vineflower follows with its report-this note.
 
 **Failure granularity.** A method failure becomes the comment block above and the class
-survives. A class whose processing throws (section 10.11) is written as
+survives. A lambda or a method of an anonymous class that fails while it is processed (a stack
+underflow) has no statement tree; the variable naming of the enclosing method
+(`VarDefinitionHelper::iterate_clashing_exprent`) skips such a body instead of failing the
+enclosing class, so the body is written as its failure comment like any other. A class whose processing throws (section 10.11) is written as
 `// $VF: Couldn't be decompiled` followed by the exception, in place of its body. A class
 whose writing throws is written as a `/* $VF: Unable to decompile class ... */` comment
 (not at all under the corpus fixture's `dump-exception-on-error=0`). Nothing

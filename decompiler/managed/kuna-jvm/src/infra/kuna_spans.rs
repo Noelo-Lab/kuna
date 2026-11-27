@@ -179,6 +179,19 @@ pub fn close(buffer: &mut TextBuffer, span: SpanId) {
     }
 }
 
+/// How many spans are open, for a writer that catches a failure to
+/// [`unwind`] to.
+pub fn depth() -> usize {
+    RECORDER.with(|r| r.borrow().open.len())
+}
+
+/// Drops the spans opened after `depth` that a caught failure left open (the
+/// header of a method that failed to write), so that the failure is recorded
+/// on the spans its comment is written in.
+pub fn unwind(depth: usize) {
+    RECORDER.with(|r| r.borrow_mut().open.truncate(depth));
+}
+
 /// `wrapper`'s method is written as an error comment: its own span keeps
 /// the error, every other open span records it.
 pub fn method_failed(wrapper: MethodWrapper) {

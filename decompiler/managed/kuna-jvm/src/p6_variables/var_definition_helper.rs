@@ -2090,9 +2090,9 @@ impl VarDefinitionHelper {
                             &mt2.get_name(),
                             &mt2.get_descriptor(),
                         );
-                        if !seen_methods.contains(&key) {
+                        let (mw_root, mw_varproc) = mw.with(|d| (d.root, d.varproc));
+                        if let (false, Some(mw_root)) = (seen_methods.contains(&key), mw_root) {
                             seen_methods.add(key);
-                            let (mw_root, mw_varproc) = mw.with(|d| (d.root, d.varproc));
 
                             let md =
                                 MethodDescriptor::parse_descriptor(&li.content_method_descriptor);
@@ -2121,7 +2121,6 @@ impl VarDefinitionHelper {
                                 start += md.params[i].stack_size;
                             }
 
-                            let mw_root = mw_root.expect("NullPointerException: lambda root");
                             let vardef =
                                 VarDefinitionHelper::new_run(mw_root, mt2, mw_varproc, false);
                             vardef.iterate_clashing_names(
@@ -2168,11 +2167,11 @@ impl VarDefinitionHelper {
                             &mt2.get_name(),
                             &mt2.get_descriptor(),
                         );
-                        if seen_methods.contains(&key) {
-                            continue;
-                        }
-                        seen_methods.add(key);
                         let (mw_root, mw_varproc) = mw.with(|d| (d.root, d.varproc));
+                        let Some(mw_root) = mw_root.filter(|_| !seen_methods.contains(&key)) else {
+                            continue;
+                        };
+                        seen_methods.add(key);
 
                         let md = mt2.method_descriptor();
                         let mut start = if mt2.has_modifier(ACC_STATIC) { 0 } else { 1 };
@@ -2194,7 +2193,6 @@ impl VarDefinitionHelper {
                             start += md.params[i].stack_size;
                         }
 
-                        let mw_root = mw_root.expect("NullPointerException: method root");
                         let vardef = VarDefinitionHelper::new_run(mw_root, mt2, mw_varproc, false);
                         vardef.iterate_clashing_names(
                             mw_root.0,
