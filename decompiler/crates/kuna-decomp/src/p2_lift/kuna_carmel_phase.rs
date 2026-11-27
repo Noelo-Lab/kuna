@@ -22,6 +22,7 @@ pub(crate) struct PhaseDecode<'a> {
     redirect: Option<u64>,
     delay_tick: Option<u64>,
     delay_mask: Option<u64>,
+    fixed_read_tick: Option<u64>,
 }
 
 impl<'a> PhaseDecode<'a> {
@@ -34,6 +35,7 @@ impl<'a> PhaseDecode<'a> {
         let redirect = arch.userops.get_op_by_name(b"carmel_known_redirect").map(|op| op.get_index() as u64);
         let delay_tick = arch.userops.get_op_by_name(b"carmel_delay_slot_admission").map(|op| op.get_index() as u64);
         let delay_mask = arch.userops.get_op_by_name(b"carmel_modeled_delay_mask").map(|op| op.get_index() as u64);
+        let fixed_read_tick = arch.userops.get_op_by_name(b"carmel_fixed_read_admission").map(|op| op.get_index() as u64);
         let (word, bits) = arch.with_context_db(|db| {
             let field = db.get_variable(b"carmel_phase_emit").ok()?;
             Some((field.get_word() as usize, field.get_mask() << field.get_shift()))
@@ -41,7 +43,7 @@ impl<'a> PhaseDecode<'a> {
         let translate = arch.translate();
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
-        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask })
+        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask, fixed_read_tick })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -54,8 +56,10 @@ impl<'a> PhaseDecode<'a> {
             if op.get_parent().is_none() { continue; }
             let Some(index) = userop(fd, op) else { continue };
             let offset = op.get_addr().get_offset();
-            if index == self.tick || Some(index) == self.redirect {
-                markers.push((op_id, offset, if index == self.tick { Mark::Tick } else { Mark::Redirect }));
+            if index == self.tick || Some(index) == self.fixed_read_tick {
+                markers.push((op_id, offset, Mark::Tick));
+            } else if Some(index) == self.redirect {
+                markers.push((op_id, offset, Mark::Redirect));
             } else if Some(index) == self.delay_tick {
                 *slot_clocks.entry(offset).or_default() += 1;
                 markers.push((op_id, offset, Mark::Slot));
@@ -147,6 +151,7 @@ impl<'a> PhaseDecode<'a> {
         block: BlockId,
     ) -> Trace {
         let mut trace = Trace::default();
+        let mut fixed_read = false;
         let mut current = fd.bb_op_head(block);
         while let Some(id) = current {
             let op = fd.obank().get(id).unwrap();
@@ -160,20 +165,27 @@ impl<'a> PhaseDecode<'a> {
                 trace.first.get_or_insert_with(|| addr.clone());
                 trace.last = Some(addr.clone());
                 trace.redirect_edges = 0;
+                fixed_read = false;
             }
             match userop(fd, op) {
                 Some(index) if index == self.tick || Some(index) == self.delay_tick => {
                     trace.events.push(Event::Tick(id));
                 }
+                Some(index) if Some(index) == self.fixed_read_tick => {
+                    trace.events.push(Event::Tick(id));
+                    fixed_read = true;
+                }
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
                 Some(index) if Some(index) == self.redirect => {
                     trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
                 }
+                _ if op.code() == OpCode::CPUI_LOAD && fixed_read => fixed_read = false,
                 _ if matches!(op.code(), OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN
                     | OpCode::CPUI_LOAD | OpCode::CPUI_STORE) => {
                     // Bus effects and opaque transfers can change the spacing
                     // of the next sample. Prove its age again after this op.
                     trace.events.push(Event::Barrier);
+                    fixed_read = false;
                 }
                 _ => {}
             }

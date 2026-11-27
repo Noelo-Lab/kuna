@@ -1815,6 +1815,60 @@ int main(void) {
 }
 
 #[test]
+fn carmel_absolute_est_load_records_rails_before_its_writeback() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let binary = common::scratch_file("carmel-est-load-admission", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short status_word = 0x8008;\n",
+    );
+    for (gap, bank) in [(0, 0), (4, 0), (5, 1)] {
+        let mut code = vec![NOP; 6];
+        code.push([0xbf, 0x12, 0x34, 0xc3, 0x63, 0x04]); // LOAD EST,*0x1234
+        code.extend(std::iter::repeat_n(NOP, gap));
+        code.push([0x36 | (bank << 6), 0x21, 0xb9, 0xc0, 0xac, 0x89]);
+        code.push([0x2b, 0xd8, 0, 0x2b, 0xec, 0]);
+        code.extend([NOP; 2]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--base", "0x1000",
+            "--target", "Carmel:BE:24:default:default", "--json", "--assert-strict",
+            "--assert", "return %R2 unsigned short",
+            "--assert", "data [data,0x1234] volatile unsigned short status_word",
+        ]);
+        for (i, input) in ["R2", "INTBASE", "EST", "CECFG1", "CECFG2", "CETBL"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &json["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let name = format!("load_gap_{gap}");
+        writeln!(generated, "{}", function["code"].as_str().unwrap().replace("sub_1000", &name)).unwrap();
+    }
+    generated.push_str(r"
+#define CLOCK(table) 0x6666,2,0,0x888,0x888,table
+int main(void) {
+    if (load_gap_0(CLOCK(0x0101)) != 0x21bb || load_gap_0(CLOCK(0x8080)) != 0x6666) return 1;
+    if (load_gap_4(CLOCK(0x0101)) != 0x21bb || load_gap_4(CLOCK(0x8080)) != 0x6666) return 2;
+    if (load_gap_5(CLOCK(0x0101)) != 0x6666 || load_gap_5(CLOCK(0x8080)) != 0x21bb) return 3;
+    if (status_word != 0x8008) return 4;
+    return 0;
+}
+");
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_compact_logic_rmw_routes_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

@@ -4045,6 +4045,10 @@ The covered compact parallel `GOTO EQ2` with one delay issue shares the
 slot clock and three refill clocks on both outcomes. The phase pass
 accepts those edges only if the decoder proved one slot clock; otherwise
 it discards the branch's samples and retains the existing status effects.
+The unqualified absolute DATA `LOAD EST` advances a proved single-read
+clock: admission uses the pre-load rails, while the low 15 bits of the
+loaded word replace `EST` for subsequent clocks. The marker authorizes
+only that one read, not arbitrary DATA effects.
 
 Signed immediate `MOVE` distinguishes the early address-qualified ports
 from late DATA or accumulator results. The indexed store captures the old

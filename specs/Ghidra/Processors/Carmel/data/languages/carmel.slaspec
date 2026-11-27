@@ -186,6 +186,7 @@ define pcodeop carmel_read_address_admission;
 define pcodeop carmel_known_redirect;
 define pcodeop carmel_delay_slot_admission;
 define pcodeop carmel_modeled_delay_mask;
+define pcodeop carmel_fixed_read_admission;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -4118,6 +4119,20 @@ wide_load_execute: "LEA1","*R1:long" is wide_0_9=0x34d & wide_40_45=1 & wide_loa
 
 :LOAD "EST","*"^wide_load_literal_bits is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
     & wide_0_22=0x436304 & wide_40_45>=0x38 & wide_load_literal_bits {
+    local address:2 = wide_load_literal_bits;
+    EST = (*[data]:2 address) & 0x7fff;
+}
+
+:LOAD "EST","*"^wide_load_literal_bits is carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_0_22=0x436304 & wide_40_45>=0x38 & wide_load_literal_bits {
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, first);
+    unary_ce(CECFG2, EST, CETBL, 1:2, second);
+    local aen1:1 = (CECFG1 & 0x1000) != 0;
+    local aen2:1 = (CECFG2 & 0x1000) != 0;
+    carmel_fixed_read_admission(first:1 | aen1 | ((second:1 | aen2) << 1));
     local address:2 = wide_load_literal_bits;
     EST = (*[data]:2 address) & 0x7fff;
 }
