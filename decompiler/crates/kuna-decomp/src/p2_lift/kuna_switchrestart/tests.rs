@@ -249,7 +249,28 @@ fn a_function_without_three_compares_of_one_location_keeps_no_snapshot() {
     assert!(!worth_capturing(&fd));
     let mut cascade_fd = build_fd();
     cascade(&mut cascade_fd, true);
-    assert!(worth_capturing(&cascade_fd), "four compares of the selector");
+    assert!(worth_capturing(&cascade_fd), "four joined compares of the selector");
+    // Three compares of one location that are not joined by edges are no cascade.
+    let mut apart = build_fd();
+    let def = new_block(&mut apart, 0x0F00);
+    let load = apart.new_op(2, ram(&apart, 0x0F00));
+    apart.op_set_opcode(load, TypeOp::new(OpCode::CPUI_LOAD, 0, "LOAD"));
+    let (spaceid, ptr) = (apart.new_constant(4, 0), apart.new_constant(8, 0x5000));
+    apart.op_set_input(load, spaceid, 0).unwrap();
+    apart.op_set_input(load, ptr, 1).unwrap();
+    let vaddr = ram(&apart, 0x4000);
+    let v = apart.new_varnode_out(4, &vaddr, load).unwrap();
+    apart.op_insert_end(load, def);
+    let mut prev = def;
+    for (n, off) in [0x1000u64, 0x1100, 0x1200].into_iter().enumerate() {
+        let cmp = new_block(&mut apart, off);
+        let gap = new_block(&mut apart, off + 0x80);
+        cmp_cbranch(&mut apart, cmp, off, OpCode::CPUI_INT_EQUAL, v, n as u64);
+        apart.bblocks_mut().add_edge(prev, cmp);
+        apart.bblocks_mut().add_edge(cmp, gap);
+        prev = gap;
+    }
+    assert!(!worth_capturing(&apart), "three compares kept apart by other blocks");
     let store = new_shared_store();
     store.borrow_mut().begin_pass(&fd);
     assert!(store.borrow_mut().take_raw(&fd).is_none());

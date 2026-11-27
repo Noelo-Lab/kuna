@@ -400,42 +400,62 @@ impl RawIr for RawSnapshot {
 }
 
 /// Whether the function's raw p-code has a cascade's shape: three blocks ending
-/// in a conditional branch that compare the same register or stack location
-/// against a constant. Only such a function is worth a [`RawSnapshot`]; one
-/// without gets none, and a cascade detection still finds in it restarts.
+/// in a conditional branch, joined by edges, that compare the same register or
+/// memory location against a constant. Only such a function is worth a
+/// [`RawSnapshot`]; one without gets none, and a cascade detection still finds
+/// in it restarts.
 pub(crate) fn worth_capturing(data: &Funcdata) -> bool {
     if data.bblocks_ref().root.is_none() {
         return false;
     }
-    let mut counts: Vec<((int4, uintb, int4), u32)> = Vec::new();
-    let mut keys: Vec<(int4, uintb, int4)> = Vec::new();
+    // (block, compared location) for every conditional block, then the edges
+    // between two of them that compare the same location.
+    let mut nodes: Vec<(BlockId, (int4, uintb, int4))> = Vec::new();
     for i in 0..data.bblocks_get_size() {
         let b = data.bblocks_get_block(i);
         let tail = data.bb_op_tail(b).and_then(|op| data.obank().get(op));
         if !tail.is_some_and(|o| o.code() == OpCode::CPUI_CBRANCH) {
             continue;
         }
-        keys.clear();
+        let first = nodes.len();
         let mut cur = data.bb_op_head(b);
         while let Some(op) = cur {
             let Some(o) = data.obank().get(op) else { break };
             cur = o.basic_neighbours().1;
             if let Some(key) = compared_against_constant(data, o) {
-                if !keys.contains(&key) {
-                    keys.push(key);
+                if !nodes[first..].iter().any(|(_, k)| *k == key) {
+                    nodes.push((b, key));
                 }
             }
         }
-        for key in &keys {
-            match counts.iter_mut().find(|(k, _)| k == key) {
-                Some((_, n)) => {
-                    *n += 1;
-                    if *n >= 3 {
-                        return true;
-                    }
-                }
-                None => counts.push((*key, 1)),
+    }
+    if nodes.len() < 3 {
+        return false;
+    }
+    let mut parent: Vec<usize> = (0..nodes.len()).collect();
+    fn root(parent: &mut [usize], mut x: usize) -> usize {
+        while parent[x] != x {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        x
+    }
+    for (i, &(b, key)) in nodes.iter().enumerate() {
+        let blk = data.bblocks_ref().block(b);
+        for k in 0..blk.size_out() {
+            let s = blk.get_out(k);
+            if let Some(j) = nodes.iter().position(|&(nb, nk)| nb == s && nk == key) {
+                let (ri, rj) = (root(&mut parent, i), root(&mut parent, j));
+                parent[ri] = rj;
             }
+        }
+    }
+    let mut sizes = vec![0u32; nodes.len()];
+    for i in 0..nodes.len() {
+        let r = root(&mut parent, i);
+        sizes[r] += 1;
+        if sizes[r] >= 3 {
+            return true;
         }
     }
     false
