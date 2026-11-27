@@ -890,16 +890,18 @@ the port of `phoenix._last_resort_refinement` +
 components, compute forward immediate dominators, and bucket the candidates —
 *crossing* edges (neither endpoint dominates the other) are virtualized
 before *secondary* edges (destination dominates source); a forward tree edge
-is never chosen. Candidate dominance queries use an iterative dominator-tree
-interval index (`p8_structure/kuna_domindex.rs`) built once per immutable
-snapshot. Subtree containment replaces repeated parent-chain walks; absent
-nodes retain the chain walk's self-dominance behavior. The index is discarded
-with the snapshot, so graph changes cannot leave stale intervals. Interval
-slots are arrays indexed by node arena id (each snapshot has a fresh pool, so
-ids are dense): building costs one immediate-dominator lookup per node plus
-linear array work, and each query is two array reads independent of
-dominator-tree depth, so the index is cheaper than the chain walk even on the
-shallow trees of ordinary functions. Candidate order and ranking are unchanged.
+is never chosen. Each call builds the snapshot afresh as a dense graph
+(`p8_structure/kuna_compgraph.rs`): node `i` is the `i`-th live component,
+parallel edges count once and self-loops count (as in a `networkx.DiGraph`),
+and a synthetic head points at every component without predecessors. One
+deterministic depth-first walk from the head (successors in address-then-index
+order, the largest explored first) gives both the post-order the
+immediate-dominator computation runs over and the `node_seq` tiebreak below.
+Dominance queries read pre-order intervals of the dominator tree, two array
+reads each, and a component the head cannot reach dominates only itself. A
+dominator tree is unique, so the arrays answer exactly what a map-keyed graph
+library would; they only drop its per-node map and allocation work, which
+had made the ordering about a tenth of a small binary's run.
 Within the winning bucket (`sailr_order_within_bucket`): H1;
 then H2 — remove each candidate, recompute post-dominators, and keep the
 edges whose removal yields the *most* post-dominators (most-linear result) —
@@ -907,9 +909,15 @@ bounded by `region_structurer.rs (POSTDOM_MAX_EDGES)` = 10 candidate edges
 and `(POSTDOM_MAX_GRAPH_SIZE)` = 50 nodes, exactly angr's caps, because
 post-dominator recomputation per edge is super-linear; then H3; then the
 post-order `node_seq` tiebreak. `regionedgeorder` only changes *which* edge
-is cut when the structurer is already forced to virtualize, so reducible
-code is byte-identical either way; it remains an opt-in (no DIV has flipped
-it — see the catalog).
+is cut when the structurer is already forced to virtualize, but that happens
+in reducible code too, and an edge cut into the function's exit prints as a
+guard `return` rather than a goto. So the ordering also decides which tail
+prints wrapped and which becomes a guard return, in functions that print no
+goto either way: with it on, `if (a) x = 2; else if (!x) x = 1;` prints its
+inner test as `if (x) return; x = 1;`. It is off in every mode. The
+`aggressive` preset turned it on until the decbench corpus showed the default
+ordering matching the source's control flow in 9 more O2 and 82 more O0
+functions, and in none fewer; `option regionedgeorder on` still selects it.
 
 **Loop refinement (angr, `option regionlooprefine`, flipped on by DIV-14).**
 The base cyclic schemas fold only the clean shape: single entry, one

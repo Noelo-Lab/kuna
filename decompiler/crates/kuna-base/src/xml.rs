@@ -2351,8 +2351,9 @@ mod tests {
         // and kuna-devirtualize-interp / an in-function bytecode interpreter devirtualized (deobfuscate devirtualize)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
+        // and kuna-regionedgeorder-preset / mode aggressive leaves regionedgeorder off
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
-        assert_eq!(count, 954, "corpus file count drifted");
+        assert_eq!(count, 955, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
