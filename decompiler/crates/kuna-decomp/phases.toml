@@ -5,7 +5,7 @@
 # live-value match. Editing a row here is the one edit point; the codegen makes
 # any drift a build failure. DO NOT hand-edit the generated Rust.
 #
-# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=76
+# Counts (asserted in tests): group=39, subphase=40, surface=98, settable=75
 # (tiers: 16 core / 35 transform / 24 analysis).
 
 # ---------------------------------------------------------------------------
