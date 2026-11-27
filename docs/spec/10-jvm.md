@@ -999,6 +999,17 @@ canonical constructor and hides the accessors, `equals`, `hashCode` and `toStrin
 match the generated ones. A failure here writes the class as `$VF: Couldn't be decompiled`
 (section 10.12).
 
+**Static initializers keep their order (kuna).** Field initializers and `static` blocks run
+in the order the source declares them, and the fields are written in class-file order, so
+moving a `<clinit>` assignment into its field's declaration changes when it runs relative to
+the other moved assignments. `extract_static_initializers` moves an assignment only when
+that keeps every value it reads: its value may not read a field of the class that an
+earlier moved assignment set and that is declared after it (`static int[] sizes = new
+int[names.length];` ahead of `names = {..}` read `null`), and no earlier moved assignment to
+a field declared after it may read its field (`next = base + 1; base = 5;` moved as `base =
+5` ahead of `next = base + 1`). Such an assignment stays in the `static` block, and so does
+every later assignment that reads its field.
+
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being
 a synthetic argument, so `hideEmptySuper` took it for the implicit call and dropped it. It

@@ -289,7 +289,7 @@ kuna	a8e71f5a39e9d179
 case	default/pkg/TestClashName	Default	classes/java8/pkg/TestClashName	classes/java8/pkg/SharedName1	classes/java8/pkg/SharedName2	classes/java8/pkg/SharedName3	classes/java8/pkg/SharedName4	classes/java8/pkg/NonSharedName	classes/java8/pkg/TestClashNameParent	classes/java8/ext/TestClashNameParent	classes/java8/pkg/TestClashNameIface	classes/java8/ext/TestClashNameIface
 kuna	7fdc0118e81cb17f
 case	default/pkg/TestClassFields	Default	classes/java8/pkg/TestClassFields
-kuna	ceb82c30a4314f00
+kuna	c63fd07a1e7e3201
 case	default/pkg/TestClassLambda	Default	classes/java8/pkg/TestClassLambda
 kuna	b1c65d1fdf0c4d43
 case	default/pkg/TestClassLoop	Default	classes/java8/pkg/TestClassLoop
@@ -2012,3 +2012,5 @@ case	kuna-fixes/pkg/TestTernaryIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTe
 case	kuna-fixes/pkg/TestCompoundIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundIntLocal
 # kuna-fixes/src/pkg/TestIncrementBeforeCondition.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestIncrementBeforeCondition	Kuna Fixes	kuna-fixes/classes/pkg/TestIncrementBeforeCondition
+# kuna-fixes/src/pkg/TestStaticInitializerOrder.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitializerOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitializerOrder

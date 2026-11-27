@@ -26,6 +26,17 @@ use crate::var_version_pair::VarVersionPair;
 
 pub struct InitializerProcessor;
 
+/// The keys of the static fields of `cl` that `exprent` reads.
+fn static_reads(exprent: Exprent, cl: StructClass) -> Vec<String> {
+    exprent
+        .get_all_exprents_rec_self(true, true)
+        .into_iter()
+        .filter_map(|e| e.try_as_field())
+        .filter(|f| f.is_static() && f.get_classname() == cl.qualified_name())
+        .map(|f| InterpreterUtil::make_unique_key(&f.get_name(), &f.get_descriptor().descriptor_string))
+        .collect()
+}
+
 fn root_class_node(name: Option<&str>) -> Option<ClassNode> {
     let map = DecompilerContext::get_class_processor().get_map_root_classes();
     let node = name.and_then(|n| map.borrow().get_cloned(&n.to_string()));
@@ -247,6 +258,7 @@ impl InitializerProcessor {
             );
 
             let mut not_inlined: Vec<FieldExprent> = Vec::new();
+            let mut moved_reads: Vec<(i32, Vec<String>)> = Vec::new();
 
             let mut itr = 0;
             while itr < first_exprents.len() {
@@ -266,6 +278,7 @@ impl InitializerProcessor {
                                 &f_expr.get_name(),
                                 &f_expr.get_descriptor().descriptor_string,
                             );
+                            let fidx = cl.get_fields().get_index_by_key(&key_field) as i32;
                             let exprent_independent = Self::is_exprent_independent(
                                 f_expr,
                                 assign_expr.get_right(),
@@ -274,13 +287,16 @@ impl InitializerProcessor {
                                 &whitelist,
                                 &multi_assign,
                                 &not_inlined,
-                                cl.get_fields().get_index_by_key(&key_field) as i32,
+                                fidx,
                                 true,
-                            );
+                            ) && !moved_reads
+                                .iter()
+                                .any(|(m, reads)| *m > fidx && reads.contains(&key_field));
                             if inline_initializers || exprent_independent {
                                 let initializers = wrapper.get_static_field_initializers();
                                 if !initializers.borrow().contains_key(&key_field) {
                                     if exprent_independent {
+                                        moved_reads.push((fidx, static_reads(assign_expr.get_right(), cl)));
                                         initializers.borrow_mut().add_with_key(
                                             assign_expr.get_right(),
                                             key_field.clone(),
@@ -597,6 +613,9 @@ impl InitializerProcessor {
                             if !fexpr.is_static() {
                                 return false;
                             } else if cl.get_fields().get_index_by_key(&key) as i32 >= fidx {
+                                if whitelist.contains(&key) {
+                                    return false;
+                                }
                                 fexpr.force_qualified(true);
                             }
                         } else if !whitelist.contains(&key) {
