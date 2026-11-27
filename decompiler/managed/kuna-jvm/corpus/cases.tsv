@@ -2222,3 +2222,5 @@ case	kuna-fixes/pkg/TestQualifiedSuperEmpty	Kuna Fixes	kuna-fixes/classes/pkg/Te
 case	kuna-fixes/pkg/TestSelectingCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSelectingCast
 # kuna-fixes/src/pkg/TestVarargsGenericRival.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestVarargsGenericRival	Kuna Fixes	kuna-fixes/classes/pkg/TestVarargsGenericRival
+# kuna-fixes/src/pkg/TestStaticInitExit.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitExit	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitExit

@@ -45,6 +45,7 @@ use crate::initializer_processor::InitializerProcessor;
 use crate::interpreter_util::InterpreterUtil;
 use crate::java_pass_location::JavaPassLocation;
 use crate::fixes::asserts;
+use crate::fixes::control_flow;
 use crate::fixes::nested_class_vars::captured_var_clash_name;
 use crate::kuna_spans;
 use crate::link_constant::LinkConstant;
@@ -333,6 +334,9 @@ impl ClassWriter {
                 DecompilerContext::reset_method(mw);
                 RecordHelper::fixup_canonical_constructor(mw, cl);
                 if let Some(root) = mw.with(|d| d.root) {
+                    if mw.with(|d| d.method_struct).get_name() == CLINIT_NAME {
+                        control_flow::initializer_return_break(root);
+                    }
                     mw.with(|d| d.varproc).rerun_clashing(root);
                 }
             }

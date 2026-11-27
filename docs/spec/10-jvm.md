@@ -937,6 +937,17 @@ or an instance that is no class's `this`, which is all an unqualified call ever 
 enclosing `this` without the check stays implicit even where a supertype outside the input
 hides whether the call's class is a member of that enclosing class.
 
+**No `return` in a static initializer (kuna).** A `<clinit>` has one `return` at its end,
+which the structuring may place inside the last statement: a loop that leaves only through
+that block ends in `return;`, which Java rejects in an initializer. Before the class is
+written, `initializer_return_break` (in `decompiler/managed/kuna-jvm/src/fixes/control_flow.rs`)
+turns each `return;` that is not at the end of the body into a `break` out of the innermost
+enclosing statement that is the last of a sequence ending the body (through the last
+statements of sequences and both branches of an `if`), into an empty block placed after it;
+the `break` is labeled unless that statement is a loop or switch with none in between. It
+jumps where the `return` did, so the class compiles to the same instructions; a `return` with
+no such statement stays.
+
 Two class-level facts come from outside the class. **Varargs (kuna).**
 `decompiler/managed/kuna-jvm/src/substrate/invocation_exprent.rs` needs to know
 whether a called method is varargs, to print `f(a, b)` instead of

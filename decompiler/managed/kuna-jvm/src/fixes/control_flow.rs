@@ -4,10 +4,13 @@
 //! exception edges; `loop_first_if_exit` makes a loop's first `if` its exit
 //! test only when the path past the `if` leaves the loop.
 
+use crate::basic_block_statement::BasicBlockStatement;
 use crate::dom_helper::DomHelper;
+use crate::exit_exprent::Type as ExitType;
 use crate::general_statement::GeneralStatement;
 use crate::if_statement::IfStatement;
 use crate::irreducible_cfg_deobfuscator::IrreducibleCFGDeobfuscator;
+use crate::root_statement::RootStatement;
 use crate::rt::{JHashMap, JHashSet};
 use crate::sequence_statement::SequenceStatement;
 use crate::stat_edge::StatEdge;
@@ -185,6 +188,91 @@ impl IrreducibleWithExceptionEdges {
                 None => return alive.len() > 1,
             }
         }
+    }
+}
+
+/// Fix `initializer_return_break`: Java allows no `return` in a static
+/// initializer, so each `return;` of `root`, a `<clinit>` body, that is not
+/// its last statement becomes a `break` out of the innermost enclosing
+/// statement after which the body ends, into an empty block placed after it.
+/// A statement qualifies when it is the last of a sequence that ends the
+/// body; the `break` is labeled unless that statement is a loop or switch
+/// with none between.
+pub fn initializer_return_break(root: RootStatement) {
+    let mut tails: JHashSet<Statement> = JHashSet::new();
+    let mut queue: Vec<Statement> = root.get_first().into_iter().collect();
+    while let Some(stat) = queue.pop() {
+        if !tails.add(stat) {
+            continue;
+        }
+        if stat.is_sequence() {
+            queue.extend(stat.get_stats().borrow().to_vec().last().copied());
+        } else if let Some(ifst) = stat.try_as_if() {
+            queue.extend(ifst.get_ifstat().into_iter().chain(ifst.get_elsestat()));
+        }
+    }
+    let exit = root.get_dummy_exit().0;
+    let mut ends: JHashMap<Statement, Statement> = JHashMap::new();
+    for edge in exit.get_all_predecessor_edges() {
+        let block = edge.get_source();
+        let Some(exprents) = block.get_exprents().filter(|e| !e.is_empty()) else {
+            continue;
+        };
+        let last = exprents.get(exprents.len() - 1);
+        if !last
+            .try_as_exit()
+            .is_some_and(|ex| ex.get_exit_type() == ExitType::Return && ex.get_value().is_none())
+            || tails.contains(&block)
+        {
+            continue;
+        }
+        let mut target = None;
+        let mut between_loop = false;
+        let mut scope = block.get_parent();
+        while let Some(stat) = scope {
+            let parent = stat.get_parent();
+            let last_of_sequence = parent.is_some_and(|p| {
+                p.is_sequence() && p.get_stats().borrow().to_vec().last() == Some(&stat)
+            });
+            if tails.contains(&stat) && last_of_sequence {
+                target = Some(stat);
+                break;
+            }
+            between_loop |= stat.is_do() || stat.is_switch();
+            scope = parent;
+        }
+        let Some(target) = target else {
+            continue;
+        };
+        let end = match ends.get(&target) {
+            Some(end) => *end,
+            None => {
+                let end = BasicBlockStatement::create();
+                let seq = target.get_parent().expect("checked above");
+                seq.get_stats().borrow_mut().add_with_key(end.0, end.id());
+                end.set_parent(Some(seq));
+                for out in target.get_all_successor_edges() {
+                    if out.get_destination() == exit {
+                        target.remove_successor(out);
+                    }
+                }
+                target.add_successor(StatEdge::new(StatEdge::TYPE_REGULAR, target, end.0));
+                let tail = StatEdge::new_closure(StatEdge::TYPE_BREAK, end.0, exit, edge.closure());
+                tail.with_mut(|d| {
+                    d.labeled = false;
+                    d.explicit = false;
+                });
+                end.add_successor(tail);
+                ends.put(target, end.0);
+                end.0
+            }
+        };
+        exprents.remove_at(exprents.len() - 1);
+        block.remove_successor(edge);
+        let jump = StatEdge::new_closure(StatEdge::TYPE_BREAK, block, end, Some(target));
+        let labeled = between_loop || !(target.is_do() || target.is_switch());
+        jump.with_mut(|d| d.labeled = labeled);
+        block.add_successor(jump);
     }
 }
 
