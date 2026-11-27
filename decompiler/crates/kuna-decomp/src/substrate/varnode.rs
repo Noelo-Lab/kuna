@@ -1634,6 +1634,9 @@ pub struct VarnodeBank {
     def_tree: BTreeMap<DefKey, VarnodeId>,
     /// The unique space, cached at construction (C++ `uniq_space`)
     uniq_space: Rc<AddrSpace>,
+    /// HighVariables whose member's Cover went stale since the last drain
+    /// (C++ `Varnode::setFlags` forwarding `coverdirty` to `high->coverDirty()`).
+    cover_dirty_highs: Vec<HighVariableId>,
 }
 
 /// Op identity and sequence number supplied by `Funcdata` when a Varnode
@@ -1667,7 +1670,20 @@ impl VarnodeBank {
             loc_tree: BTreeMap::new(),
             def_tree: BTreeMap::new(),
             uniq_space,
+            cover_dirty_highs: Vec::new(),
         })
+    }
+
+    /// Record that `vn`'s Cover went stale, for its HighVariable if it has one.
+    fn note_cover_dirty(&mut self, vn: VarnodeId) {
+        if let Some(h) = self.arena[vn].high {
+            self.cover_dirty_highs.push(h);
+        }
+    }
+
+    /// The HighVariables noted by [`Self::note_cover_dirty`] since the last call.
+    pub fn take_cover_dirty_highs(&mut self) -> Vec<HighVariableId> {
+        std::mem::take(&mut self.cover_dirty_highs)
     }
 
     /// Clear out all Varnodes and reset counters (C++ `clear`).
@@ -1677,6 +1693,7 @@ impl VarnodeBank {
         self.def_tree.clear();
         self.uniqid = self.uniqbase; // Reset counter to base value
         self.create_index = 0; // Reset varnode creation index
+        self.cover_dirty_highs.clear();
     }
 
     /// The base for unique addresses (C++ `uniqbase`).  Used when building a
@@ -1860,6 +1877,7 @@ impl VarnodeBank {
             self.def_tree.remove(&DefKey::from(lk));
         }
         self.arena[vn].set_def(Some(def.id)); // Change the varnode to be defined
+        self.note_cover_dirty(vn);
         let seqnum = SeqKey::of(&def.seqnum);
         let lk = lk.with_class(flag_class_of(varnode_flags::written), seqnum);
         self.xref(vn, lk, replace_reads)
@@ -1874,6 +1892,7 @@ impl VarnodeBank {
         }
 
         self.arena[vn].set_free();
+        self.note_cover_dirty(vn);
 
         // Re-insert as free varnode.
         let seqnum = SeqKey { uniq: self.arena[vn].create_index, ..SeqKey::default() };
@@ -1931,11 +1950,14 @@ impl VarnodeBank {
 
     /// Add `op` to `vn`'s descend list (C++ `vn->addDescend(op)`).
     pub fn add_descend(&mut self, vn: VarnodeId, op: OpId) -> KunaResult<()> {
-        self.arena[vn].add_descend(op)
+        self.arena[vn].add_descend(op)?;
+        self.note_cover_dirty(vn);
+        Ok(())
     }
     /// Erase `op` from `vn`'s descend list (C++ `vn->eraseDescend(op)`).
     pub fn erase_descend(&mut self, vn: VarnodeId, op: OpId) {
         self.arena[vn].erase_descend(op);
+        self.note_cover_dirty(vn);
     }
     /// Clear `vn`'s descend list entirely (C++ `vn->destroyDescend()`).
     pub fn destroy_descend(&mut self, vn: VarnodeId) {

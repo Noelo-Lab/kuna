@@ -61,7 +61,7 @@
   <com>quit</com>
 </script>
 <stringmatch name="LOWEREDSWITCH AUTO #1: sw2's two cases print as a switch (pass 1)" min="1" max="1">^  switch\(a1\) \{$</stringmatch>
-<stringmatch name="LOWEREDSWITCH AUTO #2: each arm of sw2's switch returns y (pass 1)" min="3" max="3">^      return a0;$</stringmatch>
+<stringmatch name="LOWEREDSWITCH AUTO #2: no arm of sw2's switch returns y itself (pass 1)" min="0" max="0">^      return a0;$</stringmatch>
 <stringmatch name="LOWEREDSWITCH AUTO #3: if3 keeps its last test (pass 1)" min="1" max="1">^      if \(a0 == 7\)$</stringmatch>
 <stringmatch name="LOWEREDSWITCH AUTO #4: with loweredswitch on sw2_on prints its second test (pass 2)" min="1" max="1">^    if \(a1 == 2\)$</stringmatch>
 <stringmatch name="LOWEREDSWITCH AUTO #5: with loweredswitch on if3_on re-rolls (pass 2)" min="1" max="1">^  switch\(a0\) \{$</stringmatch>

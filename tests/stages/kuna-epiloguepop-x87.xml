@@ -1,0 +1,24 @@
+<decompilertest>
+<binaryimage arch="x86:LE:32:default:windows">
+<!--
+  GH-1969 on i386. clang -O2 gives float twice(float x) { g(); return x * 2.0f; }
+  a four-byte frame with push eax / pop eax; the spill of x overwrites the
+  pushed slot, so the pop leaves x's bits in eax while ST0 holds the result.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+50d9442408d91c24e813000000d90424dcc058c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1020" readonly="true">c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="twice"/>
+<symbol space="ram" offset="0x1020" name="g"/>
+</binaryimage>
+<script>
+  <com>read symbols</com>
+  <com>lo fu twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EPILOGUE-POP-X87 #1: twice returns ST0" min="1" max="1">^float10 twice\(float4 a0\)$</stringmatch>
+<stringmatch name="EPILOGUE-POP-X87 #2: twice returns the doubled float" min="1" max="1">^  return \(float10\)v1 \+ \(float10\)v1;$</stringmatch>
+</decompilertest>

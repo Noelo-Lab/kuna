@@ -51,6 +51,14 @@ bytes. A three-case switch over a struct field that gcc loads into a register
 once re-rolls too: the install reads the switch value from that load through
 the register copy and its zero extension.
 
+`kuna-restartproto.xml` checks that a function prints the same whether or not
+its analysis restarted, on gcc -O0 x86-64. `pick`'s three-case `switch`, whose
+cases jump to an epilogue that loads the returned frame slot itself, re-rolls
+by restarting; the restarted pass prints the cases breaking to one
+`return v1;`, as the copy decompiled under `option loweredswitch off` (no
+restart) returns once too. It used to see the prototype store the first pass
+attached and split the epilogue into one `return K;` per case.
+
 `kuna-loopcondhoist.xml` checks option `loopcondhoist` (default `on`) on
 gcc x86-64. In three -O0 functions the loop's condition, read from the layout,
 is the loop's exit: a `for` whose `break` carries two stores keeps them in the
@@ -200,6 +208,13 @@ image twice. With the catalog defaults its PIC stub stays `sub_1800`; after
 `mode aggressive`, which sets `ppc32picimports abi` and which `auto` selects
 for files under 500 KiB, the same call prints as the import `extra`.
 
+`kuna-regionedgeorder-preset.xml` checks that `mode aggressive` leaves option
+`regionedgeorder` off. A gcc -O0 x86-64 `set_exit_status` prints the source's
+`else if (!x) x = 1;` with the catalog defaults and after `mode aggressive`;
+`option regionedgeorder on` cuts the edge from that test into the function's
+exit and prints `if (x) return; x = 1;`, as the preset did while it carried
+the option.
+
 `kuna-mips-octeon-elf32-o64.xml` loads big-endian Octeon ELF32 images without a
 target: one declaring O64, one declaring no ABI with GCC's `.mdebug.abiO64`
 marker, and one declaring no ABI at all. Each now loads with the Octeon O64
@@ -287,6 +302,28 @@ address of `rdx`'s slot for `va_start`) and `spillhigh` (gcc -O2, saving `rdx`,
 whose block holds unread flag writes once the register space has had a heritage
 pass (`deadcode delay register 50` keeps those writes alive). Before the fix the
 second `if (x)` stayed.
+
+`kuna-spillptr-loadguard.xml` checks a stack array element written directly
+and read only through a pointer the function keeps in a local (gcc -O0 stores
+`p = &st[0]` and reloads it for each `p[i]`). Before the fix the indexed
+LOAD got no guard on the stack's first heritage pass, so the store and the
+`if` around it were removed from the two functions that read through `p`,
+and a gcc -O0 `va_arg` loop lost the prologue's stores to the register save
+area it reads through the `va_list`. All of them are now kept, and `p` does
+not survive as a variable.
+
+`kuna-piececover.xml` checks a gcc -O0 byte swap inside a stack `long`: the
+old byte 5 is read after a 6-byte write that replaces it. The merge tested the
+copy that keeps that old byte against the slot's byte pieces using Covers that
+were never rebuilt after the pieces were created, so the copy was merged back
+into the slot and the printed C read byte 5 after the write. It is now saved
+before the write and byte 7 takes the saved value.
+
+`kuna-inflatecover.xml` checks a gcc -O0 halfword swap inside a stack `long`:
+an expression over halfwords 3 and 1 is used after a write of the low half that
+replaces halfword 1. `ActionMarkImplied` tested the expression against the
+slot's pieces with Covers it did not rebuild, so the expression was printed at
+its use and read halfword 1 after the write. It is now saved before the write.
 
 `kuna-looptest-order.xml` checks the ordering test of option `looptest` on four
 x86-64 counted loops whose latch tests `!=` behind a guard that tests an order.
@@ -382,6 +419,23 @@ loop now prints inside its case and the switch prints once.
 `jumptablemax`. gcc -O2 guards `x <= 0x28ff` and indexes a 41-entry table with
 `x >> 8`, so the guard admits 0x2900 values over 41 slots. The table stays a
 computed call instead of a switch with a `case` label for each value of `x`.
+
+`kuna-bytemap-noguard.xml` checks MSVC-style two-stage jump tables in four x64
+functions (kuna #1157): a byte map names a row of image-base-relative offsets
+that lie directly before it, and the first three repeat their bounds check on
+both arms of a branch before the dispatch, so no guard bounds the map's index.
+The table used to keep all 256 values of the map byte, and row 3, read from the
+map's own bytes, sent the flow to code elsewhere in the image; each table now
+ends at its map. `cmp_nodes` has a second dispatch that reuses the index
+unchecked. `cmp_folded` reads its map at `map - 2 + tag` and keeps its last real
+row, which lies past that folded base, because it lands in the function's own
+code and holds an offset rather than map bytes. `cmp_bytetag` indexes a 16-byte
+map with a byte tag, whose values are proven over all 256 tags and so take in
+the byte after the map. `cmp_coldrow` reads a 28-row table at `map - 0x61 + c`
+with no bound, and its row 10 lands in a part split off below the entry, as gcc
+places a `.cold` block: that row is real, so the table keeps it and ends at row
+28, the first read from the map. One pass, no option. Source:
+`fixtures/kuna-bytemap-noguard.asm`.
 
 `kuna-switchsingle.xml` checks that a jump table whose four entries all name one
 block becomes straight-line code with the "all go to same destination" warning
@@ -519,6 +573,7 @@ writeup, not here.
 | `kuna-rex-before-prefix.xml` | Authored x86-64 prefix order | S1 decode-table (x86 spec-fix, no option) | a REX prefix that a legacy prefix follows is ignored, as the CPU ignores it (`f3 48 67 ab` is `rep stos` of dwords with a 32-bit address; `48 67 f3 48 a5` keeps the last REX.W), instead of the legacy prefix decoding as a bad opcode |
 
 | `gh1674-subpiece-shadow-wide-const.xml` | [Kuna #1674](https://github.com/Noelo-Lab/kuna/issues/1674) | P6 merge (cover intersection, partial copy shadow; no option) | a constant truncated by 8 or more bytes reads 0 instead of shifting a 64-bit offset by 64 or more bits, so the function decompiles in a build with overflow checks |
+| `gh1793-outparam-argslot.xml` | [Kuna #1793](https://github.com/Noelo-Lab/kuna/issues/1793) | P6 variable naming (an address-taken incoming stack slot that the final prototype does not claim is mapped as a local before naming, `kuna_paramareaslot.rs`; correctness fix, no option) | default, single pass on hand-assembled Win64: the out-parameter `&slot` and the loads after the call print as one `v2`, including a slot cleared before the call and one refilled in a loop; a slot the prototype takes as a parameter keeps `&a4`, and two ints set by one store or a slot whose address is indexed are not mapped as one scalar |
 
 | `gh9184-x86-fma-ymm256.xml` | [GH-9184](https://github.com/NationalSecurityAgency/ghidra/issues/9184) | S1/S2 decode + pcode-semantics (x86 spec-fix, no option) | SLEIGH YMM FMA uses 256-bit `local tmp:32` (was `tmp:16`) |
 
@@ -587,6 +642,9 @@ writeup, not here.
 | `kuna-duplabels.xml` | kuna (a block cloned by return splitting printed `label_<addr>:` once per copy in liblua5.3, libsqlite3, e2fsck, bash, ssh) | P9 emission (label naming: copies of one block that are all goto targets print `label_<addr>`, `label_<addr>_2`, ..., and each goto names its own copy) | default correctness fix (no option) |
 | `kuna-swiftstrobj.xml` | kuna (a Swift string literal's object word, the literal's address minus 0x20 tagged in bit 63, printed as the text of the literal stored 32 bytes earlier) | P9 emission, const-pointer typing (`ActionConstantPtr` leaves a constant as a number when every use ORs in bit 63 and the bytes 32 past it open a large literal) | default correctness fix (no option) |
 | `kuna-retcopyclone.xml` | [Kuna #1355](https://github.com/Noelo-Lab/kuna/issues/1355) (a store before a `cmp; cmov; ret`, or before a shared `leave; ret`, printed a second time on one return path) | P8 structure (a return block cloned per predecessor keeps each global's `return_copy` guard flag, and a phi on address-tied storage leaves no `g = g` copy, so neither is rewritten into a second store; the order the split prints stores its phis absorbed) | default correctness fix (no option); the clone's global phis print in address order |
+| `kuna-spillptr-loadguard.xml` | kuna (Tigress `Virtualize` sample `script_0_57` lost a live `if`: a store read only through a pointer spilled to a stack slot) | P3 heritage, LOAD guards (discovery follows a stack pointer through the slot it is spilled to) | default correctness fix (no option) |
+| `kuna-piececover.xml` | kuna (Tigress `Virtualize` samples, and the same functions unprotected at gcc -O0, printed a half or byte swap of a `state[]` element reading bytes a wider write had already replaced) | P6 merge, Cover intersection of overlapping pieces (member Covers of every overlapping piece are rebuilt before the test; a data-flow edit dirties the member's variable) | default correctness fix (no option) |
+| `kuna-inflatecover.xml` | kuna (unprotected Tigress samples at gcc -O0 printed a halfword swap of a `state[]` element reading a halfword a wider write had already replaced) | P6 `ActionMarkImplied`, `Merge::inflateTest` (stale member Covers of the operand's variable and its overlapping pieces are rebuilt before the test) | default correctness fix (no option) |
 | `kuna-switchunrolledsense.xml` | [Kuna #1028](https://github.com/Noelo-Lab/kuna/issues/1028) | P2 switch model (copies of the bound check on each predecessor of the dispatch, with opposite branch senses, bound the merged index) | `option switchmultipred on\|off` |
 | `kuna-switchcond.xml` | kuna-owned (bash `man2html` `scan_format`, invalid C) | P8 region structurer (a folded switch keeps one successor; no statement in a condition slot) | default correctness fix (no option) |
 
@@ -721,6 +779,9 @@ readability defaults measured on the angr `fmt` corpus binary, DIV-34+ in
 | `kuna-objcsdk.xml` | A 1.9 MB third-party iOS app: 2,897 of 25,084 `objc_msgSend$<sel>` calls rendered with no argument (`setHidden:();`), `setAlpha:` showed `0x3ff0000000000000`, `setFrame:` one word for a CGRect — a framework selector is declared nowhere in the image. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` reads `@interface`/`@protocol` methods, `@property` getter/setter pairs and `typedef`s from a user-named SDK or header directory into runtime-style encodings; the stub prototype path pins scalars to x/d registers, spreads an HFA `CGRect` over `d0..d3`, returns the flat struct) | `option objcsdk <directory>\|off` (new kuna settable, env-bridged load-time) |
 | `kuna-objcforin.xml` | Perplexity iOS 26.46 (`-[SentryScope setAttributeValue:forKey:]`): every `for (x in c)` loop printed its `NSFastEnumerationState` as eight unrelated locals and read `state.itemsPtr[i]` as `*(objc_object **)(v6 + v5 * 8)`, because the header reader spelled `(NSFastEnumerationState *)` as a class pointer, could not spell the `(id [_Nonnull])` buffer or `NSDictionary`'s generic `(K [])`, and the decoder made any `^{...}` a `void *`, so the selector had no prototype. P1 external-refinement (`analyzers/objc/kuna_objcsdk.rs` lays out a pointer to a `typedef struct` with member names, an array parameter is a pointer, a generic parameter is `id`; `analyzers/objc/encoding.rs` decodes `^{Name=...}` to a pointer to that struct) → P6 `gatherOpen` types the stack object passed to the typelocked pointer | `option objcsdk <directory>\|off` (no new settable) |
 | `kuna-objctypes.xml` | with the `objcivars` structs only `self` was typed: a getter returned `objc_object *`, an ivar of a local class was `objc_object *`, and a field read through either stayed `*(int *)((long)v + 8)` although the property attribute (`T@"Base"`) and ivar encoding (`@"Base"`) name the class. P1 external-refinement (`analyzers/objc/kuna_objcprops.rs` reads every `property_list_t` into class-naming getter/setter encodings; `Selectors::record` keeps the class-naming spelling of agreeing declarations; the decoder resolves `@"Base"` to the layout's struct, declared-record completion included) → P5 field resolution through the typed pointer | `option objc on\|off`, `option objcivars on\|off` (no new settable) |
+| `kuna-devirtualize.xml` | A VM-protected function decompiles to the stub that enters its interpreter (an empty body). The synthetic `devirt_vm_x86_64` fixture runs `arg0 == 0 ? 7 : arg0 + 5` as bytecode in a push/ret-dispatched interpreter in its own 64 KiB `.vmp0` | P2 flow-follow (VM devirtualization) | `option deobfuscate off` vs the default `auto`, then the technique named (`option deobfuscate devirtualize`) |
+| `kuna-devirtualize-interp.xml` | A function that is its own bytecode interpreter (the shape Tigress `Virtualize` gives it: the virtual PC a local, the bytecode in the image) decompiles to the interpreter loop. The `devirt_interp_x86_64` fixture (gcc -O0 from `devirt_interp_x86_64.c`) runs one virtual program with a loop and a branch through switch dispatch from writable and read-only bytecode, threaded code copied by `memcpy` into a stack-probed local or by an inline `rep movsq`, two programs interleaved through `pc[sel]`, and bytecode patched with the argument, which is reported incomplete; a Tigress-style interpreter (every variable reached through its slot's address on the virtual stack) keeps the stores and the branch that only an indexed loop reads, a second one returns slots its indexed stores wrote, not their earlier values, and a third keeps a loop's update of a slot only an indexed load reads | P2 flow-follow (VM devirtualization) | `option deobfuscate off` vs the default `auto` |
+| `kuna-devirtualize-sound.xml` | A devirtualized function must not print anything false about its program: loops whose exit tests need more than two observed counter values, branches on memory, globals and pointer arguments, two branches to one label, values across System V calls, two virtual exits into one native epilogue that must run once, a virtual branch decided by a flag a join merged, memory a call writes through a stack-passed pointer and past the first 16 bytes behind a pointer argument. The synthetic `devirt_vm2_x86_64` fixture runs twenty hand-written bytecode programs through one interpreter; three of them report an incomplete program in the header | P2 flow-follow (VM devirtualization) | the default `auto`, one pass (strict correctness fixes) |
 | `kuna-opaquepointerretype.xml` | `probe` keeps `&frame[1]` in a saved register (ARM32 r4, PowerPC32 r29); `retype` to a pointer to a bodiless `struct Opaque` added a default one-byte frame range that split the array, the copy holding the address was propagated away, and the retype was refused with `int4 *v3` printed instead. P6 frame layout under the stable-names replay (`p6_variables/funcdata_spacebase.rs` `gather_open`): a value carrying a replayed retype's lock whose pointee has no size lays its range out by the pointee it was printed with (`kuna_stablenames.rs` `printed_pointee`) | always on (`retype` directive) |
 | `kuna-stackpointerretype.xml` | `probe` keeps `&frame[1]` in a saved register (ARM32 r4, PowerPC32 r29); `retype` to a 16-byte `Probe *` re-laid the frame as a `Probe` record, which turned the pointer's definition into a copy that was propagated into its readers: the C printed `consume(&v4)` and the retype was refused. P3 copy propagation (`p3_dataflow/ruleaction_3.rs` `RulePropagateCopy`) keeps a copy that is a definition the replayed retype's lock matched (`p6_variables/kuna_stablenames.rs` `is_retyped_definition`) | always on (`retype` directive) |
 | `kuna-poolfallthru.xml` | ARM32 `probe` (little- and big-endian) ends in a call kuna cannot prove no-return, followed by its PC-relative literal pool; the walk took the call's fall-through, decoded the constants as instructions and printed `halt_baddata(); // warn: Bad instruction` after the call. P2 flow classification (`p2_lift/kuna_funcboundflow.rs` `kuna_should_bound_at_pool`): a call's fall-through onto a literal pool the Listing's trusted loads prove (`kuna-analysis` `listing/kuna_poolextents.rs`) ends the function | `option funcboundflow off\|on` |
@@ -942,3 +1003,17 @@ with one pass.
 `vcmp`/`vcmpe` and `vmrs APSR_nzcv, fpscr`. The hardware sets C for unordered
 operands, so `hi` and `cs` are taken for a NaN and `ls` and `cc` are not; each
 printed test is false exactly when its branch is taken, NaN included.
+
+`kuna-epiloguepop.xml`, `kuna-epiloguepop-sysv.xml` and
+`kuna-epiloguepop-x87.xml` check float functions whose eight-byte (i386:
+four-byte) frame is a `push rax` / `pop rax` and whose spill overwrote the
+pushed slot (GH-1969). The register the epilogue pops is not the return value
+beside the float in `xmm0` or `ST0`: the Win64 half selection
+`((float *)&d)[i]` keeps its index parameter and indexed read, a Win64 float
+array is returned by index, clang's System V `float twice(float x) { g(); return
+x * 2.0f; }` returns `a0 + a0`, the issue's function without a red zone reads as
+its red-zone build, and the i386 `twice` returns `ST0`. A `pushfq; pop rax`
+still returns the flags, a pop beside an `xmm0` that is only stored still
+returns the popped argument, an eight-byte `struct { float f; int i; }`
+built in the frame and popped into `rax` keeps its `rax` return, and clang
+`-Oz`'s `push 5; pop rax` beside a discarded float read still returns 5.

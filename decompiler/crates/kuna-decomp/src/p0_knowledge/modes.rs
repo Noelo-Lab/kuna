@@ -71,8 +71,8 @@ pub const MODE_TABLE: &[Mode] = &[
     Mode {
         name: "aggressive",
         summary: "Maximum recovery: turn on every off-by-default quality, \
-                  structuring, and analysis pass except v850indirectbranch and \
-                  dwarf_lines. Slower and more speculative (may over-recover); \
+                  structuring, and analysis pass except the deliberate exclusions \
+                  docs/modes.md lists. Slower and more speculative (may over-recover); \
                   best for readability and the benchmark ceiling, not for \
                   guaranteed faithfulness.",
         automatic: false,
@@ -145,7 +145,6 @@ const AGGRESSIVE_OVERRIDES: &[(&str, &str)] = &[
     ("opaquepredicate", "on"),
     ("sparcstructret", "on"), // SPARC-idiom-gated; no-op off-SPARC
     ("v850indirectbranch", "on"), // V850-gated (kuna_v850indbranch::applies); no-op off-V850
-    ("regionedgeorder", "on"),
     ("returndup", "auto"), // the shipped default (DIV-54 `on`, then `auto`); kept so the preset owns it
     // (kuna) Decline the returndup split at the join of a one-block `if`, so
     // `if (c) f(); return 0;` is not printed as `if (!c) return 0; f(); return 0;`.
@@ -575,7 +574,13 @@ mod tests {
               // `libgccsigs` costs a SPARC32 caller that returns arithmetic on
               // the `__divdi3` quotient its low word or its whole return (see its
               // catalog row), so the preset must not turn it on.
-              "libgccsigs"];
+              "libgccsigs",
+              // `regionedgeorder` changes which edge the region structurer cuts,
+              // and with it which tail is wrapped and which becomes a guard
+              // return. On the decbench corpus the preset's ordering matched the
+              // source's control flow in 9 fewer O2 and 82 fewer O0 functions
+              // than the default ordering, and in none more.
+              "regionedgeorder"];
 
         /// Default-off options that predate this test and are **not** in the preset,
         /// i.e. are currently unreachable on the default path. Each is a genuine open

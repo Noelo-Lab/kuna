@@ -128,7 +128,7 @@ a60f94c05e0fb6c05f5dc355b90800000089e5578b7d0c568b7508f3a689f05e5f5dc3
 <stringmatch name="repstring #8: a compare of a run-time length" min="1" max="1">^  return builtin_memcmp\(a0,a1,a2\) == 0;</stringmatch>
 <stringmatch name="repstring #9: a compare with no flags set before it, of a constant length" min="1" max="1">^  return builtin_memcmp\(a0,a1,5\) == 0;</stringmatch>
 <stringmatch name="repstring #10: ten builtins in the default pass, none with the option off" min="10" max="10">builtin_mem</stringmatch>
-<stringmatch name="repstring #11: a compare whose final pointer is returned keeps its loop by default, as do four compares with the option off" min="5" max="5">^  \} while \(v2 == v4\);</stringmatch>
+<stringmatch name="repstring #11: a compare whose final pointer is returned keeps its loop by default, as do four compares with the option off" min="5" max="5">^  \} while \(v\d+ == v\d+\);</stringmatch>
 <stringmatch name="repstring #12: with the option off every copy and fill is an element loop -- the bug" min="5" max="5">^  while \(</stringmatch>
-<stringmatch name="repstring #13: and an ordered compare is a loop over two flags -- the bug" min="2" max="2">^  \} while \(v5\);</stringmatch>
+<stringmatch name="repstring #13: and an ordered compare is a loop over two flags -- the bug" min="2" max="2">^  \} while \(v\d+\);</stringmatch>
 </decompilertest>

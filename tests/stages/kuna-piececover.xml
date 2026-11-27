@@ -1,0 +1,57 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A byte of a stack local saved, then overwritten by a wider write of the
+    same local, then stored elsewhere: P6 merge, Cover intersection of
+    overlapping pieces.  Source (gcc 11 -O0 -fno-stack-protector
+    -fcf-protection=none):
+        unsigned long swapbytes(unsigned long x) {
+          unsigned long st[2]; char t;
+          st[0] = x * 0x9e3779b97f4a7c15UL; st[1] = x >> 3;
+          if (x & 1) {
+            t = *((char *)&st[0] + 5);
+            *((char *)&st[0] + 5) = *((char *)&st[0] + 7);
+            *((char *)&st[0] + 7) = t;
+            st[1] |= (st[1] & 63) << 4;
+            t = *((char *)&st[0] + 6);
+            *((char *)&st[0] + 6) = *((char *)&st[0] + 1);
+            *((char *)&st[0] + 1) = t;
+            t = *((char *)&st[0] + 1);
+            *((char *)&st[0] + 1) = *((char *)&st[0] + 4);
+            *((char *)&st[0] + 4) = t;
+          }
+          return st[0] ^ st[1];
+        }
+    The old byte 5 of st[0] is read after the 6-byte write of bytes 0-5
+    that replaces it.  The merge copies that read into a temporary, then
+    tested the temporary against the pieces of st[0] with Covers that were
+    never rebuilt after the pieces were created, so they read as live
+    nowhere and the temporary was merged back into byte 5: the printed C
+    read ((char *)&v5)[5] after the write, giving byte 7 the new byte 5
+    (wrong for every odd x whose bytes 5 and 7 differ).  The pieces'
+    Covers are now rebuilt before the test, so byte 5 is saved before the
+    write (#1) and byte 7 takes the saved value (#2, #3).
+-->
+<bytechunk space="ram" offset="0x101000" readonly="true">
+554889e548897dd8488b45d848ba157c4a7fb979379e480fafc2488945e0488b
+45d848c1e803488945e8488b45d883e0014885c00f84ab000000488d45e04883
+c0050fb6008845ff488d55e04883c207488d45e04883c0050fb6128810488d45
+e04883c0070fb655ff8810488b55e8488b45e848c1e00425f00300004809d048
+8945e8488d45e04883c0060fb6008845ff488d55e04883c201488d45e04883c0
+060fb6128810488d45e04883c0010fb655ff8810488d45e04883c0010fb60088
+45ff488d55e04883c204488d45e04883c0010fb6128810488d45e04883c0040f
+b655ff8810488b55e0488b45e84831d05dc3
+</bytechunk>
+<symbol space="ram" offset="0x101000" name="swapbytes"/>
+</binaryimage>
+<script>
+  <com>lo fu swapbytes</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="PIECECOVER #1: byte 5 is saved right after it is stored, before the wider write" min="1" max="1">^    \(\(char \*\)&amp;(v\d+)\)\[5\] = \(char\)\(v\d+ &gt;&gt; 0x28\);
+    v\d+ = \(\(char \*\)&amp;v\d+\)\[5\];$</stringmatch>
+<stringmatch name="PIECECOVER #2: byte 7 takes the saved byte" min="1" max="1">^    v\d+ = CONCAT17\(v\d+,\(undefined7\)v\d+\);$</stringmatch>
+<stringmatch name="PIECECOVER #3: byte 5 is not read back after the write that replaced it" min="0" max="0">CONCAT17\(\(\(char \*\)&amp;v\d+\)\[5\]</stringmatch>
+</decompilertest>

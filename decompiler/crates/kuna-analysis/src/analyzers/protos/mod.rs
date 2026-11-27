@@ -163,6 +163,51 @@ const LIBC: &[(&str, Sig)] = &[
     ("memcpy", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("memmove", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::VoidPtr, Ty::Size], vararg: -1 }),
     ("memset", Sig { ret: Ty::VoidPtr, params: &[Ty::VoidPtr, Ty::Int, Ty::Size], vararg: -1 }),
+    // C++ allocation operators (Itanium; `size_t` is `m`, `j` or `y`)
+    ("_Znwm", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnwmRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnwmSt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnwmSt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_Znam", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnamRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnamSt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnamSt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_Znwj", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnwjRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnwjSt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnwjSt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_Znaj", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnajRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnajSt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnajSt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_Znwy", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnwyRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnwySt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnwySt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_Znay", Sig { ret: Ty::VoidPtr, params: &[Ty::Size], vararg: -1 }),
+    ("_ZnayRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZnaySt11align_val_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZnaySt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::VoidPtr, params: &[Ty::Size, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZdlPv", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),
+    ("_ZdlPvRKSt9nothrow_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_ZdlPvSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdlPvSt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZdlPvm", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdlPvmSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZdlPvj", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdlPvjSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZdlPvy", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdlPvySt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZdaPv", Sig { ret: Ty::Void, params: &[Ty::VoidPtr], vararg: -1 }),
+    ("_ZdaPvRKSt9nothrow_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::VoidPtr], vararg: -1 }),
+    ("_ZdaPvSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdaPvSt11align_val_tRKSt9nothrow_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::VoidPtr], vararg: -1 }),
+    ("_ZdaPvm", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdaPvmSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZdaPvj", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdaPvjSt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
+    ("_ZdaPvy", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size], vararg: -1 }),
+    ("_ZdaPvySt11align_val_t", Sig { ret: Ty::Void, params: &[Ty::VoidPtr, Ty::Size, Ty::Size], vararg: -1 }),
     // sys/ptrace.h — `long ptrace(int request, pid_t pid, void *addr, void *data)`.
     // glibc DECLARES it variadic (`long ptrace(enum __ptrace_request, ...)`), so no
     // body analysis can derive the arity; the four fixed slots are glibc's own
@@ -617,8 +662,21 @@ impl AnalysisPass for LibProtoPass {
         seed_named_prototypes(&mut out, &present, LIBC, types, word_size, L);
         seed_resolved_prototypes(&mut out, &imports, LIBC, types, word_size, L);
         out.c_runtime_imports = crate::loader::pe_iat::c_runtime_import_names(ctx.bytes);
+        out.c_runtime_imports.extend(
+            LIBC.iter()
+                .map(|(name, _)| *name)
+                .filter(|name| is_cxx_allocation_operator(name))
+                .filter(|name| present.contains(*name) || imports.iter().any(|(n, _)| n == name))
+                .map(String::from),
+        );
         out
     }
+}
+
+/// Whether a table name is an Itanium `operator new`/`new[]`/`delete`/`delete[]`.
+/// They are free functions, so `__cdecl` on 32-bit x86 whichever DLL exports them.
+fn is_cxx_allocation_operator(name: &str) -> bool {
+    ["_Znw", "_Zna", "_Zdl", "_Zda"].iter().any(|prefix| name.starts_with(prefix))
 }
 
 #[cfg(test)]
@@ -982,6 +1040,60 @@ mod tests {
         for want in ["puts", "printf", "strcmp"] {
             assert!(present.contains(want), "fauxware should import {want}");
             assert!(LIBC.iter().any(|(n, _)| n == &want), "table should know {want}");
+        }
+    }
+
+    #[test]
+    fn the_cxx_allocation_operators_take_and_return_what_the_abi_says() {
+        fn spelled(t: Ty) -> &'static str {
+            match t {
+                Ty::Void => "void",
+                Ty::VoidPtr => "void *",
+                Ty::Size => "size_t",
+                _ => "other",
+            }
+        }
+        // What the Itanium name says: `_Znw`/`_Zna` then the size, or
+        // `_Zdl`/`_Zda`, `Pv` and perhaps the size; then perhaps
+        // `St11align_val_t` (a `size_t`) and `RKSt9nothrow_t` (a reference).
+        fn from_mangling(name: &str) -> (&'static str, Vec<&'static str>) {
+            let (ret, mut params, rest) = if let Some(rest) = name.strip_prefix("_Znw").or_else(|| name.strip_prefix("_Zna")) {
+                let rest = rest.strip_prefix(['m', 'j', 'y']).expect("a size_t spelling");
+                ("void *", vec!["size_t"], rest)
+            } else {
+                let rest = name.strip_prefix("_ZdlPv").or_else(|| name.strip_prefix("_ZdaPv")).expect("a delete");
+                match rest.strip_prefix(['m', 'j', 'y']) {
+                    Some(rest) => ("void", vec!["void *", "size_t"], rest),
+                    None => ("void", vec!["void *"], rest),
+                }
+            };
+            let rest = match rest.strip_prefix("St11align_val_t") {
+                Some(rest) => {
+                    params.push("size_t");
+                    rest
+                }
+                None => rest,
+            };
+            match rest {
+                "" => {}
+                "RKSt9nothrow_t" => params.push("void *"),
+                other => panic!("{name}: unexpected {other}"),
+            }
+            (ret, params)
+        }
+        let operators: Vec<_> = LIBC.iter().filter(|(n, _)| n.starts_with("_Zn") || n.starts_with("_Zd")).collect();
+        for (name, sig) in &operators {
+            let got: Vec<&str> = sig.params.iter().map(|t| spelled(*t)).collect();
+            assert_eq!((spelled(sig.ret), got, sig.vararg), {
+                let (ret, params) = from_mangling(name);
+                (ret, params, -1)
+            }, "{name}");
+        }
+        let names: HashSet<&str> = operators.iter().map(|(n, _)| *n).collect();
+        assert_eq!(names.len(), operators.len(), "a name is listed twice");
+        assert_eq!(operators.len(), 44, "24 forms of new and new[], and 20 of delete and delete[]");
+        for name in ["_Znwm", "_Znaj", "_Znwy", "_ZdlPv", "_ZdaPvm", "_ZdlPvySt11align_val_t", "_ZnwjSt11align_val_tRKSt9nothrow_t"] {
+            assert!(names.contains(name), "{name}");
         }
     }
 

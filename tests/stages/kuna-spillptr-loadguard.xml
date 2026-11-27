@@ -1,0 +1,77 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A stack array element written directly and read only through a pointer
+    the function keeps in a local: P3 heritage, LOAD guards.  Source (gcc -O0
+    -fno-stack-protector -fcf-protection=none):
+        long f_spill(long a) {
+            long st[8]; long *p; long s = 0;
+            for (int k = 0; k < 8; k++) st[k] = a * (k + 3);
+            if (a > 5) st[1] |= 0x78;
+            p = st;
+            for (long i = 1; i < 7; i++) s += p[i];
+            return s;
+        }
+    f_direct is the same function reading st[i] itself, f_param(a, n)
+    fills st the same way and returns p[n], and vsum(n, ...) sums n long
+    variadic arguments with va_arg, which gcc -O0 reads through the
+    reg_save_area pointer va_start stores in the va_list.  gcc stores p = &st[0] to its
+    stack slot and reloads it for each p[i], so on the stack space's first
+    heritage pass the LOAD's address came from an unlinked slot read and the
+    indexed-pointer discovery never reached it: the LOAD had no guard,
+    nothing read st[1] at the LOAD, and the if was removed as dead from
+    f_spill and f_param (kept in f_direct), and vsum lost the prologue's
+    stores of rsi..r9 to the register save area, so its loop read an array
+    nothing wrote.  Discovery now follows a stack pointer through the slot
+    it is spilled to, so the three st functions keep the if and its body
+    (#1, #2) and vsum its five stores (#4).  p[n] has no bound, and its
+    guard stops below p's own slot, so p does not survive as a variable
+    (#3).
+-->
+<bytechunk space="ram" offset="0x101000" readonly="true">
+554889e548897d9848c745f800000000c745f400000000eb1e8b45f483c00348
+98480faf45984889c28b45f44898488954c5a08345f401837df4077edc48837d
+98057e0c488b45a84883c878488945a8488d45a0488945e048c745e801000000
+eb1f488b45e8488d14c500000000488b45e04801d0488b00480145f8488345e8
+0148837de8067eda488b45f85dc3554889e548897d9848c745f800000000c745
+f400000000eb1e8b45f483c0034898480faf45984889c28b45f44898488954c5
+a08345f401837df4077edc48837d98057e0c488b45a84883c878488945a848c7
+45e801000000eb12488b45e8488b44c5a0480145f8488345e80148837de8067e
+e7488b45f85dc3554889e548897da8488975a0c745fc00000000eb1e8b45fc83
+c0034898480faf45a84889c28b45fc4898488954c5b08345fc01837dfc077edc
+48837da8057e0c488b45b84883c878488945b8488d45b0488945f0488b45a048
+8d14c500000000488b45f04801d0488b005dc3554889e54883ec7889bd1cffff
+ff4889b558ffffff48899560ffffff48898d68ffffff4c898570ffffff4c898d
+78ffffff84c074200f2945800f294d900f2955a00f295db00f2965c00f296dd0
+0f2975e00f297df048c78548ffffff00000000c78528ffffff08000000c7852c
+ffffff30000000488d451048898530ffffff488d8550ffffff48898538ffffff
+c78544ffffff00000000eb518b8528ffffff83f82f7723488b8538ffffff8b95
+28ffffff89d24801d08b9528ffffff83c208899528ffffffeb12488b8530ffff
+ff488d500848899530ffffff488b0048018548ffffff838544ffffff018b8544
+ffffff3b851cffffff7ca1488b8548ffffffc9c3
+</bytechunk>
+<symbol space="ram" offset="0x101000" name="f_spill"/>
+<symbol space="ram" offset="0x10108e" name="f_direct"/>
+<symbol space="ram" offset="0x101107" name="f_param"/>
+<symbol space="ram" offset="0x101173" name="vsum"/>
+</binaryimage>
+<script>
+  <com>lo fu f_spill</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_direct</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu f_param</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vsum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="SPILLPTR-LOADGUARD #1: the three st functions keep the if" min="3" max="3">if \(6 &lt;= a0\)</stringmatch>
+<stringmatch name="SPILLPTR-LOADGUARD #2: the three st functions keep the store the indexed read sees" min="3" max="3">v[0-9]+\[1\] \|= 0x78;</stringmatch>
+<stringmatch name="SPILLPTR-LOADGUARD #3: no local holds the reloaded pointer" min="0" max="0">\*v[0-9]+; // rax \| stack - 0x18</stringmatch>
+<stringmatch name="SPILLPTR-LOADGUARD #4: vsum keeps the register save area va_arg reads" min="5" max="5">v[0-9]+\[[1-5]\] = a[0-9]+;</stringmatch>
+</decompilertest>

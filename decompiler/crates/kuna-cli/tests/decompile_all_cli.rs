@@ -3349,19 +3349,26 @@ fn an_integer_access_through_an_index_from_a_float_global_refuses_the_float() {
     assert!(!stdout.contains("sink(gdp)"), "gdp handed on as a float its own index reads as an integer:\n{stdout}");
 }
 
-/// `floatparam_retreg_clang_O2` (clang -O2, stripped): `v1` (`sub_11c0`) returns
-/// `(float)geti()` in `xmm0`, but its recovery returns `rax`, and `main` reads
-/// the call's `xmm0`. The return a callee states in another register says
-/// nothing of what the caller reads, so the read is not printed as a
-/// reinterpretation of `sub_11c0`'s integer.
+/// `floatparam_retreg2_x86_64.o` (`floatparam_retreg2_x86_64.s`): `callee`
+/// leaves values in both `eax` and `xmm0`, its recovery returns `eax`, and
+/// `caller` reads the call's `xmm0`. The return a callee states in another
+/// register says nothing of what the caller reads, so the read is not printed
+/// as a reinterpretation of `callee`'s integer. `floatparam_retreg_clang_O2`
+/// (clang -O2, stripped) was the case until its `v1` (`sub_11c0`), which
+/// returns `(float)geti()` in `xmm0` from a `push rax` / `pop rax` frame, was
+/// recovered returning the popped `rax`; it now returns the float.
 #[test]
 fn a_return_stated_in_another_register_is_not_reinterpreted() {
-    let bin = repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures/floatparam_retreg_clang_O2").to_str().unwrap().to_string();
+    let fixture = |name: &str| repo_root().join("decompiler/crates/kuna-analysis/tests/fixtures").join(name).to_str().unwrap().to_string();
     let sp = specs();
-    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &bin, "--sleighpath", &sp]);
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture("floatparam_retreg2_x86_64.o"), "--sleighpath", &sp]);
     assert!(ok, "kuna decompile-all failed: {stderr}");
-    assert!(stdout.contains("unsigned long sub_11c0("), "sub_11c0 no longer returns rax; re-pick the case:\n{stdout}");
-    assert!(!stdout.contains(".from = sub_11c0("), "a return in rax reinterpreted as xmm0's float:\n{stdout}");
+    assert!(stdout.contains("unsigned int callee("), "callee no longer returns eax; re-pick the case:\n{stdout}");
+    assert!(!stdout.contains(".from = callee("), "a return in eax reinterpreted as xmm0's float:\n{stdout}");
+    let (stdout, stderr, ok) = run_kuna(&["decompile-all", &fixture("floatparam_retreg_clang_O2"), "--sleighpath", &sp]);
+    assert!(ok, "kuna decompile-all failed: {stderr}");
+    assert!(stdout.contains("float sub_11c0(void)"), "sub_11c0 returns the popped rax, not its float:\n{stdout}");
+    assert!(!stdout.contains(".from = sub_11c0("), "sub_11c0's float read through a reinterpretation:\n{stdout}");
 }
 
 /// `floatbitshelper_armhf.o` (Cortex-M4F hard-float, clang -O2), `floatbitshelper_a64_O0.o`

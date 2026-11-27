@@ -14,8 +14,6 @@
 //! The verdict reads no symbol and no type; a function with no parameter
 //! evidence and no frame pointer is not called unoptimized.
 
-use std::collections::HashMap;
-
 use kuna_base::space::spacetype;
 use kuna_base::types::int4;
 use kuna_num::opcodes::OpCode;
@@ -114,15 +112,26 @@ fn callee_saved(fd: &Funcdata, v: &Varnode) -> bool {
             == crate::fspec::effect_type::UNAFFECTED
 }
 
-/// Frame offsets of values, followed back to the entry stack pointer.
+/// Frame offsets of values, followed back to the entry stack pointer, and
+/// which registers the calling convention preserves, each found once.
 struct Frame<'a> {
     fd: &'a Funcdata,
     sp: VarnodeId,
     sp_offset: u64,
-    memo: HashMap<VarnodeId, Option<(i64, bool)>>,
+    memo: crate::kuna_fasthash::FxHashMap<VarnodeId, Option<(i64, bool)>>,
+    preserved: crate::kuna_fasthash::FxHashMap<(int4, u64, int4), bool>,
 }
 
 impl Frame<'_> {
+    /// [`callee_saved`], remembered per storage location.
+    fn preserved(&mut self, v: &Varnode) -> bool {
+        if v.get_space().get_type() != spacetype::IPTR_PROCESSOR {
+            return false;
+        }
+        let fd = self.fd;
+        *self.preserved.entry((v.get_space().get_index(), v.get_offset(), v.get_size())).or_insert_with(|| callee_saved(fd, v))
+    }
+
     /// The entry-stack-pointer offset `vn` holds, and whether the chain passes
     /// through a callee-saved register other than the stack pointer.
     fn offset(&mut self, vn: VarnodeId) -> Option<(i64, bool)> {
@@ -144,7 +153,7 @@ impl Frame<'_> {
     fn step(&mut self, vn: VarnodeId, depth: u32) -> Option<(i64, bool)> {
         let fd = self.fd;
         let v = fd.vbank().get(vn)?;
-        let via = v.get_offset() != self.sp_offset && callee_saved(fd, v);
+        let via = v.get_offset() != self.sp_offset && self.preserved(v);
         let op = fd.obank().get(v.get_def()?)?;
         let constant = |i: int4| op.get_in(i).and_then(|c| constant_value(fd, c));
         let (base, delta) = match op.code() {
@@ -268,7 +277,7 @@ pub fn evidence(fd: &Funcdata) -> Option<Evidence> {
     let stack = fd.get_arch().manage().get_stack_space()?.clone();
     let sp = fd.find_spacebase_input(&stack)?;
     let sp_offset = fd.vbank().get(sp)?.get_offset();
-    let mut frame = Frame { fd, sp, sp_offset, memo: HashMap::new() };
+    let mut frame = Frame { fd, sp, sp_offset, memo: Default::default(), preserved: Default::default() };
     let entry = fd.bblocks_ref().get_start_block(fd.bblocks_root_pub()).ok();
     // A slot in the function's own frame; the caller's side (a register
     // parameter's home or save area) is used by optimized code too.
@@ -306,7 +315,7 @@ pub fn evidence(fd: &Funcdata) -> Option<Evidence> {
         }
         let Some(out_id) = o.get_out() else { continue };
         let Some(out) = fd.vbank().get(out_id) else { continue };
-        if out.get_offset() == sp_offset || out.get_size() < 4 || !callee_saved(fd, out) {
+        if out.get_offset() == sp_offset || out.get_size() < 4 || !frame.preserved(out) {
             continue;
         }
         if !restores(fd, o) && frame.offset(out_id).is_none() {
@@ -315,8 +324,9 @@ pub fn evidence(fd: &Funcdata) -> Option<Evidence> {
     }
     // A load at a call reads the callee's stack argument, and a register a
     // call writes is its return address; neither is the body's own.
-    loads.retain(|(at, _, _)| !calls.contains(at));
-    writes.retain(|(_, at)| !calls.contains(at));
+    calls.sort_unstable();
+    loads.retain(|(at, _, _)| calls.binary_search(at).is_err());
+    writes.retain(|(_, at)| calls.binary_search(at).is_err());
     let inputs: Vec<VarnodeId> = fd.vbank().iter_def_flag(crate::varnode::varnode_flags::input).collect();
     let mut saved: Vec<u64> = Vec::new();
     for vn in inputs {
@@ -325,7 +335,7 @@ pub fn evidence(fd: &Funcdata) -> Option<Evidence> {
             continue;
         }
         let reg = v.get_offset();
-        if callee_saved(fd, v) && saved_to_frame(fd, &mut frame, vn) {
+        if frame.preserved(v) && saved_to_frame(fd, &mut frame, vn) {
             saved.push(reg);
         }
         if !fd.get_func_proto().possible_input_param(&v.get_addr(), v.get_size()) {

@@ -2299,6 +2299,16 @@ impl Database {
         self.symbols[sym].check_size_type_lock();
     }
 
+    /// (kuna) OR a range property into a symbol mapped before the range was
+    /// painted, as `add_map` folds it into one mapped after. Unlike
+    /// [`Self::set_attribute`] this keeps `externref`, which upstream sets only
+    /// through an `ExternRefSymbol`; the port's stand-in is the property range.
+    pub fn kuna_add_range_property(&mut self, sym: SymbolId, prop: uint4) {
+        self.kuna_gen += 1;
+        let mask = varnode_flags::readonly | varnode_flags::volatil | varnode_flags::externref;
+        self.symbols[sym].flags |= prop & mask;
+    }
+
     /// C++ `Scope::addCodeLabel` (`database.cc:1669-1684`): create a LabSymbol.
     pub fn add_code_label(
         &mut self,
