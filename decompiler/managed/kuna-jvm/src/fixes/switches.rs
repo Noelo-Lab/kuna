@@ -350,16 +350,21 @@ pub fn hides_case(switch: SwitchStatement, edges: &[StatEdge]) -> bool {
 /// with `break;` ends with a `goto` right before the instruction the group's
 /// keys jump to, to where the group goes (past the switch). False only for that
 /// `goto`, ending one of the case's blocks; true when the empty case leaves by
-/// another edge (a case whose code the structuring moved out of the switch) or
-/// the switch instruction does not list its keys.
+/// another edge (a case whose code the structuring moved out of the switch),
+/// the case breaks there through a statement of its own (its break would
+/// need a labeled block) or the switch instruction does not list its keys.
 pub fn falls_into(switch: SwitchStatement, case: Statement, group: usize) -> bool {
-    let breaks_switch = switch
+    let Some(exit) = switch
         .get_case_statements()
         .get(group)
         .get_all_successor_edges()
         .first()
-        .is_some_and(|e| e.get_type() == StatEdge::TYPE_BREAK && e.closure() == Some(switch.0));
-    if !breaks_switch {
+        .filter(|e| e.get_type() == StatEdge::TYPE_BREAK && e.closure() == Some(switch.0))
+        .map(|e| e.get_destination())
+    else {
+        return true;
+    };
+    if breaks_inner(case, exit, switch.0) {
         return true;
     }
     let Some(instr) = switch
@@ -402,6 +407,14 @@ pub fn falls_into(switch: SwitchStatement, case: Statement, group: usize) -> boo
         return true;
     };
     jump != destination(at).unwrap_or(target) || !ends_at(case, before.start_offset())
+}
+
+/// Whether a break out of `stat` to `exit` closes a statement other than
+/// `switch` (an explicit one would print as `break label;` of a labeled block).
+fn breaks_inner(stat: Statement, exit: Statement, switch: Statement) -> bool {
+    stat.get_all_successor_edges().iter().any(|e| {
+        e.get_type() == StatEdge::TYPE_BREAK && e.get_destination() == exit && e.closure() != Some(switch)
+    }) || stat.get_stats().borrow().to_vec().into_iter().any(|s| breaks_inner(s, exit, switch))
 }
 
 fn ends_at(stat: Statement, offset: i32) -> bool {

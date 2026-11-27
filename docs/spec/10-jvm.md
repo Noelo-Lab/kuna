@@ -1578,9 +1578,11 @@ fall-through into the empty labels, or vanished with a hidden empty default. The
 drops every `goto`, so only the instructions tell the two apart: javac lays cases out in order, and a
 case ending with `break;` ends with a `goto` right before the instruction the empty labels' keys jump
 to, going where they go (past the switch). `decompiler/managed/kuna-jvm/src/fixes/switches.rs
-(falls_into)` keeps the edge explicit exactly when that `goto` ends one of the case's blocks and the
-empty case breaks this switch; an empty case that leaves another way (code of the next case that the
-structuring moved out of the switch, a loop's `break label`) keeps Vineflower's rule.
+(falls_into)` keeps the edge explicit exactly when that `goto` ends one of the case's blocks, the
+empty case breaks this switch and the case's breaks to there close the switch itself (one closing a
+statement inside the case would print as a labeled block); an empty case that leaves another way
+(code of the next case that the structuring moved out of the switch, a loop's `break label`) keeps
+Vineflower's rule.
 
 **Heap reads copied into several uses.**
 `decompiler/managed/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor)`
