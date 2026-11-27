@@ -1752,6 +1752,33 @@ fn wide_register_square_selects_one_input_and_preserves_incoming_ce_feedback() {
 }
 
 #[test]
+fn wide_data_square_reads_the_old_pointer_once_and_rounds_mac_ties_upward() {
+    for (packet, mode, address, modulo, bound, word, addend, ecfg, next, result, est) in [
+        (0x900000b0888e, 0, 0x0100, 0, 0,      101,    0,            0, 0x0101, 0x27d9,       0),
+        (0x900000b0888e, 1, 0xffff, 7, 0xfff8, 0xffff, 0,            1, 0,      2,            0),
+        (0x900000b0888e, 2, 0x4047, 6, 0,      0x8003, 0,            0, 0x4041, 0x3ffd0009,   0),
+        (0x900000b0888e, 3, 0xfffd, 7, 0xfffc, 13,     0,            0, 0xfff6, 169,          0),
+        (0xa3108acb8088, 0, 0x4040, 0, 0,      0,      0x8000,       2, 0x4041, 0x10000,      0),
+        (0xa3108acb8088, 2, 0x4047, 7, 0,      0xffff, 0xfffffe7fff, 2, 0x4040, 0xffffff0000, 0x10),
+        (0xa3108acb8088, 3, 0x4040, 3, 0x4040, 0x8000, 0x11223344,   5, 0x4041, 0x7fff0000,   0x24),
+    ] {
+        let mut m = wide_product_machine(packet);
+        let adjacent = (address + 1) & 0xffff;
+        m.seed_data(address, word);
+        m.seed_data(adjacent, word ^ 0x9635);
+        m.seed(&[("PACFG", mode), ("R0", address), ("RN0", 0x8123), ("RM0", modulo),
+                 ("RL0", bound), ("A0", 0x8d6543210a), ("A2", addend), ("ECFG", ecfg),
+                 ("X1", 0x7654), ("X2", 0x4321), ("CETBL", 0)]);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R0"), m.reg("X1"), m.reg("A0"), m.reg("EST")),
+                   (next, word, result, est), "{packet:x}, mode {mode}");
+        assert_eq!((m.reg("RN0"), m.reg("X2"), m.reg("A2")), (0x8123, 0x4321, addend));
+        assert_eq!((m.data(address), m.data(adjacent)), (word, word ^ 0x9635));
+    }
+}
+
+#[test]
 fn wide_insert_keeps_the_agu_gate_and_result_ports_separate() {
     let words = [(0x4036, 0xdda4), (0x4037, 0x69bd), (0x4044, 0x25de), (0x4045, 0xd3e5),
                  (0x8040, 0x7c4b), (0x8041, 0x20fa), (0x8043, 0x8be1)];

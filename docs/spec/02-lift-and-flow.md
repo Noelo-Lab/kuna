@@ -4090,6 +4090,11 @@ Unqualified register square forms use the same 16-bit word for both
 multiplier inputs. The signed and unsigned `A1L` forms leave `X1`
 alone; the unsigned `FF1` form publishes that word to `X1`. CE feedback
 samples incoming EST, before the product updates its arithmetic flags.
+The DATA square reads the word at the old `R0` once, latches it in `X1`,
+and advances `R0` by one. Its implicit modulo window is aligned to a
+power-of-two span; the explicit window uses `RL0`. The rounded
+accumulating form adds signed `A2` to the square and rounds ties upward
+at the 16-bit boundary, regardless of the rounding-mode bit.
 An unqualified signed `MOVE` from `X1` to `A3` sign-extends the
 published word into the whole accumulator.
 

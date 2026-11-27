@@ -7979,12 +7979,41 @@ macro wide_mpy_result(first, second, kind, narrow, store, shift, product, result
   <done>
 }
 
+macro wide_square_data(input) {
+    local address:2 = R0;
+    local mode:2 = PACFG & 3;
+    local next:2 = address + 1;
+    if (mode < 2) goto <publish>;
+    if (mode == 3) goto <explicit>;
+    local modulo:2 = RM0 & 0xfff;
+    local mask:2 = modulo;
+    mask = mask | (mask >> 1);
+    mask = mask | (mask >> 2);
+    mask = mask | (mask >> 4);
+    mask = mask | (mask >> 8);
+    if ((address & mask) < modulo) goto <publish>;
+    next = next - modulo - 1;
+    goto <publish>;
+  <explicit>
+    wide_load_next(address, 3:2, RM0, RL0, 1:2, next);
+  <publish>
+    R0 = next;
+    input = *[data]:2 address;
+    X1 = input;
+}
+
 wide_mpy_square_input: "square A1L" is (wide_acc_mac_op=0x30 | wide_acc_mac_op=0x33)
     & wide_acc_mac_first=0x46 & wide_0_0=1 & wide_40_45=0x11 { export A1L; }
 wide_mpy_square_input: "square FF1" is wide_acc_mac_op=0x33
     & wide_acc_mac_first=0x4e & wide_0_0=1 & wide_40_45=0x3e {
     X1 = FF1;
     export FF1;
+}
+wide_mpy_square_input: "square *R0++" is wide_acc_mac_op=0x30
+    & wide_acc_mac_first=0x47 & wide_0_0=0 & wide_40_45=0x10 {
+    local input:2;
+    wide_square_data(input);
+    export input;
 }
 
 :^wide_mpy_kind "A0",wide_mpy_square_input is carmel_issue=5
@@ -7998,6 +8027,28 @@ wide_mpy_square_input: "square FF1" is wide_acc_mac_op=0x33
     local result:8;
     wide_mpy_result(input, input, wide_mpy_kind, 0:1, 0:1, 0:4, product, result, flags);
     A0L = result:2;
+    A0H = result(2);
+    GB0 = result(4);
+    publish_ce_feedback(flags, incoming);
+}
+
+:MACR "A0","square *R0++","A2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_0_22=0x4b8088 & wide_24_45=0x23108a {
+    local incoming:2 = EST;
+    local input:2;
+    wide_square_data(input);
+    local product:8;
+    raw_mac_product(input, input, 1:1, 1:1, product);
+    local addend:8;
+    compact_long_sample(A2L, A2H, GB2, addend);
+    local sum:8 = ((addend ^ 0x8000000000) - 0x8000000000) + product;
+    local result:8;
+    local active:2;
+    raw_mac_finish((sum + 0x8000) & 0xffffffffffff0000, addend + product + 0x8000,
+                   0:1, 0:1, 0:1, result, active);
+    local flags:2 = incoming & 0xcfff;
+    raw_mac_flags(flags, active, 0);
+    A0L = 0;
     A0H = result(2);
     GB0 = result(4);
     publish_ce_feedback(flags, incoming);
