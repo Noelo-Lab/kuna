@@ -572,34 +572,50 @@ fn get_input_cast_equal(
     let slottype = data.vn_high_type_read_facing(slotvn, op);
     let standard = strat.cast_standard(&reqtype, &slottype, false, false);
     let other = if slot == 0 { in1 } else { in0 };
-    if standard.is_none()
-        && (promotes_with_other_sign(data, strat, slotvn, other, &slottype, &reqtype)
-            || compared_word_needs_truncation(data, strat, slotvn, &reqtype))
-    {
-        return Some(reqtype);
+    if standard.is_none() {
+        if promotes_with_other_sign(data, strat, slotvn, other, &slottype, &reqtype) {
+            return Some(reqtype);
+        }
+        if let Some(word) = compared_word_type(data, strat, op, slotvn, other, &reqtype) {
+            return Some(word);
+        }
     }
     standard
 }
 
 /// Two-byte target `int` does not promote its own words; wider C hosts do.
-fn compared_word_needs_truncation(
-    data: &Funcdata,
+/// Beside a word of the other sign whose top bit may be set, the cast takes
+/// that word's type, so both sides widen alike on such a host.
+fn compared_word_type(
+    data: &mut Funcdata,
     strat: &CastStrategyC,
+    op: OpId,
     vn: VarnodeId,
-    compared: &Datatype,
-) -> bool {
+    other: VarnodeId,
+    compared: &Rc<Datatype>,
+) -> Option<Rc<Datatype>> {
     if strat.promote_size() != 2 || compared.get_size() != 2 || !data.get_arch().int_promotion {
-        return false;
+        return None;
     }
-    let Some(v) = data.vbank().get(vn) else { return false };
+    let v = data.vbank().get(vn)?;
     if v.get_size() != 2 || !v.is_implied() || v.has_implied_field()
         || !v.get_def().and_then(|id| data.obank().get(id)).is_some_and(|op|
             matches!(op.code(), OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB))
     {
-        return false;
+        return None;
     }
-    let Some((min, max)) = super::kuna_castimplied::int_range(compared) else { return false };
-    !super::kuna_truncarg::c_range(data, vn, 0).is_some_and(|(lo, hi)| min <= lo && hi <= max)
+    let int_range = super::kuna_castimplied::int_range;
+    int_range(compared)?;
+    let other_type = data.vn_high_type_read_facing(other, op);
+    let signed = |t: &Datatype| t.get_metatype() == type_metatype::TYPE_INT;
+    let top_bit_clear = data.vbank().get(other)
+        .is_some_and(|o| !kuna_base::address::signbit_negative(o.get_nz_mask(), o.get_size()));
+    let other_sign = other_type.get_size() == 2 && int_range(&other_type).is_some()
+        && signed(&other_type) != signed(compared) && !top_bit_clear;
+    let word = if other_sign { &other_type } else { compared };
+    let (min, max) = int_range(word)?;
+    let fits = super::kuna_truncarg::c_range(data, vn, 0).is_some_and(|(lo, hi)| min <= lo && hi <= max);
+    (!fits).then(|| Rc::clone(word))
 }
 
 /// (kuna) The integer operand type of an `==`/`!=` that orders after a
