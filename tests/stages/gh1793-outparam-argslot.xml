@@ -20,6 +20,9 @@
     outslot_loop refills an entry+0x38 slot through rdx on every iteration
     (store: mov [rdx],rcx) and sums it.  outparam passes the first stack
     argument slot, entry+0x28, which the prototype takes as a parameter.
+    outpair sets two adjacent ints with one 8-byte store and passes each by
+    address; outindex also indexes the slot's address.  Neither is one scalar
+    object, and both keep their storage references.
 
     Stage model: P6 variable naming.  ScopeLocal::restructure leaves the
     prototype's parameter range to the parameter symbols, and entry+0x38 is
@@ -33,6 +36,9 @@
     kuna_paramareaslot.rs (always on) maps such an address-taken slot as a
     local once the prototype is final, so the reference and the accesses
     share one name.  The parameter slot in outparam keeps its parameter.
+    Mapping outpair's 8 bytes as one local printed the second address as
+    &((char *)Register00000020)[0x3c], and mapping outindex's slot indexed
+    an 8-byte scalar, ((int8 *)&v1)[a1].
 -->
 <bytechunk space="ram" offset="0x140001000" readonly="true">
 534883ec2041b8100000004889d34c8d4c246031d2e8260000004885c0b80100
@@ -48,7 +54,15 @@ ffffff4885c0b8010000007812488b4c24604889da488b01ff500848c1e83f48
 48890ac300000000000000000000000000000000000000000000000000000000
 0000000000000000000000000000000000000000000000000000000000000000
 534883ec2041b8100000004889d34c8d4c245031d2e8a6feffff4885c0b80100
-00007812488b4c24504889da488b01ff500848c1e83f4883c4205bc3
+00007812488b4c24504889da488b01ff500848c1e83f4883c4205bc300000000
+0000000000000000000000000000000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000
+534883ec2048b8000000000400000048894424604c8d4c24644c8d442460ba01
+000000e8180000008b4424604883c4205bc30000000000000000000000000000
+41890841c7010400000031c0c300000000000000000000000000000000000000
+0000000000000000000000000000000000000000000000000000000000000000
+534883ec204889d348c744246000000000488d542460e8a5feffff488d442460
+488b04d848034424604883c4205bc3
 </bytechunk>
 <symbol space="ram" offset="0x140001000" name="outslot"/>
 <symbol space="ram" offset="0x140001040" name="fill"/>
@@ -56,6 +70,9 @@ ffffff4885c0b8010000007812488b4c24604889da488b01ff500848c1e83f48
 <symbol space="ram" offset="0x140001100" name="outslot_loop"/>
 <symbol space="ram" offset="0x140001140" name="store"/>
 <symbol space="ram" offset="0x140001180" name="outparam"/>
+<symbol space="ram" offset="0x140001200" name="outpair"/>
+<symbol space="ram" offset="0x140001240" name="fillpair"/>
+<symbol space="ram" offset="0x140001280" name="outindex"/>
 </binaryimage>
 <script>
   <com>lo fu outslot</com>
@@ -70,9 +87,15 @@ ffffff4885c0b8010000007812488b4c24604889da488b01ff500848c1e83f48
   <com>lo fu outparam</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>lo fu outpair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu outindex</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
-<stringmatch name="outparam-argslot #1: no slot prints as raw storage" min="0" max="0">Stack0</stringmatch>
+<stringmatch name="outparam-argslot #1: the out-parameter never prints as raw storage" min="0" max="0">fill\(a0,0,0x10,&amp;Stack</stringmatch>
 <stringmatch name="outparam-argslot #2: the call fills the variable the body reads" min="2" max="2">fill\(a0,0,0x10,&amp;v2\) &lt;= -1</stringmatch>
 <stringmatch name="outparam-argslot #3: the load after the call reads that variable" min="2" max="2">\(\*v2 \+ 8\)</stringmatch>
 <stringmatch name="outparam-argslot #4: the variable is the entry+0x38 slot" min="2" max="2">int8 \*v2; // rcx \| stack \+ 0x38</stringmatch>
@@ -83,4 +106,8 @@ v1 \+= v2;</stringmatch>
 <stringmatch name="outparam-argslot #7: a parameter slot keeps its parameter" min="1" max="1">fill\(a0,0,0x10,&amp;a4\) &lt;= -1\)
 return 1;
 v1 = \*\(code \*\*\)\(\*a4 \+ 8\);</stringmatch>
+<stringmatch name="outparam-argslot #8: outpair is decompiled" min="1" max="1">fillpair\(a0,1,</stringmatch>
+<stringmatch name="outparam-argslot #9: no reference lands inside a mapped slot" min="0" max="0">Register0|\)\[0x3c\]</stringmatch>
+<stringmatch name="outparam-argslot #10: outindex is decompiled" min="1" max="1">^int8 outindex\(</stringmatch>
+<stringmatch name="outparam-argslot #11: the indexed slot is not indexed as a scalar" min="0" max="0">\(\(int8 \*\)&amp;v</stringmatch>
 </decompilertest>

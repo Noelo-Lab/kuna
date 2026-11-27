@@ -1762,14 +1762,21 @@ its reads and writes printed as a separate, never-assigned variable,
 `fill(a0,0,0x10,&Stack0000000000000038); v1 = *(code **)(*v2 + 8);`. Once
 `ActionInputPrototype` has fixed the prototype, `name_local_highs_angr` maps
 each such slot as a local, right after `link_proto_params` and before any high
-is named. A slot qualifies when a stack `PTRSUB` resolves to it, it lies in the
-parameter range and in the local scope's window, no symbol (a parameter's
-included) overlaps it, some Varnode starting there is defined or read by an op
-other than an `INDIRECT` (so the body prints it), every variable holding such
-a Varnode takes its name from the slot (its name representative is stored
-there, so the naming walk binds it to the new symbol rather than to a register
-it was merged with), and no Varnode straddles its first byte. The symbol is as
-wide as the widest Varnode starting there and takes the type of the one
+is named. A slot qualifies when a stack `PTRSUB` resolves to it and every use
+of every such address hands it on whole, as a call argument or as a stored
+value (an address that feeds arithmetic or a comparison indexes an object whose
+extent the slot's own accesses do not show, such as an `fd_set` walked a word
+at a time). The slot must lie in the parameter range and in the local scope's
+window, no symbol (a parameter's included) may overlap it, and some Varnode
+starting there must be defined or read by an op other than an `INDIRECT`, so
+the body prints it. Every variable holding such a Varnode must take its name
+from the slot: its name representative is stored there, so the naming walk
+binds it to the new symbol rather than to a register it was merged with. And
+the slot must be one scalar: no Varnode straddles either end of it, and no other
+Varnode or other referenced address starts inside it. Two `int`s initialized
+by one 8-byte store and passed as `&optval, &optlen` therefore stay unmapped
+rather than becoming one 8-byte local with a reference into its middle. The
+symbol is as wide as the widest Varnode starting there and takes the type of the one
 variable stored there when that type has the same width (otherwise it is an
 `undefined<N>`), so the reference and the accesses bind to one name, `&v2` and
 `*v2`, and `variables` reports the slot. A variadic prototype maps nothing: its

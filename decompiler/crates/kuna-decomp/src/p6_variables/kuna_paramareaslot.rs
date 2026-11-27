@@ -32,9 +32,25 @@ fn printed(fd: &Funcdata, vn: VarnodeId) -> bool {
         })
 }
 
-/// The stack addresses `PTRSUB(spacebase, #off)` references take in `space`.
-fn referenced_slots(fd: &Funcdata, space: usize) -> Vec<Address> {
-    let mut slots: Vec<Address> = Vec::new();
+/// Whether every use of the address `out` hands it on whole: a call argument or a
+/// stored value, never arithmetic that would reach past the slot.
+fn passed_whole(fd: &Funcdata, out: VarnodeId) -> bool {
+    let Some(v) = fd.vbank().get(out) else {
+        return false;
+    };
+    v.descend_iter().all(|op| {
+        fd.obank().get(op).is_some_and(|op| match op.code() {
+            OpCode::CPUI_CALL | OpCode::CPUI_CALLIND => op.get_slot(out) >= 1,
+            OpCode::CPUI_STORE => op.get_slot(out) == 2,
+            _ => false,
+        })
+    })
+}
+
+/// The stack addresses `PTRSUB(spacebase, #off)` references take in `space`, each
+/// with whether every reference to it is passed whole.
+fn referenced_slots(fd: &Funcdata, space: usize) -> Vec<(Address, bool)> {
+    let mut slots: Vec<(Address, bool)> = Vec::new();
     for id in fd.obank().iter_alive() {
         let Some(op) = fd.obank().get(id) else {
             continue;
@@ -42,7 +58,7 @@ fn referenced_slots(fd: &Funcdata, space: usize) -> Vec<Address> {
         if op.code() != OpCode::CPUI_PTRSUB {
             continue;
         }
-        let (Some(base), Some(offset)) = (op.get_in(0), op.get_in(1)) else {
+        let (Some(base), Some(offset), Some(out)) = (op.get_in(0), op.get_in(1), op.get_out()) else {
             continue;
         };
         if !fd.vbank().get(base).is_some_and(|v| v.is_spacebase())
@@ -53,16 +69,21 @@ fn referenced_slots(fd: &Funcdata, space: usize) -> Vec<Address> {
         let Some(addr) = fd.resolve_spacebase_ref_addr(offset) else {
             continue;
         };
-        if addr.get_space().is_some_and(|s| s.get_index() as usize == space) && !slots.contains(&addr) {
-            slots.push(addr);
+        if addr.get_space().is_none_or(|s| s.get_index() as usize != space) {
+            continue;
+        }
+        let whole = passed_whole(fd, out);
+        match slots.iter_mut().find(|(slot, _)| *slot == addr) {
+            Some((_, all)) => *all &= whole,
+            None => slots.push((addr, whole)),
         }
     }
     slots
 }
 
 /// The width of the printed slot object starting at `addr` and the variables printing
-/// it, or `None` when no printed varnode starts there or another varnode straddles its
-/// start.
+/// it, or `None` when no printed varnode starts there or another varnode straddles
+/// either end of it.
 fn slot_object(fd: &Funcdata, addr: &Address) -> Option<(i32, Vec<HighVariableId>)> {
     let space = addr.get_space()?;
     let start = addr.get_offset();
@@ -89,14 +110,21 @@ fn slot_object(fd: &Funcdata, addr: &Address) -> Option<(i32, Vec<HighVariableId
             highs.push(high);
         }
     }
-    (!highs.is_empty() && width > 0).then_some((width, highs))
+    if highs.is_empty() || width <= 0 {
+        return None;
+    }
+    let inside = fd
+        .vbank()
+        .iter_loc_addr_range(&(addr + 1), &(addr + i64::from(width)))
+        .any(|vn| fd.vbank().get(vn).is_some_and(|v| !v.is_free()));
+    (!inside).then_some((width, highs))
 }
 
-/// Map each unclaimed address-taken parameter-area slot the body reads or writes as a
-/// local of the width and type those accesses use, when every variable printing it is
-/// named from the slot. A variadic function's unclaimed slots are its variadic
-/// arguments, not scratch, and stay unmapped. Run after the prototype is final and its
-/// parameter symbols are linked.
+/// Map each unclaimed parameter-area slot whose address is only passed on whole and
+/// which the body reads or writes as one scalar as a local of the width and type those
+/// accesses use, when every variable printing it is named from the slot. A variadic
+/// function's unclaimed slots are its variadic arguments, not scratch, and stay
+/// unmapped. Run after the prototype is final and its parameter symbols are linked.
 pub(crate) fn map(fd: &mut Funcdata) {
     if fd.get_func_proto().is_dotdotdot() {
         return;
@@ -120,11 +148,19 @@ pub(crate) fn map(fd: &mut Funcdata) {
         return;
     };
     let invalid = Address::new_invalid();
-    for addr in candidates {
+    for (addr, whole) in &candidates {
+        if !whole {
+            continue;
+        }
+        let addr = addr.clone();
         let Some((width, highs)) = slot_object(fd, &addr) else {
             continue;
         };
         let highs_len = highs.len();
+        let end = addr.get_offset().wrapping_add(width as u64);
+        if candidates.iter().any(|(other, _)| other.get_offset() > addr.get_offset() && other.get_offset() < end) {
+            continue;
+        }
         if !fd.get_func_proto().get_param_range().in_range(&addr, width) {
             continue;
         }
