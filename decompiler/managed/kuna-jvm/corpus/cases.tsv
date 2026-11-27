@@ -391,7 +391,7 @@ kuna	359273394b98d7c6
 case	default/pkg/TestFinallyBlockVariableUse	Default	classes/java8/pkg/TestFinallyBlockVariableUse
 kuna	300e30abd470e42f
 case	default/pkg/TestFinallyThrow	Default	classes/java8/pkg/TestFinallyThrow
-kuna	ad59edc18a81d646
+kuna	81a11acac30f60a3
 case	default/pkg/TestFinallyVarDef	Default	classes/java8/pkg/TestFinallyVarDef
 kuna	59757f54709ae8bf
 case	default/pkg/TestFloatInvertedIfConditionEarlyExit	Default	classes/java8/pkg/TestFloatInvertedIfConditionEarlyExit
@@ -2048,3 +2048,5 @@ case	kuna-fixes/pkg/TestLambdaReceiverGeneric	Kuna Fixes	kuna-fixes/classes/pkg/
 case	kuna-fixes/pkg/TestCapturedConstantType	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedConstantType
 # kuna-fixes/src/pkg/TestNestedLambdaCapturedGeneric.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestNestedLambdaCapturedGeneric	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedLambdaCapturedGeneric
+# kuna-fixes/src/pkg/TestFinallyBodyThrows.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFinallyBodyThrows	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyBodyThrows

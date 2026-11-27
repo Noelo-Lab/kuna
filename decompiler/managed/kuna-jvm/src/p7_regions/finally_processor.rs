@@ -497,14 +497,15 @@ impl FinallyProcessor {
         if fstat.get_handler().is_basic_block() {
             let mut is_empty = false;
             let is_first_last = map_last.contains_key(&first_basic_block);
+            let rethrows = map_last.get(&first_basic_block).copied() == Some(true);
             let seq = first_basic_block.get_seq();
 
             match firstcode {
-                0 => is_empty = is_first_last && seq.length() == 1,
+                0 => is_empty = rethrows && seq.length() == 1,
                 1 => is_empty = seq.length() == 1,
                 2 => {
                     is_empty = if is_first_last {
-                        seq.length() == 3
+                        rethrows && seq.length() == 3
                     } else {
                         seq.length() == 1
                     }

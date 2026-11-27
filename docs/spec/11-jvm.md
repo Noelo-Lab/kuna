@@ -436,6 +436,15 @@ are. The method gets the comment
 catch-all with the comment `$VF: Could not inline inconsistent finally blocks`. Each
 change also re-runs dead-block removal and block merging on the graph.
 
+A handler of one block is an empty `finally` when it only stores and rethrows the
+exception: `athrow` alone, or `astore n` followed by a load and an `athrow`. Vineflower
+decided that from the number of instructions, so `finally { throw t; }` (`astore_3;
+aload_1; athrow`) and `finally { return x; }` (`astore_2; iload_1; ireturn`) were read as
+empty: the handler's code was deleted with the rethrow and its copies left in the `try`,
+where a `catch (Throwable)` then caught `t`, or an exception escaped that the `finally`'s
+`return` swallowed. kuna (`get_finally_information`) also requires that the block's exit
+is the rethrow of the stored exception, which the same pass already records per exit block.
+
 The schedule then rebuilds `synchronized` statements once more, removes their exception
 handlers (`DomHelper::remove_synchronized_handler`), condenses sequences and clears
 structure-only statements
