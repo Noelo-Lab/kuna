@@ -22,7 +22,8 @@ use crate::{err, Result};
 
 pub const THIS_NAME: u32 = NO_INDEX - 1;
 
-/// Marks the second local of a reused parameter register in `slots`.
+/// Marks the second local of a reused parameter register in `slots` (bits
+/// 16-30 of a key hold a release build's reference-type index).
 const REUSED: u32 = 1 << 31;
 
 /// Class-level state a method's code adds to.
@@ -63,6 +64,10 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     /// The two `return true` / `return false` blocks (in layout order) of a
     /// boolean method, which share one `ireturn` as javac's `return c;` does.
     bool_ret: Option<(u32, u32, Label)>,
+    /// The method has no debug locals but its parameters' (a release build).
+    release: bool,
+    /// Reference types to their local-key index, for `release`.
+    ref_kinds: BTreeMap<Vec<u8>, u32>,
 }
 
 /// The `Code` attribute body for `m`.
@@ -134,6 +139,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             min_addr: u32::MAX,
             regions: Vec::new(),
             bool_ret: None,
+            release: m.debug.locals.iter().all(|l| l.start == 0),
+            ref_kinds: BTreeMap::new(),
         }
     }
 
@@ -151,11 +158,21 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
 
     /// The local holding value `v` of register `reg` in category `c`: a
     /// parameter's register d8 reuses for another value gets a second local,
-    /// so the parameter's own keeps the parameter throughout.
+    /// so the parameter's own keeps the parameter throughout; and in a method
+    /// without debug locals (a release build) references of different types
+    /// in one register get one local per type, as javac's variables are.
     fn local(&mut self, reg: u32, c: Mask, v: u32) -> Result<u16> {
         let m = self.m;
-        let reused = m.params.contains(&(reg, c)) && m.reused.contains(&m.root(v));
-        self.slot(if reused { reg | REUSED } else { reg }, c)
+        let param = m.params.contains(&(reg, c));
+        if param && !m.reused.contains(&m.root(v)) {
+            return self.slot(reg, c);
+        }
+        let mut key = if param { reg | REUSED } else { reg };
+        if let (true, L, Some(t)) = (self.release, c, m.ref_desc(v)) {
+            let n = self.ref_kinds.len() as u32 + 1;
+            key |= (*self.ref_kinds.entry(t.to_vec()).or_insert(n)).min(0x7fff) << 16;
+        }
+        self.slot(key, c)
     }
 
     /// A boolean method's two blocks that only return a constant, `true` in
@@ -192,6 +209,9 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         }
     }
 
+    /// Whether op `k`'s value can stay on the stack for its one reader (a
+    /// lambda's capture only when it is a field read: a captured value is a
+    /// variable in source, or an outer class's captured variable).
     fn candidate(&self, k: usize) -> bool {
         let m = self.m;
         let o = &m.ops[k];
@@ -201,7 +221,13 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         }
         let (n, phi) = m.web_uses.get(&m.root(d.id)).copied().unwrap_or((0, false));
         let u = self.user[d.id as usize];
+        let captured = |u: &Op| match u.kind {
+            Kind::NewObject { ty } => !self.sh.verifiable && m.dex.lambda_in(ty, self.sh.peers).is_some(),
+            _ => false,
+        };
+        let read = matches!(o.insn.op, 0x52..=0x58 | 0x60..=0x66);
         n == 1 && !phi && m.direct_uses[d.id as usize] == 1 && u > k && u < m.ops.len() && m.ops[u].block == o.block
+            && (read || !captured(&m.ops[u]))
     }
 
     /// Finds the joins whose phi takes only constants on every edge: the value

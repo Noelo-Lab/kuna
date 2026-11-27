@@ -495,6 +495,8 @@ fn d8_desugaring_is_undone() {
     assert!(holder.contains("Objects.requireNonNull(name)") && !holder.contains("namex"), "{holder}");
     let lower = ok(&jvm(&["decompile", &dex("sugar-release.dex"), "sx.Sugar$Params.lower"]));
     assert!(lower.contains("char[] ") && !lower.contains("(Object[])"), "{lower}");
+    let wrap = ok(&jvm(&["decompile", &dex("sugar-release.dex"), "sx.Sugar$Params.wrap"]));
+    assert!(wrap.contains("Executors.callable(r, null)") && !wrap.contains("var0"), "{wrap}");
     let params = ok(&jvm(&["decompile", &dex("sugar-release.dex"), "sx.Sugar$Params"]));
     assert!(params.contains("return c >= 3 && c <= 9;") && params.contains("Collections.emptyList()"), "{params}");
     let flow = ok(&jvm(&["decompile", &dex("debug.dex"), "dx.Flow.locked(I)I"]));

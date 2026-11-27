@@ -144,6 +144,17 @@ public class Sugar {
             return s;
         }
 
+        static Runnable wrap(Runnable r) {
+            java.util.concurrent.Callable<Object> c = java.util.concurrent.Executors.callable(r, null);
+            return () -> {
+                try {
+                    c.call();
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            };
+        }
+
         static boolean inRange(int c) {
             return c >= 3 && c <= 9;
         }
@@ -257,5 +268,6 @@ public class Sugar {
                 + " " + Params.wide(3L, 4, 1.5) + " " + Params.onePath(2, true) + " " + Params.onePath(2, false)
                 + " " + Params.captured(4) + " " + Params.reassigned(6, "abc") + " " + Params.text("x", 3) + " " + Params.lower("aBc")
                 + " " + Params.inRange(5) + Params.inRange(12) + Params.none());
+        Params.wrap(() -> System.out.println("wrapped")).run();
     }
 }
