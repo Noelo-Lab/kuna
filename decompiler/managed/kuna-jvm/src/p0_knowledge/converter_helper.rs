@@ -3,7 +3,7 @@
 use std::cell::{Cell, RefCell};
 
 use crate::code_constants::{CLINIT_NAME, INIT_NAME};
-use crate::i_identifier_renamer::{IIdentifierRenamer, Type};
+use crate::i_identifier_renamer::Type;
 use crate::rt::{jchar, JHashSet, JavaStr};
 
 const KEYWORDS: &[&str] = &[
@@ -161,8 +161,8 @@ fn is_line_terminator(c: char) -> bool {
     matches!(c, '\n' | '\r' | '\u{85}' | '\u{2028}' | '\u{2029}')
 }
 
-impl IIdentifierRenamer for ConverterHelper {
-    fn to_be_renamed(
+impl ConverterHelper {
+    pub fn to_be_renamed(
         &self,
         element_type: Type,
         class_name: Option<&str>,
@@ -190,7 +190,7 @@ impl IIdentifierRenamer for ConverterHelper {
                 && (is_windows_reserved || value.jlen() > 255 - 6))
     }
 
-    fn get_next_class_name(&self, _full_name: &str, short_name: Option<&str>) -> String {
+    pub fn get_next_class_name(&self, _full_name: &str, short_name: Option<&str>) -> String {
         let Some(short_name) = short_name else {
             return format!("class_{}", Self::post_increment(&self.class_counter));
         };
@@ -220,11 +220,11 @@ impl IIdentifierRenamer for ConverterHelper {
         }
     }
 
-    fn get_next_field_name(&self, _class_name: &str, _field: &str, _descriptor: &str) -> String {
+    pub fn get_next_field_name(&self, _class_name: &str, _field: &str, _descriptor: &str) -> String {
         format!("field_{}", Self::post_increment(&self.field_counter))
     }
 
-    fn get_next_method_name(&self, _class_name: &str, _method: &str, _descriptor: &str) -> String {
+    pub fn get_next_method_name(&self, _class_name: &str, _method: &str, _descriptor: &str) -> String {
         format!("method_{}", Self::post_increment(&self.method_counter))
     }
 }

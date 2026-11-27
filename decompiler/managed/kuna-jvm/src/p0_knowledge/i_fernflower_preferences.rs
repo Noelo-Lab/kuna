@@ -30,7 +30,6 @@ impl IFernflowerPreferences {
     pub const INCLUDE_JAVA_RUNTIME: &str = "include-runtime";
     pub const MAX_PROCESSING_METHOD: &str = "max-time-per-method";
     pub const RENAME_ENTITIES: &str = "rename-members";
-    pub const USER_RENAMER_CLASS: &str = "user-renamer-class";
     pub const INDENT_STRING: &str = "indent-string";
     pub const PREFERRED_LINE_LENGTH: &str = "preferred-line-length";
     pub const THREADS: &str = "thread-count";
@@ -162,7 +161,6 @@ static OPTIONS: &[PreferenceOption] = &[
     PreferenceOption { field: "INCLUDE_JAVA_RUNTIME", key: IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, short_name: Some("jrt"), name: Some("Include Java Runtime"), description: Some("Give the decompiler information about the Java runtime, either 1 or current for the current runtime, or a path to another runtime"), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "MAX_PROCESSING_METHOD", key: IFernflowerPreferences::MAX_PROCESSING_METHOD, short_name: Some("mpm"), name: Some("[DEPRECATED] Max time to process method"), description: Some("Maximum time in seconds to process a method. This is deprecated, do not use."), type_: Some(OptionType::Integer), dynamic_default_value: None },
     PreferenceOption { field: "RENAME_ENTITIES", key: IFernflowerPreferences::RENAME_ENTITIES, short_name: Some("ren"), name: Some("Rename Members"), description: Some("Rename classes, fields, and methods with a number suffix to help in deobfuscation."), type_: Some(OptionType::Boolean), dynamic_default_value: None },
-    PreferenceOption { field: "USER_RENAMER_CLASS", key: IFernflowerPreferences::USER_RENAMER_CLASS, short_name: Some("urc"), name: Some("User Renamer Class"), description: Some("Path to a class that implements IIdentifierRenamer."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "INDENT_STRING", key: IFernflowerPreferences::INDENT_STRING, short_name: Some("ind"), name: Some("Indent String"), description: Some("A string of spaces or tabs that is placed for each indent level."), type_: Some(OptionType::String), dynamic_default_value: None },
     PreferenceOption { field: "PREFERRED_LINE_LENGTH", key: IFernflowerPreferences::PREFERRED_LINE_LENGTH, short_name: Some("pll"), name: Some("Preferred line length"), description: Some("Max line length before formatting is applied."), type_: Some(OptionType::Integer), dynamic_default_value: None },
     PreferenceOption { field: "THREADS", key: IFernflowerPreferences::THREADS, short_name: Some("thr"), name: Some("Thread Count"), description: Some("How many threads to use to decompile."), type_: Some(OptionType::Integer), dynamic_default_value: Some("all available processors") },

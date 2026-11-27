@@ -1,8 +1,8 @@
 //! The `Fernflower` driver over `data/fernflower_driver/`: option overlay (long and
-//! three-letter names), runtime registration, renamer loading, per-class
+//! three-letter names), runtime registration, the renamer, per-class
 //! failure handling in `ContextUnit.save` (pre-processing and writing errors,
-//! duplicate classes) and in `getClassContent`, a root context that stays
-//! usable whatever the engine does, and the bytecode-to-source line mapping.
+//! duplicate classes) and in `getClassContent`, and a root context that stays
+//! usable whatever the engine does.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -138,26 +138,16 @@ fn options_overlay_defaults_by_long_and_short_name() {
 }
 
 #[test]
-fn constructor_logs_plugins_jvm_and_renamer() {
+fn constructor_logs_the_jvm_and_installs_the_renamer() {
     let logger = Rc::new(CollectingLogger::new());
     let mut fernflower = Fernflower::new(
         &options(&[
             (IFernflowerPreferences::INCLUDE_JAVA_RUNTIME, "0"),
             (IFernflowerPreferences::RENAME_ENTITIES, "1"),
-            (
-                IFernflowerPreferences::USER_RENAMER_CLASS,
-                "no.such.Renamer",
-            ),
         ]),
         logger.clone(),
     );
     assert!(DecompilerContext::get_pool_interceptor().is_some());
-    let renamer = record(&logger, "Cannot load renamer 'no.such.Renamer'").unwrap();
-    assert_eq!(renamer.severity, Severity::Warn);
-    assert!(renamer
-        .throwable
-        .unwrap()
-        .contains("ClassNotFoundException"));
     let info: Vec<String> = logger
         .records()
         .borrow()

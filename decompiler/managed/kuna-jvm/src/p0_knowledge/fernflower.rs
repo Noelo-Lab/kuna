@@ -26,7 +26,6 @@ use crate::decompiler_context::DecompilerContext;
 use crate::i_decompiled_data::IDecompiledData;
 use crate::i_fernflower_logger::{IFernflowerLogger, Severity};
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::i_identifier_renamer::IIdentifierRenamer;
 use crate::identifier_converter::IdentifierConverter;
 use crate::jdk_runtime::JdkRuntime;
 use crate::kotlin_options::KotlinOptions;
@@ -34,7 +33,7 @@ use crate::kotlin_plugin::KotlinPlugin;
 use crate::kuna_partition::RootSelection;
 use crate::language_spec::LanguageSpec;
 use crate::pool_interceptor::PoolInterceptor;
-use crate::rt::{try_catch, Caught, JHashMap, JavaException, JavaStr};
+use crate::rt::{try_catch, JHashMap, JavaStr};
 use crate::struct_class::StructClass;
 use crate::struct_context::{qualified_name_of, StructContext};
 use crate::text_buffer::TextBuffer;
@@ -65,7 +64,7 @@ pub const KUNA_ERROR_MESSAGE: &str = "Please report this to the kuna issue track
 pub struct Fernflower {
     struct_context: StructContext,
     class_processor: ClassesProcessor,
-    helper: Option<Rc<dyn IIdentifierRenamer>>,
+    helper: Option<Rc<ConverterHelper>>,
     converter: Option<IdentifierConverter>,
     data: Rc<FernflowerDecompiledData>,
     loaded: bool,
@@ -110,9 +109,7 @@ impl Fernflower {
             .map(String::as_str)
             == Some("1")
         {
-            let user_renamer =
-                properties.get_cloned(&IFernflowerPreferences::USER_RENAMER_CLASS.to_string());
-            let renamer = Self::load_helper(user_renamer.as_deref(), &*logger);
+            let renamer = Rc::new(ConverterHelper::new());
             let pool_interceptor = PoolInterceptor::new();
             interceptor = Some(pool_interceptor);
             converter = Some(IdentifierConverter::new(
@@ -171,32 +168,6 @@ impl Fernflower {
             data,
             loaded: false,
         }
-    }
-
-    /// No renamer class can be loaded by name, so a named one is reported as
-    /// missing and the default renamer is used, as on a failed load in Java.
-    fn load_helper(
-        class_name: Option<&str>,
-        logger: &dyn IFernflowerLogger,
-    ) -> Rc<dyn IIdentifierRenamer> {
-        if let Some(class_name) = class_name {
-            let exception = JavaException {
-                class: "ClassNotFoundException",
-                message: class_name.to_string(),
-            };
-            let caught = Caught {
-                message: exception.to_string(),
-                exception: Some(exception),
-                location: String::new(),
-            };
-            logger.write_message_ex(
-                &format!("Cannot load renamer '{class_name}'"),
-                Severity::Warn,
-                &caught,
-            );
-        }
-
-        Rc::new(ConverterHelper::new())
     }
 
     /// Java: addSource(IContextSource)

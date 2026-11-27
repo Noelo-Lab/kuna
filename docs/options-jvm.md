@@ -9,7 +9,6 @@ Vineflower keys kuna sets itself, so they are not options:
 - `thread-count` -- --jobs: the driver runs one engine per thread
 - `max-time-per-method` -- --max-fn-seconds: the driver's cooperative per-method deadline
 - `method-to-decompile` -- method selection (decompile <class>.<method>) slices the class by its method spans
-- `user-renamer-class` -- not supported: a renamer class needs a JVM to load
 - `dump-code-lines` -- line data of Vineflower's archive saver; kuna writes no archives
 - `skip-extra-files` -- kuna copies no resources
 - `decompile-preview` -- read nowhere in Vineflower 1.12.0: it has no effect

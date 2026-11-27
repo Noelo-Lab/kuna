@@ -15,7 +15,8 @@ use crate::code_constants::{
 use crate::decompiler_context::DecompilerContext;
 use crate::i_fernflower_logger::Severity;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
-use crate::i_identifier_renamer::{IIdentifierRenamer, Type as RenamerType};
+use crate::converter_helper::ConverterHelper;
+use crate::i_identifier_renamer::Type as RenamerType;
 use crate::import_collector::ImportCollector;
 use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::InvocationExprent;
@@ -120,7 +121,7 @@ impl ClassesProcessor {
         })
     }
 
-    pub fn load_classes(self, renamer: Option<&dyn IIdentifierRenamer>) {
+    pub fn load_classes(self, renamer: Option<&ConverterHelper>) {
         unseen_class_overload::reset();
         let mut map_inner_classes: JHashMap<String, Inner> = JHashMap::new();
         let mut map_nested_class_references: JHashMap<String, JHashSet<String>> = JHashMap::new();
