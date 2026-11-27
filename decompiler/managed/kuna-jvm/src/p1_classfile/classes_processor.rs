@@ -679,9 +679,6 @@ impl ClassesProcessor {
                 if DecompilerContext::get_option(IFernflowerPreferences::BYTECODE_SOURCE_MAPPING) {
                     let mapper = DecompilerContext::get_bytecode_source_mapper();
                     mapper.add_total_offset(offset_lines);
-                    if DecompilerContext::get_option(IFernflowerPreferences::DUMP_ORIGINAL_LINES) {
-                        buffer.dump_original_line_numbers(&mapper.get_original_lines_mapping());
-                    }
                 }
             }
         });

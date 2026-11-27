@@ -8,7 +8,7 @@
 //! and Java `assert`s (disabled at run time) are not either.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 use crate::annotation_exprent::AnnotationExprent;
@@ -262,7 +262,6 @@ pub struct TextBuffer {
     my_string_builder: Vec<u16>,
     my_line_to_offset_mapping: Option<JHashMap<i32, i32>>,
     my_bytecode_offset_mapping: JLinkedHashMap<BytecodeMappingKey, i32>,
-    my_line_mapping: Option<JHashMap<i32, BTreeSet<i32>>>,
 }
 
 impl Default for TextBuffer {
@@ -291,7 +290,6 @@ impl TextBuffer {
             my_string_builder: string_builder,
             my_line_to_offset_mapping: None,
             my_bytecode_offset_mapping: JLinkedHashMap::new(),
-            my_line_mapping: None,
         }
     }
 
@@ -997,12 +995,7 @@ impl TextBuffer {
         let original = &self.my_string_builder;
         let line_to_offset = match &self.my_line_to_offset_mapping {
             Some(map) if !map.is_empty() => map,
-            _ => {
-                if self.my_line_mapping.is_some() {
-                    return self.add_original_line_numbers();
-                }
-                return text_of(original);
-            }
+            _ => return text_of(original),
         };
         let sep = &self.my_line_separator;
         let mut res: Vec<u16> = Vec::new();
@@ -1041,37 +1034,6 @@ impl TextBuffer {
             self.append_lines(&mut res, &src_lines, previous_mark_line, src_lines.len(), n);
         }
         text_of(&res)
-    }
-
-    fn add_original_line_numbers(&self) -> String {
-        let sb = &self.my_string_builder;
-        let sep = &self.my_line_separator;
-        let line_mapping = self.my_line_mapping.as_ref().expect("line mapping");
-        let mut out: Vec<u16> = Vec::new();
-        let mut line_start = 0i32;
-        let mut count = 0;
-        let length = sep.len() as i32;
-        loop {
-            let line_end = index_of(sb, sep, line_start);
-            if line_end <= 0 {
-                break;
-            }
-            count += 1;
-            out.extend_from_slice(&sb[line_start as usize..line_end as usize]);
-            if let Some(integers) = line_mapping.get(&count) {
-                push_units(&mut out, "//");
-                for integer in integers {
-                    out.push(b' ' as u16);
-                    push_units(&mut out, &integer.to_string());
-                }
-            }
-            out.extend_from_slice(sep);
-            line_start = line_end + length;
-        }
-        if (line_start as usize) < sb.len() {
-            out.extend_from_slice(&sb[line_start as usize..]);
-        }
-        text_of(&out)
     }
 
     fn append_lines(
@@ -1364,21 +1326,6 @@ impl TextBuffer {
             i -= 1;
         }
         res
-    }
-
-    /// `line_mapping` holds `(original line, new line)` pairs.
-    pub fn dump_original_line_numbers(&mut self, line_mapping: &[i32]) {
-        if !line_mapping.is_empty() {
-            let mut map: JHashMap<i32, BTreeSet<i32>> = JHashMap::new();
-            let mut i = 0;
-            while i < line_mapping.len() {
-                let key = line_mapping[i + 1];
-                map.compute_if_absent(key, BTreeSet::new)
-                    .insert(line_mapping[i]);
-                i += 2;
-            }
-            self.my_line_mapping = Some(map);
-        }
     }
 
     pub fn get_tokens(&self) -> Vec<TextToken> {

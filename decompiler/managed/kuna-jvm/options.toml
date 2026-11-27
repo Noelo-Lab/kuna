@@ -562,10 +562,6 @@ vineflower = "decompile-preview"
 kuna = "read nowhere in Vineflower 1.12.0: it has no effect"
 
 [[driver_owned]]
-vineflower = "__dump_original_lines__"
-kuna = "corpus runner only"
-
-[[driver_owned]]
 vineflower = "indent-string"
 kuna = "fixed at Vineflower's default, three spaces"
 

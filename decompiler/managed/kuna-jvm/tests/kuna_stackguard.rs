@@ -20,6 +20,9 @@ use kuna_jvm::kuna_input::{self, LoadOptions};
 
 use crate::kuna_support::{options, scratch, RecordingLogger};
 
+/// A stack the deep field initializer overflows only while its class is written.
+const STACK_PROBE: usize = 768 << 10;
+
 fn fixture(dir: &str, classes: &[&str]) -> PathBuf {
     let from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../decompiler/managed/kuna-jvm/corpus/stackguard/classes/pkg");
     let to = scratch(dir).join("pkg");
@@ -53,7 +56,7 @@ fn text<'a>(results: &'a [ClassResult], name: &str) -> &'a str {
 #[test]
 fn an_expression_deeper_than_the_stack_fails_only_its_method() {
     let dir = fixture("stackguard-deep", &["TestDeepExpression.class"]);
-    let small = run(&dir, &[], Some(1 << 20));
+    let small = run(&dir, &[], Some(STACK_PROBE));
     let out = text(&small, "pkg/TestDeepExpression");
     assert!(out.contains("// $VF: Couldn't be decompiled"), "{out}");
     assert!(out.contains("StackOverflowError"), "{out}");
@@ -68,7 +71,7 @@ fn an_expression_deeper_than_the_stack_fails_only_its_method() {
 #[test]
 fn an_initializer_deeper_than_the_stack_fails_its_class_and_the_run_goes_on() {
     let dir = fixture("stackguard-field", &["TestDeepField.class", "TestDeepExpression.class"]);
-    let small = run(&dir, &[], Some(1 << 20));
+    let small = run(&dir, &[], Some(STACK_PROBE));
     let out = text(&small, "pkg/TestDeepField");
     assert!(out.contains("$VF: Unable to decompile class"), "{out}");
     assert!(out.contains("StackOverflowError"), "{out}");
