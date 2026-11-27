@@ -34,7 +34,11 @@
 //! the parameter is recovered whether or not anything reads the slot back. A
 //! store of one register into another's slot, a value the function computed,
 //! and a spill of a callee-saved register are not noted, and the function's own
-//! model still has to accept the storage as a parameter. Inert off Windows x64.
+//! model still has to accept the storage as a parameter. Neither is a variadic
+//! function's register save ([`vararg_save`]): the whole registers from the
+//! first unnamed argument's slot through `R9`'s, whose first slot's address
+//! `va_start` takes, or which gcc stores without one below a slot left
+//! unwritten. Inert off Windows x64.
 
 use kuna_base::address::Address;
 use kuna_base::space::AddrSpace;
@@ -60,6 +64,7 @@ struct Home {
     space: Rc<AddrSpace>,
     offset: u64,
     slot: i64,
+    int: bool,
 }
 
 /// Note the home-slot spills of `fd`; called once, after the first heritage.
@@ -108,10 +113,10 @@ fn homes(fd: &Funcdata) -> Vec<Home> {
     };
     let mut out = Vec::new();
     for (i, names) in HOMES.iter().enumerate() {
-        for name in names {
+        for (j, name) in names.iter().enumerate() {
             if let Some(r) = lookup.probe_register(name) {
                 if let Some(space) = r.space {
-                    out.push(Home { space, offset: r.offset, slot: 8 * (i as i64 + 1) });
+                    out.push(Home { space, offset: r.offset, slot: 8 * (i as i64 + 1), int: j == 0 });
                 }
             }
         }
@@ -164,6 +169,10 @@ fn spills(fd: &Funcdata) -> Vec<(Address, int4)> {
         return Vec::new();
     }
     let mut reused: Vec<i64> = Vec::new();
+    let mut written = [false; 4];
+    for (_, slot, ..) in &found {
+        written[index(*slot)] = true;
+    }
     for op in fd.obank().iter_code(OpCode::CPUI_STORE) {
         if found.iter().any(|(spill, ..)| *spill == op) {
             continue;
@@ -173,19 +182,97 @@ fn spills(fd: &Funcdata) -> Vec<(Address, int4)> {
             continue;
         };
         let Some(at) = o.get_in(1).and_then(|a| sp_offset(fd, a, sp)) else { continue };
+        for (i, w) in written.iter_mut().enumerate() {
+            let slot = 8 * (i as i64 + 1);
+            *w |= at < slot + 8 && slot < at + size;
+        }
         for (_, slot, ..) in &found {
             if at < slot + 8 && *slot < at + size && !reused.contains(slot) {
                 reused.push(*slot);
             }
         }
     }
+    let save = vararg_save(fd, sp, &homes, &found, &written);
     let mut out: Vec<(Address, int4)> = Vec::new();
     for (_, slot, addr, size) in found {
+        if save.is_some_and(|k| slot >= k) {
+            continue;
+        }
         if !reused.contains(&slot) && !out.iter().any(|(a, s)| *a == addr && *s == size) {
             out.push((addr, size));
         }
     }
     out
+}
+
+fn index(slot: i64) -> usize {
+    (slot / 8 - 1) as usize
+}
+
+/// The first slot of a variadic function's register save: every slot from it
+/// through `R9`'s holds the whole integer register, and `va_start` takes that
+/// slot's address or, when no home slot's address is taken, the function writes
+/// no slot below it (gcc saves the registers of every variadic function, also
+/// when it never calls `va_start`). Those registers carry varargs.
+fn vararg_save(
+    fd: &Funcdata,
+    sp: VarnodeId,
+    homes: &[Home],
+    found: &[(OpId, i64, Address, int4)],
+    written: &[bool; 4],
+) -> Option<i64> {
+    let whole = |slot: i64| {
+        found.iter().any(|(_, s, addr, size)| {
+            *s == slot
+                && *size == 8
+                && homes.iter().any(|h| h.slot == slot && h.int && h.offset == addr.get_offset())
+        })
+    };
+    if !whole(0x20) {
+        return None;
+    }
+    let escaped = escaped_homes(fd, sp);
+    let taken = escaped.contains(&true);
+    (1..=4).map(|i| 8 * i).find(|&k| {
+        (k..=0x20).step_by(8).all(whole)
+            && if taken { escaped[index(k)] } else { k > 8 && !written[..index(k)].contains(&true) }
+    })
+}
+
+/// The home slots whose address the function uses other than to load or store
+/// through it, as `va_start` and an out-parameter pointer do.
+fn escaped_homes(fd: &Funcdata, sp: VarnodeId) -> [bool; 4] {
+    let mut escaped = [false; 4];
+    for op in fd.obank().iter_alive() {
+        let Some(o) = fd.obank().get(op) else { continue };
+        if !matches!(o.code(), OpCode::CPUI_COPY | OpCode::CPUI_INT_ADD | OpCode::CPUI_INT_SUB) {
+            continue;
+        }
+        let Some(out) = o.get_out() else { continue };
+        let Some(at) = sp_offset(fd, out, sp) else { continue };
+        if (8..0x28).contains(&at) && !escaped[index(at)] && escapes(fd, out) {
+            escaped[index(at)] = true;
+        }
+    }
+    escaped
+}
+
+fn escapes(fd: &Funcdata, vn: VarnodeId) -> bool {
+    let Some(v) = fd.vbank().get(vn) else { return false };
+    v.descend_iter().any(|op| {
+        let Some(o) = fd.obank().get(op) else { return true };
+        let constant = |slot: int4| {
+            o.get_in(slot).and_then(|c| fd.vbank().get(c)).is_some_and(|c| c.is_constant())
+        };
+        match o.code() {
+            OpCode::CPUI_LOAD => o.get_in(1) != Some(vn),
+            OpCode::CPUI_STORE => o.get_in(1) != Some(vn) || o.get_in(2) == Some(vn),
+            OpCode::CPUI_COPY => false,
+            OpCode::CPUI_INT_ADD => !(constant(0) || constant(1)),
+            OpCode::CPUI_INT_SUB => !constant(1),
+            _ => true,
+        }
+    })
 }
 
 /// `vn` and the values that hold its low bytes unchanged: copies, and the
