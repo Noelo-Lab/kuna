@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "org.apache.commons:commons-math3:3.6.1": {
+   "sha256": "1e56d7b058d28b65abd256b8458e3885b674c1d588fa43cd7d1cbb9c7ef2b308",
+   "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar"
+  },
+  "org.apache.commons:commons-math3:3.6.1:sources": {
+   "sha256": "e2ff85a3c360d56c51a7021614a194f3fbaf224054642ac535016f118322934d",
+   "url": "https://repo1.maven.org/maven2/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1-sources.jar"
+  }
+ },
+ "deps": []
+}

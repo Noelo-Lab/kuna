@@ -1,5 +1,5 @@
 """Pinned dataset definition: the five most-starred real Java projects on GitHub,
-and where the benchmark keeps its files.
+the eleven held-out projects, and where the benchmark keeps its files.
 
 Selection (``gh api search/repositories -f q='language:java stars:>20000'
 -f sort=stars``, queried 2026-11-09) is documented in ``docs/dataset.md``; this
@@ -216,16 +216,61 @@ PROJECTS: dict[str, Project] = {
 }
 
 
+def _held_out(name: str, repo: str, modules: list[str], deps: tuple[str, ...] = (), jdk: int = 17,
+              mode: str = "release") -> Project:
+    """A held-out project: Maven coordinates with explicit dependency versions, no BOM."""
+    return Project(name=name, repo=repo, stars=0, version=modules[0].split(":")[2], kind="maven", modules=modules,
+                   dep_coords=modules + list(deps), self_artifacts=[":".join(c.split(":")[:2]) for c in modules], javac_jdk=jdk,
+                   release_mode=mode, build_jdk_note="javac chosen by source-oracle calibration (docs/dataset.md)")
+
+
+# The held-out set: eleven projects no fix was developed against, chosen by a rule written
+# before any decompiler ran on them (docs/dataset.md, "The held-out set").
+HELDOUT: dict[str, Project] = {
+    "antlr4": _held_out("antlr4", "antlr/antlr4", ["org.antlr:antlr4-runtime:4.13.2"]),
+    "h2": _held_out("h2", "h2database/h2database", ["com.h2database:h2:2.5.252"], (
+        "org.apache.lucene:lucene-core:9.12.0", "org.apache.lucene:lucene-analysis-common:9.12.0",
+        "org.apache.lucene:lucene-queryparser:9.12.0", "javax.servlet:javax.servlet-api:4.0.1",
+        "jakarta.servlet:jakarta.servlet-api:6.1.0", "org.osgi:osgi.core:8.0.0",
+        "org.osgi:org.osgi.service.jdbc:1.1.0", "org.locationtech.jts:jts-core:1.20.0",
+        "org.slf4j:slf4j-api:2.0.16")),
+    "httpcore5": _held_out("httpcore5", "apache/httpcomponents-core", [
+        "org.apache.httpcomponents.core5:httpcore5:5.5", "org.apache.httpcomponents.core5:httpcore5-h2:5.5",
+    ], ("org.conscrypt:conscrypt-openjdk-uber:2.8.0",), mode="source-target"),
+    "fastjson2": _held_out("fastjson2", "alibaba/fastjson2", ["com.alibaba.fastjson2:fastjson2:2.0.66"], (
+        "org.jetbrains.kotlin:kotlin-stdlib:2.1.20", "org.jetbrains.kotlin:kotlin-reflect:2.1.20",
+    ), mode="source-target"),
+    "tink": _held_out("tink", "tink-crypto/tink-java", ["com.google.crypto.tink:tink:1.24.0"], (
+        "com.google.http-client:google-http-client:1.43.3", "org.conscrypt:conscrypt-openjdk-uber:2.7.0"), jdk=21),
+    "janino": _held_out("janino", "janino-compiler/janino", [
+        "org.codehaus.janino:janino:3.1.12", "org.codehaus.janino:commons-compiler:3.1.12",
+    ], ("org.apache.ant:ant:1.10.11",)),
+    "rhino": _held_out("rhino", "mozilla/rhino", ["org.mozilla:rhino:1.9.2"], jdk=21),
+    "joda-time": _held_out("joda-time", "JodaOrg/joda-time", ["joda-time:joda-time:2.15.1"],
+                           ("org.joda:joda-convert:1.9.2",)),
+    "commons-math3": _held_out("commons-math3", "apache/commons-math", ["org.apache.commons:commons-math3:3.6.1"]),
+    "jenetics": _held_out("jenetics", "jenetics/jenetics", ["io.jenetics:jenetics:9.1.0"], jdk=25),
+    "nashorn": _held_out("nashorn", "openjdk/nashorn", ["org.openjdk.nashorn:nashorn-core:15.7"]),
+}
+GROUPS: dict[str, dict[str, Project]] = {"insample": PROJECTS, "heldout": HELDOUT}
+KNOWN: dict[str, Project] = {**PROJECTS, **HELDOUT}
+
+
 def get(name: str) -> Project:
-    if name not in PROJECTS:
-        raise SystemExit(f"unknown project {name!r}; known: {', '.join(PROJECTS)}")
-    return PROJECTS[name]
+    if name not in KNOWN:
+        raise SystemExit(f"unknown project {name!r}; known: {', '.join(KNOWN)}, or a set: {', '.join(GROUPS)}, all")
+    return KNOWN[name]
 
 
 def selected(names: list[str] | None) -> list[Project]:
-    if not names:
-        return list(PROJECTS.values())
-    return [get(n) for n in names]
+    """The projects ``--project`` names: project names and the sets ``insample`` (the
+    default), ``heldout`` and ``all``, in the order given, each project once."""
+    out: dict[str, Project] = {}
+    for n in names or ["insample"]:
+        group = KNOWN if n == "all" else GROUPS.get(n)
+        for proj in (group.values() if group is not None else [get(n)]):
+            out.setdefault(proj.name, proj)
+    return list(out.values())
 
 
 def resolve_run(r: str) -> Path:

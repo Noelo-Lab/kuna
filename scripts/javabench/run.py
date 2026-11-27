@@ -126,7 +126,7 @@ def report(runs: list[str], quiet: bool = False) -> str:
         n_tops = 0
         tot_wall = 0.0
         peak = 0.0
-        for proj in P.PROJECTS:
+        for proj in P.KNOWN:
             pdir = rdir / proj
             recs = _load_methods(pdir)
             if not recs:

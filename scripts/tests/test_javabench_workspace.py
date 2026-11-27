@@ -56,7 +56,7 @@ class WorkspaceTests(unittest.TestCase):
         own.parent.mkdir(parents=True)
         own.write_text('{"artifacts": {}, "deps": []}')
         self.assertEqual(fetch._load_lock("guava"), {"artifacts": {}, "deps": []})
-        self.assertEqual(sorted(p.stem for p in projects.PINS_DIR.glob("*.json")), sorted(projects.PROJECTS))
+        self.assertEqual(sorted(p.stem for p in projects.PINS_DIR.glob("*.json")), sorted(projects.KNOWN))
 
     def test_without_a_workspace_the_cli_stops_with_one_line(self):
         env = {k: v for k, v in os.environ.items() if k not in ENV_KEYS}
@@ -75,6 +75,33 @@ class WorkspaceTests(unittest.TestCase):
                            cwd=self.tmp.name, env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 1)
         self.assertIn("not a javabench run: no-such-run", r.stderr)
+
+
+class ProjectSetTests(unittest.TestCase):
+    def test_sets_select_their_projects(self):
+        names = lambda sel: [p.name for p in projects.selected(sel)]
+        self.assertEqual(names(None), list(projects.PROJECTS))
+        self.assertEqual(names(["insample"]), list(projects.PROJECTS))
+        self.assertEqual(names(["heldout"]), list(projects.HELDOUT))
+        self.assertEqual(len(names(["all"])), 16)
+        self.assertEqual(names(["guava", "heldout", "antlr4"])[:2], ["guava", "antlr4"])
+        self.assertFalse(set(projects.PROJECTS) & set(projects.HELDOUT))
+        with self.assertRaises(SystemExit):
+            projects.selected(["no-such-project"])
+
+    def test_every_project_is_pinned(self):
+        for name, proj in projects.KNOWN.items():
+            pin = json.loads((projects.PINS_DIR / f"{name}.json").read_text())
+            if proj.kind != "maven":
+                continue
+            for coord in proj.modules:
+                self.assertRegex(pin["artifacts"][coord]["sha256"], r"^[0-9a-f]{64}$", coord)
+                self.assertRegex(pin["artifacts"][coord + ":sources"]["sha256"], r"^[0-9a-f]{64}$", coord)
+            locked = {":".join(d["coord"].split(":")[:2]) for d in pin["deps"]}
+            for coord in proj.dep_coords:
+                ga = ":".join(coord.split(":")[:2])
+                if ga not in proj.self_artifacts:
+                    self.assertIn(ga, locked, f"{name}: {coord}")
 
 
 if __name__ == "__main__":

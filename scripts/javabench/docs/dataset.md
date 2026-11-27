@@ -56,6 +56,65 @@ only 99.13% of sampled methods byte-exactly (JDK-8272564: javac >= 18 emits
 `invokeinterface` for `Object` methods called on interfaces), javac 21 99.97%,
 javac 25 100.0% -- so javac 25 is used.
 
+## The held-out set (`--project heldout`)
+
+The five projects above are where kuna's fixes were developed, so their score says how the
+fixes do where they were tuned. Eleven more projects were chosen by a rule written on
+2026-11-26, before any decompiler had run on any candidate, and nothing was dropped, added
+or swapped after a decompiler's output on them had been seen:
+
+1. A Maven Central artifact with a binary jar and a `-sources.jar`, at the newest stable
+   release in `maven-metadata.xml` on that day.
+2. Not in-sample: not one of the five projects or their modules, not one of their
+   compile-time dependencies or code repackaged inside them, not any other input the fixes
+   were triaged on (okio, okhttp, kotlin-stdlib, kotlinx-coroutines, kotlin-reflect, the JDK's
+   own modules, Vineflower's test suite), and no other version, fork or module of those.
+3. One project per style slot, the first candidate that passes; the lists were fixed with
+   the rule:
+
+| slot | style | candidates in order |
+|---|---|---|
+| 1 | parser-generator runtime | `org.antlr:antlr4-runtime`; `org.parboiled:parboiled-java` |
+| 2 | database engine | `com.h2database:h2`; `org.hsqldb:hsqldb` |
+| 3 | network stack | `httpcore5` with `httpcore5-h2`; `io.undertow:undertow-core` |
+| 4 | JSON library | `com.alibaba.fastjson2:fastjson2`; `com.dslplatform:dsl-json` |
+| 5 | cryptography | `com.google.crypto.tink:tink`; `org.jasypt:jasypt` |
+| 6 | compiler front end | `org.codehaus.janino:janino` with `commons-compiler`; `org.eclipse.jdt:ecj` |
+| 7 | language runtime | `org.mozilla:rhino`; `org.openjdk.nashorn:nashorn-core` |
+| 8 | pre-Java-8 code base (class files major 50 or lower) | `joda-time:joda-time`; `org.apache.commons:commons-math3` |
+| 9 | numerical code, pre-Java-8 | `org.apache.commons:commons-math3`; `org.ejml:ejml-ddense` |
+| 10 | Java 17+ with records, sealed types and pattern switches | `io.jenetics:jenetics`; `io.jenetics:jenetics.ext` |
+
+4. Feasibility, decided without a decompiler: the fetch, the index and the `source`
+   pseudo-decompiler run. A candidate fails with fewer than 300 scored methods, or if the
+   source oracle recompiles under 90% of its top-level classes once the compile-only
+   dependencies its pom declares are added. The recompiling javac is the one whose
+   source-oracle run is most byte-exact.
+5. Size: 60,000 to 120,000 scored methods in total. The ten winners had 53,880, so the
+   second candidate of slot 7 (nashorn) was added, as the rule says.
+
+| project | version | scored methods | class files | javac used for recompilation |
+|---|---|---:|---|---|
+| antlr4 | `antlr4-runtime` 4.13.2 | 1,447 | 215 (major 52) | 17 `--release` |
+| h2 | 2.5.252 | 12,095 | 1,067 (major 55), no local-variable tables | 17 `--release`; its optional deps (Lucene 9.12, servlet APIs, OSGi, JTS, slf4j) |
+| httpcore5 | `httpcore5` + `httpcore5-h2` 5.5 | 5,138 | 894 (major 52) | 17 `-source 8 -target 8` (`jdk.net` is hidden by `--release 8`) |
+| fastjson2 | 2.0.66 | 6,645 | 773 (major 52) | 17 `-source 8 -target 8` (`sun.misc.Unsafe`) |
+| tink | 1.24.0 | 4,384 | 1,431 (major 55) | 21 `--release` |
+| janino | `janino` + `commons-compiler` 3.1.12 | 4,095 | 663 (major 51) | 17 `--release` |
+| rhino | 1.9.2 | 6,178 | 709 (major 55) | 21 `--release` |
+| joda-time | 2.15.1 | 3,910 | 248 (major 49), no local-variable tables | 17 `--release` |
+| commons-math3 | 3.6.1 | 8,073 | 1,301 (major 49) | 17 `--release` |
+| jenetics | 9.1.0 | 1,915 | 238 (major 69): records, sealed types, type switches | 25 `--release` |
+| nashorn | `nashorn-core` 15.7 | 9,309 | 1,019 (major 55; 79 at 49 or 51) | 17 `--release` |
+
+63,189 scored methods in 4,339 top-level classes. The source oracle reaches 98.90% of them
+perfect on all metrics and recompiles every class. Every jar and dependency is pinned in
+`pins/<project>.json` exactly as for the five.
+
+A held-out set stays held out only until someone fixes what it shows. The result recorded
+in `docs/jvm-benchmark.md` says for each number whether it was measured before or after
+fixes were developed against these projects.
+
 ## Scored set
 
 Per project, every class-file method with a `Code` attribute is either scored

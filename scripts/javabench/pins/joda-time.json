@@ -1,0 +1,18 @@
+{
+ "artifacts": {
+  "joda-time:joda-time:2.15.1": {
+   "sha256": "035f145e2f7a47e6eee02e4ff488c1a9a28c0d61dadd69861662039b9e88ca2a",
+   "url": "https://repo1.maven.org/maven2/joda-time/joda-time/2.15.1/joda-time-2.15.1.jar"
+  },
+  "joda-time:joda-time:2.15.1:sources": {
+   "sha256": "d98582928a0796d1791fef4d6c1b09c78484b27d5ec4130d334fb5b6278e0301",
+   "url": "https://repo1.maven.org/maven2/joda-time/joda-time/2.15.1/joda-time-2.15.1-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "org.joda:joda-convert:1.9.2",
+   "sha256": "6b411dce0fa286ebf03324f0ad7a33b4b1f3042769abef04c99319cd9075f313"
+  }
+ ]
+}

@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "org.antlr:antlr4-runtime:4.13.2": {
+   "sha256": "dd3e8a13a2d669bf84fb8d834de35ce4875f27157698d206241ec8488aadcaf7",
+   "url": "https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.13.2/antlr4-runtime-4.13.2.jar"
+  },
+  "org.antlr:antlr4-runtime:4.13.2:sources": {
+   "sha256": "4100b1df2f38152d8502e89195b94654d9aa22f5b6c47aca7b6a7f3194b5fbb0",
+   "url": "https://repo1.maven.org/maven2/org/antlr/antlr4-runtime/4.13.2/antlr4-runtime-4.13.2-sources.jar"
+  }
+ },
+ "deps": []
+}

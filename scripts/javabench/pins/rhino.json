@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "org.mozilla:rhino:1.9.2": {
+   "sha256": "0d28c18bb7d60c736556700ac2d51e2e1bf11b173fe5a16f9893092abc7e3d90",
+   "url": "https://repo1.maven.org/maven2/org/mozilla/rhino/1.9.2/rhino-1.9.2.jar"
+  },
+  "org.mozilla:rhino:1.9.2:sources": {
+   "sha256": "8b4a49d19fcb5542631c0d961385d6f2dd2fcd7a31b57e9ff8a217d7dacc9dae",
+   "url": "https://repo1.maven.org/maven2/org/mozilla/rhino/1.9.2/rhino-1.9.2-sources.jar"
+  }
+ },
+ "deps": []
+}

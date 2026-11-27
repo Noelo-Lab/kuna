@@ -1,7 +1,9 @@
 # javabench
 
 A DecBench-style benchmark that scores **Java decompilers against original
-source**, per method, on the five most-starred real Java projects on GitHub.
+source**, per method, on the five most-starred real Java projects on GitHub
+(the default set, `insample`) and on eleven held-out projects (`--project heldout`;
+`docs/dataset.md` has the rule that chose them).
 It compares kuna's JVM engine with **Vineflower 1.12.0**; the results and how
 they were measured are in `docs/jvm-benchmark.md`.
 
@@ -90,6 +92,7 @@ python3 -m scripts.javabench run --decompiler vineflower --jobs 12 --run-name vf
 python3 -m scripts.javabench run --decompiler kuna --kuna-bin decompiler/target/release/kuna \
     --jobs 12 --run-name kuna-sample
 #     fast inner loop (no recompilation): add --skip-bytes; one project: --project guava
+#     --project takes project names and the sets insample (default), heldout and all
 
 # (c) compare two runs: methods perfect in A but not B (and vice versa)
 python3 -m scripts.javabench compare vf-sample kuna-sample [--project guava] \

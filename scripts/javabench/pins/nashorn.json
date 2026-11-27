@@ -1,0 +1,34 @@
+{
+ "artifacts": {
+  "org.openjdk.nashorn:nashorn-core:15.7": {
+   "sha256": "3f2b62e55b5458ba2e8a0cc4599aa3abe81b1422e31c38bb8294a7096ceee6f2",
+   "url": "https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/15.7/nashorn-core-15.7.jar"
+  },
+  "org.openjdk.nashorn:nashorn-core:15.7:sources": {
+   "sha256": "712190fd4458e47f8cae1c1596438746803bc431f550788c1187adef48306c00",
+   "url": "https://repo1.maven.org/maven2/org/openjdk/nashorn/nashorn-core/15.7/nashorn-core-15.7-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "org.ow2.asm:asm-analysis:7.3.1",
+   "sha256": "46b8a8efd4b94facb5ab4b35afe30ee0546ae7a43d2c64e6def56c2f168fefa5"
+  },
+  {
+   "coord": "org.ow2.asm:asm-commons:7.3.1",
+   "sha256": "87cd8bb3c6bf6bcbb33fca48060c5065f66ebf6a3d7de9bf18bff51bcf156ebc"
+  },
+  {
+   "coord": "org.ow2.asm:asm-tree:7.3.1",
+   "sha256": "f91a4a8aa868c5c4665bb4fd134019a91f9f8b9216527fba295e3c8b5422b78b"
+  },
+  {
+   "coord": "org.ow2.asm:asm-util:7.3.1",
+   "sha256": "182128592742ed4883ac82bf205f137b6bfbe1234c68e6feb13759e75a85b729"
+  },
+  {
+   "coord": "org.ow2.asm:asm:7.3.1",
+   "sha256": "2f67e11ceec819ebd88ddee5300aba699b1cbab2e20c22e97cf027d3be93959b"
+  }
+ ]
+}

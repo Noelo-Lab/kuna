@@ -14,7 +14,8 @@ def main(argv: list[str] | None = None) -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     f = sub.add_parser("fetch", help="download + pin the dataset (reproduces <dataset>/<project>/)")
-    f.add_argument("--project", action="append", help="limit to project(s); repeatable")
+    f.add_argument("--project", action="append", help="project name(s) or a set: insample (the default), "
+                   "heldout, all; repeatable. Every command takes it the same way")
 
     i = sub.add_parser("index", help="(re)build the ground-truth index")
     i.add_argument("--project", action="append")
