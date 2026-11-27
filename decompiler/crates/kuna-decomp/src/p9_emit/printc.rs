@@ -1644,6 +1644,7 @@ pub struct PrintC {
     /// [`crate::kuna_globalref`].
     globalref: crate::kuna_globalref::Plan,
     named_globals: crate::kuna_namedglobals::References,
+    mmio_masks: std::collections::BTreeMap<OpId, (VarnodeId, String)>,
     /// Per-body spelling of a goto-target leaf whose address label another
     /// printed label already uses (see [`assign_label_names`](PrintC::assign_label_names)).
     label_names: std::collections::BTreeMap<BlockId, String>,
@@ -1695,6 +1696,7 @@ impl PrintC {
             stmt_op: None,
             globalref: crate::kuna_globalref::Plan::default(),
             named_globals: crate::kuna_namedglobals::References::default(),
+            mmio_masks: Default::default(),
             label_names: std::collections::BTreeMap::new(),
         }
     }
@@ -2786,6 +2788,7 @@ impl PrintC {
 
         self.emit_type_definition_preamble(fd);
         self.emit_bytearray_preamble(fd);
+        let mmio_definitions = self.plan_mmio_masks(fd, arch);
 
         let id1 = self.emit.begin_function();
         // emitCommentFuncHeader(fd): the header warning comments (C++
@@ -2837,6 +2840,10 @@ impl PrintC {
         } else {
             let _emitted_decls = self.emit_local_var_decls(fd, arch);
             self.emit_indirect_input_aliases(fd);
+            for (name, value) in &mmio_definitions {
+                self.emit.tag_line();
+                self.emit.print(&format!("#define {name} ({value})"), SyntaxHighlight::NoColor);
+            }
             crate::kuna_renderfault::check(fd.get_address().get_offset());
             if fd.sblocks_get_size() != 0 {
                 self.emit_function_body(fd, arch);
@@ -2860,6 +2867,10 @@ impl PrintC {
         // construct with no closer flush point onto the last body line, so no
         // warning is ever silently dropped or carried out of this function.
         self.flush_eol_warnings();
+        for name in mmio_definitions.keys() {
+            self.emit.tag_line();
+            self.emit.print(&format!("#undef {name}"), SyntaxHighlight::NoColor);
+        }
         self.emit.close_brace_indent("}", id);
         self.emit.tag_line();
         self.emit.end_function(id1);
@@ -2878,6 +2889,43 @@ impl PrintC {
             return None;
         }
         crate::kuna_bytearrayc::access(fd, vn)
+    }
+
+    fn plan_mmio_masks(
+        &mut self, fd: &Funcdata, arch: &Architecture,
+    ) -> std::collections::BTreeMap<String, String> {
+        self.mmio_masks.clear();
+        let mut definitions = std::collections::BTreeMap::new();
+        if arch.mmio_field_masks.is_empty() || self.out_lang != crate::kuna_lang::OutLang::C {
+            return definitions;
+        }
+        for op in fd.obank().iter_alive() {
+            let Some((vn, name)) = super::kuna_mmiomask::operand(fd, arch, op) else { continue };
+            if fd.get_scope_local().is_some_and(|scope| scope.local_name_used(name))
+                || arch.symboltab.get_global_scope().is_some_and(|scope| {
+                    !arch.symboltab.find_by_name(scope, name).is_empty()
+                })
+            {
+                continue;
+            }
+            let Some(value) = self.integer_constant_token(fd, arch, vn, op) else { continue };
+            let definition = definitions.entry(name.to_owned()).or_insert_with(|| value.clone());
+            if *definition == value {
+                self.mmio_masks.insert(op, (vn, name.to_owned()));
+            }
+        }
+        definitions
+    }
+
+    fn push_mmio_mask(&mut self, op: OpId, vn: VarnodeId) -> bool {
+        let Some((mask_vn, name)) = self.mmio_masks.get(&op) else { return false };
+        if *mask_vn != vn {
+            return false;
+        }
+        self.push_atom(&Atom::with_op_vn(
+            name.clone(), TagType::Syntax, crate::printlanguage::SyntaxHighlight::const_color, op_key(op), vn_key(vn),
+        ));
+        true
     }
 
     fn emit_bytearray_preamble(&mut self, fd: &Funcdata) {
@@ -6153,7 +6201,9 @@ impl PrintC {
         self.push_op(tok, Some(op_key(op)));
         let (lhs, lhs_op) = self.inplace_target(fd, (in0, op), (out, stmt));
         self.push_vn_explicit_ir(fd, arch, lhs, lhs_op);
-        self.push_vn_ir(fd, arch, in1, op);
+        if !self.push_mmio_mask(op, in1) {
+            self.push_vn_ir(fd, arch, in1, op);
+        }
         true
     }
 
@@ -6656,7 +6706,7 @@ impl PrintC {
                     self.context.set_mod(modifiers::CONDITION_CONTEXT);
                     self.push_vn_ir(fd, arch, v, op);
                     self.context.pop_mod();
-                } else {
+                } else if !self.push_mmio_mask(op, v) {
                     self.push_vn_ir(fd, arch, v, op);
                 }
             }
@@ -10754,6 +10804,12 @@ impl PrintC {
         let size = if size != 0 { size } else { vsize };
 
         if let Some((name, sym_off, sym_type)) = entry {
+            if sym_off == 0 {
+                self.named_globals.record(fd, arch, &vaddr, &name);
+            } else if sym_off > 0 && vaddr.get_offset() >= sym_off as u64 {
+                let base = &vaddr - i64::from(sym_off);
+                self.named_globals.record(fd, arch, &base, &name);
+            }
             // The volatile annotation Symbol renders in special_color (C++
             // pushSymbol: `sym->isVolatile()` -> special_color).  The mapped global
             // carried the `volatil` flag (set by `volatile [ram,...]`), so use it.

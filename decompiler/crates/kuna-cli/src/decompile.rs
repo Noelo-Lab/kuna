@@ -979,6 +979,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     let mut assert_strict = false;
     let mut types: Vec<String> = Vec::new();
     let mut types_cpp: Option<String> = None;
+    let mut svd: Option<String> = None;
     let mut decomp_dbg: Option<String> = None;
     let mut engine: Option<String> = None;
     let mut sleighpath: Option<String> = None;
@@ -1061,6 +1062,12 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
             }
             "--types-cpp" => {
                 types_cpp = Some(take_value(argv, &mut i, "--types-cpp")?);
+                forwarded.extend(argv[i - 1..=i].iter().cloned());
+            }
+            "--svd" => {
+                if svd.replace(take_value(argv, &mut i, "--svd")?).is_some() {
+                    return Err("only one --svd file is allowed per image".into());
+                }
                 forwarded.extend(argv[i - 1..=i].iter().cloned());
             }
             "--decomp-dbg" => decomp_dbg = Some(take_value(argv, &mut i, "--decomp-dbg")?),
@@ -1178,7 +1185,7 @@ pub fn main(argv: &[String]) -> Result<i32, String> {
     if let Some(flag) = record_flag {
         return Err(format!("{flag} selects --json record keys; add --json"));
     }
-    let assertions = crate::assertdecl::with_types(&types, types_cpp.as_deref(), assertions)?;
+    let assertions = crate::assertdecl::with_imports(&types, types_cpp.as_deref(), svd.as_deref(), assertions)?;
 
     // (kuna outlang, DIV-80) The auto policy -- follow the binary when the caller
     // named no language. See `decompile_all::detected_output_language`.
@@ -1230,7 +1237,7 @@ fn usage() {
          \x20                     [--option N V].. [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
-         \x20                     [--types FILE.h|DIR].. [--types-cpp CC] \\\n\
+         \x20                     [--types FILE.h|DIR].. [--types-cpp CC] [--svd FILE] \\\n\
          \x20                     [--isa auto|arm|thumb] [--slice ARCH] [--target T] \\\n\
          \x20                     [--sleighpath D] [--decomp-dbg P] [--max-fn-memory MiB]\n\
          \x20                     [--max-fn-seconds N] [--raw-image --target T --base VMA]\n\
@@ -1272,7 +1279,7 @@ fn usage() {
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
          derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
          name, type, format, isolate, comment, flow, callee, callproto, readonly, volatile,\n\
-         bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
+         mmio-mask, bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
          `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
          `format <addr> hex|dec|oct|bin|char [<value>]` sets the form the constant\n\
@@ -1291,6 +1298,9 @@ fn usage() {
          each header first (kuna runs no preprocessor otherwise).  A declaration\n\
          that does not parse is reported with its file and line and the rest still\n\
          apply; an --assert on the same function wins over the header.\n\
+         \n\
+         --svd FILE maps CMSIS-SVD peripheral registers as volatile globals and\n\
+         names exact bitfield masks on proven register reads in C.\n\
          \n\
          --sleighpath D and --decomp-dbg P override where this run reads the compiled\n\
          SLEIGH tree and which engine binary it drives; without them both are found\n\

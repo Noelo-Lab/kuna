@@ -4105,6 +4105,19 @@ decomp_command!(
     }
 );
 
+decomp_command!(
+    /// Import a symbolic mask for one memory-mapped register.
+    IfcMmioMask,
+    fn execute(&self, status: &mut IfaceStatus, s: &mut CommandStream) -> IfaceResult<()> {
+        let directive = crate::assertsyntax::parse_directive(&format!("mmio-mask {}", s.rest()))
+            .map_err(IfaceError::parse)?;
+        let prog = dcp_mut(status)?.conf.as_mut()
+            .ok_or_else(|| IfaceError::execution("No load image present"))?;
+        crate::assertions::apply_one_program_scoped(prog, &directive.body)
+            .map_err(IfaceError::execution)
+    }
+);
+
 // --- volatile / readonly (ifacedecomp.cc) ----------------------------------
 
 decomp_command!(

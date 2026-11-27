@@ -2189,21 +2189,23 @@ impl Database {
         self.kuna_gen += 1;
         if ct.get_size() > 0 {
             if let Some(space) = addr.get_space() {
-                let first = u128::from(addr.get_offset());
-                let end = first + ct.get_size() as u128;
-                let inferred: Vec<SymbolId> = self.scopes[scope]
+                let first = addr.get_offset();
+                let end = first.saturating_add(ct.get_size() as u64 - 1);
+                let inferred: std::collections::BTreeSet<SymbolId> = self.scopes[scope]
                     .maptable
                     .get(space.get_index() as usize)
                     .and_then(|map| map.as_ref())
                     .into_iter()
-                    .flat_map(|map| map.records())
-                    .filter_map(|(_, record)| {
-                        let entry = &record.entry;
-                        let at = u128::from(entry.get_addr().get_offset());
+                    .flat_map(|map| {
+                        map.iter_between(&map.find_begin(first), &map.find_end(end))
+                            .map(move |idx| &map.record(idx).entry)
+                    })
+                    .filter_map(|entry| {
+                        let at = entry.get_addr().get_offset();
                         let symbol = &self.symbols[entry.symbol];
                         (at != first
-                            && at < end
-                            && at + entry.get_size().max(0) as u128 > first
+                            && at <= end
+                            && u128::from(at) + entry.get_size().max(0) as u128 > u128::from(first)
                             && symbol.is_type_locked()
                             && !symbol.is_name_locked()
                             && symbol.mapentry.len() == 1

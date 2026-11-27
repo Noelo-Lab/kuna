@@ -19,6 +19,7 @@ kuna-num.workspace = true
 # FID and FLIRT construction also read archive members.
 object = { workspace = true, features = ["archive"] }
 regex.workspace = true
+roxmltree = "0.21"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.11"

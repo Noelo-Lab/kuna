@@ -230,6 +230,24 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             }
             Body::Data { addr, decl: decl.to_string() }
         }
+        "mmio-mask" => {
+            let (addr, rest) = take_token(rest);
+            let (size, rest) = take_token(rest);
+            let (mask, name) = take_token(rest);
+            let invalid = || bad("mmio-mask needs <hex addr> <byte width> <hex mask> <C identifier ending in _Msk>");
+            let addr = parse_vma(addr).ok_or_else(invalid)?;
+            let size = size.parse::<i32>().ok().filter(|size| matches!(size, 1 | 2 | 4 | 8))
+                .ok_or_else(invalid)?;
+            let mask = parse_vma(mask).filter(|&mask| mask != 0 && mask <= kuna_base::address::calc_mask(size))
+                .ok_or_else(invalid)?;
+            if !name.ends_with("_Msk")
+                || !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                || !name.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'_')
+            {
+                return Err(invalid());
+            }
+            Body::MmioMask { addr, size, mask, name: name.to_owned() }
+        }
         "param" => {
             let (index, rest) = take_token(rest);
             let (func, index) = split_qualifier(index);
@@ -385,7 +403,7 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
                  function, typedef, prototype, callproto, data, param, return, comment, flow, callee, \
-                 name, type, format, isolate, readonly, volatile, bytes)"
+                 name, type, format, isolate, readonly, volatile, mmio-mask, bytes)"
             ))
         }
     };

@@ -3068,6 +3068,23 @@ declaration the grammar refuses is a `rejected` row and a warning, the others
 still apply, and such a row never fails the run, under `--assert-strict` too:
 a header is loaded as far as it parses.
 
+(kuna) **CMSIS-SVD register layouts (`--svd`).** `kuna_svd` turns one caller-supplied
+device description into program-scoped `data` assertions. It resolves explicit
+`derivedFrom` inheritance, then applies the enclosing register-size defaults.
+Each address is the sum of the peripheral base, enclosing cluster offsets, the
+register offset, and each array index times its stride. The first non-alternate
+definition at an address takes precedence over an alternate definition. Each
+register is a volatile unsigned scalar of its declared size; neither
+read-only access metadata nor a reset value makes it constant. The assertions
+are applied before explicit `--assert` declarations. The loader mapping and
+instruction-level access widths are unchanged.
+Register fields also supply `mmio-mask` assertions keyed by the register's
+address and byte width. Field geometry comes from `bitOffset`/`bitWidth`,
+`lsb`/`msb`, or `[msb:lsb]` and uses bit strides for field arrays. A mask
+described by different field names in one register is not supplied. If
+several register views share an address, their widths and field masks must
+agree before a mask is supplied; the primary register name is still used.
+
 A `flow` directive is the sharpest of the function-scoped ones, and the only
 one that changes which bytes are in the function at all. P2 classifies the flow
 out of each instruction — branch, call, call-that-does-not-return, return — and

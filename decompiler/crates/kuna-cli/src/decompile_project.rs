@@ -171,6 +171,7 @@ fn usage() {
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--stream | --progress] \\\n\
          \x20                   [--define-function S[-E][=N]|@FILE].. \\\n\
+         \x20                   [--svd FILE] \\\n\
          \x20                   [--option N V].. [--isa auto|arm|thumb] [--slice ARCH] [--target T] [--sleighpath D]\n\
          \x20                   [--raw-image --target T --base VMA (--entry|--addr VMA)..]\n\
          \n\
