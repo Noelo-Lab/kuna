@@ -84,8 +84,7 @@ impl ExitExprent {
             }),
         );
         e.add_bytecode_offsets(bytecode_offsets);
-        let exit = ExitExprent(e);
-        exit
+        ExitExprent(e)
     }
 
     pub fn copy(self) -> Exprent {

@@ -782,9 +782,8 @@ impl FinallyProcessor {
             lst_areas.push(arr);
             let arr = lst_areas.last().expect("area");
 
-            match &side_exits {
-                None => side_exits = Some(arr.side_exits.clone()),
-                Some(_) => {}
+            if side_exits.is_none() {
+                side_exits = Some(arr.side_exits.clone());
             }
         }
 
