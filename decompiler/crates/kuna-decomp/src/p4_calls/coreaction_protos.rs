@@ -1945,6 +1945,7 @@ impl Action for ActionReturnRecovery {
             crate::kuna_armfloatreturn::narrow_returns(data, &mut active);
             crate::kuna_retsysreg::drop_set_aside(data, &mut active, &return_ops);
             crate::p4_calls::kuna_x87emptyreturn::drop_empty(data, &mut active, &return_ops);
+            crate::p4_calls::kuna_quotientreturn::drop_quotient(data, &mut active, &return_ops);
             let own_input = crate::kuna_retcallhalf::accept(data, &mut active, &return_ops);
             crate::p4_calls::kuna_callwide::retain_pair(data, &mut active, &return_ops);
             crate::kuna_bejoin::keep_proven_pair(data, &mut active, &return_ops);

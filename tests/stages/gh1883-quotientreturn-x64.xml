@@ -1,0 +1,91 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna #1883: x86 div/idiv writes the quotient to eax/rax and the remainder
+    to edx/rdx at once. A function returning a float or double converted from
+    the remainder leaves the unread quotient in rax, and return recovery took
+    that quotient as the return value.
+
+        1000  89 f8              MOV      EAX,EDI
+        1002  99                 CDQ
+        1003  f7 fe              IDIV     ESI          ; quotient unread
+        1005  f3 0f 2a c2        CVTSI2SS XMM0,EDX     ; (float)(a % b)
+        1009  c3                 RET
+
+        1020  85 d2              TEST     EDX,EDX
+        1022  74 0a              JZ       0x102e
+        1024  89 f8              MOV      EAX,EDI
+        1026  99                 CDQ
+        1027  f7 fe              IDIV     ESI
+        1029  f3 0f 2a c2        CVTSI2SS XMM0,EDX
+        102d  c3                 RET
+        102e  f3 0f 2a c7        CVTSI2SS XMM0,EDI     ; rax never written here
+        1032  c3                 RET
+
+        1040  85 d2              TEST     EDX,EDX
+        1042  74 0b              JZ       0x104f
+        1044  89 f8              MOV      EAX,EDI
+        1046  31 d2              XOR      EDX,EDX
+        1048  f7 f6              DIV      ESI
+        104a  f3 0f 2a c2        CVTSI2SS XMM0,EDX
+        104e  c3                 RET
+        104f  89 f8              MOV      EAX,EDI
+        1051  f3 48 0f 2a c0     CVTSI2SS XMM0,RAX     ; rax read into the float
+        1056  c3                 RET
+
+        1060  49 89 d0           MOV      R8,RDX
+        1063  89 f8              MOV      EAX,EDI
+        1065  99                 CDQ
+        1066  f7 fe              IDIV     ESI
+        1068  f3 0f 2a c2        CVTSI2SS XMM0,EDX
+        106c  f3 41 0f 11 00     MOVSS    [R8],XMM0    ; the float is stored
+        1071  c3                 RET                   ; the quotient returns
+
+        1080  48 89 f8           MOV      RAX,RDI
+        1083  31 d2              XOR      EDX,EDX
+        1085  48 f7 f6           DIV      RSI
+        1088  f2 48 0f 2a c2     CVTSI2SD XMM0,RDX     ; (double)(a % b)
+        108d  c3                 RET
+
+    Stage: P4 return recovery. The first, second, third and fifth functions
+    return the float or double; store_rem stores the float and still returns
+    the quotient.
+-->
+<bytechunk space="ram" offset="0x1000">
+89f899f7fef30f2ac2c30000000000000000000000000000000000000000000085d2740a89f899f7fef30f2ac2c3f30f2ac7c30000000000000000000000000085d2740b89f831d2f7f6f30f2ac2c389f8f3480f2ac0c30000000000000000004989d089f899f7fef30f2ac2f3410f1100c300000000000000000000000000004889f831d248f7f6f2480f2ac2c3
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="srem_float"/>
+<symbol space="ram" offset="0x1020" name="pick"/>
+<symbol space="ram" offset="0x1040" name="scale"/>
+<symbol space="ram" offset="0x1060" name="store_rem"/>
+<symbol space="ram" offset="0x1080" name="rem_double"/>
+</binaryimage>
+<script>
+  <com>lo fu srem_float</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pick</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu scale</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu store_rem</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu rem_double</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="QUOTIENTRETURN #1: idiv then cvtsi2ss returns the float" min="1" max="1">^float4 srem_float\(int4 a0,int4 a1\)</stringmatch>
+<stringmatch name="QUOTIENTRETURN #2: the float is the remainder" min="1" max="1">^  return \(float4\)\(a0 % a1\);</stringmatch>
+<stringmatch name="QUOTIENTRETURN #3: a path that never writes rax returns the float" min="1" max="1">^float4 pick\(int4 a0,int4 a1,int4 a2\)</stringmatch>
+<stringmatch name="QUOTIENTRETURN #4: the other paths of pick and scale convert the parameter" min="2" max="2">^  return \(float4\)a0;</stringmatch>
+<stringmatch name="QUOTIENTRETURN #5: a path that converts rax returns the float" min="1" max="1">^float4 scale\(uint4 a0,uint4 a1,int4 a2\)</stringmatch>
+<stringmatch name="QUOTIENTRETURN #6: the div path returns its remainder" min="1" max="1">^    return \(float4\)\(int4\)\(a0 % a1\);</stringmatch>
+<stringmatch name="QUOTIENTRETURN #7: only the stored float leaves the quotient the return" min="1" max="1">^  return \(int8\)a0 / a1 &amp; 0xffffffff;</stringmatch>
+<stringmatch name="QUOTIENTRETURN #8: the stored float is kept" min="1" max="1">^  \*a2 = \(float4\)\(a0 % a1\);</stringmatch>
+<stringmatch name="QUOTIENTRETURN #9: div rsi then cvtsi2sd returns the double" min="1" max="1">^float8 rem_double\(uint8 a0,uint8 a1\)</stringmatch>
+<stringmatch name="QUOTIENTRETURN #10: the double is the remainder" min="1" max="1">^  return \(float8\)\(int8\)\(a0 % a1\);</stringmatch>
+</decompilertest>
