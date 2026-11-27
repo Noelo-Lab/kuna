@@ -36,6 +36,7 @@ pub(crate) struct PhaseDecode<'a> {
     delay_tick: Option<u64>,
     delay_mask: Option<u64>,
     fixed_read_tick: Option<u64>,
+    fixed_load: Option<u64>,
     fixed_store: Option<u64>,
     end_unmodeled: Option<u64>,
     idle_tick: Option<u64>,
@@ -61,6 +62,7 @@ impl<'a> PhaseDecode<'a> {
         let delay_tick = index(b"carmel_delay_slot_admission");
         let delay_mask = index(b"carmel_modeled_delay_mask");
         let fixed_read_tick = index(b"carmel_fixed_read_admission");
+        let fixed_load = index(b"carmel_single_data_load");
         let fixed_store = index(b"carmel_single_data_store");
         let end_unmodeled = index(b"carmel_end_unmodeled_issue");
         let idle_tick = index(b"carmel_record_idle_admission");
@@ -85,7 +87,7 @@ impl<'a> PhaseDecode<'a> {
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
-            fixed_read_tick, fixed_store, end_unmodeled, idle_tick, reset, register_ex, data_ex, address_ex,
+            fixed_read_tick, fixed_load, fixed_store, end_unmodeled, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
             staged_data, ff })
     }
@@ -136,8 +138,8 @@ impl<'a> PhaseDecode<'a> {
                 markers.push((op_id, offset, Mark::Slot));
             } else if Some(index) == self.end_unmodeled {
                 markers.push((op_id, offset, Mark::EndUnmodeled));
-            } else if Some(index) == self.fixed_store {
-                markers.push((op_id, offset, Mark::FixedStore));
+            } else if Some(index) == self.fixed_load || Some(index) == self.fixed_store {
+                markers.push((op_id, offset, Mark::FixedAccess));
             } else if Some(index) == self.delay_mask {
                 delay_queries.push((op_id, offset));
             } else if index == self.admission {
@@ -212,7 +214,7 @@ impl<'a> PhaseDecode<'a> {
                 cleanup.push(marker);
             } else {
                 known.insert(offset);
-                if matches!(kind, Mark::EndUnmodeled | Mark::FixedStore) {
+                if matches!(kind, Mark::EndUnmodeled | Mark::FixedAccess) {
                     cleanup.push(marker);
                 }
             }
@@ -330,6 +332,9 @@ impl<'a> PhaseDecode<'a> {
                     trace.events.push(Event::Tick(id, false));
                     fixed_bus = Some(OpCode::CPUI_LOAD);
                 }
+                Some(index) if Some(index) == self.fixed_load => {
+                    fixed_bus = Some(OpCode::CPUI_LOAD);
+                }
                 Some(index) if Some(index) == self.fixed_store => {
                     fixed_bus = Some(OpCode::CPUI_STORE);
                 }
@@ -418,7 +423,7 @@ enum Mark {
     Slot,
     Redirect,
     EndUnmodeled,
-    FixedStore,
+    FixedAccess,
     Copy,
 }
 

@@ -39,6 +39,7 @@ define register offset=0x080 size=2 [ BTR1 ];
 define register offset=0x084 size=2 [ BTR2 ];
 define register offset=0x088 size=2 [ FF1 ];
 define register offset=0x08c size=2 [ FF2 ];
+define register offset=0x08e size=1 [ FFG ];
 define register offset=0x090 size=2 [ X1 ];
 define register offset=0x094 size=2 [ X2 ];
 define register offset=0x098 size=2 [ FFTV ];
@@ -191,6 +192,7 @@ define pcodeop carmel_known_redirect;
 define pcodeop carmel_delay_slot_admission;
 define pcodeop carmel_modeled_delay_mask;
 define pcodeop carmel_fixed_read_admission;
+define pcodeop carmel_single_data_load;
 define pcodeop carmel_single_data_store;
 define pcodeop carmel_end_unmodeled_issue;
 define pcodeop carmel_capture_ff_before_ex;
@@ -4575,6 +4577,17 @@ swap_address: "*"^swap_base is swap_register_address=0 & wide_7_7=0 & swap_modif
 macro compact_long_sample(lo, hi, guard, bits) {
     bits = (zext(guard) << 32) | (zext(hi) << 16) | zext(lo);
 }
+macro write_ff_pair(bits) {
+    local value:8 = bits;
+    FF1 = value:2;
+    FF2 = value(2);
+    FFG = value(4);
+}
+
+macro shifted_ff_addend(value) {
+    value = sext(FFG) * 0x10000 + zext(FF2);
+}
+
 macro compact_long_finish(bits, carry_out, overflow, data_result, mixed, result, flags) {
     local negative:1 = bits >= 0x8000000000;
     local extend:1 = bits > 0x7fffffff && bits < 0xff80000000;
@@ -4649,8 +4662,7 @@ compact_aux_long: "FF12",indexed_load_acc,compact_aux_agu is $(COMPACT_AUX_LONG)
     local result:8;
     local flags:2;
     compact_aux_add(lhs, compact_aux_agu, 0:1, result, flags);
-    FF1 = result:2;
-    FF2 = result(2);
+    write_ff_pair(result);
     export flags;
 }
 
@@ -6937,12 +6949,10 @@ macro parallel_logic_ff12_pair() {
     parallel_or_r6(CECFG1, 0:2, left, ce1);
     parallel_or_r6(CECFG2, 1:2, right, ce2);
     if (ce1 == 0) goto <right_port>;
-    FF1 = left;
-    FF2 = 0;
+    write_ff_pair(zext(left));
   <right_port>
     if (ce2 == 0) goto <left_status>;
-    FF1 = right;
-    FF2 = 0;
+    write_ff_pair(zext(right));
     if (ce1 != 0) goto <conflict>;
     parallel_logic_status(right, 6);
   <left_status>
@@ -6958,18 +6968,18 @@ macro parallel_logic_ff12_pair() {
 
 macro parallel_logic_mac_ff12(latch, mac_shift, word_shift) {
     local direct_word:2 = A4L | A0L;
-    local incoming:2 = FF2;
+    local incoming:8;
+    shifted_ff_addend(incoming);
     local operand:2 = *[data]:2 R7;
     local product:8 = sext(operand) * zext(R7) * (1 + zext(ECFG & 1));
     local mask:8 = 0xffffffffff;
-    local raw:8 = zext(incoming) + (product & mask);
+    local raw:8 = (incoming & mask) + (product & mask);
     local result:8;
     local flags:2;
     compact_long_finish(raw & mask, raw > mask, 0:1, 0:1, 0:1, result, flags);
     latch = operand;
     # The paired result suppresses the direct FF word, not that lane's flags.
-    FF1 = result:2;
-    FF2 = result(2);
+    write_ff_pair(result);
     parallel_logic_status(direct_word, word_shift);
     local packed:2 = (EST & 0xcfff & ~(0x3b << mac_shift)) | (flags << mac_shift);
     publish_alu_ce(packed);
@@ -9523,6 +9533,64 @@ compact_mpy_ff: "FF2" is slot_9_9=1 { export FF2; }
 @define COMPACT_FF_ROUND "slot_7_22=0xad7f & slot_1_5=0x16 & slot_0_0=1 & compact_round_ff & compact_round_before"
 @define COMPACT_FF_MPY "slot_10_22=0x11f3 & slot_6_8=3 & slot_1_5=0x1a & slot_0_0=1 & compact_mpy_ff"
 @define COMPACT_FF_PHASE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
+
+:MACHUS "CE1" "FF12","*R3","RN1" is $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & slot_0_22=0x5338d3 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local flags:2 = EST & 0xcfff;
+    if (admitted == 0) goto <feedback>;
+    carmel_single_data_load();
+    local word:2 = *[data]:2 R3;
+    X1 = word;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <feedback>;
+    local addend:8;
+    shifted_ff_addend(addend);
+    local product:8;
+    raw_mac_product(word, RN1, 0:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(addend + product, (addend & 0xffffffffff) + (product & 0xffffffffff),
+                         0:1, 0:1, 0:1, 0:1, result, active);
+    write_ff_pair(result);
+    raw_mac_flags(flags, active, 0:4);
+  <feedback>
+    publish_alu_ce(flags);
+    record_ce_admission();
+}
+
+:MPYUS "CE1" "A0L","R7","A0L" is $(RAW_MAC_SEQ) & $(COMPACT_FF_PHASE) & slot_0_22=0x4ac071 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local flags:2 = EST & 0xcfff;
+    if (admitted == 0) goto <feedback>;
+    X1 = R7;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <feedback>;
+    local product:8;
+    raw_mac_product(R7, A0L, 0:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 1:1, 0:1, 0:1, result, active);
+    A0L = result(2);
+    raw_mac_flags(flags, active, 0:4);
+  <feedback>
+    publish_alu_ce(flags);
+    record_ce_admission();
+}
+
+compact_move_ff2_to_a2l: "MOVE" "A2L","FF2" is slot_0_22=0x31aa4e & ce_single_tick {
+    local value:2 = carmel_sample_ff_at_ex(FF2);
+    A2L = value;
+    local flags:2 = (EST & 0xcfc4) | (zext(value == 0) << 3) | (zext(value s< 0) << 4);
+    publish_ce_feedback(flags, EST);
+    build ce_single_tick;
+}
+
+:^compact_move_ff2_to_a2l "||" nop_right is
+    ($(RAW_MAC_PAR) & $(COMPACT_FF_PHASE) & compact_move_ff2_to_a2l); (slot_mode=0 & nop_right) {
+    build compact_move_ff2_to_a2l;
+}
 
 macro compact_ff_round_store(first, before, latch, cfg, bank, lane, gate) {
     local admitted:1 = carmel_read_address_admission(gate);

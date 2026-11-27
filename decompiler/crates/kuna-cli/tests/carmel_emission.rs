@@ -1924,6 +1924,61 @@ fn carmel_sequential_subc_flags_only_gate_the_late_intbase_store() {
 }
 
 #[test]
+fn carmel_compact_shifted_mac_uses_guard_and_separates_qualification() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("shifted-mac.bin");
+    let source = scratch.path().join("shifted-mac.c");
+    let executable = scratch.path().join("shifted-mac");
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const PAIR: [u8; 6] = [0xd3, 0x38, 0xd3, 0x4a, 0xc0, 0x71];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\nstatic volatile unsigned short word;\n");
+    let mut checks = String::new();
+    for (row, (guard, ff2, cfg, table, prefix, expected)) in [
+        (0, 0x1000, 0, 0xffff, None, [0xfffe, 0x0dac, 0xc048]),
+        (0xff, 0x1000, 0, 0xffff, None, [0xfffd, 0x0dac, 0xc048]),
+        (0xff, 0x1000, 0, 0xffff, Some([0x12, 0xbc, 0, 0x2b, 0xec, 0]), [0xfffe, 0x0dac, 0xc048]),
+        (0, 0x1000, 0x1000, 0, None, [0x1000, 0x1234, 0xc048]),
+        (0, 0x1000, 0, 0, None, [0x1000, 0x1234, 0x96a5]),
+        (0, 0, 0x0888, 0x80, Some([0x21, 0xac, 0x62, 0x2b, 0xec, 0]), [0xfffe, 0x1234, 0xc048]),
+    ].into_iter().enumerate() {
+        let mut code = vec![NOP; 6];
+        if let Some(prefix) = prefix {
+            code.push(prefix);
+            code.extend([NOP; 6]);
+        }
+        code.extend([PAIR, [0x31, 0xaa, 0x4e, 0x2b, 0xec, 0], NOP, [0x2b, 0xd8, 0, 0x2b, 0xec, 0], NOP]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let specs = scratch.path().join(format!("shifted-mac-specs-{row}"));
+        tracked_carmel_entry_specs(&specs, &[
+            ("FF1", 1), ("FF2", ff2), ("FFG", guard), ("A0L", 0x1234), ("A0H", 0), ("GB0", 0),
+            ("A1L", 0xffff), ("X1", 0x96a5), ("R0", 0x40), ("R3", 0xc040), ("R7", 0xc048),
+            ("RN1", 0xfffe), ("ECFG", 0), ("EST", 0), ("CECFG1", cfg), ("CECFG2", 0), ("CETBL", table),
+        ], 0, 0);
+        for (reg, value) in ["A2L", "A0L", "X1"].into_iter().zip(expected) {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", &format!("return %{reg} unsigned short"),
+                "--assert", "data [data,0xc040] volatile unsigned short word",
+            ]);
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let name = format!("shifted_mac_{row}_{reg}");
+            writeln!(c, "#define sub_0 {name}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+            writeln!(checks, "word = 0xeffe; if ({name}() != {value}) return {};", row + 1).unwrap();
+        }
+    }
+    writeln!(c, "int main(void) {{\n{checks}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_reset_clears_control_only_after_a_proved_retirement_window() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
@@ -5351,7 +5406,7 @@ fn carmel_compact_parallel_logic_ports_execute_in_emitted_c() {
                 (0x804a, 0x4176), (0xc048, 0xa25e), (0xc049, 0x8a5a)];
     let tracked = [("R2", 0x8040), ("R4", 0x48), ("R5", 0x4048), ("R6", 0x8048), ("R7", 0xc048),
                    ("RN4", 1), ("PACFG", 0), ("RM4", 0), ("RL4", 0), ("RM6", 0), ("RL6", 0),
-                   ("CECFG1", 0x1000), ("CECFG2", 0x1000)];
+                   ("CECFG1", 0x1000), ("CECFG2", 0x1000), ("FFG", 0)];
     let params = [("CETBL", 0), ("EST", 0), ("ECFG", 0), ("A0L", 0x09a4), ("A0H", 0x4338), ("GB0", 0xea),
                   ("A1L", 0xecd0), ("A1H", 0x834c), ("GB1", 0x6a), ("A2L", 0x4b74), ("A2H", 0xb008),
                   ("GB2", 0x87), ("A4L", 0xaf94), ("FF1", 0x1234), ("FF2", 0xf678), ("X1", 0xba98), ("X2", 0x5678)];

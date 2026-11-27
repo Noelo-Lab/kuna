@@ -3889,6 +3889,13 @@ the upper result word and test zero above the low word. The parallel
 right slot reverses the X destination selectors and uses its own flag
 lane. These register results do not apply the DATA store's `SR1` shift.
 
+The shifted MAC reads the signed upper 24 bits of the 40-bit FF
+backing, including the guard above `FF2`. Full-width FF writes replace
+the guard; a write to either 16-bit FF register leaves it unchanged.
+In the qualified sequential form, the two operand captures can update
+`X1` even when their later result gates veto the FF or accumulator
+write. The following word `MOVE` samples only `FF2` at execution.
+
 For compact `ADD` with a half result and a first operand selector `30` or
 `31`, the unbound input is zero and the other word supplies the result.
 The accumulator `ADD` form with a postincrementing DATA input and selector
