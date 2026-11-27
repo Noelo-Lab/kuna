@@ -197,6 +197,7 @@ define context contextreg
     hw_loop_setup = (24,24) noflow
     carmel_implicit_repeat = (25,25) noflow
     carmel_gpp_disconnected = (26,26) noflow
+    carmel_addrupdate_right_r0 = (27,27) noflow
     hw_loop_restart = (128,151) noflow
     hw_loop_prepare_end = (160,183) noflow
     hw_loop_first = (192,215) noflow
@@ -2287,6 +2288,13 @@ macro publish_ce_feedback(flags, feedback) {
 macro publish_alu_ce(flags) {
     local feedback:2 = (EST & 0x3000) | flags;
     publish_ce_feedback(flags, feedback);
+}
+
+:ADDRUPDATE "R0" is carmel_issue=3 & carmel_addrupdate_right_r0=1 & agu_modifier_1
+    & (slot_raw=0x2cb420 | slot_raw=0x2cb440 | slot_raw=0x2cb460 |
+       slot_raw=0x2cf420 | slot_raw=0x2cf440 | slot_raw=0x2cf460) {
+    modify_ptr(R0, RN0, RM0, RL0, 0:4, agu_modifier_1);
+    publish_alu_ce(EST & 0xcfff);
 }
 
 :^nop_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & nop_left {

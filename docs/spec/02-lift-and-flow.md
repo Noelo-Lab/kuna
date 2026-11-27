@@ -3857,6 +3857,13 @@ on the preceding slot's display fields. Unknown text does not invent
 execution, and recognizing the syntax of an unimplemented form does not let
 flow follow past it.
 
+A sequential right address update may take its register route from the
+paired left CODE word even when flow enters at the odd address. The
+framer resolves the covered indexed, increment, and decrement forms
+with a left `NOP` to the `R0` address port. They use its configured
+address mode without accessing DATA. The parallel encodings and other
+left descriptors are not assigned that route.
+
 Parallel roots sample both compact lanes before committing their register
 effects. A Carmel delay is measured in issues, not fetches. For a one-issue
 delay the loader paints the following issue's byte length. For longer delays

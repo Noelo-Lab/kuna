@@ -7102,6 +7102,44 @@ fn carmel_secondary_shifter_reserves_physical_preg_reads() {
     }
 }
 
+#[test]
+fn carmel_sequential_address_update_resolves_the_right_port_from_the_fetch() {
+    let binary = common::scratch_file("carmel-sequential-address-update", "bin");
+    for (left, right, implemented) in [
+        ([0xab, 0xec, 0], [0x2c, 0xb4, 0x20], true),
+        ([0xab, 0xec, 0], [0x2c, 0xf4, 0x60], true),
+        ([0xb0, 0x37, 0x80], [0x2c, 0xb4, 0x20], false),
+        ([0x2b, 0xec, 0], [0x2c, 0xb4, 0x20], false),
+    ] {
+        fs::write(&binary, [left, right, [0x2b, 0xec, 0], [0x2b, 0xec, 0]].as_flattened()).unwrap();
+        let (stdout, stderr, status) = common::run_kuna(&[
+            "raw-pcode", binary.to_str().unwrap(), if left[0] == 0x2b { "0x1000" } else { "0x1001" },
+            "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000",
+            "--count", "1", "--json",
+        ]);
+        let doc: Value = serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("{stdout}\n{stderr}"));
+        if !implemented {
+            assert_eq!(status, 1, "{doc}");
+            assert!(doc["instructions"].as_array().unwrap().is_empty(), "{doc}");
+            continue;
+        }
+        assert_eq!(status, 0, "{doc}\n{stderr}");
+        let [issue] = doc["instructions"].as_array().unwrap().as_slice() else { panic!("{doc}"); };
+        assert_eq!(issue["address"], 0x1001, "{doc}");
+        assert_eq!(issue["size"], 3, "{doc}");
+        let ops = issue["ops"].as_array().unwrap();
+        let mut writes = ops.iter().filter_map(|op| {
+            assert!(!matches!(op["opcode"].as_str(), Some("LOAD" | "STORE")), "{doc}");
+            let out = &op["output"];
+            (out["space"] == "register").then(|| (out["offset"].as_u64().unwrap(), out["size"].as_u64().unwrap()))
+        }).collect::<Vec<_>>();
+        writes.sort_unstable();
+        writes.dedup();
+        assert_eq!(writes, [(0xb4, 2), (0xd0, 2)], "{doc}");
+    }
+    fs::remove_file(binary).unwrap();
+}
+
 fn run_emitted_c(source: &Path, executable: &Path, emitted: &str) {
     for opt in ["-O0", "-O2"] {
         common::process::required_output(Command::new("cc")

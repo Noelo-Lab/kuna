@@ -22,11 +22,13 @@ const ISSUE: &str = "carmel_issue";
 const NEXT: &str = "carmel_next_issue_size";
 const BAD_FETCH: &str = "carmel_bad_fetch";
 const IMPLICIT_REPEAT: &str = "carmel_implicit_repeat";
+const ADDRUPDATE_RIGHT_R0: &str = "carmel_addrupdate_right_r0";
 
 enum Specialization {
     PeerRedirect(peer_redirect::Redirect),
     ConditionalReturn(conditional_return::ReturnDelay),
     ImplicitRepeat,
+    AddrUpdateRightR0,
 }
 
 const CLIW_FIELDS: [&str; 4] = [
@@ -289,6 +291,9 @@ pub(super) fn frame(
             }
             if left == Issue::SeqLeft {
                 paint(&mut result.issues, ISSUE, addr + SLOT, Issue::SeqRight as u32);
+                if matches!(fetch, [0xab, 0xec, 0, 0x2c, 0xb4 | 0xf4, 0x20 | 0x40 | 0x60]) {
+                    candidates.push((addr + SLOT, Specialization::AddrUpdateRightR0));
+                }
                 paint(&mut result.next_sizes, NEXT, addr, SLOT as u32);
                 if following_size != 0 {
                     paint(&mut result.next_sizes, NEXT, addr + SLOT, following_size);
@@ -323,6 +328,7 @@ pub(super) fn frame(
         let (context, safe) = match candidate {
             Specialization::PeerRedirect(redirect) => (peer_redirect::CONTEXT, redirect.admissible(start, fetch_at)?),
             Specialization::ConditionalReturn(delay) => (conditional_return::CONTEXT, delay.admissible(start, fetch_at)?),
+            Specialization::AddrUpdateRightR0 => (ADDRUPDATE_RIGHT_R0, true),
             Specialization::ImplicitRepeat => {
                 // Three issues retire before the restart, but the end is
                 // encoded in fetch units. Only admit a single-issue body.
