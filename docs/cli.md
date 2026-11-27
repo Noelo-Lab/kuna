@@ -3187,6 +3187,17 @@ back are indistinguishable from one long one. Without a range check to read, not
 is followed. This is what puts the callees inside a `switch` on
 `kuna decompile-graph`'s callee list.
 
+The base and the range check need not sit in the dispatch's own block. A base
+hoisted above a loop or an `if/else`, or shared by two switches (MSVC keeps one
+`LEA reg,[__ImageBase]` for every table of a function), is found by following the
+one decoded branch into a block nothing falls into, and a range check may sit up
+to 128 instructions above the jump. Either way the check must compare the register
+the table is indexed by, or one it was copied from just above the comparison, with
+no call in between that may overwrite it, and
+`jae` after `cmp $c` admits `c` cases where `ja` admits `c + 1`. A dispatch whose
+check compares another value, or that a branch enters between the check and the
+jump, is still not followed.
+
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
