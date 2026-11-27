@@ -333,7 +333,10 @@ fn local(fd: &Funcdata, vn: VarnodeId, j: BlockId, depth: u32) -> bool {
 
 /// The recorded statements of RETURN block `b`: its in-edge indices grouped
 /// by the return statement each came through.  `None` when the function has
-/// no record or an in-edge carries no tag.
+/// no record or an in-edge carries no tag.  Whether the epilogue computes the
+/// returned value is asked of the storage the RETURN op returns, not of the
+/// prototype: its output is not recovered until after `returndup`, and the
+/// store a restart keeps holds a cleared one.
 pub(crate) fn groups(fd: &Funcdata, b: BlockId) -> Option<Vec<Vec<int4>>> {
     let rec = fd.kuna_o0returns.as_deref()?;
     let op = fd.bb_op_tail(b).and_then(|t| fd.obank().get(t))?;
@@ -342,16 +345,9 @@ pub(crate) fn groups(fd: &Funcdata, b: BlockId) -> Option<Vec<Vec<int4>>> {
     }
     let valued = op.num_input() >= 2;
     let held = valued && {
-        let proto = fd.get_func_proto();
-        let (a, sz) = if proto.has_store() {
-            let out = proto.get_output();
-            (out.get_address(), out.get_size())
-        } else {
-            let v = fd.vbank().get(op.get_in(1)?)?;
-            (v.get_addr().clone(), v.get_size())
-        };
-        let s = a.get_space().map_or(-1, |s| s.get_index());
-        let (off, sz) = (a.get_offset(), sz as u64);
+        let v = fd.vbank().get(op.get_in(1)?)?;
+        let s = v.get_space().get_index();
+        let (off, sz) = (v.get_offset(), v.get_size() as u64);
         rec.held.iter().any(|&(hs, ho, hz)| hs == s && ho < off + sz && off < ho + hz as u64)
     };
     let blk = fd.bblocks_ref().block(b);

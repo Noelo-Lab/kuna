@@ -4027,6 +4027,25 @@ flip. Restarts are refused outright during jump-table recovery
 plumbing, not semantics: trigger, clear, re-read-P0, re-run are the upstream
 restart contract.
 
+A restarted pass starts from the state the first pass of a fresh drive starts
+from, so what a function prints does not depend on whether it restarted.
+`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (clear)` keeps what the
+drive seeded before the first pass (the Override store, a declared prototype,
+the attempt's withdrawn flags; the callee seeds `run_pipeline` takes again after
+the re-flow) and drops what the passes of one analysis hand to each other: the
+frame slots and stack records `restructure_varnode` collects, the stack objects
+`castobject` reconciles, the joined loop latches and the blocks they were placed
+in, the type-propagation plateau, the `condfold` give-up and the return notes
+kept for callers. The prototype store needs the drive. Upstream's store exists
+from construction; kuna attaches it late in every pass (`ActionOutputPrototype`),
+and `clear()` keeps it with its output cleared, so `run_pipeline` drops it after
+the re-flow unless the drive seeded one with a declared prototype. Before that, a
+restarted pass saw a store from its first action on, and every reader that asks
+whether the function has a prototype store yet answered as no fresh pass does:
+`returndup auto` read the cleared output as the returned register and split the
+shared epilogue of each unoptimized function that restarted to install a
+re-rolled switch.
+
 Two engine details are output-affecting and deliberately preserved
 (`decompiler/crates/kuna-decomp/src/infra/action.rs`): `Action::perform` is a
 resumable status machine (an action with `rule_repeatapply` loops until its
