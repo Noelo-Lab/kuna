@@ -407,7 +407,7 @@ kuna	6580480f55206bbc
 case	default/pkg/TestForCyclicVarDef	Default	classes/java8/pkg/TestForCyclicVarDef
 kuna	292c860d76142311
 case	default/pkg/TestForeachMultiDimensionalArray	Default	classes/java8/pkg/TestForeachMultiDimensionalArray
-kuna	d13447a0b1c5825e
+kuna	77402596d2fd0eae
 case	default/pkg/TestForeachMultipleLoops	Default	classes/java8/pkg/TestForeachMultipleLoops
 kuna	490fbee7dbc03562
 case	default/pkg/TestForeachVardef	Default	classes/java8/pkg/TestForeachVardef
@@ -2050,3 +2050,5 @@ case	kuna-fixes/pkg/TestCapturedConstantType	Kuna Fixes	kuna-fixes/classes/pkg/T
 case	kuna-fixes/pkg/TestNestedLambdaCapturedGeneric	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedLambdaCapturedGeneric
 # kuna-fixes/src/pkg/TestFinallyBodyThrows.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestFinallyBodyThrows	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyBodyThrows
+# kuna-fixes/src/pkg/TestForEachArrayIncrement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestForEachArrayIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestForEachArrayIncrement

@@ -807,6 +807,17 @@ on the second held-out benchmark).
 makes it an if: the head's edge into the branch, which now continues the loop, leaves the if, or
 is dropped when the if already has a successor, which goes where the branch went.
 
+**The increment of a for-each over an array (kuna).** `MergeHelper::match_for_each` makes a
+for-each of `T[] c = a; int n = c.length; int i = 0; while (i < n) { T x = c[i]; ..; i++; }` and
+deletes the `i++` with the other parts. Vineflower took that increment from the last statement in
+the body's statement order and checked its operand only when it was a variable: inside a `switch`,
+whose cases are not kept in flow order, it took the `a[0][0]++` of a `catch` block for the
+increment and deleted it, leaving the real `i++` behind undeclared; and without a
+LocalVariableTable it took the `i++` of `if (c) { i++; }`, so a loop that stays on one element
+while `c` is false iterated over all of them. The increment is now the last statement of the one
+block every `continue` edge of the loop leaves from, so it runs before every jump back, and it
+must be `i++` or `++i` on the index variable itself; otherwise the loop stays a `while`.
+
 **ECJ's layout (kuna).** In a class the Eclipse compiler wrote (section 11.3) the rules above
 read ECJ's code, which places an `if`'s branches, its exits and its `continue` and `break`
 jumps as javac does, with two differences.
