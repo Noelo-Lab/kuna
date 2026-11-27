@@ -7443,6 +7443,17 @@ macro wide_insert_store_pair(address, next, source, original, status) {
     EST = status | (first << 12) | (second << 13);
 }
 
+macro wide_check_word_and_pair_reads(word, low, high) {
+    if (((low ^ high) | (low ^ word)) < 0x8000) goto <stopped>;
+    local bank:2 = word & 0xc000;
+    if (bank == 0 || bank == 0xc000) goto <sample>;
+    if (((low ^ word) & 0xc001) != 0 && ((high ^ word) & 0xc001) != 0) goto <sample>;
+  <stopped>
+    carmel_data_read_conflict();
+    goto <stopped>;
+  <sample>
+}
+
 :INSERT "*R1+"^wide_shift_dst_disp^":long","*R2++","FF2:FF1" is
     carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
     & wide_0_22=0x78c225 & wide_40_45=0x23 & wide_shift_dst_disp {
@@ -7450,15 +7461,7 @@ macro wide_insert_store_pair(address, next, source, original, status) {
     local next:2 = address + 1;
     local source_addr:2 = R2;
     transfer_address_word(R2, RM2, RL2, 4, 1:2, R2);
-    # A long RMW and a short source reserve three words in one issue.
-    if (((address ^ next) | (address ^ source_addr)) < 0x8000) goto <stopped>;
-    local bank:2 = source_addr & 0xc000;
-    if (bank == 0 || bank == 0xc000) goto <sample>;
-    if (((address ^ source_addr) & 0xc001) != 0 && ((next ^ source_addr) & 0xc001) != 0) goto <sample>;
-  <stopped>
-    carmel_data_read_conflict();
-    goto <stopped>;
-  <sample>
+    wide_check_word_and_pair_reads(source_addr, address, next);
     local original:8;
     wide_insert_read_pair(address, next, original);
     local source:2 = *[data]:2 source_addr;
@@ -10008,6 +10011,28 @@ wide_extract_cetbl_source: "FFTV" is wide_0_22=0x7589cb { export FFTV; }
     CETBL = value:2;
 }
 
+:EXTRACTZ "long *R1++","*R2++","long *R4--" is
+    $(WIDE_ORIGINAL_BITS) & wide_left=0xdcc85e & wide_right=0xf6a224 {
+    local destination:2 = R1;
+    local source:2 = R2;
+    local field:2 = R4;
+    local offset_addr:2 = field + 1;
+    modify_ptr_scaled_window(R1, 0:2, RM0, RL0, 2:4, 2:2, 2:2, 0xffff:2);
+    modify_ptr_scaled_window(R2, 0:2, RM2, RL2, 4:4, 2:2, 1:2, 0xffff:2);
+    modify_ptr_scaled_window(R4, 0:2, RM4, RL4, 8:4, 3:2, 2:2, 0xffff:2);
+    wide_check_word_and_pair_reads(source, field, offset_addr);
+    local word:2 = *[data]:2 source;
+    local count:2 = *[data]:2 field;
+    local offset:2 = *[data]:2 offset_addr;
+    local result:4;
+    wide_extract_zero(sext(word), count, offset, result);
+    local status:2 = (EST & 0xcfe7) | (zext(result == 0) << 3);
+    local stored:8 = zext(result);
+    compact_pair_fft(stored, stored, 0:1, status);
+    publish_ce_feedback(status, EST);
+    compact_pair_long_store(destination, result);
+}
+
 wide_bitfield_data: "*"^short_alu_src_ptr is packed_lhs_group=0 & short_alu_src_ptr {
     local low:2 = *[data]:2 short_alu_src_ptr;
     local source:4 = sext(low);
@@ -10241,27 +10266,31 @@ macro wide_shift_fallback_word(dest, count) {
     wide_shift_fallback_word(dest, RN2);
 }
 
-macro wide_shift_carry_only(input, count) {
+macro wide_shift_carry_flags(input, count, flags) {
     local result:8;
-    local flags:2;
     wide_shift_ports(input, count, 32:4, 0:4, 1:1, result, flags);
-    publish_alu_ce((EST & 0xcffe) | (flags & 1));
+    flags = (EST & 0xcffe) | (flags & 1);
 }
 
 :ASHIFT "discard","RF0","ASTATUS" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x39 & wide_0_22=0x730b71 {
     local input:8 = sext(RF0);
-    wide_shift_carry_only(input, ASTATUS);
+    local flags:2;
+    wide_shift_carry_flags(input, ASTATUS, flags);
+    publish_alu_ce(flags);
 }
 
 :ASHIFT "discard","long *"^absolute_data_addr,"*(R6+"^wide_shift_dst_disp^")" is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x26 & wide_0_22=0x73cef2 & absolute_data_addr & wide_shift_dst_disp {
     local address:2 = absolute_data_addr;
     local upper:2 = address + 1;
     local count_addr:2 = R6 + sext(wide_shift_dst_disp:1);
+    wide_check_word_and_pair_reads(count_addr, address, upper);
     local low:2 = *[data]:2 address;
     local high:2 = *[data]:2 upper;
     local count:2 = *[data]:2 count_addr;
     local input:8 = sext(high) * 0x10000 + zext(low);
-    wide_shift_carry_only(input, count);
+    local flags:2;
+    wide_shift_carry_flags(input, count, flags);
+    publish_ce_feedback(flags, EST);
 }
 
 :ASHIFT "discard","BTR1","*R4+="^wide_shift_dst_disp is $(WIDE_ORIGINAL_BITS) & wide_40_45=0x34 & wide_0_22=0x73a78c & wide_shift_dst_disp {

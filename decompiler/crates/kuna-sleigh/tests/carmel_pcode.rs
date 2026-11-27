@@ -3319,3 +3319,37 @@ fn wide_extract_cetbl_publishes_feedback_before_table_writeback() {
         assert_eq!(m.reg("EST"), expected.2);
     }
 }
+
+#[test]
+fn wide_data_extract_and_shift_use_incoming_feedback() {
+    let packets = [(0xdcc85e, 0xf6a224), (NOP, NOP), (0xa602ca, 0xf3cef2), (NOP, NOP), (NOP, NOP)];
+    let issues = [(0, 5, 6), (2, 1, 6), (4, 5, 6), (6, 1, 6), (8, 1, 0)];
+    let mut m = Machine::new(0, &packets, &issues, None);
+    for (word, count, want) in [(0, 0, (0, 0, 0x1008, 0x2008)),
+                                (0x8000, 31, (0x8000, 0x7fff, 0x5000, 0x5000))] {
+        m.seed(&[("R1", 0x4040), ("R2", 0x8040), ("R4", 0x48), ("PACFG", 0),
+                 ("EST", 0), ("ECFG", 0x10), ("FFTV", 1), ("CETBL", 0x8001),
+                 ("CECFG1", 0x888), ("CECFG2", 0x888)]);
+        m.seed_data(0x4040, 0xaaaa);
+        m.seed_data(0x4041, 0xbbbb);
+        m.seed_data(0x8040, word);
+        m.seed_data(0x48, count);
+        m.seed_data(0x49, 0);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R1"), m.reg("R2"), m.reg("R4")), (0x4042, 0x8041, 0x46));
+        assert_eq!((m.data(0x4040), m.data(0x4041), m.reg("EST")), (want.0, want.1, want.2));
+        assert_eq!(m.step(), 12);
+        assert_eq!(m.reg("EST"), want.3);
+    }
+    m.seed(&[("R6", 0x8048), ("ECFG", 0), ("EST", 0), ("CETBL", 0x8001),
+             ("CECFG1", 0x222), ("CECFG2", 0x222)]);
+    for (at, value) in [(0x2ca, 0xe1b2), (0x2cb, 0x8003), (0x8012, 1)] {
+        m.seed_data(at, value);
+    }
+    m.start(4).unwrap();
+    assert_eq!(m.step(), 18);
+    assert_eq!(m.reg("EST"), 0x1001);
+    assert_eq!(m.step(), 24);
+    assert_eq!(m.reg("EST"), 0x2001);
+}

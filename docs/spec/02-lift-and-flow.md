@@ -4013,6 +4013,13 @@ Wide signed `EXTRACT` into `CETBL` takes a signed word from `ECFG`,
 It updates Z and M, but both CE banks sample the incoming flags and old
 table. The next issue can use the new table.
 
+For the wide long-DATA extract with a word source and a long DATA descriptor,
+the three pointers update before bus arbitration. The extract reads both
+operands at their old addresses and writes the zero-extended result to the
+old destination. A carry-only wide shift can reserve the same number of
+DATA words without driving a store. Both operations publish the CE bits
+from incoming flags, independently of the arithmetic flags they update.
+
 Unqualified compact `BANKXCHG` swaps selected `R`/`RN` pairs and
 their two-bit `PACFG` fields, and selected `RM`/`RL` pairs, with the
 shadow bank. It does not access DATA. Bit 1 additionally exchanges the
