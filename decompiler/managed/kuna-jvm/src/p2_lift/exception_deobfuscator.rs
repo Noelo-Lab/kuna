@@ -15,6 +15,7 @@ use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::i_graph::IGraph;
 use crate::instruction::Instruction;
 use crate::instruction_sequence::InstructionSequence;
+use crate::fixes::exception_ranges::already_caught;
 use crate::fixes::exception_ranges::handler_copy_shared_body::HandlerCopySharedBody;
 use crate::fixes::exception_ranges::nested_handler_copies::NestedHandlerCopies;
 use crate::rt::{objects_equals, JHashMap, JHashSet, JList, JavaListExt};
@@ -97,7 +98,13 @@ impl ExceptionDeobfuscator {
                                         setrange_super.remove_all(&setrange);
                                     }
 
-                                    if !setrange_super.is_empty() {
+                                    if !setrange_super.is_empty()
+                                        || (si > ri
+                                            && already_caught::encloses(
+                                                lst_ranges[ri].range_cfg,
+                                                range_super.range_cfg,
+                                            ))
+                                    {
                                         let mut newblock = handler;
 
                                         if seq.length() > 1 {

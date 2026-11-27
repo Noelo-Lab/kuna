@@ -289,7 +289,7 @@ kuna	a8e71f5a39e9d179
 case	default/pkg/TestClashName	Default	classes/java8/pkg/TestClashName	classes/java8/pkg/SharedName1	classes/java8/pkg/SharedName2	classes/java8/pkg/SharedName3	classes/java8/pkg/SharedName4	classes/java8/pkg/NonSharedName	classes/java8/pkg/TestClashNameParent	classes/java8/ext/TestClashNameParent	classes/java8/pkg/TestClashNameIface	classes/java8/ext/TestClashNameIface
 kuna	7fdc0118e81cb17f
 case	default/pkg/TestClassFields	Default	classes/java8/pkg/TestClassFields
-kuna	c63fd07a1e7e3201
+kuna	c43112e14c556522
 case	default/pkg/TestClassLambda	Default	classes/java8/pkg/TestClassLambda
 kuna	b1c65d1fdf0c4d43
 case	default/pkg/TestClassLoop	Default	classes/java8/pkg/TestClassLoop
@@ -327,7 +327,7 @@ kuna	f5d28b7e42126ddf
 case	default/pkg/TestConstructorSwitchExpression2	Default	classes/java16/pkg/TestConstructorSwitchExpression2
 kuna	bf9cd5930586e2ac
 case	default/pkg/TestConstructorSwitchExpression3	Default	classes/java16/pkg/TestConstructorSwitchExpression3
-kuna	994d2cfb18f94b9f
+kuna	74a69317088b9f97
 case	default/pkg/TestCustomProcessor	Default	classes/java21preview/pkg/TestCustomProcessor
 kuna	39db98e926f0babf
 case	default/pkg/TestDanglingBoxingCall	Default	classes/java8/pkg/TestDanglingBoxingCall
@@ -375,7 +375,7 @@ kuna	30edca3a144f43e9
 case	default/pkg/TestEnumStaticField2	Default	classes/jasm/pkg/TestEnumStaticField2
 kuna	d24cf424007e0535
 case	default/pkg/TestEnumSwitchEmpty	Default	classes/java8/pkg/TestEnumSwitchEmpty
-kuna	aea7da8d6685184e
+kuna	8b87869ff230aabc
 case	default/pkg/TestExceptionElse	Default	classes/java8/pkg/TestExceptionElse
 kuna	f8472b8b72c062aa
 case	default/pkg/TestExtendingSubclass	Default	classes/java8/pkg/TestExtendingSubclass
@@ -391,7 +391,7 @@ kuna	359273394b98d7c6
 case	default/pkg/TestFinallyBlockVariableUse	Default	classes/java8/pkg/TestFinallyBlockVariableUse
 kuna	300e30abd470e42f
 case	default/pkg/TestFinallyThrow	Default	classes/java8/pkg/TestFinallyThrow
-kuna	ad59edc18a81d646
+kuna	81a11acac30f60a3
 case	default/pkg/TestFinallyVarDef	Default	classes/java8/pkg/TestFinallyVarDef
 kuna	59757f54709ae8bf
 case	default/pkg/TestFloatInvertedIfConditionEarlyExit	Default	classes/java8/pkg/TestFloatInvertedIfConditionEarlyExit
@@ -407,7 +407,7 @@ kuna	6580480f55206bbc
 case	default/pkg/TestForCyclicVarDef	Default	classes/java8/pkg/TestForCyclicVarDef
 kuna	292c860d76142311
 case	default/pkg/TestForeachMultiDimensionalArray	Default	classes/java8/pkg/TestForeachMultiDimensionalArray
-kuna	d13447a0b1c5825e
+kuna	77402596d2fd0eae
 case	default/pkg/TestForeachMultipleLoops	Default	classes/java8/pkg/TestForeachMultipleLoops
 kuna	490fbee7dbc03562
 case	default/pkg/TestForeachVardef	Default	classes/java8/pkg/TestForeachVardef
@@ -595,7 +595,7 @@ kuna	dc0201b9af22b746
 case	default/pkg/TestLoopBreakException	Default	classes/java8/pkg/TestLoopBreakException
 kuna	e9b87c7479d5af5a
 case	default/pkg/TestLoopFinally	Default	classes/java8/pkg/TestLoopFinally
-kuna	360397b9e0117fe5
+kuna	56f9b55e4b190370
 case	default/pkg/TestLoopMerging2	Default	classes/java8/pkg/TestLoopMerging2
 kuna	afba6960c702a585
 case	default/pkg/TestLoopReturn	Default	classes/java8/pkg/TestLoopReturn
@@ -905,7 +905,7 @@ kuna	842ff5967e7b2fae
 case	default/pkg/TestSwitchFinally	Default	classes/java8/pkg/TestSwitchFinally
 kuna	74be45cd6e8c5c44
 case	default/pkg/TestSwitchInTry	Default	classes/java8/pkg/TestSwitchInTry
-kuna	e6703a1336514686
+kuna	e8e013ce78532ebb
 case	default/pkg/TestSwitchLoop	Default	classes/java8/pkg/TestSwitchLoop
 kuna	e57fdfff9b22ea71
 case	default/pkg/TestSwitchOnEnum	Default	classes/java8/pkg/TestSwitchOnEnum
@@ -1033,7 +1033,7 @@ kuna	f278332b5b439da3
 case	default/pkg/TestTryCatchFinally	Default	classes/java8/pkg/TestTryCatchFinally
 kuna	c812acabba592b5d
 case	default/pkg/TestTryCatchNested	Default	classes/java8/pkg/TestTryCatchNested
-kuna	def18eb23a88430a
+kuna	24a96cf5552f40d5
 case	default/pkg/TestTryFinally	Default	classes/java8/pkg/TestTryFinally
 kuna	403ca25862ad9a2a
 case	default/pkg/TestTryLoop	Default	classes/java8/pkg/TestTryLoop
@@ -1166,7 +1166,7 @@ case	kotlin-core-default/pkg/TestRunSuspend	Kotlin Core Default	classes/kotlin/c
 kuna	bcd68dcb78c7e579
 compare	TestRunSuspend.kt	TestRunSuspend.java
 case	kotlin-core-default/pkg/TestSuspendLambdaKt	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSuspendLambdaKt
-kuna	bf455d10a1be24f0
+kuna	9f6fcd5d56b6a1af
 compare	TestSuspendLambdaKt.kt	TestSuspendLambdaKt.java
 case	kotlin-core-default/pkg/TestSynchronizedUnprotected	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSynchronizedUnprotected
 kuna	bfc00870a7c1d629
@@ -2062,3 +2062,21 @@ case	kuna-fixes/pkg/TestExplicitLambdaParams	Kuna Fixes	kuna-fixes/classes/pkg/T
 case	kuna-fixes/pkg/TestTypeVariableLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeVariableLocal
 # kuna-fixes/src/pkg/TestTypeVariableScope.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestTypeVariableScope	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeVariableScope
+# kuna-fixes/src/pkg/TestFinallyBodyThrows.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFinallyBodyThrows	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyBodyThrows
+# kuna-fixes/src/pkg/TestForEachArrayIncrement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestForEachArrayIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestForEachArrayIncrement
+# kuna-fixes/src/pkg/TestExitCopiedIntoTry.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestExitCopiedIntoTry	Kuna Fixes	kuna-fixes/classes/pkg/TestExitCopiedIntoTry
+# kuna-fixes/src/pkg/TestRecordPatternInstanceofType.java, javac 21.0.13.1 (-g:none --release 21)
+case	kuna-fixes/pkg/TestRecordPatternInstanceofType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternInstanceofType
+# kuna-fixes/src/pkg/TestStaticInitAfterCall.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitAfterCall
+# kuna-fixes/src/pkg/TestNestedAlreadyCaught.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestNestedAlreadyCaught	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedAlreadyCaught
+# kuna-fixes/src/pkg/TestFinallyRethrowOutside.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFinallyRethrowOutside	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyRethrowOutside
+# kuna-fixes/src/pkg/TestEmptyEnumSwitch.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestEmptyEnumSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEmptyEnumSwitch	kuna-fixes/classes/pkg/EmptySwitchColor
+# kuna-fixes/src/pkg/TestEnumConstantSwitchArgs.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestEnumConstantSwitchArgs	Kuna Fixes	kuna-fixes/classes/pkg/TestEnumConstantSwitchArgs

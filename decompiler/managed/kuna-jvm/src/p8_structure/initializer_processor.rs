@@ -22,6 +22,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
 use crate::rt::{try_catch, JHashMap, JHashSet, JList, JavaListExt};
+use crate::statement::Statement;
 use crate::statements::Statements;
 use crate::struct_class::StructClass;
 use crate::var_version_pair::VarVersionPair;
@@ -36,15 +37,31 @@ fn written_as_kotlin(cl: StructClass) -> bool {
         && KotlinMetadataAnnotation::find(cl).is_some()
 }
 
-/// The keys of the static fields of `cl` that `exprent` reads.
-fn static_reads(exprent: Exprent, cl: StructClass) -> Vec<String> {
-    exprent
-        .get_all_exprents_rec_self(true, true)
-        .into_iter()
-        .filter_map(|e| e.try_as_field())
-        .filter(|f| f.is_static() && f.get_classname() == cl.qualified_name())
-        .map(|f| InterpreterUtil::make_unique_key(&f.get_name(), &f.get_descriptor().descriptor_string))
-        .collect()
+/// The blocks that run one after another from `first`: a switch expression leaves its
+/// backing switch in the tree, phantom, writing only its head block, so the code after it
+/// continues in the first block of the statement after the switch in its sequence.
+fn straight_line_blocks(first: Statement) -> Vec<Statement> {
+    let mut chain = vec![first];
+    let mut block = first;
+    while let Some(switch) = block
+        .get_parent()
+        .and_then(|p| p.try_as_switch())
+        .filter(|sw| sw.is_phantom() && sw.get_first() == Some(block))
+    {
+        let next = switch.get_parent().filter(|p| p.is_sequence()).and_then(|seq| {
+            let stats = seq.get_stats().borrow().to_vec();
+            let at = stats.iter().position(|s| *s == switch.0)?;
+            stats.get(at + 1).copied().and_then(Statements::find_first_data)
+        });
+        match next {
+            Some(next) if !chain.contains(&next) => {
+                chain.push(next);
+                block = next;
+            }
+            _ => break,
+        }
+    }
+    chain
 }
 
 fn root_class_node(name: Option<&str>) -> Option<ClassNode> {
@@ -230,7 +247,16 @@ impl InitializerProcessor {
             let mut seen: Vec<String> = Vec::new();
             let mut multi_assign: Vec<String> = Vec::new();
 
-            let first_exprents = first_data.get_exprents().expect("exprents");
+            let chain = straight_line_blocks(first_data);
+            let first_exprents = if chain.len() == 1 {
+                first_data.get_exprents().expect("exprents")
+            } else {
+                let merged: JList<Exprent> = JList::new();
+                for block in &chain {
+                    merged.add_all(block.get_exprents().expect("exprents").to_vec());
+                }
+                merged
+            };
             for exprent in first_exprents.iter() {
                 if let Some(assign_expr) = exprent.try_as_assignment() {
                     if let Some(f_expr) = assign_expr.get_left().try_as_field() {
@@ -268,12 +294,15 @@ impl InitializerProcessor {
             );
 
             let mut not_inlined: Vec<FieldExprent> = Vec::new();
-            let mut moved_reads: Vec<(i32, Vec<String>)> = Vec::new();
+            let keeps_order = !written_as_kotlin(cl) && !cl.has_modifier(ACC_INTERFACE);
+            let mut last_moved: i32 = -1;
+            let mut kept = false;
 
             let mut itr = 0;
             while itr < first_exprents.len() {
                 let exprent = first_exprents.get(itr);
                 let mut remove = false;
+                let mut pending_local = false;
 
                 if let Some(assign_expr) = exprent.try_as_assignment() {
                     if let Some(f_expr) = assign_expr.get_left().try_as_field() {
@@ -289,6 +318,8 @@ impl InitializerProcessor {
                                 &f_expr.get_descriptor().descriptor_string,
                             );
                             let fidx = cl.get_fields().get_index_by_key(&key_field) as i32;
+                            let field = cl.get_fields().get(fidx as usize);
+                            let enum_constant = field.has_modifier(ACC_ENUM);
                             let exprent_independent = Self::is_exprent_independent(
                                 f_expr,
                                 assign_expr.get_right(),
@@ -299,15 +330,16 @@ impl InitializerProcessor {
                                 &not_inlined,
                                 fidx,
                                 true,
-                            ) && (written_as_kotlin(cl)
-                                || !moved_reads
-                                    .iter()
-                                    .any(|(m, reads)| *m > fidx && reads.contains(&key_field)));
+                            ) && (!keeps_order
+                                || enum_constant
+                                || (!kept && fidx > last_moved));
                             if inline_initializers || exprent_independent {
                                 let initializers = wrapper.get_static_field_initializers();
                                 if !initializers.borrow().contains_key(&key_field) {
                                     if exprent_independent {
-                                        moved_reads.push((fidx, static_reads(assign_expr.get_right(), cl)));
+                                        if !field.is_synthetic() && !enum_constant {
+                                            last_moved = fidx;
+                                        }
                                         initializers.borrow_mut().add_with_key(
                                             assign_expr.get_right(),
                                             key_field.clone(),
@@ -330,6 +362,9 @@ impl InitializerProcessor {
                                                     non_field_assignment.get_right(),
                                                 ));
                                                 exprents_to_remove.push(non_field_assignment.0);
+                                                if !enum_constant {
+                                                    last_moved = last_moved.max(fidx);
+                                                }
                                                 initializers.borrow_mut().add_with_key(
                                                     assign_expr.get_right(),
                                                     key_field.clone(),
@@ -347,6 +382,7 @@ impl InitializerProcessor {
                     } else if inline_initializers {
                         if let Some(left) = assign_expr.get_left().try_as_var() {
                             non_field_assigns.put(left.get_index(), assign_expr);
+                            pending_local = true;
                         }
                     }
                 }
@@ -354,6 +390,7 @@ impl InitializerProcessor {
                 if remove {
                     first_exprents.remove_at(itr);
                 } else {
+                    kept |= !pending_local;
                     itr += 1;
                 }
             }
@@ -361,6 +398,16 @@ impl InitializerProcessor {
                 first_exprents
                     .borrow_mut()
                     .retain(|e| !exprents_to_remove.j_contains(e));
+            }
+            if chain.len() > 1 {
+                let kept_exprents = first_exprents.to_vec();
+                for block in &chain {
+                    block
+                        .get_exprents()
+                        .expect("exprents")
+                        .borrow_mut()
+                        .retain(|e| kept_exprents.j_contains(e));
+                }
             }
         }
 

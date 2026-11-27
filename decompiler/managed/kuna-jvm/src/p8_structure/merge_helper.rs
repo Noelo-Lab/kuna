@@ -735,7 +735,6 @@ impl MergeHelper {
         let mut first_do_exprent: Option<AssignmentExprent> = None;
         let mut init_exprents: [Option<AssignmentExprent>; 3] = [None; 3];
         let mut pre_data: Option<Statement> = None;
-        let mut last_exprent: Option<Exprent> = None;
 
         let mut current = stat.0;
         while let Some(parent) = current.get_parent() {
@@ -777,14 +776,6 @@ impl MergeHelper {
                 first_do_exprent = Some(assignment);
             }
         }
-        let last_data = Self::get_last_direct_data(stat.get_first().expect("DoStatement.first"));
-        if let Some(ld) = last_data {
-            let exprents = ld.get_exprents().expect("exprents");
-            if !exprents.is_empty() {
-                last_exprent = Some(exprents.get(exprents.len() - 1));
-            }
-        }
-
         if stat.get_looptype() != LoopType::While {
             return false;
         }
@@ -938,7 +929,15 @@ impl MergeHelper {
                 return false;
             }
 
-            let Some(last_exprent) = last_exprent.filter(|e| e.is_function()) else {
+            let continues = stat.get_neighbours_set(StatEdge::TYPE_CONTINUE, EdgeDirection::Backward);
+            let [last_data] = continues.to_vec()[..] else {
+                return false;
+            };
+            let Some(last_exprent) = last_data
+                .get_exprents()
+                .and_then(|e| (!e.is_empty()).then(|| e.get(e.len() - 1)))
+                .filter(|e| e.is_function())
+            else {
                 return false;
             };
 
@@ -975,17 +974,17 @@ impl MergeHelper {
             let array = arr.get_array().as_var();
             let count_expr = func_inc.get_lst_operands().get(0);
 
-            if let Some(counter) = count_expr.try_as_var() {
-                if counter.get_index() != index.get_index()
-                    || counter.get_version() != index.get_version()
-                {
-                    return false;
-                }
+            let Some(counter) = count_expr.try_as_var() else {
+                return false;
+            };
+            if counter.get_index() != index.get_index()
+                || counter.get_version() != index.get_version()
+            {
+                return false;
+            }
 
-                if counter.is_var_referenced(stat.get_first().expect("DoStatement.first"), &[index])
-                {
-                    return false;
-                }
+            if counter.is_var_referenced(stat.get_first().expect("DoStatement.first"), &[index]) {
+                return false;
             }
 
             if !array.equals_versions(func_right.get_lst_operands().get(0)) {
@@ -1020,7 +1019,6 @@ impl MergeHelper {
                 .expect("exprents")
                 .remove_item(&first_do_exprent.0);
             last_data
-                .expect("lastData")
                 .get_exprents()
                 .expect("exprents")
                 .remove_item(&last_exprent);

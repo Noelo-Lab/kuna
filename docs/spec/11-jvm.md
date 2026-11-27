@@ -332,7 +332,15 @@ and `DeadCodeHelper`:
    that protects the same code. When a range's handler starts that way and another range
    covers its protected blocks, that instruction is split into a block of its own and put
    back into the outer range, so a nested `try` stays inside the outer one. Ranges with
-   the same handler and exception types are considered together.
+   the same handler and exception types are considered together. Vineflower takes a range
+   for the outer one only when it protects more blocks: over the same blocks two handlers
+   are as often the `catch` clauses of one `try`. (kuna) The class file decides it when the
+   later handler catches a type the earlier one already catches (the same class or a
+   subclass): javac rejects that as a second `catch` of one `try` (`exception Exception has
+   already been caught`), and compiles `try { try { A } catch (E e) {} } catch (E f) { B }`
+   with both ranges over `A` alone, so the later range is the outer one
+   (`decompiler/managed/kuna-jvm/src/fixes/exception_ranges/already_caught.rs`). Without the
+   classes in the input or the runtime, only the same class is decided.
 3. `remove_empty_ranges` - a range that protects no
    instructions is dropped together with its exception edges, and the method gets a
    `$VF: Removed empty exception range` comment.
@@ -435,6 +443,25 @@ are. The method gets the comment
 (under `jvm_decompiler_comments`). A handler whose shape cannot be read at all stays a
 catch-all with the comment `$VF: Could not inline inconsistent finally blocks`. Each
 change also re-runs dead-block removal and block merging on the graph.
+
+A handler of one block is an empty `finally` when it only stores and rethrows the
+exception: `athrow` alone, or `astore n` followed by a load and an `athrow`. Vineflower
+decided that from the number of instructions, so `finally { throw t; }` (`astore_3;
+aload_1; athrow`) and `finally { return x; }` (`astore_2; iload_1; ireturn`) were read as
+empty: the handler's code was deleted with the rethrow and its copies left in the `try`,
+where a `catch (Throwable)` then caught `t`, or an exception escaped that the `finally`'s
+`return` swallowed. kuna (`get_finally_information`) also requires that the block's exit
+is the rethrow of the stored exception, which the same pass already records per exit block.
+
+The handler's shape is read from the blocks of the catch-all's handler statement, but the
+structurer can place the rethrow outside it: in `while (..) { try { .. } catch (..) { .. }
+finally { if (c) break; } .. }` the handler's `aload; athrow` came after the loop body.
+The pass then saw a handler without a rethrow, matched the copies without one, found no
+code to continue at after them and sent the end of the `try` to the method's exit, which
+deleted the rest of the loop, and left `throw var3` with its store removed (Vineflower
+prints the same). A handler whose stored exception is rethrown from a block outside the
+handler statement is now read as inconsistent: it stays a `catch (Throwable)` with its copies
+where javac placed them.
 
 The schedule then rebuilds `synchronized` statements once more, removes their exception
 handlers (`DomHelper::remove_synchronized_handler`), condenses sequences and clears
@@ -557,7 +584,11 @@ and most changes restart the loop from the top, so the order below is a priority
    value with `instanceof String`, and on failure goes on to the next case) is bound with the
    tested type, not the component's: without a LocalVariableTable, or for an unnamed `_`,
    the binding had the type `Object`, so the pattern printed as `R(Object var4)`, which
-   matches every `R`.
+   matches every `R`. (kuna) A copy of a record pattern keeps those tested types
+   (`decompiler/managed/kuna-jvm/src/substrate/pattern_exprent.rs (PatternExprent::copy)`);
+   Vineflower's copy dropped them, and the passes that copy a condition (joining ifs into
+   `&&`, a returned condition) turned `return o instanceof Box(Integer i) && i > 0` into
+   `Box(Object var1) && var1 > 0`.
 7. When the method has switches:
    `decompiler/managed/kuna-jvm/src/p8_structure/switch_pattern_match_processor.rs`
    rebuilds pattern switches from `SwitchBootstraps.typeSwitch` dispatch (also gated by
@@ -591,7 +622,14 @@ When a full pass of the loop changes nothing, the tail runs once, in this order:
   by `equals` tests into a second switch) back into one switch over the strings; the
   helper statements this leaves are marked hidden and are not written. If that produced a
   switch expression, switch expressions, stack
-  variables and versions are processed once more.
+  variables and versions are processed once more. (kuna) javac compiles `switch (e) {}` on
+  an enum of another class to a read of the switch map at `e.ordinal()` whose value it
+  discards, with no switch instruction, which Vineflower wrote as
+  `int var10000 = <unrepresentable>.$SwitchMap$..[e.ordinal()];`; such a read
+  (`empty_enum_switches`: a stack variable nothing reads, set from an array of a
+  `$SwitchMap` field indexed by `ordinal()`) is written as the call `e.ordinal();`, which
+  checks `e` the same way. The source's `switch (e) {}` would also bring back the synthetic
+  map class; it is not written.
 - `ExitHelper::adjust_return_type` and `ExitHelper::remove_redundant_returns` (a trailing
   `return;` of a `void` method is dropped).
 - secondary functions once more, then
@@ -797,6 +835,32 @@ on the second held-out benchmark).
 `decompiler/managed/kuna-jvm/src/p8_structure/merge_helper.rs (MergeHelper::drop_else_edge)`
 makes it an if: the head's edge into the branch, which now continues the loop, leaves the if, or
 is dropped when the if already has a successor, which goes where the branch went.
+
+**The increment of a for-each over an array (kuna).** `MergeHelper::match_for_each` makes a
+for-each of `T[] c = a; int n = c.length; int i = 0; while (i < n) { T x = c[i]; ..; i++; }` and
+deletes the `i++` with the other parts. Vineflower took that increment from the last statement in
+the body's statement order and checked its operand only when it was a variable: inside a `switch`,
+whose cases are not kept in flow order, it took the `a[0][0]++` of a `catch` block for the
+increment and deleted it, leaving the real `i++` behind undeclared; and without a
+LocalVariableTable it took the `i++` of `if (c) { i++; }`, so a loop that stays on one element
+while `c` is false iterated over all of them. The increment is now the last statement of the one
+block every `continue` edge of the loop leaves from, so it runs before every jump back, and it
+must be `i++` or `++i` on the index variable itself; otherwise the loop stays a `while`.
+
+**An exit copied into a `try` (kuna).** `ExitHelper::integrate_exits` replaces a `break` to a
+block that holds only a `return` or `throw` with a copy of that exit, at the place of the `break`.
+When the `break` leaves a `try`, a `finally` or a `synchronized` body, the copy lands in it, which
+Vineflower did not check: `for (..) { try { switch (..) { .. } break; } catch (Exception e) {} }
+return Arrays.asList(ret);` printed the `return` in both cases of the switch, where the `catch`
+covers `Arrays.asList` and continues the loop when it throws, and a `return n` copied into a `try`
+whose `finally` assigns `n` returned the value from before the `finally`.
+`decompiler/managed/kuna-jvm/src/p8_structure/exit_helper.rs (ExitHelper::moves_into_protected)`
+walks from the place of the copy to the statement the jump leaves and refuses the copy when it
+passes a protected body the exit could run differently in: a `try` with a `catch` or a
+`synchronized` body unless the exit is a `return` of nothing, a constant or a variable (which
+cannot throw), and the `try` of a `finally` unless it returns nothing, a constant, or a local
+the `finally` does not assign (the `finally` runs after the value is computed, and nothing
+else can change a local). The `break` then stays, labelled where it leaves an outer statement.
 
 **ECJ's layout (kuna).** In a class the Eclipse compiler wrote (section 11.3) the rules above
 read ECJ's code, which places an `if`'s branches, its exits and its `continue` and `break`
@@ -1196,17 +1260,29 @@ match the generated ones. A failure here writes the class as `$VF: Couldn't be d
 (section 11.12).
 
 **Static initializers keep their order (kuna).** Field initializers and `static` blocks run
-in the order the source declares them, and the fields are written in class-file order, so
-moving a `<clinit>` assignment into its field's declaration changes when it runs relative to
-the other moved assignments. `extract_static_initializers` moves an assignment only when
-that keeps every value it reads: its value may not read a field of the class that an
-earlier moved assignment set and that is declared after it (`static int[] sizes = new
-int[names.length];` ahead of `names = {..}` read `null`), and no earlier moved assignment to
-a field declared after it may read its field (`next = base + 1; base = 5;` moved as `base =
-5` ahead of `next = base + 1`). Such an assignment stays in the `static` block, and so does
-every later assignment that reads its field. A class written as Kotlin is exempt: its writer
-places an object's or companion's instance (assigned first, declared last) and the
-properties that read it itself.
+in the order the source declares them, and `<clinit>` runs them in that order. The class is
+written with its fields, in class-file order, before the `static` block that holds what was
+not moved, so a moved assignment runs before every statement that stays in the block and
+before the moved assignments to the fields declared after its own. Vineflower moved any
+assignment whose value reads no local: past a call (`static { init(); b = a + 1; }` became
+`static int b = a + 1;`, run before `init()` set `a`), past an assignment that stayed
+(`sizes = new int[names.length]` ahead of `names = {..}`, which then read `null`), and ahead
+of an earlier one to a later field (`next = base + 1; base = 5;` moved as `base = 5` first).
+`extract_static_initializers` now moves an assignment of the first block only while every
+statement before it moved and its field is declared after every field moved so far, so the
+written order is the order of `<clinit>`; the rest stays in the `static` block, a final field
+there being assigned once in it. Synthetic fields (`$assertionsDisabled`, an enum's
+`$VALUES`) are not written, so their position does not count, and an enum's constants are
+written first whatever their field index (a class translated from DEX lists its fields by
+name), as `<clinit>` builds them first: they always move and do not bound the other fields. An interface, which cannot
+hold a `static` block, and a class written as Kotlin, whose writer places an object's or
+companion's instance and the properties that read it itself, keep Vineflower's rule. The
+first block is followed through switch expressions (`straight_line_blocks`): a switch
+expression leaves its backing switch in the tree, phantom, writing only its head block, so
+`<clinit>`'s straight-line code continues in the first block of the statement after it;
+Vineflower read only the first block, so enum constants built with a switch expression as an
+argument stayed in a `static` block (`$VF: Failed to inline enum fields`, which javac rejects)
+and so did every static field after such an initializer.
 
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being

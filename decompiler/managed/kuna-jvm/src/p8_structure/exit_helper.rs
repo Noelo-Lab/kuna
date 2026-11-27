@@ -127,7 +127,10 @@ impl ExitHelper {
                     }
                 }
 
-                if let Some(dest) = dest {
+                let jump = if_break_edge.unwrap_or(ifedge);
+                if let Some(dest) =
+                    dest.filter(|d| !Self::moves_into_protected(ifst.0, jump.closure(), *d))
+                {
                     let new_block = BasicBlockStatement::create();
                     new_block.set_exprents(copy_exprents(&dest.get_exprents().unwrap()));
 
@@ -242,6 +245,9 @@ impl ExitHelper {
                 Some(dest) => dest,
                 None => return ret,
             };
+            if Self::moves_into_protected(stat, destedge.closure(), dest) {
+                return ret;
+            }
 
             stat.remove_successor(destedge);
 
@@ -300,6 +306,44 @@ impl ExitHelper {
         }
 
         ret
+    }
+
+    /// kuna: whether a copy of the exit `dest` placed at `place`, inside `closure` (the
+    /// statement the jump to it leaves), lands in the protected body of a `try`, a `finally` or a
+    /// `synchronized` that the jump leaves, where it would run differently: a `catch` or a lock
+    /// covers an exit that can throw, and a `finally` runs after the exit's value is computed
+    /// instead of before. A `return` of nothing, a constant or a variable moves unchanged, a
+    /// variable into the `try` of a `finally` only when the `finally` does not assign it.
+    fn moves_into_protected(place: Statement, closure: Option<Statement>, dest: Statement) -> bool {
+        let exit = dest.get_exprents().unwrap().get(0).as_exit();
+        let value = exit.get_value();
+        let is_return = exit.get_exit_type() == ExitType::Return;
+        let constant = is_return && value.is_none_or(|v| v.is_const());
+        let returned_var = value.filter(|_| is_return).and_then(|v| v.try_as_var());
+        let simple = constant || returned_var.is_some();
+
+        let mut cur = place;
+        while Some(cur) != closure {
+            let Some(parent) = cur.get_parent() else {
+                break;
+            };
+            let covered = if parent.is_catch() {
+                parent.get_first() == Some(cur) && !simple
+            } else if let Some(fin) = parent.try_as_catch_all() {
+                parent.get_first() == Some(cur)
+                    && !constant
+                    && returned_var.is_none_or(|v| assigns(fin.get_handler(), v.get_index()))
+            } else if let Some(sync) = parent.try_as_synchronized() {
+                sync.get_body() == cur && !simple
+            } else {
+                false
+            };
+            if covered {
+                return true;
+            }
+            cur = parent;
+        }
+        false
     }
 
     fn is_exit_edge(edge: StatEdge) -> Option<Statement> {
@@ -458,6 +502,30 @@ impl ExitHelper {
 }
 
 /// `DecHelper.copyExprentList(lst)` as the fresh list `setExprents` takes.
+/// kuna: whether a statement of `stat` assigns the local in slot `index` or increments it.
+fn assigns(stat: Statement, index: i32) -> bool {
+    let exprents = match stat.get_exprents() {
+        Some(exprents) => exprents.to_vec(),
+        None => stat.get_stat_exprents(),
+    };
+    let writes = |e: Exprent| {
+        if let Some(assign) = e.try_as_assignment() {
+            return assign.get_left().try_as_var().is_some_and(|v| v.get_index() == index);
+        }
+        e.try_as_function().is_some_and(|f| {
+            matches!(
+                f.get_func_type(),
+                FunctionType::Ppi | FunctionType::Ipp | FunctionType::Mmi | FunctionType::Imm
+            ) && f.get_lst_operands().get(0).try_as_var().is_some_and(|v| v.get_index() == index)
+        })
+    };
+    exprents
+        .into_iter()
+        .any(|e| e.get_all_exprents_rec_self(true, true).into_iter().any(writes))
+        || (stat.get_exprents().is_none()
+            && stat.get_stats().borrow().to_vec().into_iter().any(|s| assigns(s, index)))
+}
+
 fn copy_exprents(lst: &JList<Exprent>) -> JList<Exprent> {
     JList::from(DecHelper::copy_exprent_list(&lst.to_vec()))
 }

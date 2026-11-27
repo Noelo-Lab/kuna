@@ -475,6 +475,12 @@ impl FinallyProcessor {
 
             if let Some(block_statement) = block_statement {
                 let handler = fstat.get_handler();
+                if is_true_exit
+                    && firstcode != 1
+                    && node.block().is_some_and(|b| !handler.contains_statement(b.0))
+                {
+                    return None;
+                }
                 for edge in block_statement.get_successor_edges(Statement::STATEDGE_DIRECT_ALL) {
                     if edge.get_type() != StatEdge::TYPE_REGULAR
                         && handler.contains_statement(block_statement.0)
@@ -497,14 +503,15 @@ impl FinallyProcessor {
         if fstat.get_handler().is_basic_block() {
             let mut is_empty = false;
             let is_first_last = map_last.contains_key(&first_basic_block);
+            let rethrows = map_last.get(&first_basic_block).copied() == Some(true);
             let seq = first_basic_block.get_seq();
 
             match firstcode {
-                0 => is_empty = is_first_last && seq.length() == 1,
+                0 => is_empty = rethrows && seq.length() == 1,
                 1 => is_empty = seq.length() == 1,
                 2 => {
                     is_empty = if is_first_last {
-                        seq.length() == 3
+                        rethrows && seq.length() == 3
                     } else {
                         seq.length() == 1
                     }
