@@ -6084,6 +6084,91 @@ purely to preserve it across a call and pops it into a *different* register that
 it then returns; nothing local distinguishes that from the alignment idiom, and
 this rule reads it as maintenance.
 
+#### (kuna) The register an epilogue pops to release the frame (`kuna_epiloguepop.rs`)
+
+`float f(void *p, unsigned i) { double d = *(double *)((char *)p + 0x108);
+return ((float *)&d)[i]; }` is, from clang for Win64 (and for x86-64 System V
+without a red zone), `push rax; vmovsd xmm0,[rcx+0x108]; vmovsd [rsp],xmm0; mov
+eax,edx; vmovss xmm0,[rsp+rax*4]; pop rax; ret` (GH-1969). The `push rax` and
+`pop rax` are the function's eight-byte frame, and the spill overwrote the
+pushed slot, so at the RETURN `rax` holds the double's bits and `xmm0` the
+selected float. Both trials pass ancestor realism and `ancestorOpUse`, and the
+output model's fallback prefers the general class, so the function printed
+`unsigned long long f(void *a0) { return ((unsigned long long *)a0)[0x21]; }`:
+the index parameter and the indexed read were dead. The same happens to every
+float function clang gives an eight-byte frame and a call: `float twice(float x)
+{ g(); return x * 2.0f; }` is `push rax; movss [rsp+4],xmm0; call g; movss
+xmm0,[rsp+4]; addss xmm0,xmm0; pop rax; ret` and printed `unsigned long
+twice(unsigned int a0)` returning the spill slot, and i386's `push eax` ...
+`pop eax` around an x87 result returned the argument's bits from `eax`.
+
+GCC and LLVM pop into a register to release stack, and choose one that is dead
+there. The one pop they aim at a live register is clang's minimum-size (`-Oz`)
+constant, `push imm8; pop rax` for `return 5`. `kuna_epiloguepop::note_pops`
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_epiloguepop.rs`) runs right
+after `ActionReturnRecovery` scores the output trials for the first time, while
+each RETURN still reads the register the instruction wrote, and marks a trial
+when:
+
+* its value at every live RETURN is the write of a single-register pop: copied
+  out of the instruction's temporary, or written directly, by a LOAD whose
+  address is the stack pointer, in an instruction that also adds the loaded
+  width to that same stack pointer (`kuna_epiloguepop.rs (popped)`), and that
+  stack pointer was not set by a `push` of an immediate, an instruction that
+  STOREs a constant through it (`kuna_epiloguepop.rs (pushed_constant)`); and
+* another trial, in an output entry of a different storage class (`xmm0`,
+  `ST0`), is already active on that pass (`kuna_epiloguepop.rs (rival)`).
+
+The first pass still sees the frame's stores. A float the function stores into
+the slot the pop reads, as when an eight-byte `struct { float f; int i; }` is
+built in the frame and returned in `rax`, has a STORE among its uses and is not
+active yet, so nothing is marked and the struct keeps its return.
+
+After the last scoring pass, before the output map,
+`kuna_epiloguepop::yield_to_other_class` makes a marked trial inactive when its
+rival is still active and the output model, given the trials without it,
+returns something. The float then stands alone: `unsigned int f(void *a0,unsigned
+int a1)` returns `((unsigned int *)&v1)[a1]`, as the red-zone build of the same
+function always did, `twice` is `float twice(float a0) { g(); return a0 + a0; }`,
+and the i386 one returns `ST0`.
+
+A pop with no rival is unchanged: `pushfq; pop rax; ret` still returns the flags,
+and a function that only moves a double through `xmm0` to memory before `pop rax`
+keeps `rax`, since that `xmm0` is not active. A popped second register of an
+`edx:eax` or `rdx:rax` pair with no float beside it is left to the pair rules
+above. Beside an active `ST0`, the popped `edx` of MSVC's x87 CRT helpers (`push
+edx; fstcw [esp]; ... pop edx; ret`) is dropped as well, and `eax`, which those
+helpers set as a status, still outranks `ST0` in the model's fallback. The rule
+is always on. A constant popped into `rax` stays the return beside an active
+`xmm0`: clang `-Oz` builds `int f(volatile float *p) { (void)*p; return 5; }`
+as `movss xmm0,[rdi]; push 5; pop rax; ret`, and the discarded read leaves an
+active `xmm0` that would otherwise take the return. What the rule cannot
+separate is hand-written code that leaves a dead float in `xmm0` while returning
+a register value it pushed and popped back into `rax`.
+
+GCC keeps its frames with `sub`/`add`, so over the decbench x86-64 binaries at
+O0 and O2 and the ARM firmware at O2 (497 images) the rule never fires. Built by
+clang, zlib, SQLite and SDL's libm (shared objects, Win64 and i386 COFF objects)
+change nothing; 83 SDL sources at O2, O1, Os and O2 without a red zone change 24
+functions, all float returns that printed the popped slot (`SDL_acos`,
+`SDL_round`, `SDL_GetDisplayContentScale`, `SDL_GetSurfaceHDRHeadroom`, i386
+`SDL_sqrtf`), and the parameter lists of the 22 System V ones match their DWARF
+before and after. Over 240 PE images (148,269 functions) 22 functions change in
+four i386 images, all MSVC x87 CRT helpers: the `fprem` and truncation helpers
+now return `ST0`, and the `cos`-style helpers drop the popped `edx` half. Where
+`ST0` becomes the return, the helper's `edx` flag argument, which the `ST0`
+result depends on, becomes a parameter, and the `__fastcall` model puts the
+`ecx` the helper only saves before it.
+
+`tests/stages/kuna-epiloguepop.xml` pins the issue's function, a Win64 float
+array returned by index, the two controls and the frame-built struct; `kuna-epiloguepop-sysv.xml` pins
+`twice`, the issue's function without a red zone, which must read as its
+red-zone build, and the `-Oz` constant beside a discarded float read;
+`kuna-epiloguepop-x87.xml` pins the i386 `twice`. In
+`decompile-all`, clang's `float v1(void) { return (float)geti(); }`
+(`floatparam_retreg_clang_O2`) printed `unsigned long sub_11c0(void)` returning
+the popped slot and now prints `float sub_11c0(void)`.
+
 #### (kuna, rustc) The two-register `ScalarPair` return (`rustabi`)
 
 rustc returns a `Result`, an `Option`, a slice or a fat pointer whose layout it
@@ -9901,7 +9986,12 @@ callee-first plan, not once the plan is done: a wrapper is redone as soon as its
 first reader is decompiled, so every later reader reads the wrapper's return
 the first time it is decompiled. A reader decompiled later that reads the
 wrapper wider forces it again at that width, and one that reads another
-register withdraws it: it returns nothing again, as before.
+register withdraws it: it returns nothing again, as before. Settling after
+every function does not walk every callee's claims each time: `due` looks only
+at the callees left unsettled since its last look, those whose claims, recovered
+return, return storage, forced storage or withdrawal changed, and those it last
+forced or withdrew. A callee's verdict reads nothing else, and one that acts
+leaves nothing to do the next time, so every other callee would come out empty.
 
 Callers that read a register pair and callers that read only its least
 significant register agree on that register (`kuna_voidret.rs
@@ -10093,7 +10183,11 @@ function whose redo changed either has every reader decompiled before that redo
 decompiled again (`kuna_voidret.rs (stale_readers)`) when it now states a return
 to `callrettype`, returns a float, or had its float return withdrawn; a callee
 that states nothing has nothing to hand a reader, and only a wrapper still
-waiting on it is redone. Such a reader typed the
+waiting on it is redone. The readers and callers a change can name are listed
+when the redo makes it (`kuna_voidret.rs (Owed)`): a function is filed as one
+only by its own decompile, which comes after, so the list never grows, and each
+settling drops the functions decompiled since and forgets a change with none
+left. Such a reader typed the
 call's result itself, against a callee it saw return nothing, and kept that
 text: cp's callers printed `unsigned long v10 = sub_18a0f(4,a1)` beside `void
 *sub_18a0f(..)`, which is not C, and find's printed `*(unsigned int

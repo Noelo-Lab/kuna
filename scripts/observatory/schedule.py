@@ -24,7 +24,7 @@ _BOXED = re.compile(r"act!\(\s*(?:[\w:]+::)*(\w+)::boxed\(\s*\"([^\"]+)\"\s*\)")
 _NEWBOX = re.compile(r"act!\(\s*Box::new\(\s*(?:[\w:]+::)*(\w+)::new\(([^)]*)\)", re.S)
 _CONTAINER = re.compile(r'name:\s*"([^"]+)"')
 _DEFSITE = re.compile(r'(\w+)\s*\{\s*base:\s*ActionBase::new\(\s*[^,]*?,\s*"([^"]+)"\s*,\s*("[^"]+"|[\w.]+)\s*,?\s*\)', re.S)
-_FOLDER = re.compile(r"^(p\d_\w+|substrate|infra)$")
+_FOLDER = re.compile(r"^(p\d_\w+|substrate|infra|deobf)$")
 
 LEGEND = {
     "repeat": "repeatapply: the node loops until no member applies",

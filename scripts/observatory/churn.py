@@ -23,7 +23,7 @@ def _classify(path: str):
         top = parts[4]
         if top[0] == "p" and top[1:2].isdigit():
             phase = f"P{top[1]}"
-        elif top in ("substrate", "infra"):
+        elif top in ("substrate", "infra", "deobf"):
             phase = top
     return {"area": parts[0], "crate": crate, "phase": phase}
 

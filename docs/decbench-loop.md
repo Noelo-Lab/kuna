@@ -78,8 +78,8 @@ Decisions baked in:
    length: `aggressive` below 500 KiB, `reliable` up to 2 MiB, `fast` at 2 MiB and above.
    **Consequence: an aggressive-only regression is *inside* the published number**, and
    any triage that assumes `reliable` mis-attributes it — round 4's Rank 5
-   (`regionedgeorder`, on only because `AGGRESSIVE_OVERRIDES` turns it on) is exactly that
-   case. Reproduce in `auto`/`aggressive` first; run `reliable` as the contrast, not the
+   (`regionedgeorder`, on only because `AGGRESSIVE_OVERRIDES` turned it on, and since
+   dropped from the preset) is exactly that case. Reproduce in `auto`/`aggressive` first; run `reliable` as the contrast, not the
    baseline.
    **On this corpus `fast` never happens.** The largest stripped benchmark binary is O0
    `bash` at 1,513,904 bytes (1.44 MiB), so across all 803 binaries `auto` resolves to

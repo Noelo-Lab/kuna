@@ -19,6 +19,12 @@ impl ImportSlots {
         Self(merged)
     }
 
+    pub(crate) fn insert(&mut self, lo: u64, hi: u64) {
+        let mut ranges = std::mem::take(&mut self.0);
+        ranges.push((lo, hi));
+        *self = Self::new(ranges);
+    }
+
     pub(crate) fn contains(&self, address: u64) -> bool {
         let end = self.0.partition_point(|&(lo, _)| {
             #[cfg(test)]
