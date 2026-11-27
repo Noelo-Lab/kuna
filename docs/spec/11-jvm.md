@@ -1192,7 +1192,13 @@ written order is the order of `<clinit>`; the rest stays in the `static` block, 
 there being assigned once in it. Synthetic fields (`$assertionsDisabled`, an enum's
 `$VALUES`) are not written, so their position does not count. An interface, which cannot
 hold a `static` block, and a class written as Kotlin, whose writer places an object's or
-companion's instance and the properties that read it itself, keep Vineflower's rule.
+companion's instance and the properties that read it itself, keep Vineflower's rule. The
+first block is followed through switch expressions (`straight_line_blocks`): a switch
+expression leaves its backing switch in the tree, phantom, writing only its head block, so
+`<clinit>`'s straight-line code continues in the first block of the statement after it;
+Vineflower read only the first block, so enum constants built with a switch expression as an
+argument stayed in a `static` block (`$VF: Failed to inline enum fields`, which javac rejects)
+and so did every static field after such an initializer.
 
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being

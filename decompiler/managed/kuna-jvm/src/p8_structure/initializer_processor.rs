@@ -22,6 +22,7 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::method_wrapper::MethodWrapper;
 use crate::new_exprent::NewExprent;
 use crate::rt::{try_catch, JHashMap, JHashSet, JList, JavaListExt};
+use crate::statement::Statement;
 use crate::statements::Statements;
 use crate::struct_class::StructClass;
 use crate::var_version_pair::VarVersionPair;
@@ -34,6 +35,33 @@ pub struct InitializerProcessor;
 fn written_as_kotlin(cl: StructClass) -> bool {
     DecompilerContext::get_option(KotlinOptions::DECOMPILE_KOTLIN)
         && KotlinMetadataAnnotation::find(cl).is_some()
+}
+
+/// The blocks that run one after another from `first`: a switch expression leaves its
+/// backing switch in the tree, phantom, writing only its head block, so the code after it
+/// continues in the first block of the statement after the switch in its sequence.
+fn straight_line_blocks(first: Statement) -> Vec<Statement> {
+    let mut chain = vec![first];
+    let mut block = first;
+    while let Some(switch) = block
+        .get_parent()
+        .and_then(|p| p.try_as_switch())
+        .filter(|sw| sw.is_phantom() && sw.get_first() == Some(block))
+    {
+        let next = switch.get_parent().filter(|p| p.is_sequence()).and_then(|seq| {
+            let stats = seq.get_stats().borrow().to_vec();
+            let at = stats.iter().position(|s| *s == switch.0)?;
+            stats.get(at + 1).copied().and_then(Statements::find_first_data)
+        });
+        match next {
+            Some(next) if !chain.contains(&next) => {
+                chain.push(next);
+                block = next;
+            }
+            _ => break,
+        }
+    }
+    chain
 }
 
 fn root_class_node(name: Option<&str>) -> Option<ClassNode> {
@@ -219,7 +247,16 @@ impl InitializerProcessor {
             let mut seen: Vec<String> = Vec::new();
             let mut multi_assign: Vec<String> = Vec::new();
 
-            let first_exprents = first_data.get_exprents().expect("exprents");
+            let chain = straight_line_blocks(first_data);
+            let first_exprents = if chain.len() == 1 {
+                first_data.get_exprents().expect("exprents")
+            } else {
+                let merged: JList<Exprent> = JList::new();
+                for block in &chain {
+                    merged.add_all(block.get_exprents().expect("exprents").to_vec());
+                }
+                merged
+            };
             for exprent in first_exprents.iter() {
                 if let Some(assign_expr) = exprent.try_as_assignment() {
                     if let Some(f_expr) = assign_expr.get_left().try_as_field() {
@@ -355,6 +392,16 @@ impl InitializerProcessor {
                 first_exprents
                     .borrow_mut()
                     .retain(|e| !exprents_to_remove.j_contains(e));
+            }
+            if chain.len() > 1 {
+                let kept_exprents = first_exprents.to_vec();
+                for block in &chain {
+                    block
+                        .get_exprents()
+                        .expect("exprents")
+                        .borrow_mut()
+                        .retain(|e| kept_exprents.j_contains(e));
+                }
             }
         }
 
