@@ -2358,8 +2358,9 @@ mod tests {
         // and kuna-arm-stored-double / an ARM hard-float double stored only to a global is a parameter
         // and kuna-arm-opaque-double / an ARM hard-float double written for an opaque callee is its argument
         // and kuna-passthroughfwdstack / a forwarder's call with a stack argument takes the target's whole run
+        // and kuna-gotoreduce-auto / an unoptimized function keeps the goto statements it was written with
         // and kuna-revisitcalls / a revisit that retires a call's creation guards the call again
-        assert_eq!(count, 962, "corpus file count drifted");
+        assert_eq!(count, 963, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

@@ -1058,7 +1058,7 @@ qualify, and each tier is its own pass:
   `kuna_gotoreduce.rs (MAX_TAIL_BLOCKS)` = 3 blocks and `(MAX_TAIL_OPS)` = 8
   ops, and **any** `CALL`/`CALLIND`/`CALLOTHER`/`STORE` in the tail declines
   the match.
-- `on`, the default, runs that pass and then
+- `on` runs that pass and then
   `decompiler/crates/kuna-decomp/src/p8_structure/kuna_taildup.rs
   (ActionTailDup)` for the return tail that *contains a call* — the
   `free(p); return;` epilogue, which the call-free pass rejects and
@@ -1075,12 +1075,63 @@ qualify, and each tier is its own pass:
   policy that prints fewer casts (`castarith`) can bring a tail within the
   bound. Each duplication is logged (`taildup:`).
 - `off` runs neither and keeps the upstream goto/label rendering.
+- `auto`, the default, is `on`, except that in a function the
+  unoptimized-code detector flags (§ `returndup auto`) both passes leave
+  alone every goto whose target the author's own `goto` statements jump to.
 
 `return` is the setting for the C `goto out;` idiom, where many early-exit
 checks share one cleanup epilogue: `on` gives every check its own copy of the
 cleanup call, which the source does not have, while `return` keeps the
 epilogue behind its label and still turns the call-free return tails into
 early returns. Both tiers were flipped on by DIV-14 (changing zero datatests).
+
+### gotoreduce auto — the gotos an unoptimized function was written with
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_o0gotos.rs`. An
+optimizing compiler threads and merges jumps until a goto in kuna's output
+rarely corresponds to one in the source, and duplicating the return tail is
+right there. An unoptimizing compiler invents no jumps, so a goto to a label
+it can still see is usually the author's `goto out;`, and copying the cleanup
+tail into every `if` gives a graph the source does not have. gcc -O0
+compiles a `goto L;` that is the whole arm of an `if` into a `nop` the test
+jumps to (kept so a debugger can stop on the statement's line), followed by a
+jump to `L` or falling into it, and lays these statement blocks out right
+before `L`. A bare `break;`, `continue;` and void `return;` compile the same
+way, so at the first heritage pass `record` takes such a jump for a `goto`
+only when nothing else explains it:
+
+- it does not come from inside the loop its target follows. The loop is the
+  one whose bottom test or back jump is laid out right before the target and
+  its statement blocks; its range runs from that branch's destination to the
+  branch. When the loop's last statement is `if (c) { S; break; }`, gcc folds
+  the back jump into that test and lays `S` out after it, so a block entered
+  only by the fall-through of a backward test extends the range to the target,
+  unless the test is a `for` or `while` test (reached by the loop's entry jump
+  from before the loop), after which the code is after the loop;
+- it does not come from inside a jump-table `switch` whose cases end at the
+  target (a case starts right after a plain jump to it, or a bare `case K:
+  break;` block only jumps to it); the range runs from the dispatch to the
+  target;
+- the target is not a loop's head or test (a backward branch enters it, or the
+  first branch it runs into goes backward).
+
+Each such edge gets edge-label bit 31 (`GOTO_BIT`; `loopcontinue auto` uses bits
+10..15 and `returndup auto` bits 16..30); a removed block's in-edges keep their
+labels when they are re-pointed at its successor. `keeps` then answers, for the
+first basic block of a goto's target, whether any in-edge carries the bit, and
+`ActionGotoReduce` and `ActionTailDup` skip that goto. A `{ S; goto L; }`
+compiles to a plain jump, exactly like the end of an `if` arm (the two
+graphs are the same), and clang -O0 writes no `nop` at all, so a target reached
+only by plain jumps is duplicated as under `on`. Counting plain jumps as
+evidence (three or more into one target) recovered seven more matches on the
+decbench O0 corpus but printed gotos in four more functions whose source has
+none (else-if arm ends and switch breaks), and was left out. The
+recogniser does not know a `switch` lowered to a compare tree, so a bare
+`case K: break;` reached from such a dispatch counts as a `goto` (bash
+`man2html` `change_to_font`). On the decbench gcc -O0 corpus `auto` makes 45
+more functions match the source's control flow than `on` (45 gained, none
+lost; no -O2 function changes); five functions whose source text has no `goto`
+gain one, three of them through rsyslog's `CHKiRet` macro, which is a `goto`.
 
 ### Releasing a label the duplication passes converted away
 
