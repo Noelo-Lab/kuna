@@ -2116,3 +2116,5 @@ case	kuna-fixes/pkg/TestBlankFinalConstant	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestInitializerLocalClass	Kuna Fixes	kuna-fixes/classes/pkg/TestInitializerLocalClass
 # kuna-fixes/src/pkg/TestCapturedSlotReuse.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestCapturedSlotReuse	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedSlotReuse
+# kuna-fixes/src/pkg/TestRawTargetGenericCall.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawTargetGenericCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawTargetGenericCall

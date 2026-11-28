@@ -191,6 +191,26 @@ fn raw_parameter(inv: InvocationExprent, index: usize) -> bool {
     }
 }
 
+/// Whether the parameter at `index` of `inv` has, as kuna writes the call, a
+/// class type without type arguments: a raw one ([`raw_parameter`]), or a
+/// class the method declares the parameter with that is not generic.
+pub(crate) fn erased_parameter(inv: InvocationExprent, index: usize) -> bool {
+    if raw_parameter(inv, index) {
+        return true;
+    }
+    if !matches!(inv.get_functype(), InvocationKind::General | InvocationKind::Init) {
+        return false;
+    }
+    let Some(sig) = inv.find_desc().and_then(|m| m.get_signature()) else {
+        return false;
+    };
+    let declared = sig.parameter_types();
+    declared.len() == inv.get_descriptor().params.len()
+        && declared[index].type_ == CodeType::Object
+        && declared[index].array_dim == 0
+        && !declared[index].is_generic()
+}
+
 /// Whether the class `inv` names, and every class it extends or implements,
 /// is known and declares no method of `inv`'s name and arity with other
 /// parameter types than `inv`'s descriptor. `Object`, when the class context

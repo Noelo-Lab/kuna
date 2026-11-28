@@ -1293,7 +1293,25 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    accepts for these targets. A parameter whose target type argument is a class with type
    arguments, or whose type in the interface method is generic, leaves the lambda as it
    was: a declared type must equal the target's exactly, and the class file holds only its
-   erasure. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
+   erasure. A type variable taken through a wildcard (`Fn<? super T, ?>`) counts as the
+   variable itself (JLS 9.9). (kuna) A generic call written where its target type is a class
+   type without type arguments infers nothing from that target: `Cmp<T>` is a subtype of the
+   raw `Cmp` and of `Object` whatever `T` is (JLS 4.10.2), so in `box.sort(Cmp.comparing(s
+   -> s.length()))` on a raw receiver, `takeRaw(Cmp.comparing(..))` for a parameter
+   declared raw or `Object`, or `Cmp c = Cmp.comparing(..)` for a raw local, `T` is
+   `Object` and the text does not compile. Without a LocalVariableTable such targets are
+   common, and where the source wrote them it declared the lambda's parameters.
+   `explicit_lambda_parameters::mark_erased_target` marks the lambda arguments of a call
+   passed for a parameter of such a type as kuna writes it
+   (`raw_target_cast::erased_parameter`) or assigned to a variable or field of one, when
+   the call's result is a class type: a type variable the result mentions then counts as
+   fixed by nothing else, and the lambda is written with its parameters declared as above.
+   The declared types make the lambda pertinent to applicability (JLS 15.12.2.2), so this
+   is done only when the called class has no other method of the name and arity
+   (`raw_target_cast::sole_method`). The enclosing call's method and result type do not
+   change: its parameter is a class type without type arguments, which accepts the call's
+   result by widening whatever its type arguments are and mentions no type variable to
+   infer. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
    writes the call, is a raw functional interface has the raw type's function type, whose
    parameters are the erasures of the interface's (JLS 4.8, 9.9): that holds for a call on
    a receiver whose written type is raw (`raw_receiver_erasure::has_raw_receiver`), for a

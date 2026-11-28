@@ -2091,6 +2091,11 @@ impl InvocationExprent {
                 break;
             }
 
+            if let Some(inner) = lst_parameters.get(i).try_as_invocation() {
+                if !writing_kotlin() && raw_target_cast::erased_parameter(self, i) {
+                    explicit_lambda_parameters::mark_erased_target(inner);
+                }
+            }
             let raw_target = (!raw_field && mask.is_none())
                 .then(|| match ambiguous {
                     true => raw_target_cast::selecting_cast(self, i),
