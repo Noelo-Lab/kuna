@@ -40,7 +40,9 @@ pub fn set_non_final(
         }
         let mut body: JHashSet<VarVersionPair> = JHashSet::new();
         helper.set_non_final_exprent(dostat.get_condition_exprent(), &mut body);
-        helper.set_non_final_exprent(dostat.get_inc_exprent(), &mut body);
+        for update in dostat.get_inc_exprents() {
+            helper.set_non_final_exprent(Some(update), &mut body);
+        }
         for st in stats {
             set_non_final(helper, st, &mut body);
         }

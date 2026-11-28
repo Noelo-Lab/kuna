@@ -853,11 +853,13 @@ printed with all but the last before the loop, where their scope outlives it, so
 after the loop could not take the slot javac gave it (ECJ's `exSize` printed as a second local,
 and Vineflower merges it into `i` with the wrong type). `kuna_javac_layout::extra_inits` takes
 the assignments right before the header's into it too when each assigns another variable the
-condition or update reads, starts on the condition's line, does not read its own slot (a
+condition or one of the header's updates reads, starts on the condition's line, does not read its own slot (a
 declaration cannot read the variable it declares: d8's release DEX of Elasticsearch's `size =
 Math.min(docs.length, size)` on the header's line printed a second `long` local; case
 `TestForInitReassigned`), and, with a LocalVariableTable, has the descriptor of the header's
-variable and a scope that ends where the loop's code ends; the loop holds them in source order
+variable and a scope that ends where the loop's code ends, as the header variable's own does (a
+header declares all its variables or none; a block on one line around a loop whose counter is
+declared before it is not a header: case `TestForInitOuterCounter`); the loop holds them in source order
 before its init slot (`DoStatement::add_extra_init`).
 `VarDefinitionHelper::set_var_definitions` declares each where it declares the header's, and
 `split_mixed_inits` moves them back before the loop when the header cannot hold them (Java's
@@ -867,7 +869,17 @@ header variable (`before_header`) prints before the loop, so it belongs to the b
 loop, where the other declarations of its local are merged into it (`double v; for (..) { v = ..;
 } v = ..;`), unless its slot follows that of another variable the header declares: then it is one
 of the header's declarators (`for (int i = 0, j, n = a.length; ..)`, javac's slots in declaration
-order) and goes into the header. Case `TestForInitPair`. *A value returned after a try whose handlers exit, or
+order) and goes into the header. Case `TestForInitPair`. *A header with several updates* (`for
+(..; i < j; i++, j--)`): Vineflower takes the last statement of the body for the update and
+leaves the others at the end of the body, where a `continue` of the source becomes an `if`
+around the rest. javac writes the header's updates after the body's code, each with the line of
+its place in the header, which precedes the body's first line. `kuna_javac_layout::extra_updates`
+counts the expression statements right before the update taken that start on a line before the
+one the body's code starts on, as the update itself does, and `MergeHelper::match_for` moves them
+into the header in source order before the update slot (`DoStatement::add_extra_update`). The
+move changes no meaning whatever the lines say: the statements are the end of the one block all
+paths to the loop's next iteration pass through. A loop written on one line, or a class without a
+LineNumberTable, shows nothing and keeps one update. Case `TestForUpdateList`. *A value returned after a try whose handlers exit, or
 after a `synchronized` block*: `DeadCodeHelper::incorporate_value_returns` adds a `load; xreturn`
 block to the protected ranges of its predecessors, which puts the `return` into the try; it does
 not when javac reached the block by a `goto` from every predecessor (`jumped_to`: the block does

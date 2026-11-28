@@ -1448,14 +1448,16 @@ pub fn for_header(
 /// the block ahead of `loop_` (not yet its header's), javac compiled from the
 /// same `for` header
 /// (`for (int i = 0, n = a.length; i < n; i++)`): each assigns another
-/// variable the condition or `update` reads and starts on the line of the
+/// variable the condition or one of the header's `updates` reads and starts
+/// on the line of the
 /// condition, as `init` does (a declaration on a line of its own is a
 /// statement before the loop); with a LocalVariableTable, its entry also
 /// covers the loop from its start to where the loop's code ends (not one of
 /// a later local of the slot, which ECJ's for-each temporaries take) and has
-/// the descriptor of `init`'s variable, and a variable without an entry is a
-/// compiler's temporary.
-pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &[Exprent]) -> usize {
+/// the descriptor of `init`'s variable, whose own entry ends with the loop
+/// too (a header declares all its variables or none), and a variable without
+/// an entry is a compiler's temporary.
+pub fn extra_inits(loop_: DoStatement, init: Exprent, updates: &[Exprent], before: &[Exprent]) -> usize {
     let var = |e: Exprent| e.try_as_assignment().and_then(|a| a.get_left().try_as_var());
     let (Some(head), Some(cond)) = (var(init), loop_.get_condition_exprent()) else {
         return 0;
@@ -1468,13 +1470,16 @@ pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &
     let exit = loop_code_end(loop_);
     let loop_start = code_start(loop_.0);
     let head_lvt = head.get_lvt();
+    if head_lvt.as_ref().is_some_and(|lvt| exit.is_none_or(|exit| lvt.get_end() > exit)) {
+        return 0;
+    }
     let mut taken: Vec<VarExprent> = vec![head];
     for candidate in before.iter().rev() {
         let Some(v) = var(*candidate) else {
             break;
         };
         let read = cond.contains_var(v.get_var_version_pair())
-            || update.contains_var(v.get_var_version_pair());
+            || updates.iter().any(|update| update.contains_var(v.get_var_version_pair()));
         if taken.iter().any(|t| t.get_index() == v.get_index())
             || !read
             || line(*candidate) != cond_line
@@ -1497,6 +1502,28 @@ pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &
         taken.push(v);
     }
     taken.len() - 1
+}
+
+/// How many of the expression statements `before`, which end right before
+/// `update` at the end of `loop_`'s body, javac compiled from the same `for`
+/// header (`for (..; ..; i++, j--)`): the header's updates follow the body in
+/// the code and precede it in the text, so with a LineNumberTable each
+/// starts on a line before the one the body's code starts on, as `update`
+/// does. A loop written on one line shows nothing and keeps one update.
+pub fn extra_updates(loop_: DoStatement, update: Exprent, before: &[Exprent]) -> usize {
+    let line = |exprent: Exprent| exprent_start(exprent).and_then(line_at);
+    let Some(body_line) = loop_.get_first().and_then(code_start).and_then(line_at) else {
+        return 0;
+    };
+    let header = |exprent: Exprent| line(exprent).is_some_and(|l| l < body_line);
+    if !header(update) {
+        return 0;
+    }
+    before
+        .iter()
+        .rev()
+        .take_while(|e| (e.is_assignment() || e.is_function()) && header(**e))
+        .count()
 }
 
 /// The slot the last store instruction among those `exprent` came from

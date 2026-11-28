@@ -240,14 +240,10 @@ impl VarDefinitionHelper {
                     {
                         continue;
                     } else {
-                        let lst_special = vec![
-                            dstat
-                                .get_condition_exprent()
-                                .expect("NullPointerException: for condition"),
-                            dstat
-                                .get_inc_exprent()
-                                .expect("NullPointerException: for increment"),
-                        ];
+                        let mut lst_special = vec![dstat
+                            .get_condition_exprent()
+                            .expect("NullPointerException: for condition")];
+                        lst_special.extend(dstat.get_inc_exprents());
                         for var in Self::get_all_vars(&lst_special) {
                             if var.get_index() == index {
                                 stat = stat.get_parent().expect("NullPointerException: parent");
@@ -1965,20 +1961,22 @@ impl VarDefinitionHelper {
                         &mut when_false,
                     );
                 }
-                if let Some(inc) = do_stat.get_inc_exprent() {
+                if do_stat.get_inc_exprent().is_some() {
                     live_var_defs.add_all(when_true.iter().copied());
-                    self.iterate_clashing_exprent(
-                        do_stat.0,
-                        mt,
-                        var_definitions,
-                        inc,
-                        live_var_defs,
-                        cur_var_defs,
-                        name_map,
-                        seen_methods,
-                        &mut JHashSet::new(),
-                        &mut JHashSet::new(),
-                    );
+                    for inc in do_stat.get_inc_exprents() {
+                        self.iterate_clashing_exprent(
+                            do_stat.0,
+                            mt,
+                            var_definitions,
+                            inc,
+                            live_var_defs,
+                            cur_var_defs,
+                            name_map,
+                            seen_methods,
+                            &mut JHashSet::new(),
+                            &mut JHashSet::new(),
+                        );
+                    }
                     live_var_defs.remove_all(&when_true);
                 }
 
