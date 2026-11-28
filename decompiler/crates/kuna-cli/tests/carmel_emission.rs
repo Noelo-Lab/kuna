@@ -6319,6 +6319,14 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     let a0 = packet([0x21, 0xac, 0x20]);
     let a1 = packet([0x21, 0xac, 0x62]);
     let dynamic = [[0x90, 0, 0x0a, 0xce, 0x84, 2], a0, a1, a0, a1, a0, ret];
+    let mut register = [nop; 11];
+    register[0] = packet([0x2a, 0xa6, 0x7b]); // REPEAT R3, word 15, delay 3
+    register[4] = a0;
+    register[7] = [0xa1, 0xac, 0x20, 0x21, 0xac, 0x62];
+    register[8] = a0;
+    register[10] = ret;
+    let mut unreachable_odd_tail = register;
+    unreachable_odd_tail[7] = a0;
     let nested = [[0xa0, 0, 0x0e, 0xce, 4, 0], [0xa0, 0, 6, 0xce, 4, 0], a0, nop, nop, nop, nop, nop, ret];
     let mut coincident = [nop; 12];
     coincident[0] = [0xa0, 0, 0x12, 0xce, 0x0c, 0];
@@ -6334,10 +6342,15 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     let continuing = transfer(continue_issue);
     let breaking = transfer(break_issue);
     let transfer_inputs = &["A0L", "A1L", "A2L", "A3L", "A4L", "A5L", "ECFG", "EST"][..];
-    let mut emitted = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut emitted = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\nvoid carmel_zero_repeat_count(void) { abort(); }\n"
+    );
     let mut calls = String::from("int main(void) {\n");
     for (n, (code, base, params, reg, checks)) in [
         (&dynamic[..], "0", &["A0L", "ECFG", "R1"][..], "A0L", &[("10,0,1", 13), ("10,0,3", 19)][..]),
+        (&register[..], "0", &["A0L", "ECFG", "R3"][..], "A0L", &[("0,0,1", 3), ("0,0,2", 5)][..]),
+        (&register[..], "0", &["A1L", "ECFG", "R3"][..], "A1L", &[("0,0,2", 2)][..]),
+        (&unreachable_odd_tail[..], "0", &["R3"][..], "LC1", &[("2", 2)][..]),
         (&nested[..], "0", &["A0L", "ECFG"][..], "A0L", &[("10,0", 14)][..]),
         (&nested[..], "0", &[][..], "LC1", &[("", 0)][..]),
         (&nested[..], "0", &[][..], "LC2", &[("", 0)][..]),

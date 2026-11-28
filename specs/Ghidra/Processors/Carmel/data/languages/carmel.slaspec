@@ -211,6 +211,8 @@ define pcodeop carmel_d2_end_ex_controls;
 define pcodeop carmel_staged_wb_data;
 define pcodeop carmel_data_only_ex;
 define pcodeop carmel_address_only_ex;
+define pcodeop carmel_prove_repeat_r3_sample;
+define pcodeop carmel_zero_repeat_count;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
     carmel_issue = (0,2) noflow
@@ -229,7 +231,7 @@ define context contextreg
     hw_loop_end_publish = (18,18) noflow
     hw_loop_indirect = (19,19) noflow
     hw_loop_activate = (20,20) noflow
-    hw_loop_capture_rn0 = (21,21) noflow
+    hw_loop_capture_count = (21,21) noflow
     hw_loop_setup = (24,24) noflow
     carmel_implicit_repeat = (25,25) noflow
     carmel_gpp_disconnected = (26,26) noflow
@@ -1430,7 +1432,12 @@ macro activate_loop_bank(due, first, last, pending, count, start, end, counter, 
     publish_loop_word(last, LEAH, LEAL);
     LC = count;
     LOOP_FRAME = frame;
-    pending = pending & 0xfb;
+    if ((pending & 0x10) == 0 || count != 0) goto <complete>;
+  <stopped>
+    carmel_zero_repeat_count();
+    goto <stopped>;
+  <complete>
+    pending = pending & 0xeb;
   <done>
 }
 
@@ -1438,7 +1445,12 @@ macro capture_loop_count(due, pending, count, depth, level) {
     local at:4 = inst_start;
     if (depth < level) goto <done>;
     if ((pending & 8) == 0 || at != due) goto <done>;
+    if ((pending & 0x10) == 0) goto <rn0>;
+    count = R3;
+    goto <captured>;
+  <rn0>
     count = RN0;
+  <captured>
     pending = pending & 0xf7;
   <done>
 }
@@ -1470,8 +1482,8 @@ loop_activate: is hw_loop_activate=1 {
     activate_loop_bank(LOOP_LAST_AT4, LOOP_FIRST_WORD4, LOOP_LAST_WORD4, LOOP_PENDING4, LOOP_COUNT4, LSA4W, LEA4W, LC4, depth, 12:2, 4:1);
 }
 
-loop_capture: is hw_loop_capture_rn0=0 { }
-loop_capture: is hw_loop_capture_rn0=1 {
+loop_capture: is hw_loop_capture_count=0 { }
+loop_capture: is hw_loop_capture_count=1 {
     local depth:2 = PSTATUS & 0x000f;
     capture_loop_count(LOOP_FIRST_AT1, LOOP_PENDING1, LOOP_COUNT1, depth, 9:2);
     capture_loop_count(LOOP_FIRST_AT2, LOOP_PENDING2, LOOP_COUNT2, depth, 10:2);
@@ -1614,6 +1626,11 @@ with : hw_loop_phase=1 {
 
 :REPEAT "RN0",loop_register_endpoint "delay" hw_loop_reg_delay is (carmel_issue=1 & slot_mode=0 & slot_16_22=0x2a & slot_15_15=1 & hw_loop_reg_source=24 & loop_register_endpoint & hw_loop_reg_delay & $(BLOCK_LOOP_PLAN)); (slot_mode=0 & nop_right) {
     arm_block_loop(0:2, 12:1, $(ARM_LOOP_PLAN));
+}
+
+:REPEAT "R3",loop_register_endpoint "delay" hw_loop_reg_delay is (carmel_issue=1 & slot_mode=0 & slot_16_22=0x2a & slot_15_15=1 & hw_loop_reg_source=19 & loop_register_endpoint & hw_loop_reg_delay & $(BLOCK_LOOP_PLAN)); (slot_mode=0 & nop_right) {
+    carmel_prove_repeat_r3_sample(loop_start_at, R3);
+    arm_block_loop(0:2, 0x1c:1, $(ARM_LOOP_PLAN));
 }
 
 :^complete_left is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0))

@@ -33,7 +33,7 @@ impl LoopSetup {
                     count: LoopCount::Immediate,
                 });
             }
-            if issue == Issue::Parallel && slot[1] & 0xfe == 0xb0 {
+            if issue == Issue::Parallel && matches!(slot[1] & 0xfe, 0xa6 | 0xb0) {
                 return Some(Self {
                     delay: u64::from(slot[2] & 7),
                     end_words: u64::from((u16::from_be_bytes([slot[1], slot[2]]) >> 3) & 63),
@@ -122,7 +122,7 @@ impl Plans {
                 paint(&mut result.specializations, field, setup, value);
             }
             for (at, phase) in [
-                (start_at, if dynamic { "hw_loop_capture_rn0" } else { "hw_loop_start_publish" }),
+                (start_at, if dynamic { "hw_loop_capture_count" } else { "hw_loop_start_publish" }),
                 (Some(end_at), if dynamic { "hw_loop_activate" } else { "hw_loop_end_publish" }),
             ] {
                 if let Some(at) = at.filter(|&at| result.is_issue_start(at)) {

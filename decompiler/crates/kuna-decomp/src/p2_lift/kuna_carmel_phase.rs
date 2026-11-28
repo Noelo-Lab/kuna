@@ -49,6 +49,7 @@ pub(crate) struct PhaseDecode<'a> {
     operand_fetch: Option<u64>,
     reset_ex_end: Option<u64>,
     staged_data: Option<u64>,
+    repeat_r3: Option<u64>,
     ff: Option<FfOps>,
 }
 
@@ -76,6 +77,7 @@ impl<'a> PhaseDecode<'a> {
         let operand_fetch = index(b"carmel_operand_fetch_survives");
         let reset_ex_end = index(b"carmel_d2_end_ex_controls");
         let staged_data = index(b"carmel_staged_wb_data");
+        let repeat_r3 = index(b"carmel_prove_repeat_r3_sample");
         let ff = (|| Some(FfOps {
             capture: index(b"carmel_capture_ff_before_ex")?,
             fetch: index(b"carmel_sample_ff_at_of")?,
@@ -93,7 +95,7 @@ impl<'a> PhaseDecode<'a> {
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
             fixed_read_tick, fixed_load, fixed_store, end_unmodeled, omitted, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
-            staged_data, ff })
+            staged_data, repeat_r3, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -106,6 +108,7 @@ impl<'a> PhaseDecode<'a> {
         let mut reads = false;
         let mut resets = Vec::new();
         let mut address_ex = Vec::new();
+        let mut repeat_samples = Vec::new();
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
             if op.get_parent().is_none() { continue; }
@@ -152,9 +155,14 @@ impl<'a> PhaseDecode<'a> {
                 markers.push((op_id, offset, Mark::FixedAccess));
             } else if Some(index) == self.delay_mask {
                 delay_queries.push((op_id, offset));
+            } else if Some(index) == self.repeat_r3 {
+                repeat_samples.push(op_id);
             } else if index == self.admission {
                 reads = true;
             }
+        }
+        if !repeat_samples.is_empty() {
+            prove_repeat_samples(fd, visits, &repeat_samples)?;
         }
         if let Some(&(_, offset, _)) = markers.iter().find(|(_, _, kind)| *kind == Mark::Omitted) {
             prove_omitted_prefix(fd, visits, &markers, offset)?;
@@ -434,6 +442,48 @@ fn lower_operand_fetch(fd: &mut Funcdata, op: OpId, canceled: bool) -> KunaResul
 fn sample_error(fd: &Funcdata, op: OpId, sample: &str) -> KunaError {
     let addr = fd.obank().get(op).unwrap().get_addr();
     KunaError::lowlevel(format!("Unproved Carmel {sample} at CODE {:#x}", addr.get_offset() / 3))
+}
+
+// The count sees the first successor's address phase, not its entire issue.
+// With no write to R3 or transfer in that issue, both samples agree.
+fn prove_repeat_samples(fd: &mut Funcdata, visits: &VisitedMap, samples: &[OpId]) -> KunaResult<()> {
+    let mut successors = BTreeMap::new();
+    for &sample in samples {
+        let marker = fd.obank().get(sample).unwrap();
+        let address = marker.get_addr();
+        let following = fd.vbank().get(marker.get_in(1).unwrap()).unwrap().get_offset();
+        let Some(visit) = visits.get(address) else {
+            return Err(sample_error(fd, sample, "R3 repeat count"));
+        };
+        let next = address + i64::from(visit.size);
+        if next.get_offset() != following || !visits.contains_key(&next) {
+            return Err(sample_error(fd, sample, "R3 repeat count"));
+        }
+        successors.insert(following, sample);
+    }
+    for (_, id) in fd.obank().iter_all() {
+        let op = fd.obank().get(id).unwrap();
+        let Some(&sample) = successors.get(&op.get_addr().get_offset()) else { continue };
+        if op.get_parent().is_none() { continue; }
+        let marker = fd.obank().get(sample).unwrap();
+        let register = fd.vbank().get(marker.get_in(2).unwrap()).unwrap();
+        let writes = op.get_out().and_then(|out| fd.vbank().get(out))
+            .is_some_and(|out| out.overlap_range(register.get_addr(), register.get_size()) >= 0);
+        let transfer = match op.code() {
+            OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
+                !fd.vbank().get(op.get_in(0).unwrap()).unwrap().is_constant()
+            }
+            OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => true,
+            _ => false,
+        };
+        if writes || transfer {
+            return Err(sample_error(fd, id, "R3 repeat count"));
+        }
+    }
+    for &sample in samples {
+        fd.op_destroy(sample);
+    }
+    Ok(())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

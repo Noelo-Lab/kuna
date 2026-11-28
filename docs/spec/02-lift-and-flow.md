@@ -3974,6 +3974,10 @@ update, and publish the count and bounds at execute. Immediate bounds publish
 separately, before any dynamic execute publication at the same issue. The
 Carmel loader plans each phase at a physical issue; the lifted frame owns the
 pending values. Loop bounds and restart targets remain CODE word addresses.
+For `REPEAT R3`, a zero count stops after publishing the bounds. An odd
+bound only becomes a terminal issue if it is an actual sequential slot.
+The lift checks that the first following issue cannot change the sampled
+`R3` or transfer control before capture.
 At a terminal issue only the active top frame can retire. An already-selected
 redirect belongs to that terminal issue; an adjacent terminal issue cannot
 consume it. A tail with a single established restart target uses a direct
