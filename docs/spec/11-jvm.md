@@ -996,6 +996,18 @@ R> f` keeps the cast javac requires, and with or without the table `return (Stri
 first(raw)` for a raw `Seq raw` passed to `<T> T first(Seq<T>)` no longer drops it. An
 argument of a type variable passed for a parameter of a type variable that bounds it (`U
 extends T`) needs no cast to it (JLS 4.10.2, `generic_casts::variable_below`).
+
+**Casts no instruction records (kuna).** A cast between two parameterizations of one class
+erases to nothing, so the class file holds no instruction for it, yet the types can still
+decide it is needed. A variable (or `this`) whose type has, at some place, a type variable
+in scope that is not a subtype of `B`, where the target type has `? extends B` (JLS 4.5.1:
+no bound of the variable, through the type variables among its bounds, is of `B`'s class;
+each bound a known class or `Object`), is not assignable to the target, and
+`uncontained_type_argument` (read by `ExprProcessor`'s generic cast test, for a returned,
+assigned or passed value) writes the cast: `return (Node<? extends Node<N>>) this` for a
+`Node<N>` with `N` bounded by `Object`, which printed `return this` and did not compile. A
+variable bounded by `B`'s class or a subclass (`S extends Self<S>`) is left alone, as is any
+value but a variable, whose inferred type may be less exact than javac's.
 The pass, like every fix that asks which method a call names before the call is written,
 looks the method up without recording it (`InvocationExprent::find_desc`). The ported
 `get_desc` records what it finds, and a call with a recorded method is written without the

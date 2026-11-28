@@ -13,6 +13,7 @@ pub(crate) mod raw_receiver_erasure;
 pub(crate) mod receiver_type_arguments;
 pub(crate) mod unchecked_call_result_cast;
 pub(crate) mod unchecked_generic_cast;
+pub(crate) mod uncontained_type_argument;
 
 use crate::code_type::CodeType;
 use crate::generic_type::GenericType;

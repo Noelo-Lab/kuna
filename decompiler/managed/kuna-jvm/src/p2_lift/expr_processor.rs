@@ -22,6 +22,7 @@ use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::fixes::generic_casts::unchecked_generic_cast;
+use crate::fixes::generic_casts::uncontained_type_argument;
 use crate::fixes::generic_casts::bounded_inference_cast;
 use crate::fixes::generic_casts;
 use crate::fixes::generic_casts::argument_checkcast;
@@ -1596,6 +1597,9 @@ impl ExprProcessor {
             (Some(left), Some(right)) => (left, right),
             _ => return false,
         };
+        if !ex.is_kotlin() && uncontained_type_argument::needs_cast(ex, left, right) {
+            return true;
+        }
 
         if left.is_generic() && right.is_generic() {
             if Self::should_generic_types_cast(&named, left, right) {
