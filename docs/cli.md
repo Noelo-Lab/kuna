@@ -3126,6 +3126,9 @@ with the reason, so the text answer never reads as complete when it is not:
  "coverage": {"decoded": true, "section": "__TEXT,__text",
               "code_section": true, "executable": true,
               "unwalked": [{"name","address","address_hex","section"}],
+              "unread_tables_count": N,
+              "unread_tables": [{"address","address_hex",
+                                 "function": {"name","address","address_hex"}}],
               "notes": ["..."]},
  "xrefs": [{"address","address_hex","kind",
             "from_address","from_address_hex","to_address","to_address_hex",
@@ -3243,6 +3246,8 @@ no such gap.
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
+| `unread_tables_count` | How many computed jumps through a jump table the walk could not read (see below) the answer may be missing code behind: for `--from` a function, the ones it dispatches from; for `--from` such a jump, that jump; for a `--to` that finds nothing, every one in the image. Code only they reach was not decoded. `0` otherwise. |
+| `unread_tables` | The first three of those jumps in address order, the ones the note names, with the function each is in (`null` when nothing owns it). |
 | `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section, and one when the function (or the jump) asked about dispatches through a jump table the walk could not read (see below); a `--to` answer gets one while `unwalked` is not empty, when it finds nothing and the image has such a jump, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
 
 An incoming JSON answer may include `target.call_destination_candidate`. It names
@@ -3304,11 +3309,12 @@ call, a float-derived selector has no range check, MIPS PIC loads the base from
 the GOT. `--from` a function that dispatches through such a table says so in
 `coverage.notes`, as does `--from` the jump itself, and a `--to` that finds
 nothing names the first three in the image with their functions, since the
-reference asked about may be made in a case body. A jump through a pointer (a
-structure field, an argument, a GOT or import slot, a vtable, a returned value),
-a PLT stub and a return index no table and add no note, and neither does a table
-the walk read. `kuna decompile` reads a switch through the function's own data
-flow and recovers many of these.
+reference asked about may be made in a case body (`coverage.unread_tables` lists
+the same three, `coverage.unread_tables_count` counts them all). A jump through
+a pointer (a structure field, an argument, a GOT or import slot, a vtable, a
+returned value), a PLT stub and a return index no table and add no note, and
+neither does a table the walk read. `kuna decompile` reads a switch through the
+function's own data flow and recovers many of these.
 
 ```
 $ kuna xrefs unreadtable_x86_64 --to t_c_0

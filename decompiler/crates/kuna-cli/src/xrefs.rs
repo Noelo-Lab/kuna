@@ -327,8 +327,9 @@ fn query(args: &XrefArgs) -> Result<String, String> {
         .filter(|r| args.instructions && (args.kinds.is_empty() || args.kinds.contains(&r.kind)))
         .collect();
     if args.instructions {
-        let scope = (args.direction, function, rows.is_empty());
-        coverage.notes.extend(unread_tables_note(&prog, &file, &index, &names, &target, scope));
+        coverage.unread = unread_tables(&prog, &file, &index, &target, (args.direction, function, rows.is_empty()));
+        let scope = (args.direction, function);
+        coverage.notes.extend(unread_tables_note(&prog, &index, &names, &target, scope, &coverage.unread));
     }
     for note in &coverage.notes {
         eprintln!("note: {note}");
@@ -433,6 +434,8 @@ struct Coverage {
     placement: Placement,
     /// [`unwalked_code`].
     unwalked: Vec<(u64, String)>,
+    /// [`unread_tables`].
+    unread: Vec<u64>,
     call_destination_site: Option<u64>,
     notes: Vec<String>,
 }
@@ -498,7 +501,7 @@ fn coverage_of(
             && unwalked.iter().any(|(address, _)| *address == addr)
             && declared_data(file, addr).is_none()
     });
-    Coverage { decoded, placement, unwalked, call_destination_site, notes }
+    Coverage { decoded, placement, unwalked, unread: Vec::new(), call_destination_site, notes }
 }
 
 /// The note for an address of a kernel collection the loaded entry does not
@@ -656,38 +659,51 @@ fn unwalked_note(
     })
 }
 
-/// (kuna `unreadtable`) What the answer is missing behind computed jumps whose
-/// jump table the walk could not read ([`XrefIndex::unread_tables`]): for
-/// `--from` a function, the ones it dispatches from; for `--from` such a jump,
-/// that jump; for a `--to` that found nothing, every one in the image, since the
-/// reference asked about may be made from code only one of them reaches.
-fn unread_tables_note(
+/// (kuna `unreadtable`) The computed jumps whose jump table the walk could not
+/// read ([`XrefIndex::unread_tables`]) that the answer may be missing code
+/// behind: for `--from` a function, the ones it dispatches from; for `--from`
+/// such a jump, that jump; for a `--to` that found nothing, every one in the
+/// image, since the reference asked about may be made from code only one of
+/// them reaches.
+fn unread_tables(
     prog: &ConsoleProgram,
     file: &object::File,
     index: &XrefIndex,
-    names: &EntryNames,
     target: &Target,
     (direction, function, empty): (Direction, bool, bool),
-) -> Option<String> {
-    const LISTED: usize = 3;
+) -> Vec<u64> {
     let arch = prog.arch();
-    let sites: Vec<u64> = match direction {
+    match direction {
         Direction::From if function => index.unread_tables(file, arch, Some(target.addr)),
-        Direction::From => {
-            let owner = index.function_containing(target.addr)?;
+        Direction::From => index.function_containing(target.addr).map_or_else(Vec::new, |owner| {
             index.unread_tables(file, arch, Some(owner)).into_iter().filter(|&at| at == target.addr).collect()
-        }
+        }),
         Direction::To if empty => index.unread_tables(file, arch, None),
         Direction::To => Vec::new(),
-    };
+    }
+}
+
+/// How many of [`unread_tables`]' jumps the note and `coverage.unread_tables`
+/// name; `coverage.unread_tables_count` counts them all.
+const UNREAD_LISTED: usize = 3;
+
+/// The `coverage.notes` sentence for [`unread_tables`]' `sites`.
+fn unread_tables_note(
+    prog: &ConsoleProgram,
+    index: &XrefIndex,
+    names: &EntryNames,
+    target: &Target,
+    (direction, function): (Direction, bool),
+    sites: &[u64],
+) -> Option<String> {
     let (&first, _) = sites.split_first()?;
     let spell = |at: u64| match owning_function(prog, index, names, at).filter(|_| direction == Direction::To) {
         Some((_, name)) => format!("0x{at:x} in {name}"),
         None => format!("0x{at:x}"),
     };
-    let mut listed: Vec<String> = sites.iter().take(LISTED).map(|&at| spell(at)).collect();
-    if sites.len() > LISTED {
-        listed.push(format!("{} more", sites.len() - LISTED));
+    let mut listed: Vec<String> = sites.iter().take(UNREAD_LISTED).map(|&at| spell(at)).collect();
+    if sites.len() > UNREAD_LISTED {
+        listed.push(format!("{} more", sites.len() - UNREAD_LISTED));
     }
     let one = sites.len() == 1;
     let tables = if one {
@@ -747,6 +763,23 @@ fn coverage_json(prog: &ConsoleProgram, index: &XrefIndex, names: &EntryNames, c
                             ("address".into(), Json::Number(at.to_string())),
                             ("address_hex".into(), Json::Str(format!("0x{at:x}"))),
                             ("section".into(), Json::Str(section.clone())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("unread_tables_count".into(), Json::Number(c.unread.len().to_string())),
+        (
+            "unread_tables".into(),
+            Json::Array(
+                c.unread
+                    .iter()
+                    .take(UNREAD_LISTED)
+                    .map(|&at| {
+                        Json::Object(vec![
+                            ("address".into(), Json::Number(at.to_string())),
+                            ("address_hex".into(), Json::Str(format!("0x{at:x}"))),
+                            ("function".into(), optional_function_json(owning_function(prog, index, names, at))),
                         ])
                     })
                     .collect(),
