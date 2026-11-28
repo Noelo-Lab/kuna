@@ -2360,7 +2360,9 @@ mod tests {
         // and kuna-passthroughfwdstack / a forwarder's call with a stack argument takes the target's whole run
         // and kuna-gotoreduce-auto / an unoptimized function keeps the goto statements it was written with
         // and kuna-revisitcalls / a revisit that retires a call's creation guards the call again
-        assert_eq!(count, 963, "corpus file count drifted");
+        // and kuna-wholeinputarg / a stated parameter the caller hands on whole is passed whole
+        // and kuna-wholeinputarg-be / its big-endian twin
+        assert_eq!(count, 965, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
