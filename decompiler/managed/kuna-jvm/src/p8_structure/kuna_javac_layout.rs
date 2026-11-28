@@ -1448,7 +1448,8 @@ pub fn for_header(
 /// the block ahead of `loop_` (not yet its header's), javac compiled from the
 /// same `for` header
 /// (`for (int i = 0, n = a.length; i < n; i++)`): each assigns another
-/// variable the condition or `update` reads and starts on the line of the
+/// variable the condition or one of the header's `updates` reads and starts
+/// on the line of the
 /// condition, as `init` does (a declaration on a line of its own is a
 /// statement before the loop); with a LocalVariableTable, its entry also
 /// covers the loop from its start to where the loop's code ends (not one of
@@ -1456,7 +1457,7 @@ pub fn for_header(
 /// the descriptor of `init`'s variable, whose own entry ends with the loop
 /// too (a header declares all its variables or none), and a variable without
 /// an entry is a compiler's temporary.
-pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &[Exprent]) -> usize {
+pub fn extra_inits(loop_: DoStatement, init: Exprent, updates: &[Exprent], before: &[Exprent]) -> usize {
     let var = |e: Exprent| e.try_as_assignment().and_then(|a| a.get_left().try_as_var());
     let (Some(head), Some(cond)) = (var(init), loop_.get_condition_exprent()) else {
         return 0;
@@ -1478,7 +1479,7 @@ pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &
             break;
         };
         let read = cond.contains_var(v.get_var_version_pair())
-            || update.contains_var(v.get_var_version_pair());
+            || updates.iter().any(|update| update.contains_var(v.get_var_version_pair()));
         if taken.iter().any(|t| t.get_index() == v.get_index())
             || !read
             || line(*candidate) != cond_line

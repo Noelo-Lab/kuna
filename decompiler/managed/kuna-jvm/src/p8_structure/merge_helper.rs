@@ -611,7 +611,9 @@ impl MergeHelper {
                 let pd_exprents = pre_data.expect("preData").get_exprents().expect("exprents");
                 let exp = pd_exprents.remove_at(pd_exprents.len() - 1);
                 let extra = if kuna_javac_layout::active() {
-                    kuna_javac_layout::extra_inits(stat, exp, last_exp, &pd_exprents.to_vec())
+                    let mut updates = extra_updates.clone();
+                    updates.push(last_exp);
+                    kuna_javac_layout::extra_inits(stat, exp, &updates, &pd_exprents.to_vec())
                 } else {
                     0
                 };

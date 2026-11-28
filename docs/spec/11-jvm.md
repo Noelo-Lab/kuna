@@ -853,7 +853,7 @@ printed with all but the last before the loop, where their scope outlives it, so
 after the loop could not take the slot javac gave it (ECJ's `exSize` printed as a second local,
 and Vineflower merges it into `i` with the wrong type). `kuna_javac_layout::extra_inits` takes
 the assignments right before the header's into it too when each assigns another variable the
-condition or update reads, starts on the condition's line, does not read its own slot (a
+condition or one of the header's updates reads, starts on the condition's line, does not read its own slot (a
 declaration cannot read the variable it declares: d8's release DEX of Elasticsearch's `size =
 Math.min(docs.length, size)` on the header's line printed a second `long` local; case
 `TestForInitReassigned`), and, with a LocalVariableTable, has the descriptor of the header's

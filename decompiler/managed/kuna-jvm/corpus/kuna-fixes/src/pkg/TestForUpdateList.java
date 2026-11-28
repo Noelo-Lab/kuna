@@ -50,6 +50,16 @@ public class TestForUpdateList {
       return s + n;
    }
 
+   static int readByUpdate(int[] a, int bits) {
+      int s = 0;
+
+      for (int i = 0, shift = bits; shift <= 32; i++, shift += bits) {
+         s += a[i] << shift;
+      }
+
+      return s;
+   }
+
    static int bodyIncrement(int[] a) {
       int s = 0;
       int n = 0;
