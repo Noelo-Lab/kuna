@@ -1,7 +1,11 @@
 //! Fix `selecting_cast`: an argument of a call of a method of a class in the
 //! input is cast to its parameter type when, written with its own type,
 //! javac's overload resolution (JLS 15.12.2) would select another method of
-//! that name or find the call ambiguous.
+//! that name or find the call ambiguous. The argument's own type is decided
+//! twice: by its instruction, and by the type arguments of its receiver
+//! (`list.get(0)` of a `List<String>` is a `String` for javac, an `Object`
+//! for the descriptor), so that `show((Object) list.get(0))` keeps the cast
+//! that selects `show(Object)` beside `show(String)`.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -10,9 +14,11 @@ use std::rc::Rc;
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
+use crate::exprent::Exprent;
 use crate::fixes::overloads::vararg_spread_resolution::{
-    candidates, more_specific, phase, same_parameters, written_type,
+    candidates, convertible, more_specific, phase, primitive, same_parameters, written_type,
 };
+use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, Type};
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::BitSet;
@@ -46,6 +52,7 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
         return;
     }
     let mut args = Vec::with_capacity(params.len());
+    let mut generic_args = Vec::with_capacity(params.len());
     for (i, param) in params.iter().enumerate() {
         if param.try_as_new().is_some_and(|n| n.is_lambda()) {
             return;
@@ -54,28 +61,64 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
         if !known(&t) {
             return;
         }
+        generic_args.push(generic_type(param, &t).unwrap_or_else(|| t.clone()));
         args.push(t);
     }
-    if phase(&args, &descriptor.params) != Some(1) {
+    decide(&args, &descriptor.params, &methods, ambiguous);
+    if generic_args.iter().zip(&args).any(|(g, t)| !g.equals(t)) {
+        decide(&generic_args, &descriptor.params, &methods, ambiguous);
+    }
+}
+
+/// Marks in `ambiguous` the arguments, of types `args`, to cast to the
+/// parameter types `own` of the method called so that no rival of `methods`
+/// still applicable is as specific.
+fn decide(args: &[VarType], own: &[VarType], methods: &[(StructMethod, MethodDescriptor)], ambiguous: &mut BitSet) {
+    if phase(args, own) != Some(1) {
         return;
     }
-    let mut differ = vec![false; params.len()];
+    let mut differ = vec![false; args.len()];
     for (_, md) in methods.iter() {
-        if same_parameters(&md.params, &descriptor.params)
-            || phase(&args, &md.params) != Some(1)
-            || more_specific(&descriptor.params, &md.params)
+        if same_parameters(&md.params, own)
+            || phase(args, &md.params) != Some(1)
+            || more_specific(own, &md.params)
         {
             continue;
         }
         for (i, d) in differ.iter_mut().enumerate() {
-            *d |= !md.params[i].equals(&descriptor.params[i]);
+            *d |= !md.params[i].equals(&own[i]);
         }
     }
     for (i, d) in differ.into_iter().enumerate() {
-        if d && !args[i].equals(&descriptor.params[i]) {
+        if d && !args[i].equals(&own[i]) {
             ambiguous.set(i);
         }
     }
+}
+
+/// The class or array type javac gives the argument `e`, a call or a field
+/// read written with the type `written`, when the type arguments of its
+/// receiver make it a subtype of `written`: the erasure of its inferred
+/// type, a wildcard's upper bound taken for the wildcard and a type
+/// variable's first bound for the variable.
+fn generic_type(e: Exprent, written: &VarType) -> Option<VarType> {
+    if primitive(written) || written.type_ == CodeType::Null || e.try_as_invocation().is_none() && e.try_as_field().is_none() {
+        return None;
+    }
+    let mut inferred = e.get_inferred_expr_type(None);
+    if inferred.type_ == CodeType::Genvar && inferred.array_dim == 0 {
+        inferred = e.get_named_generics().get(&inferred)?.first()?.clone();
+    }
+    if inferred.type_ != CodeType::Object && inferred.array_dim == 0 {
+        return None;
+    }
+    if inferred.try_as_generic().is_some_and(|g| {
+        g.get_wildcard() == GenericType::WILDCARD_SUPER || g.get_wildcard() == GenericType::WILDCARD_UNBOUND
+    }) {
+        return None;
+    }
+    let erased = VarType::new_value(inferred.type_, inferred.array_dim, inferred.value.clone());
+    (!erased.equals(written) && !primitive(&erased) && convertible(&erased, written)).then_some(erased)
 }
 
 type Rivals = Rc<Vec<(StructMethod, MethodDescriptor)>>;
@@ -163,15 +206,14 @@ fn generic_parameters(mt: StructMethod) -> bool {
     })
 }
 
-/// Whether `t` is a type whose conversions are known: a primitive, `null`, or
-/// a class or array of the class context.
+/// Whether `t` is a type whose conversions are known: a primitive, `null`,
+/// `Object`, or a class or array of the class context.
 fn known(t: &VarType) -> bool {
     match t.type_ {
         CodeType::Null => true,
-        CodeType::Object => t
-            .value
-            .as_deref()
-            .is_some_and(|v| DecompilerContext::get_struct_context().get_class(v).is_some()),
+        CodeType::Object => t.value.as_deref().is_some_and(|v| {
+            v == "java/lang/Object" || DecompilerContext::get_struct_context().get_class(v).is_some()
+        }),
         CodeType::Byte
         | CodeType::Char
         | CodeType::Short

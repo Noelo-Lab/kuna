@@ -2038,7 +2038,15 @@ candidate's parameter differs is cast to its parameter type. Every candidate sti
 applicable then takes a supertype of each parameter, so the invoked method is the most
 specific. A call whose candidates have generic parameter types, whose arguments include a
 lambda or a type kuna cannot resolve, or whose method is varargs or not strictly
-applicable keeps Vineflower's casts.
+applicable keeps Vineflower's casts. The written argument types are decided twice. The
+first is the type the argument's instruction gives it, which is the erased one for a call
+or a field read: `list.get(0)` is an `Object`. The second is the type javac gives it from
+the type arguments of its receiver: the erasure of its inferred type, a wildcard's upper
+bound for the wildcard and a type variable's first bound for the variable, so `list.get(0)`
+of a `List<String>` is a `String`. Each decision can only add casts. Without the second,
+`show((Object) list.get(0))` beside a `show(String)` was printed `show(list.get(0))`, which
+compiles and calls `show(String)` (Vineflower prints it so): the descriptor's type matched
+`show(Object)` exactly and no cast seemed needed.
 
 **A callee's unbound class variable (kuna).** `appendParamList` writes each argument
 against its parameter's generic type, remapped through the type arguments the receiver's
