@@ -39,18 +39,22 @@
   <default_proto>
     <prototype name="__stdcall" extrapop="0" stackshift="0">
       <input killedbycall="true">
-        <pentry minsize="1" maxsize="8" metatype="float">
-          <register name="f12"/>
-        </pentry>
-        <pentry minsize="1" maxsize="8" metatype="float">
-          <register name="f13"/>
-        </pentry>
-        <pentry minsize="1" maxsize="8" extension="sign">
-          <register name="a0"/>
-        </pentry>
-        <pentry minsize="1" maxsize="8" extension="sign">
-          <register name="a1"/>
-        </pentry>
+        <group>
+          <pentry minsize="1" maxsize="8" metatype="float">
+            <register name="f12"/>
+          </pentry>
+          <pentry minsize="1" maxsize="8" extension="sign">
+            <register name="a0"/>
+          </pentry>
+        </group>
+        <group>
+          <pentry minsize="1" maxsize="8" metatype="float">
+            <register name="f13"/>
+          </pentry>
+          <pentry minsize="1" maxsize="8" extension="sign">
+            <register name="a1"/>
+          </pentry>
+        </group>
         <pentry minsize="1" maxsize="8" extension="sign">
           <register name="a2"/>
         </pentry>
@@ -61,6 +65,17 @@
           <addr offset="32" space="stack"/>
         </pentry>
         <!-- Each leading fixed FP argument also occupies one 64-bit GPR slot. -->
+        <!-- An aggregate result occupies a0 before the first named argument. -->
+        <rule>
+          <datatype name="float"/>
+          <datatype_at index="-1"><datatype name="struct"/></datatype_at>
+          <consume storage="general"/>
+        </rule>
+        <rule>
+          <datatype name="float"/>
+          <datatype_at index="-1"><datatype name="union"/></datatype_at>
+          <consume storage="general"/>
+        </rule>
         <rule>
           <datatype name="float"/>
           <varargs/>
@@ -70,14 +85,12 @@
           <datatype name="float" maxsize="8"/>
           <position index="0"/>
           <consume storage="float"/>
-          <consume_extra storage="general"/>
         </rule>
         <rule>
           <datatype name="float" maxsize="8"/>
           <position index="1"/>
           <datatype_at index="0"><datatype name="float" maxsize="8"/></datatype_at>
           <consume storage="float"/>
-          <consume_extra storage="general"/>
         </rule>
         <rule>
           <datatype name="float"/>
@@ -94,6 +107,14 @@
         <pentry minsize="9" maxsize="16">
           <addr space="join" piece1="v0" piece2="v1"/>
         </pentry>
+        <rule>
+          <datatype name="struct"/>
+          <hidden_return strategy="normalparam"/>
+        </rule>
+        <rule>
+          <datatype name="union"/>
+          <hidden_return strategy="normalparam"/>
+        </rule>
       </output>
       <unaffected>
         <register name="s0"/>

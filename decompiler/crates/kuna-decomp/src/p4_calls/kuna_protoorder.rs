@@ -1505,8 +1505,7 @@ pub struct Recovered {
 /// A recovered VOID return is not stated: `set_pieces` output-locks whatever the
 /// pieces name, and a locked void output removes the call's result at every
 /// site, so a caller reading the return register would read a value nothing
-/// writes.  The parked list is a FLOOR (`first_var_arg_slot` past the recovered
-/// parameters): a closed list skips `init_active_input` for the locked call spec
+/// writes.  The parked list is a FLOOR (`RECOVERED_INPUT_TAIL`): a closed list skips `init_active_input` for the locked call spec
 /// and deletes every argument past the parked ones, while a variable tail keeps
 /// the caller's own recovery on (`coreaction_protos.rs`, `if !inputlocked ||
 /// varargs`).
@@ -1535,7 +1534,7 @@ pub fn recovered_pieces(
         outtype,
         intypes: Vec::new(),
         innames: Vec::new(),
-        first_var_arg_slot: nparams,
+        first_var_arg_slot: PrototypePieces::RECOVERED_INPUT_TAIL,
         output_storage: None,
         input_storage: Vec::new(),
         kuna_library_names: None,
@@ -1652,7 +1651,7 @@ fn next_slot_storage(pieces: &PrototypePieces, arch: &Architecture) -> Option<(A
 /// entry walk cannot speak about at all.
 ///
 /// Dropping a real parameter is the cheap direction here and only because the
-/// parked list is a FLOOR (`first_var_arg_slot`): the caller still recovers
+/// parked list is a FLOOR (`RECOVERED_INPUT_TAIL`): the caller still recovers
 /// whatever it passes past the stated prefix, so an under-stated tail costs a
 /// type on that slot, while an over-stated one fabricates an argument.  Only
 /// the tail is trimmed: removing an interior parameter would leave a hole the
@@ -1766,8 +1765,7 @@ fn slot_is_read(
 /// are all parked in the same slot, and every one of them is a stated fact that
 /// outranks a recovered guess.
 ///
-/// The parked list is always a FLOOR -- `first_var_arg_slot` marks the first
-/// slot past the recovered parameters as the start of a variable tail -- because
+/// The parked list always leaves room for more inputs after its fixed prefix, because
 /// a closed list is answered entirely from the parked parameters and truncates
 /// every call that passes more.  Closing it where the entry walk decoded the
 /// callee's whole body (every path ending at a `RETURN`, so "no other argument
@@ -1824,13 +1822,11 @@ pub fn park_recovered(
     if pieces.intypes.is_empty() && pieces.outtype.is_none() {
         return Err(Decline::VoidVoid);
     }
-    pieces.first_var_arg_slot = pieces.intypes.len() as int4;
     match model_storage(&pieces, arch) {
         None => return Err(Decline::StorageUnderivable),
         Some(model) if model != storage => return Err(Decline::NonCanonicalStorage),
         Some(_) => {}
     }
-    pieces.output_storage = crate::kuna_vfpvariadic::parked_output(data.get_arch(), &pieces);
     arch.set_function_prototype_pieces_at(entry, pieces.clone());
     Ok(Recovered { pieces, trimmed })
 }
@@ -1882,8 +1878,6 @@ fn arity_claim_sound(
     pieces: &PrototypePieces,
     storage: &[(Address, int4)],
 ) -> bool {
-    let closed = crate::kuna_armfloatreturn::closed_recovery(arch, pieces);
-    let pieces = &*closed;
     let Some(facts) = entry_facts(arch, entry) else { return false };
     if !storage.iter().all(|(a, _)| crate::kuna_calleearitybody::is_register(a)) {
         return false;
@@ -1893,7 +1887,19 @@ fn arity_claim_sound(
     if next_read || ends_at_the_register_boundary(storage.last(), next) {
         return false;
     }
-    matches!(model_storage(pieces, arch), Some(model) if model == storage)
+    // An arity claim must also account for a possible variadic prologue. Only
+    // the image-backed VFP recovery proves its FP inputs use the fixed ABI.
+    let variadic;
+    let candidate = if crate::kuna_armfloatreturn::applies(arch) || crate::kuna_armfloatargs::applies(arch) {
+        pieces
+    } else {
+        variadic = PrototypePieces {
+            first_var_arg_slot: pieces.intypes.len() as int4,
+            ..pieces.clone()
+        };
+        &variadic
+    };
+    matches!(model_storage(candidate, arch), Some(model) if model == storage)
 }
 
 /// What [`park_recovered`] states beside the parameter types.

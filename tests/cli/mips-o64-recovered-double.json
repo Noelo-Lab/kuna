@@ -1,0 +1,40 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}",
+    "--option",
+    "protoorder",
+    "lock"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/mips-float-arguments/results-o64.so",
+    "in_repo_path": "tests/fixtures/mips-float-arguments/results-o64.so",
+    "binary_sha256": "666c574e38c4654db05d083194010e7cb68cfa0b46c5f65bffd9fbff8c2c9a2f",
+    "binary_size": 14372,
+    "binary_source": "in-repo",
+    "selector": "call_save",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "save_one\\(3\\.75\\);"
+    ],
+    "stdout_absent": [
+      "save_one\\(0x400e000000000000\\);"
+    ]
+  },
+  "notes": "GCC passes the fixed double in f12. Locking the locally recovered prefix must keep that storage while allowing further arguments at call sites."
+}

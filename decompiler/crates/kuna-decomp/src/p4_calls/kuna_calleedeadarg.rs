@@ -926,7 +926,7 @@ fn declared_accounts_for_its_reads(
     entry: &Address,
 ) -> bool {
     match arch.symboltab.function_proto_pieces_across_scopes(entry) {
-        Some(pieces) => pieces.first_var_arg_slot < 0,
+        Some(pieces) => !pieces.has_open_input_tail(),
         None => false,
     }
 }

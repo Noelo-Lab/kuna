@@ -3,9 +3,13 @@
 # mips64-octeon-linux-gnu-gcc), CLANG is Clang 21.1.8 (used only to assemble
 # GCC's output) and MIPS_LD is GNU ld 2.47.
 set -eu
-: "${MIPS_CC:?}" "${CLANG:?}" "${MIPS_LD:?}"
+: "${MIPS_CC:?}" "${CLANG:?}" "${MIPS_LD:?}" "${TMPDIR:?set TMPDIR to an existing absolute scratch directory}"
+case "$TMPDIR" in
+    /*) ;;
+    *) echo "TMPDIR must be an absolute directory" >&2; exit 1 ;;
+esac
 cd "$(dirname "$0")"
-work=$(mktemp -d)
+work=$(mktemp -d "$TMPDIR/mips-float-arguments.XXXXXXXX")
 trap 'rm -rf "$work"' EXIT
 
 image() {
@@ -22,7 +26,14 @@ image n32-le.so n32.c mips64el-linux-gnuabin32 elf32ltsmipn32 -EL -march=mips64r
 image n64.so n32.c mips64-linux-gnuabi64 elf64btsmip -march=mips64r2 -mabi=64
 image r6.so r6.c mips-linux-gnu elf32btsmip -march=mips32r6 -mabi=32
 
+image results-r6.so results.c mips-linux-gnu elf32btsmip -march=mips32r6 -mabi=32
+
 # Clang cannot assemble O64; GCC's own assembler writes its ELF32 flags.
-"$MIPS_CC" -march=mips64r2 -mabi=o64 -mhard-float -O1 -ffreestanding -fno-builtin -fno-ident \
-    -fPIC -mabicalls -c o64.c -o "$work/calls.o"
-"$MIPS_LD" -m elf32btsmip -shared --build-id=none -z max-page-size=0x1000 "$work/calls.o" -o o64.so
+o64_image() {
+    "$MIPS_CC" -march=mips64r2 -mabi=o64 -mhard-float -O1 -ffreestanding -fno-builtin -fno-ident \
+        -fPIC -mabicalls -c "$2" -o "$work/calls.o"
+    "$MIPS_LD" -m elf32btsmip -shared --build-id=none -z max-page-size=0x1000 "$work/calls.o" -o "$1"
+}
+
+o64_image o64.so o64.c
+o64_image results-o64.so results.c

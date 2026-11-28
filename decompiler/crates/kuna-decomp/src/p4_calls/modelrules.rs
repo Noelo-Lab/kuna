@@ -1419,7 +1419,7 @@ impl AssignAction {
                 &mut tmp_status[grp],
                 size_left,
                 align,
-                justify_right,
+                entries[se].justify_right_for(dt, justify_right),
                 manager,
             )?; // Consume all the space we need
             if addr.is_invalid() {

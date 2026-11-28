@@ -529,7 +529,7 @@ impl Image<'_> {
         let declaration = self.declarations.get(&entry)?;
         if !Rc::ptr_eq(&declaration.model, &self.model)
             || !integer_contract(&declaration.pieces)
-            || declaration.pieces.first_var_arg_slot >= 0
+            || declaration.pieces.has_open_input_tail()
             || !declaration.pieces.input_storage.is_empty()
             || declaration.pieces.output_storage.is_some()
         {

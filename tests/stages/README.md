@@ -216,12 +216,14 @@ exit and prints `if (x) return; x = 1;`, as the preset did while it carried
 the option.
 
 `kuna-mips-float-arguments.xml` loads GCC 7.3 PIC images for N32 (both byte
-orders), MIPS32r6 O32 and O64. It declares each callee with `map prototype` and
-checks that the declared arguments take GCC's registers. On N32,
+orders), MIPS32r6 O32 and O64. It uses `map prototype` to check declared
+arguments against GCC's registers and stack slots. On N32,
 `intdbl(2,3.125,91)` passes `3.125` in `f13` and `91` in `a2`. On O64,
 a double after an integer occupies `a1`. N32's ninth `float` sits at its stack
 slot's low address. R6 O32 passes a float after an integer in a GPR word, and O64 puts a
-variadic call's named double in `a0`. The callees read the same positions. Main
+variadic call's named double in `a0`. Structure and union result pointers consume
+`a0` on both old ABIs. O64 wrappers also forward one or two FP registers to
+undeclared sinks. The declared callees read the same positions. Main
 read `a0`, `a1` or an unset slot for each of these. An N64 build of the N32
 source and two controls already right on main stay unchanged. A strict fix with
 one pass. The fixtures and their recipe are in `tests/fixtures/mips-float-arguments/`.

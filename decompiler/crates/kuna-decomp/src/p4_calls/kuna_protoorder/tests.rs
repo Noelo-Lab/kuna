@@ -70,7 +70,8 @@ fn converter_carries_types_names_and_storage() {
     // call spec whose prototype is locked AND variadic keeps active-input
     // recovery on (`ActionFuncLink::func_link_input`: `if !inputlocked ||
     // varargs`).  A closed list would delete those arguments outright.
-    assert_eq!(pieces.first_var_arg_slot, 2);
+    assert!(pieces.has_open_input_tail());
+    assert_eq!(pieces.first_var_arg_slot, PrototypePieces::RECOVERED_INPUT_TAIL);
     assert_eq!(storage, vec![(at(&reg, 0x38), 8), (at(&reg, 0x30), 8)]);
 }
 

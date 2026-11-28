@@ -1090,6 +1090,31 @@ fn proto_model_has_effect_internal_space_is_unaffected() {
 }
 
 #[test]
+fn recovered_input_tail_round_trips_independently_of_declared_varargs() {
+    let mgr = AddrSpaceManager::new();
+    let model = Rc::new(three_reg_proto_model(&mgr, &reg_space_le()));
+    let mut fp = FuncProto::new();
+    fp.set_internal(model, Rc::new(Datatype::new(1, type_metatype::TYPE_VOID)));
+    for tail in [PrototypePieces::RECOVERED_INPUT_TAIL, 1, -1] {
+        let pieces = PrototypePieces {
+            outtype: Some(int4_type()),
+            intypes: vec![int4_type()],
+            first_var_arg_slot: tail,
+            ..Default::default()
+        };
+        fp.update_all_types(&pieces, &PanicTypeFactory, &mgr).unwrap();
+        let mut recovered = PrototypePieces::default();
+        fp.get_pieces(&mut recovered);
+        assert_eq!(recovered.first_var_arg_slot, tail);
+        assert_eq!(fp.is_dotdotdot(), tail != -1);
+        let variadic = crate::modelrules::QualifierFilter::Varargs {
+            first_pos: i32::MIN, last_pos: i32::MAX,
+        };
+        assert_eq!(variadic.filter(&recovered, 0), tail == 1);
+    }
+}
+
+#[test]
 fn proto_model_assign_parameter_storage_orders_output_first() {
     let mgr = AddrSpaceManager::new();
     let reg = reg_space_le();

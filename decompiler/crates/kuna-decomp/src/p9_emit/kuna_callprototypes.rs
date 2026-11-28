@@ -65,7 +65,7 @@ pub fn declarations(arch: &Architecture, fd: &Funcdata) -> Result<Declarations, 
         };
         if !has_wide_contract {
             let parked = fd.get_arch().callee_proto_pieces(call.get_entry_address());
-            if let Some(pieces) = parked.filter(|pieces| pieces.first_var_arg_slot >= 0) {
+            if let Some(pieces) = parked.filter(|pieces| pieces.has_open_input_tail()) {
                 if snapshot
                     .set_pieces(&pieces, None, arch.types(), arch.manage())
                     .is_err()

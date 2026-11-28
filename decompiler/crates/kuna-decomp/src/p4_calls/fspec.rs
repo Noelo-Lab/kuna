@@ -4057,7 +4057,8 @@ pub struct PrototypePieces {
     pub intypes: Vec<Rc<Datatype>>,
     /// Identifiers for input types (C++ `innames`).
     pub innames: Vec<String>,
-    /// First position of a variable argument, or -1 if not varargs (C++
+    /// First declared variadic slot, -1 for a fixed list, or
+    /// [`Self::RECOVERED_INPUT_TAIL`] for an inferred prefix (C++
     /// `firstVarArgSlot`).
     pub first_var_arg_slot: int4,
     /// (kuna) Explicit, model-overriding locked output storage, as established by
@@ -4090,6 +4091,15 @@ pub struct PrototypePieces {
     /// (kuna) Whether a built-in library table supplied this declaration,
     /// rather than the image, a debug-info unit or the caller.
     pub kuna_library_table: bool,
+}
+
+impl PrototypePieces {
+    /// Further inputs may be recovered at the call, using the ordinary fixed-argument ABI.
+    pub const RECOVERED_INPUT_TAIL: int4 = -2;
+
+    pub fn has_open_input_tail(&self) -> bool {
+        self.first_var_arg_slot >= 0 || self.first_var_arg_slot == Self::RECOVERED_INPUT_TAIL
+    }
 }
 
 // =============================================================================
@@ -5491,6 +5501,8 @@ pub mod func_proto_flags {
     pub const IS_OVERRIDE: uint4 = 0x1000;
     /// Potential output storage should always be considered killed-by-call.
     pub const AUTO_KILLEDBYCALL: uint4 = 0x2000;
+    /// DOTDOTDOT permits more caller inputs after an inferred fixed prefix.
+    pub const RECOVERED_INPUT_TAIL: uint4 = 0x4000;
 }
 
 /// A function prototype: the parameters and return value for a specific
@@ -5964,6 +5976,7 @@ impl FuncProto {
     }
     /// Toggle whether this takes variable arguments (C++ `setDotdotdot`).
     pub fn set_dotdotdot(&mut self, val: bool) {
+        self.flags &= !func_proto_flags::RECOVERED_INPUT_TAIL;
         self.flags = if val {
             self.flags | func_proto_flags::DOTDOTDOT
         } else {
@@ -6141,7 +6154,13 @@ impl FuncProto {
                 pieces.innames.push(param.get_name().to_string());
             }
         }
-        pieces.first_var_arg_slot = if self.is_dotdotdot() { num } else { -1 };
+        pieces.first_var_arg_slot = if self.flags & func_proto_flags::RECOVERED_INPUT_TAIL != 0 {
+            PrototypePieces::RECOVERED_INPUT_TAIL
+        } else if self.is_dotdotdot() {
+            num
+        } else {
+            -1
+        };
     }
 
     /// The full prototype is (re)set from a model, names, and data-types (C++
@@ -6251,7 +6270,7 @@ impl FuncProto {
                 if pieces.intypes.is_empty()
                     && pieces.innames.is_empty()
                     && pieces.input_storage.is_empty()
-                    && pieces.first_var_arg_slot < 0
+                    && !pieces.has_open_input_tail()
                 {
                     self.set_input_lock(false);
                 }
@@ -6276,7 +6295,10 @@ impl FuncProto {
         self.store_mut().clear_all_inputs();
         self.store_mut().clear_output();
         self.flags &= !func_proto_flags::VOIDINPUTLOCK;
-        self.set_dotdotdot(proto.first_var_arg_slot >= 0);
+        self.set_dotdotdot(proto.has_open_input_tail());
+        if proto.first_var_arg_slot == PrototypePieces::RECOVERED_INPUT_TAIL {
+            self.flags |= func_proto_flags::RECOVERED_INPUT_TAIL;
+        }
 
         let mut pieces: Vec<ParameterPieces> = Vec::new();
         let model = self.model().clone();
