@@ -729,7 +729,10 @@ follows it with a binding in its condition (`else_chain`: or the `if` it starts 
 a store in the first `if`'s code to the slot of the second's first binding shows two statements
 (Vineflower's chain is not kept), and a store in it to a later slot, or a binding of its own in an
 earlier one, without that one shows the chain, which `reorder` makes (`Reorder::Else`, the second
-`if` taking the code after it as its own else-branch). Case `TestPatternChainSlots`.
+`if` taking the code after it as its own else-branch) when the first `if`'s then-branch ends in a
+return or throw (a branch that ends with a jump is laid out by the rules above). The rule is
+`TransPatterns`', so it is not read in a class ECJ wrote, whose slots follow other rules.
+Case `TestPatternChainSlots`.
 
 **A finally exit inside a loop (kuna).** Each exit of a `finally` body is an edge of its own
 kind to the body's end, and `reorder_if` took such an edge as the direct path out of an `if`,

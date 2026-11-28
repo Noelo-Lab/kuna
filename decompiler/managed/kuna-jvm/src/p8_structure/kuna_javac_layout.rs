@@ -421,7 +421,7 @@ fn pattern_if_else(ifstat: IfStatement, after_jump: i32, rest_start: i32) -> boo
 /// shows the chain; `None` when its code shows neither. Two views: `ifstat`
 /// with `rest`, from `rest_start`, starting with the second `if`
 /// ([`pattern_chain`]); `ifstat` starting the else-branch of the first
-/// ([`else_chain`]).
+/// ([`else_chain`]). javac's rule: not read in a class ECJ wrote.
 fn pattern_chain(ifstat: IfStatement, rest: &[Statement], rest_start: i32) -> Option<bool> {
     let mut next = *rest.first()?;
     while next.is_sequence() {
@@ -669,12 +669,12 @@ pub fn reorder(
     );
     let mut body_first = body_start < rest_start;
     let after_jump = fall_through(ifstat);
-    let chain = if body_first {
+    let chain = if body_first && !ecj() {
         pattern_chain(ifstat, &rest, rest_start).or_else(|| else_chain(ifstat))
     } else {
         None
     };
-    if chain == Some(true) {
+    if chain == Some(true) && exits_before(body, rest_start) {
         let else_branch = *rest.last()?;
         if (next.is_do() || continues_loop(else_branch))
             && !loop_end_ok(&rest, Reorder::Else, body_start)
@@ -684,7 +684,7 @@ pub fn reorder(
         return Some(Reorder::Else);
     }
     if body_first
-        && chain.is_none()
+        && chain != Some(false)
         && after_jump.is_some_and(|f| pattern_if_else(ifstat, f, rest_start))
     {
         return None;
