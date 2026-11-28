@@ -653,7 +653,8 @@ impl XrefIndex {
             .into_iter()
             .filter(|u| {
                 let _selection = super::kuna_walkcontext::InstructionMode::select(arch, translate, &code_space, u.at, u.mode);
-                kuna_unreadtable::indexes_table(translate, &code_space, data_space.as_ref(), &decoded, u, &reach)
+                let ops = u.ops(arch);
+                kuna_unreadtable::indexes_table(translate, &code_space, data_space.as_ref(), &decoded, u.at, &ops, &reach)
             })
             .map(|u| u.at)
             .collect()
@@ -1650,8 +1651,8 @@ fn descend(
                         insn_queue.extend(cases.iter().map(|&target| (target, mode)));
                     }
                     let unread = !call_table && (unbounded || cases.is_empty());
-                    if let Some(branch) = branch.filter(|b| unread && kuna_switchtable::key_of(b, data_space.as_ref()).is_some()) {
-                        st.unread.push(Unread { at: vma, mode, branch: branch.clone(), ops: cap.ops().to_vec() });
+                    if branch.is_some_and(|b| unread && kuna_switchtable::key_of(b, data_space.as_ref()).is_some()) {
+                        st.unread.push(Unread::new(vma, mode, cap.ops()));
                     }
                 }
             }
@@ -2070,13 +2071,37 @@ struct State {
 }
 
 /// (kuna `unreadtable`) A decoded computed jump on a register that no read
-/// resolved to a table: its address and decode mode, the varnode it branches
-/// on, and its p-code.
+/// resolved to a table: its address, decode mode and p-code, each varnode
+/// held as (space index, offset, size) so the index stays shareable across
+/// threads.
 pub(super) struct Unread {
     pub(super) at: u64,
     pub(super) mode: Option<u32>,
-    pub(super) branch: VarnodeData,
-    pub(super) ops: Vec<FullOp>,
+    ops: Vec<(OpCode, Option<Slot>, Vec<Slot>)>,
+}
+
+type Slot = (i32, u64, u32);
+
+impl Unread {
+    fn new(at: u64, mode: Option<u32>, ops: &[FullOp]) -> Self {
+        let slot = |vn: &VarnodeData| (vn.space.as_ref().map_or(-1, |s| s.get_index()), vn.offset, vn.size);
+        let ops = ops.iter().map(|op| (op.opcode, op.out.as_ref().map(slot), op.ins.iter().map(slot).collect())).collect();
+        Unread { at, mode, ops }
+    }
+
+    /// The p-code again, its spaces looked up in `arch`.
+    pub(super) fn ops(&self, arch: &Architecture) -> Vec<FullOp> {
+        let manage = arch.manage();
+        let vn = |&(space, offset, size): &Slot| VarnodeData {
+            space: (space >= 0).then(|| manage.get_space(space).cloned()).flatten(),
+            offset,
+            size,
+        };
+        self.ops
+            .iter()
+            .map(|(opcode, out, ins)| FullOp { opcode: *opcode, out: out.as_ref().map(vn), ins: ins.iter().map(vn).collect() })
+            .collect()
+    }
 }
 
 impl State {

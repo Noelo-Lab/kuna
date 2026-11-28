@@ -40,7 +40,7 @@ use super::kuna_switchtable::{
     falls_through, fold, invalidate, is_constant, key_of, keys_overlap, leaves_registers_unknown, previous, survives,
     targets, value_of, Key, Val, MAX_TRACKED, MIN_ENTRIES,
 };
-use super::xrefs::{decode, in_range, looks_like_address, FullCapture, FullOp, Unread};
+use super::xrefs::{decode, in_range, looks_like_address, FullCapture, FullOp};
 
 /// How far back from the jump the slice may reach.
 const MAX_SLICE_INSNS: usize = 64;
@@ -77,7 +77,7 @@ pub(super) struct Reach<'a> {
     pub(super) sp: Option<Key>,
 }
 
-/// Does the computed jump `jump` index a table?
+/// Does the computed jump at `from`, whose p-code is `jump`, index a table?
 ///
 /// A delta or compact table (an entry added back to a base) is a switch's
 /// shape and nothing else's. A pointer table is a structure's array of
@@ -94,13 +94,14 @@ pub(super) fn indexes_table(
     code_space: &Rc<AddrSpace>,
     data: Option<&Rc<AddrSpace>>,
     decoded: &dyn Fn(u64) -> bool,
-    jump: &Unread,
+    from: u64,
+    jump: &[FullOp],
     reach: &Reach,
 ) -> bool {
     let Reach { pool, image, exec, preserved, mapped, sp } = *reach;
-    let from = jump.at;
-    let Some(want) = key_of(&jump.branch, data) else { return false };
-    let (slice, teardown) = straight_slice(translate, code_space, data, decoded, jump, want, preserved, sp);
+    let branch = jump.iter().find(|op| op.opcode == OpCode::CPUI_BRANCHIND).and_then(|op| op.ins.first());
+    let Some(want) = branch.and_then(|vn| key_of(vn, data)) else { return false };
+    let (slice, teardown) = straight_slice(translate, code_space, data, decoded, from, jump, want, preserved, sp);
     let ops = || slice.iter().flat_map(|(_, ops)| ops);
     if !ops().any(|op| op.opcode == OpCode::CPUI_LOAD) || !shaped(&slice, data, pool.ptr_width()) {
         return false;
@@ -250,7 +251,8 @@ fn straight_slice(
     code_space: &Rc<AddrSpace>,
     data: Option<&Rc<AddrSpace>>,
     decoded: &dyn Fn(u64) -> bool,
-    jump: &Unread,
+    from: u64,
+    jump: &[FullOp],
     want: Key,
     preserved: &[(u64, u64)],
     sp: Option<Key>,
@@ -260,11 +262,11 @@ fn straight_slice(
     let mut out = Vec::new();
     let mut teardown = false;
     let (mut holds_load, mut idle) = (false, 0);
-    let mut cur = jump.at;
+    let mut cur = from;
     let mut ends_at: Option<u64> = None;
     for step in 0..MAX_SLICE_INSNS {
         let insn = if step == 0 {
-            jump.ops.as_slice()
+            jump
         } else {
             let Some(len) = decode(translate, cur, code_space, &mut cap) else { break };
             if ends_at.is_some_and(|end| cur.wrapping_add(u64::from(len)) != end) || !falls_through(cap.ops()) {
