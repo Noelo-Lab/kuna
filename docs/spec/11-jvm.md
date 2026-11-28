@@ -1284,6 +1284,57 @@ Vineflower read only the first block, so enum constants built with a switch expr
 argument stayed in a `static` block (`$VF: Failed to inline enum fields`, which javac rejects)
 and so did every static field after such an initializer.
 
+**A compound assignment is no initializer (kuna).** `count += 2` in `<clinit>` is an assignment
+whose right side is the `2` alone, and Vineflower moved it into the declaration as
+`static int count = 2;`, dropping the read of `count`: after an initializer that calls a method
+setting `count` to 10, the field ends at 2 instead of 12. `extract_static_initializers` moves
+only a plain assignment; a compound one stays a statement. The constructors had the same defect:
+an instance block `{ count += 2; }` after `int calls = this.bump();` became `int count = 2;`, and
+`extract_dynamic_initializers` too moves only a plain assignment. It takes the initializers
+from the front of the statements every constructor that calls `super(..)` shares, one at a
+time, and stops at the first it does not move, so no statement kept in a constructor runs
+before an initializer it moved.
+
+**Static blocks written where they run (kuna).** With one `static` block after the fields,
+the order rule keeps every initializer after the first statement that stays, though the
+source most often has its block *before* a field whose initializer follows (Ghidra's
+`UnsignedLeb128DataType` calls `ClassTranslator.put(..)` and then declares
+`dataType = new UnsignedLeb128DataType()`), so such initializers read far from their
+declarations. `extract_static_initializers` gathers the statements that stay into the runs
+between the initializers it moves (`HeadRuns`): a run that `<clinit>` executes before a moved
+initializer is written as a `static { }` block immediately before that field's declaration
+(`ClassWriter::write_static_block`), and what follows the last moved initializer stays in the
+block after the fields. The moved initializers are still in increasing field order and each
+block lies between the declarations whose initializers run just before and just after it, so
+the text runs every statement in `<clinit>`'s order. A run becomes a block only where the class
+file shows it is a scope of its own: none of its locals is mentioned after it, in the head or
+anywhere else in `<clinit>` (two blocks whose locals share a slot and that the variable analysis
+merged into one local stay one block), it holds no switch expression, condition, `return`,
+`throw` or monitor, and no local class is declared in it or before it, or outside the head;
+otherwise the initializer stays in the run, as before. Since every statement kept earlier is
+written before a moved initializer, the initializer may read a field that a kept statement
+assigns. The class file does not tell a field's initializer from a last assignment of the block
+before it (Vineflower's `TestStaticBlockFinalField` assigns `dum = field.substring(1)` at the end
+of its block); the assignment is written as the initializer, as kuna writes every assignment it
+can move. A block written before a
+declaration may not read a later field by its simple name (JLS 8.3.3), which a class file not
+compiled by javac from this layout can hold (ECJ, other compilers, obfuscators) and javac's
+own source had to qualify: every read of a static field declared at or after the block's place,
+in the block and in the bodies of the lambdas it holds, is written qualified (`C.f`), which
+compiles to the same `getstatic`, while the target of a plain assignment keeps its simple name,
+which the rule allows and a final field needs. Enum constants are written first and do not
+close a run; synthetic fields, interfaces, classes written as Kotlin and the single-method
+mode keep the rules above. A class translated from DEX lists its fields by name, and its
+blocks stand among the fields in that order, which keeps the order of execution. The
+statements stay in `<clinit>` through the class-level passes, which type and name their locals,
+and leave it only when the class is written (`InitializerProcessor::take_static_blocks`).
+
+**A lambda reads its own field qualified (kuna).** A moved initializer's reads of later fields
+are qualified, in the bodies of its lambdas too, but in a lambda only the fields declared after
+its own were: `static final Runnable SELF = () -> { if (SELF == null) .. }` is a self-reference
+javac rejects (JLS 8.3.3 counts the field's own initializer), though the class file holds just a
+`getstatic` of `SELF` (its source wrote `C.SELF`). The field itself is now qualified as well.
+
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being
 a synthetic argument, so `hideEmptySuper` took it for the implicit call and dropped it. It
