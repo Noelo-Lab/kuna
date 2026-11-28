@@ -163,9 +163,14 @@ impl DoStatement {
                     .append_possible_newline_alt(" ")
                     .append_buffer(&null_slot(self.get_condition_exprent()).to_java(indent))
                     .append(";")
-                    .append_possible_newline_alt(" ")
-                    .append_buffer(&null_slot(self.get_inc_exprent()).to_java(indent))
-                    .append_possible_newline_dedent("", true);
+                    .append_possible_newline_alt(" ");
+                for (at, update) in self.get_inc_exprents().into_iter().enumerate() {
+                    if at > 0 {
+                        buf.append(", ");
+                    }
+                    buf.append_buffer(&update.to_java(indent));
+                }
+                buf.append_possible_newline_dedent("", true);
                 buf.pop_newline_group();
                 buf.append(") {").append_line_separator();
                 buf.append_buffer(&ExprProcessor::jmp_wrapper(first, indent + 1, false));
@@ -227,7 +232,7 @@ impl DoStatement {
 
         match looptype {
             Type::DoWhile => lst.extend(self.get_condition_exprent()),
-            Type::For => lst.extend(self.get_inc_exprent()),
+            Type::For => lst.extend(self.get_inc_exprents()),
             _ => {}
         }
 
@@ -244,10 +249,26 @@ impl DoStatement {
                 list.set(0, newexpr);
             }
         }
-        let inits = self.get_init_exprent_list();
-        if let Some(at) = (1..inits.len()).find(|&i| inits.get(i) == oldexpr) {
-            inits.set(at, newexpr);
+        for list in [self.get_init_exprent_list(), self.get_inc_exprent_list()] {
+            if let Some(at) = (1..list.len()).find(|&i| list.get(i) == oldexpr) {
+                list.set(at, newexpr);
+            }
         }
+    }
+
+    /// The updates of a `for` header in source order: those
+    /// [`add_extra_update`](Self::add_extra_update) added, then the update
+    /// slot's, which the list holds last.
+    pub fn get_inc_exprents(self) -> Vec<Exprent> {
+        self.get_inc_exprent_list().to_vec()
+    }
+
+    /// Adds `update`, an expression statement javac evaluated before the
+    /// update slot's, to the `for` header (`for (..; ..; i++, j--)`), after
+    /// the extras added before it.
+    pub fn add_extra_update(self, update: Exprent) {
+        let list = self.get_inc_exprent_list();
+        list.add_at(list.len().saturating_sub(1), update);
     }
 
     /// The initializers of a `for` header in source order: those
@@ -352,12 +373,14 @@ impl DoStatement {
         set_head_slot(&self.get_condition_exprent_list(), condition_exprent);
     }
 
+    /// The update slot: the last update of the list, after any extra ones
+    /// ([`add_extra_update`](Self::add_extra_update)).
     pub fn get_inc_exprent(self) -> Option<Exprent> {
-        self.d(|d| d.inc_exprent.first())
+        self.d(|d| d.inc_exprent.last())
     }
 
     pub fn set_inc_exprent(self, inc_exprent: Exprent) {
-        set_head_slot(&self.get_inc_exprent_list(), inc_exprent);
+        set_last_slot(&self.get_inc_exprent_list(), inc_exprent);
     }
 
     /// The init slot: the last initializer of the list, after any extra
@@ -367,13 +390,7 @@ impl DoStatement {
     }
 
     pub fn set_init_exprent(self, init_exprent: Exprent) {
-        let list = self.get_init_exprent_list();
-        match list.len() {
-            0 => list.add(init_exprent),
-            n => {
-                list.set(n - 1, init_exprent);
-            }
-        }
+        set_last_slot(&self.get_init_exprent_list(), init_exprent);
     }
 
     pub fn get_looptype(self) -> Type {
@@ -382,5 +399,15 @@ impl DoStatement {
 
     pub fn set_looptype(self, looptype: Type) {
         self.d_mut(|d| d.looptype = looptype)
+    }
+}
+
+/// Sets the slot a header list holds last, after its extra entries.
+fn set_last_slot(list: &JList<Exprent>, exprent: Exprent) {
+    match list.len() {
+        0 => list.add(exprent),
+        n => {
+            list.set(n - 1, exprent);
+        }
     }
 }

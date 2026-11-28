@@ -571,6 +571,22 @@ impl MergeHelper {
                 }
             }
 
+            let before_last = last_exprents.to_vec();
+            let before_last = &before_last[..before_last.len() - 1];
+            let extra_updates = if kuna_javac_layout::active() {
+                let n = kuna_javac_layout::extra_updates(stat, last_exp, before_last);
+                let taken = &before_last[before_last.len() - n..];
+                let skipped = taken.iter().rposition(|update| {
+                    final_variables
+                        .to_vec()
+                        .into_iter()
+                        .any(|exp| exp.is_var_referenced_exp(*update, &[]))
+                });
+                skipped.map_or(taken, |at| &taken[at + 1..]).to_vec()
+            } else {
+                Vec::new()
+            };
+
             if hasinit {
                 let pd_exprents = pre_data.expect("preData").get_exprents().expect("exprents");
                 if let Some(assign) = pd_exprents.get(pd_exprents.len() - 1).try_as_assignment() {
@@ -580,6 +596,9 @@ impl MergeHelper {
                             .expect("DoStatement.conditionExprent")
                             .contains_var(var.get_var_version_pair())
                             && !last_exp.contains_var(var.get_var_version_pair())
+                            && !extra_updates
+                                .iter()
+                                .any(|update| update.contains_var(var.get_var_version_pair()))
                         {
                             return;
                         }
@@ -613,6 +632,10 @@ impl MergeHelper {
                 last_exp.add_bytecode_offsets(inc.get_bytecode().as_ref());
             }
             stat.set_inc_exprent(last_exp);
+            for update in extra_updates {
+                last_exprents.remove_item(&update);
+                stat.add_extra_update(update);
+            }
         }
 
         Self::clean_empty_statements(stat, Some(last_data));

@@ -2150,3 +2150,7 @@ case	kuna-fixes/pkg/TestCastBranchOldClass	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestForInitReassigned	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitReassigned
 # kuna-fixes/src/pkg/TestSwitchArmScope.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestSwitchArmScope	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchArmScope
+# kuna-fixes/src/pkg/TestForUpdateList.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForUpdateList	Kuna Fixes	kuna-fixes/classes/pkg/TestForUpdateList
+# kuna-fixes/src/pkg/TestForInitOuterCounter.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForInitOuterCounter	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitOuterCounter
