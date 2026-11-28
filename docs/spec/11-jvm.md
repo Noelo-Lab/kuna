@@ -2818,8 +2818,13 @@ registers a short walk finds dead at every target) and nothing else enters them,
 `sparse-switch` with each test's case (an `if-ne`'s fall-through, then the chain ends at its
 target, the default) and an explicit default target, written as `lookupswitch`, and the rest
 become `nop`s. And `<clinit>` fills the first entry through the register it stored the new
-array from; that register reads the field again right after the store (the same reference),
+array from; that register reads the field again after the store (the same reference),
 so the entry is `getstatic`'s as in javac's code and the engine reads every entry of the map.
+The read goes inside the try item that covers the entry's `aput` when that starts after the
+store (javac's read is inside the entry's `try`; before it, the reference would be a local
+across the `try` and the entry one the engine does not read), and every array of the class
+gets one: a class that switches on two enums has two. An entry the engine does not read
+leaves its case without a constant, which fails the method. Fixture `maps-release.dex`.
 
 **Lambdas.** d8 desugars every `invokedynamic` to `LambdaMetafactory` into a class
 `X$$ExternalSyntheticLambdaN`. `decompiler/managed/kuna-dex/src/lambda.rs` recognises

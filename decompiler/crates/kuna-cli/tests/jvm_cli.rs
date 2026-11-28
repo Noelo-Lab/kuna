@@ -503,6 +503,17 @@ fn d8_desugaring_is_undone() {
     assert!(flow.contains("synchronized (LOCK) {") && !flow.contains("$VF"), "{flow}");
 }
 
+/// A class that switches on two enums has two `$SwitchMap$` arrays in one
+/// synthetic class; d8's release build fills the first entry of each through
+/// a register, and the first one's `try` starts an instruction later.
+#[test]
+fn d8_switch_maps_of_two_enums_are_switches() {
+    for (m, arm) in [("state", "case BLOCKED:\n         r += 20;"), ("unit", "case HOURS:\n         r += 20;")] {
+        let sw = ok(&jvm(&["decompile", &dex("maps-release.dex"), &format!("mx.Maps.{m}")]));
+        assert!(sw.contains("switch (") && sw.contains(arm) && !sw.contains("SwitchMap") && !sw.contains("$VF"), "{sw}");
+    }
+}
+
 #[test]
 fn d8_register_sharing_is_undone() {
     for f in ["shapes.dex", "shapes-release.dex"] {

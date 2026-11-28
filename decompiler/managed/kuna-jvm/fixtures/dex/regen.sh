@@ -39,6 +39,10 @@ $D8 --debug --min-api 26 --lib "$LIB" --output "$tmp/vd" $(find "$tmp/v" -name '
 $D8 --release --min-api 26 --lib "$LIB" --output "$tmp/vr" $(find "$tmp/v" -name '*.class')
 cp "$tmp/vd/classes.dex" shapes.dex
 cp "$tmp/vr/classes.dex" shapes-release.dex
+mkdir -p "$tmp/m" "$tmp/mr"
+"$JAVAC" -g -parameters --release 17 -d "$tmp/m" src/mx/*.java
+$D8 --release --min-api 26 --lib "$LIB" --output "$tmp/mr" $(find "$tmp/m" -name '*.class')
+cp "$tmp/mr/classes.dex" maps-release.dex
 "$JAVA" -cp "$tmp/v" vx.Shapes > expected/Shapes.txt
 "$JAVA" -cp "$tmp/s" sx.Sugar > expected/Sugar.txt
 cp "$tmp/d/classes.dex" debug.dex

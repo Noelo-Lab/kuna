@@ -17,25 +17,40 @@ use crate::insn::{packed_switch, sparse_switch, Insn};
 use crate::Dex;
 
 /// Inserts the field read of a `<clinit>` that fills a `$SwitchMap$` array
-/// through the register it stored it from: right after the `sput-object`,
-/// so the read is pushed before the first entry's index as javac's is.
-pub fn refill(dex: &Dex, insns: &mut Vec<Insn>) {
-    let Some(k) = insns.iter().position(|x| x.op == 0x69 && switch_map(dex, x.idx)) else { return };
+/// through the register it stored it from, so the read is pushed before the
+/// first entry's index as javac's is: after the `sput-object`, and inside
+/// the try item (`tries`) that covers the entry's `aput` when that starts
+/// later, since javac's read is inside the entry's `try`. A class that
+/// switches on several enums has one array per enum, each stored and filled
+/// this way.
+pub fn refill(dex: &Dex, insns: &mut Vec<Insn>, tries: &[(u32, u32)]) {
+    let stores: Vec<usize> = (0..insns.len()).filter(|&k| insns[k].op == 0x69 && switch_map(dex, insns[k].idx)).collect();
+    for k in stores.into_iter().rev() {
+        let Some(fill) = filled_through(insns, k) else { continue };
+        let start = tries.iter().find(|&&(s, e)| s <= insns[fill].addr && insns[fill].addr < e).map_or(0, |t| t.0);
+        let at = (k + 1..=fill).find(|&i| insns[i].addr >= start).unwrap_or(fill);
+        let mut read = insns[k].clone();
+        read.op = 0x62;
+        read.addr = insns[at].addr;
+        read.size = 0;
+        insns.insert(at, read);
+    }
+}
+
+/// The `aput` that fills the array through the register the `sput-object`
+/// at `k` stored it from, when nothing before it writes the register or
+/// branches.
+fn filled_through(insns: &[Insn], k: usize) -> Option<usize> {
     let r = insns[k].a;
-    let Some(next) = insns.get(k + 1).map(|x| x.addr) else { return };
-    for x in &insns[k + 1..] {
+    for (j, x) in insns.iter().enumerate().skip(k + 1) {
         if x.op == 0x4b && x.b == r {
-            let mut read = insns[k].clone();
-            read.op = 0x62;
-            read.addr = next;
-            read.size = 0;
-            insns.insert(k + 1, read);
-            return;
+            return Some(j);
         }
         if writes(x) == Some(r) || matches!(x.op, 0x0e..=0x11 | 0x27..=0x2c | 0x32..=0x3d) {
-            return;
+            return None;
         }
     }
+    None
 }
 
 fn switch_map(dex: &Dex, field: u32) -> bool {

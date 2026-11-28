@@ -468,8 +468,8 @@ impl<'d, 'a> Method<'d, 'a> {
         if undo {
             crate::nest::rewrite(self.dex, &mut insns);
             let handlers: Vec<u32> = self.code.tries.iter().flat_map(|t| t.handlers.iter().map(|h| h.1)).collect();
-            crate::switchmap::refill(self.dex, &mut insns);
             let tries: Vec<(u32, u32)> = self.code.tries.iter().map(|t| (t.start, t.start + t.count)).collect();
+            crate::switchmap::refill(self.dex, &mut insns, &tries);
             let regs = |x: &Insn| self.insn_regs(x);
             let entered = crate::switchmap::entered(&insns, self.code.insns, &handlers);
             let named = |r: u32, s: u32, e: u32| self.debug.locals.iter().any(|l| l.reg == r && l.start < e && s < l.end.max(l.start + 1));
