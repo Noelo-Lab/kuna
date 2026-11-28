@@ -9,4 +9,6 @@ small0 big0123
 5 4
 1.5 0 null 0.0 3 o
 0r1g2other3other
+3 3
+npe
 ?0?0?0s1m0?0?0

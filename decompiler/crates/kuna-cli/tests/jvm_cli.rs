@@ -516,6 +516,10 @@ fn d8_register_sharing_is_undone() {
         assert!(version.contains(" = null;") && !version.contains(" = var"), "{f}: {version}");
         let from = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.from"]));
         assert!(from.contains("Shapes.Kind var") && !from.contains("var3 = r.lowerKind()"), "{f}: {from}");
+        let bound = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.bound"]));
+        assert!(bound.contains("return s::len;") && !bound.contains("requireNonNull"), "{f}: {bound}");
+        let checked = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.checked"]));
+        assert!(checked.contains("Objects.requireNonNull(s);"), "{f}: {checked}");
         for m in ["unit", "seconds"] {
             let sw = ok(&jvm(&["decompile", &dex(f), &format!("vx.Shapes.{m}")]));
             assert!(sw.contains("switch (u) {") && sw.contains("case SECONDS:") && !sw.contains("SwitchMap"), "{f}: {sw}");

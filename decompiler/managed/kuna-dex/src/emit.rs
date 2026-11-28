@@ -61,6 +61,9 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     stmts: Vec<(u32, u32)>,
     min_addr: u32,
     regions: Vec<crate::region::Region>,
+    /// Bound method references whose receiver d8 null-checked just before
+    /// them (the check's op to the reference's), written as javac does.
+    null_checks: BTreeMap<usize, usize>,
     /// The two `return true` / `return false` blocks (in layout order) of a
     /// boolean method, which share one `ireturn` as javac's `return c;` does.
     bool_ret: Option<(u32, u32, Label)>,
@@ -139,6 +142,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             min_addr: u32::MAX,
             regions: Vec::new(),
             bool_ret: None,
+            null_checks: BTreeMap::new(),
             release: m.debug.locals.iter().all(|l| l.start == 0),
             ref_kinds: BTreeMap::new(),
         }
@@ -362,9 +366,44 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         m.use_cat(&m.ops[k], 0)
     }
 
+    /// javac checks a bound method reference's receiver with `dup`,
+    /// `Objects.requireNonNull` (or `getClass()`) and `pop` before its
+    /// `invokedynamic`; d8 keeps the check as a call whose result is unused
+    /// right before the reference's lambda class is created. Such a pair is
+    /// written as javac's sequence, so the receiver and what is pending
+    /// below it stay expressions.
+    fn find_null_checks(&mut self) -> Result<()> {
+        let m = self.m;
+        if self.sh.verifiable {
+            return Ok(());
+        }
+        for blk in m.blocks.iter().filter(|b| b.reachable) {
+            for k in blk.start..blk.end {
+                let o = &m.ops[k];
+                if o.kind != Kind::Plain || o.result || o.uses.len() != 1 || !matches!(o.insn.op, 0x6e | 0x71 | 0x74 | 0x77) {
+                    continue;
+                }
+                let mi = m.dex.method(o.insn.idx)?;
+                let (class, name, desc) = (m.dex.type_desc(mi.class)?, m.dex.string(mi.name)?, m.dex.proto_desc(mi.proto)?);
+                let check = matches!(o.insn.op, 0x71 | 0x77) && class == b"Ljava/util/Objects;" && name == b"requireNonNull" && desc == b"(Ljava/lang/Object;)Ljava/lang/Object;"
+                    || matches!(o.insn.op, 0x6e | 0x74) && name == b"getClass" && desc == b"()Ljava/lang/Class;";
+                let Some(n) = (k + 1..blk.end).find(|&j| m.ops[j].kind != Kind::Absorbed && m.ops[j].insn.op != 0x00) else { continue };
+                let Kind::NewObject { ty } = m.ops[n].kind else { continue };
+                let Some((owner, l)) = m.dex.lambda_in(ty, self.sh.peers) else { continue };
+                let bound = matches!(l.kind, 5 | 9) && l.captures.len() == 1 && !owner.synthetic_method(l.method);
+                if check && bound && m.ops[n].uses.first().map(|u| u.val) == Some(o.uses[0].val) {
+                    self.null_checks.insert(n, k);
+                    self.silent[k] = true;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn run(&mut self) -> Result<()> {
         let m = self.m;
         self.find_joins()?;
+        self.find_null_checks()?;
         let mut order = layout(m);
         self.regions = crate::region::arrange(m, &mut order);
         self.bool_ret = self.boolean_returns(&order);
@@ -840,6 +879,13 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         if let Kind::NewObject { ty } = o.kind {
             if let Some((owner, l)) = m.dex.lambda_in(ty, self.sh.peers).filter(|_| !self.sh.verifiable) {
                 self.push_uses(k)?;
+                if let Some(&c) = self.null_checks.get(&k) {
+                    let x = &m.ops[c].insn;
+                    let r = self.method_ref(x.idx, false)?;
+                    self.asm.op(op::DUP, &[], 1);
+                    self.asm.op_u16(if matches!(x.op, 0x71 | 0x77) { op::INVOKESTATIC } else { op::INVOKEVIRTUAL }, r, 0);
+                    self.asm.op(op::POP, &[], -1);
+                }
                 let r = self.metafactory(owner, l)?;
                 let pops = self.uses_size(k);
                 self.asm.op(op::INVOKEDYNAMIC, &[(r >> 8) as u8, r as u8, 0, 0], 1 - pops);

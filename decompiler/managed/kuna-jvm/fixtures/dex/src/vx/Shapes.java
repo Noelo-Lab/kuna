@@ -182,6 +182,26 @@ public class Shapes {
         }
     }
 
+    interface Fn<A, B> {
+        B apply(A a);
+    }
+
+    int len(String x) {
+        return x.length();
+    }
+
+    // A bound method reference d8 null-checks with Objects.requireNonNull right before it
+    // (spring SimpleTypeReference.isPrimitive).
+    static Fn<String, Integer> bound(Shapes s) {
+        return s::len;
+    }
+
+    // An explicit check before a lambda capturing the same variable stays a statement.
+    static Fn<String, Integer> checked(Shapes s) {
+        java.util.Objects.requireNonNull(s);
+        return x -> s.len(x) + 1;
+    }
+
     public static void main(String[] args) {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
@@ -203,6 +223,12 @@ public class Shapes {
             System.out.print(c.ordinal() + paint(c));
         }
         System.out.println();
+        System.out.println(bound(new Shapes()).apply("abc") + " " + checked(new Shapes()).apply("ab"));
+        try {
+            bound(null);
+        } catch (NullPointerException e) {
+            System.out.println("npe");
+        }
         for (java.util.concurrent.TimeUnit u : java.util.concurrent.TimeUnit.values()) {
             System.out.print(unit(u) + seconds(u));
         }

@@ -2384,7 +2384,15 @@ synthetic bridge of the same class (`$r8$lambda$...`) that passes its parameters
 unchanged; the handle then names the method itself, virtual (interface in an interface), as
 javac's does (the bridge stays, synthetic, for the lambda class). The engine then prints the lambda or
 method reference. A lambda class of any other shape (d8 inlined the body into it) is left as
-it is; the lambda class of a `new` in a peer file is found there, and the members it names
+it is. javac checks a bound method reference's receiver with `dup`, `Objects.requireNonNull`
+(or `getClass()`) and `pop` before its `invokedynamic`; d8 keeps the check as a call whose
+result is unused, right before the reference's lambda class is created. Such a call on the
+receiver of the bound method reference that follows it (one capture, a virtual or interface
+target that is not a synthetic lambda body) is written as javac's sequence inside the
+reference, so the reference stays an operand and what was pending below it (`stream()` of
+`list.stream().anyMatch(name::startsWith)`) stays an expression; a check before a lambda
+that merely captures the variable is a statement of the source and stays one. The lambda
+class of a `new` in a peer file is found there, and the members it names
 (the implementation method and its descriptor) are read from that file's own tables, since
 another file's indices name other members.
 
