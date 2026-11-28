@@ -1184,9 +1184,12 @@ store, and the unread array stays a variable of its own instead of being merged 
 `order_declarations` moves only variables the table names. `VarDefinitionHelper::merge_check`
 refuses to merge two variables the table names differently (`kuna_source_locals::named_apart`,
 `properties` and a later block's `subFields`), and a variable that is a captured argument of a
-lambda (`var_merge_captured::captured_apart`): a captured variable must be effectively final
-(JLS 4.12.4), and two blocks that each declare an `o` and pass `() -> o.hashCode()` were printed
-as one `Object o = ..; .. o = ..;`, which javac rejects. Increments
+lambda when an assignment of one of the two can be followed by an assignment of the other
+(`var_merge_captured::captured_apart`, by the statements' successor edges): a captured variable
+must be effectively final (JLS 4.12.4), and two blocks that each declare an `o` and pass `() ->
+o.hashCode()` were printed as one `Object o = ..; .. o = ..;`, which javac rejects. Assignments
+on paths that exclude each other are one variable of the source and stay merged (`T v; if (c) {
+v = a; use(v); return; } v = b; run(() -> v.m());`). Increments
 (`decompiler/managed/kuna-jvm/src/p3_dataflow/kuna_source_increments.rs`): javac emits a
 statement's code in source order and starts a LineNumberTable entry where a statement starts on a
 new line. `SimplifyExprentsHelper::is_ipp_or_imm` does not fold `x = a; a++;` into `x = a++` when the

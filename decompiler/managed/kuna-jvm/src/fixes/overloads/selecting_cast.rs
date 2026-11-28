@@ -106,10 +106,12 @@ fn generic_type(e: Exprent, written: &VarType) -> Option<VarType> {
         return None;
     }
     let mut inferred = e.get_inferred_expr_type(None);
-    if inferred.type_ == CodeType::Genvar && inferred.array_dim == 0 {
-        inferred = e.get_named_generics().get(&inferred)?.first()?.clone();
+    if inferred.type_ == CodeType::Genvar {
+        let dims = inferred.array_dim;
+        let bound = e.get_named_generics().get(&inferred.resize_array_dim(0))?.first()?.clone();
+        inferred = bound.resize_array_dim(bound.array_dim + dims);
     }
-    if inferred.type_ != CodeType::Object && inferred.array_dim == 0 {
+    if inferred.type_ == CodeType::Genvar || (inferred.type_ != CodeType::Object && inferred.array_dim == 0) {
         return None;
     }
     if inferred.try_as_generic().is_some_and(|g| {

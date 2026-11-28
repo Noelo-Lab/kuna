@@ -51,4 +51,21 @@ public class TestCapturedVariableMerge {
 
       return n;
    }
+
+   void exclusive(Object a, boolean c) {
+      Object picked;
+      if (a != null) {
+         if (c) {
+            picked = a.toString();
+            add(picked::hashCode);
+            return;
+         }
+
+         picked = a;
+      } else {
+         picked = "none";
+      }
+
+      add(() -> picked.hashCode() + 3);
+   }
 }
