@@ -170,12 +170,12 @@ reads:
 | ecj | 10,886 | 59.14% → 69.67% | 84.19% → 92.56% | 95.97% → 98.33% | 59.26% → 70.02% | 88.09% → 94.34% | 136 → 0 |
 | luaj | 2,218 | 80.79% → 85.98% | 96.36% → 99.17% | 95.79% → 96.52% | 82.46% → 87.87% | 90.72% → 92.78% | 0 |
 | junit4 | 1,473 | 90.77% → 97.69% | 97.67% → 99.86% | 99.03% → 99.93% | 90.77% → 97.69% | 96.97% → 97.58% | 0 |
-| ojalgo | 13,686 | 90.68% → 98.58% | 97.65% → 99.76% | 99.82% → 99.96% | 90.81% → 98.70% | 92.53% → 95.23% | 0 |
+| ojalgo | 13,686 | 90.68% → 98.61% | 97.65% → 99.76% | 99.82% → 99.96% | 90.81% → 98.73% | 92.53% → 95.23% | 0 |
 | langchain4j | 3,599 | 88.25% → 95.58% | 97.24% → 99.94% | 99.86% → 100.00% | 88.25% → 95.61% | 97.14% → 98.18% | 0 |
-| **all** | 51,458 | 79.56% → 89.47% | 93.36% → 97.94% | 96.70% → 97.93% | 80.29% → 90.47% | 93.29% → 96.68% | 138 → 0 |
+| **all** | 51,458 | 79.56% → 89.48% | 93.36% → 97.94% | 96.70% → 97.93% | 80.29% → 90.47% | 93.29% → 96.68% | 138 → 0 |
 
-46,040 methods perfect instead of 40,939, and 2,854 of 2,952 classes recompile instead of
-2,754. 7,498 methods score better than Vineflower's and 172 worse (ecj 96, hsqldb 49,
+46,044 methods perfect instead of 40,939, and 2,854 of 2,952 classes recompile instead of
+2,754. 7,501 methods score better than Vineflower's and 172 worse (ecj 96, hsqldb 49,
 undertow 10, ojalgo 9, luaj 3, langchain4j 3, dsl-json 2); every method is decompiled. One of
 ecj's is a method whose earlier text, like Vineflower's, left a loop at its first element and
 scored better than the text that is right ("What the recompiled projects refer to" has it).
