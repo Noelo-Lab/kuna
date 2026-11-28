@@ -36,7 +36,23 @@ pub(crate) fn resolve(file: &object::File) -> Vec<(u64, Vec<u8>)> {
 /// the slot, so the import facts keyed by entry address are emitted at the slot
 /// as well as at the import's stub (`protos::loaded_import_addrs`, `noreturn`).
 pub(crate) fn function_slots(file: &object::File) -> Vec<(u64, Vec<u8>)> {
-    resolve_where(file, |kind| !matches!(kind, SymbolKind::Data | SymbolKind::Tls))
+    let mut slots = resolve_where(file, |kind| !matches!(kind, SymbolKind::Data | SymbolKind::Tls));
+    if !slots.is_empty() {
+        let stable = stable_slot(file);
+        slots.retain(|(slot, _)| stable(*slot));
+    }
+    slots
+}
+
+/// On x86 the decompiler binds calls through named import slots directly.
+fn stable_slot<'a>(file: &'a object::File) -> impl Fn(u64) -> bool + 'a {
+    let bytes = match file {
+        object::File::Elf64(elf) if file.architecture() == object::Architecture::X86_64 => Some(elf.data()),
+        object::File::Elf32(elf) if file.architecture() == object::Architecture::I386 => Some(elf.data()),
+        _ => None,
+    };
+    let relro = bytes.and_then(super::kuna_dynrelocs::protected_pages);
+    move |slot| bytes.is_none() || super::kuna_dynrelocs::protected_slot(file, slot, relro)
 }
 
 fn resolve_where(file: &object::File, keep: impl Fn(SymbolKind) -> bool) -> Vec<(u64, Vec<u8>)> {
@@ -106,7 +122,9 @@ impl AnalysisPass for ElfGotImportPass {
     fn run(&self, ctx: &AnalysisCtx) -> AnalysisOutput {
         let mut out = AnalysisOutput::default();
         let mode = symbolnamechars_mode();
+        let stable = stable_slot(ctx.file);
         for ((slot, end), name) in ranged(ctx.file) {
+            if !stable(slot) { continue; }
             out.externref.push((slot, end));
             out.import_slot_names.push((slot, minted_name(&name, mode)));
         }

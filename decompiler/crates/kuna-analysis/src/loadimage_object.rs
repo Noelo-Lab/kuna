@@ -625,6 +625,7 @@ pub struct ObjectLoadImage {
     ///
     /// Empty for a non-ELF linked image, and with both gates off.
     dynreloc_const: Vec<(u64, u64)>,
+    pub preemptible_functions: Vec<(u64, u64)>,
     /// (kuna) The image's **import pointer slots** as half-open `[lo, hi)` VMA
     /// ranges — the PE Import Address Table words a run-time loader fills with a
     /// resolved import address. [`Self::funcsyms`] carries a `FunctionSymbol` at
@@ -1275,6 +1276,7 @@ impl ObjectLoadImage {
             data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
             const_ranges,
             dynreloc_const,
+            preemptible_functions: dynrelocs.preemptible_functions,
             import_slots,
             nullable_relocations: Vec::new(),
             function_address_aliases: Vec::new(),
@@ -1465,6 +1467,7 @@ impl ObjectLoadImage {
             // `msvcfpconst`, whose ranges qualify for exactly the same reason —
             // a datum that is known by construction, not by policy — and from
             // a MIPS object's synthetic GOT.
+            preemptible_functions: Vec::new(),
             dynreloc_const: fpconst
                 .const_ranges
                 .into_iter()
@@ -1948,7 +1951,7 @@ impl LoadImage for ObjectLoadImage {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
-        for r in &mut self.plt_local {
+        for r in self.plt_local.iter_mut().chain(&mut self.preemptible_functions) {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }

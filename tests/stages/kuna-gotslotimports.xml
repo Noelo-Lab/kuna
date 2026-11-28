@@ -81,6 +81,29 @@
   <com>lo fu bail</com>
   <com>decompile</com>
   <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/got-slot-binding/binding_x86_64.so</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>lo fu relative</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu absolute</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu interposed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/got-slot-binding/writable_x86_64.so</com>
+  <com>option listing on</com>
+  <com>read symbols</com>
+  <com>lo fu replaced</com>
+  <com>decompile</com>
+  <com>print C</com>
   <com>quit</com>
 </script>
 <stringmatch name="GOT slot imports #1: no call through a GOT slot loses its argument" min="0" max="0">(strlen|free|memcmp)\(\)</stringmatch>
@@ -95,4 +118,9 @@
 <stringmatch name="GOT slot imports #10: control: bail's exit through the stub is no-return, with importdata on and off" min="2" max="2">exit\(1\); // no-return</stringmatch>
 <stringmatch name="GOT slot imports #11: with importdata off no symbol sits at strlen's slot, so first's call through it stays unnamed" min="1" max="1">= \(\*dat_3fd0\)\(\);</stringmatch>
 <stringmatch name="GOT slot imports #12: with importdata off the exit slot's no-return fact reaches no function at the slot, so check keeps main's output" min="1" max="1">\(\*dat_3fc8\)\(2\); // warn: funcboundflow</stringmatch>
+<stringmatch name="RIP-relative call through the protected exit slot ends flow" min="1" max="1">exit\(0x11\); // no-return</stringmatch>
+<stringmatch name="Absolute operand at the same VMA keeps its return" min="1" max="1">return 0x2a;</stringmatch>
+<stringmatch name="Interposable definition keeps its caller's return" min="1" max="1">return 0x2c;</stringmatch>
+<stringmatch name="Replaced writable slot keeps its caller's return" min="1" max="1">return 0x2b;</stringmatch>
+<stringmatch name="The returning export retains its argument and result" min="1" max="1">return plus_one\(7\) \+ 2;</stringmatch>
 </decompilertest>

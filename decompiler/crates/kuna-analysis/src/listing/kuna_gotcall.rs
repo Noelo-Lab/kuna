@@ -8,13 +8,13 @@ use kuna_base::space::AddrSpace;
 use kuna_decomp::architecture::Architecture;
 use kuna_num::opcodes::OpCode;
 use object::{
-    Object, ObjectSection, ObjectSegment, ObjectSymbol, SectionFlags, SegmentFlags, SymbolFlags,
+    Object, ObjectSection, ObjectSymbol, SectionFlags, SymbolFlags,
     SymbolSection,
 };
 
 use super::xrefs::{in_range, FullOp, XrefKind, MAX_SLOT_COPIES};
 use crate::loader::kuna_dataptrs::Coverage;
-use crate::loader::kuna_dynrelocs::{fixup_sites, relro_range, FixupKind};
+use crate::loader::kuna_dynrelocs::{fixup_sites, mapped_flags, protected, protected_pages, FixupKind};
 
 pub(super) struct GotCalls(BTreeMap<u64, u64>);
 
@@ -99,7 +99,7 @@ impl GotCalls {
                 .and_modify(|entry| *entry &= ordinary)
                 .or_insert(ordinary);
         }
-        let relro = relro_range(elf.data()).map(|(lo, hi)| (lo, hi & !4095));
+        let relro = protected_pages(elf.data());
         let mut targets = BTreeMap::new();
         let mut prior_end = 0;
         for (i, fixup) in fixups.sites.iter().enumerate() {
@@ -214,37 +214,6 @@ fn overlaps(a: &kuna_num::pcoderaw::VarnodeData, b: &kuna_num::pcoderaw::Varnode
     matches!((&a.space, &b.space), (Some(a), Some(b)) if Rc::ptr_eq(a, b))
         && a.offset < b.offset.saturating_add(u64::from(b.size))
         && b.offset < a.offset.saturating_add(u64::from(a.size))
-}
-
-fn protected(file: &object::File, address: u64, end: u64, relro: Option<(u64, u64)>) -> bool {
-    mapped_flags(file, address, end).is_some_and(|flags| {
-        flags & object::elf::PF_R != 0
-            && (flags & object::elf::PF_W == 0
-                || relro.is_some_and(|(lo, hi)| lo <= address && end <= hi))
-    })
-}
-
-fn mapped_flags(file: &object::File, address: u64, end: u64) -> Option<u32> {
-    let mut found = None;
-    for segment in file.segments() {
-        let lo = segment.address();
-        let hi = lo.checked_add(segment.size())?;
-        if end <= lo || hi <= address {
-            continue;
-        }
-        let SegmentFlags::Elf { p_flags } = segment.flags() else {
-            return None;
-        };
-        if found.is_some()
-            || address < lo
-            || hi < end
-            || end - lo > segment.data().ok()?.len() as u64
-        {
-            return None;
-        }
-        found = Some(p_flags);
-    }
-    found
 }
 
 #[cfg(test)]

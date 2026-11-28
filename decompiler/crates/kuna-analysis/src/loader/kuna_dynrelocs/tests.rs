@@ -156,14 +156,14 @@ fn build_elf(is64: bool, machine: u16, secs: &[Sec], got_len: u64) -> Vec<u8> {
 
 /// `.dynsym`: index 0 NULL, 1 = defined `func` at [`TEXT_VMA`], 2 = undefined
 /// `imp` (the import that must be skipped).
-fn dynsym(is64: bool) -> Vec<u8> {
+fn dynsym(is64: bool, visibility: u8) -> Vec<u8> {
     let mut v = Vec::new();
     if is64 {
         v.extend_from_slice(&[0u8; 24]);
         let mut sym = |name: u32, value: u64, shndx: u16| {
             v.extend_from_slice(&name.to_le_bytes());
             v.push(0x12); // GLOBAL | FUNC
-            v.push(0);
+            v.push(if shndx == 0 { 0 } else { visibility });
             v.extend_from_slice(&shndx.to_le_bytes());
             v.extend_from_slice(&value.to_le_bytes());
             v.extend_from_slice(&0u64.to_le_bytes());
@@ -177,7 +177,7 @@ fn dynsym(is64: bool) -> Vec<u8> {
             v.extend_from_slice(&value.to_le_bytes());
             v.extend_from_slice(&0u32.to_le_bytes());
             v.push(0x12);
-            v.push(0);
+            v.push(if shndx == 0 { 0 } else { visibility });
             v.extend_from_slice(&shndx.to_le_bytes());
         };
         sym(1, TEXT_VMA as u32, TEXT_SHNDX);
@@ -208,12 +208,12 @@ fn rel32(offset: u32, sym: u32, ty: u32) -> Vec<u8> {
 
 /// Assemble a 64-bit RELA image for `machine` with the three-relocation set:
 /// RELATIVE (addend), GLOB_DAT on the defined symbol, JUMP_SLOT on the import.
-fn image64(machine: u16, r_rel: u32, r_glob: u32, r_jmp: u32) -> Vec<u8> {
+fn image64(machine: u16, r_rel: u32, r_glob: u32, r_jmp: u32, visibility: u8) -> Vec<u8> {
     let mut relocs = rela64(GOT_VMA, 0, r_rel, TEXT_VMA);
     relocs.extend(rela64(GOT_VMA + 8, 1, r_glob, 0));
     relocs.extend(rela64(GOT_VMA + 16, 2, r_jmp, 0));
     let secs = vec![
-        Sec { ty: SHT_DYNSYM, flags: 2, addr: 0, data: dynsym(true), link: 2, info: 1, entsize: 24 },
+        Sec { ty: SHT_DYNSYM, flags: 2, addr: 0, data: dynsym(true, visibility), link: 2, info: 1, entsize: 24 },
         Sec { ty: SHT_STRTAB, flags: 2, addr: 0, data: dynstr(), link: 0, info: 0, entsize: 0 },
         Sec { ty: SHT_RELA, flags: 2, addr: 0, data: relocs, link: 1, info: 0, entsize: 24 },
         Sec { ty: SHT_PROGBITS, flags: 6, addr: TEXT_VMA, data: vec![0x90; 16], link: 0, info: 0, entsize: 0 },
@@ -233,7 +233,7 @@ fn run(bytes: &[u8]) -> DynRelocs {
 /// written slots land in the RELRO const set.
 #[test]
 fn x86_64_relative_and_globdat_apply_import_is_skipped() {
-    let bytes = image64(62, 8, 6, 7);
+    let bytes = image64(62, 8, 6, 7, object::elf::STV_PROTECTED);
     let r = run(&bytes);
     assert_eq!(
         r.writes,
@@ -246,10 +246,20 @@ fn x86_64_relative_and_globdat_apply_import_is_skipped() {
     assert_eq!(r.const_ranges, vec![(GOT_VMA, GOT_VMA + 7), (GOT_VMA + 8, GOT_VMA + 15)]);
 }
 
+#[test]
+fn only_the_default_visible_function_bind_is_preemptible() {
+    let bytes = image64(62, 8, 6, 7, object::elf::STV_DEFAULT);
+    let result = run(&bytes);
+    assert_eq!(result.preemptible_functions, [(GOT_VMA + 8, TEXT_VMA)]);
+    let protected = run(&image64(62, 8, 6, 7, object::elf::STV_PROTECTED));
+    assert!(protected.preemptible_functions.is_empty());
+    assert_eq!(result.writes, protected.writes);
+}
+
 /// AArch64 uses a different `r_type` numbering for the same triple.
 #[test]
 fn aarch64_uses_its_own_reloc_numbering() {
-    let bytes = image64(183, 1027, 1025, 1026);
+    let bytes = image64(183, 1027, 1025, 1026, object::elf::STV_PROTECTED);
     let r = run(&bytes);
     assert_eq!(
         r.writes,
@@ -270,7 +280,7 @@ fn i386_rel_table_reads_the_implicit_addend_from_the_slot() {
     let mut got = vec![0u8; 12];
     got[..4].copy_from_slice(&(TEXT_VMA as u32).to_le_bytes()); // the implicit addend
     let secs = vec![
-        Sec { ty: SHT_DYNSYM, flags: 2, addr: 0, data: dynsym(false), link: 2, info: 1, entsize: 16 },
+        Sec { ty: SHT_DYNSYM, flags: 2, addr: 0, data: dynsym(false, object::elf::STV_PROTECTED), link: 2, info: 1, entsize: 16 },
         Sec { ty: SHT_STRTAB, flags: 2, addr: 0, data: dynstr(), link: 0, info: 0, entsize: 0 },
         Sec { ty: SHT_REL, flags: 2, addr: 0, data: relocs, link: 1, info: 0, entsize: 8 },
         Sec { ty: SHT_PROGBITS, flags: 6, addr: TEXT_VMA, data: vec![0x90; 16], link: 0, info: 0, entsize: 0 },
@@ -293,7 +303,7 @@ fn i386_rel_table_reads_the_implicit_addend_from_the_slot() {
 #[test]
 fn unhandled_machine_is_inert() {
     // EM_PPC64 (21) — parsed fine, but no RELATIVE/GLOB_DAT/JUMP_SLOT triple.
-    let bytes = image64(21, 8, 6, 7);
+    let bytes = image64(21, 8, 6, 7, object::elf::STV_PROTECTED);
     assert!(run(&bytes).writes.is_empty());
 }
 
@@ -302,7 +312,7 @@ fn unhandled_machine_is_inert() {
 #[test]
 fn fixup_sites_list_every_slot_with_its_kind() {
     use crate::loader::kuna_dataptrs::{Coverage, Source};
-    let bytes = image64(62, 8, 6, 7);
+    let bytes = image64(62, 8, 6, 7, object::elf::STV_PROTECTED);
     let file = object::File::parse(&*bytes).unwrap();
     let listed = fixup_sites(&file, &bytes);
     assert_eq!(listed.coverage, Coverage::Complete(Source::DynamicRelocations));
@@ -328,7 +338,7 @@ fn fixup_sites_list_every_slot_with_its_kind() {
 /// has no triple for as on one it has.
 #[test]
 fn a_relocation_kuna_does_not_apply_is_listed_unvalued() {
-    let bytes = image64(21, 8, 6, 7);
+    let bytes = image64(21, 8, 6, 7, object::elf::STV_PROTECTED);
     let file = object::File::parse(&*bytes).unwrap();
     let listed = fixup_sites(&file, &bytes);
     assert_eq!(listed.sites.len(), 3);

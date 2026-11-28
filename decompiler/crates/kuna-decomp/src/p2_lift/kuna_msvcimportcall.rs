@@ -55,7 +55,7 @@ pub fn noreturn_import_slot(
 ) -> Option<Address> {
     let slot = import_slot(data, op, noreturn)?;
     let (_, entry, _) = data.get_arch().query_function(&slot)?;
-    (entry == slot).then_some(slot)
+    (entry == slot && crate::kuna_x86gotslot::can_bind_import(data, op, &slot)).then_some(slot)
 }
 
 /// The external import slot in `slots` that the CALLIND `op`'s own instruction

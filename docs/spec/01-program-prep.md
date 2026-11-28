@@ -2450,6 +2450,11 @@ funcsym stream:
   produces nothing rather than guessing at a number that means something else
   there.
 
+  A default-visible function definition in a shared object may be interposed.
+  The loader retains its local address as an ABI-recovery candidate. The
+  read-only fold withholds that address when its prototype carries no-return.
+  Direct calls to the local implementation can still use the body fact.
+
   Applying the relocation is only half of it. `.got` is `SHF_WRITE`, so nothing
   downstream would trust a value read out of it, and the constant fold of
   read-only storage is gated program-wide by `option readonly`
@@ -2715,6 +2720,11 @@ funcsym stream:
   third user of the same "constant by construction, not by policy" exception, and
   the one that needs no loader pass at all — only the section table the loader
   already reports.
+
+  On x86, treating an import slot as the function it names also requires the
+  whole pointer to be in one readable file-backed load segment, either
+  read-only or sealed by RELRO. A writable slot can be reassigned after
+  relocation; reads there retain their ordinary memory semantics.
 
   An ARM immediate too wide for the instruction encoding is not in the
   instruction: the compiler parks it in a **literal pool** in `.text` and loads it
