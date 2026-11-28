@@ -61,6 +61,30 @@ pub(crate) fn variable_below(named: &JHashMap<VarType, Vec<VarType>>, sub: &VarT
     false
 }
 
+/// Whether the cast to `cast` of `value`'s operand, whose type is `right`,
+/// is javac's cast of an array of a type variable to its erasure: `right`
+/// is an array of a type variable in scope with a bound of the cast's
+/// class, and `cast` that class's array of the same dimensions. The
+/// operand already has the type the cast would erase, so the cast is not
+/// written (`for (K e : c.getEnumConstants())` for a `Class<K> c` and `K
+/// extends Enum<K>`, which `(Enum[])` turned into a loop over `Enum`).
+pub(crate) fn variable_array_erasure(value: crate::exprent::Exprent, right: &VarType, cast: &[VarType]) -> bool {
+    if crate::fixes::kt_util::writing_kotlin()
+        || right.type_ != CodeType::Genvar
+        || right.array_dim == 0
+        || !is_exact(right)
+        || cast.len() != 1
+        || cast[0].type_ != CodeType::Object
+        || cast[0].array_dim != right.array_dim
+    {
+        return false;
+    }
+    value
+        .get_named_generics()
+        .get(&right.resize_array_dim(0))
+        .is_some_and(|bounds| bounds.iter().any(|b| b.type_ == CodeType::Object && b.array_dim == 0 && b.value == cast[0].value))
+}
+
 /// A type argument that is a type, not a wildcard.
 fn is_exact(t: &VarType) -> bool {
     t.try_as_generic()

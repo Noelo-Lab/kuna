@@ -1007,7 +1007,14 @@ each bound a known class or `Object`), is not assignable to the target, and
 assigned or passed value) writes the cast: `return (Node<? extends Node<N>>) this` for a
 `Node<N>` with `N` bounded by `Object`, which printed `return this` and did not compile. A
 variable bounded by `B`'s class or a subclass (`S extends Self<S>`) is left alone, as is any
-value but a variable, whose inferred type may be less exact than javac's.
+value but a variable, whose inferred type may be less exact than javac's. The reverse holds
+for javac's `checkcast` of an array of a type variable to its erasure: the value already has
+the array type the cast would erase, and written, the cast changes it to the bound's array,
+so `for (K k : s.items())` for a `Seq<K> s` and `K extends Item` printed `for (K k :
+(Item[]) s.items())`, which javac rejects. A cast of a value whose inferred type is an array
+of a type variable in scope, to the array of the same dimensions of a class that bounds the
+variable, is not written (`generic_casts::variable_array_erasure`, read by the cast's
+`FunctionExprent::get_inferred_expr_type` before either of its tests), in Java only.
 The pass, like every fix that asks which method a call names before the call is written,
 looks the method up without recording it (`InvocationExprent::find_desc`). The ported
 `get_desc` records what it finds, and a call with a recorded method is written without the

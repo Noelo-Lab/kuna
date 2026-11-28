@@ -4,6 +4,7 @@ use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
 use crate::const_exprent::ConstExprent;
 use crate::expr_processor::ExprProcessor;
+use crate::fixes::generic_casts;
 use crate::exprent::{Exprent, ExprentKind, ExprentType};
 use crate::i_matchable::MatchProperties;
 use crate::int_helper::IntHelper;
@@ -504,6 +505,10 @@ impl FunctionExprent {
                 .map(|e| e.get_expr_type())
                 .collect();
 
+            if generic_casts::variable_array_erasure(self.0, &right, &cast) {
+                self.set_needs_cast(false);
+                return Some(right);
+            }
             let generic_bound = upper_bound.filter(|ub| ub.is_generic() || right.is_generic());
             if let Some(upper_bound) = generic_bound {
                 let mut upper_bound = upper_bound.clone();

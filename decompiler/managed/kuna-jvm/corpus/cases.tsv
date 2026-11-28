@@ -2072,3 +2072,5 @@ case	kuna-fixes/pkg/TestRawReceiverCheckcast	Kuna Fixes	kuna-fixes/classes/pkg/T
 case	kuna-fixes/pkg/TestSignatureParameterTypes	Kuna Fixes	kuna-fixes/classes/pkg/TestSignatureParameterTypes
 # kuna-fixes/src/pkg/TestUncontainedArguments.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestUncontainedArguments	Kuna Fixes	kuna-fixes/classes/pkg/TestUncontainedArguments
+# kuna-fixes/src/pkg/TestVariableArrayErasure.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestVariableArrayErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestVariableArrayErasure
