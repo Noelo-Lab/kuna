@@ -504,6 +504,42 @@ fn d8_desugaring_is_undone() {
 }
 
 #[test]
+fn d8_register_sharing_is_undone() {
+    for f in ["shapes.dex", "shapes-release.dex"] {
+        let color = ok(&jvm(&["decompile", &dex(f), "vx.Shapes$Color"]));
+        assert!(color.contains("RED,\n   GREEN,\n   BLUE,\n   GRAY;"), "{f}: {color}");
+        let arms = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.arms"]));
+        assert!(arms.contains(" = new StringBuilder(") && !arms.contains("var1000"), "{f}: {arms}");
+        let ranges = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.ranges"]));
+        assert!(ranges.contains(" = ~") && ranges.contains(" - 1;") && !ranges.contains("(boolean)"), "{f}: {ranges}");
+        let version = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.version"]));
+        assert!(version.contains(" = null;") && !version.contains(" = var"), "{f}: {version}");
+        let from = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.from"]));
+        assert!(from.contains("Shapes.Kind var") && !from.contains("var3 = r.lowerKind()"), "{f}: {from}");
+        let label = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.label"]));
+        assert!(label.contains("return \"item \" + name + \" #\" + n;"), "{f}: {label}");
+        let failure = ok(&jvm(&["decompile", &dex(f), "vx.Shapes$Failure"]));
+        assert!(failure.contains("      super(\"failed at \" + ") && !failure.contains(" = String.valueOf("), "{f}: {failure}");
+        let rethrow = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.rethrow"]));
+        assert!(rethrow.contains("} catch (IOException | RuntimeException "), "{f}: {rethrow}");
+        let as_int = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.asInt"]));
+        assert!(as_int.contains("boolean var1 = bytes.length >= 4;") && !as_int.contains("(boolean)"), "{f}: {as_int}");
+        let bound = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.bound"]));
+        assert!(bound.contains("return s::len;") && !bound.contains("requireNonNull"), "{f}: {bound}");
+        let checked = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.checked"]));
+        assert!(checked.contains("Objects.requireNonNull(s);"), "{f}: {checked}");
+        for m in ["unit", "seconds", "hoisted"] {
+            let sw = ok(&jvm(&["decompile", &dex(f), &format!("vx.Shapes.{m}")]));
+            assert!(sw.contains("switch (") && sw.contains("case SECONDS:") && !sw.contains("SwitchMap"), "{f}: {sw}");
+        }
+        if f == "shapes.dex" {
+            let paint = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.paint"]));
+            assert!(paint.contains("case RED:\n         return \"r\";"), "{f}: {paint}");
+        }
+    }
+}
+
+#[test]
 fn a_kotlin_class_from_dex_prints_as_kotlin() {
     let out = ok(&jvm(&["decompile", &dex("kotlin.dex"), "kx.Point"]));
     assert!(out.contains("data class Point(") && out.contains("operator fun plus"), "{out}");

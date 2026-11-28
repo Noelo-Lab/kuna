@@ -235,14 +235,25 @@ them out. d8's desugaring is undone: lambda classes become the `invokedynamic` j
 become the JDK calls, records on `com.android.tools.r8.RecordTag` print as records, nest
 accessors (`-$$Nest$...`, `-IA` constructors) become the private accesses, and a catch-all
 that does not rethrow is `catch (Throwable t)`; these work across the `classes*.dex` of an
-APK (`docs/spec/11-jvm.md` 11.17 has the algorithm). A method whose code cannot be
+APK (`docs/spec/11-jvm.md` 11.17 has the algorithm). Where d8 shares one register or one
+constant among values of different types, the translation gives javac's shape back: a
+constant is written at each use it reaches alone, and a temporary d8 joins at a branch gets a
+local of its own. Also undone: the per-type handlers of a multi-catch (one handler again),
+the null check of a bound method reference (inside the reference, as javac writes it), the
+`String.valueOf` d8 calls on a concatenation operand before the `StringBuilder` chain
+(written where it is appended, so `super("..." + x)` stays first), the dropped results of
+the chain's `append`s in release builds (one expression again, printed as `+`), the if-chain
+a release build makes of a small `switch` on an enum's switch map (a `switch` again), and
+DEX's by-name field order for an enum's constants (declaration order again, which their
+ordinals depend on). A method whose code cannot be
 translated fails alone, with the engine's usual failure comment naming the reason
 (`DEX code not translated: ...`).
 
 **What is lost relative to class files.** The rest of d8's work is not undone: register
 reuse, comparisons and constants shared between uses, code moved or merged across branches
 (shared returns, a `throw` placed after the return), default and static interface methods
-moved into `$-CC` classes below min-api 24, string concatenation (a `StringBuilder` chain),
+moved into `$-CC` classes below min-api 24, string concatenation (a `StringBuilder` chain the
+engine prints as `+`, but with `String.valueOf(x)` for a reference operand),
 pattern `switch` (`$$ExternalSyntheticTypeSwitch`), `AutoCloseable` dispatch, the inlined
 backports (`List.of()` as `Collections.EMPTY_LIST`, `Boolean.logicalAnd` as `&`), the lambda
 classes themselves (still listed and printed), and a `synchronized` method's lock written as

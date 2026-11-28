@@ -12,6 +12,7 @@ mod backport;
 mod class;
 mod classfile;
 mod code;
+mod concat;
 mod debug;
 mod dex;
 mod emit;
@@ -21,6 +22,7 @@ mod nest;
 mod reader;
 mod record;
 mod region;
+mod switchmap;
 
 pub use class::ERROR_ATTRIBUTE;
 

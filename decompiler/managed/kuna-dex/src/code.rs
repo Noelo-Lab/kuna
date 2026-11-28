@@ -167,6 +167,18 @@ pub struct Method<'d, 'a> {
     /// (not the parameter updated in place, nor named as it by debug info):
     /// they get a local of their own.
     pub reused: BTreeSet<u32>,
+    /// Webs debug info names: a def it names right after the def, a use it
+    /// names at the use, or a phi it names where the phi's block starts
+    /// (parameter entries, which start at 0, aside).
+    pub named: BTreeSet<u32>,
+    /// Handler blocks to the equal handler block that stands for them
+    /// (`merge_handlers`).
+    pub alias: BTreeMap<u32, u32>,
+    /// Int-like webs whose values are booleans (`boolean_webs`).
+    pub booleans: BTreeSet<u32>,
+    /// `sparse-switch` ops rewritten from d8's test chains on a switch map,
+    /// by address: their cases and default target (`switchmap.rs`).
+    pub chains: BTreeMap<u32, crate::switchmap::Chain>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -259,6 +271,10 @@ impl<'d, 'a> Method<'d, 'a> {
             handler_live: Vec::new(),
             clean_param: Vec::new(),
             reused: BTreeSet::new(),
+            named: BTreeSet::new(),
+            alias: BTreeMap::new(),
+            booleans: BTreeSet::new(),
+            chains: BTreeMap::new(),
         };
         m.build_ops(undo)?;
         m.build_blocks()?;
@@ -266,6 +282,7 @@ impl<'d, 'a> Method<'d, 'a> {
         m.number_values()?;
         m.infer_types()?;
         m.classify_params();
+        m.name_webs();
         m.forward_moves();
         Ok(m)
     }
@@ -304,6 +321,20 @@ impl<'d, 'a> Method<'d, 'a> {
             )));
         }
         Ok(())
+    }
+
+    /// The registers an instruction reads and writes (both halves of a
+    /// wide value); a malformed one reads every register.
+    fn insn_regs(&self, x: &Insn) -> (Vec<u32>, Vec<u32>) {
+        let regs = |v: &[(u32, Mask)]| v.iter().flat_map(|&(r, m)| if is_wide(m) { vec![r, r + 1] } else { vec![r] }).collect::<Vec<u32>>();
+        match x.op {
+            0x0a | 0x0c => (vec![], vec![x.a]),
+            0x0b => (vec![], vec![x.a, x.a + 1]),
+            _ => match self.shape(x) {
+                Ok((uses, def, _)) => (regs(&uses), regs(&def.into_iter().collect::<Vec<_>>())),
+                Err(_) => ((0..u32::from(self.code.registers)).collect(), vec![]),
+            },
+        }
     }
 
     fn shape(&self, x: &Insn) -> Result<Shape> {
@@ -436,6 +467,15 @@ impl<'d, 'a> Method<'d, 'a> {
         let mut insns = decode(self.code.insns)?;
         if undo {
             crate::nest::rewrite(self.dex, &mut insns);
+            let handlers: Vec<u32> = self.code.tries.iter().flat_map(|t| t.handlers.iter().map(|h| h.1)).collect();
+            crate::switchmap::refill(self.dex, &mut insns);
+            let tries: Vec<(u32, u32)> = self.code.tries.iter().map(|t| (t.start, t.start + t.count)).collect();
+            let regs = |x: &Insn| self.insn_regs(x);
+            let entered = crate::switchmap::entered(&insns, self.code.insns, &handlers);
+            let named = |r: u32, s: u32, e: u32| self.debug.locals.iter().any(|l| l.reg == r && l.start < e && s < l.end.max(l.start + 1));
+            let line = |a: u32| self.debug.lines.partition_point(|&(x, _)| x <= a).checked_sub(1).map(|i| self.debug.lines[i].1);
+            crate::concat::rechain(self.dex, &mut insns, &entered, &tries, &regs, &named, &line);
+            self.chains = crate::switchmap::rewrite(self.dex, &mut insns, self.code.insns, &entered, &tries, &handlers, &regs);
         }
         let regs = u32::from(self.code.registers);
         let mut k = 0;
@@ -635,7 +675,8 @@ impl<'d, 'a> Method<'d, 'a> {
     }
 
     fn op_at(&self, addr: u32) -> Option<usize> {
-        self.ops.binary_search_by_key(&addr, |o| o.insn.addr).ok()
+        let k = self.ops.partition_point(|o| o.insn.addr < addr);
+        (self.ops.get(k)?.insn.addr == addr).then_some(k)
     }
 
     /// The first op starting at or after `addr`.
@@ -658,12 +699,53 @@ impl<'d, 'a> Method<'d, 'a> {
                 .iter()
                 .map(|&t| at(i64::from(x.addr) + i64::from(t)))
                 .collect::<Result<_>>()?,
+            0x2c if self.chains.contains_key(&x.addr) => {
+                let (cases, default) = &self.chains[&x.addr];
+                cases.iter().map(|c| c.1).chain([*default]).map(|t| at(i64::from(t))).collect::<Result<_>>()?
+            }
             0x2c => crate::insn::sparse_switch(self.code.insns, x.target())?
                 .iter()
                 .map(|&(_, t)| at(i64::from(x.addr) + i64::from(t)))
                 .collect::<Result<_>>()?,
             _ => vec![],
         })
+    }
+
+    /// javac compiles `catch (A | B e)` to one handler for both types; d8
+    /// gives each type its own handler, a `move-exception` into one register
+    /// and a jump to the shared body. Typed handler blocks that are just that,
+    /// with the same register and the same body, are one code: every try
+    /// item's entry for them names the first of them, and the others are
+    /// never entered.
+    fn merge_handlers(&mut self) {
+        let bare = |m: &Self, h: u32| -> Option<(u32, u32)> {
+            let blk = &m.blocks[h as usize];
+            let ops: Vec<&Op> = m.ops[blk.start..blk.end].iter().filter(|o| o.insn.op != 0x00).collect();
+            let jump = match ops.as_slice() {
+                [x] => x.insn.op == 0x0d,
+                [x, g] => x.insn.op == 0x0d && matches!(g.insn.op, 0x28..=0x2a),
+                _ => false,
+            };
+            match blk.succs.as_slice() {
+                &[j] if jump => Some((ops[0].insn.a, j)),
+                _ => None,
+            }
+        };
+        let mut first: BTreeMap<(u32, u32), u32> = BTreeMap::new();
+        for b in 0..self.blocks.len() {
+            for i in 0..self.blocks[b].handlers.len() {
+                let (ty, h) = self.blocks[b].handlers[i];
+                if ty.is_none() {
+                    continue;
+                }
+                let Some(key) = bare(self, h) else { continue };
+                let rep = *first.entry(key).or_insert(h);
+                if rep != h {
+                    self.alias.insert(h, rep);
+                    self.blocks[b].handlers[i].1 = rep;
+                }
+            }
+        }
     }
 
     fn build_blocks(&mut self) -> Result<()> {
@@ -716,7 +798,7 @@ impl<'d, 'a> Method<'d, 'a> {
                 .iter()
                 .map(|&t| block_of[self.op_at(t).expect("checked")])
                 .collect();
-            let falls = !matches!(last.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a);
+            let falls = !matches!(last.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a) && !self.chains.contains_key(&last.insn.addr);
             if falls && e < self.ops.len() {
                 succs.push(block_of[e]);
             }
@@ -739,6 +821,7 @@ impl<'d, 'a> Method<'d, 'a> {
             blk.try_item = try_item;
             blk.falls_off = falls_off;
         }
+        self.merge_handlers();
         let mut stack = vec![0u32];
         self.blocks[0].reachable = true;
         while let Some(b) = stack.pop() {
@@ -1028,6 +1111,31 @@ impl<'d, 'a> Method<'d, 'a> {
         self.clean_param = clean_param;
     }
 
+    fn name_webs(&mut self) {
+        let locals: Vec<(u32, u32, u32)> =
+            self.debug.locals.iter().filter(|l| l.start > 0 && l.name != crate::dex::NO_INDEX).map(|l| (l.reg, l.start, l.end.max(l.start + 1))).collect();
+        if locals.is_empty() {
+            return;
+        }
+        let covers = |r: u32, a: u32| locals.iter().any(|&(lr, s, e)| lr == r && s <= a && a < e);
+        let mut named = BTreeSet::new();
+        for o in &self.ops {
+            if let Some(d) = o.def.as_ref().filter(|d| covers(d.reg, o.end)) {
+                named.insert(self.root(d.id));
+            }
+            for u in o.uses.iter().filter(|u| u.val != UNDEF && covers(u.reg, o.insn.addr)) {
+                named.insert(self.root(u.val));
+            }
+        }
+        for (i, (&b, &r)) in self.phi_block.iter().zip(&self.phi_reg).enumerate() {
+            let blk = &self.blocks[b as usize];
+            if blk.start < self.ops.len() && covers(r, self.ops[blk.start].insn.addr) {
+                named.insert(self.root(self.defs + i as u32));
+            }
+        }
+        self.named = named;
+    }
+
     /// Removes the register copies d8 makes to line up a range call: a
     /// `move` of a parameter or of a value read only by it, whose copy is
     /// read once later in the same block, hands that reader the value itself,
@@ -1097,18 +1205,17 @@ impl<'d, 'a> Method<'d, 'a> {
         }
     }
 
-    /// Whether the value is a constant read only where it reaches alone.
-    pub fn inline_const(&self, v: u32) -> bool {
+    /// Whether the value is a constant debug info does not name: each use it
+    /// reaches alone reads the literal, typed by that use, as javac writes a
+    /// constant at each use; only a phi it joins reads it from its local.
+    pub fn literal(&self, v: u32) -> bool {
         let k = self.def_op[v as usize];
-        if k >= self.ops.len() {
-            return false;
-        }
-        let o = &self.ops[k];
-        if !matches!(o.insn.op, 0x12..=0x1c) || self.named_def(k) {
-            return false;
-        }
-        let (_, phi) = self.web_uses.get(&self.root(v)).copied().unwrap_or((0, false));
-        !phi
+        k < self.ops.len() && matches!(self.ops[k].insn.op, 0x12..=0x1c) && !self.named_def(k)
+    }
+
+    /// Whether the value is a [`Method::literal`] no phi joins: it is never stored.
+    pub fn inline_const(&self, v: u32) -> bool {
+        self.literal(v) && !self.web_uses.get(&self.root(v)).is_some_and(|w| w.1)
     }
 
     /// The constant op a value holds: its def, or the def a `move` copies.
@@ -1195,6 +1302,7 @@ impl<'d, 'a> Method<'d, 'a> {
             }
         };
         let inline: Vec<bool> = (0..values as u32).map(|v| self.inline_const(v)).collect();
+        let lit: Vec<bool> = (0..values as u32).map(|v| self.literal(v)).collect();
         for (k, &(_, m)) in self.params.iter().enumerate() {
             let t = tfind(&mut tp, k as u32);
             mask[t as usize] &= m;
@@ -1205,7 +1313,7 @@ impl<'d, 'a> Method<'d, 'a> {
         for &k in &live {
             let o = &self.ops[k];
             for u in &o.uses {
-                if !inline[u.val as usize] {
+                if !lit[u.val as usize] {
                     let t = tfind(&mut tp, u.val);
                     mask[t as usize] &= u.mask;
                 }
@@ -1217,13 +1325,13 @@ impl<'d, 'a> Method<'d, 'a> {
             match o.rel {
                 Rel::Same => {
                     let (u, d) = (&o.uses[0], o.def.as_ref().expect("def"));
-                    if !inline[u.val as usize] {
+                    if !lit[u.val as usize] {
                         tunion(&mut tp, &mut mask, d.id, u.val);
                     }
                 }
                 Rel::SameUses => {
                     let (a, b) = (&o.uses[0], &o.uses[1]);
-                    if !inline[a.val as usize] && !inline[b.val as usize] {
+                    if !lit[a.val as usize] && !lit[b.val as usize] {
                         tunion(&mut tp, &mut mask, a.val, b.val);
                     }
                 }
@@ -1232,6 +1340,7 @@ impl<'d, 'a> Method<'d, 'a> {
         }
         self.tvar = (0..values as u32).map(|v| tfind(&mut tp, v)).collect();
         self.infer_ref_types(&live);
+        self.boolean_webs(&live);
         for &k in &live {
             let o = &self.ops[k];
             if !matches!(o.rel, Rel::ArrayGet | Rel::ArrayPut) {
@@ -1241,7 +1350,7 @@ impl<'d, 'a> Method<'d, 'a> {
             let target = if o.rel == Rel::ArrayGet {
                 o.def.as_ref().map(|d| d.id)
             } else {
-                Some(o.uses[2].val).filter(|&v| !inline[v as usize])
+                Some(o.uses[2].val).filter(|&v| !lit[v as usize])
             };
             if let Some(t) = target {
                 mask[self.tvar[t as usize] as usize] &= e;
@@ -1264,6 +1373,71 @@ impl<'d, 'a> Method<'d, 'a> {
             })?;
         }
         Ok(())
+    }
+
+    /// The int-like webs some def of which is a boolean (a `boolean` result,
+    /// field or element, `instance-of`) and none of which is another int
+    /// (arithmetic, a comparison, a length, an int-typed result, field or
+    /// element): d8 puts both in one register, javac's variables keep them
+    /// apart.
+    fn boolean_webs(&mut self, live: &[usize]) {
+        let (mut z, mut n) = (BTreeSet::new(), BTreeSet::new());
+        let ret = |m: &Self, x: &Insn| m.dex.method(x.idx).ok().and_then(|mi| m.dex.proto(mi.proto).ok()).and_then(|p| m.dex.type_desc(p.ret).ok()).map(|d| d == b"Z");
+        let field = |m: &Self, x: &Insn| m.dex.field(x.idx).ok().and_then(|f| m.dex.type_desc(f.ty).ok()).map(|d| d == b"Z");
+        for &k in live {
+            let o = &self.ops[k];
+            let Some(d) = o.def.as_ref().filter(|d| d.mask & I != 0 && !is_wide(d.mask)) else { continue };
+            let x = &o.insn;
+            let kind = match x.op {
+                0x20 | 0x47 => Some(true),
+                0x52 | 0x60 => Some(false),
+                0x55 | 0x63 => Some(true),
+                0x56..=0x58 | 0x64..=0x66 | 0x44 | 0x48..=0x4a | 0x21 | 0x2d..=0x31 | 0x7b..=0xe2 => Some(false),
+                0x53 | 0x54 | 0x61 | 0x62 => None,
+                0x6e..=0x72 | 0x74..=0x78 if o.kind == Kind::Plain => ret(self, x),
+                _ => None,
+            }
+            .or_else(|| if matches!(x.op, 0x52..=0x58 | 0x60..=0x66) { field(self, x) } else { None });
+            match kind {
+                Some(true) => z.insert(self.root(d.id)),
+                Some(false) => n.insert(self.root(d.id)),
+                None => false,
+            };
+        }
+        let boolean_ret = self.dex.type_desc(self.proto.ret).is_ok_and(|d| d == b"Z");
+        for &k in live {
+            let o = &self.ops[k];
+            let x = &o.insn;
+            let params: Option<Vec<bool>> = match x.op {
+                0x6e..=0x72 | 0x74..=0x78 => self.dex.method(x.idx).ok().and_then(|mi| self.dex.proto(mi.proto).ok()).map(|p| {
+                    let own = usize::from(!matches!(x.op, 0x71 | 0x77));
+                    let mut v = vec![false; own];
+                    v.extend(p.params.iter().map(|&t| self.dex.type_desc(t).is_ok_and(|d| d == b"Z")));
+                    v
+                }),
+                _ => None,
+            };
+            for (i, u) in o.uses.iter().enumerate() {
+                if u.val == UNDEF || self.literal(u.val) {
+                    continue;
+                }
+                let boolean = match x.op {
+                    0x0f => Some(boolean_ret),
+                    0x4e => (i == 2).then_some(true),
+                    0x5c => (i == 1).then_some(true),
+                    0x6a => Some(true),
+                    0x6e..=0x72 | 0x74..=0x78 => params.as_ref().and_then(|p| p.get(i).copied()).filter(|&b| b || u.mask & I != 0),
+                    0x7b..=0xe2 => Some(false),
+                    _ => None,
+                };
+                match boolean {
+                    Some(true) => z.insert(self.root(u.val)),
+                    Some(false) => n.insert(self.root(u.val)),
+                    None => false,
+                };
+            }
+        }
+        self.booleans = z.difference(&n).copied().collect();
     }
 
     /// The element category of the array a value holds, when its type is known.
@@ -1339,8 +1513,8 @@ impl<'d, 'a> Method<'d, 'a> {
     /// The category of the value a use reads.
     pub fn use_cat(&self, o: &Op, u: usize) -> Mask {
         match self.cat[o.uses[u].val as usize] {
-            0 => self.inline_cat(o, u),
-            c => c,
+            c if c != 0 && !self.literal(o.uses[u].val) => c,
+            _ => self.inline_cat(o, u),
         }
     }
 
@@ -1348,7 +1522,7 @@ impl<'d, 'a> Method<'d, 'a> {
     pub fn inline_cat(&self, o: &Op, u: usize) -> Mask {
         let use_ = &o.uses[u];
         let mut m = use_.mask;
-        let known = |v: u32| Some(self.cat[v as usize]).filter(|&c| c != 0);
+        let known = |v: u32| Some(self.cat[v as usize]).filter(|&c| c != 0 && !self.literal(v));
         match o.rel {
             Rel::Same => {
                 if let Some(c) = o.def.as_ref().and_then(|d| known(d.id)) {

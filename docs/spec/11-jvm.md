@@ -2653,16 +2653,23 @@ call (it fails over when more than one is). Blocks start at branch targets, afte
 returns, throws and the monitor ops, at try boundaries and at handlers; a block in a try range has its handlers as exception successors, and
 reachability follows normal edges and the handlers of blocks with a throwing instruction.
 Unreachable blocks are not translated, and a reachable block that falls off the code is an
-error.
+error. javac compiles `catch (A | B e)` to one handler for both types; d8 gives each type its
+own handler, a `move-exception` into one register and a jump to the shared body. Typed
+handler blocks that are only that, into the same register and on to the same block, are one
+code: every try item's entry for them names the first of them, so the exception table lists
+both types with one handler as javac's does, and the others are never entered.
 
 **Values and webs.** Liveness is computed per register with exception edges taken at each
 throwing op (the state before the op flows to the handler). A forward pass then numbers
 values: every def is a value, and where a live register receives two different values at a
 block entry the block gets a phi for that register; a use names the one value reaching it.
-Webs are the union-find classes of values joined through phis. A web of a single constant
-def with no phi is *inline*: the constant is written at each of its uses, typed by that use,
-so one register can carry one literal (`0` as int, float and `null`) to differently-typed
-uses, and no store is emitted. After typing, a `move` that d8 wrote to line up a range call
+Webs are the union-find classes of values joined through phis. A constant def debug info
+does not name is a *literal*: the constant is written at each use it reaches alone (not
+through a phi), typed by that use, so one register can carry one literal (`0` as int, float
+and `null`) to differently-typed uses, and those uses neither read its local nor type its
+web. A literal no phi joins is *inline* and no store is emitted; one a phi joins is stored
+for the phi alone (d8 shares one `const/4 v, 1` between `~i - 1` and the `true` a later join
+receives, where javac writes each constant where it is used). After typing, a `move` that d8 wrote to line up a range call
 is forwarded: when its source is a parameter or a value read only by the move, and its copy
 is read once later in the same block, that reader reads the source instead and the move
 vanishes, provided no other op writes the source's local in between; a chain of such moves
@@ -2692,7 +2699,18 @@ register is another variable (`char[] cs = s.toCharArray()` in `s`'s register). 
 `add-int/lit` becomes `iinc` only when the value it reads is in the local it writes. A
 parameter debug info does not name (a release build) gets a `LocalVariableTable` entry over
 the whole method with its `MethodParameters` name, as javac's `-g` writes one; the engine
-otherwise names a read of it apart from its declaration.
+otherwise names a read of it apart from its declaration. In a method with debug locals, a
+web joined at a phi that no local entry names (no entry covers a def right after it, a use
+at it, or the start of the phi's block; parameter entries aside) is d8's temporary for a
+`?:` or a materialised condition, and gets a local of its own per type, apart from the
+named variables of its register: otherwise the engine merges two such temporaries of one
+register (`T lower` and the `BoundType` after it in Guava `GeneralRange.from`) into one
+variable of their common supertype that a later read cannot take. Likewise an int-like web
+that is a boolean (a def or a use typed `boolean`: a result, field, element, `instance-of`,
+argument, stored value or returned value of a `boolean` method; no def or use typed as
+another int: arithmetic, comparison, length, int-typed result, field, element or argument)
+gets a local apart from the register's other ints when debug info does not name it (in
+any method of a release build), so `int var2 = var1.length >= 4` is a `boolean`.
 
 **Release builds.** d8's release build also gives each `return` of a boolean method its own
 block where javac shares one `ireturn` for `return c;`: two blocks that only return `true`
@@ -2700,7 +2718,26 @@ and `false`, on the same source line, share one `ireturn` again (the constant pu
 the first jumping to the second), so the engine prints the condition; returns on different
 lines were written as such and stay. And it reads `Collections.EMPTY_LIST`, `EMPTY_SET` and
 `EMPTY_MAP` where the code called `emptyList()`, `emptySet()` and `emptyMap()`; such a read
-is written as the call. In a method without debug locals, references of different types
+is written as the call. d8 lowers javac's string concatenation to a `StringBuilder` and, in a
+release build, drops the `move-result` of each `append`, which returns the builder it was
+called on: the chain became a builder in a register and one statement per `append`.
+`decompiler/managed/kuna-dex/src/concat.rs` gives the `append`s their results back (each
+writes the builder's register again, the same reference) when the builder is created,
+appended to and turned into its string by `toString` in straight-line code under one try
+item and on one source line, nothing else reads or writes its register in between, and
+debug info does not name it, so the chain is one expression (a builder the source appends to
+in statements of its own looks the same in a release build, but its statements are on lines
+of their own) and the engine prints the concatenation. d8 also calls
+`String.valueOf` on each reference operand of a concatenation before the chain starts, so the
+converted operand sat in a register across the chain, and a `super(...)` or `this(...)`
+argument became a statement before the call, which javac rejects. Such a call whose one use
+is an `append(String)` later in its block is written at that use, as javac evaluates the
+operand, when nothing it moves past can have an effect it could observe (constants, a new
+`StringBuilder` with no argument, a string literal or a non-negative literal capacity,
+appends of strings or primitives to it, and other such calls whose own appends come
+later), nothing in between writes its argument's register, and the argument is not itself
+an expression folded into the call (it would become a variable). In a method
+without debug locals, references of different types
 that d8 put in one register get one local per type (the type inferred for each value's web),
 so the engine does not type them as one variable of their common supertype. And a value
 captured by a lambda body (a synthetic implementation method) stays in a local unless it is a
@@ -2724,7 +2761,9 @@ constant above the branch) gets the constant pushed on each edge instead: a pred
 jumps or falls into the join pushes its constant last, and a conditional or switch edge
 lands on a stub that pushes it, the stubs laid out right before the join as javac's arms are.
 The value then stays on the stack when it is read once, as the first operand of the join's
-first statement, and is stored into its local at the join otherwise; the constants themselves
+first statement whose JVM code reads that operand before pushing anything else (not a
+constructor call, which pushes `new` and `dup` first, `filled-new-array`, `rsub-int`, or an
+`add-int/lit` that may become `iinc`), and is stored into its local at the join otherwise; the constants themselves
 are not written. A register some exception handler reads is excluded, since its local would
 then be unwritten where the JVM merges handler states. `add-int/lit` on one local
 becomes `iinc`, `not-int` becomes `^ -1`, `rsub-int` pushes its literal first,
@@ -2767,6 +2806,21 @@ that throws and a `KunaDexError` attribute (a constant-pool string, laid out as
 (`decompiler/managed/kuna-jvm/src/infra/method_processor.rs (code_to_java_schedule)`).
 A panic in the translation of one method is caught and fails that method the same way.
 
+**Switch maps.** javac's `switch` on an enum of another class reads
+`$SwitchMap$...[e.ordinal()]`, an array its synthetic class fills in `<clinit>`, and javac
+writes such an array for nothing else. d8's release build changes both sides, and
+`decompiler/managed/kuna-dex/src/switchmap.rs` undoes both before ops are built. A small
+`switch` becomes a chain of `if-eq`/`if-ne` tests of the value read from the array against
+constants (a register holds one if a forward pass over the method as d8 wrote it finds that
+constant in it on every path, handlers entered knowing none, since d8 hoists constants above
+other branches): when the tests follow each other (constants only between them, whose
+registers a short walk finds dead at every target) and nothing else enters them, the first becomes a
+`sparse-switch` with each test's case (an `if-ne`'s fall-through, then the chain ends at its
+target, the default) and an explicit default target, written as `lookupswitch`, and the rest
+become `nop`s. And `<clinit>` fills the first entry through the register it stored the new
+array from; that register reads the field again right after the store (the same reference),
+so the entry is `getstatic`'s as in javac's code and the engine reads every entry of the map.
+
 **Lambdas.** d8 desugars every `invokedynamic` to `LambdaMetafactory` into a class
 `X$$ExternalSyntheticLambdaN`. `decompiler/managed/kuna-dex/src/lambda.rs` recognises
 such a class once per file: it implements one interface, its constructor stores its
@@ -2784,7 +2838,20 @@ synthetic bridge of the same class (`$r8$lambda$...`) that passes its parameters
 unchanged; the handle then names the method itself, virtual (interface in an interface), as
 javac's does (the bridge stays, synthetic, for the lambda class). The engine then prints the lambda or
 method reference. A lambda class of any other shape (d8 inlined the body into it) is left as
-it is; the lambda class of a `new` in a peer file is found there.
+it is. javac checks a bound method reference's receiver with `dup`, `Objects.requireNonNull`
+(or `getClass()`) and `pop` before its `invokedynamic`; d8 keeps the check as a call whose
+result is unused, right before the reference's lambda class is created. Such a call on the
+receiver of the bound method reference that follows it (one capture, a virtual or interface
+target that is not a synthetic lambda body) is written as javac's sequence inside the
+reference when the receiver is a parameter, a named variable, a constant, or a value read
+by nothing else, which then folds into the reference as javac's receiver expression (an
+unnamed variable would take the reference's type in the engine). The reference stays an
+operand and what was pending below it (`stream()` of
+`list.stream().anyMatch(name::startsWith)`) stays an expression; a check before a lambda
+that merely captures the variable is a statement of the source and stays one. The lambda
+class of a `new` in a peer file is found there, and the members it names
+(the implementation method and its descriptor) are read from that file's own tables, since
+another file's indices name other members.
 
 **Backports.** Below the API level that added a JDK method, d8 calls a static method of a
 synthetic class (`X$$ExternalSyntheticBackportN.m`) holding its own implementation.
@@ -2837,7 +2904,11 @@ member classes, and every class of the file whose `EnclosingClass` or `Enclosing
 names it (the engine links anonymous and local classes through their encloser's
 attribute). Static values become `ConstantValue` for primitives and strings when non-zero
 or the field is final; a final primitive field with no static value (d8 drops trailing
-defaults) that `<clinit>` never writes gets its type's default. Since DEX does not mark a method's class as an interface, a static,
+defaults) that `<clinit>` never writes gets its type's default. DEX lists a class's fields
+sorted by name, but an enum's constants are its fields in declaration order (their ordinals,
+which `values()` and a `switch` on `ordinal()` depend on; d8 switches on `ordinal()` itself
+for an enum of the program); an enum's constant fields are therefore written first, in the
+order its `<clinit>` first stores them, as javac declares and initialises them. Since DEX does not mark a method's class as an interface, a static,
 `super` or direct call is an interface call when the class is an interface defined in the
 file or one of a short list of JDK interfaces. The class-file version is the lowest that
 expresses the class: 50 (or the `min_version` option, down to 49), 51 for method-handle and

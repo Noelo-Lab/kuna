@@ -20,6 +20,7 @@ use crate::{err, Options, Result, Translated};
 
 const ACC_STATIC: u32 = 0x8;
 const ACC_INTERFACE: u32 = 0x200;
+const ACC_ENUM: u32 = 0x4000;
 const ACC_ABSTRACT: u32 = 0x400;
 const ACC_NATIVE: u32 = 0x100;
 pub const ERROR_ATTRIBUTE: &str = "KunaDexError";
@@ -680,11 +681,12 @@ impl<'d, 'a> Writer<'d, 'a> {
     }
 }
 
-/// The static fields `<clinit>` writes (d8 leaves trailing default static
-/// values out of the class's static values, so a final field without one and
-/// not written there is a constant with its type's default).
-fn clinit_puts(dex: &Dex, data: &crate::dex::ClassData) -> std::collections::BTreeSet<u32> {
-    let mut out = std::collections::BTreeSet::new();
+/// The static fields `<clinit>` writes, in the order it first writes them
+/// (d8 leaves trailing default static values out of the class's static
+/// values, so a final field without one and not written there is a constant
+/// with its type's default).
+fn clinit_puts(dex: &Dex, data: &crate::dex::ClassData) -> Vec<u32> {
+    let mut out = Vec::new();
     for em in &data.direct_methods {
         let is_clinit = dex
             .method(em.method)
@@ -695,8 +697,8 @@ fn clinit_puts(dex: &Dex, data: &crate::dex::ClassData) -> std::collections::BTr
         }
         let Ok(code) = dex.code_item(em.code_off) else { continue };
         for x in crate::insn::decode(code.insns).unwrap_or_default() {
-            if (0x67..=0x6d).contains(&x.op) {
-                out.insert(x.idx);
+            if (0x67..=0x6d).contains(&x.op) && !out.contains(&x.idx) {
+                out.push(x.idx);
             }
         }
     }
@@ -771,6 +773,19 @@ pub fn translate(dex: &Dex, idx: u32, opts: &Options, peers: &[Dex]) -> Result<T
             desc: w.pool.utf8(desc),
             attrs,
         });
+    }
+    if def.access & ACC_ENUM != 0 {
+        let n = data.static_fields.len();
+        let rank = |i: usize| {
+            let ef = &data.static_fields[i];
+            let pos = assigned.iter().position(|&f| f == ef.field).unwrap_or(usize::MAX);
+            if ef.access & ACC_ENUM != 0 { (0, pos, i) } else { (1, 0, i) }
+        };
+        let mut order: Vec<usize> = (0..n).collect();
+        order.sort_by_key(|&i| rank(i));
+        let mut statics: Vec<Option<Member>> = fields.drain(..n).map(Some).collect();
+        let sorted: Vec<Member> = order.iter().map(|&i| statics[i].take().expect("each once")).collect();
+        fields.splice(0..0, sorted);
     }
     let defaults = w
         .system(&class_anns, b"Ldalvik/annotation/AnnotationDefault;")

@@ -232,3 +232,16 @@ fn parameters_updated_in_place_keep_their_local() {
         }
     }
 }
+
+#[test]
+fn a_lambda_class_in_another_dex_file_keeps_its_target() {
+    let (main, lambda) = (fixture("peers/Peers.dex"), fixture("peers/Lambda.dex"));
+    let (dex, peers) = (Dex::parse(&main).unwrap(), [Dex::parse(&lambda).unwrap()]);
+    let idx = (0..dex.class_count()).find(|&i| dex.class_name(i).unwrap() == "px/Peers").unwrap();
+    let t = dex.translate_with(idx, &Options::default(), &peers).unwrap();
+    assert!(t.failures.is_empty(), "{:?}", t.failures);
+    let c = read_class(&t.bytes);
+    assert!(c.utf8.iter().any(|s| s == "java/lang/invoke/LambdaMetafactory"));
+    let target: Vec<&(String, String)> = c.name_types.iter().filter(|nt| nt.0 == "twice").collect();
+    assert_eq!(target, [&("twice".to_string(), "(JLjava/lang/CharSequence;)J".to_string())]);
+}

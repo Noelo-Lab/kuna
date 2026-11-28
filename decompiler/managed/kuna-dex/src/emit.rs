@@ -11,7 +11,7 @@
 //! incoming values are all constants read once at the join's start gets them
 //! on the stack from each edge (`b = x > 3`, `c ? 5 : 7`), as javac writes it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::backport::Call;
 use crate::classfile::{op, Asm, Body, Label, Pool};
@@ -57,10 +57,18 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     /// Joins that receive their value on the stack: block to its edges.
     joins: BTreeMap<u32, Join>,
     silent: Vec<bool>,
+    /// `String.valueOf` calls of d8's string concatenation, written where
+    /// their value is appended (see `find_late`).
+    late: Vec<bool>,
     on_stack: Vec<bool>,
     stmts: Vec<(u32, u32)>,
     min_addr: u32,
     regions: Vec<crate::region::Region>,
+    /// Bound method references whose receiver d8 null-checked just before
+    /// them (the check's op to the reference's), written as javac does.
+    null_checks: BTreeMap<usize, usize>,
+    /// The receivers of `null_checks`, read by the check and the reference.
+    checked: BTreeSet<u32>,
     /// The two `return true` / `return false` blocks (in layout order) of a
     /// boolean method, which share one `ireturn` as javac's `return c;` does.
     bool_ret: Option<(u32, u32, Label)>,
@@ -134,11 +142,14 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             next_block: vec![u32::MAX; m.blocks.len()],
             joins: BTreeMap::new(),
             silent: vec![false; m.ops.len()],
+            late: vec![false; m.ops.len()],
             on_stack: vec![false; m.ops.len()],
             stmts: Vec::new(),
             min_addr: u32::MAX,
             regions: Vec::new(),
             bool_ret: None,
+            null_checks: BTreeMap::new(),
+            checked: BTreeSet::new(),
             release: m.debug.locals.iter().all(|l| l.start == 0),
             ref_kinds: BTreeMap::new(),
         }
@@ -158,19 +169,32 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
 
     /// The local holding value `v` of register `reg` in category `c`: a
     /// parameter's register d8 reuses for another value gets a second local,
-    /// so the parameter's own keeps the parameter throughout; and in a method
+    /// so the parameter's own keeps the parameter throughout; in a method
     /// without debug locals (a release build) references of different types
-    /// in one register get one local per type, as javac's variables are.
+    /// in one register get one local per type, as javac's variables are; and
+    /// with debug locals, a value joined at a phi that debug info does not
+    /// name (d8's temporary for a `?:` or a materialised condition) is kept
+    /// apart from the register's named variables, one local per type; and an
+    /// unnamed boolean is kept apart from the register's other ints.
     fn local(&mut self, reg: u32, c: Mask, v: u32) -> Result<u16> {
         let m = self.m;
+        let root = m.root(v);
         let param = m.params.contains(&(reg, c));
-        if param && !m.reused.contains(&m.root(v)) {
+        if param && !m.reused.contains(&root) {
             return self.slot(reg, c);
         }
         let mut key = if param { reg | REUSED } else { reg };
-        if let (true, L, Some(t)) = (self.release, c, m.ref_desc(v)) {
+        let unnamed = self.release || !m.named.contains(&root);
+        let temp = !self.release && !m.named.contains(&root) && m.web_uses.get(&root).is_some_and(|w| w.1);
+        let t = match (c, m.ref_desc(v)) {
+            (L, Some(t)) if self.release || temp => Some(t.to_vec()),
+            (I, _) if unnamed && m.booleans.contains(&root) => Some(b"Z".to_vec()),
+            _ if temp => Some(b"?".to_vec()),
+            _ => None,
+        };
+        if let Some(t) = t {
             let n = self.ref_kinds.len() as u32 + 1;
-            key |= (*self.ref_kinds.entry(t.to_vec()).or_insert(n)).min(0x7fff) << 16;
+            key |= (*self.ref_kinds.entry(t).or_insert(n)).min(0x7fff) << 16;
         }
         self.slot(key, c)
     }
@@ -227,7 +251,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             _ => false,
         };
         let read = matches!(o.insn.op, 0x52..=0x58 | 0x60..=0x66);
-        n == 1 && !phi && m.direct_uses[d.id as usize] == 1 && u > k && u < m.ops.len() && m.ops[u].block == o.block
+        let checked = u32::from(self.checked.contains(&d.id));
+        n == 1 + checked && !phi && m.direct_uses[d.id as usize] == 1 + checked && u > k && u < m.ops.len() && m.ops[u].block == o.block
             && (read || !captured(&m.ops[u]))
     }
 
@@ -256,12 +281,13 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             let phi = m.defs + i as u32;
             let root = m.root(phi);
             let ju = j as usize;
-            let uses = m.web_uses.get(&root).map_or(0, |w| w.0);
+            let web = &members[&root];
+            let literal_reads: u32 = web.iter().filter(|&&v| m.literal(v)).map(|&v| m.direct_uses[v as usize]).sum();
+            let uses = m.web_uses.get(&root).map_or(0, |w| w.0) - literal_reads;
             let caught = m.handler_live[r as usize / 64] >> (r % 64) & 1 != 0;
             if j == 0 || caught || handler[ju] || self.joins.contains_key(&j) || uses == 0 || m.direct_uses[phi as usize] != uses {
                 continue;
             }
-            let web = &members[&root];
             let consts = web.iter().all(|&v| v == phi || m.const_op(v).is_some());
             if !consts {
                 continue;
@@ -273,7 +299,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                     let o = &m.ops[q];
                     o.kind == Kind::Absorbed || o.insn.op == 0x00 || o.def.as_ref().is_some_and(|d| m.inline_const(d.id))
                 });
-                quiet && m.ops[k].uses.first().map(|u| u.val) == Some(phi) && !self.candidate(k)
+                quiet && m.ops[k].uses.first().map(|u| u.val) == Some(phi) && !self.candidate(k) && self.reads_first(k)
             };
             let mut edges = Vec::new();
             for &p in &preds[ju] {
@@ -312,6 +338,15 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         Ok(())
     }
 
+    /// Whether op `k`'s JVM code reads its first use before pushing anything
+    /// else: not a constructor call (`new`, `dup` first), `filled-new-array`
+    /// (`newarray` first), `rsub-int` (the literal first) or a possible `iinc`.
+    fn reads_first(&self, k: usize) -> bool {
+        let o = &self.m.ops[k];
+        let new = matches!(o.kind, Kind::NewObject { ty } if self.sh.verifiable || self.m.dex.lambda_in(ty, self.sh.peers).is_none());
+        !new && !matches!(o.insn.op, 0x24 | 0x25 | 0xd0 | 0xd1 | 0xd8 | 0xd9)
+    }
+
     /// The constant op predecessor `p` brings to join `j`.
     fn edge_value(&self, p: u32, j: u32) -> Option<usize> {
         self.joins.get(&j)?.edges.iter().find(|e| e.0 == p).map(|e| e.1)
@@ -342,9 +377,141 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         m.use_cat(&m.ops[k], 0)
     }
 
+    /// javac checks a bound method reference's receiver with `dup`,
+    /// `Objects.requireNonNull` (or `getClass()`) and `pop` before its
+    /// `invokedynamic`; d8 keeps the check as a call whose result is unused
+    /// right before the reference's lambda class is created. Such a pair is
+    /// written as javac's sequence, so the receiver and what is pending
+    /// below it stay expressions, when the receiver is a parameter, a named
+    /// variable, a constant, or a value read by nothing else, which then
+    /// folds into the reference (the engine types a variable it would
+    /// otherwise become by the reference).
+    fn find_null_checks(&mut self) -> Result<()> {
+        let m = self.m;
+        if self.sh.verifiable {
+            return Ok(());
+        }
+        for blk in m.blocks.iter().filter(|b| b.reachable) {
+            for k in blk.start..blk.end {
+                let o = &m.ops[k];
+                if o.kind != Kind::Plain || o.result || o.uses.len() != 1 || !matches!(o.insn.op, 0x6e | 0x71 | 0x74 | 0x77) {
+                    continue;
+                }
+                let mi = m.dex.method(o.insn.idx)?;
+                let (class, name, desc) = (m.dex.type_desc(mi.class)?, m.dex.string(mi.name)?, m.dex.proto_desc(mi.proto)?);
+                let check = matches!(o.insn.op, 0x71 | 0x77) && class == b"Ljava/util/Objects;" && name == b"requireNonNull" && desc == b"(Ljava/lang/Object;)Ljava/lang/Object;"
+                    || matches!(o.insn.op, 0x6e | 0x74) && name == b"getClass" && desc == b"()Ljava/lang/Class;";
+                let Some(n) = (k + 1..blk.end).find(|&j| m.ops[j].kind != Kind::Absorbed && m.ops[j].insn.op != 0x00) else { continue };
+                let Kind::NewObject { ty } = m.ops[n].kind else { continue };
+                let Some((owner, l)) = m.dex.lambda_in(ty, self.sh.peers) else { continue };
+                let bound = matches!(l.kind, 5 | 9) && l.captures.len() == 1 && !owner.synthetic_method(l.method);
+                let v = o.uses[0].val;
+                if !(check && bound && m.ops[n].uses.first().map(|u| u.val) == Some(v)) {
+                    continue;
+                }
+                let src = m.def_op[v as usize];
+                self.checked.insert(v);
+                let kept = src >= m.ops.len() || m.named.contains(&m.root(v)) || m.literal(v) || self.candidate(src) && self.user[v as usize] == n;
+                if kept {
+                    self.null_checks.insert(n, k);
+                    self.silent[k] = true;
+                } else {
+                    self.checked.remove(&v);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// d8 lowers javac's string concatenation to a `StringBuilder` chain
+    /// and calls `String.valueOf` on each reference operand before the
+    /// chain starts, so the converted operand sits in a register across the
+    /// chain (and a `super(...)` argument becomes a statement before the
+    /// call). Such a call whose one use is an `append(String)` later in its
+    /// block is written at that use, as javac's operand is, when nothing it
+    /// would move past can have an effect it could observe: constants, a new
+    /// `StringBuilder()`, appends of strings or primitives to it, and other
+    /// such calls whose own appends come later; and when nothing between
+    /// writes its argument's register and the argument is not itself an
+    /// expression folded into the call (it would become a variable).
+    fn find_late(&mut self) -> Result<()> {
+        let m = self.m;
+        let is = |k: usize, class: &[u8], name: &[u8], descs: &[&[u8]]| -> Result<bool> {
+            let mi = m.dex.method(m.ops[k].insn.idx)?;
+            Ok(m.dex.type_desc(mi.class)? == class && m.dex.string(mi.name)? == name && descs.contains(&m.dex.proto_desc(mi.proto)?.as_slice()))
+        };
+        const SB: &[u8] = b"Ljava/lang/StringBuilder;";
+        const APPEND: [&[u8]; 7] = [
+            b"(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+            b"(C)Ljava/lang/StringBuilder;",
+            b"(I)Ljava/lang/StringBuilder;",
+            b"(J)Ljava/lang/StringBuilder;",
+            b"(F)Ljava/lang/StringBuilder;",
+            b"(D)Ljava/lang/StringBuilder;",
+            b"(Z)Ljava/lang/StringBuilder;",
+        ];
+        for blk in m.blocks.iter().filter(|b| b.reachable) {
+            for k in (blk.start..blk.end).rev() {
+                let o = &m.ops[k];
+                let Some(d) = o.def.as_ref().filter(|_| o.kind == Kind::Plain && matches!(o.insn.op, 0x71 | 0x77) && o.uses.len() == 1) else { continue };
+                if !is(k, b"Ljava/lang/String;", b"valueOf", &[b"(Ljava/lang/Object;)Ljava/lang/String;"])? {
+                    continue;
+                }
+                let u = self.user[d.id as usize];
+                let single = m.direct_uses[d.id as usize] == 1 && m.web_uses.get(&m.root(d.id)) == Some(&(1, false));
+                if !single || u <= k || u >= blk.end {
+                    continue;
+                }
+                let user = &m.ops[u];
+                if user.kind != Kind::Plain || !matches!(user.insn.op, 0x6e | 0x74) || user.uses.get(1).map(|x| x.val) != Some(d.id) || !is(u, SB, b"append", &APPEND[..1])? {
+                    continue;
+                }
+                let reg = o.uses[0].reg;
+                let src = m.def_op[o.uses[0].val as usize];
+                if src < m.ops.len() && self.candidate(src) {
+                    continue;
+                }
+                let lit = |j: usize, string: bool| {
+                    m.ops[j].uses.first().is_some_and(|x| {
+                        let c = m.def_op[x.val as usize];
+                        m.literal(x.val) && if string { matches!(m.ops[c].insn.op, 0x1a | 0x1b) } else { m.ops[c].insn.lit >= 0 }
+                    })
+                };
+                let mut pure = true;
+                for j in k + 1..u {
+                    let x = &m.ops[j];
+                    if x.kind == Kind::Absorbed || x.insn.op == 0x00 {
+                        continue;
+                    }
+                    let writes = x.def.as_ref().is_some_and(|w| w.reg == reg || is_wide(w.mask) && w.reg + 1 == reg);
+                    let ok = match x.kind {
+                        _ if writes => false,
+                        Kind::NewObject { ty } if m.dex.type_desc(ty)? == SB => {
+                            is(j, SB, b"<init>", &[b"()V"])? || is(j, SB, b"<init>", &[b"(Ljava/lang/String;)V"])? && lit(j, true) || is(j, SB, b"<init>", &[b"(I)V"])? && lit(j, false)
+                        }
+                        _ if matches!(x.insn.op, 0x12..=0x1c) => true,
+                        _ if matches!(x.insn.op, 0x6e | 0x74) => is(j, SB, b"append", &APPEND)?,
+                        _ => self.late[j] && x.def.as_ref().is_some_and(|w| self.user[w.id as usize] > u),
+                    };
+                    if !ok {
+                        pure = false;
+                        break;
+                    }
+                }
+                if pure {
+                    self.late[k] = true;
+                    self.deferred[k] = true;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn run(&mut self) -> Result<()> {
         let m = self.m;
         self.find_joins()?;
+        self.find_late()?;
+        self.find_null_checks()?;
         let mut order = layout(m);
         self.regions = crate::region::arrange(m, &mut order);
         self.bool_ret = self.boolean_returns(&order);
@@ -380,7 +547,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             self.flush()?;
             let next = order.get(i + 1).copied();
-            if falls(&m.ops[blk.end - 1]) {
+            if falls(m, &m.ops[blk.end - 1]) {
                 let f = b as u32 + 1;
                 let stubbed = match self.joins.get(&f) {
                     Some(join) => {
@@ -426,7 +593,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     fn step(&mut self, k: usize, b: usize) -> Result<()> {
         let m = self.m;
         let o = &m.ops[k];
-        if o.kind == Kind::Absorbed || o.insn.op == 0x00 || self.silent[k] {
+        if o.kind == Kind::Absorbed || o.insn.op == 0x00 || self.silent[k] || self.late[k] {
             return Ok(());
         }
         if let Some(d) = &o.def {
@@ -526,7 +693,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         let by = i16::try_from(o.insn.lit).ok();
         let src = m.def_op[u.val as usize];
         let folded = src < m.ops.len() && self.deferred[src];
-        if u.reg != d.reg || by.is_none() || folded || m.inline_const(u.val) || m.def_cat(d) != I || m.use_cat(o, 0) != I {
+        if u.reg != d.reg || by.is_none() || folded || m.literal(u.val) || m.def_cat(d) != I || m.use_cat(o, 0) != I {
             return Ok(false);
         }
         let s = self.local(d.reg, I, d.id)?;
@@ -627,7 +794,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         if u == 0 && self.on_stack[k] {
             return Ok(());
         }
-        if m.inline_const(v) {
+        if m.literal(v) {
             return self.push_const(m.def_op[v as usize], c);
         }
         if let Some(p) = m.param_copy(v) {
@@ -692,7 +859,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     fn method_ref_in(&mut self, dex: &Dex, idx: u32, interface: bool) -> Result<u16> {
         let mi = dex.method(idx)?;
         let class = self.class_name_in(dex, mi.class)?.to_vec();
-        let desc = self.proto_desc(mi.proto)?;
+        let desc = dex.proto_desc(mi.proto)?;
         Ok(self.sh.pool.method(&class, dex.string(mi.name)?, &desc, interface))
     }
 
@@ -820,6 +987,13 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         if let Kind::NewObject { ty } = o.kind {
             if let Some((owner, l)) = m.dex.lambda_in(ty, self.sh.peers).filter(|_| !self.sh.verifiable) {
                 self.push_uses(k)?;
+                if let Some(&c) = self.null_checks.get(&k) {
+                    let x = &m.ops[c].insn;
+                    let r = self.method_ref(x.idx, false)?;
+                    self.asm.op(op::DUP, &[], 1);
+                    self.asm.op_u16(if matches!(x.op, 0x71 | 0x77) { op::INVOKESTATIC } else { op::INVOKEVIRTUAL }, r, 0);
+                    self.asm.op(op::POP, &[], -1);
+                }
                 let r = self.metafactory(owner, l)?;
                 let pops = self.uses_size(k);
                 self.asm.op(op::INVOKEDYNAMIC, &[(r >> 8) as u8, r as u8, 0, 0], 1 - pops);
@@ -967,7 +1141,11 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             0x2b | 0x2c => {
                 self.push_use(k, 0)?;
-                let next = self.labels[o.block as usize + 1];
+                let chain = m.chains.get(&x.addr);
+                let next = match chain {
+                    Some(&(_, d)) => self.land(o.block, m.ops[m.ops.partition_point(|o| o.insn.addr < d)].block),
+                    None => self.labels[o.block as usize + 1],
+                };
                 let label_at = |e: &Self, rel: i32| -> Label {
                     let t = (i64::from(x.addr) + i64::from(rel)) as u32;
                     let k = e.m.ops.partition_point(|o| o.insn.addr < t);
@@ -982,10 +1160,11 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                         self.asm.tableswitch(next, first, &targets);
                     }
                 } else {
-                    let pairs: Vec<(i32, Label)> = sparse_switch(m.code.insns, x.target())?
-                        .iter()
-                        .map(|&(key, r)| (key, label_at(self, r)))
-                        .collect();
+                    let cases = match chain {
+                        Some((cases, _)) => cases.iter().map(|&(key, t)| (key, (i64::from(t) - i64::from(x.addr)) as i32)).collect(),
+                        None => sparse_switch(m.code.insns, x.target())?,
+                    };
+                    let pairs: Vec<(i32, Label)> = cases.iter().map(|&(key, r)| (key, label_at(self, r))).collect();
                     if pairs.windows(2).any(|w| w[0].0 >= w[1].0) {
                         return Err(err("sparse-switch keys are not sorted".to_string()));
                     }
@@ -1310,6 +1489,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 for (start, end) in e.coverage(t) {
                     for &(ty, addr) in &t.handlers {
                         let b = m.ops[m.ops.partition_point(|o| o.insn.addr < addr)].block;
+                        let b = m.alias.get(&b).copied().unwrap_or(b);
                         if m.blocks[b as usize].reachable && !skip(b, ty) {
                             table.push((start, end, b, ty));
                         }
@@ -1438,8 +1618,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     }
 }
 
-fn falls(o: &Op) -> bool {
-    !matches!(o.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a)
+fn falls(m: &Method, o: &Op) -> bool {
+    !matches!(o.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a) && !m.chains.contains_key(&o.insn.addr)
 }
 
 /// Sorted intervals with touching ones joined.
@@ -1483,7 +1663,7 @@ fn layout(m: &Method) -> Vec<u32> {
             order.push(b as u32);
             let blk = &m.blocks[b];
             let last = &m.ops[blk.end - 1];
-            if falls(last) {
+            if falls(m, last) {
                 b += 1;
                 if placed[b] {
                     break;

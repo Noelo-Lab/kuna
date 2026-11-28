@@ -18,6 +18,8 @@ pub struct Method {
 pub struct Class {
     pub version: u16,
     pub utf8: Vec<String>,
+    /// `(name, descriptor)` of each `NameAndType` constant.
+    pub name_types: Vec<(String, String)>,
     /// `(inner, outer, simple name)` class names of the `InnerClasses` entries.
     pub inner: Vec<(String, String, String)>,
     pub methods: Vec<Method>,
@@ -51,6 +53,7 @@ pub fn read_class(b: &[u8]) -> Class {
     let n = r.u16();
     let mut utf8 = vec![String::new(); n as usize];
     let mut class_ref = vec![0u16; n as usize];
+    let mut nat = Vec::new();
     let mut i = 1;
     while i < n {
         let tag = r.u8();
@@ -59,7 +62,8 @@ pub fn read_class(b: &[u8]) -> Class {
                 let len = r.u16() as usize;
                 utf8[i as usize] = String::from_utf8_lossy(r.take(len)).into_owned();
             }
-            3 | 4 | 9..=12 | 18 => {
+            12 => nat.push((r.u16(), r.u16())),
+            3 | 4 | 9..=11 | 18 => {
                 r.take(4);
             }
             5 | 6 => {
@@ -140,8 +144,10 @@ pub fn read_class(b: &[u8]) -> Class {
         }
     }
     let attrs = class_attrs.into_iter().map(|a| a.0).collect();
+    let name_types = nat.iter().map(|&(a, b)| (utf8[a as usize].clone(), utf8[b as usize].clone())).collect();
     Class {
         version,
+        name_types,
         utf8,
         inner,
         methods,
