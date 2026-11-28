@@ -525,6 +525,10 @@ impl InitializerProcessor {
                             };
                             let earlier_kept: &[FieldExprent] =
                                 if runs.is_some() && !enum_constant { &[] } else { &not_inlined };
+                            let in_order = in_order
+                                && !(keeps_order
+                                    && regular
+                                    && class_writing::blank_final_constant(field, assign_expr.get_right()));
                             let exprent_independent = Self::is_exprent_independent(
                                 f_expr,
                                 assign_expr.get_right(),
@@ -744,7 +748,13 @@ impl InitializerProcessor {
                                 &f_expr.get_descriptor().descriptor_string,
                             );
                             let fidx = cl.get_fields().get_index_by_key(&field_key) as i32;
+                            let blank_constant = !written_as_kotlin(cl)
+                                && class_writing::blank_final_constant(
+                                    cl.get_fields().get(fidx as usize),
+                                    assign_expr.get_right(),
+                                );
                             if prev_fidx <= fidx
+                                && !blank_constant
                                 && Self::is_exprent_independent(
                                     f_expr,
                                     assign_expr.get_right(),

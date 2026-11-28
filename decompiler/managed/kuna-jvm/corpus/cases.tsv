@@ -2110,3 +2110,5 @@ case	kuna-fixes/pkg/TestSyntheticReceiverCapture	Kuna Fixes	kuna-fixes/classes/p
 case	kuna-fixes/pkg/TestCapturedVariableMerge	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedVariableMerge
 # kuna-fixes/src/pkg/TestRawLambdaSelection.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestRawLambdaSelection	Kuna Fixes	kuna-fixes/classes/pkg/TestRawLambdaSelection
+# kuna-fixes/src/pkg/TestBlankFinalConstant.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBlankFinalConstant	Kuna Fixes	kuna-fixes/classes/pkg/TestBlankFinalConstant

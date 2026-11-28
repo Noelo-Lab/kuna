@@ -15,6 +15,7 @@
 use crate::class_wrapper::ClassWrapper;
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{ACC_ENUM, ACC_INTERFACE, ACC_PRIVATE, ACC_PROTECTED, ACC_PUBLIC, ACC_STATIC};
+use crate::code_type::CodeType;
 use crate::const_exprent::ConstValue;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent::Type as ExitType;
@@ -167,6 +168,22 @@ impl EnumBodySeparator {
             .append_line_separator();
         true
     }
+}
+
+/// Whether `value`, assigned to the field `field` in `<clinit>` or the
+/// constructors, is a constant a blank `final` of a primitive type or
+/// `String` is given in a block or a constructor: javac gives `final int F =
+/// 1;` a `ConstantValue` attribute (and a static one no assignment), so a
+/// field without the attribute had no such initializer, and writing the
+/// constant as one would make the field a constant variable (JLS 4.12.4),
+/// which javac inlines where it is read, a static one in other classes too
+/// and without initializing its class.
+pub fn blank_final_constant(field: crate::struct_field::StructField, value: Exprent) -> bool {
+    let descriptor = field.get_descriptor();
+    field.has_modifier(crate::code_constants::ACC_FINAL)
+        && (descriptor.len() == 1 || descriptor == "Ljava/lang/String;")
+        && !field.has_attribute(StructGeneralAttribute::ATTRIBUTE_CONSTANT_VALUE)
+        && value.try_as_const().is_some_and(|c| c.get_const_type().type_ != CodeType::Null)
 }
 
 /// Moves the constants built in a leading `$VALUES = new E[]{F = new E(..), ..}`

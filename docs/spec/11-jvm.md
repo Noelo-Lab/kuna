@@ -1446,6 +1446,18 @@ blocks stand among the fields in that order, which keeps the order of execution.
 statements stay in `<clinit>` through the class-level passes, which type and name their locals,
 and leave it only when the class is written (`InitializerProcessor::take_static_blocks`).
 
+**A blank final keeps its assignment (kuna).** javac gives `static final int F = 1;` a
+`ConstantValue` attribute and no assignment in `<clinit>`, and a `final int f = 1;` the
+attribute beside the constructors' assignment. A `final` field of a primitive type or `String`
+that has no such attribute and is assigned a constant was therefore a blank final, assigned
+in a block or a constructor (or comes from another compiler that writes it so, as kotlinc does
+for a `val`). Moving the constant into the declaration makes the field a constant variable
+(JLS 4.12.4): javac then inlines it where it is read by its simple or qualified name, in other
+classes too, and a read of a static one no longer initializes the class. `static final int
+FIRST; static { FIRST = 2; }` was printed `static final int FIRST = 2;`, after which
+`NAME + FIRST` recompiled to a constant. `class_writing::blank_final_constant` keeps such an
+assignment where it is: in the static block, written in place, or in the constructors.
+
 **A lambda reads its own field qualified (kuna).** A moved initializer's reads of later fields
 are qualified, in the bodies of its lambdas too, but in a lambda only the fields declared after
 its own were: `static final Runnable SELF = () -> { if (SELF == null) .. }` is a self-reference
