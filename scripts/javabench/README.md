@@ -364,7 +364,9 @@ check (`getClass()` before javac 9, `Objects.requireNonNull` after); `iinc` as a
 subtract of its constant; capture fields (`val$x`) by their position; a constructor's
 read of its own `this$0`; a cast of the null literal; anonymous and local classes
 paired per enclosing method in javac's order; a switch target that is a `goto` read as
-its destination; and members javac before 5 marked synthetic by attribute only.
+its destination; members javac before 5 marked synthetic by attribute only; and an enum's
+`values()` and `valueOf(String)`, whose bodies the compiler writes (ECJ's `ENUM$VALUES` is
+javac's `$VALUES`).
 
 ## Harness ceiling
 

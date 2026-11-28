@@ -45,7 +45,8 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from .bytecode import match_classes
-from .classfile import ACC_BRIDGE, ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC, NEWARRAY_TYPES, ClassFile, decode_code, parse_class
+from .classfile import (ACC_BRIDGE, ACC_ENUM, ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC, NEWARRAY_TYPES, ClassFile, decode_code,
+                        parse_class)
 
 CALL = {"invokevirtual": "virtual", "invokeinterface": "virtual", "invokespecial": "special", "invokestatic": "static"}
 FIELD = {"getfield": ("get", False), "putfield": ("put", False), "getstatic": ("get", True), "putstatic": ("put", True)}
@@ -340,6 +341,8 @@ class Refs:
                 return None
             if name.startswith("val$"):
                 name = self.side.capture_index(raw, name)
+            elif name == "ENUM$VALUES":
+                name = "$VALUES"
             return ("field", *FIELD[op], hier.canonical("field", tr(raw), name, desc), name, tr(desc))
         if op in TYPED:
             return (op, tr(cp.class_name(ins.args[0])))
@@ -589,6 +592,12 @@ def _translator(names: dict[str, str]):
                                       if "L" in s else s)
 
 
+def _enum_mandated(cf: ClassFile, m) -> bool:
+    """An enum's ``values()`` or ``valueOf(String)``, whose bodies the compiler writes (javac and ECJ differently)."""
+    return bool(cf.access & ACC_ENUM) and (m.name, m.descriptor) in (
+        ("values", f"()[L{cf.name};"), ("valueOf", f"(Ljava/lang/String;)L{cf.name};"))
+
+
 def _old_synthetic(m) -> bool:
     """A member javac before 5 marked synthetic only by attribute: an accessor, a class-literal helper, or the
     constructor a private nested class gets for its outer class, whose last parameter is an anonymous class."""
@@ -641,7 +650,7 @@ def compare_classes(original: dict[str, ClassFile], recompiled: dict[str, ClassF
             out["methods"].append({"class": name, "method": "<header>", "categories": ["class header differs"],
                                    "details": [f"{ocf.super_name} {ocf.interfaces} => {rcf.super_name} {rcf.interfaces}"]})
         for om in ocf.methods:
-            if om.code is None or om.access & (ACC_SYNTHETIC | ACC_BRIDGE) or _old_synthetic(om):
+            if om.code is None or om.access & (ACC_SYNTHETIC | ACC_BRIDGE) or _old_synthetic(om) or _enum_mandated(ocf, om):
                 continue
             out["compared"] += 1
             key = om.name + om.descriptor
