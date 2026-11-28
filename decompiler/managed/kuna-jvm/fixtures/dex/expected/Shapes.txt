@@ -1,0 +1,10 @@
+011111000011111100001111110000
+null null
+true a CLOSED false null OPEN | false null OPEN true b OPEN
+null OPEN null CLOSED | x CLOSED x CLOSED
+2 2 -1
+42 -1
+5 0
+small0 big0123
+5 4
+1.5 0 null 0.0 3 o

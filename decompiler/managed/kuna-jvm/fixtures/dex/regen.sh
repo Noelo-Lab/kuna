@@ -33,6 +33,13 @@ $D8 --debug --min-api 26 --lib "$LIB" --output "$tmp/pd" $(find "$tmp/p" -name '
 $D8 --debug --min-api 26 --file-per-class --lib "$LIB" --output "$tmp/pp" "$tmp/pd/classes.dex"
 cp "$tmp/pp/px/Peers.dex" peers/Peers.dex
 cp "$tmp/pp/px/Peers\$\$ExternalSyntheticLambda0.dex" peers/Lambda.dex
+mkdir -p "$tmp/v" "$tmp/vd" "$tmp/vr"
+"$JAVAC" -g -parameters --release 17 -d "$tmp/v" src/vx/*.java
+$D8 --debug --min-api 26 --lib "$LIB" --output "$tmp/vd" $(find "$tmp/v" -name '*.class')
+$D8 --release --min-api 26 --lib "$LIB" --output "$tmp/vr" $(find "$tmp/v" -name '*.class')
+cp "$tmp/vd/classes.dex" shapes.dex
+cp "$tmp/vr/classes.dex" shapes-release.dex
+"$JAVA" -cp "$tmp/v" vx.Shapes > expected/Shapes.txt
 "$JAVA" -cp "$tmp/s" sx.Sugar > expected/Sugar.txt
 cp "$tmp/d/classes.dex" debug.dex
 cp "$tmp/r/classes.dex" release.dex

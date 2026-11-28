@@ -2300,7 +2300,9 @@ constant above the branch) gets the constant pushed on each edge instead: a pred
 jumps or falls into the join pushes its constant last, and a conditional or switch edge
 lands on a stub that pushes it, the stubs laid out right before the join as javac's arms are.
 The value then stays on the stack when it is read once, as the first operand of the join's
-first statement, and is stored into its local at the join otherwise; the constants themselves
+first statement whose JVM code reads that operand before pushing anything else (not a
+constructor call, which pushes `new` and `dup` first, `filled-new-array`, `rsub-int`, or an
+`add-int/lit` that may become `iinc`), and is stored into its local at the join otherwise; the constants themselves
 are not written. A register some exception handler reads is excluded, since its local would
 then be unwritten where the JVM merges handler states. `add-int/lit` on one local
 becomes `iinc`, `not-int` becomes `^ -1`, `rsub-int` pushes its literal first,

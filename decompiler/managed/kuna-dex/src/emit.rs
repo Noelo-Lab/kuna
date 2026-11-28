@@ -273,7 +273,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                     let o = &m.ops[q];
                     o.kind == Kind::Absorbed || o.insn.op == 0x00 || o.def.as_ref().is_some_and(|d| m.inline_const(d.id))
                 });
-                quiet && m.ops[k].uses.first().map(|u| u.val) == Some(phi) && !self.candidate(k)
+                quiet && m.ops[k].uses.first().map(|u| u.val) == Some(phi) && !self.candidate(k) && self.reads_first(k)
             };
             let mut edges = Vec::new();
             for &p in &preds[ju] {
@@ -310,6 +310,15 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             self.joins.insert(j, Join { edges, stubs, store });
         }
         Ok(())
+    }
+
+    /// Whether op `k`'s JVM code reads its first use before pushing anything
+    /// else: not a constructor call (`new`, `dup` first), `filled-new-array`
+    /// (`newarray` first), `rsub-int` (the literal first) or a possible `iinc`.
+    fn reads_first(&self, k: usize) -> bool {
+        let o = &self.m.ops[k];
+        let new = matches!(o.kind, Kind::NewObject { ty } if self.sh.verifiable || self.m.dex.lambda_in(ty, self.sh.peers).is_none());
+        !new && !matches!(o.insn.op, 0x24 | 0x25 | 0xd0 | 0xd1 | 0xd8 | 0xd9)
     }
 
     /// The constant op predecessor `p` brings to join `j`.

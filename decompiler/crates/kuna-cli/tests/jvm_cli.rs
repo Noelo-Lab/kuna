@@ -504,6 +504,14 @@ fn d8_desugaring_is_undone() {
 }
 
 #[test]
+fn d8_register_sharing_is_undone() {
+    for f in ["shapes.dex", "shapes-release.dex"] {
+        let arms = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.arms"]));
+        assert!(arms.contains(" = new StringBuilder(") && !arms.contains("var1000"), "{f}: {arms}");
+    }
+}
+
+#[test]
 fn a_kotlin_class_from_dex_prints_as_kotlin() {
     let out = ok(&jvm(&["decompile", &dex("kotlin.dex"), "kx.Point"]));
     assert!(out.contains("data class Point(") && out.contains("operator fun plus"), "{out}");
