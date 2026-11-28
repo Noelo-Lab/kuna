@@ -3928,7 +3928,14 @@ uses stable encounter order for equal-size entries, preserves the effect of the
 exact-size early break, and applies the original use-point validity test.
 Property, naming, container, and callee lookups first isolate the requested
 space, so register, stack, and other non-global varnodes do not scan mappings
-from unrelated spaces.
+from unrelated spaces. Every new varnode also asks the snapshot's property map
+and owned ranges about its storage
+(`decompiler/crates/kuna-decomp/src/substrate/kuna_spaceprops.rs (SpaceProps)`).
+The property map is ordered by space first, so a space holding none of its split
+points reads one value everywhere, that of the last split point below the space,
+and a space holding no owned range is owned nowhere; those answers are taken
+once per space, the first time it is asked about, and dropped if the property
+map is changed.
 
 The copy happens in exactly one place:
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs (build_arch_handle)`,
