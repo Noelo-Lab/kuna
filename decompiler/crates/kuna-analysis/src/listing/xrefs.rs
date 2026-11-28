@@ -89,6 +89,7 @@ use super::kuna_regcarry::{self, Machine as CarryMachine};
 use super::kuna_calltable;
 use super::kuna_switchflow;
 use super::kuna_switchtable;
+use super::kuna_unreadtable;
 use super::model::{FlowKind, FlowType, RawOp};
 #[path = "kuna_prefixreuse.rs"]
 mod kuna_prefixreuse;
@@ -186,6 +187,10 @@ pub struct XrefIndex {
     flow: Option<FlowGraph>,
     /// Every jump table the walk read, in walk order.
     switches: Vec<SwitchTable>,
+    /// (kuna `unreadtable`) The decoded computed jumps on a register that the
+    /// walk read no table at, in address order, classified on demand
+    /// ([`XrefIndex::unread_tables`]).
+    unread: Vec<Unread>,
     /// The targets of decoded direct calls and branches that lie outside the
     /// sections the walk decodes.
     stopped: BTreeSet<u64>,
@@ -602,6 +607,56 @@ impl XrefIndex {
     /// the two can never name different functions.
     pub fn has_indirect_calls(&self, entry: u64) -> bool {
         self.indirect_callers.contains(&entry)
+    }
+
+    /// (kuna `unreadtable`) Every decoded computed jump that indexes a table of
+    /// jump targets the walk read nothing from, in address order: a switch
+    /// whose base or range check it could not prove, or an unchecked table.
+    /// Whatever is reached only through one was not decoded, so a reference
+    /// made there is in no answer. A jump through a pointer, a forwarding
+    /// veneer and a return are not ones ([`super::kuna_unreadtable`]).
+    ///
+    /// With `entry`, only the ones dispatched from the function entered there,
+    /// by the ownership rule [`Self::refs_from_function`] buckets references
+    /// by. The jumps are classified here rather than by the walk, re-reading
+    /// the code above each from `file` through `arch` (the program the index
+    /// was built over), so a caller that never asks pays nothing.
+    pub fn unread_tables(&self, file: &object::File, arch: &Architecture, entry: Option<u64>) -> Vec<u64> {
+        let asked: Vec<&Unread> =
+            self.unread.iter().filter(|u| entry.is_none_or(|e| self.function_containing(u.at) == Some(e))).collect();
+        if asked.is_empty() {
+            return Vec::new();
+        }
+        let (Some(code_space), Some(pool), Some(image)) = (
+            arch.manage().get_default_code_space().map(Rc::clone),
+            PoolImage::new(file),
+            kuna_unreadtable::image(file),
+        ) else {
+            return Vec::new();
+        };
+        let translate = arch.translate();
+        let data_space = arch.manage().get_default_data_space().cloned();
+        let exec = super::ExecutableCoverage::from_object(file).ranges;
+        let mapped = range_union(mapped_ranges(file));
+        let preserved = kuna_switchtable::preserved_registers(arch);
+        let sp = arch.manage().get_stack_space().and_then(|s| s.get_spacebase(0).ok());
+        let reach = kuna_unreadtable::Reach {
+            pool: &pool,
+            image: &image,
+            exec: &exec,
+            preserved: &preserved,
+            mapped: &mapped,
+            sp: sp.map(|b| kuna_switchtable::Key::Reg(b.offset, b.size)),
+        };
+        let decoded = |at: u64| self.decoded.contains(&at);
+        asked
+            .into_iter()
+            .filter(|u| {
+                let _selection = super::kuna_walkcontext::InstructionMode::select(arch, translate, &code_space, u.at, u.mode);
+                kuna_unreadtable::indexes_table(translate, &code_space, data_space.as_ref(), &decoded, u, &reach)
+            })
+            .map(|u| u.at)
+            .collect()
     }
 }
 
@@ -1594,6 +1649,10 @@ fn descend(
                         picpool.cases(vma, &cases);
                         insn_queue.extend(cases.iter().map(|&target| (target, mode)));
                     }
+                    let unread = !call_table && (unbounded || cases.is_empty());
+                    if let Some(branch) = branch.filter(|b| unread && kuna_switchtable::key_of(b, data_space.as_ref()).is_some()) {
+                        st.unread.push(Unread { at: vma, mode, branch: branch.clone(), ops: cap.ops().to_vec() });
+                    }
                 }
             }
             // (kuna `calltable`) An indexed call through a table of function
@@ -2005,6 +2064,19 @@ struct State {
     /// (kuna `switchflow`) The decoded branches and switch cases into each
     /// address, for the table reads that step back across a block boundary.
     entries: kuna_switchflow::Entries,
+    /// (kuna `unreadtable`) The computed jumps no read resolved when decoded;
+    /// [`State::finish`] keeps the ones no later read did.
+    unread: Vec<Unread>,
+}
+
+/// (kuna `unreadtable`) A decoded computed jump on a register that no read
+/// resolved to a table: its address and decode mode, the varnode it branches
+/// on, and its p-code.
+pub(super) struct Unread {
+    pub(super) at: u64,
+    pub(super) mode: Option<u32>,
+    pub(super) branch: VarnodeData,
+    pub(super) ops: Vec<FullOp>,
 }
 
 impl State {
@@ -2024,6 +2096,7 @@ impl State {
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
             entries: kuna_switchflow::Entries::default(),
+            unread: Vec::new(),
         }
     }
 
@@ -2117,6 +2190,14 @@ impl State {
         for (&entry, v) in &veneers {
             veneers_of_slot.entry(v.slot).or_default().push(entry);
         }
+        let read: BTreeSet<u64> = self.switches.iter().map(|s| s.dispatch).collect();
+        let called: BTreeSet<u64> = self.unread.iter().map(|u| u.at).collect();
+        let called: BTreeSet<u64> =
+            refs.iter().filter(|r| r.kind == XrefKind::Call && called.contains(&r.from)).map(|r| r.from).collect();
+        let mut unread = std::mem::take(&mut self.unread);
+        unread.retain(|u| !read.contains(&u.at) && !called.contains(&u.at) && self.decoded.contains(&u.at));
+        unread.sort_by_key(|u| u.at);
+        unread.dedup_by_key(|u| u.at);
         XrefIndex {
             refs,
             by_source,
@@ -2132,6 +2213,7 @@ impl State {
             insns,
             flow: self.flow,
             switches: self.switches,
+            unread,
             stopped: BTreeSet::new(),
             stopped_direct_calls: BTreeMap::new(),
         }
@@ -2193,6 +2275,7 @@ fn empty() -> XrefIndex {
         insns: 0,
         flow: None,
         switches: Vec::new(),
+        unread: Vec::new(),
         stopped: BTreeSet::new(),
         stopped_direct_calls: BTreeMap::new(),
     }
@@ -3113,6 +3196,7 @@ mod tests {
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
             entries: kuna_switchflow::Entries::default(),
+            unread: Vec::new(),
         };
         for e in edges {
             st.file(e.from, e.to, e.kind, "");
@@ -3174,6 +3258,7 @@ mod tests {
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
             entries: kuna_switchflow::Entries::default(),
+            unread: Vec::new(),
         };
         st.file(0x1188, 0x4008, XrefKind::Read, "");
         let index = st.finish(BTreeMap::new(), false);
@@ -3213,6 +3298,7 @@ mod tests {
             carry: kuna_regcarry::Tracker::default(),
             skips: Vec::new(),
             entries: kuna_switchflow::Entries::default(),
+            unread: Vec::new(),
         };
         let index = st.finish(BTreeMap::new(), true);
         assert_eq!(index.function_containing(0x1001), Some(0x1000));

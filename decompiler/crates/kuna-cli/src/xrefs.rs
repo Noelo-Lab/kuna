@@ -312,27 +312,27 @@ fn query(args: &XrefArgs) -> Result<String, String> {
     let mut coverage =
         coverage_of(&prog, &file, &index, &names, &target, args.direction, unwalked, fileset.as_ref());
     coverage.notes.extend(proof_note);
-    for note in &coverage.notes {
-        eprintln!("note: {note}");
-    }
+    let function = index.is_function_entry(target.addr) || names.at(target.addr).is_some();
     let rows = match args.direction {
         // `--to` answers for the callable, not the literal address: an import
         // reached through a veneer and an IAT/GOT slot is one thing under two
         // names, and which of the two a call site happens to reference is not a
         // distinction the caller asked about (`XrefIndex::refs_to_class`).
         Direction::To => index.refs_to_class(&target.class),
-        Direction::From => {
-            if index.is_function_entry(target.addr) || names.at(target.addr).is_some() {
-                index.refs_from_function(target.addr)
-            } else {
-                index.refs_from_instruction(target.addr)
-            }
-        }
+        Direction::From if function => index.refs_from_function(target.addr),
+        Direction::From => index.refs_from_instruction(target.addr),
     };
     let rows: Vec<&Xref> = rows
         .into_iter()
         .filter(|r| args.instructions && (args.kinds.is_empty() || args.kinds.contains(&r.kind)))
         .collect();
+    if args.instructions {
+        let scope = (args.direction, function, rows.is_empty());
+        coverage.notes.extend(unread_tables_note(&prog, &file, &index, &names, &target, scope));
+    }
+    for note in &coverage.notes {
+        eprintln!("note: {note}");
+    }
     let data = kuna_analysis::loader::kuna_dataptrs::data_pointers(&file, &bytes);
     let operands = matches!(
         object::Object::architecture(&file),
@@ -653,6 +653,71 @@ fn unwalked_note(
             unwalked.len(),
             listed.join(", ")
         )
+    })
+}
+
+/// (kuna `unreadtable`) What the answer is missing behind computed jumps whose
+/// jump table the walk could not read ([`XrefIndex::unread_tables`]): for
+/// `--from` a function, the ones it dispatches from; for `--from` such a jump,
+/// that jump; for a `--to` that found nothing, every one in the image, since the
+/// reference asked about may be made from code only one of them reaches.
+fn unread_tables_note(
+    prog: &ConsoleProgram,
+    file: &object::File,
+    index: &XrefIndex,
+    names: &EntryNames,
+    target: &Target,
+    (direction, function, empty): (Direction, bool, bool),
+) -> Option<String> {
+    const LISTED: usize = 3;
+    let arch = prog.arch();
+    let sites: Vec<u64> = match direction {
+        Direction::From if function => index.unread_tables(file, arch, Some(target.addr)),
+        Direction::From => {
+            let owner = index.function_containing(target.addr)?;
+            index.unread_tables(file, arch, Some(owner)).into_iter().filter(|&at| at == target.addr).collect()
+        }
+        Direction::To if empty => index.unread_tables(file, arch, None),
+        Direction::To => Vec::new(),
+    };
+    let (&first, _) = sites.split_first()?;
+    let spell = |at: u64| match owning_function(prog, index, names, at).filter(|_| direction == Direction::To) {
+        Some((_, name)) => format!("0x{at:x} in {name}"),
+        None => format!("0x{at:x}"),
+    };
+    let mut listed: Vec<String> = sites.iter().take(LISTED).map(|&at| spell(at)).collect();
+    if sites.len() > LISTED {
+        listed.push(format!("{} more", sites.len() - LISTED));
+    }
+    let one = sites.len() == 1;
+    let tables = if one {
+        "a jump table the walk could not read (its base or its bound is not proven)".to_string()
+    } else {
+        format!("{} jump tables the walk could not read (their base or bound is not proven)", sites.len())
+    };
+    let unreached = format!(
+        "code only {} was not decoded",
+        if one { "that jump reaches" } else { "those jumps reach" }
+    );
+    let at = listed.join(", ");
+    Some(match direction {
+        Direction::From if function => format!(
+            "{} dispatches through {tables}, at {at}: {unreached}, so references made there are not listed",
+            function_name(prog, index, names, target.addr),
+        ),
+        Direction::From => format!(
+            "0x{first:x} is a computed jump through {tables}: its targets were not decoded, so no jump to \
+             them is listed"
+        ),
+        Direction::To if one => format!(
+            "the computed jump at {at} dispatches through {tables}: {unreached}, so a reference made there \
+             is not in this answer"
+        ),
+        Direction::To => format!(
+            "{} computed jumps dispatch through jump tables the walk could not read (their base or bound is \
+             not proven), at {at}: {unreached}, so a reference made there is not in this answer",
+            sites.len()
+        ),
     })
 }
 

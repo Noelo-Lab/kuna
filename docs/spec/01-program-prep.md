@@ -11307,6 +11307,46 @@ table again once its own queue drains and walks the cases as its own: it reaches
 the dispatch by falling into it, and it is the function the cold fragment
 belongs to.
 
+*What is left unread* (`decompiler/crates/kuna-analysis/src/listing/kuna_unreadtable.rs`,
+always on in the reference walk, read-only). A table the reader cannot bound
+leaves its case bodies undecoded, and an answer that is missing what they
+reference used to look like any other answer. Each computed jump on a register
+that no read turned into a switch or a call table by the time the walk ends is
+kept with its p-code, and classified only when a query asks
+(`XrefIndex::unread_tables`), in the mode the walk decoded it in. The straight
+run above the jump is stepped back over as the table reader's slice is, but
+every operation the target is computed from is followed (a mask, a rotate's
+halves, any scaling: MIPS's `jr` and ARM's `bx` clear the ISA bit of their
+target, Thumb's `orr r2, r2, #1` sets it, and PowerPC's `slwi` is a rotate under
+a mask), only those operations are kept, and what they compute from constants
+is written as a constant. The step back stops 64 instructions up, or after 32
+instructions that compute nothing it wants (3 once it holds a load: MIPS
+schedules a table's load well above its `jr`, while a pointer fetch is settled
+at once). A slice that neither scales a value, reads a narrow entry, nor adds a
+loaded value to another reads no table and is settled there. The kept
+operations are then folded with the table reader's own lattice, with no cap on
+the values carried, once per choice of the value left unknown as the index:
+everything read from above the run, one register read from above, or what one
+read of memory yields. Every other register read from above, and every other
+read of a fixed address, is a stand-in base no image maps, so a base hoisted out
+of reach, loaded from the GOT (MIPS and PowerPC PIC) or spilled to the stack
+counts as a base. The jump indexes a table when a fold reaches a case address:
+a delta or compact-table entry added back to its base, or an entry added to its
+own address (glibc's AArch64 `memcpy`). A pointer read at an index scaled by
+the pointer width counts only where it cannot be a structure's array of
+function pointers called in tail position: at a constant address whose first
+two entries, read out of any section with file content (a computed goto's
+labels in `.data.rel.ro`), land in the jump's executable section; or indexed
+off a register read from above with no pop of the frame on the run
+(`mov 0x1f18(%r14,%rax,8),%rax; pop ...; jmp *%rax` is a tail call). A jump
+through a pointer reads at an unscaled offset from an unknown and is no table:
+a structure field, a vtable slot, a PLT stub's `ldr x17, [x16, #off]`, MIPS
+PIC's `lw t9, %call16(f)(gp)`, i386's `jmp *0xc(%ebx)`. A returned function
+pointer reads nothing, a forwarding veneer branches on memory, and a return is
+no computed jump. `kuna xrefs` reports these jumps in `coverage.notes`: for
+`--from` the function that dispatches from one or the jump itself, and for a
+`--to` that finds nothing.
+
 With all five, the 51 binaries miss 156 direct call sites instead of 3,913 —
 none at `-O0` outside tar and e2fsck — and the call graph gains 1,868 edges and
 loses three, two of which were jumps from a table read past its end. What is

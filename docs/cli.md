@@ -3243,7 +3243,7 @@ no such gap.
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
-| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
+| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section, and one when the function (or the jump) asked about dispatches through a jump table the walk could not read (see below); a `--to` answer gets one while `unwalked` is not empty, when it finds nothing and the image has such a jump, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
 
 An incoming JSON answer may include `target.call_destination_candidate`. It names
 the lowest-address decoded direct call site to the exact selected address. The
@@ -3294,6 +3294,27 @@ no call in between that may overwrite it, and
 `jae` after `cmp $c` admits `c` cases where `ja` admits `c + 1`. A dispatch whose
 check compares another value, or that a branch enters between the check and the
 jump, is still not followed.
+
+A table the walk does not read is not silent. A computed jump whose target is an
+entry read out of a table (a pointer at an index scaled by its width, or a
+narrower entry added back to a base), but whose base or range check the walk
+cannot prove, leaves its case bodies undecoded, and the references they make are
+in no answer: gcc `-fipa-ra` keeps the base in a caller-saved register across a
+call, a float-derived selector has no range check, MIPS PIC loads the base from
+the GOT. `--from` a function that dispatches through such a table says so in
+`coverage.notes`, as does `--from` the jump itself, and a `--to` that finds
+nothing names the first three in the image with their functions, since the
+reference asked about may be made in a case body. A jump through a pointer (a
+structure field, an argument, a GOT or import slot, a vtable, a returned value),
+a PLT stub and a return index no table and add no note, and neither does a table
+the walk read. `kuna decompile` reads a switch through the function's own data
+flow and recovers many of these.
+
+```
+$ kuna xrefs unreadtable_x86_64 --to t_c_0
+note: 2 computed jumps dispatch through jump tables the walk could not read (their base or bound is not proven), at 0x10001b in caller_saved, 0x100052 in unguarded: code only those jumps reach was not decoded, so a reference made there is not in this answer
+# 0 references to t_c_0 @ 0x1000b3
+```
 
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
