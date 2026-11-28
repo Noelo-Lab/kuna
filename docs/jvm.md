@@ -274,11 +274,11 @@ the same sources, methods perfect on all metrics:
 | project | from the jar | from DEX, kuna | from DEX, jadx 1.5.3 |
 |---|---|---|---|
 | Guava | 98.78% | 80.70% | 42.65% |
-| spring-boot | 99.29% | 76.33% | 57.40% |
-| spring-framework | 99.03% | 74.02% | 62.92% |
-| Ghidra | 98.71% | 73.22% | 56.59% |
-| Elasticsearch | 98.89% | 65.54% | 36.05% |
-| all | 98.88% | 69.94% | 44.31% |
+| spring-boot | 99.29% | 76.38% | 57.40% |
+| spring-framework | 99.03% | 74.03% | 62.92% |
+| Ghidra | 98.71% | 73.28% | 56.59% |
+| Elasticsearch | 98.89% | 66.95% | 36.05% |
+| all | 98.88% | 70.74% | 44.31% |
 
 Release builds (what APKs ship) carry no local-variable debug info, and d8 optimises more
 (shared values, split returns, rewritten library calls). Built with `--release` instead of
@@ -288,16 +288,16 @@ metrics for kuna / jadx:
 | project | from the jar | debug DEX, kuna | release DEX, kuna | release DEX, jadx | structure | types | bytes | classes recompiling |
 |---|---|---|---|---|---|---|---|---|
 | Guava | 98.78% | 80.70% | 65.21% | 38.23% | 92.2 / 88.5% | 83.2 / 82.6% | 67.6 / 38.6% | 69.9 / 48.7% |
-| spring-boot | 99.29% | 76.33% | 62.06% | 47.90% | 90.0 / 90.5% | 79.2 / 80.9% | 64.2 / 48.9% | 76.6 / 59.8% |
-| spring-framework | 99.03% | 74.02% | 61.56% | 52.52% | 88.1 / 88.5% | 79.4 / 81.7% | 63.0 / 52.8% | 76.8 / 68.7% |
-| Ghidra | 98.71% | 73.22% | 60.52% | 49.57% | 84.7 / 84.6% | 77.3 / 78.0% | 61.3 / 50.0% | 80.6 / 73.0% |
-| Elasticsearch | 98.89% | 65.54% | 52.33% | 31.71% | 85.5 / 83.0% | 84.0 / 81.4% | 52.9 / 31.8% | 68.1 / 44.7% |
-| all | 98.88% | 69.94% | 56.61% | 38.57% | 86.6 / 84.8% | 82.1 / 81.0% | 57.6 / 38.8% | 72.3 / 54.7% |
+| spring-boot | 99.29% | 76.38% | 62.21% | 47.90% | 90.0 / 90.5% | 79.2 / 80.9% | 64.4 / 48.9% | 77.5 / 59.8% |
+| spring-framework | 99.03% | 74.03% | 61.56% | 52.52% | 88.1 / 88.5% | 79.4 / 81.7% | 63.0 / 52.8% | 77.1 / 68.7% |
+| Ghidra | 98.71% | 73.28% | 60.57% | 49.57% | 84.7 / 84.6% | 77.3 / 78.0% | 61.4 / 50.0% | 80.7 / 73.0% |
+| Elasticsearch | 98.89% | 66.95% | 53.67% | 31.71% | 85.5 / 83.0% | 84.1 / 81.4% | 54.3 / 31.8% | 69.4 / 44.7% |
+| all | 98.88% | 70.74% | 57.38% | 38.57% | 86.6 / 84.8% | 82.1 / 81.0% | 58.4 / 38.8% | 73.2 / 54.7% |
 
 What a release build costs both tools: the types metric most (local types come from debug
 info: kuna 96.7% to 82.1%, jadx 93.9% to 81.0%, so neither has much of an edge there), then
 bytes exact and classes recompiling (d8's release optimisations reach the recompiled code;
-kuna 70.0% to 57.6% and 81.2% to 72.3%, jadx 44.4% to 38.8% and 56.1% to 54.7%), and
+kuna 70.8% to 58.4% and 81.7% to 73.2%, jadx 44.4% to 38.8% and 56.1% to 54.7%), and
 structure least (89.6% to 86.6%, jadx 87.8% to 84.8%). Parameter names survive where the code was
 compiled with `-parameters`, and line numbers survive.
 
