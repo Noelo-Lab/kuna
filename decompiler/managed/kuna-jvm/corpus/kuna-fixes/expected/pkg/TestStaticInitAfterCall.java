@@ -7,7 +7,14 @@ public class TestStaticInitAfterCall {
    static String c;
    static int d = 3;
    static int e;
-   static int f;
+
+   static {
+      init();
+      b = a + 1;
+      c = LOG.toString();
+   }
+
+   static int f = next();
 
    static void init() {
       a = 5;
@@ -19,10 +26,6 @@ public class TestStaticInitAfterCall {
    }
 
    static {
-      init();
-      b = a + 1;
-      c = LOG.toString();
-      f = next();
       e = d * 2;
    }
 }

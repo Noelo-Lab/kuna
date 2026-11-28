@@ -28,6 +28,7 @@ use crate::method_wrapper::MethodWrapper;
 use crate::language_spec::LanguageSpec;
 use crate::root_statement::RootStatement;
 use crate::rt::{try_catch, Caught, JHashMap, JHashSet, Shared};
+use crate::statement::Statement;
 use crate::struct_class::StructClass;
 use crate::struct_method::StructMethod;
 use crate::var_names_collector::VarNamesCollector;
@@ -36,10 +37,26 @@ use crate::var_version_pair::VarVersionPair;
 use crate::vb_style_collection::VBStyleCollection;
 use crate::{arena_identity, arena_object, jthrow};
 
+/// Statements of `<clinit>`'s straight-line head written as a `static { }` block
+/// before the declaration of the field at index `before_field` (kuna).
+pub struct StaticBlock {
+    pub before_field: usize,
+    pub exprents: Vec<Exprent>,
+}
+
+/// The `static { }` blocks written among the fields, and the basic blocks of
+/// `<clinit>` their statements are taken from when the class is written (kuna).
+#[derive(Default)]
+pub struct StaticBlocks {
+    pub sources: Vec<Statement>,
+    pub blocks: Vec<StaticBlock>,
+}
+
 pub struct ClassWrapperData {
     pub class_struct: StructClass,
     pub node: ClassNode,
     pub hidden_members: Shared<JHashSet<String>>,
+    pub static_blocks: Shared<StaticBlocks>,
     pub static_field_initializers: Shared<VBStyleCollection<Exprent, String>>,
     pub dynamic_field_initializers: Shared<VBStyleCollection<Exprent, String>>,
     pub methods: Shared<VBStyleCollection<MethodWrapper, String>>,
@@ -77,6 +94,7 @@ impl ClassWrapper {
             class_struct,
             node,
             hidden_members: Shared::new(JHashSet::new()),
+            static_blocks: Shared::new(StaticBlocks::default()),
             static_field_initializers: Shared::new(VBStyleCollection::new()),
             dynamic_field_initializers: Shared::new(VBStyleCollection::new()),
             methods: Shared::new(VBStyleCollection::new()),
@@ -330,6 +348,10 @@ impl ClassWrapper {
 
     pub fn get_hidden_members(self) -> Shared<JHashSet<String>> {
         self.with(|d| d.hidden_members.clone())
+    }
+
+    pub fn get_static_blocks(self) -> Shared<StaticBlocks> {
+        self.with(|d| d.static_blocks.clone())
     }
 
     pub fn get_static_field_initializers(self) -> Shared<VBStyleCollection<Exprent, String>> {

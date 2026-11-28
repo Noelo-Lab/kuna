@@ -15,7 +15,7 @@ use crate::annotation_exprent::AnnotationExprent;
 use crate::fixes::generic_casts::disjoint_generic_cast;
 use crate::fixes::generic_casts::initializer_local_type;
 use crate::class_reference14_processor::ClassReference14Processor;
-use crate::class_wrapper::ClassWrapper;
+use crate::class_wrapper::{ClassWrapper, StaticBlock};
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{
     ACC_ABSTRACT, ACC_ANNOTATION, ACC_BRIDGE, ACC_ENUM, ACC_FINAL, ACC_INTERFACE, ACC_MANDATED,
@@ -61,7 +61,7 @@ use crate::record_helper::RecordHelper;
 use crate::rt::jchar::{is_java_identifier_part, is_java_identifier_start};
 use crate::rt::jnum::int_to_hex_string;
 use crate::rt::jstring::from_utf16;
-use crate::rt::{rethrow, try_catch, Caught, JHashSet, JavaStr};
+use crate::rt::{rethrow, try_catch, Caught, JHashSet, JList, JavaStr};
 use crate::struct_annotation_attribute::StructAnnotationAttribute;
 use crate::struct_annotation_parameter_attribute::StructAnnotationParameterAttribute;
 use crate::struct_bootstrap_methods_attribute::StructBootstrapMethodsAttribute;
@@ -702,17 +702,21 @@ impl ClassWriter {
                 let components = cl.get_record_components();
 
                 let mut enum_fields: Vec<StructField> = Vec::new();
-                let mut non_enum_fields: Vec<StructField> = Vec::new();
+                let mut non_enum_fields: Vec<(usize, StructField)> = Vec::new();
 
-                for fd in cl.get_fields().to_vec() {
+                for (index, fd) in cl.get_fields().to_vec().into_iter().enumerate() {
                     let is_enum = fd.has_modifier(ACC_ENUM);
                     if is_enum {
                         enum_fields.push(fd);
                     } else {
-                        non_enum_fields.push(fd);
+                        non_enum_fields.push((index, fd));
                     }
                 }
+                let mut static_blocks =
+                    InitializerProcessor::take_static_blocks(wrapper).into_iter().peekable();
 
+                let mut member_written = false;
+                let mut after_block = false;
                 let mut enums = false;
                 for fd in enum_fields {
                     if enums {
@@ -729,7 +733,7 @@ impl ClassWriter {
                     buffer.append(";").append_line_separator();
                 }
 
-                for fd in non_enum_fields {
+                for (index, fd) in non_enum_fields {
                     let hide = (fd.is_synthetic()
                         && DecompilerContext::get_option(IFernflowerPreferences::REMOVE_SYNTHETIC))
                         || wrapper.get_hidden_members().borrow().contains(
@@ -761,7 +765,38 @@ impl ClassWriter {
                     }
 
                     have_content(buffer, &mut has_content);
+                    while let Some(block) = static_blocks.next_if(|b| b.before_field <= index) {
+                        if member_written {
+                            buffer.append_line_separator();
+                        }
+                        self.write_static_block(buffer, indent, wrapper, &block);
+                        member_written = true;
+                        after_block = true;
+                    }
+                    if after_block {
+                        buffer.append_line_separator();
+                        after_block = false;
+                    }
                     self.write_field_to_buffer(buffer, indent, fd, wrapper);
+                    member_written = true;
+                }
+
+                if static_blocks.peek().is_some() {
+                    if enum_separator.before_member(buffer) {
+                        has_content = true;
+                        enums = true;
+                    }
+                    if enums {
+                        buffer.append_line_separator();
+                    }
+                    have_content(buffer, &mut has_content);
+                    for block in static_blocks {
+                        if member_written {
+                            buffer.append_line_separator();
+                        }
+                        self.write_static_block(buffer, indent, wrapper, &block);
+                        member_written = true;
+                    }
                 }
             }
 
@@ -1292,6 +1327,48 @@ impl ClassWriter {
             Some(&wrapper.get_class_struct().qualified_name()),
             Some(initializer),
         );
+    }
+
+    /// Writes statements of `<clinit>` as a `static { }` block among the fields (kuna);
+    /// one that cannot be written marks `<clinit>`, which then prints its failure.
+    fn write_static_block(
+        &self,
+        buffer: &mut TextBuffer,
+        indent: i32,
+        wrapper: ClassWrapper,
+        block: &StaticBlock,
+    ) {
+        let Some(method) = wrapper.get_method_wrapper(CLINIT_NAME, "()V") else {
+            return;
+        };
+        if method.with(|d| d.decompile_error.is_some()) {
+            return;
+        }
+        let outer_wrapper = DecompilerContext::get_current_method_wrapper();
+        DecompilerContext::set_current_method_wrapper(Some(method));
+        let _finally = RestoreMethodWrapper(outer_wrapper);
+        let depth = kuna_spans::depth();
+        let exprents = JList::from(block.exprents.clone());
+        match try_catch(|| ExprProcessor::list_to_java(Some(&exprents), indent + 2)) {
+            Ok(code) => {
+                buffer.append_indent(indent + 1).append("static {").append_line_separator();
+                buffer.append_buffer_mapped(
+                    &code,
+                    Some(&wrapper.get_class_struct().qualified_name()),
+                    Some("<clinit> ()V"),
+                );
+                buffer.append_indent(indent + 1).append("}").append_line_separator();
+            }
+            Err(t) => {
+                let message = format!(
+                    "Method <clinit> ()V in class {} couldn't be written.",
+                    wrapper.get_class_struct().qualified_name()
+                );
+                DecompilerContext::get_logger().write_message_ex(&message, Severity::Warn, &t);
+                method.with_mut(|d| d.decompile_error = Some(t));
+                kuna_spans::unwind(depth);
+            }
+        }
     }
 
     /// Java: writeField(ClassWrapper, StructClass, StructField, TextBuffer, int)

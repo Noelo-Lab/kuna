@@ -1,7 +1,9 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InitializerProcessor.java`.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::assignment_exprent::AssignmentExprent;
-use crate::class_wrapper::ClassWrapper;
+use crate::class_wrapper::{ClassWrapper, StaticBlock, StaticBlocks};
 use crate::classes_processor::{ClassNode, ClassNodeType};
 use crate::code_constants::{
     ACC_ENUM, ACC_FINAL, ACC_INTERFACE, ACC_STATIC, ACC_SYNTHETIC, CLINIT_NAME, INIT_NAME,
@@ -13,6 +15,7 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::FunctionType;
 use crate::i_fernflower_logger::Severity;
+use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
 use crate::kotlin_options::KotlinOptions;
 use crate::kt_metadata::KotlinMetadataAnnotation;
@@ -64,6 +67,179 @@ fn straight_line_blocks(first: Statement) -> Vec<Statement> {
     chain
 }
 
+/// The statements of `<clinit>`'s straight-line head that stay, gathered into the runs
+/// between moved initializers (kuna). A run closed by a moved initializer becomes a
+/// `static { }` block written before that field's declaration; a run can close only
+/// when none of its locals is read after it and it holds no local class.
+struct HeadRuns {
+    head: Vec<Exprent>,
+    scan: Option<HeadScan>,
+    run: Vec<Exprent>,
+    run_last_use: Option<usize>,
+    run_closable: bool,
+    stopped: bool,
+    blocks: Vec<StaticBlock>,
+}
+
+/// The locals each head statement reads or writes, the last head position of each,
+/// and those the rest of `<clinit>` (or a declaration outside the head) mentions.
+struct HeadScan {
+    uses: Vec<Vec<i32>>,
+    last_use: HashMap<i32, usize>,
+    outside: HashSet<i32>,
+    outside_class_def: bool,
+}
+
+fn local_indices(e: Exprent) -> Vec<i32> {
+    e.get_all_exprents_rec_self(true, true)
+        .into_iter()
+        .filter_map(|x| x.try_as_var().map(|v| v.get_index()))
+        .collect()
+}
+
+fn scan_outside(stat: Statement, chain: &[Statement], scan: &mut HeadScan) {
+    let visit = |e: Exprent, scan: &mut HeadScan| {
+        for x in e.get_all_exprents_rec_self(true, true) {
+            if let Some(v) = x.try_as_var() {
+                scan.outside.insert(v.get_index());
+                scan.outside_class_def |= v.is_class_def();
+            }
+        }
+    };
+    for e in stat.get_var_definitions().iter() {
+        visit(e, scan);
+    }
+    match stat.get_exprents() {
+        Some(exprents) => {
+            if !chain.contains(&stat) {
+                for e in exprents.iter() {
+                    visit(e, scan);
+                }
+            }
+        }
+        None => {
+            for e in stat.get_stat_exprents() {
+                visit(e, scan);
+            }
+            for st in stat.get_stats().borrow().iter() {
+                scan_outside(*st, chain, scan);
+            }
+        }
+    }
+}
+
+impl HeadRuns {
+    fn new(head: Vec<Exprent>) -> HeadRuns {
+        HeadRuns {
+            head,
+            scan: None,
+            run: Vec::new(),
+            run_last_use: None,
+            run_closable: true,
+            stopped: false,
+            blocks: Vec::new(),
+        }
+    }
+
+    fn keep(&mut self, pos: usize, e: Exprent, root: Statement, chain: &[Statement]) {
+        let head = &self.head;
+        let scan = self.scan.get_or_insert_with(|| {
+            let uses: Vec<Vec<i32>> = head.iter().map(|e| local_indices(*e)).collect();
+            let mut last_use = HashMap::new();
+            for (at, vars) in uses.iter().enumerate() {
+                for v in vars {
+                    last_use.insert(*v, at);
+                }
+            }
+            let mut scan = HeadScan {
+                uses,
+                last_use,
+                outside: HashSet::new(),
+                outside_class_def: false,
+            };
+            scan_outside(root, chain, &mut scan);
+            scan
+        });
+        self.stopped |= scan.outside_class_def;
+        for v in &scan.uses[pos] {
+            self.run_closable &= !scan.outside.contains(v);
+            let last = scan.last_use[v];
+            self.run_last_use = Some(self.run_last_use.map_or(last, |u| u.max(last)));
+        }
+        for x in e.get_all_exprents_rec_self(true, true) {
+            match x.get_type() {
+                ExprentType::Exit
+                | ExprentType::Monitor
+                | ExprentType::Switch
+                | ExprentType::SwitchHead
+                | ExprentType::If
+                | ExprentType::Yield => self.run_closable = false,
+                ExprentType::Var if x.as_var().is_class_def() => self.stopped = true,
+                _ => {}
+            }
+        }
+        self.run.push(e);
+    }
+
+    /// Whether an initializer at head position `pos` may move: nothing waits in the
+    /// run, or the run can be written as a block of its own before it.
+    fn can_close(&self, pos: usize) -> bool {
+        self.run.is_empty()
+            || (!self.stopped && self.run_closable && self.run_last_use.is_none_or(|u| u < pos))
+    }
+
+    fn close(&mut self, before_field: usize) {
+        if !self.run.is_empty() {
+            self.blocks.push(StaticBlock {
+                before_field,
+                exprents: std::mem::take(&mut self.run),
+            });
+        }
+        self.run_last_use = None;
+        self.run_closable = true;
+    }
+}
+
+/// Qualifies each read, in a block written before the field at `first_later`, of a
+/// static field of `cl` declared at or after it (JLS 8.3.3 rejects it by simple name);
+/// a plain assignment's target is left as it is, which the rule allows.
+fn qualify_forward_reads(exprents: &[Exprent], cl: StructClass, first_later: usize) {
+    for e in exprents {
+        let all = e.get_all_exprents_rec_self(true, true);
+        let targets: Vec<Exprent> = all
+            .iter()
+            .filter_map(|x| x.try_as_assignment())
+            .filter(|a| a.get_cond_type().is_none())
+            .map(|a| a.get_left())
+            .collect();
+        for x in all {
+            if let Some(f) = x.try_as_field() {
+                if !targets.contains(&x) && declared_from(f, cl, first_later as i32) {
+                    f.force_qualified(true);
+                }
+            } else if let Some(n) = x.try_as_new() {
+                InitializerProcessor::qualify_field_references(n, cl, first_later as i32);
+            }
+        }
+    }
+}
+
+/// Whether `f` is an unqualified static field of `cl`, other than an enum constant,
+/// declared at index `first_later` or after it.
+fn declared_from(f: FieldExprent, cl: StructClass, first_later: i32) -> bool {
+    if !f.is_static()
+        || f.get_instance().is_some()
+        || f.get_classname() != cl.qualified_name()
+        || !cl.has_field(&f.get_name(), &f.get_descriptor().descriptor_string)
+    {
+        return false;
+    }
+    let key =
+        InterpreterUtil::make_unique_key(&f.get_name(), &f.get_descriptor().descriptor_string);
+    let index = cl.get_fields().get_index_by_key(&key) as i32;
+    index >= first_later && !cl.get_fields().get(index as usize).has_modifier(ACC_ENUM)
+}
+
 fn root_class_node(name: Option<&str>) -> Option<ClassNode> {
     let map = DecompilerContext::get_class_processor().get_map_root_classes();
     let node = name.and_then(|n| map.borrow().get_cloned(&n.to_string()));
@@ -97,6 +273,21 @@ impl InitializerProcessor {
         Self::lift_constructor(wrapper);
 
         Self::hide_empty_super(wrapper);
+    }
+
+    /// The `static { }` blocks to write among the fields, their statements taken out
+    /// of `<clinit>`, which keeps them through the class-level passes until now.
+    pub fn take_static_blocks(wrapper: ClassWrapper) -> Vec<StaticBlock> {
+        let StaticBlocks { sources, blocks } =
+            std::mem::take(&mut *wrapper.get_static_blocks().borrow_mut());
+        let taken: Vec<Exprent> =
+            blocks.iter().flat_map(|b| b.exprents.iter().copied()).collect();
+        for source in sources {
+            if let Some(exprents) = source.get_exprents() {
+                exprents.borrow_mut().retain(|e| !taken.contains(e));
+            }
+        }
+        blocks
     }
 
     fn lift_constructor(wrapper: ClassWrapper) {
@@ -295,10 +486,15 @@ impl InitializerProcessor {
 
             let mut not_inlined: Vec<FieldExprent> = Vec::new();
             let keeps_order = !written_as_kotlin(cl) && !cl.has_modifier(ACC_INTERFACE);
+            let mut runs = (keeps_order
+                && DecompilerContext::get_property(IFernflowerPreferences::METHOD_TO_DECOMPILE)
+                    .is_none_or(|m| m.is_empty()))
+            .then(|| HeadRuns::new(first_exprents.to_vec()));
             let mut last_moved: i32 = -1;
             let mut kept = false;
 
             let mut itr = 0;
+            let mut pos = 0;
             while itr < first_exprents.len() {
                 let exprent = first_exprents.get(itr);
                 let mut remove = false;
@@ -321,6 +517,14 @@ impl InitializerProcessor {
                             let fidx = cl.get_fields().get_index_by_key(&key_field) as i32;
                             let field = cl.get_fields().get(fidx as usize);
                             let enum_constant = field.has_modifier(ACC_ENUM);
+                            let regular = !field.is_synthetic() && !enum_constant;
+                            let in_order = match &runs {
+                                _ if !keeps_order || enum_constant => true,
+                                Some(runs) if regular => fidx > last_moved && runs.can_close(pos),
+                                _ => !kept && fidx > last_moved,
+                            };
+                            let earlier_kept: &[FieldExprent] =
+                                if runs.is_some() && !enum_constant { &[] } else { &not_inlined };
                             let exprent_independent = Self::is_exprent_independent(
                                 f_expr,
                                 assign_expr.get_right(),
@@ -328,18 +532,19 @@ impl InitializerProcessor {
                                 cl,
                                 &whitelist,
                                 &multi_assign,
-                                &not_inlined,
+                                earlier_kept,
                                 fidx,
                                 true,
-                            ) && (!keeps_order
-                                || enum_constant
-                                || (!kept && fidx > last_moved));
+                            ) && in_order;
                             if inline_initializers || exprent_independent {
                                 let initializers = wrapper.get_static_field_initializers();
                                 if !initializers.borrow().contains_key(&key_field) {
                                     if exprent_independent {
-                                        if !field.is_synthetic() && !enum_constant {
+                                        if regular {
                                             last_moved = fidx;
+                                            if let Some(runs) = &mut runs {
+                                                runs.close(fidx as usize);
+                                            }
                                         }
                                         initializers.borrow_mut().add_with_key(
                                             assign_expr.get_right(),
@@ -392,13 +597,33 @@ impl InitializerProcessor {
                     first_exprents.remove_at(itr);
                 } else {
                     kept |= !pending_local;
+                    if let Some(runs) = &mut runs {
+                        runs.keep(pos, exprent, root.0, &chain);
+                    }
                     itr += 1;
                 }
+                pos += 1;
             }
             if !exprents_to_remove.is_empty() {
                 first_exprents
                     .borrow_mut()
                     .retain(|e| !exprents_to_remove.j_contains(e));
+            }
+            if let Some(runs) = runs {
+                let mut blocks = runs.blocks;
+                for block in &mut blocks {
+                    block.exprents.retain(|e| !exprents_to_remove.j_contains(e));
+                }
+                blocks.retain(|b| !b.exprents.is_empty());
+                for block in &blocks {
+                    qualify_forward_reads(&block.exprents, cl, block.before_field);
+                }
+                if !blocks.is_empty() {
+                    *wrapper.get_static_blocks().borrow_mut() = StaticBlocks {
+                        sources: chain.clone(),
+                        blocks,
+                    };
+                }
             }
             if chain.len() > 1 {
                 let kept_exprents = first_exprents.to_vec();
@@ -687,7 +912,9 @@ impl InitializerProcessor {
                     }
                 }
                 ExprentType::New => {
-                    Self::qualify_field_references(expr.as_new(), cl, fidx);
+                    if cl.get_fields().get(fidx as usize).has_modifier(ACC_STATIC) {
+                        Self::qualify_field_references(expr.as_new(), cl, fidx + 1);
+                    }
                 }
                 _ => {}
             }
@@ -696,9 +923,10 @@ impl InitializerProcessor {
         true
     }
 
-    fn qualify_field_references(nexpr: NewExprent, cl: StructClass, fidx: i32) {
-        let is_static = cl.get_fields().get(fidx as usize).has_modifier(ACC_STATIC);
-        if is_static && nexpr.is_lambda() && !nexpr.is_method_reference() {
+    /// Qualifies, in the body of the lambda `nexpr` and the lambdas in it, each read of
+    /// a static field of `cl` declared at index `first_later` or after it.
+    fn qualify_field_references(nexpr: NewExprent, cl: StructClass, first_later: i32) {
+        if nexpr.is_lambda() && !nexpr.is_method_reference() {
             let child = root_class_node(nexpr.get_new_type().value.as_deref()).expect("child");
             let (parent, content_method_key) = child.with(|d| {
                 (
@@ -742,14 +970,14 @@ impl InitializerProcessor {
                                 &fe.get_descriptor().descriptor_string,
                             );
                             if fe.get_instance().is_none()
-                                && cl.get_fields().get_index_by_key(&key) as i32 > fidx
+                                && cl.get_fields().get_index_by_key(&key) as i32 >= first_later
                             {
                                 fe.force_qualified(true);
                             }
                         }
                     }
                     ExprentType::New => {
-                        Self::qualify_field_references(e.as_new(), cl, fidx);
+                        Self::qualify_field_references(e.as_new(), cl, first_later);
                     }
                     _ => {}
                 }

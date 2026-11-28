@@ -289,7 +289,7 @@ kuna	a8e71f5a39e9d179
 case	default/pkg/TestClashName	Default	classes/java8/pkg/TestClashName	classes/java8/pkg/SharedName1	classes/java8/pkg/SharedName2	classes/java8/pkg/SharedName3	classes/java8/pkg/SharedName4	classes/java8/pkg/NonSharedName	classes/java8/pkg/TestClashNameParent	classes/java8/ext/TestClashNameParent	classes/java8/pkg/TestClashNameIface	classes/java8/ext/TestClashNameIface
 kuna	7fdc0118e81cb17f
 case	default/pkg/TestClassFields	Default	classes/java8/pkg/TestClassFields
-kuna	c43112e14c556522
+kuna	dad331731673d929
 case	default/pkg/TestClassLambda	Default	classes/java8/pkg/TestClassLambda
 kuna	b1c65d1fdf0c4d43
 case	default/pkg/TestClassLoop	Default	classes/java8/pkg/TestClassLoop
@@ -857,7 +857,7 @@ kuna	d3ebbc3d109ab7f3
 case	default/pkg/TestStackCastParam	Default	classes/java8/pkg/TestStackCastParam
 kuna	347138d88642b5ca
 case	default/pkg/TestStaticBlockFinalField	Default	classes/java8/pkg/TestStaticBlockFinalField
-kuna	d540829304f031bd
+kuna	ea7d1af6dd4223d6
 case	default/pkg/TestStaticBlockNull	Default	classes/java8/pkg/TestStaticBlockNull
 kuna	b84995d04cba7102
 case	default/pkg/TestStaticInit	Default	classes/java8/pkg/TestStaticInit
@@ -2082,3 +2082,5 @@ case	kuna-fixes/pkg/TestEmptyEnumSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEm
 case	kuna-fixes/pkg/TestEnumConstantSwitchArgs	Kuna Fixes	kuna-fixes/classes/pkg/TestEnumConstantSwitchArgs
 # kuna-fixes/src/pkg/TestStaticCompoundAssign.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestStaticCompoundAssign	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticCompoundAssign
+# kuna-fixes/src/pkg/TestStaticBlockInPlace.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticBlockInPlace	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticBlockInPlace
