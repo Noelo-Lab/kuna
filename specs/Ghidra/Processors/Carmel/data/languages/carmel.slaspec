@@ -212,6 +212,7 @@ define pcodeop carmel_staged_wb_data;
 define pcodeop carmel_data_only_ex;
 define pcodeop carmel_address_only_ex;
 define pcodeop carmel_prove_repeat_r3_sample;
+define pcodeop carmel_repeat_d2_write;
 define pcodeop carmel_zero_repeat_count;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
@@ -14436,6 +14437,10 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "R1",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa1 & wide_14_22=0x119 & literal_word { R1 = literal_word; }
 :MOVE "R2",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa2 & wide_14_22=0x119 & literal_word { R2 = literal_word; }
 :MOVE "R3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa3 & wide_14_22=0x119 & literal_word { R3 = literal_word; }
+:MOVE "R3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa3
+    & wide_14_22=0x119 & literal_word & carmel_phase_emit=1 & hw_loop_capture_count=1 {
+    R3 = carmel_repeat_d2_write(literal_word);
+}
 :MOVE "R4",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa4 & wide_14_22=0x119 & literal_word { R4 = literal_word; }
 :MOVE "R5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa5 & wide_14_22=0x119 & literal_word { R5 = literal_word; }
 :MOVE "R6",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa6 & wide_14_22=0x119 & literal_word { R6 = literal_word; }

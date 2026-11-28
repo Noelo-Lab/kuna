@@ -50,6 +50,7 @@ pub(crate) struct PhaseDecode<'a> {
     reset_ex_end: Option<u64>,
     staged_data: Option<u64>,
     repeat_r3: Option<u64>,
+    repeat_d2_write: Option<u64>,
     ff: Option<FfOps>,
 }
 
@@ -78,6 +79,7 @@ impl<'a> PhaseDecode<'a> {
         let reset_ex_end = index(b"carmel_d2_end_ex_controls");
         let staged_data = index(b"carmel_staged_wb_data");
         let repeat_r3 = index(b"carmel_prove_repeat_r3_sample");
+        let repeat_d2_write = index(b"carmel_repeat_d2_write");
         let ff = (|| Some(FfOps {
             capture: index(b"carmel_capture_ff_before_ex")?,
             fetch: index(b"carmel_sample_ff_at_of")?,
@@ -95,7 +97,7 @@ impl<'a> PhaseDecode<'a> {
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
             fixed_read_tick, fixed_load, fixed_store, end_unmodeled, omitted, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
-            staged_data, repeat_r3, ff })
+            staged_data, repeat_r3, repeat_d2_write, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -109,6 +111,7 @@ impl<'a> PhaseDecode<'a> {
         let mut resets = Vec::new();
         let mut address_ex = Vec::new();
         let mut repeat_samples = Vec::new();
+        let mut repeat_writes = Vec::new();
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
             if op.get_parent().is_none() { continue; }
@@ -157,12 +160,17 @@ impl<'a> PhaseDecode<'a> {
                 delay_queries.push((op_id, offset));
             } else if Some(index) == self.repeat_r3 {
                 repeat_samples.push(op_id);
+            } else if Some(index) == self.repeat_d2_write {
+                repeat_writes.push(op_id);
             } else if index == self.admission {
                 reads = true;
             }
         }
         if !repeat_samples.is_empty() {
-            prove_repeat_samples(fd, visits, &repeat_samples)?;
+            prove_repeat_samples(fd, visits, &repeat_samples, self.repeat_d2_write)?;
+        }
+        for write in repeat_writes {
+            lower_copy(fd, write, 1);
         }
         if let Some(&(_, offset, _)) = markers.iter().find(|(_, _, kind)| *kind == Mark::Omitted) {
             prove_omitted_prefix(fd, visits, &markers, offset)?;
@@ -445,8 +453,10 @@ fn sample_error(fd: &Funcdata, op: OpId, sample: &str) -> KunaError {
 }
 
 // The count sees the first successor's address phase, not its entire issue.
-// With no write to R3 or transfer in that issue, both samples agree.
-fn prove_repeat_samples(fd: &mut Funcdata, visits: &VisitedMap, samples: &[OpId]) -> KunaResult<()> {
+// Only writes explicitly classified as D2 may reach the OF sample.
+fn prove_repeat_samples(
+    fd: &mut Funcdata, visits: &VisitedMap, samples: &[OpId], d2_write: Option<u64>,
+) -> KunaResult<()> {
     let mut successors = BTreeMap::new();
     for &sample in samples {
         let marker = fd.obank().get(sample).unwrap();
@@ -476,7 +486,8 @@ fn prove_repeat_samples(fd: &mut Funcdata, visits: &VisitedMap, samples: &[OpId]
             OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => true,
             _ => false,
         };
-        if writes || transfer {
+        let early = d2_write.is_some_and(|index| userop(fd, op) == Some(index));
+        if transfer || (writes && !early) {
             return Err(sample_error(fd, id, "R3 repeat count"));
         }
     }

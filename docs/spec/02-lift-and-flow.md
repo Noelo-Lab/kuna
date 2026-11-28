@@ -3976,8 +3976,9 @@ Carmel loader plans each phase at a physical issue; the lifted frame owns the
 pending values. Loop bounds and restart targets remain CODE word addresses.
 For `REPEAT R3`, a zero count stops after publishing the bounds. An odd
 bound only becomes a terminal issue if it is an actual sequential slot.
-The lift checks that the first following issue cannot change the sampled
-`R3` or transfer control before capture.
+The lift admits a following write to `R3` only when classified as a D2
+write, before the count is sampled. A write one issue later does not
+change the count, and an unclassified write or transfer is rejected.
 For a paired compact `MPYUS` and `REPEAT R3`, the earlier address gate
 reserves `R7+RN7` and old `R3`, applies the R3 postmodifier, and latches
 `X1` or `X2`. Only the later result gate can publish `A5H` and the MAC flags;

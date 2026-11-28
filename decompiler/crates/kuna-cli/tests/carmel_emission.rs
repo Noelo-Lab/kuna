@@ -6388,6 +6388,11 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     register[7] = [0xa1, 0xac, 0x20, 0x21, 0xac, 0x62];
     register[8] = a0;
     register[10] = ret;
+    let r3_write = [0x80, 0x00, 0x02, 0xc6, 0x42, 0x8c];
+    let mut next_r3 = register;
+    next_r3[1] = r3_write;
+    let mut later_r3 = register;
+    later_r3[2] = r3_write;
     let mut unreachable_odd_tail = register;
     unreachable_odd_tail[7] = a0;
     let left_multiply = [0x4b, 0x9b, 0xe7, 0x2a, 0xa7, 0x0b];
@@ -6428,6 +6433,8 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         (&dynamic[..], "0", &["A0L", "ECFG", "R1"][..], "A0L", &[("10,0,1", 13), ("10,0,3", 19)][..]),
         (&register[..], "0", &["A0L", "ECFG", "R3"][..], "A0L", &[("0,0,1", 3), ("0,0,2", 5)][..]),
         (&register[..], "0", &["A1L", "ECFG", "R3"][..], "A1L", &[("0,0,2", 2)][..]),
+        (&next_r3[..], "0", &["A0L", "ECFG", "R3"][..], "A0L", &[("0,0,1", 5)][..]),
+        (&later_r3[..], "0", &["A0L", "ECFG", "R3"][..], "A0L", &[("0,0,1", 3)][..]),
         (&unreachable_odd_tail[..], "0", &["R3"][..], "LC1", &[("2", 2)][..]),
         (&paired_left[..], "0", multiply_inputs, "LC1", &[(disabled, 0xc040), (address_only, 0xc041), (enabled, 0xc041)][..]),
         (&paired_left[..], "0", multiply_inputs, "X1", &[(disabled, 0x54ad), (address_only, 0x1234)][..]),
