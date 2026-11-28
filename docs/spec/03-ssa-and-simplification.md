@@ -140,6 +140,14 @@ the walk that finds the candidate element asks for the *predecessor* of the rang
 first, which answers both the "step back from `lower_bound`" and the "already at
 `begin()`" cases in one descent. Every varnode of every heritaged space is
 re-offered to this map on every pass, so it is the most-called map in the phase.
+Nearly every range offered is already held whole by an element, so `add` first
+asks two elements before any walk: the one it returned last (varnodes arrive in
+address order, so a run of versions of one register lands in it), and the one
+that starts exactly at the range's address. An element holds the range when the
+range starts at or after the element's start and ends inside it; the walk would
+find that element first and return it unchanged, so the answer is the same. The
+remembered element is forgotten whenever an element is erased (refinement) or
+the map is cleared, the only other changes to the map.
 
 **The simple case.** For each disjoint range, `heritage.rs (Heritage::collect)`
 partitions the range's varnodes into reads (free), writes (defined), and
@@ -157,7 +165,9 @@ MULTIEQUAL placement order and is therefore observable output — and
 input per in-edge at the head of every merge block. Renaming is the classic
 Cytron et al. dominator-tree stack walk
 (`heritage.rs (Heritage::rename_recurse)`): reads take the top of the
-per-address `VariableStack`, writes push, and the walk pops on exit. The walk
+per-address `VariableStack`, writes push, and the walk pops on exit. The stacks
+are only ever looked up by address, never visited in order, so they live in a
+hash map rather than upstream's ordered map. The walk
 keeps an explicit stack of open blocks instead of recursing, since the dominator
 tree of a large function can be tens of thousands of blocks deep. A read
 whose stack is *empty* has no reaching definition — it is materialized as a

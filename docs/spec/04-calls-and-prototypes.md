@@ -27,6 +27,23 @@ moves as a single is also typed `float`. Words read only as integers, such as a
 double handed to a base-AAPCS helper in core registers, are left as
 `armfloatreturn` alone leaves them (`kuna_armfloatargs.rs (single_move)`).
 
+A double the code hands on whole in a core register pair is one input typed
+`double` (`kuna_vfpcorepair.rs`). The doubleword `vmov r2,r3,d0` reads `d0`
+whole to give a variadic callee or a base-PCS helper its double in `r2:r3`, but
+heritage refines `d0` into `s0` and `s1`, and copy propagation leaves the call
+reading the two words as its arguments. Two floats moved one by one, or with the
+two-singles `vmov r2,r3,s0,s1`, end in the same IR, so `ActionFuncLink` notes,
+from the raw p-code, each instruction that writes a core register's word pair
+from one d register read whole (`kuna_vfpcorepair.rs (note_moves)`). When the
+two words of a noted d register are read only by one call, as the low and high
+registers of an aligned pair (`r0:r1` or `r2:r3`) that the noted instruction
+wrote, they are joined into the d register, and the rule that splits a
+d-register input read only in halves keeps that input whole.
+`show2(int n, double d) { consume("%d %lf", n, d); }` then takes
+`(double, unsigned int)`, and a caller that forwards both passes both. The call
+keeps its two words, because the same instructions hand a double's bits to a
+64-bit integer parameter (`hash64(bits(d))`). Little-endian images only.
+
 An 8-byte VFP input that no reader takes as a double is not a parameter
 (`kuna_armfloatargs.rs (stray_vector_input)`): followed through copies, merges
 and bitwise lane edits, its value reaches only its own low word and vector user
@@ -2545,6 +2562,48 @@ classified:
   (`Architecture::source_lang`, the loader's language verdict with any
   `option sourcelang` force applied) is left alone, because Go passes arguments
   in registers the cspec calls scratch. `off` restores the first-pass verdict.
+
+- (kuna) **A stated parameter the caller hands on whole is passed whole**
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_wholeinputarg.rs (widen)`,
+  always on). When an 8-byte incoming register also has a 4-byte reader, such as
+  the `w0` of a stated `unsigned int` return on AArch64, heritage splits it, and
+  a call's trial there covers only the low piece, read as heritage's own
+  `SUBPIECE(x0(i),0)`. An input at the call slot fails the realistic-ancestor
+  test, but that read is an op and passes it, and a piece the test refuses is
+  still filled in by `fillinMap` when a later argument is active. Either way the
+  callee was handed the caller's pointer cut to the return width: a PLT veneer
+  stated as `unsigned sample(struct Item *p)` printed `(*dat_20000)((int)p)`, as
+  did the stubs kuna's built-in libc prototypes state (`open`, `__snprintf_chk`)
+  and `int f(char *p, void *fp)` tail-calling `fp`, on AArch64, PowerPC64 and
+  RISC-V64. Once `fillinMap` has mapped a non-variadic call's trials, and before
+  its inputs are built, a used trial whose value is that low piece of an unwritten
+  input is widened to the input when the caller's locked prototype states a
+  pointer or integer parameter in exactly that register, the register is exactly
+  the general-purpose entry the trial was mapped to, the piece is that entry's
+  least significant part, no other trial overlaps it, and the callee's own
+  recovered prototype (`protoorder`) states no narrower parameter there. The call
+  then passes `p`. A stated struct passed in the register keeps its field
+  (`fp(s.a)`), and a call to `int g(int)`, recovered before its caller, keeps
+  `g((int)n)`. A zero or sign extension the code performs before the call
+  (`mov w0,w0`, `sxtw x0,w0`) writes the register, so its value is no piece of
+  the input and is passed as it was. Which trials are arguments is unchanged:
+  with an 8-byte return nothing is split and the forwarded pointer stays no
+  argument, as above. A variadic call keeps the width its format gave (x86-64
+  `__printf_chk(1,"%*lu ",w,n)` passes the `int` width in `edx` while the
+  function writes all of `rdx` elsewhere), a recovered or 32-bit parameter keeps
+  its piece, and float entries and stack slots are not widened.
+  The rule names no target. In x86-64 C code the return register `rax` is not
+  an argument register, so a narrow return splits nothing a call reads, but a
+  32-bit read of an incoming `rdi` or `rsi` (`cmp edi,5`) splits it the same
+  way and `fillinMap` fills the piece below a later argument (`ext(n,7)` printed
+  `ext((int)n,7)`); Go's register ABI passes its first argument in `rax`. The
+  widened value is what the register holds at the call; the cut width came from
+  an unrelated read in the caller, not from the callee. A callee nothing
+  describes that takes an `int` gets the same untouched register on AArch64 and
+  x86-64, so `ext_i2((int)n,7)` now prints `ext_i2(n,7)`, as AArch64 already
+  printed it when the caller returned a `long`. PowerPC64 and RISC-V64 callers
+  extend an `int` argument themselves, so there the call writes the register
+  and keeps `ext_i2((long)(int)n,7)`.
 
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side

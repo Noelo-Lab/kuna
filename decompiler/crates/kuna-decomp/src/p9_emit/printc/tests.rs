@@ -2995,6 +2995,18 @@ mod w10_printc_cast_render {
             let text = printer.emit_mut().output_str();
             assert!(text.starts_with("SUB"), "{text}");
             assert!(!text.contains("union"), "{text}");
+            let lane = fd.new_constant(4, 2);
+            fd.op_set_input(op, lane, 1).unwrap();
+            let mut printer = PrintC::new();
+            printer.set_output_stream();
+            printer.op_push_ir(&fd, &arch, op, None);
+            let text = printer.emit_mut().output_str();
+            let expected = format!(
+                "(short)(((union {{ {} from; {} to; }}){{ .from = workspace }}).to >> 0x10)",
+                if size == 4 { "float" } else { "double" },
+                if size == 4 { "unsigned int" } else { "unsigned long long" }
+            );
+            assert_eq!(text, expected);
             let zero = fd.new_constant(4, 0);
             fd.op_set_input(op, zero, 1).unwrap();
             fd.vbank_mut().get_mut(source).unwrap().update_type(named(

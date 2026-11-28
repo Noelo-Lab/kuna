@@ -658,6 +658,9 @@ mod xrefs_switch_case_calls;
 #[path = "xrefs_unflagged_cli.rs"]
 mod xrefs_unflagged_cli;
 
+#[path = "xrefs_unread_tables.rs"]
+mod xrefs_unread_tables;
+
 #[path = "zero_extended_returns.rs"]
 mod zero_extended_returns;
 
