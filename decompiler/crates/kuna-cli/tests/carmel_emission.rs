@@ -317,14 +317,19 @@ fn carmel_data_repeat_replays_the_range_and_skips_only_its_first_issue_at_zero()
         0x2b, 0xec, 0x00, 0x2b, 0xec, 0x00,
         0x2b, 0xd8, 0x00, 0x2b, 0xec, 0x00,
     ];
-    check_carmel_data_repeat_range(&code);
-    check_carmel_data_repeat_range(&mixed);
+    let mut literal = code;
+    literal[..6].copy_from_slice(&[0xb8, 0, 3, 0xcf, 0x24, 0]);
+    check_carmel_data_repeat_range(&code, false);
+    check_carmel_data_repeat_range(&mixed, false);
+    check_carmel_data_repeat_range(&literal, true);
+    check_carmel_long_data_repeat_range();
 }
 
-fn check_carmel_data_repeat_range(code: &[u8]) {
+fn check_carmel_data_repeat_range(code: &[u8], literal: bool) {
     let binary = common::scratch_file("carmel-data-repeat", "bin");
     fs::write(&binary, code).unwrap();
     for (output, zero, three) in [("A3L", 7, 10), ("A4L", 8, 10)] {
+        let zero = if literal { three } else { zero };
         let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
         kuna.arg("decompile").arg(&binary).args([
             "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
@@ -357,6 +362,63 @@ fn check_carmel_data_repeat_range(code: &[u8]) {
         }
     }
     fs::remove_file(binary).unwrap();
+}
+
+fn check_carmel_long_data_repeat_range() {
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("carmel-long-data-repeat.bin");
+    let source = scratch.path().join("carmel-long-data-repeat.c");
+    let executable = scratch.path().join("carmel-long-data-repeat");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let params = ["A3L", "A4L", "ECFG", "EST", "CECFG1", "CECFG2", "CETBL", "PACFG", "RM4", "RL4", "RM4_ALIGN"];
+    let mut generated = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short repeat_count;\n");
+    let mut main = String::from("int main(void) {\n");
+    for (n, (descriptor, delay, final_r4)) in [(0x44, 4, 0x40fb), (0x54, 4, 0x40fd), (0x74, 4, 0x40c0),
+                                                (0x74, 0, 0x40c0)].into_iter().enumerate() {
+        let mut code = vec![[0x80, 0x40, 0xfb, 0xc6, 0x42, 0x90]]; // R4 = 0x40fb
+        code.extend([nop; 6]);
+        code.extend([
+            [descriptor, 0, 0xc5, 0xcf, (delay << 3) | 2, 0x81],
+            nop, nop, nop,
+            [0x21, 0xac, 0xe6, 0x2b, 0xec, 0], // INC A3L
+            [0x21, 0xad, 0x28, 0x2b, 0xec, 0], // INC A4L
+            [0x2b, 0xd8, 0, 0x2b, 0xec, 0],
+            nop, nop,
+        ]);
+        fs::write(&binary, code.as_flattened()).unwrap();
+        for (j, register) in ["A3L", "A4L", "R4"].into_iter().enumerate() {
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0",
+                "--json", "--assert-strict", "--assert", "data [data,0x40fb] volatile unsigned short repeat_count",
+                "--assert", &format!("return %{register} unsigned short"),
+            ]);
+            for (i, reg) in params.iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{reg} unsigned short in_{i}")]);
+            }
+            let result = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&result.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let name = format!("long_repeat_{n}_{j}");
+            writeln!(generated, "#define sub_0 {name}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+            let repeated = if delay == 4 { 10 } else { 8 };
+            let (disabled, zero, three) = match register {
+                "A3L" => (8, 7, repeated),
+                "A4L" => (8, 8, repeated),
+                _ => (0x40fb, final_r4, final_r4),
+            };
+            let check = n * 3 + j + 1;
+            writeln!(main, "repeat_count = 0;\
+                if ({name}(7,7,0,0,0,0,0,0,0,0,0) != {disabled}) return {check};\
+                if ({name}(7,7,0,0,0,0x1000,0,0,0,0,0) != {zero} || repeat_count != 0) return {check};\
+                repeat_count = 3;\
+                if ({name}(7,7,0,0,0,0,0xffff,0,0,0,0) != {three} || repeat_count != 3) return {check};").unwrap();
+        }
+    }
+    writeln!(generated, "{main}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
 }
 
 #[test]

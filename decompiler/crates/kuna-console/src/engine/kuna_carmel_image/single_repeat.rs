@@ -1,4 +1,4 @@
-//! Direct-count REP resumes after three issues, but its end is a fetch address.
+//! Planned wide REP resumes after three issues, but its end is a fetch address.
 
 use super::{FETCH, Fetch};
 
@@ -8,8 +8,12 @@ pub(super) struct DirectRepeat(u8);
 
 impl DirectRepeat {
     pub(super) fn parse(fetch: &Fetch) -> Option<Self> {
-        (fetch[0] == 0xb8 && fetch[3] == 0xcf && fetch[4] & 0xc3 == 0 && fetch[5] == 0)
-            .then(|| Self(fetch[4] >> 3))
+        if fetch[3] != 0xcf {
+            return None;
+        }
+        let direct = fetch[0] == 0xb8 && fetch[4] & 0xc3 == 0 && fetch[5] == 0;
+        let long_data = matches!(fetch[0], 0x44 | 0x54 | 0x74) && fetch[4] & 0xc7 == 2 && fetch[5] == 0x81;
+        (direct || long_data).then(|| Self((fetch[4] >> 3) & 7))
     }
 
     /// Zero is reserved for an unresolved layout. Value one has no backedge;

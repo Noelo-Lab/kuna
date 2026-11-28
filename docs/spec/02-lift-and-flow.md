@@ -5235,6 +5235,12 @@ only its left slot if that fetch is the endpoint. Positive counts repeat
 the range only when the endpoint has not already passed; zero skips the
 first issue after setup and leaves any following issues to execute once.
 
+The CE2 form with a long R4 descriptor uses the same replay range. The
+address gate alone admits the access and postmodifier: a veto makes the
+body fall through once. An admitted operation reads a single 16-bit
+count at the original R4 address, even when the descriptor advances R4
+by two words or by a signed displacement.
+
 The marked wide single repeat in family `0x13c`, variant 0, with
 encoded delay three and an extended count selector samples one 16-bit
 word at DATA `0xffff`; the encoded address field does not name a DATA

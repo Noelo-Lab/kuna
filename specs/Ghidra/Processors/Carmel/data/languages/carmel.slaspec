@@ -826,6 +826,7 @@ define token wide (48)
     config_shift_ce_bank = (46,46)
     wide_repeat_count = (24,39)
     wide_repeat_delay = (11,13)
+    wide_repeat_displacement = (24,31) signed
     wide_repeat_long = (13,13)
     wide_repeat_extended = (1,1)
     wide_immediate_0 = (24,45) hex
@@ -13964,12 +13965,42 @@ direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
     export *[const]:2 absolute_data_addr;
 }
 
-@define REPEAT_DIRECT "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_14_22=0x13c & wide_40_45=0x38 & direct_rep_count & wide_repeat_delay & repeat_setup"
+repeat_count_source: direct_rep_count is carmel_issue=5 & wide_left_mode=1 & wide_40_45=0x38 & direct_rep_count {
+    export direct_rep_count;
+}
 
-:"REP" direct_rep_count "delay" wide_repeat_delay^repeat_setup is $(REPEAT_DIRECT)
+repeat_long_r4: "*R4:long" is wide_40_45=4 { export R4; }
+repeat_long_r4: "*R4++:long" is wide_40_45=0x14 {
+    local address:2 = R4;
+    modify_native_agu(R4, 2:2, RM4, RL4, RM4_ALIGN, 8:4, 4:2);
+    export address;
+}
+repeat_long_r4: "*R4+="^wide_repeat_displacement^":long" is wide_40_45=0x34 & wide_repeat_displacement {
+    local address:2 = R4;
+    modify_native_agu(R4, wide_repeat_displacement:2, RM4, RL4, RM4_ALIGN, 8:4, 4:2);
+    export address;
+}
+
+# The long descriptor changes the AGU, not the width of the count read.
+# A vetoed address leaves ordinary fall-through, including the first body issue.
+repeat_count_source: "CE2" repeat_long_r4 is carmel_issue=4 & wide_left_mode=0 & wide_goto_ce_bank=1
+    & wide_0_10=0x281 & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 & repeat_long_r4 {
+    local count:2 = 1;
+    local admitted:1 = carmel_read_address_admission(2:1);
+    if (!admitted) goto <ready>;
+    build repeat_long_r4;
+    count = *[data]:2 repeat_long_r4;
+  <ready>
+    carmel_end_unmodeled_issue();
+    export count;
+}
+
+@define PLANNED_REP "wide_right_mode=1 & wide_14_22=0x13c & repeat_count_source & wide_repeat_delay & repeat_setup"
+
+:"REP" repeat_count_source "delay" wide_repeat_delay^repeat_setup is $(PLANNED_REP)
     & carmel_direct_repeat=1 [ carmel_counted_delay=1; carmel_split_delay=1; ] {
-    build direct_rep_count;
-    local count:2 = direct_rep_count;
+    build repeat_count_source;
+    local count:2 = repeat_count_source;
     clock_ce();
     build repeat_setup;
     if (count != 0) goto <first>;
@@ -13980,10 +14011,10 @@ direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
   <exit>
 }
 
-:"REP" direct_rep_count "delay" wide_repeat_delay^repeat_setup is $(REPEAT_DIRECT)
+:"REP" repeat_count_source "delay" wide_repeat_delay^repeat_setup is $(PLANNED_REP)
     & carmel_direct_repeat=2 [ carmel_counted_delay=1; carmel_split_delay=1; ] {
-    build direct_rep_count;
-    local count:2 = direct_rep_count;
+    build repeat_count_source;
+    local count:2 = repeat_count_source;
     clock_ce();
     build repeat_setup;
     if (count != 0) goto <again>;
@@ -13996,10 +14027,10 @@ direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
   <exit>
 }
 
-:"REP" direct_rep_count "delay" wide_repeat_delay^repeat_setup^repeat_first^repeat_tail is $(REPEAT_DIRECT)
+:"REP" repeat_count_source "delay" wide_repeat_delay^repeat_setup^repeat_first^repeat_tail is $(PLANNED_REP)
     & repeat_first & repeat_tail [ carmel_counted_delay=1; carmel_split_delay=1; ] {
-    build direct_rep_count;
-    local count:2 = direct_rep_count;
+    build repeat_count_source;
+    local count:2 = repeat_count_source;
     clock_ce();
     build repeat_setup;
     if (count != 0) goto <again>;
@@ -14014,7 +14045,7 @@ direct_rep_count: absolute_data_addr is wide_0_10=0x400 & absolute_data_addr {
     goto <again>;
   <exit>
 }
-@undef REPEAT_DIRECT
+@undef PLANNED_REP
 
 # The extended count selects an implicit DATA word; the encoded address is
 # disconnected. The console guard proves the first replay issue is the end.
