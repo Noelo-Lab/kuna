@@ -51,6 +51,7 @@ use crate::statement::{EdgeDirection, Statement};
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
+use crate::var_exprent::VarExprent;
 
 /// The local-variable store opcodes (the `_n` forms are read as these).
 const STORES: [i32; 5] = [OPC_ISTORE, OPC_LSTORE, OPC_FSTORE, OPC_DSTORE, OPC_ASTORE];
@@ -1259,6 +1260,67 @@ pub fn for_header(
         None => false,
     };
     Some((init_line, update_line == cond_line))
+}
+
+/// How many of the assignments `before`, which end right before `init` in
+/// the block ahead of `loop_` (not yet its header's), javac compiled from the
+/// same `for` header
+/// (`for (int i = 0, n = a.length; i < n; i++)`): each assigns another
+/// variable the condition or `update` reads and starts on the line of the
+/// condition, as `init` does (a declaration on a line of its own is a
+/// statement before the loop); with a LocalVariableTable, its entry also
+/// covers the loop from its start to where the loop's code ends (not one of
+/// a later local of the slot, which ECJ's for-each temporaries take) and has
+/// the descriptor of `init`'s variable, and a variable without an entry is a
+/// compiler's temporary.
+pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &[Exprent]) -> usize {
+    let var = |e: Exprent| e.try_as_assignment().and_then(|a| a.get_left().try_as_var());
+    let (Some(head), Some(cond)) = (var(init), loop_.get_condition_exprent()) else {
+        return 0;
+    };
+    let line = |exprent: Exprent| exprent_start(exprent).and_then(line_at);
+    let cond_line = line(cond);
+    if cond_line.is_none() || line(init) != cond_line {
+        return 0;
+    }
+    let exit = loop_code_end(loop_);
+    let loop_start = code_start(loop_.0);
+    let head_lvt = head.get_lvt();
+    let mut taken: Vec<VarExprent> = vec![head];
+    for candidate in before.iter().rev() {
+        let Some(v) = var(*candidate) else {
+            break;
+        };
+        let read = cond.contains_var(v.get_var_version_pair())
+            || update.contains_var(v.get_var_version_pair());
+        if taken.iter().any(|t| t.get_index() == v.get_index()) || !read || line(*candidate) != cond_line {
+            break;
+        }
+        let scoped = match (v.get_lvt(), &head_lvt) {
+            (Some(lvt), Some(head_lvt)) => {
+                lvt.descriptor == head_lvt.descriptor
+                    && loop_start.is_some_and(|start| lvt.get_start() <= start)
+                    && exit.is_some_and(|exit| lvt.get_end() <= exit)
+            }
+            (None, None) => !has_lvt(),
+            _ => false,
+        };
+        if !scoped {
+            break;
+        }
+        taken.push(v);
+    }
+    taken.len() - 1
+}
+
+/// Whether the method being structured has a LocalVariableTable (then a
+/// local without an entry is a compiler's temporary).
+fn has_lvt() -> bool {
+    METHOD.with(|m| {
+        m.borrow()
+            .as_ref()
+            .is_some_and(|m| m.mt.get_local_variable_attr().is_some())
+    })
 }
 
 /// The source line of the instruction at `pc` in the LineNumberTable of the

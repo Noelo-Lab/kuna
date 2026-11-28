@@ -816,7 +816,24 @@ header's only when the LineNumberTable gives them the line of the loop's conditi
 for a header's parts and not for a statement before or in a `while` loop. So `X x = a; while (x !=
 null) { ..; x = x.next; }` stays a `while` loop, `for (; i < n; i++)` with `i` declared before it
 is a `for` without init, and a last statement that the end of an if-else reaches is not taken for
-a `for` update when it has a line of its own. *A value returned after a try whose handlers exit, or
+a `for` update when it has a line of its own. A header that declares several variables (`for (int
+i = 0, n = a.length; i < n; i++)`, javac's code for which is the stores one after another)
+printed with all but the last before the loop, where their scope outlives it, so a local declared
+after the loop could not take the slot javac gave it (ECJ's `exSize` printed as a second local,
+and Vineflower merges it into `i` with the wrong type). `kuna_javac_layout::extra_inits` takes
+the assignments right before the header's into it too when each assigns another variable the
+condition or update reads, starts on the condition's line, and, with a LocalVariableTable, has
+the descriptor of the header's variable and a scope that ends where the loop's code ends; the
+loop holds them in source order before its init slot (`DoStatement::add_extra_init`).
+`VarDefinitionHelper::set_var_definitions` declares each where it declares the header's, and
+`split_mixed_inits` moves them back before the loop when the header cannot hold them (Java's
+for-init is one declaration of one type or a list of assignments: a variable used after the loop,
+or declared with another type). A declaration that `kuna_source_scopes::hoist` moves before a
+header variable (`before_header`) prints before the loop, so it belongs to the block around the
+loop, where the other declarations of its local are merged into it (`double v; for (..) { v = ..;
+} v = ..;`), unless its slot follows that of another variable the header declares: then it is one
+of the header's declarators (`for (int i = 0, j, n = a.length; ..)`, javac's slots in declaration
+order) and goes into the header. Case `TestForInitPair`. *A value returned after a try whose handlers exit, or
 after a `synchronized` block*: `DeadCodeHelper::incorporate_value_returns` adds a `load; xreturn`
 block to the protected ranges of its predecessors, which puts the `return` into the try; it does
 not when javac reached the block by a `goto` from every predecessor (`jumped_to`: the block does

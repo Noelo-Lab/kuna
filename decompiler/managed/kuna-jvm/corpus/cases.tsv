@@ -2136,3 +2136,5 @@ case	kuna-fixes/pkg/TestWideningSelectsOverload	Kuna Fixes	kuna-fixes/classes/pk
 case	kuna-fixes/pkg/TestUpdateInLastCase	Kuna Fixes	kuna-fixes/classes/pkg/TestUpdateInLastCase
 # kuna-fixes/src/pkg/TestMixedWidening.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestMixedWidening	Kuna Fixes	kuna-fixes/classes/pkg/TestMixedWidening
+# kuna-fixes/src/pkg/TestForInitPair.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForInitPair	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitPair

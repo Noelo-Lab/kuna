@@ -591,10 +591,19 @@ impl MergeHelper {
             if hasinit {
                 let pd_exprents = pre_data.expect("preData").get_exprents().expect("exprents");
                 let exp = pd_exprents.remove_at(pd_exprents.len() - 1);
+                let extra = if kuna_javac_layout::active() {
+                    kuna_javac_layout::extra_inits(stat, exp, last_exp, &pd_exprents.to_vec())
+                } else {
+                    0
+                };
                 if let Some(init) = stat.get_init_exprent() {
                     exp.add_bytecode_offsets(init.get_bytecode().as_ref());
                 }
                 stat.set_init_exprent(exp);
+                let at = pd_exprents.len() - extra;
+                for _ in 0..extra {
+                    stat.add_extra_init(pd_exprents.remove_at(at));
+                }
             }
             last_data
                 .get_exprents()
