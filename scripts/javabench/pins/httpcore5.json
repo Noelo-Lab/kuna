@@ -1,0 +1,26 @@
+{
+ "artifacts": {
+  "org.apache.httpcomponents.core5:httpcore5-h2:5.5": {
+   "sha256": "129ba087557420b311740652757f4265a83e91feb013e7bacab47db1ac1305f2",
+   "url": "https://repo1.maven.org/maven2/org/apache/httpcomponents/core5/httpcore5-h2/5.5/httpcore5-h2-5.5.jar"
+  },
+  "org.apache.httpcomponents.core5:httpcore5-h2:5.5:sources": {
+   "sha256": "936a5b34c058f1f1eb4085f1635c975e645993781a53805e7cbf06b72df62233",
+   "url": "https://repo1.maven.org/maven2/org/apache/httpcomponents/core5/httpcore5-h2/5.5/httpcore5-h2-5.5-sources.jar"
+  },
+  "org.apache.httpcomponents.core5:httpcore5:5.5": {
+   "sha256": "6431b7cf03143d02926588434f1b5ad6762d7b276a0bdffd615be4f79063bfa9",
+   "url": "https://repo1.maven.org/maven2/org/apache/httpcomponents/core5/httpcore5/5.5/httpcore5-5.5.jar"
+  },
+  "org.apache.httpcomponents.core5:httpcore5:5.5:sources": {
+   "sha256": "1b73acb907669e2add09c873b4e7c251116e653f704017dd4e1285cec54fb056",
+   "url": "https://repo1.maven.org/maven2/org/apache/httpcomponents/core5/httpcore5/5.5/httpcore5-5.5-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "org.conscrypt:conscrypt-openjdk-uber:2.8.0",
+   "sha256": "4022024808c54211275c7d58ed81e4e13ed8ba170351588cba19f6b947478668"
+  }
+ ]
+}

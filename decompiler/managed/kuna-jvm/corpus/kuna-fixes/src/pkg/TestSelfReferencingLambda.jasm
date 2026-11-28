@@ -1,0 +1,79 @@
+package pkg;
+
+super public class TestSelfReferencingLambda
+	version 52:0
+{
+  const #7 = Method TestSelfReferencingLambda.body:"()V";
+  const #10 = Method TestSelfReferencingLambda.lambda$plain$0:"()V";
+
+  Field task:"Lpkg/TestSelfReferencingLambda$Task;";
+
+  public Method "<init>":"()V"
+	stack 2 locals 1
+  {
+		aload_0;
+		invokespecial	Method java/lang/Object."<init>":"()V";
+		aload_0;
+		aload_0;
+		invokedynamic	InvokeDynamic REF_invokeStatic:Method java/lang/invoke/LambdaMetafactory.metafactory:"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;":run:"(Lpkg/TestSelfReferencingLambda;)Lpkg/TestSelfReferencingLambda$Task;" {
+			MethodType "()V",
+			MethodHandle REF_invokeVirtual:#7,
+			MethodType "()V"
+		};
+		putfield	Field task:"Lpkg/TestSelfReferencingLambda$Task;";
+		return;
+  }
+
+  public Method plain:"()V"
+	stack 2 locals 1
+  {
+		aload_0;
+		aload_0;
+		invokedynamic	InvokeDynamic REF_invokeStatic:Method java/lang/invoke/LambdaMetafactory.metafactory:"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;":run:"(Lpkg/TestSelfReferencingLambda;)Lpkg/TestSelfReferencingLambda$Task;" {
+			MethodType "()V",
+			MethodHandle REF_invokeSpecial:#10,
+			MethodType "()V"
+		};
+		putfield	Field task:"Lpkg/TestSelfReferencingLambda$Task;";
+		return;
+  }
+
+  private synthetic Method lambda$plain$0:"()V"
+	stack 2 locals 1
+  {
+		aload_0;
+		aload_0;
+		invokedynamic	InvokeDynamic REF_invokeStatic:Method java/lang/invoke/LambdaMetafactory.metafactory:"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;":run:"(Lpkg/TestSelfReferencingLambda;)Lpkg/TestSelfReferencingLambda$Task;" {
+			MethodType "()V",
+			MethodHandle REF_invokeVirtual:#7,
+			MethodType "()V"
+		};
+		putfield	Field task:"Lpkg/TestSelfReferencingLambda$Task;";
+		return;
+  }
+
+  synthetic Method body:"()V"
+	stack 2 locals 1
+  {
+		aload_0;
+		aload_0;
+		invokedynamic	InvokeDynamic REF_invokeStatic:Method java/lang/invoke/LambdaMetafactory.metafactory:"(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;":run:"(Lpkg/TestSelfReferencingLambda;)Lpkg/TestSelfReferencingLambda$Task;" {
+			MethodType "()V",
+			MethodHandle REF_invokeVirtual:#7,
+			MethodType "()V"
+		};
+		putfield	Field task:"Lpkg/TestSelfReferencingLambda$Task;";
+		return;
+  }
+
+  static abstract interface InnerClass Task=class TestSelfReferencingLambda$Task of class TestSelfReferencingLambda;
+  public static final InnerClass Lookup=class java/lang/invoke/MethodHandles$Lookup of class java/lang/invoke/MethodHandles;
+}
+
+interface TestSelfReferencingLambda$Task
+	version 52:0
+{
+  public abstract Method run:"()V";
+
+  static abstract interface InnerClass Task=class TestSelfReferencingLambda$Task of class TestSelfReferencingLambda;
+}

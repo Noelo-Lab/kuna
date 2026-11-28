@@ -1,0 +1,8 @@
+UNIT archive $DATA/dup.zip
+R true false
+D y
+D y/
+O -1 x.txt
+O -1 x.txt
+O -1 y
+K 0

@@ -15,11 +15,21 @@
 
 use std::io::{self, BufWriter, Write};
 
+#[cfg(test)]
+thread_local! {
+    /// What the commands this thread runs write to stdout, while a test collects it.
+    pub(crate) static CAPTURED: std::cell::RefCell<Option<Vec<u8>>> = const { std::cell::RefCell::new(None) };
+}
+
 pub fn emit(text: &str) -> io::Result<()> {
     emit_bytes(text.as_bytes())
 }
 
 pub fn emit_bytes(bytes: &[u8]) -> io::Result<()> {
+    #[cfg(test)]
+    if CAPTURED.with_borrow(Option::is_some) {
+        return emit_streamed(|out| out.write_all(bytes));
+    }
     let stdout = io::stdout();
     let mut writer = BufWriter::new(stdout.lock());
     emit_to(&mut writer, bytes)
@@ -28,6 +38,12 @@ pub fn emit_bytes(bytes: &[u8]) -> io::Result<()> {
 /// Write stdout through `write` as it renders, for a document too large to
 /// hold whole; the same buffering and failures as [`emit`].
 pub fn emit_streamed(write: impl FnOnce(&mut dyn Write) -> io::Result<()>) -> io::Result<()> {
+    #[cfg(test)]
+    if let Some(mut captured) = CAPTURED.take() {
+        let written = write(&mut captured);
+        CAPTURED.set(Some(captured));
+        return written;
+    }
     let stdout = io::stdout();
     let mut writer = BufWriter::new(stdout.lock());
     write(&mut writer)?;

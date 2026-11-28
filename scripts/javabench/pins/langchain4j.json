@@ -1,0 +1,34 @@
+{
+ "artifacts": {
+  "dev.langchain4j:langchain4j-core:1.24.1": {
+   "sha256": "e0b33b8d67e1438e6da6721c18b16b7b1a3d445d18a67c1597bdf192753dcf7d",
+   "url": "https://repo1.maven.org/maven2/dev/langchain4j/langchain4j-core/1.24.1/langchain4j-core-1.24.1.jar"
+  },
+  "dev.langchain4j:langchain4j-core:1.24.1:sources": {
+   "sha256": "63603582f8f6531594a9e84c1e814e17a611be38395d27fb743d2f2a66bdd275",
+   "url": "https://repo1.maven.org/maven2/dev/langchain4j/langchain4j-core/1.24.1/langchain4j-core-1.24.1-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "com.fasterxml.jackson.core:jackson-annotations:2.23",
+   "sha256": "e5b60c3088e0887b290ff9226394354589a1dad583743944b7f5538661056b4c"
+  },
+  {
+   "coord": "com.fasterxml.jackson.core:jackson-core:2.23.0",
+   "sha256": "449798beb4c4ec26de9cc25b39ca2198036883fb905ca968cbef7136d19a25d9"
+  },
+  {
+   "coord": "com.fasterxml.jackson.core:jackson-databind:2.23.0",
+   "sha256": "abd1edd2736c764da03fe6cb7a9de70d48dd0a198aed131604c564bff62f9cc1"
+  },
+  {
+   "coord": "org.jspecify:jspecify:1.0.1",
+   "sha256": "070d75f261fe4c5b8202508366715f7f2d4660f88c8ef7e6d3575e48c9683b66"
+  },
+  {
+   "coord": "org.slf4j:slf4j-api:2.0.20",
+   "sha256": "7e1446499b359675d8aabe6af2de86b85e72ae8a2a932c0b40d0e5ba57097439"
+  }
+ ]
+}

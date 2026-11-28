@@ -1,0 +1,65 @@
+== load default
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+b/Outer$A	MEMBER	A	1	b/Outer	b/Outer$A$1,b/Outer$A$Deep	\N	b/Outer	\N
+b/Outer$A$1	ANONYMOUS	\N	0	b/Outer$A		\N	b/Outer,b/Outer$A	java/lang/Runnable
+b/Outer$A$Deep	MEMBER	Deep	0	b/Outer$A		\N	b/Outer$A	\N
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+== load verify-anonymous
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+b/Outer$A	MEMBER	A	1	b/Outer	b/Outer$A$1,b/Outer$A$Deep	\N	b/Outer	\N
+b/Outer$A$1	ANONYMOUS	\N	0	b/Outer$A		\N	b/Outer,b/Outer$A	java/lang/Runnable
+b/Outer$A$Deep	MEMBER	Deep	0	b/Outer$A		\N	b/Outer$A	\N
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+== load no-inner
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N		\N		\N
+b/Outer$1	ROOT	Outer$1	32	\N		run ()V		\N
+b/Outer$1Local	ROOT	Outer$1Local	32	\N		run ()V		\N
+b/Outer$1LocalE	ROOT	Outer$1LocalE	16432	\N		run ()V		\N
+b/Outer$1LocalI	ROOT	Outer$1LocalI	1536	\N		run ()V		\N
+b/Outer$2	ROOT	Outer$2	32	\N		run ()V		\N
+b/Outer$A	ROOT	Outer$A	33	\N		\N		\N
+b/Outer$A$1	ROOT	Outer$A$1	32	\N		\N		\N
+b/Outer$A$Deep	ROOT	Outer$A$Deep	32	\N		\N		\N
+b/Outer$B	ROOT	Outer$B	33	\N		\N		\N
+b/Outer$C	ROOT	Outer$C	1536	\N		\N		\N
+== load no-name-check
+b/Natives	ROOT	Natives	1057	\N		\N		\N
+b/Outer	ROOT	Outer	33	\N	b/Outer$1,b/Outer$1Local,b/Outer$1LocalE,b/Outer$1LocalI,b/Outer$2,b/Outer$A,b/Outer$B,b/Outer$C	\N		\N
+b/Outer$1	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Object
+b/Outer$1Local	LOCAL	Local	0	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalE	LOCAL	LocalE	16408	b/Outer		run ()V	b/Outer	\N
+b/Outer$1LocalI	LOCAL	LocalI	1536	b/Outer		run ()V	b/Outer	\N
+b/Outer$2	ANONYMOUS	\N	0	b/Outer		\N	b/Outer	java/lang/Runnable
+b/Outer$A	MEMBER	A	1	b/Outer	b/Outer$A$1,b/Outer$A$Deep	\N	b/Outer	\N
+b/Outer$A$1	ANONYMOUS	\N	0	b/Outer$A		\N	b/Outer,b/Outer$A	java/lang/Runnable
+b/Outer$A$Deep	MEMBER	Deep	0	b/Outer$A		\N	b/Outer$A	\N
+b/Outer$B	MEMBER	B	9	b/Outer		\N	b/Outer	\N
+b/Outer$C	MEMBER	C	1546	b/Outer		\N	b/Outer	\N
+== load inconsistent
+b/X	ROOT	X	33	\N	b/X$Y	\N		\N
+b/X$Y	MEMBER	Y	9	b/X		\N	b/X	\N
+log	WARN	Inconsistent inner class entries for b/X$Y!
+log	WARN	  b/X$Y: Y public static MEMBER of b/X
+log	WARN	  b/X: Y  MEMBER of b/X
+== load inconsistent-reversed
+b/X	ROOT	X	33	\N	b/X$Y	\N		\N
+b/X$Y	MEMBER	Y	9	b/X		\N	b/X	\N
+log	WARN	Inconsistent inner class entries for b/X$Y!
+log	WARN	  b/X: Y  MEMBER of b/X
+log	WARN	  b/X$Y: Y public static MEMBER of b/X
+log	WARN	Changing mapping to b/X$Y -> Y public static MEMBER of b/X

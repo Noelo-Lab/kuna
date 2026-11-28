@@ -1,0 +1,2 @@
+D8 8.13.25 (build fdd12f220c9b37fb01acdb33edfdf0c5ead3122d from go/r8bot (luci-r8-custom-ci-archive-us-east1-b-0-ngbi))
+javac 25.0.5

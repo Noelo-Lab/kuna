@@ -4,6 +4,8 @@
 //! override keeps external queries. This module renders a table, indented JSON
 //! or the generated Markdown manual. Validation compares the catalog with
 //! [`kuna_decomp::options::KUNA_OPTION_NAMES`] to reject missing or stale rows.
+//! `--engine <managed engine>|all` adds a managed engine's rows (for the JVM,
+//! `docs/options-jvm.md`); the default query is the native catalog alone.
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -13,6 +15,7 @@ use kuna_decomp::kuna_phases::{emit_catalog_json, emit_catalog_json_one, emit_ca
 use kuna_decomp::options::KUNA_OPTION_NAMES;
 
 use crate::jsonfmt::{dumps_indent2, extract_json_span, parse, Json};
+use crate::managed::{catalog as managed, ENGINES};
 use crate::paths;
 
 /// Read the local static catalog unless the caller selected an external console.
@@ -89,6 +92,78 @@ fn entries(v: &Json) -> Vec<&Json> {
     }
 }
 
+/// Which engine's rows a catalog query covers. `Default` (no `--engine`, or
+/// the legacy `cpp|rust`) is the native catalog exactly as it always was; a
+/// managed engine's option name given to `--option` still finds its row
+/// there. The others tag every row with `engine` (and `aliases`).
+#[derive(Clone, Copy)]
+pub enum Engine {
+    Default,
+    Native,
+    Managed(&'static dyn kuna_managed::Engine),
+    All,
+}
+
+impl Engine {
+    pub fn parse(value: Option<&str>) -> Result<Engine, String> {
+        match value {
+            None | Some("cpp") | Some("rust") => Ok(Engine::Default),
+            Some("native") => Ok(Engine::Native),
+            Some("all") => Ok(Engine::All),
+            Some(other) => ENGINES.iter().find(|e| e.name() == other).map(|e| Engine::Managed(*e)).ok_or_else(|| {
+                let names: Vec<&str> = std::iter::once("native").chain(ENGINES.iter().map(|e| e.name())).collect();
+                format!("unknown --engine {other:?} (expected {} or all)", names.join(", "))
+            }),
+        }
+    }
+}
+
+/// `row` with `aliases` (when absent) and `engine` appended.
+fn tagged(row: &Json, engine: &str) -> Json {
+    let mut row = row.clone();
+    if let Json::Object(pairs) = &mut row {
+        if !pairs.iter().any(|(k, _)| k == "aliases") {
+            pairs.push(("aliases".into(), Json::Array(Vec::new())));
+        }
+        if !pairs.iter().any(|(k, _)| k == "engine") {
+            pairs.push(("engine".into(), Json::Str(engine.into())));
+        }
+    }
+    row
+}
+
+/// The rows a query selects, in catalog order: native rows, then managed engines' rows.
+fn selected_rows(option: Option<&str>, pinned_by: Option<&str>, engine: Engine) -> Result<Vec<Json>, String> {
+    let only = match (engine, option) {
+        (Engine::Managed(e), _) => Some(e),
+        (Engine::Default | Engine::All, Some(name)) if emit_catalog_json_one(name, None).is_none() => {
+            ENGINES.iter().copied().find(|e| managed::knows(*e, name))
+        }
+        _ => None,
+    };
+    let mut rows = Vec::new();
+    if only.is_none() {
+        let v = run_catalog(option, pinned_by)?;
+        for e in entries(&v) {
+            rows.push(if matches!(engine, Engine::Default) { e.clone() } else { tagged(e, "native") });
+        }
+    }
+    match only {
+        Some(e) => {
+            let found = managed::rows(e, option);
+            if let (true, Some(name)) = (found.is_empty(), option) {
+                return Err(format!("unknown option: {name:?}"));
+            }
+            rows.extend(found);
+        }
+        None if matches!(engine, Engine::All) && option.is_none() => {
+            rows.extend(ENGINES.iter().flat_map(|e| managed::rows(*e, None)));
+        }
+        None => {}
+    }
+    Ok(rows)
+}
+
 /// Look up a string field on an object entry.
 fn field<'a>(entry: &'a Json, key: &str) -> Option<&'a str> {
     if let Json::Object(pairs) = entry {
@@ -136,16 +211,14 @@ fn arr_field(entry: &Json, key: &str) -> Vec<String> {
 
 /// `--json`: byte-identical to `json.dumps(entries, indent=2)`, keeping the rows
 /// of `tier` only when one is given.
-pub fn cmd_json(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str>) -> i32 {
-    match run_catalog(option, pinned_by) {
-        Ok(v) => {
+pub fn cmd_json(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str>, engine: Engine) -> i32 {
+    match selected_rows(option, pinned_by, engine) {
+        Ok(rows) => {
             // Python always re-dumps the *list* form (catalog() returns a list,
             // wrapping a single dict in `[data]`).
             let list = Json::Array(
-                entries(&v)
-                    .into_iter()
+                rows.into_iter()
                     .filter(|e| tier.is_none_or(|want| field(e, "tier") == Some(want)))
-                    .cloned()
                     .collect(),
             );
             crate::output::emit_with_status(&format!("{}\n", dumps_indent2(&list)), 0)
@@ -161,26 +234,35 @@ pub fn cmd_json(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str
 /// from `SETTABLE_TABLE` (`kuna_phases::emit_catalog_markdown`) -- no live
 /// values, byte-stable, freshness-fenced by kuna-decomp's
 /// `tests/options_md_fresh.rs`.
-pub fn cmd_markdown(option: Option<&str>) -> i32 {
+pub fn cmd_markdown(option: Option<&str>, engine: Engine) -> i32 {
     if let Some(o) = option {
         eprintln!("error: --markdown renders the whole catalog (got --option {o}); use --json/--option for one row");
         return 2;
     }
-    crate::output::emit_with_status(&emit_catalog_markdown(), 0)
+    match engine {
+        Engine::Default | Engine::Native => crate::output::emit_with_status(&emit_catalog_markdown(), 0),
+        Engine::Managed(e) => crate::output::emit_with_status(&managed::markdown(e), 0),
+        Engine::All => {
+            let others: String =
+                ENGINES.iter().map(|e| format!(" or --engine {0} (docs/options-{0}.md)", e.name())).collect();
+            eprintln!("error: --markdown renders one engine's catalog: --engine native (docs/options.md){others}");
+            2
+        }
+    }
 }
 
 /// (default) the human-readable table (port of catalog.main's text branch).
 /// `tier` filters to one of transform|analysis|core.
-pub fn cmd_text(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str>) -> i32 {
-    let v = match run_catalog(option, pinned_by) {
-        Ok(v) => v,
+pub fn cmd_text(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str>, engine: Engine) -> i32 {
+    let rows = match selected_rows(option, pinned_by, engine) {
+        Ok(rows) => rows,
         Err(e) => {
             eprintln!("error: {e}");
             return 1;
         }
     };
     let mut text = String::new();
-    for e in entries(&v) {
+    for e in &rows {
         if let Some(want) = tier {
             if field(e, "tier") != Some(want) {
                 continue;
@@ -219,6 +301,10 @@ pub fn cmd_text(option: Option<&str>, tier: Option<&str>, pinned_by: Option<&str
         if !insp.is_empty() {
             let _ = writeln!(text, "    inspiration: {insp}");
         }
+        let aliases = arr_field(e, "aliases");
+        if !aliases.is_empty() {
+            let _ = writeln!(text, "    aliases: {}", aliases.join(", "));
+        }
     }
     crate::output::emit_with_status(&text, 0)
 }
@@ -255,6 +341,13 @@ pub fn cmd_check(pinned_by: Option<&str>) -> i32 {
         ));
     }
 
+    let mut managed_ok = String::new();
+    for engine in ENGINES {
+        let (found, ok) = managed::check(*engine);
+        problems.extend(found);
+        managed_ok.push_str(&ok);
+    }
+
     if !problems.is_empty() {
         eprintln!("catalog DRIFT:");
         for p in &problems {
@@ -263,7 +356,7 @@ pub fn cmd_check(pinned_by: Option<&str>) -> i32 {
         return 1;
     }
     crate::output::emit_with_status(
-        "catalog OK: documents exactly the registered kuna options\n",
+        &format!("catalog OK: documents exactly the registered kuna options\n{managed_ok}"),
         0,
     )
 }

@@ -1,0 +1,8 @@
+101 hi objects 1099511627776 0.5 Objects#7[init]
+Square(2.25) 2.0
+14 hello local37/hello anon1
+rgreengblue?red2
+best=6[fig, pear, kiwi, banana]7
+run 101
+true
+5-s-1.25

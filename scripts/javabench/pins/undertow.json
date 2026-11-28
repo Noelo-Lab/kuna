@@ -1,0 +1,70 @@
+{
+ "artifacts": {
+  "io.undertow:undertow-core:2.4.4.Final": {
+   "sha256": "335f142f1e0a8b47f1c2a3c03a1c45de369d82217cfc6bd227c9a158ce2a29be",
+   "url": "https://repo1.maven.org/maven2/io/undertow/undertow-core/2.4.4.Final/undertow-core-2.4.4.Final.jar"
+  },
+  "io.undertow:undertow-core:2.4.4.Final:sources": {
+   "sha256": "0e1829b986c27a5a9bd1656661d1161438b6bc0ca5a85b8177969cd3fd613a4d",
+   "url": "https://repo1.maven.org/maven2/io/undertow/undertow-core/2.4.4.Final/undertow-core-2.4.4.Final-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "io.smallrye.common:smallrye-common-annotation:2.14.0",
+   "sha256": "3c7fdeac90ed7acf97b03eb63d8e3286e9f0fa66c8450613d3453645725db010"
+  },
+  {
+   "coord": "io.smallrye.common:smallrye-common-constraint:2.12.0",
+   "sha256": "9000921eabb4d1a6f76ccf2376d3524041af62038740df1d10cf0f75b5c93630"
+  },
+  {
+   "coord": "io.smallrye.common:smallrye-common-cpu:2.14.0",
+   "sha256": "1ee21c46d9c0b8cbdd1e489683fbd9976c0dce93b8e5a5af0543997577eb9969"
+  },
+  {
+   "coord": "io.smallrye.common:smallrye-common-expression:2.4.0",
+   "sha256": "be71fdb758e7ba5ff3ebbd9ac2df23ec3656ed73484c624192e13c42c1e8e7e8"
+  },
+  {
+   "coord": "io.smallrye.common:smallrye-common-function:2.14.0",
+   "sha256": "f0e0c6c213c40665b3c29cede733f668f37e38aa5f3ab4335c55191fdc0c359d"
+  },
+  {
+   "coord": "io.smallrye.common:smallrye-common-net:2.12.0",
+   "sha256": "91abf905742c8927f8ccce7a609461b15a5bf8f7957cd5c8de0247723caf5dde"
+  },
+  {
+   "coord": "io.smallrye.common:smallrye-common-os:2.4.0",
+   "sha256": "cf01ba20b379bd080f01957d7778edf0a802c7e2b58ad6c948b52ee14e755797"
+  },
+  {
+   "coord": "io.smallrye.common:smallrye-common-ref:2.4.0",
+   "sha256": "b9902d99b52a463cc3851105dddd58d40f5807350648b996ae161ab14123427c"
+  },
+  {
+   "coord": "org.jboss.logging:jboss-logging:3.6.2.Final",
+   "sha256": "f423e07bffce73bf2b6cc872f30981c06fe9cfd5a86a0b4f5fbdd11cfe0148e0"
+  },
+  {
+   "coord": "org.jboss.threads:jboss-threads:3.9.2",
+   "sha256": "ac0fd044686122014143267d3688245852ca07c6c4474320c9172062a5af6634"
+  },
+  {
+   "coord": "org.jboss.xnio:xnio-api:3.8.16.Final",
+   "sha256": "3572098fe1687dabd90f0222080fb158f63ca771c42ef1d39974434849f78bc4"
+  },
+  {
+   "coord": "org.jboss.xnio:xnio-nio:3.8.16.Final",
+   "sha256": "cee1ad9674ff4615f492a314a986c77b7c223ae03255c77aacc60c6cea62d59c"
+  },
+  {
+   "coord": "org.wildfly.client:wildfly-client-config:1.0.1.Final",
+   "sha256": "80a4e963ce94ebb043ecb0f2c0e77d327f23dc87d81350b863752eedfa2c3bb3"
+  },
+  {
+   "coord": "org.wildfly.common:wildfly-common:2.0.1",
+   "sha256": "fa4a710db7ae3e598a5f41639eb54e9f7b09de5fd0f58f56bd6070f21d956374"
+  }
+ ]
+}

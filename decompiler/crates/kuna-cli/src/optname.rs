@@ -39,6 +39,16 @@ pub(crate) fn check(name: &str) -> Result<(), String> {
         return Ok(());
     }
     let mut msg = format!("option {name}: Unknown option");
+    let managed = crate::managed::ENGINES.iter().find(|e| name.starts_with(&format!("{}_", e.name())));
+    if let Some(e) = managed {
+        msg.push_str(&format!(
+            "; {0}_* options apply to {1} inputs ({2}), which `kuna catalog --engine {0}` lists",
+            e.name(),
+            e.label(),
+            e.inputs()
+        ));
+        return Err(msg);
+    }
     if let Some(near) = nearest(name) {
         msg.push_str(&format!(" (did you mean {near:?}?)"));
     }
@@ -79,7 +89,7 @@ fn nearest(name: &str) -> Option<&'static str> {
 
 /// Levenshtein edit distance over `char`s (the two-row form; option names are
 /// short enough that the allocation is irrelevant).
-fn distance(a: &str, b: &str) -> usize {
+pub(crate) fn distance(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     let mut cur = vec![0usize; b.len() + 1];
@@ -119,6 +129,14 @@ mod tests {
         assert!(err.contains("zzzznotanoption"), "{err}");
         assert!(err.contains("Unknown option"), "{err}");
         assert!(!err.contains("did you mean"), "nothing is near it: {err}");
+    }
+
+    #[cfg(feature = "jvm")]
+    #[test]
+    fn a_jvm_option_on_a_native_input_points_at_the_jvm_catalog() {
+        let err = check("jvm_decompile_finally").unwrap_err();
+        assert!(err.contains("Unknown option"), "{err}");
+        assert!(err.contains("kuna catalog --engine jvm"), "{err}");
     }
 
     #[test]

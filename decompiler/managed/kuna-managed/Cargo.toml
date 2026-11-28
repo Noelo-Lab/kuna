@@ -1,0 +1,11 @@
+[package]
+name = "kuna-managed"
+description = "kuna non-native plane: the contract between the kuna CLI and a managed-bytecode engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

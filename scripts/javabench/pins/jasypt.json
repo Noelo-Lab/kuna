@@ -1,0 +1,22 @@
+{
+ "artifacts": {
+  "org.jasypt:jasypt:1.9.3": {
+   "sha256": "f481fbb8dd8ce754bfde7552af4fcbe8c5e303d53663bb3d8ce9d4338e0e55aa",
+   "url": "https://repo1.maven.org/maven2/org/jasypt/jasypt/1.9.3/jasypt-1.9.3.jar"
+  },
+  "org.jasypt:jasypt:1.9.3:sources": {
+   "sha256": "99e623e63f16af0b139f9cfa209d8600ef9cd375aba346cc491ae058c58331c9",
+   "url": "https://repo1.maven.org/maven2/org/jasypt/jasypt/1.9.3/jasypt-1.9.3-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "com.ibm.icu:icu4j:3.4.4",
+   "sha256": "ea15945e590d2b181d630849c26f7f06af4544055230b5219a7e5ecd1d45942e"
+  },
+  {
+   "coord": "javax.servlet:servlet-api:2.4",
+   "sha256": "243f8b5577f59bffdd30fd15cc25fc13004a6b08773a61cc32e48726c3633b7c"
+  }
+ ]
+}

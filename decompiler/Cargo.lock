@@ -286,6 +286,8 @@ dependencies = [
  "kuna-base",
  "kuna-console",
  "kuna-decomp",
+ "kuna-jvm",
+ "kuna-managed",
  "kuna-num",
  "kuna-slacomp",
  "kuna-sleigh",
@@ -328,6 +330,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-dex"
+version = "0.1.0"
+
+[[package]]
 name = "kuna-ghidra"
 version = "0.1.0"
 dependencies = [
@@ -352,11 +358,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuna-jvm"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "kuna-dex",
+ "kuna-managed",
+ "serde",
+ "sha2",
+ "toml",
+]
+
+[[package]]
 name = "kuna-lift-diff"
 version = "0.1.0"
 dependencies = [
  "kuna-harness",
 ]
+
+[[package]]
+name = "kuna-managed"
+version = "0.1.0"
 
 [[package]]
 name = "kuna-num"

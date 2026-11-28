@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "org.eclipse.jdt:ecj:3.46.100": {
+   "sha256": "74c93172475fee0cd4e6eefb44233516dd40525642da35d009146d97ea598229",
+   "url": "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/3.46.100/ecj-3.46.100.jar"
+  },
+  "org.eclipse.jdt:ecj:3.46.100:sources": {
+   "sha256": "e27368e8dd83da80575cd5dfd50f60078fb638b69a10e427284686c2eaa34e1c",
+   "url": "https://repo1.maven.org/maven2/org/eclipse/jdt/ecj/3.46.100/ecj-3.46.100-sources.jar"
+  }
+ },
+ "deps": []
+}

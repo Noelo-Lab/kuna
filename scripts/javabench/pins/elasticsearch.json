@@ -1,0 +1,182 @@
+{
+ "artifacts": {
+  "org.elasticsearch:elasticsearch:9.5.6": {
+   "sha256": "b61fc81e9705aeeb621e3096a7748c1c252e20ed633fde474d867ed9da06dba6",
+   "url": "https://repo1.maven.org/maven2/org/elasticsearch/elasticsearch/9.5.6/elasticsearch-9.5.6.jar"
+  },
+  "org.elasticsearch:elasticsearch:9.5.6:sources": {
+   "sha256": "2588cc46dff17f128d7a4554ef12b54eec6b33a9f13503789056172f2b47f990",
+   "url": "https://repo1.maven.org/maven2/org/elasticsearch/elasticsearch/9.5.6/elasticsearch-9.5.6-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "at.yawk.lz4:lz4-java:1.11.4",
+   "sha256": "58c8e0b813960d2a248e050c353baea73139b48a2ffc55382d42c69707e17325"
+  },
+  {
+   "coord": "co.elastic.logging:ecs-logging-core:1.7.0",
+   "sha256": "6431b4461025605ea26d8de2f8133a6178483522d0b9195f6445b693b524690b"
+  },
+  {
+   "coord": "co.elastic.logging:log4j2-ecs-layout:1.7.0",
+   "sha256": "ba6f338e8c02f56a7296bf669f4748f6a0506b6074452a59690da204d8f535e0"
+  },
+  {
+   "coord": "com.carrotsearch:hppc:0.8.1",
+   "sha256": "f540703478636d88f699f4666242e6fc9175a996c08ddceaf02106517b970406"
+  },
+  {
+   "coord": "net.sf.jopt-simple:jopt-simple:5.0.2",
+   "sha256": "457877c79e038f390557db5f8e92c4436fb4f4b3ba63f28bc228500fee080193"
+  },
+  {
+   "coord": "org.apache.logging.log4j:log4j-api:2.26.1",
+   "sha256": "f1810a4704ccce019d02bba029dc02a4f2ac0c997f647b465e7d409c1927f822"
+  },
+  {
+   "coord": "org.apache.logging.log4j:log4j-core:2.26.1",
+   "sha256": "2ec8c3bf5a6d7c89be8620116a2fc973f7dda1ad0261ad393c4d4726edfd3dcb"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-analysis-common:10.5.2",
+   "sha256": "b1ee60ca6cd5951cc22dee71f8a0434e4f44e61e19495918c8ed7b5992c6cbea"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-backward-codecs:10.5.2",
+   "sha256": "3e5ecd56022c196cc6ab1bd6b99a1d504ce82153c77ecf4b5d01b8bb0b365682"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-core:10.5.2",
+   "sha256": "39210e1024da5c31d1ad7571d622ebb122a8c4e23ff42e9bc380124973d8c635"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-facet:10.5.2",
+   "sha256": "65f440e9e46947a5f63e54655a97829a7be806a90548ad9da89a5206ae00bfac"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-grouping:10.5.2",
+   "sha256": "8d8bda693ea6dd083c73b089f71aa56b7f7ccdf1f34bcd4824d2fe3d251bf35e"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-highlighter:10.5.2",
+   "sha256": "18259f2cd8685bec6c1d20338edbbcfd4bd4900356a81820e31c91dc7defa971"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-join:10.5.2",
+   "sha256": "60a3c4409ba323bab5bbeb6c47f046acf8e36f514aaf9613cdacfd4b938f41b9"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-memory:10.5.2",
+   "sha256": "2203cb5e776c2970e2dea543f81ce18de722e851a8234b7db15efeeb7353e53d"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-misc:10.5.2",
+   "sha256": "bc85110616e58e4c8c68a466699e1bf692fb8f5ebbabb26b2279fed35d533416"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-queries:10.5.2",
+   "sha256": "8dc8c5bd96908df668daa6bf9f88fa4a91e8cd2d897b340f29530184ed7690d7"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-queryparser:10.5.2",
+   "sha256": "ae7d20d735e61c2e0a9bd4b6893eb3d460dea58b0c4b73bafcf136da6f61f3ca"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-sandbox:10.5.2",
+   "sha256": "27c0b5e7f5814b7c12365e9e0e67fa67fcc870c66a22a66085639e13cde07ba1"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-suggest:10.5.2",
+   "sha256": "fc6593dde947a7db413522c86889d0c3aa6ca3d12d73484eeb7cc04b8aa10adf"
+  },
+  {
+   "coord": "org.elasticsearch.plugin:elasticsearch-plugin-analysis-api:9.5.6",
+   "sha256": "116643f6b74ab752cb190b88c38c9d7e9400c8f417beebb98365b7602be6ebc4"
+  },
+  {
+   "coord": "org.elasticsearch.plugin:elasticsearch-plugin-api:9.5.6",
+   "sha256": "d417f28a9e0aab106ae4f6922ac95ea68fe096b5a87275923a76daa33e89023d"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-cli-terminal:9.5.6",
+   "sha256": "689b6feb00cd78e5cf7df03c98abe5e87d0f2af8020fb241c33e8f88ec34f716"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-cli:9.5.6",
+   "sha256": "c34d0232f254fa39111e64cc4a96efe6556243244a7709828d79388860e2d89c"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-core:9.5.6",
+   "sha256": "f8b40f4d218ca9742c6ef11f742e1315aa8a0d7bd569ba817f8132f14ab45eea"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-entitlement:9.5.6",
+   "sha256": "800f68f57db6a218b146c441fb7d1069fae8fdd033f001b176a98c53559cab78"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-exponential-histogram:9.5.6",
+   "sha256": "160657ff5f1f94764623c2428ce999a7f3b82c656545ae62008236dea97142c1"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-foreign-adapter:9.5.6",
+   "sha256": "642f7e20045ba208a8ab557f21dc7cc3bebbfec3ab5687adae1a42a561858e75"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-foreign-library:9.5.6",
+   "sha256": "2f5688488c93a2dd43a9443cf8b9026dee8f2411312ae7f868fc01470d8204db"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-geo:9.5.6",
+   "sha256": "469d89ab54ce173fdc8de11342d5fd324ae2a9382021e436871dda6d5d4cf6f4"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-grok:9.5.6",
+   "sha256": "577c33dbc96e03bb6b63ba011fc94496218d2a35a603f9d6c35487f304fbeec5"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-ip-location-api:9.5.6",
+   "sha256": "1fda7f749f33bd54b7a95be24296f68c7d1b8b45e43708cedb5e95f8dd5ec113"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-logging:9.5.6",
+   "sha256": "fc5c6aa9b6319697f117f20bd59c0549cc318382fa0ac69a770e58b13e048a45"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-lz4:9.5.6",
+   "sha256": "0b72b1b95ab67589443929ab6faad69a84cd5180f4cf8b343ae13e5352d7432e"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-native:9.5.6",
+   "sha256": "05e8b5fb17dae4d2a771051c1baeb80d08ee5aa7975ae01ba55268b604645abf"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-simdvec:9.5.6",
+   "sha256": "6296bcbdab15d03b83cbd74e1d94509728528e0646ca0e81439ac760f1ca30a1"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-tdigest:9.5.6",
+   "sha256": "e8271ffd641716301348571be567a9583e8f2ffe1ac06d8c2fceadc6e8a3d093"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-user-agent-api:9.5.6",
+   "sha256": "4f6b97b1bafbb746dc74d4d1a4d3ce3ac86039204dd4d471018b016cb72b1f2f"
+  },
+  {
+   "coord": "org.elasticsearch:elasticsearch-x-content:9.5.6",
+   "sha256": "f0a7f0a182732e9ee0bb5173cd90ecb054e9772af15645785089c6ab39cf3abd"
+  },
+  {
+   "coord": "org.hdrhistogram:HdrHistogram:2.1.9",
+   "sha256": "95d40913be28dfd439cefea9170c40898ea84f11f25e6ff8de50339b8a7b5e3e"
+  },
+  {
+   "coord": "org.jruby.jcodings:jcodings:1.0.63",
+   "sha256": "ef11e1741a65160c5619cd2c3c79c40ee0affda847062f012616034b9d10e719"
+  },
+  {
+   "coord": "org.jruby.joni:joni:2.2.6",
+   "sha256": "fb33f60ab43e38653317bbf41a1fec89cbee270c48e53b0b56d1165c00de0e07"
+  }
+ ]
+}

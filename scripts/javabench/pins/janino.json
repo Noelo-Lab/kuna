@@ -1,0 +1,30 @@
+{
+ "artifacts": {
+  "org.codehaus.janino:commons-compiler:3.1.12": {
+   "sha256": "17ea25d860225f4b59d0a512b4995f2e4711bdae5e15736cbcd5f6ce4dda8f7c",
+   "url": "https://repo1.maven.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12.jar"
+  },
+  "org.codehaus.janino:commons-compiler:3.1.12:sources": {
+   "sha256": "894638a7d9d056dc07abf1390169fb8f515dbb74fda66447424c4a921d21eb11",
+   "url": "https://repo1.maven.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12-sources.jar"
+  },
+  "org.codehaus.janino:janino:3.1.12": {
+   "sha256": "5699878c31e71c9a94cf472f95a2dad52ca7b0449c099276b8bd7e992a43595b",
+   "url": "https://repo1.maven.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12.jar"
+  },
+  "org.codehaus.janino:janino:3.1.12:sources": {
+   "sha256": "4f4f79b38f4ebe206ba213ce6a1de248ca6fa9b8abfb0fc79de48ac0e714bf6a",
+   "url": "https://repo1.maven.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "org.apache.ant:ant-launcher:1.10.11",
+   "sha256": "dab530df7a980b5ac8fd7e8d208243ae0d3ebd6de09b1aa2ce756360cc2ed256"
+  },
+  {
+   "coord": "org.apache.ant:ant:1.10.11",
+   "sha256": "88c0b89bbbaae01e0d9fcae93be792f5abbe3409106f8eee858fdf365dbc0754"
+  }
+ ]
+}

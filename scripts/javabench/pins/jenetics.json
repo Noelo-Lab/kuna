@@ -1,0 +1,13 @@
+{
+ "artifacts": {
+  "io.jenetics:jenetics:9.1.0": {
+   "sha256": "8373103d9994026616651b74bec7320878e81eec6f25e40fca67322ca10480d1",
+   "url": "https://repo1.maven.org/maven2/io/jenetics/jenetics/9.1.0/jenetics-9.1.0.jar"
+  },
+  "io.jenetics:jenetics:9.1.0:sources": {
+   "sha256": "099eff9f777cb0d3b9fbd5d512b25b630854254eda1bb822ac54b7ad30ad58c8",
+   "url": "https://repo1.maven.org/maven2/io/jenetics/jenetics/9.1.0/jenetics-9.1.0-sources.jar"
+  }
+ },
+ "deps": []
+}

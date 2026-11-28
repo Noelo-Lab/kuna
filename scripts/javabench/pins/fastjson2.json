@@ -1,0 +1,26 @@
+{
+ "artifacts": {
+  "com.alibaba.fastjson2:fastjson2:2.0.66": {
+   "sha256": "2d865acc55cf64c6db551ad6966f00a3029680f78c4db28b21f90da6758af326",
+   "url": "https://repo1.maven.org/maven2/com/alibaba/fastjson2/fastjson2/2.0.66/fastjson2-2.0.66.jar"
+  },
+  "com.alibaba.fastjson2:fastjson2:2.0.66:sources": {
+   "sha256": "3d8232a70f7deae64fdb36bea464eca568f9b30899939867d6dd86a672abd0b8",
+   "url": "https://repo1.maven.org/maven2/com/alibaba/fastjson2/fastjson2/2.0.66/fastjson2-2.0.66-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "org.jetbrains.kotlin:kotlin-reflect:2.1.20",
+   "sha256": "419778f2b7a826bad6ee2ca1e4bdebe639ab306d2904fa3ef2a308ecfaab3811"
+  },
+  {
+   "coord": "org.jetbrains.kotlin:kotlin-stdlib:2.1.20",
+   "sha256": "1bcc74e8ce84e2c25eaafde10f1248349cce3062b6e36978cbeec610db1e930a"
+  },
+  {
+   "coord": "org.jetbrains:annotations:13.0",
+   "sha256": "ace2a10dc8e2d5fd34925ecac03e4988b2c0f851650c94b8cef49ba1bd111478"
+  }
+ ]
+}

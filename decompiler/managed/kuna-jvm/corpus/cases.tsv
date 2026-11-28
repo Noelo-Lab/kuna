@@ -1,0 +1,2170 @@
+# kuna-jvm corpus manifest; format, layout and how to add a case: decompiler/managed/kuna-jvm/corpus/README.md
+kuna-jvm-corpus	1
+set	Default	default
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	force-jsr-inline	1
+opt	verify-pre-post-merges	1
+set	Javadoc	javadoc
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+javadoc	plain
+set	Literals	literals
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	0
+opt	include-runtime	
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	verify-pre-post-merges	1
+set	LVT	lvt
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	decompile-inner	1
+opt	ascii-strings	1
+opt	use-lvt-names	1
+opt	verify-pre-post-merges	1
+set	Markdown Javadoc	markdown-javadoc
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+javadoc	markdown
+set	No LVT	no-lvt
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	decompile-inner	1
+opt	ascii-strings	1
+opt	use-lvt-names	0
+opt	verify-pre-post-merges	1
+set	Renaming	renaming
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	rename-members	1
+opt	verify-pre-post-merges	1
+set	Synthetics Marking	synthetics-marking
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	mark-corresponding-synthetics	1
+opt	verify-pre-post-merges	1
+set	With Idea Not Null	with-idea-not-null
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	force-jsr-inline	1
+set	Plugin Defaults	plugin-defaults
+set	Kotlin Core Default	kotlin-core-default
+opt	kt-enable	0
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+opt	force-jsr-inline	1
+opt	verify-pre-post-merges	1
+set	Kotlin Entire Classpath	kotlin-entire-classpath
+opt	decompile-generics	1
+opt	remove-synthetic	0
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+opt	ignore-invalid-bytecode	1
+opt	verify-anonymous-classes	1
+set	Kuna Fixes	kuna-fixes	kuna-fixes/expected
+opt	decompile-generics	1
+opt	remove-synthetic	1
+opt	remove-bridge	1
+opt	keep-literals	1
+opt	include-runtime	
+case	default/InvalidMethodSignature	Default	classes/custom/InvalidMethodSignature
+kuna	481f6b85016c9c03
+compare	i.java
+case	default/Java14Test	Default	classes/custom/Java14Test
+kuna	768aa6f5d8f4ab84
+case	default/JsHurt	Default	classes/custom/JsHurt
+kuna	7c985ac680db6ad0
+case	default/TestCorruptedSignatures	Default	classes/custom/TestCorruptedSignatures
+kuna	41e838cc2009d539
+compare	Signatures.java
+case	default/TestEclipseSwitchEnum	Default	classes/custom/TestEclipseSwitchEnum
+kuna	e17de5a654a85e2e
+case	default/TestEclipseSwitchString	Default	classes/custom/TestEclipseSwitchString
+kuna	d7e619c5a24858d1
+case	default/TestHotjava	Default	classes/custom/TestHotjava
+kuna	e48daddc8645d65a
+case	default/TestIdeaNotNull	Default	classes/custom/TestIdeaNotNull
+kuna	3e749b4c51b4b14f
+case	default/TestJava1Synchronized	Default	classes/custom/TestJava1Synchronized
+kuna	7c7f4bb0a03d53c7
+case	default/TestJsr	Default	classes/custom/TestJsr
+kuna	af5362731a4ef103
+case	default/TestJsr2	Default	classes/custom/TestJsr2
+kuna	4c3b7bc3cee32d72
+case	default/TestStringConcatJ19	Default	classes/custom/TestStringConcatJ19
+kuna	cce6b57cc493fdbe
+case	default/TestSwitchOnEnumWithoutEnumJ21	Default	classes/custom/TestSwitchOnEnumWithoutEnumJ21
+kuna	3591eeeffc09530f
+case	default/module-info	Default	classes/java9/module-info
+kuna	3dd516a0605ce551
+case	default/pkg/MoreAnnotations	Default	classes/java8/pkg/MoreAnnotations
+kuna	96e3c889f818a775
+case	default/pkg/PermittedSubClassA	Default	classes/java16preview/pkg/PermittedSubClassA	classes/java16preview/pkg/TestSealedClasses
+kuna	5dccb40e72fa2790
+case	default/pkg/PermittedSubClassB	Default	classes/java16preview/pkg/PermittedSubClassB	classes/java16preview/pkg/PermittedSubClassA	classes/java16preview/pkg/TestSealedClasses
+kuna	23e03ca98a360b86
+case	default/pkg/PermittedSubClassC	Default	classes/java16preview/pkg/PermittedSubClassC	classes/java16preview/pkg/TestSealedInterfaces
+kuna	65cdad731cb0e1e6
+case	default/pkg/PermittedSubClassD	Default	classes/java16preview/pkg/PermittedSubClassD	classes/java16preview/pkg/PermittedSubClassC	classes/java16preview/pkg/TestSealedInterfaces
+kuna	2024dd32f6f84cef
+case	default/pkg/PermittedSubClassE	Default	classes/java16preview/pkg/PermittedSubClassE	classes/java16preview/pkg/TestSealedInterfaces
+kuna	c4c4dbfa5b5f0036
+case	default/pkg/PermittedSubInterfaceA	Default	classes/java16preview/pkg/PermittedSubInterfaceA	classes/java16preview/pkg/TestSealedInterfaces
+kuna	fcb6c27a34669da7
+case	default/pkg/PermittedSubInterfaceB	Default	classes/java16preview/pkg/PermittedSubInterfaceB	classes/java16preview/pkg/PermittedSubInterfaceA	classes/java16preview/pkg/TestSealedInterfaces
+kuna	621d0a8a7f337221
+case	default/pkg/TestAbstractMethods	Default	classes/java8/pkg/TestAbstractMethods
+kuna	31ffca1490580afa
+case	default/pkg/TestAccessReplace	Default	classes/java8/pkg/TestAccessReplace
+kuna	d980aed94a548ca9
+case	default/pkg/TestAccidentalSwitchExpression	Default	classes/java16/pkg/TestAccidentalSwitchExpression
+kuna	01fb10c0b55d710c
+case	default/pkg/TestAmbiguousArraylen	Default	classes/java8/pkg/TestAmbiguousArraylen
+kuna	65d9ccb9b35c9c71
+case	default/pkg/TestAmbiguousCall	Default	classes/java8/pkg/TestAmbiguousCall
+kuna	55e8dbad6752d822
+case	default/pkg/TestAnnotationFormatting	Default	classes/java8/pkg/TestAnnotationFormatting
+kuna	021e24a4639add4a
+case	default/pkg/TestAnonymousClassConstructor	Default	classes/java8/pkg/TestAnonymousClassConstructor
+kuna	9483df8294229dc0
+case	default/pkg/TestAnonymousClassJ25	Default	classes/java25/pkg/TestAnonymousClassJ25
+kuna	22959601698c564c
+case	default/pkg/TestAnonymousClassToLambda	Default	classes/java8/pkg/TestAnonymousClassToLambda
+kuna	bc944819eb1bbab5
+case	default/pkg/TestAnonymousObject	Default	classes/java8/pkg/TestAnonymousObject
+kuna	63b7a04a67ed719d
+case	default/pkg/TestAnonymousParamNames	Default	classes/java8/pkg/TestAnonymousParamNames
+kuna	a76bfd0ec3d6f2cc
+case	default/pkg/TestArrayAssign	Default	classes/java8/pkg/TestArrayAssign
+kuna	5aeec8c9ec50f7cb
+case	default/pkg/TestArrayAssign2	Default	classes/java8/pkg/TestArrayAssign2
+kuna	7a36dbc6dfa54562
+case	default/pkg/TestArrayAssignmentEquals	Default	classes/java8/pkg/TestArrayAssignmentEquals
+kuna	d755e5225f099aaa
+case	default/pkg/TestArrayConstructorReference	Default	classes/java8/pkg/TestArrayConstructorReference
+kuna	af4682bea628a4c8
+case	default/pkg/TestArrayCopy	Default	classes/java8/pkg/TestArrayCopy
+kuna	3d0327033a4f9d2f
+case	default/pkg/TestArrayDoWhile	Default	classes/java8/pkg/TestArrayDoWhile
+kuna	9d5516ddec0735ea
+case	default/pkg/TestArrayFieldAccess	Default	classes/java8/pkg/TestArrayFieldAccess
+kuna	013ed6843ee6b9a0
+case	default/pkg/TestArrayFieldAccess1	Default	classes/java8/pkg/TestArrayFieldAccess1
+kuna	1ac489f9ac2cdaab
+case	default/pkg/TestArrayFieldAccess2	Default	classes/java8/pkg/TestArrayFieldAccess2
+kuna	1165643d8b44b99b
+case	default/pkg/TestArrayForeach	Default	classes/java8/pkg/TestArrayForeach
+kuna	5ae41c9fa4abcdf6
+case	default/pkg/TestArrayInitializations	Default	classes/java8/pkg/TestArrayInitializations
+kuna	ee2b151d3749b5bc
+case	default/pkg/TestArrayNewAccess	Default	classes/java8/pkg/TestArrayNewAccess
+kuna	d54805ae79860693
+case	default/pkg/TestArrayNull1	Default	classes/java8nodebug/pkg/TestArrayNull1
+kuna	6c534cb7157e3a02
+case	default/pkg/TestArrayNull2	Default	classes/java8nodebug/pkg/TestArrayNull2
+kuna	72efeb1b33b6fd39
+case	default/pkg/TestArrayNullAccess	Default	classes/java8/pkg/TestArrayNullAccess
+kuna	0fa13027fb4e0741
+case	default/pkg/TestArrayPPMM	Default	classes/java8/pkg/TestArrayPPMM
+kuna	b5fb9901fcdd7b1f
+case	default/pkg/TestArrayPPMM1	Default	classes/java8/pkg/TestArrayPPMM1
+kuna	b11890985cce4af7
+case	default/pkg/TestArrayTernary	Default	classes/java8/pkg/TestArrayTernary
+kuna	a21fc0c82c46c175
+case	default/pkg/TestArrays	Default	classes/java8/pkg/TestArrays
+kuna	4edb8c659cc2189a
+case	default/pkg/TestAssertConst	Default	classes/java8/pkg/TestAssertConst
+kuna	594d932509afbbae
+case	default/pkg/TestAssertInterface1	Default	classes/java25/pkg/TestAssertInterface1
+kuna	4bb7e6c00d7be487
+case	default/pkg/TestAssertInterface2	Default	classes/java25/pkg/TestAssertInterface2
+kuna	ff34fe253c702935
+case	default/pkg/TestAssertInterface3	Default	classes/java25/pkg/TestAssertInterface3
+kuna	f3f9eaa1365eda3c
+case	default/pkg/TestAssertJ16	Default	classes/java16/pkg/TestAssertJ16
+kuna	f53d37d2a4d6b23c
+case	default/pkg/TestAssertMerge	Default	classes/java8/pkg/TestAssertMerge
+kuna	e4a486279008bbce
+case	default/pkg/TestAssertPatternMatching	Default	classes/java25/pkg/TestAssertPatternMatching
+kuna	b1ec1637abd4a5a4
+case	default/pkg/TestAssertSwitchExpression	Default	classes/java16/pkg/TestAssertSwitchExpression
+kuna	1b044c057b744395
+case	default/pkg/TestAsserts	Default	classes/java8/pkg/TestAsserts
+kuna	87124979ecdb436a
+case	default/pkg/TestAssertsEnabled	Default	classes/java25/pkg/TestAssertsEnabled
+kuna	d60bdf762fa1fc1b
+case	default/pkg/TestAssignmentInDoWhile	Default	classes/java8/pkg/TestAssignmentInDoWhile
+kuna	6171f8e54256d4f7
+case	default/pkg/TestAssignmentInLoop	Default	classes/java8/pkg/TestAssignmentInLoop
+kuna	d774b217d8532614
+case	default/pkg/TestAssignmentSwitchExpression1	Default	classes/java16/pkg/TestAssignmentSwitchExpression1
+kuna	a3d2357a6892ae7a
+case	default/pkg/TestAssignmentSwitchExpression2	Default	classes/java16/pkg/TestAssignmentSwitchExpression2
+kuna	092a96af27358c33
+case	default/pkg/TestAssignmentSwitchExpression3	Default	classes/java16/pkg/TestAssignmentSwitchExpression3
+kuna	182b8c3a32d56bf3
+case	default/pkg/TestAssignmentSwitchExpression4	Default	classes/java16/pkg/TestAssignmentSwitchExpression4
+kuna	950e78ca3bf3a7fd
+case	default/pkg/TestAssignmentSwitchExpression5	Default	classes/java16/pkg/TestAssignmentSwitchExpression5
+kuna	0ce76f19671279a3
+case	default/pkg/TestAssignmentSwitchExpression6	Default	classes/java16/pkg/TestAssignmentSwitchExpression6
+kuna	2daaa43f4918acdc
+case	default/pkg/TestAssignmentSwitchExpression7	Default	classes/java16/pkg/TestAssignmentSwitchExpression7
+kuna	bc9428a260cb9154
+case	default/pkg/TestBackwardsExceptionHandler	Default	classes/jasm/pkg/TestBackwardsExceptionHandler
+kuna	0a1993ac23a9c768
+case	default/pkg/TestBinaryOperationWrapping	Default	classes/java8/pkg/TestBinaryOperationWrapping
+kuna	8e37c6232a8c8890
+case	default/pkg/TestBlankLinesSpaces	Default	classes/java8/pkg/TestBlankLinesSpaces
+kuna	876dc1f19d89df66
+case	default/pkg/TestBooleanAssignment	Default	classes/java8/pkg/TestBooleanAssignment
+kuna	cb9e7cf7a86d2d63
+case	default/pkg/TestBooleanExpressions	Default	classes/java8/pkg/TestBooleanExpressions
+kuna	5d5e6402c609f0b9
+case	default/pkg/TestBooleanSwitchExpression1	Default	classes/java16/pkg/TestBooleanSwitchExpression1
+kuna	9bb22a167cfe47df
+case	default/pkg/TestBooleanSwitchExpression2	Default	classes/java16/pkg/TestBooleanSwitchExpression2
+kuna	dbb13eda637f3fd9
+case	default/pkg/TestBooleanSwitchExpression3	Default	classes/java16/pkg/TestBooleanSwitchExpression3
+kuna	eff7f34cdf59e7e2
+case	default/pkg/TestBooleanSwitchExpression4	Default	classes/java16/pkg/TestBooleanSwitchExpression4
+kuna	fbb2097100a5db18
+case	default/pkg/TestBooleanSwitchExpression5	Default	classes/java16/pkg/TestBooleanSwitchExpression5
+kuna	d1e7ac10735cf5b9
+case	default/pkg/TestBoxingSuperclass	Default	classes/java8/pkg/TestBoxingSuperclass
+kuna	2dd552a2620aa4d5
+case	default/pkg/TestCastIntersectionJ21	Default	classes/java21/pkg/TestCastIntersectionJ21
+kuna	e42906fe0c94f38e
+case	default/pkg/TestCastObjectToPrimitive	Default	classes/java8/pkg/TestCastObjectToPrimitive
+kuna	78a56f9145e7749d
+case	default/pkg/TestCastPrimitiveToObject	Default	classes/java8/pkg/TestCastPrimitiveToObject
+kuna	55944567d94c821e
+case	default/pkg/TestCatchClashing	Default	classes/java8/pkg/TestCatchClashing
+kuna	779a97903923cbe1
+case	default/pkg/TestCatchVariable	Default	classes/java8/pkg/TestCatchVariable
+kuna	92b8fe4ecb81c096
+case	default/pkg/TestChainedCFG	Default	classes/java8/pkg/TestChainedCFG
+kuna	a8e71f5a39e9d179
+case	default/pkg/TestClashName	Default	classes/java8/pkg/TestClashName	classes/java8/pkg/SharedName1	classes/java8/pkg/SharedName2	classes/java8/pkg/SharedName3	classes/java8/pkg/SharedName4	classes/java8/pkg/NonSharedName	classes/java8/pkg/TestClashNameParent	classes/java8/ext/TestClashNameParent	classes/java8/pkg/TestClashNameIface	classes/java8/ext/TestClashNameIface
+kuna	7fdc0118e81cb17f
+case	default/pkg/TestClassFields	Default	classes/java8/pkg/TestClassFields
+kuna	dad331731673d929
+case	default/pkg/TestClassLambda	Default	classes/java8/pkg/TestClassLambda
+kuna	b1c65d1fdf0c4d43
+case	default/pkg/TestClassLoop	Default	classes/java8/pkg/TestClassLoop
+kuna	c137ffb473e71132
+case	default/pkg/TestClassNestedInitializer	Default	classes/java8/pkg/TestClassNestedInitializer
+kuna	20f48a1e33d36e43
+case	default/pkg/TestClassSwitch	Default	classes/java8/pkg/TestClassSwitch
+kuna	b95e474682f3353e
+case	default/pkg/TestClassVar	Default	classes/java8/pkg/TestClassVar
+kuna	9adc2b508fe52042
+case	default/pkg/TestCodeConstructs	Default	classes/java8/pkg/TestCodeConstructs
+kuna	1736a497a48c77c3
+case	default/pkg/TestCollectionItr	Default	classes/java8/pkg/TestCollectionItr
+kuna	b6ccb6e5c8abe0ac
+case	default/pkg/TestComplexIfElseChain	Default	classes/java8/pkg/TestComplexIfElseChain
+kuna	8d8fcef33e9ef422
+case	default/pkg/TestCompoundAssignment	Default	classes/java8/pkg/TestCompoundAssignment
+kuna	8ae35fb41b3b5305
+case	default/pkg/TestCompoundAssignmentReplace	Default	classes/java8nodebug/pkg/TestCompoundAssignmentReplace
+kuna	48f6b347f14cbd0d
+case	default/pkg/TestCondy	Default	classes/jasm/pkg/TestCondy
+kuna	7ee5957628f95359
+case	default/pkg/TestConflictingLvtNamer	Default	classes/custom/pkg/TestConflictingLvtNamer
+kuna	85572b41c23734fd
+case	default/pkg/TestConstType	Default	classes/java8/pkg/TestConstType
+kuna	1b09794ac683d27c
+case	default/pkg/TestConstants	Default	classes/java8/pkg/TestConstants
+kuna	e202ae63a224a13e
+case	default/pkg/TestConstructorInvoc	Default	classes/java8/pkg/TestConstructorInvoc
+kuna	417cae2199ba44b0
+case	default/pkg/TestConstructorReference	Default	classes/java8/pkg/TestConstructorReference
+kuna	937ec6289d3e7edf
+case	default/pkg/TestConstructorSwitchExpression1	Default	classes/java16/pkg/TestConstructorSwitchExpression1
+kuna	f5d28b7e42126ddf
+case	default/pkg/TestConstructorSwitchExpression2	Default	classes/java16/pkg/TestConstructorSwitchExpression2
+kuna	bf9cd5930586e2ac
+case	default/pkg/TestConstructorSwitchExpression3	Default	classes/java16/pkg/TestConstructorSwitchExpression3
+kuna	74a69317088b9f97
+case	default/pkg/TestCustomProcessor	Default	classes/java21preview/pkg/TestCustomProcessor
+kuna	39db98e926f0babf
+case	default/pkg/TestDanglingBoxingCall	Default	classes/java8/pkg/TestDanglingBoxingCall
+kuna	502a151bcf5804c7
+case	default/pkg/TestDebugSymbols	Default	classes/java8/pkg/TestDebugSymbols
+kuna	491ff6b2a7047922
+case	default/pkg/TestDefiniteAssignment	Default	classes/java17/pkg/TestDefiniteAssignment
+kuna	fa1ffa50ac896cd3
+case	default/pkg/TestDeprecations	Default	classes/java8/pkg/TestDeprecations
+kuna	cf0998308dc6eacc
+case	default/pkg/TestDoWhileMerge	Default	classes/java8/pkg/TestDoWhileMerge
+kuna	a624ce25a987bea5
+case	default/pkg/TestDoWhileTrue	Default	classes/java8/pkg/TestDoWhileTrue
+kuna	5875557466894aee
+case	default/pkg/TestDoubleAdd	Default	classes/java8/pkg/TestDoubleAdd
+kuna	19fe4e5fcf26555c
+case	default/pkg/TestDoubleBraceInitializers	Default	classes/java8/pkg/TestDoubleBraceInitializers
+kuna	e7a67527626c7bca
+case	default/pkg/TestDoubleBraceInitializersJ17	Default	classes/java17/pkg/TestDoubleBraceInitializersJ17
+kuna	037ad6fa811477b2
+case	default/pkg/TestDoubleCast	Default	classes/jasm/pkg/TestDoubleCast
+kuna	151275ae22f91d0a
+case	default/pkg/TestDoubleForeach	Default	classes/java17/pkg/TestDoubleForeach
+kuna	98e28a880344a62d
+case	default/pkg/TestDoubleNestedClass	Default	classes/java8nodebug/pkg/TestDoubleNestedClass
+kuna	5c5e2d0b94889d64
+case	default/pkg/TestDoublePopAfterJump	Default	classes/jasm/pkg/TestDoublePopAfterJump
+kuna	e434ec54de2ac74c
+case	default/pkg/TestDuplicateAssignmentInSwitchExpr	Default	classes/java17/pkg/TestDuplicateAssignmentInSwitchExpr
+kuna	ea2a69c183f50799
+case	default/pkg/TestDuplicateLocals	Default	classes/java8nodebug/pkg/TestDuplicateLocals
+kuna	914e54f11ae3a6ec
+case	default/pkg/TestDuplicateSwitchLocals	Default	classes/java8/pkg/TestDuplicateSwitchLocals
+kuna	a007017846de4741
+case	default/pkg/TestEmptyBlocks	Default	classes/java8/pkg/TestEmptyBlocks
+kuna	6c1f4a5b3d4fc1a2
+case	default/pkg/TestEnhancedForLoops	Default	classes/java8/pkg/TestEnhancedForLoops
+kuna	38a2f6a9a2fa0fe1
+case	default/pkg/TestEnum	Default	classes/java8/pkg/TestEnum
+kuna	94cc4aa5992737d8
+case	default/pkg/TestEnumArrayStaticInit	Default	classes/java8/pkg/TestEnumArrayStaticInit
+kuna	65e900f14511f2e0
+case	default/pkg/TestEnumStaticField	Default	classes/jasm/pkg/TestEnumStaticField
+kuna	30edca3a144f43e9
+case	default/pkg/TestEnumStaticField2	Default	classes/jasm/pkg/TestEnumStaticField2
+kuna	d24cf424007e0535
+case	default/pkg/TestEnumSwitchEmpty	Default	classes/java8/pkg/TestEnumSwitchEmpty
+kuna	f727efc46aad8917
+case	default/pkg/TestExceptionElse	Default	classes/java8/pkg/TestExceptionElse
+kuna	f8472b8b72c062aa
+case	default/pkg/TestExtendingSubclass	Default	classes/java8/pkg/TestExtendingSubclass
+kuna	5687f4cd0cf2247c
+case	default/pkg/TestExtendsList	Default	classes/java8/pkg/TestExtendsList
+kuna	f217ede591d98394
+case	default/pkg/TestExtraClass	Default	classes/java8/pkg/TestExtraClass
+kuna	db7da1d84bc61ea2
+case	default/pkg/TestExtraneousImports	Default	classes/java8/pkg/TestExtraneousImports
+kuna	1c4d2865d830fa56
+case	default/pkg/TestFieldSingleAccess	Default	classes/jasm/pkg/TestFieldSingleAccess
+kuna	359273394b98d7c6
+case	default/pkg/TestFinallyBlockVariableUse	Default	classes/java8/pkg/TestFinallyBlockVariableUse
+kuna	300e30abd470e42f
+case	default/pkg/TestFinallyThrow	Default	classes/java8/pkg/TestFinallyThrow
+kuna	81a11acac30f60a3
+case	default/pkg/TestFinallyVarDef	Default	classes/java8/pkg/TestFinallyVarDef
+kuna	59757f54709ae8bf
+case	default/pkg/TestFloatInvertedIfConditionEarlyExit	Default	classes/java8/pkg/TestFloatInvertedIfConditionEarlyExit
+kuna	71f6bf269ca0fdaf
+case	default/pkg/TestFloatOrderOfOperations	Default	classes/java8/pkg/TestFloatOrderOfOperations
+kuna	8a26320b672b1f06
+case	default/pkg/TestFloatPiAdd	Default	classes/java8/pkg/TestFloatPiAdd
+kuna	dfcab216c4132f68
+case	default/pkg/TestFmtProcessor	Default	classes/java21preview/pkg/TestFmtProcessor
+kuna	ca10f092118991a0
+case	default/pkg/TestForContinue	Default	classes/java8/pkg/TestForContinue
+kuna	6580480f55206bbc
+case	default/pkg/TestForCyclicVarDef	Default	classes/java8/pkg/TestForCyclicVarDef
+kuna	292c860d76142311
+case	default/pkg/TestForeachMultiDimensionalArray	Default	classes/java8/pkg/TestForeachMultiDimensionalArray
+kuna	77402596d2fd0eae
+case	default/pkg/TestForeachMultipleLoops	Default	classes/java8/pkg/TestForeachMultipleLoops
+kuna	490fbee7dbc03562
+case	default/pkg/TestForeachVardef	Default	classes/java8/pkg/TestForeachVardef
+kuna	ed9b2767146062f1
+case	default/pkg/TestGenericArgs	Default	classes/java8/pkg/TestGenericArgs
+kuna	d8f0c018b915fb43
+case	default/pkg/TestGenericCasts	Default	classes/java8/pkg/TestGenericCasts
+kuna	afc57d3240c5cf0e
+case	default/pkg/TestGenericComparison	Default	classes/java8/pkg/TestGenericComparison
+kuna	54faacab550b7356
+case	default/pkg/TestGenericMap	Default	classes/java8/pkg/TestGenericMap
+kuna	3e7871e6e716a24b
+case	default/pkg/TestGenericMapInput	Default	classes/java8/pkg/TestGenericMapInput
+kuna	8b6f2ec66b3c0630
+case	default/pkg/TestGenericMapping	Default	classes/java8/pkg/TestGenericMapping
+kuna	cb82a47db93e97cb
+case	default/pkg/TestGenericStatic	Default	classes/java8/pkg/TestGenericStatic
+kuna	6e01d5c2587f6eea
+case	default/pkg/TestGenericStaticCall	Default	classes/java8/pkg/TestGenericStaticCall
+kuna	0374b69565567e89
+case	default/pkg/TestGenericSuperCast	Default	classes/java8/pkg/TestGenericSuperCast
+kuna	0ab0745d094337b9
+case	default/pkg/TestGenericsInvocUnchecked	Default	classes/java8/pkg/TestGenericsInvocUnchecked
+kuna	e315dcfc4b70f211
+case	default/pkg/TestGoto	Default	classes/jasm/pkg/TestGoto
+kuna	5ef46416cc9de728
+case	default/pkg/TestIfElseSwitch	Default	classes/java8/pkg/TestIfElseSwitch
+kuna	dd5ee073529ac52c
+case	default/pkg/TestIfElseTernary1	Default	classes/java8/pkg/TestIfElseTernary1
+kuna	1a807c001403ed22
+case	default/pkg/TestIfElseTernary1J17	Default	classes/java17/pkg/TestIfElseTernary1J17
+kuna	3e553906c07a8316
+case	default/pkg/TestIfLoop	Default	classes/java8/pkg/TestIfLoop
+kuna	e9268f2d1316f986
+case	default/pkg/TestIfPatternMatchMethod	Default	classes/java16/pkg/TestIfPatternMatchMethod
+kuna	e15b41774d94360c
+case	default/pkg/TestIfTernary1	Default	classes/java8/pkg/TestIfTernary1
+kuna	42f55374c7896472
+case	default/pkg/TestIfTernary1J17	Default	classes/java17/pkg/TestIfTernary1J17
+kuna	c83dba25cf7871e3
+case	default/pkg/TestIfTernary2	Default	classes/java8/pkg/TestIfTernary2
+kuna	fa76aa3b264b1d23
+case	default/pkg/TestIfTernary3	Default	classes/java8/pkg/TestIfTernary3
+kuna	293883f7e3be00bc
+case	default/pkg/TestIfTernaryReturn	Default	classes/java8/pkg/TestIfTernaryReturn
+kuna	94c19b9860264fc6
+case	default/pkg/TestIffSimplification	Default	classes/java8/pkg/TestIffSimplification
+kuna	73f77a25724a79d8
+case	default/pkg/TestIllegalMethodNames	Default	classes/jasm/pkg/TestIllegalMethodNames
+kuna	a1a21a2519581d10
+case	default/pkg/TestImplicitlySealedEnum	Default	classes/java17/pkg/TestImplicitlySealedEnum
+kuna	87b2fecb22a5a872
+case	default/pkg/TestInUse	Default	classes/java8/pkg/TestInUse
+kuna	7317baaaeaf2ef5f
+case	default/pkg/TestInfiniteLoop	Default	classes/java8/pkg/TestInfiniteLoop
+kuna	75310f36912454b4
+case	default/pkg/TestInheritanceChainCycle	Default	classes/jasm/pkg/TestInheritanceChainCycle
+kuna	c5cc568080482f6f
+case	default/pkg/TestInlineAssignments	Default	classes/java8/pkg/TestInlineAssignments
+kuna	a769e5599817b21e
+case	default/pkg/TestInlineNoSuccessor	Default	classes/java8/pkg/TestInlineNoSuccessor
+kuna	c2b6e7d542d05240
+case	default/pkg/TestInlineSwitchExpression1	Default	classes/java16/pkg/TestInlineSwitchExpression1	classes/java16/ext/Direction
+kuna	a6a98332289e92ea
+case	default/pkg/TestInlineSwitchExpression2	Default	classes/java16/pkg/TestInlineSwitchExpression2
+kuna	bd304902c300510b
+case	default/pkg/TestInlineSwitchExpression3	Default	classes/java16/pkg/TestInlineSwitchExpression3	classes/java16/ext/Direction
+kuna	d77a9608534bcf94
+case	default/pkg/TestInlineSwitchExpression4	Default	classes/java16/pkg/TestInlineSwitchExpression4
+kuna	7db15affcd15cda7
+case	default/pkg/TestInlineSwitchExpression5	Default	classes/java16/pkg/TestInlineSwitchExpression5
+kuna	918272bde9846b6e
+case	default/pkg/TestInlineSwitchExpression6	Default	classes/java16/pkg/TestInlineSwitchExpression6
+kuna	940446d9dd834f6a
+case	default/pkg/TestInlineSwitchExpression7	Default	classes/java16/pkg/TestInlineSwitchExpression7
+kuna	815f31e9aa0751ce
+case	default/pkg/TestInner2	Default	classes/java8/pkg/TestInner2
+kuna	e5112027a4aaadec
+case	default/pkg/TestInnerClassConstructor	Default	classes/java8/pkg/TestInnerClassConstructor
+kuna	45fa767d657ea1a2
+case	default/pkg/TestInnerClassExtend	Default	classes/java8/pkg/TestInnerClassExtend
+kuna	2049eec92490f954
+case	default/pkg/TestInnerClassExtendJ17	Default	classes/java17/pkg/TestInnerClassExtendJ17
+kuna	04821ab195593915
+case	default/pkg/TestInnerClassGeneric	Default	classes/java8/pkg/TestInnerClassGeneric
+kuna	553e24c441271fb4
+case	default/pkg/TestInnerClassReference	Default	classes/java8/pkg/TestInnerClassReference	classes/java8/ext/SomeOuterClass	classes/java8/ext/SomeOuterClass$SomeInner
+kuna	ea9935fc9c6ecebe
+case	default/pkg/TestInnerClasses2J21	Default	classes/java21/pkg/TestInnerClasses2J21
+kuna	dc1685ddeb2d88b1
+case	default/pkg/TestInnerClasses3J21	Default	classes/java21/pkg/TestInnerClasses3J21
+kuna	118605916e378165
+case	default/pkg/TestInnerClasses4J21	Default	classes/java21/pkg/TestInnerClasses4J21
+kuna	cb3bbd90a423b8c0
+case	default/pkg/TestInnerClassesJ21	Default	classes/java21/pkg/TestInnerClassesJ21
+kuna	f89ff50409c08b00
+case	default/pkg/TestInnerClassesJ8	Default	classes/java8/pkg/TestInnerClassesJ8
+kuna	337bd2c18e99edf9
+case	default/pkg/TestInnerLocal	Default	classes/java8/pkg/TestInnerLocal
+kuna	030796e65ee41c59
+case	default/pkg/TestInnerSignature	Default	classes/java8/pkg/TestInnerSignature
+kuna	85860f4e9d221a88
+case	default/pkg/TestInstanceStaticInvoke	Default	classes/java8/pkg/TestInstanceStaticInvoke
+kuna	f4bd8eabb52a8faa
+case	default/pkg/TestIntBoolMerge	Default	classes/java8/pkg/TestIntBoolMerge
+kuna	2ce359b25cf711e0
+case	default/pkg/TestIntBoolMergeNoDebug	Default	classes/java8nodebug/pkg/TestIntBoolMergeNoDebug
+kuna	9cd2596cb0abee2b
+case	default/pkg/TestInterfaceFields	Default	classes/java8/pkg/TestInterfaceFields
+kuna	e70b6688930f6d41
+case	default/pkg/TestInterfaceLambdaCast	Default	classes/java8/pkg/TestInterfaceLambdaCast
+kuna	45105283c0651f72
+case	default/pkg/TestInterfaceMethods	Default	classes/java8/pkg/TestInterfaceMethods
+kuna	8ef89f752d6ba060
+case	default/pkg/TestInterfaceNullInvoc	Default	classes/java8/pkg/TestInterfaceNullInvoc
+kuna	8091a2f137b078b2
+case	default/pkg/TestInterfaceSubclass	Default	classes/java8/pkg/TestInterfaceSubclass
+kuna	bd4980aba3c8a82a
+case	default/pkg/TestInterfaceSuper	Default	classes/java8/pkg/TestInterfaceSuper
+kuna	b41e326f01d8e07f
+case	default/pkg/TestInvertedFloatComparison	Default	classes/java8/pkg/TestInvertedFloatComparison
+kuna	600e077e4a86cc6a
+case	default/pkg/TestIrreducible	Default	classes/jasm/pkg/TestIrreducible
+kuna	5e6e0e96805c212a
+case	default/pkg/TestIterationOverGenericsWithoutLvt	Default	classes/java8nodebug/pkg/TestIterationOverGenericsWithoutLvt
+kuna	3211e3833cc10346
+case	default/pkg/TestIterationOverGenericsWithoutLvt1	Default	classes/java8nodebug/pkg/TestIterationOverGenericsWithoutLvt1
+kuna	3b5d4adf8db8413f
+case	default/pkg/TestJava11StringConcat	Default	classes/java11/pkg/TestJava11StringConcat
+kuna	64845cd4bca32225
+case	default/pkg/TestJava9StringConcat	Default	classes/java9/pkg/TestJava9StringConcat
+kuna	034ed60c46f424c1
+case	default/pkg/TestLVTReassignment	Default	classes/java8/pkg/TestLVTReassignment
+kuna	747f0c23e6dd5890
+case	default/pkg/TestLVTReassignmentNoDebug	Default	classes/java8nodebug/pkg/TestLVTReassignmentNoDebug
+kuna	db796c81c1bf73b9
+case	default/pkg/TestLabeledBlockInConstructor	Default	classes/java8/pkg/TestLabeledBlockInConstructor
+kuna	96216881c4c52e02
+case	default/pkg/TestLabeledBreaks	Default	classes/java8/pkg/TestLabeledBreaks
+kuna	f0eaf0a43ff015f3
+case	default/pkg/TestLambdaLocalCapture	Default	classes/java8/pkg/TestLambdaLocalCapture
+kuna	7562b4c45853e7f8
+case	default/pkg/TestLambdaParamTypes	Default	classes/java8/pkg/TestLambdaParamTypes
+kuna	450d8fa1a8b8e078
+case	default/pkg/TestLambdaParams	Default	classes/java8/pkg/TestLambdaParams
+kuna	98a5e736c3fc090e
+case	default/pkg/TestLambdaQualified	Default	classes/java8/pkg/TestLambdaQualified
+kuna	14093b825a236ff4
+case	default/pkg/TestLeakyMethod	Default	classes/jasm/pkg/TestLeakyMethod
+kuna	31be0355fc6be8c6
+case	default/pkg/TestListEquals	Default	classes/java8/pkg/TestListEquals
+kuna	a9f264e5672d0e48
+case	default/pkg/TestLocalClass	Default	classes/java8/pkg/TestLocalClass
+kuna	de25aa1a84741df2
+case	default/pkg/TestLocalClassesSwitch	Default	classes/java8/pkg/TestLocalClassesSwitch
+kuna	90ee08b6e938b439
+case	default/pkg/TestLocalEnum	Default	classes/java16/pkg/TestLocalEnum
+kuna	57f472117658ffa4
+case	default/pkg/TestLocalInterface	Default	classes/java16/pkg/TestLocalInterface
+kuna	b0e681a1718ba08b
+case	default/pkg/TestLocalRecord	Default	classes/java16/pkg/TestLocalRecord
+kuna	5e8f6f3f743df611
+case	default/pkg/TestLocalScopeClash	Default	classes/java8/pkg/TestLocalScopeClash
+kuna	2b33b1d37625954e
+case	default/pkg/TestLocalScopes	Default	classes/java8/pkg/TestLocalScopes
+kuna	2a28d3834a95cca4
+case	default/pkg/TestLocalVariableMerge	Default	classes/java8/pkg/TestLocalVariableMerge
+kuna	432a9bb13f083148
+case	default/pkg/TestLocalVariableMergeSwitch	Default	classes/java8/pkg/TestLocalVariableMergeSwitch
+kuna	776b8ab20a672e81
+case	default/pkg/TestLocalsNames	Default	classes/java8/pkg/TestLocalsNames
+kuna	05e06db2d7042998
+case	default/pkg/TestLongMethodDeclaration	Default	classes/java8/pkg/TestLongMethodDeclaration
+kuna	e8370eeb6ba9718f
+case	default/pkg/TestLongMethodInvocation	Default	classes/java8/pkg/TestLongMethodInvocation
+kuna	afaaa033324dde12
+case	default/pkg/TestLoopBreak	Default	classes/java8/pkg/TestLoopBreak
+kuna	54a044e0741447f9
+case	default/pkg/TestLoopBreak2	Default	classes/java8/pkg/TestLoopBreak2
+kuna	ef6b42a2ead503e7
+case	default/pkg/TestLoopBreak3	Default	classes/java8/pkg/TestLoopBreak3
+kuna	6e988a8810a01d2a
+case	default/pkg/TestLoopBreak4	Default	classes/java8/pkg/TestLoopBreak4
+kuna	dc0201b9af22b746
+case	default/pkg/TestLoopBreakException	Default	classes/java8/pkg/TestLoopBreakException
+kuna	e9b87c7479d5af5a
+case	default/pkg/TestLoopFinally	Default	classes/java8/pkg/TestLoopFinally
+kuna	56f9b55e4b190370
+case	default/pkg/TestLoopMerging2	Default	classes/java8/pkg/TestLoopMerging2
+kuna	afba6960c702a585
+case	default/pkg/TestLoopReturn	Default	classes/java8/pkg/TestLoopReturn
+kuna	4a3ef048a75c97b4
+case	default/pkg/TestMemberAnnotations	Default	classes/java8/pkg/TestMemberAnnotations
+kuna	e8c75da7e489b342
+case	default/pkg/TestMethodHandles	Default	classes/java8/pkg/TestMethodHandles
+kuna	430a33b9083e9d7d
+case	default/pkg/TestMethodParameters	Default	classes/java8/pkg/TestMethodParameters
+kuna	195c6ea0138efbd7
+case	default/pkg/TestMethodParametersAttr	Default	classes/java8/pkg/TestMethodParametersAttr
+kuna	300c18bdf8f8d3f2
+case	default/pkg/TestMethodParamsNoLvt	Default	classes/jasm/pkg/TestMethodParamsNoLvt
+kuna	6a1df5749392c8b7
+case	default/pkg/TestMethodReferenceJ21	Default	classes/java21/pkg/TestMethodReferenceJ21	classes/java21/ext/RefsExt
+kuna	49352144169a2112
+case	default/pkg/TestMethodReferenceJ25	Default	classes/java25/pkg/TestMethodReferenceJ25	classes/java25/ext/RefsExt
+kuna	34505b448b4a879d
+case	default/pkg/TestMethodReferenceLetterClass	Default	classes/java8/pkg/TestMethodReferenceLetterClass
+kuna	229aa73c2ea47cb2
+case	default/pkg/TestMethodReferenceSameName	Default	classes/java8/pkg/TestMethodReferenceSameName
+kuna	62b81cbaa6ab042a
+case	default/pkg/TestMissingConstructorCallBad	Default	classes/jasm/pkg/TestMissingConstructorCallBad
+kuna	4597c1c5e776c676
+case	default/pkg/TestMissingConstructorCallGood	Default	classes/jasm/pkg/TestMissingConstructorCallGood
+kuna	af1c3aff51a34ccf
+case	default/pkg/TestMissingLambdaBody	Default	classes/java16/pkg/TestMissingLambdaBody
+kuna	1065e91215ae2efd
+case	default/pkg/TestMixedCompoundAssignment	Default	classes/java8/pkg/TestMixedCompoundAssignment
+kuna	97c6df0fb162b97a
+case	default/pkg/TestMultiAssignmentInDynamicBlock	Default	classes/java8/pkg/TestMultiAssignmentInDynamicBlock
+kuna	3444a861884e974d
+case	default/pkg/TestMultiAssignmentInStaticBlock	Default	classes/java8/pkg/TestMultiAssignmentInStaticBlock
+kuna	2eadfbe945d140ad
+case	default/pkg/TestMultiBoolean	Default	classes/java8/pkg/TestMultiBoolean
+kuna	56351a9f0e26608d
+case	default/pkg/TestMultiCast	Default	classes/java8/pkg/TestMultiCast
+kuna	a03f4971d0c4a249
+case	default/pkg/TestMultiException	Default	classes/java8/pkg/TestMultiException
+kuna	273ced9654e2def3
+case	default/pkg/TestMultipleStaticBlocks	Default	classes/java8/pkg/TestMultipleStaticBlocks
+kuna	99bfe523fe74bedd
+case	default/pkg/TestNativeMethods	Default	classes/java8/pkg/TestNativeMethods
+kuna	e2b6a7fe4095ae27
+case	default/pkg/TestNestedAnonymousClass	Default	classes/java8/pkg/TestNestedAnonymousClass
+kuna	6202f91c56b11dff
+case	default/pkg/TestNestedArrayPP	Default	classes/java8/pkg/TestNestedArrayPP
+kuna	bc1313945c385eb7
+case	default/pkg/TestNestedFor	Default	classes/java8/pkg/TestNestedFor
+kuna	35ffec8ed37d9774
+case	default/pkg/TestNestedGenerics1	Default	classes/java8/pkg/TestNestedGenerics1
+kuna	3654c58413f1d76d
+case	default/pkg/TestNestedGenerics2	Default	classes/java11/pkg/TestNestedGenerics2
+kuna	27e4193abe66c86f
+case	default/pkg/TestNestedLambdas	Default	classes/java8/pkg/TestNestedLambdas
+kuna	6fb04665f00fd4c8
+case	default/pkg/TestNestedLoops2	Default	classes/java8/pkg/TestNestedLoops2
+kuna	95fcedd1b339c0fc
+case	default/pkg/TestNestedTernaryAssign	Default	classes/java8/pkg/TestNestedTernaryAssign
+kuna	4fab7db12c9c2d98
+case	default/pkg/TestNestedTernaryCondition	Default	classes/java8/pkg/TestNestedTernaryCondition
+kuna	d073e76d9afb542e
+case	default/pkg/TestNextGaussian	Default	classes/java8/pkg/TestNextGaussian
+kuna	e2fb022eb5bd03fc
+case	default/pkg/TestNoUse	Default	classes/java8nodebug/pkg/TestNoUse
+kuna	30b3a6aea1a8a2af
+case	default/pkg/TestNumberCasts	Default	classes/java8/pkg/TestNumberCasts
+kuna	e213b1ef266ec684
+case	default/pkg/TestNumberCompareToBoolean	Default	classes/jasm/pkg/TestNumberCompareToBoolean
+kuna	b20a77450b446b6d
+case	default/pkg/TestNumberDisambiguation	Default	classes/java8/pkg/TestNumberDisambiguation
+kuna	b68784e9ccf5df86
+case	default/pkg/TestObjectBitwise	Default	classes/java8/pkg/TestObjectBitwise
+kuna	ee101d92ea6c8f57
+case	default/pkg/TestObjectLambda	Default	classes/java16nodebug/pkg/TestObjectLambda
+kuna	e4ba61818a5cdec9
+case	default/pkg/TestObjectPhi	Default	classes/java8/pkg/TestObjectPhi
+kuna	c5fa9e1738cc4db6
+case	default/pkg/TestOldECJInner	Default	classes/jasm/pkg/TestOldECJInner
+kuna	7e4779737eb93a33
+case	default/pkg/TestOperatorPrecedence	Default	classes/java8/pkg/TestOperatorPrecedence
+kuna	d28054e8e1a5afdd
+case	default/pkg/TestOverloadedNull	Default	classes/java8/pkg/TestOverloadedNull
+kuna	4f632a5878762411
+case	default/pkg/TestOverrideIndirect	Default	classes/java8/pkg/TestOverrideIndirect
+kuna	6688c54aa8ed3b13
+case	default/pkg/TestPPMM	Default	classes/java8/pkg/TestPPMM
+kuna	fee0374398bcea8f
+case	default/pkg/TestPPMMBoxed	Default	classes/java8/pkg/TestPPMMBoxed
+kuna	681c85fe7086ace3
+case	default/pkg/TestPPMMByte	Default	classes/java8/pkg/TestPPMMByte
+kuna	8934e933fadd592e
+case	default/pkg/TestPPMMIf	Default	classes/java8/pkg/TestPPMMIf
+kuna	7da1761af133fad1
+case	default/pkg/TestPPMMLong	Default	classes/java8/pkg/TestPPMMLong
+kuna	1d83ac0dab4085f3
+case	default/pkg/TestPPMMLoop	Default	classes/java8/pkg/TestPPMMLoop
+kuna	d959248518047f70
+case	default/pkg/TestPPMMMath	Default	classes/java8/pkg/TestPPMMMath
+kuna	03b5842b59f9b814
+case	default/pkg/TestPPMMOnObjectField	Default	classes/java8/pkg/TestPPMMOnObjectField
+kuna	ac1716e4732394c5
+case	default/pkg/TestPPMMOnStaticField	Default	classes/java8/pkg/TestPPMMOnStaticField
+kuna	60a78bb4e47902dc
+case	default/pkg/TestPPMMPhi	Default	classes/java8/pkg/TestPPMMPhi
+kuna	643bea3d9b3d091d
+case	default/pkg/TestParameterizedTypes	Default	classes/java8/pkg/TestParameterizedTypes
+kuna	a42de78e1ad48b1d
+case	default/pkg/TestPatternMatchSwitchString	Default	classes/java25/pkg/TestPatternMatchSwitchString
+kuna	a4f494ded5e94902
+case	default/pkg/TestPatternMatching	Default	classes/java16/pkg/TestPatternMatching
+kuna	a22d017da99795c1
+case	default/pkg/TestPatternMatching17	Default	classes/java17/pkg/TestPatternMatching17
+kuna	863648291d5c4d57
+case	default/pkg/TestPatternMatching17AlreadyUsed	Default	classes/java17/pkg/TestPatternMatching17AlreadyUsed
+kuna	d909a417f5a39383
+case	default/pkg/TestPatternMatching17Fake	Default	classes/java17/pkg/TestPatternMatching17Fake
+kuna	5c3be00d675f6620
+case	default/pkg/TestPatternMatching17FakeLoops	Default	classes/java17/pkg/TestPatternMatching17FakeLoops
+kuna	3c126362298bebcf
+case	default/pkg/TestPatternMatching17FakeLoopsInverted	Default	classes/java17/pkg/TestPatternMatching17FakeLoopsInverted
+kuna	7828cc5b461fc127
+case	default/pkg/TestPatternMatching17FakeNew	Default	classes/java17/pkg/TestPatternMatching17FakeNew
+kuna	41b7cece839a9be1
+case	default/pkg/TestPatternMatchingAssign	Default	classes/java16nodebug/pkg/TestPatternMatchingAssign
+kuna	37a41afecfc73eea
+case	default/pkg/TestPatternMatchingCompoundBool	Default	classes/java16/pkg/TestPatternMatchingCompoundBool
+kuna	0779598050b1a4a7
+case	default/pkg/TestPatternMatchingFake	Default	classes/java16/pkg/TestPatternMatchingFake
+kuna	f165823509bde1a9
+case	default/pkg/TestPatternMatchingFakeLoops	Default	classes/java16/pkg/TestPatternMatchingFakeLoops
+kuna	82a4138e4e60ab74
+case	default/pkg/TestPatternMatchingFakeLoopsInverted	Default	classes/java16/pkg/TestPatternMatchingFakeLoopsInverted
+kuna	df20ea129e51bca2
+case	default/pkg/TestPatternMatchingFakeNew	Default	classes/java16/pkg/TestPatternMatchingFakeNew
+kuna	6e1666eedc00ffbe
+case	default/pkg/TestPatternMatchingInline	Default	classes/java16/pkg/TestPatternMatchingInline
+kuna	29327bb18e7abf21
+case	default/pkg/TestPatternMatchingInteger	Default	classes/java17/pkg/TestPatternMatchingInteger
+kuna	a116699068813576
+case	default/pkg/TestPatternMatchingInvoke	Default	classes/java16/pkg/TestPatternMatchingInvoke
+kuna	05f15ba264556f23
+case	default/pkg/TestPatternMatchingLocalCapture	Default	classes/java16/pkg/TestPatternMatchingLocalCapture
+kuna	0441023a9ce33a2d
+case	default/pkg/TestPatternMatchingLoops	Default	classes/java17/pkg/TestPatternMatchingLoops
+kuna	672eef9cbe0b7c1d
+case	default/pkg/TestPatternMatchingMerge	Default	classes/java16/pkg/TestPatternMatchingMerge
+kuna	ec9553251f1f9210
+case	default/pkg/TestPatternMatchingReturn	Default	classes/java16/pkg/TestPatternMatchingReturn
+kuna	e2a110504d6bf57a
+case	default/pkg/TestPatternMatchingStatic	Default	classes/java16/pkg/TestPatternMatchingStatic
+kuna	0157e8b0b98da71e
+case	default/pkg/TestPatternMatchingVariableScope	Default	classes/java16/pkg/TestPatternMatchingVariableScope
+kuna	f03faaaa5405f185
+case	default/pkg/TestPop2OneDoublePop2	Default	classes/jasm/pkg/TestPop2OneDoublePop2
+kuna	4ad271f8214a288a
+case	default/pkg/TestPop2OneLongPop2	Default	classes/jasm/pkg/TestPop2OneLongPop2
+kuna	ed61ad422a8fd7a7
+case	default/pkg/TestPop2TwoIntPop2	Default	classes/jasm/pkg/TestPop2TwoIntPop2
+kuna	fc9fae31c38b564b
+case	default/pkg/TestPop2TwoIntTwoPop	Default	classes/jasm/pkg/TestPop2TwoIntTwoPop
+kuna	e1933deb37c8f3c1
+case	default/pkg/TestPrimitiveNarrowing	Default	classes/java8/pkg/TestPrimitiveNarrowing
+kuna	740edc0624517c72
+case	default/pkg/TestPrimitiveTypeClasses	Default	classes/java8/pkg/TestPrimitiveTypeClasses
+kuna	a080da6ea3d08411
+case	default/pkg/TestPrivateClasses	Default	classes/java8/pkg/TestPrivateClasses
+kuna	1ec8da3309ed1fbc
+case	default/pkg/TestPrivateEmptyConstructor	Default	classes/java8/pkg/TestPrivateEmptyConstructor
+kuna	dd08445eb8ad7335
+case	default/pkg/TestPrivateInterfaceMethod	Default	classes/java9/pkg/TestPrivateInterfaceMethod
+kuna	d5108b28958ea32e
+case	default/pkg/TestQualifiedNew	Default	classes/java8/pkg/TestQualifiedNew
+kuna	f7d092ec1894c896
+case	default/pkg/TestRawProcessor	Default	classes/java21preview/pkg/TestRawProcessor
+kuna	b91bfd33154c6b97
+case	default/pkg/TestRecordAnno	Default	classes/java16/pkg/TestRecordAnno
+kuna	d87af3cafce3d9b0
+case	default/pkg/TestRecordBig	Default	classes/java16/pkg/TestRecordBig
+kuna	3706d0474b1c90f9
+case	default/pkg/TestRecordEmpty	Default	classes/java16/pkg/TestRecordEmpty
+kuna	e4d1b36e6bc3d41f
+case	default/pkg/TestRecordEmptyConstructor	Default	classes/java16/pkg/TestRecordEmptyConstructor
+kuna	b9c0ce2f9f9a042f
+case	default/pkg/TestRecordGenericSuperclass	Default	classes/java16/pkg/TestRecordGenericSuperclass
+kuna	fe66340cef1d3752
+case	default/pkg/TestRecordGenericVararg	Default	classes/java16/pkg/TestRecordGenericVararg
+kuna	4dba9ad06d870eb8
+case	default/pkg/TestRecordInner	Default	classes/java16/pkg/TestRecordInner
+kuna	2b9df18fa87e5b1b
+case	default/pkg/TestRecordLocal	Default	classes/java16/pkg/TestRecordLocal
+kuna	3ae0695fdf9d97eb
+case	default/pkg/TestRecordMixup	Default	classes/java16/pkg/TestRecordMixup
+kuna	013ef68468e698a2
+case	default/pkg/TestRecordPatterns1	Default	classes/java21/pkg/TestRecordPatterns1
+kuna	43d4a183f04b782a
+case	default/pkg/TestRecordPatterns1J25	Default	classes/java25/pkg/TestRecordPatterns1J25
+kuna	6540743633f9fe3b
+case	default/pkg/TestRecordPatterns2	Default	classes/java21/pkg/TestRecordPatterns2
+kuna	59b9cb4f52d9bac1
+case	default/pkg/TestRecordPatterns3	Default	classes/java21/pkg/TestRecordPatterns3
+kuna	8ee73fb6b8aacbc5
+case	default/pkg/TestRecordPatterns4	Default	classes/java21/pkg/TestRecordPatterns4
+kuna	b08d85166d477120
+case	default/pkg/TestRecordPatterns5	Default	classes/java21/pkg/TestRecordPatterns5
+kuna	3141226b5166a334
+case	default/pkg/TestRecordPatterns6	Default	classes/java21/pkg/TestRecordPatterns6
+kuna	a9c8936f5a256121
+case	default/pkg/TestRecordPatterns7	Default	classes/java21/pkg/TestRecordPatterns7
+kuna	ceafb9a7e35d64b5
+case	default/pkg/TestRecordPatterns8	Default	classes/java21/pkg/TestRecordPatterns8
+kuna	22dbb123e1f1ab37
+case	default/pkg/TestRecordPatterns9	Default	classes/java21/pkg/TestRecordPatterns9
+kuna	897317a4f44fcc80
+case	default/pkg/TestRecordSimple	Default	classes/java16/pkg/TestRecordSimple
+kuna	4ca28ab672a1ff4e
+case	default/pkg/TestRecordVararg	Default	classes/java16/pkg/TestRecordVararg
+kuna	18c893be43a83328
+case	default/pkg/TestRecursiveLambda	Default	classes/jasm/pkg/TestRecursiveLambda
+kuna	f2073c75bf8c9e6f
+case	default/pkg/TestReturnIf	Default	classes/java8/pkg/TestReturnIf
+kuna	e28023212cd92714
+case	default/pkg/TestReturnSwitchExpression1	Default	classes/java16/pkg/TestReturnSwitchExpression1
+kuna	51037298f849baaf
+case	default/pkg/TestReturnSwitchExpression2	Default	classes/java16/pkg/TestReturnSwitchExpression2
+kuna	216b736e77c31f88
+case	default/pkg/TestReturnSwitchExpression3	Default	classes/java16/pkg/TestReturnSwitchExpression3
+kuna	dd0de9cd78c9789e
+case	default/pkg/TestReturnSwitchExpression4	Default	classes/java16/pkg/TestReturnSwitchExpression4
+kuna	1361374c25d65fab
+case	default/pkg/TestReturnSwitchExpression5	Default	classes/java16/pkg/TestReturnSwitchExpression5
+kuna	5b1738067f5730e1
+case	default/pkg/TestReturnTernaryChar	Default	classes/java8/pkg/TestReturnTernaryChar
+kuna	81be866e8b88b825
+case	default/pkg/TestSealedClasses	Default	classes/java16preview/pkg/TestSealedClasses
+kuna	2422c80915e23e18
+case	default/pkg/TestSealedFinal	Default	classes/java17/pkg/TestSealedFinal	classes/java17/pkg/SealedInterface
+kuna	c0a3ada2e6f8b626
+case	default/pkg/TestSealedInterfaces	Default	classes/java16preview/pkg/TestSealedInterfaces
+kuna	8b9f0e7cc135266b
+case	default/pkg/TestSealedRecord	Default	classes/java17/pkg/TestSealedRecord	classes/java17/pkg/SealedInterface
+kuna	002411973871f560
+case	default/pkg/TestSelfIterableLoop	Default	classes/jasm/pkg/TestSelfIterableLoop
+kuna	eda7597bd9695ae7
+case	default/pkg/TestSharedVarIndex	Default	classes/java8/pkg/TestSharedVarIndex
+kuna	2011b7ae7eff47f7
+case	default/pkg/TestShiftAssignmentInCall	Default	classes/java8/pkg/TestShiftAssignmentInCall
+kuna	48ed943b8beed3be
+case	default/pkg/TestShiftLoop	Default	classes/java8/pkg/TestShiftLoop
+kuna	dcc261e357d54028
+case	default/pkg/TestSimpleIf	Default	classes/java8/pkg/TestSimpleIf
+kuna	23770939ee30e052
+case	default/pkg/TestSimpleWhile	Default	classes/java8/pkg/TestSimpleWhile
+kuna	9cedd0e19910a3f7
+case	default/pkg/TestSingleCaseStrSwitch	Default	classes/java17/pkg/TestSingleCaseStrSwitch
+kuna	917f4f456a4c64d8
+case	default/pkg/TestSplitColorComponents	Default	classes/java8/pkg/TestSplitColorComponents
+kuna	d3ebbc3d109ab7f3
+case	default/pkg/TestStackCastParam	Default	classes/java8/pkg/TestStackCastParam
+kuna	347138d88642b5ca
+case	default/pkg/TestStaticBlockFinalField	Default	classes/java8/pkg/TestStaticBlockFinalField
+kuna	ea7d1af6dd4223d6
+case	default/pkg/TestStaticBlockNull	Default	classes/java8/pkg/TestStaticBlockNull
+kuna	b84995d04cba7102
+case	default/pkg/TestStaticInit	Default	classes/java8/pkg/TestStaticInit
+kuna	6384d8804bd3a45a
+case	default/pkg/TestStaticIterator	Default	classes/java8/pkg/TestStaticIterator
+kuna	6ac1eba1f9edbafe
+case	default/pkg/TestStaticNameClash	Default	classes/java8/pkg/TestStaticNameClash
+kuna	4dfc5853f2c22f79
+case	default/pkg/TestStrProcessor	Default	classes/java21preview/pkg/TestStrProcessor
+kuna	39aa8a92c9cd4116
+case	default/pkg/TestStringConcat	Default	classes/java8/pkg/TestStringConcat
+kuna	8ed6d9808fa22b02
+case	default/pkg/TestStringLiteral	Default	classes/java8/pkg/TestStringLiteral
+kuna	3f7b4cb33a2c9fef
+case	default/pkg/TestStringLiterals	Default	classes/java8/pkg/TestStringLiterals
+kuna	42eccc1c67092f21
+case	default/pkg/TestStringSwitchTypes	Default	classes/java17/pkg/TestStringSwitchTypes
+kuna	3d96f0f2a7a83dde
+case	default/pkg/TestSuperInner	Default	classes/java8/pkg/TestSuperInner	classes/java8/pkg/TestSuperInnerBase
+kuna	19853d912f6adcde
+case	default/pkg/TestSwapException	Default	classes/jasm/pkg/TestSwapException
+kuna	0a84e2b314e618c0
+case	default/pkg/TestSwitchAssign	Default	classes/java8/pkg/TestSwitchAssign
+kuna	69685a7a58a278ed
+case	default/pkg/TestSwitchDefaultBefore	Default	classes/java8/pkg/TestSwitchDefaultBefore
+kuna	6e2b6cb3915fe763
+case	default/pkg/TestSwitchDefaultCaseReturn	Default	classes/java17/pkg/TestSwitchDefaultCaseReturn
+kuna	5951186116e90d95
+case	default/pkg/TestSwitchEmpty	Default	classes/java8/pkg/TestSwitchEmpty
+kuna	c17c568a3648cd0e
+case	default/pkg/TestSwitchExprInvoc	Default	classes/java16/pkg/TestSwitchExprInvoc
+kuna	53b22b670c65474e
+case	default/pkg/TestSwitchExprString1	Default	classes/java16/pkg/TestSwitchExprString1
+kuna	4bbabd13c8a3a3bd
+case	default/pkg/TestSwitchExpressionFallthrough1	Default	classes/java16/pkg/TestSwitchExpressionFallthrough1
+kuna	82ec232d392d9d09
+case	default/pkg/TestSwitchExpressionIfBlocks	Default	classes/java16/pkg/TestSwitchExpressionIfBlocks
+kuna	a43c8df55198d87b
+case	default/pkg/TestSwitchExpressionNested1	Default	classes/java16/pkg/TestSwitchExpressionNested1
+kuna	a0e2ba0d2ce57621
+case	default/pkg/TestSwitchExpressionPPMM	Default	classes/java16/pkg/TestSwitchExpressionPPMM
+kuna	0ce45d5744b7957e
+case	default/pkg/TestSwitchExpressionReturnType	Default	classes/java16/pkg/TestSwitchExpressionReturnType
+kuna	842ff5967e7b2fae
+case	default/pkg/TestSwitchFinally	Default	classes/java8/pkg/TestSwitchFinally
+kuna	74be45cd6e8c5c44
+case	default/pkg/TestSwitchInTry	Default	classes/java8/pkg/TestSwitchInTry
+kuna	e8e013ce78532ebb
+case	default/pkg/TestSwitchLoop	Default	classes/java8/pkg/TestSwitchLoop
+kuna	e57fdfff9b22ea71
+case	default/pkg/TestSwitchOnEnum	Default	classes/java8/pkg/TestSwitchOnEnum
+kuna	3fb0e3038039ce45
+case	default/pkg/TestSwitchOnEnumFake	Default	classes/java17/pkg/TestSwitchOnEnumFake
+kuna	62d142d64afb82c4
+case	default/pkg/TestSwitchOnEnumJ21	Default	classes/java21/pkg/TestSwitchOnEnumJ21	classes/java21/ext/TestEnum2
+kuna	4d8d2bce2bb8fe4e
+case	default/pkg/TestSwitchOnStrings	Default	classes/java8/pkg/TestSwitchOnStrings
+kuna	821808df5aa8cd28
+case	default/pkg/TestSwitchOnlyDefault	Default	classes/java8/pkg/TestSwitchOnlyDefault
+kuna	1c2ede733751594c
+case	default/pkg/TestSwitchPatternMatching1	Default	classes/java17preview/pkg/TestSwitchPatternMatching1
+kuna	237a991455268e32
+case	default/pkg/TestSwitchPatternMatching10	Default	classes/java17preview/pkg/TestSwitchPatternMatching10
+kuna	267c3c9bbeeaf0bc
+case	default/pkg/TestSwitchPatternMatching11	Default	classes/java17preview/pkg/TestSwitchPatternMatching11
+kuna	5fe11747913ad47f
+case	default/pkg/TestSwitchPatternMatching12	Default	classes/java17preview/pkg/TestSwitchPatternMatching12
+kuna	dd347e48fa394138
+case	default/pkg/TestSwitchPatternMatching13	Default	classes/java17preview/pkg/TestSwitchPatternMatching13
+kuna	c2606be0448a165f
+case	default/pkg/TestSwitchPatternMatching14	Default	classes/java17preview/pkg/TestSwitchPatternMatching14
+kuna	6fb01b9f27c2415a
+case	default/pkg/TestSwitchPatternMatching15	Default	classes/java17preview/pkg/TestSwitchPatternMatching15
+kuna	2616b53b45f3f978
+case	default/pkg/TestSwitchPatternMatching16	Default	classes/java17preview/pkg/TestSwitchPatternMatching16
+kuna	7e5aeda2369134a6
+case	default/pkg/TestSwitchPatternMatching17	Default	classes/java17preview/pkg/TestSwitchPatternMatching17
+kuna	bb49666892da97af
+case	default/pkg/TestSwitchPatternMatching18	Default	classes/java17preview/pkg/TestSwitchPatternMatching18
+kuna	15cc9f85fc4f39da
+case	default/pkg/TestSwitchPatternMatching19	Default	classes/java17preview/pkg/TestSwitchPatternMatching19
+kuna	f65f937f4e24db7b
+case	default/pkg/TestSwitchPatternMatching2	Default	classes/java17preview/pkg/TestSwitchPatternMatching2
+kuna	367b0d9c19c0a7be
+case	default/pkg/TestSwitchPatternMatching20	Default	classes/java17preview/pkg/TestSwitchPatternMatching20
+kuna	5dfd3a558f247d3d
+case	default/pkg/TestSwitchPatternMatching21	Default	classes/java17preview/pkg/TestSwitchPatternMatching21
+kuna	a603cfca91fde704
+case	default/pkg/TestSwitchPatternMatching22	Default	classes/java17preview/pkg/TestSwitchPatternMatching22
+kuna	01f45d4b07c33d90
+case	default/pkg/TestSwitchPatternMatching3	Default	classes/java17preview/pkg/TestSwitchPatternMatching3
+kuna	ecf97f155fd5c2e8
+case	default/pkg/TestSwitchPatternMatching4	Default	classes/java17preview/pkg/TestSwitchPatternMatching4
+kuna	d01c19d8d03ecee3
+case	default/pkg/TestSwitchPatternMatching5	Default	classes/java17preview/pkg/TestSwitchPatternMatching5
+kuna	71ccefe7dc2003c7
+case	default/pkg/TestSwitchPatternMatching6	Default	classes/java17preview/pkg/TestSwitchPatternMatching6	classes/java17preview/ext/Direction
+kuna	2bfb73dbec79c855
+case	default/pkg/TestSwitchPatternMatching7	Default	classes/java17preview/pkg/TestSwitchPatternMatching7
+kuna	e55783645cf1db56
+case	default/pkg/TestSwitchPatternMatching8	Default	classes/java17preview/pkg/TestSwitchPatternMatching8
+kuna	3dbdfc890b43134a
+case	default/pkg/TestSwitchPatternMatching9	Default	classes/java17preview/pkg/TestSwitchPatternMatching9
+kuna	7194eeb3de73a5f3
+case	default/pkg/TestSwitchPatternMatchingConstructor1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingConstructor1
+kuna	87cece64ccad0a7f
+case	default/pkg/TestSwitchPatternMatchingConstructor2	Default	classes/java17preview/pkg/TestSwitchPatternMatchingConstructor2
+kuna	d7f140a7b94c8452
+case	default/pkg/TestSwitchPatternMatchingFuzz1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingFuzz1
+kuna	f3f2a010e0b39e3f
+case	default/pkg/TestSwitchPatternMatchingInstanceof1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof1
+kuna	9d13695a9b890b67
+case	default/pkg/TestSwitchPatternMatchingInstanceof2	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof2
+kuna	115ab99f53208f82
+case	default/pkg/TestSwitchPatternMatchingInstanceof3	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof3
+kuna	58b5cc203cb30caf
+case	default/pkg/TestSwitchPatternMatchingInstanceof4	Default	classes/java17preview/pkg/TestSwitchPatternMatchingInstanceof4
+kuna	db772e0dc672eb7a
+case	default/pkg/TestSwitchPatternMatchingJ21	Default	classes/java21/pkg/TestSwitchPatternMatchingJ21
+kuna	83ba92a0ff0f7bf1
+case	default/pkg/TestSwitchPatternMatchingJ25	Default	classes/java25/pkg/TestSwitchPatternMatchingJ25
+kuna	e992a709e9c24eb2
+case	default/pkg/TestSwitchPatternMatchingLoop	Default	classes/java17preview/pkg/TestSwitchPatternMatchingLoop
+kuna	ec033bdcfab7ac63
+case	default/pkg/TestSwitchPatternMatchingReturn1	Default	classes/java17preview/pkg/TestSwitchPatternMatchingReturn1
+kuna	eb49c4a53ffed53c
+case	default/pkg/TestSwitchPatternMatchingReturn2	Default	classes/java17preview/pkg/TestSwitchPatternMatchingReturn2
+kuna	48916d377d8447ec
+case	default/pkg/TestSwitchPatternMatchingWithNull	Default	classes/java17preview/pkg/TestSwitchPatternMatchingWithNull
+kuna	f40849ee6a18b4f9
+case	default/pkg/TestSwitchReturn	Default	classes/java8/pkg/TestSwitchReturn
+kuna	16ba1d64c817d24b
+case	default/pkg/TestSwitchSimpleMultiLine	Default	classes/java21/pkg/TestSwitchSimpleMultiLine
+kuna	e670d3bdd9384da6
+case	default/pkg/TestSwitchStringHashcodeCollision	Default	classes/java8/pkg/TestSwitchStringHashcodeCollision
+kuna	2843aa567faf74eb
+case	default/pkg/TestSwitchTernary	Default	classes/java8/pkg/TestSwitchTernary
+kuna	a8018ea9ee104ace
+case	default/pkg/TestSynchronizeNull	Default	classes/java8/pkg/TestSynchronizeNull
+kuna	1b50cca5ab76100e
+case	default/pkg/TestSynchronized	Default	classes/java8/pkg/TestSynchronized
+kuna	2dc6ccd9b7f0e2c2
+case	default/pkg/TestSynchronizedLoop	Default	classes/java8/pkg/TestSynchronizedLoop
+kuna	89f2218622a1652b
+case	default/pkg/TestSynchronizedMapping	Default	classes/java8/pkg/TestSynchronizedMapping
+kuna	42fe76d3ee1b707d
+case	default/pkg/TestSynchronizedTernary	Default	classes/java8/pkg/TestSynchronizedTernary
+kuna	4183ad2d1f80a00f
+case	default/pkg/TestSynchronizedThrow	Default	classes/java8/pkg/TestSynchronizedThrow
+kuna	b674225aef118cdf
+case	default/pkg/TestSynchronizedTry	Default	classes/java8/pkg/TestSynchronizedTry
+kuna	71ad6e106b960929
+case	default/pkg/TestSynchronizedTryReturn	Default	classes/java8/pkg/TestSynchronizedTryReturn
+kuna	4b69221e993c1898
+case	default/pkg/TestSynchronizedTrySharing	Default	classes/java8/pkg/TestSynchronizedTrySharing
+kuna	b6b371c55e264832
+case	default/pkg/TestSyntheticAccess	Default	classes/java8/pkg/TestSyntheticAccess
+kuna	a824fc5811207d1c
+case	default/pkg/TestTempAssign	Default	classes/java8/pkg/TestTempAssign
+kuna	16ab51b3921dadfa
+case	default/pkg/TestTernaryAssign	Default	classes/java8/pkg/TestTernaryAssign
+kuna	1bd8dc80f244688a
+case	default/pkg/TestTernaryCall	Default	classes/java8/pkg/TestTernaryCall
+kuna	5dad7a3cfee17bf4
+case	default/pkg/TestTernaryReturn	Default	classes/java8/pkg/TestTernaryReturn
+kuna	61ffd897461117fd
+case	default/pkg/TestTernaryReturn2	Default	classes/java16/pkg/TestTernaryReturn2
+kuna	b32142feeb8507c3
+case	default/pkg/TestTextBlocks	Default	classes/java16/pkg/TestTextBlocks
+kuna	c7f75240f0e85b20
+case	default/pkg/TestThrowLoop	Default	classes/java8/pkg/TestThrowLoop
+kuna	f278332b5b439da3
+case	default/pkg/TestTryCatchFinally	Default	classes/java8/pkg/TestTryCatchFinally
+kuna	c812acabba592b5d
+case	default/pkg/TestTryCatchNested	Default	classes/java8/pkg/TestTryCatchNested
+kuna	24a96cf5552f40d5
+case	default/pkg/TestTryFinally	Default	classes/java8/pkg/TestTryFinally
+kuna	403ca25862ad9a2a
+case	default/pkg/TestTryLoop	Default	classes/java8/pkg/TestTryLoop
+kuna	8bc626b685654170
+case	default/pkg/TestTryLoop2	Default	classes/java8/pkg/TestTryLoop2
+kuna	df413f2cbe024b37
+case	default/pkg/TestTryLoopNoCatch	Default	classes/java8/pkg/TestTryLoopNoCatch
+kuna	4132d91a4ff16d33
+case	default/pkg/TestTryLoopRecompile	Default	classes/java8/pkg/TestTryLoopRecompile
+kuna	8fa06b20e9ac78c5
+case	default/pkg/TestTryLoopReturnFinally	Default	classes/java8/pkg/TestTryLoopReturnFinally
+kuna	c4dbe56899bdcc4a
+case	default/pkg/TestTryLoopSimpleFinally	Default	classes/java8/pkg/TestTryLoopSimpleFinally
+kuna	6f4832c3c2164dce
+case	default/pkg/TestTryReturnNoDebug	Default	classes/java8nodebug/pkg/TestTryReturnNoDebug
+kuna	d73dbab5bf8362c9
+case	default/pkg/TestTrySplit	Default	classes/java8/pkg/TestTrySplit
+kuna	8384bd4bdd5fe93c
+case	default/pkg/TestTrySynchronized	Default	classes/java8/pkg/TestTrySynchronized
+kuna	b0e3e31c4bb016fd
+case	default/pkg/TestTryVar	Default	classes/java8/pkg/TestTryVar
+kuna	3f519874418aeb09
+case	default/pkg/TestTryVarNoDebug	Default	classes/java8nodebug/pkg/TestTryVarNoDebug
+kuna	afe8f510d568ac29
+case	default/pkg/TestTypeAnnotations	Default	classes/java21/pkg/TestTypeAnnotations
+kuna	8b5089750ea92f75
+case	default/pkg/TestUnicodeIdentifiers	Default	classes/java8/pkg/TestUnicodeIdentifiers
+kuna	da872f0ccc3e0abf
+case	default/pkg/TestUnionTypeAssign	Default	classes/java8/pkg/TestUnionTypeAssign
+kuna	a870d00309ddf7af
+case	default/pkg/TestUnknownCast	Default	classes/java8/pkg/TestUnknownCast
+kuna	732a821e5f189175
+case	default/pkg/TestUnknownCastJ17	Default	classes/java17preview/pkg/TestUnknownCastJ17
+kuna	21e1e1efee29a1bc
+case	default/pkg/TestUnnamedVar1	Default	classes/java25/pkg/TestUnnamedVar1
+kuna	095f9bedff24a1e9
+case	default/pkg/TestVarHandles	Default	classes/java9/pkg/TestVarHandles
+kuna	372e00877f3d94b6
+case	default/pkg/TestVarIndex	Default	classes/java8nodebug/pkg/TestVarIndex
+kuna	7bcd6f9365fa4b6a
+case	default/pkg/TestVarMergeSupertype	Default	classes/java8/pkg/TestVarMergeSupertype
+kuna	7a8df8c189cb1d76
+case	default/pkg/TestVarRedef	Default	classes/java17/pkg/TestVarRedef
+kuna	449d02a7f82054c6
+case	default/pkg/TestWhile1	Default	classes/java8/pkg/TestWhile1
+kuna	6e1215be50206470
+case	default/pkg/TestWhileCondition	Default	classes/java8/pkg/TestWhileCondition
+kuna	32ca95a4d15fc909
+case	default/pkg/TestWhileConditionTernary	Default	classes/java8/pkg/TestWhileConditionTernary
+kuna	f38c4c46ceb976c3
+case	default/pkg/TestWhileForeach	Default	classes/java8/pkg/TestWhileForeach
+kuna	929f8ee9af4afb15
+case	default/pkg/TestWhileIterator	Default	classes/java8/pkg/TestWhileIterator
+kuna	2405e4f4a26d7734
+case	default/pkg/TestWhileLambda	Default	classes/java8/pkg/TestWhileLambda
+kuna	cd1896bf499bea06
+case	default/pkg/TestWhileLoopPromotion	Default	classes/java8/pkg/TestWhileLoopPromotion
+kuna	15e68265aadb9cdb
+case	default/pkg/TestWhileTernary1	Default	classes/java8/pkg/TestWhileTernary1
+kuna	dd42afc7dcd6a3db
+case	default/pkg/TestWhileTernary10	Default	classes/java8/pkg/TestWhileTernary10
+kuna	36a5b645298c0064
+case	default/pkg/TestWhileTernary2	Default	classes/java8/pkg/TestWhileTernary2
+kuna	dea469f6e1e07450
+case	default/pkg/TestWhileTernary3	Default	classes/java8/pkg/TestWhileTernary3
+kuna	f0ecdb0ca46c841b
+case	default/pkg/TestWhileTernary4	Default	classes/java8/pkg/TestWhileTernary4
+kuna	8086d892d7f2c09a
+case	default/pkg/TestWhileTernary5	Default	classes/java8/pkg/TestWhileTernary5
+kuna	8ddce1b364e1e476
+case	default/pkg/TestWhileTernary6	Default	classes/java8/pkg/TestWhileTernary6
+kuna	e56b274697db0cd4
+case	default/pkg/TestWhileTernary7	Default	classes/java8/pkg/TestWhileTernary7
+kuna	8d0fcd2e5e15eb38
+case	default/pkg/TestWhileTernary8	Default	classes/java8/pkg/TestWhileTernary8
+kuna	8acc2d5fa00609bf
+case	default/pkg/TestWhileTernary9	Default	classes/java8/pkg/TestWhileTernary9
+kuna	d879764fd4daea1e
+case	default/pkg/TestWhileTernaryFake	Default	classes/java8/pkg/TestWhileTernaryFake
+kuna	c3232f1bbaded4f9
+case	default/pkg/TypeAnnotations	Default	classes/java8/pkg/TypeAnnotations
+kuna	79493e95799e5634
+case	default/pkg/package-info	Default	classes/java8/pkg/package-info
+kuna	4a519486cd06d31b
+case	default/v11/TestInnerClassConstructor	Default	classes/custom/v11/TestInnerClassConstructor
+kuna	04e391e216698698
+case	javadoc/pkg/TestJavadoc	Javadoc	classes/java8/pkg/TestJavadoc
+kuna	537f34ce29395ab0
+case	literals/pkg/TestConstantUninlining	Literals	classes/java8/pkg/TestConstantUninlining
+kuna	03cd8a10da9954a3
+case	literals/pkg/TestFloatPrecision	Literals	classes/java8/pkg/TestFloatPrecision
+kuna	a0f0b7b622789eb8
+case	literals/pkg/TestNotFloatPrecision	Literals	classes/java8/pkg/TestNotFloatPrecision
+kuna	c8b451b1980799cb
+case	literals/pkg/TestPiDivision	Literals	classes/java8/pkg/TestPiDivision
+kuna	445116521e137f41
+case	lvt/pkg/TestLVT	LVT	classes/java8/pkg/TestLVT
+kuna	dd63b93377385e26
+case	lvt/pkg/TestLVTComplex	LVT	classes/java8/pkg/TestLVTComplex
+kuna	3875fccf30f26437
+case	lvt/pkg/TestLVTScoping	LVT	classes/java8/pkg/TestLVTScoping
+kuna	eaf01ed39920d6ad
+case	lvt/pkg/TestLoopMerging	LVT	classes/java8/pkg/TestLoopMerging
+kuna	c3ee6cce9cad46de
+case	lvt/pkg/TestVarType	LVT	classes/java8/pkg/TestVarType
+kuna	f7dd84f1af9322b6
+case	markdown-javadoc/pkg/TestMarkdownJavadoc	Markdown Javadoc	classes/java8/pkg/TestMarkdownJavadoc
+kuna	7f6bc7f8734b41d3
+case	no-lvt/pkg/TestNoLvt	No LVT	classes/java8/pkg/TestNoLvt
+kuna	5456e09624813377
+case	renaming/pkg/TestRenameEntities	Renaming	classes/java8/pkg/TestRenameEntities
+kuna	f7dbe4c83bdef883
+case	synthetics-marking/pkg/TestAnonymousClassNaming	Synthetics Marking	classes/java8/pkg/TestAnonymousClassNaming
+kuna	b8a7dda487387652
+case	synthetics-marking/pkg/TestLambdaNaming	Synthetics Marking	classes/java8/pkg/TestLambdaNaming
+kuna	0ffd255cb290ef88
+case	synthetics-marking/pkg/TestLocalClassNaming	Synthetics Marking	classes/java8/pkg/TestLocalClassNaming
+kuna	248dd9d4582a21de
+case	plugin-defaults/TestIdeaNotNull	Plugin Defaults	classes/custom/TestIdeaNotNull
+kuna	3e749b4c51b4b14f
+case	with-idea-not-null/TestIdeaNotNull	With Idea Not Null	classes/custom/TestIdeaNotNull
+kuna	3e749b4c51b4b14f
+case	kotlin-core-default/pkg/TestIllegalVarName	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestIllegalVarName
+kuna	b412e295c9c57258
+compare	TestIllegalVarName.kt	TestIllegalVarName.java
+case	kotlin-core-default/pkg/TestKotlinEnumWhen	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestKotlinEnumWhen
+kuna	9eb587c7cd6c24fb
+compare	TestKotlinEnumWhen.kt	TestKotlinEnumWhen.java
+case	kotlin-core-default/pkg/TestRunSuspend	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestRunSuspend
+kuna	bcd68dcb78c7e579
+compare	TestRunSuspend.kt	TestRunSuspend.java
+case	kotlin-core-default/pkg/TestSuspendLambdaKt	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSuspendLambdaKt
+kuna	9f6fcd5d56b6a1af
+compare	TestSuspendLambdaKt.kt	TestSuspendLambdaKt.java
+case	kotlin-core-default/pkg/TestSynchronizedUnprotected	Kotlin Core Default	classes/kotlin/core-kt/pkg/TestSynchronizedUnprotected
+kuna	bfc00870a7c1d629
+compare	TestSynchronizedUnprotected.kt	TestSynchronizedUnprotected.java
+case	kotlin-entire-classpath/pkg/TestAnnotations	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestAnnotations
+kuna	10ab1313545feef8
+compare	TestAnnotations.kt	TestAnnotations.java
+case	kotlin-entire-classpath/pkg/TestAnonymousEverything	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestAnonymousEverything
+kuna	600ee67282c4a8b5
+compare	TestAnonymousEverything.kt	TestAnonymousEverything.java
+case	kotlin-entire-classpath/pkg/TestAnyType	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestAnyType
+kuna	456afd885754935c
+compare	TestAnyType.kt	TestAnyType.java
+case	kotlin-entire-classpath/pkg/TestBitwiseFunctions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestBitwiseFunctions
+kuna	b6acc6522d372e9b
+compare	TestBitwiseFunctions.kt	TestBitwiseFunctions.java
+case	kotlin-entire-classpath/pkg/TestClassDec	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestClassDec
+kuna	3dd728d8b2ea16a3
+compare	TestClassDec.kt	TestClassDec.java
+case	kotlin-entire-classpath/pkg/TestClassicStringInterpolation	Kotlin Entire Classpath	classes/kotlin/ktold/pkg/TestClassicStringInterpolation
+kuna	dd1d2680ac71c906
+compare	TestClassicStringInterpolation.kt	TestClassicStringInterpolation.java
+case	kotlin-entire-classpath/pkg/TestCompanionObject	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestCompanionObject
+kuna	b23fbe61d4c2a1ff
+compare	TestCompanionObject.kt	TestCompanionObject.java
+case	kotlin-entire-classpath/pkg/TestComparison	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestComparison
+kuna	2cfdd016245cb066
+compare	TestComparison.kt	TestComparison.java
+case	kotlin-entire-classpath/pkg/TestCompileTimeErrors	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestCompileTimeErrors
+kuna	02c423d003f923f7
+compare	TestCompileTimeErrors.kt	TestCompileTimeErrors.java
+case	kotlin-entire-classpath/pkg/TestConstructors	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestConstructors
+kuna	7d6ca10a720a2f07
+compare	TestConstructors.kt	TestConstructors.java
+case	kotlin-entire-classpath/pkg/TestContracts	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestContracts
+kuna	94ed8f34d38070dc
+compare	TestContracts.kt	TestContracts.java
+case	kotlin-entire-classpath/pkg/TestConvertedK2JOps	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestConvertedK2JOps
+kuna	b88f3c0ea9ced1d3
+compare	TestConvertedK2JOps.kt	TestConvertedK2JOps.java
+case	kotlin-entire-classpath/pkg/TestDataClass	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestDataClass
+kuna	52250293b62abf9f
+compare	TestDataClass.kt	TestDataClass.java
+case	kotlin-entire-classpath/pkg/TestDestructors	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestDestructors
+kuna	538819397e7d2db5
+compare	TestDestructors.kt	TestDestructors.java
+case	kotlin-entire-classpath/pkg/TestEnumClass	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestEnumClass
+kuna	0761348569dd2156
+compare	TestEnumClass.kt	TestEnumClass.java
+case	kotlin-entire-classpath/pkg/TestExtensionFun	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestExtensionFun
+kuna	a22b0bcef56405ea
+compare	TestExtensionFun.kt	TestExtensionFun.java
+case	kotlin-entire-classpath/pkg/TestForRange	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestForRange
+kuna	15fb6f008383d508
+compare	TestForRange.kt	TestForRange.java
+case	kotlin-entire-classpath/pkg/TestFunVarargs	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestFunVarargs
+kuna	42e720db9d5bfe2d
+compare	TestFunVarargs.kt	TestFunVarargs.java
+case	kotlin-entire-classpath/pkg/TestFuncRef	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestFuncRefKt
+kuna	7baa02d028e905a1
+compare	TestFuncRefKt.kt	TestFuncRefKt.java
+case	kotlin-entire-classpath/pkg/TestGenerics	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestGenerics
+kuna	51b877787f8e674b
+compare	TestGenerics.kt	TestGenerics.java
+case	kotlin-entire-classpath/pkg/TestIfRange	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestIfRange
+kuna	0285c1329066112e
+compare	TestIfRange.kt	TestIfRange.java
+case	kotlin-entire-classpath/pkg/TestInfixFun	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestInfixFun
+kuna	f96b460fa5cb36b8
+compare	TestInfixFun.kt	TestInfixFun.java
+case	kotlin-entire-classpath/pkg/TestKotlinTypes	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestKotlinTypes
+kuna	e8e8367cab61b4bc
+compare	TestKotlinTypes.kt	TestKotlinTypes.java
+case	kotlin-entire-classpath/pkg/TestKt	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestKt
+kuna	7d2d5dd6a8a270eb
+compare	TestKt.kt	TestKt.java
+case	kotlin-entire-classpath/pkg/TestLabeledJumps	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestLabeledJumps
+kuna	2021e5c795ea31ab
+compare	TestLabeledJumps.kt	TestLabeledJumps.java
+case	kotlin-entire-classpath/pkg/TestNonInlineLambda	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNonInlineLambda
+kuna	ed2ca656aa4f1c0d
+compare	TestNonInlineLambda.kt	TestNonInlineLambda.java
+case	kotlin-entire-classpath/pkg/TestNothingReturns	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNothingReturns
+kuna	2101a9fd366dfd61
+compare	TestNothingReturns.kt	TestNothingReturns.java
+case	kotlin-entire-classpath/pkg/TestNullable	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNullable
+kuna	19e99c33ecbc3dd3
+compare	TestNullable.kt	TestNullable.java
+case	kotlin-entire-classpath/pkg/TestNullableOperator	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestNullableOperator
+kuna	80c8f3f2b9d08bb7
+compare	TestNullableOperator.kt	TestNullableOperator.java
+case	kotlin-entire-classpath/pkg/TestObject	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestObject
+kuna	cd2eb5896d459c90
+compare	TestObject.kt	TestObject.java
+case	kotlin-entire-classpath/pkg/TestParams	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestParams
+kuna	8cee3c055e526454
+compare	TestParams.kt	TestParams.java
+case	kotlin-entire-classpath/pkg/TestPoorNames	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestPoorNames
+kuna	cd8eceea6c296758
+compare	TestPoorNames.kt	TestPoorNames.java
+case	kotlin-entire-classpath/pkg/TestPropertyAccess	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestPropertyAccess	classes/kotlin/kt/ext/Person
+kuna	46d194a22345ff8f
+compare	TestPropertyAccess.kt	TestPropertyAccess.java
+case	kotlin-entire-classpath/pkg/TestReflection	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestReflection
+kuna	93dee3a28ff7ef98
+compare	TestReflection.kt	TestReflection.java
+case	kotlin-entire-classpath/pkg/TestSafeCasts	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSafeCasts
+kuna	7fdb0fd90142a8d8
+compare	TestSafeCasts.kt	TestSafeCasts.java
+case	kotlin-entire-classpath/pkg/TestSealedHierarchy	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSealedHierarchy
+kuna	5b7596217dbce211
+compare	TestSealedHierarchy.kt	TestSealedHierarchy.java
+case	kotlin-entire-classpath/pkg/TestShadowParam	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestShadowParam
+kuna	7a5d301903e7362c
+compare	TestShadowParam.kt	TestShadowParam.java
+case	kotlin-entire-classpath/pkg/TestSmartCasts	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSmartCasts
+kuna	5b1345496383421a
+compare	TestSmartCasts.kt	TestSmartCasts.java
+case	kotlin-entire-classpath/pkg/TestStringInterpolation	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestStringInterpolation
+kuna	84a0d6898ab06a7d
+compare	TestStringInterpolation.kt	TestStringInterpolation.java
+case	kotlin-entire-classpath/pkg/TestSynchronized	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestSynchronized
+kuna	4ee9d0d6b4fadc93
+compare	TestSynchronized.kt	TestSynchronized.java
+case	kotlin-entire-classpath/pkg/TestTailrecFunctions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTailrecFunctions
+kuna	b57547c3fac677e3
+compare	TestTailrecFunctions.kt	TestTailrecFunctions.java
+case	kotlin-entire-classpath/pkg/TestTopLevelKt	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTopLevelKt
+kuna	04a5834c31a12776
+compare	TestTopLevelKt.kt	TestTopLevelKt.java
+case	kotlin-entire-classpath/pkg/TestTryCatchExpressions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchExpressions
+kuna	f9789d45913e5b33
+compare	TestTryCatchExpressions.kt	TestTryCatchExpressions.java
+case	kotlin-entire-classpath/pkg/TestTryCatchFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchFinally
+kuna	0c31308cc22029c3
+compare	TestTryCatchFinally.kt	TestTryCatchFinally.java
+case	kotlin-entire-classpath/pkg/TestTryCatchNested	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchNested
+kuna	8a97c1da6ce7e1fc
+compare	TestTryCatchNested.kt	TestTryCatchNested.java
+case	kotlin-entire-classpath/pkg/TestTryCatchThrowable	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryCatchThrowable
+kuna	fa13401ec696d566
+compare	TestTryCatchThrowable.kt	TestTryCatchThrowable.java
+case	kotlin-entire-classpath/pkg/TestTryFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryFinally
+kuna	e2a54156cf5970f4
+compare	TestTryFinally.kt	TestTryFinally.java
+case	kotlin-entire-classpath/pkg/TestTryFinallyExpressions	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryFinallyExpressions
+kuna	bbb0c2008d6d398b
+compare	TestTryFinallyExpressions.kt	TestTryFinallyExpressions.java
+case	kotlin-entire-classpath/pkg/TestTryLoop	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoop
+kuna	45bd6acbba7fea95
+compare	TestTryLoop.kt	TestTryLoop.java
+case	kotlin-entire-classpath/pkg/TestTryLoop2	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoop2
+kuna	acd0732dafd054e6
+compare	TestTryLoop2.kt	TestTryLoop2.java
+case	kotlin-entire-classpath/pkg/TestTryLoopNoCatch	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopNoCatch
+kuna	da4a3b185a0e6078
+compare	TestTryLoopNoCatch.kt	TestTryLoopNoCatch.java
+case	kotlin-entire-classpath/pkg/TestTryLoopRecompile	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopRecompile
+kuna	77c759eea951c2b2
+compare	TestTryLoopRecompile.kt	TestTryLoopRecompile.java
+case	kotlin-entire-classpath/pkg/TestTryLoopReturnFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopReturnFinally
+kuna	b5ae16a520890581
+compare	TestTryLoopReturnFinally.kt	TestTryLoopReturnFinally.java
+case	kotlin-entire-classpath/pkg/TestTryLoopSimpleFinally	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryLoopSimpleFinally
+kuna	ab42e95c32ce3e22
+compare	TestTryLoopSimpleFinally.kt	TestTryLoopSimpleFinally.java
+case	kotlin-entire-classpath/pkg/TestTryReturn	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryReturn
+kuna	d07f480c37cdc3cb
+compare	TestTryReturn.kt	TestTryReturn.java
+case	kotlin-entire-classpath/pkg/TestTrySplit	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTrySplit
+kuna	e37abc915b134684
+compare	TestTrySplit.kt	TestTrySplit.java
+case	kotlin-entire-classpath/pkg/TestTrySynchronized	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTrySynchronized
+kuna	ec257255cb860bef
+compare	TestTrySynchronized.kt	TestTrySynchronized.java
+case	kotlin-entire-classpath/pkg/TestTryVar	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestTryVar
+kuna	48c9abeacae03c9e
+compare	TestTryVar.kt	TestTryVar.java
+case	kotlin-entire-classpath/pkg/TestVarReplace	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestVarReplaceKt
+kuna	f9fd4c07966a90b9
+compare	TestVarReplaceKt.kt	TestVarReplaceKt.java
+case	kotlin-entire-classpath/pkg/TestVars	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestVars
+kuna	df9fa564abf7efdf
+compare	TestVars.kt	TestVars.java
+case	kotlin-entire-classpath/pkg/TestWhen	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhen
+kuna	dd584474159bc073
+compare	TestWhen.kt	TestWhen.java
+case	kotlin-entire-classpath/pkg/TestWhenBoolean	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhenBoolean
+kuna	673dd74ec1dc0807
+compare	TestWhenBoolean.kt	TestWhenBoolean.java
+case	kotlin-entire-classpath/pkg/TestWhenControlFlow	Kotlin Entire Classpath	classes/kotlin/kt/pkg/TestWhenControlFlow
+kuna	ee940f8095054f75
+compare	TestWhenControlFlow.kt	TestWhenControlFlow.java
+# kuna-fixes/src/pkg/TestMembersWithoutMetadata.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/NoMetaBag	Kuna Fixes	kuna-fixes/classes/pkg/NoMetaBag	kuna-fixes/classes/pkg/NoMetaReader
+# kuna-fixes/src/pkg/TestAbstractClassConstructor.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestAbstractClassConstructor	Kuna Fixes	kuna-fixes/classes/pkg/TestAbstractClassConstructor
+# kuna-fixes/src/pkg/TestAbstractFunctionBody.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestAbstractFunctionBody	Kuna Fixes	kuna-fixes/classes/pkg/TestAbstractFunctionBody
+# kuna-fixes/src/pkg/TestAccessorBackingField.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestAccessorBackingField	Kuna Fixes	kuna-fixes/classes/pkg/TestAccessorBackingField
+# kuna-fixes/src/pkg/TestAccessorFieldInObject.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestAccessorFieldInObject	Kuna Fixes	kuna-fixes/classes/pkg/TestAccessorFieldInObject
+# kuna-fixes/src/pkg/TestAmbiguousTypeVariableArgument.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestAmbiguousTypeVariableArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestAmbiguousTypeVariableArgument
+# kuna-fixes/src/pkg/TestAnnotatedInnerType.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestAnnotatedInnerType	Kuna Fixes	kuna-fixes/classes/pkg/TestAnnotatedInnerType
+# kuna-fixes/src/pkg/TestAnonymousStaticCall.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestAnonymousStaticCall	Kuna Fixes	kuna-fixes/classes/pkg/TestAnonymousStaticCall
+# kuna-fixes/src/pkg/TestArgumentGenericCast.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestArgumentGenericCast	Kuna Fixes	kuna-fixes/classes/pkg/TestArgumentGenericCast
+# kuna-fixes/src/pkg/TestArrayOfArrays.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestArrayOfArrays	Kuna Fixes	kuna-fixes/classes/pkg/TestArrayOfArrays
+# kuna-fixes/src/pkg/TestAssertDeadThrow.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestAssertDeadThrow	Kuna Fixes	kuna-fixes/classes/pkg/TestAssertDeadThrow
+# kuna-fixes/src/pkg/TestAssertExpressionPosition.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestAssertExpressionPosition	Kuna Fixes	kuna-fixes/classes/pkg/TestAssertExpressionPosition
+# kuna-fixes/src/pkg/TestAssertThrowAfterIf.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestAssertThrowAfterIf	Kuna Fixes	kuna-fixes/classes/pkg/TestAssertThrowAfterIf
+# kuna-fixes/src/pkg/TestBinaryNumericPromotion.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestBinaryNumericPromotion	Kuna Fixes	kuna-fixes/classes/pkg/TestBinaryNumericPromotion
+# kuna-fixes/src/pkg/TestBoundedInferenceCast.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestBoundedInferenceCast	Kuna Fixes	kuna-fixes/classes/pkg/TestBoundedInferenceCast
+# kuna-fixes/src/pkg/TestBoxedReceiverTypeArgument.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestBoxedReceiverTypeArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestBoxedReceiverTypeArgument
+# kuna-fixes/src/pkg/TestBoxedTypeVariableCast.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestBoxedTypeVariableCast	Kuna Fixes	kuna-fixes/classes/pkg/TestBoxedTypeVariableCast
+# kuna-fixes/src/pkg/TestCanonicalRecordLines.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestCanonicalRecordLines	Kuna Fixes	kuna-fixes/classes/pkg/TestCanonicalRecordLines
+# kuna-fixes/src/pkg/TestCapturedClashName.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestCapturedClashName	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedClashName
+# kuna-fixes/src/pkg/TestCapturedReceiver.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestCapturedReceiverKt	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedReceiverKt
+# kuna-fixes/src/pkg/TestCastCapture.kt, kotlinc 2.0.0 (-jvm-target 17 -Xlambdas=class, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestCastCaptureKt	Kuna Fixes	kuna-fixes/classes/pkg/TestCastCaptureKt	kuna-fixes/classes/pkg/CastCaptureBoard	kuna-fixes/classes/pkg/CastCaptureCallback	kuna-fixes/classes/pkg/CastCaptureGate	kuna-fixes/classes/pkg/CastCaptureHandle	kuna-fixes/classes/pkg/CastCaptureHandleImpl
+# kuna-fixes/src/pkg/TestCatchBlockJump.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestCatchBlockJump	Kuna Fixes	kuna-fixes/classes/pkg/TestCatchBlockJump
+# kuna-fixes/src/pkg/TestCatchLoopBack.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestCatchLoopBack	Kuna Fixes	kuna-fixes/classes/pkg/TestCatchLoopBack
+# kuna-fixes/src/pkg/TestCatchTailHoist.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestCatchTailHoist	Kuna Fixes	kuna-fixes/classes/pkg/TestCatchTailHoist
+# kuna-fixes/src/pkg/TestCharIntSlot.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestCharIntSlot	Kuna Fixes	kuna-fixes/classes/pkg/TestCharIntSlot
+# kuna-fixes/src/pkg/TestCharIntSlot.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestCharIntSlotKt	Kuna Fixes	kuna-fixes/classes/pkg/TestCharIntSlotKt
+# kuna-fixes/src/pkg/TestCompanionPropertyInitializer.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestCompanionPropertyInitializer	Kuna Fixes	kuna-fixes/classes/pkg/TestCompanionPropertyInitializer
+# kuna-fixes/src/pkg/TestCompoundAssignmentShape.java, javac 17.0.21 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestCompoundAssignmentShape	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundAssignmentShape
+# kuna-fixes/src/pkg/TestCompoundBitwiseAssignment.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestCompoundBitwiseAssignment	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundBitwiseAssignment
+# kuna-fixes/src/pkg/TestCompoundBitwiseInfixOperand.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestCompoundBitwiseInfixOperand	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundBitwiseInfixOperand
+# kuna-fixes/src/pkg/TestCompoundShiftCount.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestCompoundShiftCount	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundShiftCount
+# kuna-fixes/src/pkg/TestConcatCharArray.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestConcatCharArray	Kuna Fixes	kuna-fixes/classes/pkg/TestConcatCharArray
+# kuna-fixes/src/pkg/TestConcatOperandType.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestConcatOperandType	Kuna Fixes	kuna-fixes/classes/pkg/TestConcatOperandType
+# kuna-fixes/src/pkg/TestConcatOperandTypeBuilder.java, javac 17.0.21 (--release 8 -g)
+case	kuna-fixes/pkg/TestConcatOperandTypeBuilder	Kuna Fixes	kuna-fixes/classes/pkg/TestConcatOperandTypeBuilder
+# kuna-fixes/src/pkg/TestConstructorBodyBeyondFirstBlock.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestConstructorBodyBeyondFirstBlock	Kuna Fixes	kuna-fixes/classes/pkg/TestConstructorBodyBeyondFirstBlock
+# kuna-fixes/src/pkg/TestConstructorDefaultSignature.kt, kotlinc 2.0.0 (-jvm-target 17); kotlin.Metadata d1 then edited to drop the constructor signature's desc, the shape kotlin-stdlib 2.2.20's kotlin/Unit.class has
+case	kuna-fixes/pkg/TestConstructorDefaultSignature	Kuna Fixes	kuna-fixes/classes/pkg/TestConstructorDefaultSignature
+# kuna-fixes/src/pkg/TestConstructorDiamond.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestConstructorDiamond	Kuna Fixes	kuna-fixes/classes/pkg/TestConstructorDiamond
+# kuna-fixes/src/pkg/TestCopiedEquality.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestCopiedEquality	Kuna Fixes	kuna-fixes/classes/pkg/TestCopiedEquality
+# kuna-fixes/src/pkg/TestCoroutineBoxing.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestCoroutineBoxingKt	Kuna Fixes	kuna-fixes/classes/pkg/TestCoroutineBoxingKt
+# kuna-fixes/src/pkg/TestDeadStoreConstType.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestDeadStoreConstType	Kuna Fixes	kuna-fixes/classes/pkg/TestDeadStoreConstType
+# kuna-fixes/src/pkg/TestDeclarationScopes.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestDeclarationScopes	Kuna Fixes	kuna-fixes/classes/pkg/TestDeclarationScopes
+# kuna-fixes/src/pkg/TestDefaultAccessorFlags.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestDefaultAccessorFlags	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultAccessorFlags
+# kuna-fixes/src/pkg/TestDefaultArgAssignedParam.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestDefaultArgAssignedParam	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultArgAssignedParam
+# kuna-fixes/src/pkg/TestDefaultArgCompoundBranch.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestDefaultArgCompoundBranch	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultArgCompoundBranch
+# kuna-fixes/src/pkg/TestDefaultArgsBridgeLookup.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestDefaultArgsBridgeLookup	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultArgsBridgeLookup
+# kuna-fixes/src/pkg/TestDefaultArgsCall.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestDefaultArgsCall	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultArgsCall	kuna-fixes/classes/pkg/TestDefaultArgsCallKt
+# kuna-fixes/src/pkg/TestDefaultArgsCtorDescriptor.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestDefaultArgsCtorDescriptor	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultArgsCtorDescriptor
+# kuna-fixes/src/pkg/TestDefaultArgsSuperCall.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestDefaultArgsSuperCall	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultArgsSuperCall
+# kuna-fixes/src/pkg/TestDefaultArgsSuperNamed.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestDefaultArgsSuperNamed	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultArgsSuperNamed
+# kuna-fixes/src/pkg/TestDefaultPropertyInitializer.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestDefaultPropertyInitializer	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultPropertyInitializer
+# kuna-fixes/src/pkg/TestDefaultValueCoercionCast.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestDefaultValueCoercionCast	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultValueCoercionCast
+# kuna-fixes/src/pkg/TestDefaultValueNames.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestDefaultValueNames	Kuna Fixes	kuna-fixes/classes/pkg/TestDefaultValueNames
+# kuna-fixes/src/pkg/TestDelegatedMemberDefault.kt, kotlinc 2.0.0 -jvm-target 17 -language-version 1.9 (K1; JDK 17.0.21)
+case	kuna-fixes/pkg/TestDelegatedMemberDefault	Kuna Fixes	kuna-fixes/classes/pkg/TestDelegatedMemberDefault
+# kuna-fixes/src/pkg/TestDelegationArguments.kt, kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21)
+case	kuna-fixes/pkg/TestDelegationArguments	Kuna Fixes	kuna-fixes/classes/pkg/TestDelegationArguments	kuna-fixes/classes/pkg/DelegationBase	kuna-fixes/classes/pkg/DelegationJava
+# kuna-fixes/src/pkg/TestDelegationArguments.kt, kotlinc 2.0.0 -jvm-target 17 (DelegationJava.java: javac 17.0.21)
+case	kuna-fixes/pkg/TestDelegationOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestDelegationOrder	kuna-fixes/classes/pkg/DelegationJava
+# kuna-fixes/src/pkg/TestDiamondArgumentConflict.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestDiamondArgumentConflict	Kuna Fixes	kuna-fixes/classes/pkg/TestDiamondArgumentConflict
+# kuna-fixes/src/pkg/TestDiamondExternalClass.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestDiamondExternalClass	Kuna Fixes	kuna-fixes/classes/pkg/TestDiamondExternalClass
+# kuna-fixes/src/pkg/TestDisjointGenericCast.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestDisjointGenericCast	Kuna Fixes	kuna-fixes/classes/pkg/TestDisjointGenericCast
+# kuna-fixes/src/pkg/TestDoubleConstantLiteral.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestDoubleConstantLiteral	Kuna Fixes	kuna-fixes/classes/pkg/TestDoubleConstantLiteral
+opt	keep-literals	0
+# kuna-fixes/src/pkg/TestEnumNoConstants.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestEnumNoConstants	Kuna Fixes	kuna-fixes/classes/pkg/TestEnumNoConstants
+# kuna-fixes/src/pkg/TestEnumValuesArray.kt, kotlinc 2.0.0 -jvm-target 17, then <clinit> rewritten to Kotlin 1.3 enum shape (each constant built inside the $VALUES array: dup; putstatic; aastore) and $values() removed
+case	kuna-fixes/pkg/TestEnumValuesArray	Kuna Fixes	kuna-fixes/classes/pkg/TestEnumValuesArray
+# kuna-fixes/src/pkg/TestExplicitTypeArguments.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestExplicitTypeArguments	Kuna Fixes	kuna-fixes/classes/pkg/TestExplicitTypeArguments
+# kuna-fixes/src/pkg/TestExpressionValueCheck.kt, kotlinc 2.0.0 -jvm-target 17 (JavaLib: javac 17)
+case	kuna-fixes/pkg/TestExpressionValueCheck	Kuna Fixes	kuna-fixes/classes/pkg/TestExpressionValueCheck	kuna-fixes/classes/pkg/JavaLib
+# kuna-fixes/src/pkg/TestExpressionValueCheckLegacy.kt, kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (JavaLib: javac 17)
+case	kuna-fixes/pkg/TestExpressionValueCheckLegacy	Kuna Fixes	kuna-fixes/classes/pkg/TestExpressionValueCheckLegacy	kuna-fixes/classes/pkg/JavaLib
+# kuna-fixes/src/pkg/TestExtensionCall.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestExtensionCall{Lib,Multi,Box}.kt
+case	kuna-fixes/pkg/TestExtensionCall	Kuna Fixes	kuna-fixes/classes/pkg/TestExtensionCall	kuna-fixes/classes/pkg/lib/ExtLib	kuna-fixes/classes/pkg/lib/ExtMulti	kuna-fixes/classes/pkg/lib/ExtMulti__TestExtensionCallMultiKt	kuna-fixes/classes/pkg/lib/ExtBox	kuna-fixes/classes/pkg/lib/ExtTools
+# kuna-fixes/src/pkg/TestExtensionProperty.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestExtensionProperty	Kuna Fixes	kuna-fixes/classes/pkg/TestExtensionProperty
+# kuna-fixes/src/pkg/TestExtensionReceiver.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestExtensionReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestExtensionReceiver	kuna-fixes/classes/pkg/TestExtensionReceiverKt
+# kuna-fixes/src/pkg/TestExternalSupertypeArgs.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestExternalSupertypeArgs	Kuna Fixes	kuna-fixes/classes/pkg/TestExternalSupertypeArgs
+# kuna-fixes/src/pkg/TestFacadeCall.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestFacadeCall{Lib,Multi1,Multi2}.kt
+case	kuna-fixes/pkg/TestFacadeCall	Kuna Fixes	kuna-fixes/classes/pkg/TestFacadeCall	kuna-fixes/classes/pkg/lib/FacadeLib	kuna-fixes/classes/pkg/lib/FacadeMulti	kuna-fixes/classes/pkg/lib/FacadeMulti__TestFacadeCallMulti1Kt	kuna-fixes/classes/pkg/lib/FacadeMulti__TestFacadeCallMulti2Kt
+# kuna-fixes/src/pkg/TestFailedMethodHidden.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestFailedMethodHidden	Kuna Fixes	kuna-fixes/classes/pkg/TestFailedMethodHidden
+# kuna-fixes/src/pkg/TestFieldIncrementShape.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestFieldIncrementShape	Kuna Fixes	kuna-fixes/classes/pkg/TestFieldIncrementShape
+# kuna-fixes/src/pkg/TestFieldReadReuse.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestFieldReadReuse	Kuna Fixes	kuna-fixes/classes/pkg/TestFieldReadReuse
+# kuna-fixes/src/pkg/FileClassSizes.kt, kotlinc 2.0.0 (-jvm-target 17 -Xmultifile-parts-inherit; with FileClassShapes.kt)
+case	kuna-fixes/pkg/TestFileClassConstructor__FileClassSizesKt	Kuna Fixes	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassSizesKt	kuna-fixes/classes/pkg/TestFileClassConstructor__FileClassShapesKt	kuna-fixes/classes/pkg/TestFileClassConstructor
+# kuna-fixes/src/pkg/TestFileStaticInitializer.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestFileStaticInitializer	Kuna Fixes	kuna-fixes/classes/pkg/TestFileStaticInitializer
+# kuna-fixes/src/pkg/TestFinallyExitVersions.java, javac 17.0.21
+case	kuna-fixes/pkg/TestFinallyExitVersions	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyExitVersions
+# kuna-fixes/src/pkg/TestForInlineCopy.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestForInlineCopyKt	Kuna Fixes	kuna-fixes/classes/pkg/TestForInlineCopyKt	kuna-fixes/classes/pkg/InlineSink	kuna-fixes/classes/pkg/InlineFlow
+# kuna-fixes/src/pkg/TestForLoopContinueUpdate.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestForLoopContinueUpdate	Kuna Fixes	kuna-fixes/classes/pkg/TestForLoopContinueUpdate
+# kuna-fixes/src/pkg/TestForLoopDefinitions.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestForLoopDefinitions	Kuna Fixes	kuna-fixes/classes/pkg/TestForLoopDefinitions
+# kuna-fixes/src/pkg/TestForLoopExitCondition.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestForLoopExitCondition	Kuna Fixes	kuna-fixes/classes/pkg/TestForLoopExitCondition
+# kuna-fixes/src/pkg/TestForRangeCounter.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestForRangeCounter	Kuna Fixes	kuna-fixes/classes/pkg/TestForRangeCounter
+# kuna-fixes/src/pkg/TestForRangeExclusiveBound.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestForRangeExclusiveBound	Kuna Fixes	kuna-fixes/classes/pkg/TestForRangeExclusiveBound
+# kuna-fixes/src/pkg/TestForRangeUnmatchedBound.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestForRangeUnmatchedBound	Kuna Fixes	kuna-fixes/classes/pkg/TestForRangeUnmatchedBound
+# kuna-fixes/src/pkg/TestFreeGenericArgument.java, javac 17.0.21 (-g, with src/pkglib/ExtPreds.java, not in the input)
+case	kuna-fixes/pkg/TestFreeGenericArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestFreeGenericArgument
+# kuna-fixes/src/pkg/TestGeneratedConstructors.kt, kotlinc 2.0.0 (-jvm-target 17 -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestGeneratedConstructors	Kuna Fixes	kuna-fixes/classes/pkg/TestGeneratedConstructors
+# kuna-fixes/src/pkg/TestGenericPatternBinding.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestGenericPatternBinding	Kuna Fixes	kuna-fixes/classes/pkg/TestGenericPatternBinding
+# kuna-fixes/src/pkg/TestGenericSlotReuse.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestGenericSlotReuse	Kuna Fixes	kuna-fixes/classes/pkg/TestGenericSlotReuse
+# kuna-fixes/src/pkg/TestHiddenEmptySuperCall.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestHiddenEmptySuperCall	Kuna Fixes	kuna-fixes/classes/pkg/TestHiddenEmptySuperCall
+# kuna-fixes/src/pkg/TestIfDenestFallthrough.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestIfDenestFallthrough	Kuna Fixes	kuna-fixes/classes/pkg/TestIfDenestFallthrough
+# kuna-fixes/src/pkg/TestImplicitOuterInstance.java, javac 17.0.21 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestImplicitOuterInstance	Kuna Fixes	kuna-fixes/classes/pkg/TestImplicitOuterInstance
+# kuna-fixes/src/pkg/TestImplicitWideningArithmetic.java, javac 17.0.21
+case	kuna-fixes/pkg/TestImplicitWideningArithmetic	Kuna Fixes	kuna-fixes/classes/pkg/TestImplicitWideningArithmetic
+# kuna-fixes/src/pkg/TestIncrementStatements.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestIncrementStatements	Kuna Fixes	kuna-fixes/classes/pkg/TestIncrementStatements
+# kuna-fixes/src/pkg/TestInheritedMemberType.java, javac 17.0.21 (-g, with src/pkg/TestInheritedMemberBase.java, vendored as second input classes, against pkglib.Agg, pkglib.Filters, pkglib.Writeable and pkgio.Reader, not in the input)
+case	kuna-fixes/pkg/TestInheritedMemberType	Kuna Fixes	kuna-fixes/classes/pkg/TestInheritedMemberType	kuna-fixes/classes/pkg/TestInheritedMemberBase
+# kuna-fixes/src/pkg/TestInlineClassConstructorAccessor.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestInlineClassConstructorAccessor	Kuna Fixes	kuna-fixes/classes/pkg/TestInlineClassConstructorAccessor
+# kuna-fixes/src/pkg/TestInlineMarkerFinally.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestInlineMarkerFinally	Kuna Fixes	kuna-fixes/classes/pkg/TestInlineMarkerFinally
+# kuna-fixes/src/pkg/TestInlinedObjectCapture.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$dropFirst$1$2.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$$inlined$source$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$orElse$1$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1.class
+class	kuna-fixes/classes/pkg/TestInlinedObjectCaptureKt$source$1$drain$1.class
+class	kuna-fixes/classes/pkg/Sink.class
+class	kuna-fixes/classes/pkg/Source.class
+compare	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.kt	TestInlinedObjectCaptureKt$dropFirst$$inlined$source$1.java	TestInlinedObjectCaptureKt.kt	TestInlinedObjectCaptureKt.java
+# kuna-fixes/src/pkg/TestInnerMethodArgumentShift.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestInnerMethodArgumentShift	Kuna Fixes	kuna-fixes/classes/pkg/TestInnerMethodArgumentShift
+# kuna-fixes/src/pkg/TestInnerOfGenericOuter.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestInnerOfGenericOuter	Kuna Fixes	kuna-fixes/classes/pkg/TestInnerOfGenericOuter
+# kuna-fixes/src/pkg/TestInterfaceCompanionField.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestInterfaceCompanionField	Kuna Fixes	kuna-fixes/classes/pkg/TestInterfaceCompanionField
+# kuna-fixes/src/pkg/TestInterfaceObjectMethods.java, javac 21.0.13.1 (-g --release 17) (with java/lang/Object.java, a stand-in that declares clone protected, javac 21.0.13.1 --patch-module java.base, vendored as a second input class)
+case	kuna-fixes/pkg/TestInterfaceObjectMethods	Kuna Fixes	kuna-fixes/classes/pkg/TestInterfaceObjectMethods	kuna-fixes/classes/java/lang/Object
+# kuna-fixes/src/pkg/TestIrreducibleTry.jasm, asmtools-core 7.0.b10-ea jasm, run on JDK 17.0.20.1
+case	kuna-fixes/pkg/TestIrreducibleTry	Kuna Fixes	kuna-fixes/classes/pkg/TestIrreducibleTry
+# kuna-fixes/src/pkg/TestJavaCastSyntax.kt, kotlinc 2.0.0 (-Xlambdas=class)
+case	kuna-fixes/pkg/TestJavaCastSyntax	Kuna Fixes	kuna-fixes/classes/pkg/TestJavaCastSyntax
+# kuna-fixes/src/pkg/TestJavaClassLiteral.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestJavaClassLiteral	Kuna Fixes	kuna-fixes/classes/pkg/TestJavaClassLiteral
+# kuna-fixes/src/pkg/TestJavaKeywordNames.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestJavaKeywordNames	Kuna Fixes	kuna-fixes/classes/pkg/TestJavaKeywordNames
+# kuna-fixes/src/pkg/TestJavaReferenceCast.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestJavaReferenceCast	Kuna Fixes	kuna-fixes/classes/pkg/TestJavaReferenceCast
+# kuna-fixes/src/pkg/TestJavaStatementJump.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestJavaStatementJump	Kuna Fixes	kuna-fixes/classes/pkg/TestJavaStatementJump
+# kuna-fixes/src/pkg/TestJavaTypeSyntax.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestJavaTypeSyntax	Kuna Fixes	kuna-fixes/classes/pkg/TestJavaTypeSyntax
+# kuna-fixes/src/pkg/TestJavacBooleanCompare.java, javac 21.0.13 (-g --release 21)
+case	kuna-fixes/pkg/TestJavacBooleanCompare	Kuna Fixes	kuna-fixes/classes/pkg/TestJavacBooleanCompare
+# kuna-fixes/src/pkg/TestJavacLayout.java, javac 17.0.21.0.3
+case	kuna-fixes/pkg/TestJavacLayout	Kuna Fixes	kuna-fixes/classes/pkg/TestJavacLayout
+# kuna-fixes/src/pkg/TestJavacLoops.java, javac 17.0.21.0.3 (-g -source 17 -target 17)
+case	kuna-fixes/pkg/TestJavacLoops	Kuna Fixes	kuna-fixes/classes/pkg/TestJavacLoops
+# kuna-fixes/src/pkg/TestJavacTails.java, javac 17.0.21.0.3 (-g -source 17 -target 17)
+case	kuna-fixes/pkg/TestJavacTails	Kuna Fixes	kuna-fixes/classes/pkg/TestJavacTails
+# kuna-fixes/src/pkg/TestJumpToNonLoopLabel.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestJumpToNonLoopLabel	Kuna Fixes	kuna-fixes/classes/pkg/TestJumpToNonLoopLabel
+# kuna-fixes/src/pkg/TestJvmNameCall.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17), with src/pkg/lib/TestJvmNameCallLib.kt
+case	kuna-fixes/pkg/TestJvmNameCall	Kuna Fixes	kuna-fixes/classes/pkg/TestJvmNameCall	kuna-fixes/classes/pkg/lib/Counter	kuna-fixes/classes/pkg/lib/SubCounter	kuna-fixes/classes/pkg/lib/Meters
+# kuna-fixes/src/pkg/TestJvmOverloads.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestJvmOverloads	Kuna Fixes	kuna-fixes/classes/pkg/TestJvmOverloads
+# kuna-fixes/src/pkg/TestKtClassHeaderMetadata.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtClassHeaderMetadata	Kuna Fixes	kuna-fixes/classes/pkg/TestKtClassHeaderMetadata
+# kuna-fixes/src/pkg/TestKtCompanionOverride.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17)
+case	kuna-fixes/pkg/TestKtCompanionOverride	Kuna Fixes	kuna-fixes/classes/pkg/TestKtCompanionOverride
+# kuna-fixes/src/pkg/TestKtConstructorAccessorCall.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestKtConstructorAccessorCall	Kuna Fixes	kuna-fixes/classes/pkg/TestKtConstructorAccessorCall
+# kuna-fixes/src/pkg/TestKtContractImport.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtContractImport	Kuna Fixes	kuna-fixes/classes/pkg/TestKtContractImport
+# kuna-fixes/src/pkg/TestKtDataClassPropertyParameters.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtDataClassPropertyParameters	Kuna Fixes	kuna-fixes/classes/pkg/TestKtDataClassPropertyParameters
+# kuna-fixes/src/pkg/TestKtDefaultImplsDelegate.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtDefaultImplsDelegate	Kuna Fixes	kuna-fixes/classes/pkg/TestKtDefaultImplsDelegate
+# kuna-fixes/src/pkg/TestKtEmptyPrimaryConstructor.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestKtEmptyPrimaryConstructor	Kuna Fixes	kuna-fixes/classes/pkg/TestKtEmptyPrimaryConstructor
+# kuna-fixes/src/pkg/TestKtEnclosingTypeParameter.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtEnclosingTypeParameter	Kuna Fixes	kuna-fixes/classes/pkg/TestKtEnclosingTypeParameter
+# kuna-fixes/src/pkg/TestKtEnumWhenMappings.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestKtEnumWhenMappings	Kuna Fixes	kuna-fixes/classes/pkg/TestKtEnumWhenMappings
+# kuna-fixes/src/pkg/TestKtEscapedClassName.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtEscapedClassName	Kuna Fixes	kuna-fixes/classes/pkg/TestKtEscapedClassName
+# kuna-fixes/src/pkg/TestKtExtensionMemberType.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17); TestKtExtensionMemberTypeKt from the same source
+case	kuna-fixes/pkg/TestKtExtensionMemberType	Kuna Fixes	kuna-fixes/classes/pkg/TestKtExtensionMemberType	kuna-fixes/classes/pkg/TestKtExtensionMemberTypeKt
+# kuna-fixes/src/pkg/TestKtFieldReadOnce.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtFieldReadOnce	Kuna Fixes	kuna-fixes/classes/pkg/TestKtFieldReadOnce
+# kuna-fixes/src/pkg/TestKtFieldReadPaths.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtFieldReadPaths	Kuna Fixes	kuna-fixes/classes/pkg/TestKtFieldReadPaths
+# kuna-fixes/src/pkg/TestKtFinallyExitVersions.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtFinallyExitVersions	Kuna Fixes	kuna-fixes/classes/pkg/TestKtFinallyExitVersions
+# kuna-fixes/src/pkg/TestKtFinallySemaphore.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestKtFinallySemaphore	Kuna Fixes	kuna-fixes/classes/pkg/TestKtFinallySemaphore
+# kuna-fixes/src/pkg/TestKtFunctionParameterName.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), then the LocalVariableTable of every method removed (kotlinc 1.3's data class equals has none)
+case	kuna-fixes/pkg/TestKtFunctionParameterName	Kuna Fixes	kuna-fixes/classes/pkg/TestKtFunctionParameterName
+# kuna-fixes/src/pkg/TestKtHeadDefinitionScope.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtHeadDefinitionScope	Kuna Fixes	kuna-fixes/classes/pkg/TestKtHeadDefinitionScope
+opt	kt-enable	0
+# kuna-fixes/src/pkg/TestKtImplicitWidening.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtImplicitWidening	Kuna Fixes	kuna-fixes/classes/pkg/TestKtImplicitWidening
+# kuna-fixes/src/pkg/TestKtInlineClassValue.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtInlineClassValue	Kuna Fixes	kuna-fixes/classes/pkg/TestKtInlineClassValue
+# kuna-fixes/src/pkg/TestKtInlineEvaluationOrder.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtInlineEvaluationOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestKtInlineEvaluationOrder
+# kuna-fixes/src/pkg/TestKtInlineHeapRead.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtInlineHeapRead	Kuna Fixes	kuna-fixes/classes/pkg/TestKtInlineHeapRead
+# kuna-fixes/src/pkg/TestKtInlineLockLocal.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtInlineLockLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestKtInlineLockLocal
+# kuna-fixes/src/pkg/TestKtInlinedStdlibCall.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtInlinedStdlibCall	Kuna Fixes	kuna-fixes/classes/pkg/TestKtInlinedStdlibCall
+# kuna-fixes/src/pkg/TestKtInnerClassConstructor.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtInnerClassConstructor	Kuna Fixes	kuna-fixes/classes/pkg/TestKtInnerClassConstructor
+# kuna-fixes/src/pkg/TestKtJvmFieldSetter.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtJvmFieldSetter	Kuna Fixes	kuna-fixes/classes/pkg/TestKtJvmFieldSetter
+# kuna-fixes/src/pkg/TestKtLegacyCheckBranchingDelegation.kt, kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool
+case	kuna-fixes/pkg/TestKtLegacyCheckBranchingDelegation	Kuna Fixes	kuna-fixes/classes/pkg/TestKtLegacyCheckBranchingDelegation
+# kuna-fixes/src/pkg/TestKtLegacyFunctionChecks.kt, kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull and the receiver check's name <this> to Kotlin 1.3's $this$shout in the constant pool
+case	kuna-fixes/pkg/TestKtLegacyFunctionChecks	Kuna Fixes	kuna-fixes/classes/pkg/TestKtLegacyFunctionChecks
+# kuna-fixes/src/pkg/TestKtLegacyToTypedArray.kt, kotlinc 2.0.0 -jvm-target 17; TestKtLegacyToTypedArray.class then rewritten to Kotlin 1.3's shapes with ASM (Intrinsics.checkParameterIsNotNull; after each inlined toTypedArray's Collection.toArray: dup, ifnonnull, throw TypeCastException("null cannot be cast to non-null type kotlin.Array<T>"), astore/aload of a temporary), $Modern kept as kotlinc 2.0 wrote it with the check renamed
+case	kuna-fixes/pkg/TestKtLegacyToTypedArray	Kuna Fixes	kuna-fixes/classes/pkg/TestKtLegacyToTypedArray
+# kuna-fixes/src/pkg/TestKtMemberExtensionReceiver.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestKtMemberExtensionReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestKtMemberExtensionReceiver
+# kuna-fixes/src/pkg/TestKtNarrowConstantTemps.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtNarrowConstantTemps	Kuna Fixes	kuna-fixes/classes/pkg/TestKtNarrowConstantTemps
+# kuna-fixes/src/pkg/TestKtObjectMonitorCall.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtObjectMonitorCall	Kuna Fixes	kuna-fixes/classes/pkg/TestKtObjectMonitorCall
+# kuna-fixes/src/pkg/TestKtPropertyFieldFlags.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtPropertyFieldFlags	Kuna Fixes	kuna-fixes/classes/pkg/TestKtPropertyFieldFlags
+# kuna-fixes/src/pkg/TestKtRawGenericType.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestKtRawGenericType	Kuna Fixes	kuna-fixes/classes/pkg/TestKtRawGenericType
+# kuna-fixes/src/pkg/TestKtReusedInlineObject.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17); TestKtReusedInlineObjectKt and its objects from the same source
+case	kuna-fixes/pkg/TestKtReusedInlineObject	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Label.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObject$Order.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderBy$1.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$orderByDescending$1.class
+class	kuna-fixes/classes/pkg/TestKtReusedInlineObjectKt$labelBy$1.class
+# kuna-fixes/src/pkg/TestKtSafeCallFieldRead.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtSafeCallFieldRead	Kuna Fixes	kuna-fixes/classes/pkg/TestKtSafeCallFieldRead
+opt	kt-enable	0
+# kuna-fixes/src/pkg/TestKtUnlabeledSequenceBreak.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestKtUnlabeledSequenceBreak	Kuna Fixes	kuna-fixes/classes/pkg/TestKtUnlabeledSequenceBreak
+# kuna-fixes/src/pkg/TestLabelledContinueOuterEnd.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestLabelledContinueOuterEnd	Kuna Fixes	kuna-fixes/classes/pkg/TestLabelledContinueOuterEnd
+# kuna-fixes/src/pkg/TestLambdaArgumentOverload.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestLambdaArgumentOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaArgumentOverload
+# kuna-fixes/src/pkg/TestLambdaCatchVarRename.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestLambdaCatchVarRename	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaCatchVarRename
+# kuna-fixes/src/pkg/TestLambdaPertinence.java, javac 17.0.20.1
+case	kuna-fixes/pkg/TestLambdaPertinence	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaPertinence
+# kuna-fixes/src/pkg/TestLambdaReturnTypeArgument.java, javac 17.0.21 (-g, with src/pkglib/Ext.java, not in the input)
+case	kuna-fixes/pkg/TestLambdaReturnTypeArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaReturnTypeArgument
+# kuna-fixes/src/pkg/TestLambdaSingletonReturns.kt, kotlinc 2.0.0 (-Xlambdas=class)
+case	kuna-fixes/pkg/TestLambdaSingletonReturnsKt	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaSingletonReturnsKt
+# kuna-fixes/src/pkg/TestLambdaTypeVariableTarget.java, javac 17.0.20.1
+case	kuna-fixes/pkg/TestLambdaTypeVariableTarget	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaTypeVariableTarget
+# kuna-fixes/src/pkg/TestLegacyParameterChecks.kt, kotlinc 2.0.0 -jvm-target 17, then Intrinsics.checkNotNullParameter renamed to Kotlin 1.3's checkParameterIsNotNull in the constant pool
+case	kuna-fixes/pkg/TestLegacyParameterChecks	Kuna Fixes	kuna-fixes/classes/pkg/TestLegacyParameterChecks
+# kuna-fixes/src/pkg/TestLocalClassAnonymousSubclass.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestLocalClassAnonymousSubclass	Kuna Fixes	kuna-fixes/classes/pkg/TestLocalClassAnonymousSubclass
+# kuna-fixes/src/pkg/TestLocalFinalWrites.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestLocalFinalWrites	Kuna Fixes	kuna-fixes/classes/pkg/TestLocalFinalWrites
+# kuna-fixes/src/pkg/TestLocalVisibilityComment.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestLocalVisibilityComment	Kuna Fixes	kuna-fixes/classes/pkg/TestLocalVisibilityComment
+# kuna-fixes/src/pkg/TestLoopCarriedLocal.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLoopCarriedLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestLoopCarriedLocal
+# kuna-fixes/src/pkg/TestLoopFirstIfExit.java, javac 17.0.21
+case	kuna-fixes/pkg/TestLoopFirstIfExit	Kuna Fixes	kuna-fixes/classes/pkg/TestLoopFirstIfExit
+# kuna-fixes/src/pkg/TestMappedJavaMember.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestMappedJavaMember	Kuna Fixes	kuna-fixes/classes/pkg/TestMappedJavaMember
+# kuna-fixes/src/pkg/TestMappedJavaType.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestMappedJavaType	Kuna Fixes	kuna-fixes/classes/pkg/TestMappedJavaType
+# kuna-fixes/src/pkg/TestMemberExtensionProperty.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestMemberExtensionProperty	Kuna Fixes	kuna-fixes/classes/pkg/TestMemberExtensionProperty
+# kuna-fixes/src/pkg/TestMembersWithoutMetadata.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1	Kuna Fixes
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.class
+class	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$counting$$inlined$feed$1.class
+class	kuna-fixes/classes/pkg/NoMetaFeed.class
+compare	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.kt	TestMembersWithoutMetadataKt$counting$$inlined$feed$1$1.java	TestMembersWithoutMetadataKt$counting$$inlined$feed$1.kt	TestMembersWithoutMetadataKt$counting$$inlined$feed$1.java
+# kuna-fixes/src/pkg/TestMembersWithoutMetadata.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1	Kuna Fixes	kuna-fixes/classes/pkg/TestMembersWithoutMetadataKt$named$$inlined$cell$1	kuna-fixes/classes/pkg/NoMetaCell
+# kuna-fixes/src/pkg/TestMethodObjectReturnType.kt, kotlinc 2.0.0 (-Xlambdas=class)
+case	kuna-fixes/pkg/TestMethodObjectReturnType	Kuna Fixes	kuna-fixes/classes/pkg/TestMethodObjectReturnType
+# kuna-fixes/src/pkg/TestMethodRefWildcardReceiver.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestMethodRefWildcardReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver
+# kuna-fixes/src/pkg/TestMisplacedModality.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestMisplacedModality	Kuna Fixes	kuna-fixes/classes/pkg/TestMisplacedModality	kuna-fixes/classes/pkg/TestMisplacedModalityKt
+# kuna-fixes/src/pkg/TestMissedOverride.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestMissedOverride	Kuna Fixes	kuna-fixes/classes/pkg/TestMissedOverride
+# kuna-fixes/src/pkg/TestMixedTypeReassociation.java, javac 17.0.21
+case	kuna-fixes/pkg/TestMixedTypeReassociation	Kuna Fixes	kuna-fixes/classes/pkg/TestMixedTypeReassociation
+# kuna-fixes/src/pkg/TestNarrowBitwiseOperand.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestNarrowBitwiseOperand	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowBitwiseOperand
+# kuna-fixes/src/pkg/TestNegatedEquality.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestNegatedEquality	Kuna Fixes	kuna-fixes/classes/pkg/TestNegatedEquality
+# kuna-fixes/src/pkg/TestNegatedPatternLayout.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestNegatedPatternLayout	Kuna Fixes	kuna-fixes/classes/pkg/TestNegatedPatternLayout
+# kuna-fixes/src/pkg/TestNestedAnnotationArgument.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestNestedAnnotationArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedAnnotationArgument
+# kuna-fixes/src/pkg/TestNestedParamRename.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestNestedParamRename	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedParamRename
+# kuna-fixes/src/pkg/TestNonPublicNestedImport.java, javac 17.0.20.1 (-g, against a lib.Base that is not in the input)
+case	kuna-fixes/pkg/TestNonPublicNestedImport	Kuna Fixes	kuna-fixes/classes/pkg/TestNonPublicNestedImport
+# kuna-fixes/src/pkg/TestNotNullAssertion.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestNotNullAssertion	Kuna Fixes	kuna-fixes/classes/pkg/TestNotNullAssertion
+# kuna-fixes/src/pkg/TestNotNullAssertionLegacy.kt, kotlinc 2.0.0 -jvm-target 17 -Xno-unified-null-checks (Kotlin 1.3's null checks)
+case	kuna-fixes/pkg/TestNotNullAssertionLegacy	Kuna Fixes	kuna-fixes/classes/pkg/TestNotNullAssertionLegacy
+# kuna-fixes/src/pkg/TestNothingValueThrow.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestNothingValueThrowKt	Kuna Fixes	kuna-fixes/classes/pkg/TestNothingValueThrowKt	kuna-fixes/classes/pkg/NothingSource
+# kuna-fixes/src/pkg/TestNullCheckConstantValue.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestNullCheckConstantValue	Kuna Fixes	kuna-fixes/classes/pkg/TestNullCheckConstantValue
+# kuna-fixes/src/pkg/TestNullableCast.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestNullableCast	Kuna Fixes	kuna-fixes/classes/pkg/TestNullableCast
+# kuna-fixes/src/pkg/TestNullableLocal.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestNullableLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNullableLocal
+# kuna-fixes/src/pkg/TestObjectDefaultBridge.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestObjectDefaultBridgeKt	Kuna Fixes	kuna-fixes/classes/pkg/TestObjectDefaultBridgeKt	kuna-fixes/classes/pkg/BridgeCombiner
+# kuna-fixes/src/pkg/TestObjectInstance.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestObjectInstance	Kuna Fixes	kuna-fixes/classes/pkg/TestObjectInstance
+# kuna-fixes/src/pkg/TestObjectInstanceLocal.kt, kotlinc 2.0.0 -jvm-target 17, then <clinit> rewritten to Kotlin 1.3's instance local (astore_0; aload_0 for INSTANCE)
+case	kuna-fixes/pkg/TestObjectInstanceLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestObjectInstanceLocal
+# kuna-fixes/src/pkg/TestObjectSuperCall.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestObjectSuperCall	Kuna Fixes	kuna-fixes/classes/pkg/TestObjectSuperCall
+# kuna-fixes/src/pkg/TestOperatorLineBreak.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestOperatorLineBreak	Kuna Fixes	kuna-fixes/classes/pkg/TestOperatorLineBreak
+# kuna-fixes/src/pkg/TestOperatorPrecedence.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestOperatorPrecedence	Kuna Fixes	kuna-fixes/classes/pkg/TestOperatorPrecedence
+# kuna-fixes/src/pkg/TestOuterOnlySignature.java, javac 17.0.21, then the Signature of each local and anonymous class constructor set with ASM to kotlinc 1.3's form (the descriptor's parameters without the leading outer instance)
+case	kuna-fixes/pkg/TestOuterOnlySignature	Kuna Fixes	kuna-fixes/classes/pkg/TestOuterOnlySignature
+# kuna-fixes/src/pkg/TestOuterThis.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestOuterThis	Kuna Fixes	kuna-fixes/classes/pkg/TestOuterThis
+# kuna-fixes/src/pkg/TestOverlappingRanges.kt, kotlinc 2.0.0 -jvm-target 17, then each catch range of a try that returns inside a try/finally extended to its handler with ASM (kotlinc 1.3's exception table)
+case	kuna-fixes/pkg/TestOverlappingRanges	Kuna Fixes	kuna-fixes/classes/pkg/TestOverlappingRanges
+# kuna-fixes/src/pkg/TestOverrideInaccessible.java, javac 17.0.20.1 (-g) (with ext/TestOverrideInaccessibleBase.java, vendored as a second input class)
+case	kuna-fixes/pkg/TestOverrideInaccessible	Kuna Fixes	kuna-fixes/classes/pkg/TestOverrideInaccessible	kuna-fixes/classes/ext/TestOverrideInaccessibleBase
+# kuna-fixes/src/pkg/TestPartialInline.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestPartialInline	Kuna Fixes	kuna-fixes/classes/pkg/TestPartialInline
+# kuna-fixes/src/pkg/TestPatternBindingShape.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestPatternBindingShape	Kuna Fixes	kuna-fixes/classes/pkg/TestPatternBindingShape
+# kuna-fixes/src/pkg/TestPatternSubjectLocal.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestPatternSubjectLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestPatternSubjectLocal
+# kuna-fixes/src/pkg/TestPatternVariableScope.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestPatternVariableScope	Kuna Fixes	kuna-fixes/classes/pkg/TestPatternVariableScope
+# kuna-fixes/src/pkg/TestPropertyInitializerKey.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestPropertyInitializerKey	Kuna Fixes	kuna-fixes/classes/pkg/TestPropertyInitializerKey	kuna-fixes/classes/pkg/TestPropertyInitializerKeyKt
+# kuna-fixes/src/pkg/TestPropertyReferences.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestPropertyReferencesKt	Kuna Fixes	kuna-fixes/classes/pkg/TestPropertyReferencesKt
+# kuna-fixes/src/pkg/TestProtectedBackEdge.java, javac 17.0.21
+case	kuna-fixes/pkg/TestProtectedBackEdge	Kuna Fixes	kuna-fixes/classes/pkg/TestProtectedBackEdge
+# kuna-fixes/src/pkg/TestQualifiedSuperCall.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestQualifiedSuperCall	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedSuperCall
+# kuna-fixes/src/pkg/TestQualifiedSuperExternal.java, javac 17.0.21 (-g, against a pkglib.OuterLib that is not in the input)
+case	kuna-fixes/pkg/TestQualifiedSuperExternal	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedSuperExternal
+# kuna-fixes/src/pkg/TestRangeOperandPrecedence.kt, kotlinc 2.0.0 (-Xlambdas=class)
+case	kuna-fixes/pkg/TestRangeOperandPrecedenceKt	Kuna Fixes	kuna-fixes/classes/pkg/TestRangeOperandPrecedenceKt
+# kuna-fixes/src/pkg/TestRawReceiverErasure.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestRawReceiverErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestRawReceiverErasure
+# kuna-fixes/src/pkg/TestReceiverTypeArguments.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestReceiverTypeArguments	Kuna Fixes	kuna-fixes/classes/pkg/TestReceiverTypeArguments
+# kuna-fixes/src/pkg/TestRecordComputedFields.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestRecordComputedFields	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordComputedFields
+# kuna-fixes/src/pkg/TestRecordPatternInTry.java, javac 21.0.12.1 (--release 21 -g)
+case	kuna-fixes/pkg/TestRecordPatternInTry	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternInTry
+# kuna-fixes/src/pkg/TestReferenceClasses.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestReferenceClassesKt	Kuna Fixes	kuna-fixes/classes/pkg/TestReferenceClassesKt
+# kuna-fixes/src/pkg/TestReferenceInequality.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestReferenceInequality	Kuna Fixes	kuna-fixes/classes/pkg/TestReferenceInequality
+# kuna-fixes/src/pkg/TestReferenceMangled.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestReferenceMangledKt	Kuna Fixes	kuna-fixes/classes/pkg/TestReferenceMangledKt	kuna-fixes/classes/pkg/MangledHolder	kuna-fixes/classes/pkg/MangledTag
+# kuna-fixes/src/pkg/TestReferenceUnboxing.java, javac 17.0.21
+case	kuna-fixes/pkg/TestReferenceUnboxing	Kuna Fixes	kuna-fixes/classes/pkg/TestReferenceUnboxing
+# kuna-fixes/src/pkg/TestRefreshPrintedVarNames.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestRefreshPrintedVarNames	Kuna Fixes	kuna-fixes/classes/pkg/TestRefreshPrintedVarNames	kuna-fixes/classes/pkg/RefreshCountdown
+# kuna-fixes/src/pkg/TestReturnOutsideLambda.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestReturnOutsideLambdaKt	Kuna Fixes	kuna-fixes/classes/pkg/TestReturnOutsideLambdaKt
+# kuna-fixes/src/pkg/TestSamWrapperObject.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestSamWrapperObjectKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSamWrapperObjectKt
+# kuna-fixes/src/pkg/TestSealedPrivatePermits.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestSealedPrivatePermits	Kuna Fixes	kuna-fixes/classes/pkg/TestSealedPrivatePermits
+# kuna-fixes/src/pkg/TestSecondaryConstructorLine.kt, kotlinc 2.0.0 (-Xlambdas=class)
+case	kuna-fixes/pkg/TestSecondaryConstructorLine	Kuna Fixes	kuna-fixes/classes/pkg/TestSecondaryConstructorLine
+# kuna-fixes/src/pkg/TestSelfReferencingLambda.jasm, asmtools-core 7.0.b10-ea jasm (-g), run on JDK 17.0.20.1
+case	kuna-fixes/pkg/TestSelfReferencingLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestSelfReferencingLambda
+# kuna-fixes/src/pkg/TestSetterParameterName.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestSetterParameterName	Kuna Fixes	kuna-fixes/classes/pkg/TestSetterParameterName	kuna-fixes/classes/pkg/TestSetterParameterNameKt
+# kuna-fixes/src/pkg/TestShadowedTypeVariable.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestShadowedTypeVariable	Kuna Fixes	kuna-fixes/classes/pkg/TestShadowedTypeVariable
+# kuna-fixes/src/pkg/TestSneakyThrowCast.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestSneakyThrowCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSneakyThrowCast
+# kuna-fixes/src/pkg/TestSourceLocals.java, javac 17.0.21
+case	kuna-fixes/pkg/TestSourceLocals	Kuna Fixes	kuna-fixes/classes/pkg/TestSourceLocals
+# kuna-fixes/src/pkg/TestSourceLocalsKt.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestSourceLocalsKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSourceLocalsKt
+# kuna-fixes/src/pkg/TestSourceNullCheck.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestSourceNullCheck	Kuna Fixes	kuna-fixes/classes/pkg/TestSourceNullCheck
+# kuna-fixes/src/pkg/TestSourcePatterns.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestSourcePatterns	Kuna Fixes	kuna-fixes/classes/pkg/TestSourcePatterns
+# kuna-fixes/src/pkg/TestSplitConstructorCall.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21), decompiled as Java
+case	kuna-fixes/pkg/TestSplitConstructorCall	Kuna Fixes	kuna-fixes/classes/pkg/TestSplitConstructorCall	kuna-fixes/classes/pkg/SplitEntry	kuna-fixes/classes/pkg/SplitFormat	kuna-fixes/classes/pkg/SplitPart
+opt	kt-enable	0
+# kuna-fixes/src/pkg/TestSplitConstructorCallKotlin.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestSplitConstructorCallKotlin	Kuna Fixes	kuna-fixes/classes/pkg/TestSplitConstructorCallKotlin	kuna-fixes/classes/pkg/SplitPair
+# kuna-fixes/src/pkg/TestStaticInitializer.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestStaticInitializer	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitializer
+# kuna-fixes/src/pkg/TestStaticTypeVariableScope.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestStaticTypeVariableScope	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticTypeVariableScope
+# kuna-fixes/src/pkg/TestStringLiteralEscape.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestStringLiteralEscape	Kuna Fixes	kuna-fixes/classes/pkg/TestStringLiteralEscape
+# kuna-fixes/src/pkg/TestSuperPropertyAccess.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestSuperPropertyAccess	Kuna Fixes	kuna-fixes/classes/pkg/TestSuperPropertyAccess
+# kuna-fixes/src/pkg/TestSupertypeTypeArguments.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestSupertypeTypeArguments	Kuna Fixes	kuna-fixes/classes/pkg/TestSupertypeTypeArguments
+# kuna-fixes/src/pkg/TestSuspendConditionalFinally.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendConditionalFinally	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendConditionalFinally
+# kuna-fixes/src/pkg/TestSuspendContinuation.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestSuspendContinuationKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendContinuationKt	kuna-fixes/classes/pkg/SuspendSink	kuna-fixes/classes/pkg/SuspendSource
+# kuna-fixes/src/pkg/TestSuspendFinally.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestSuspendFinallyKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendFinallyKt
+opt	kt-enable	0
+# kuna-fixes/src/pkg/TestSuspendFunctionType.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendFunctionType	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendFunctionType
+# kuna-fixes/src/pkg/TestSuspendImpl.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendImpl	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendImpl	kuna-fixes/classes/pkg/ImplSource	kuna-fixes/classes/pkg/TestSuspendImplDoubler
+# kuna-fixes/src/pkg/TestSuspendLambda.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendLambdaKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendLambdaKt	kuna-fixes/classes/pkg/LambdaSource	kuna-fixes/classes/pkg/LambdaSink	kuna-fixes/classes/pkg/LambdaMode
+# kuna-fixes/src/pkg/TestSuspendLoopFinally.kt, kotlinc-jvm 2.0.0 (JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestSuspendLoopFinally	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendLoopFinally
+opt	kt-enable	0
+# kuna-fixes/src/pkg/TestSuspendLoopTry.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestSuspendLoopTry	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendLoopTry
+opt	kt-enable	0
+# kuna-fixes/src/pkg/TestSuspendMemberMachine.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendMemberMachine	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendMemberMachine	kuna-fixes/classes/pkg/MemberSource
+# kuna-fixes/src/pkg/TestSuspendResultCast.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.20.1)
+case	kuna-fixes/pkg/TestSuspendResultCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendResultCast
+opt	kt-enable	0
+# kuna-fixes/src/pkg/TestSuspendSam.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendSamKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendSamKt	kuna-fixes/classes/pkg/SamSink	kuna-fixes/classes/pkg/SamIntSink	kuna-fixes/classes/pkg/SamFlow	kuna-fixes/classes/pkg/SamIntFlow
+# kuna-fixes/src/pkg/TestSuspendStateMachine.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendStateMachineKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendStateMachineKt	kuna-fixes/classes/pkg/StateSource
+# kuna-fixes/src/pkg/TestSuspendTailCall.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestSuspendTailCallKt	Kuna Fixes	kuna-fixes/classes/pkg/TestSuspendTailCallKt	kuna-fixes/classes/pkg/TailSource
+# kuna-fixes/src/pkg/TestSwitchAssignNotYield.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestSwitchAssignNotYield	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchAssignNotYield
+# kuna-fixes/src/pkg/TestSwitchCaseOrder.java, javac 21.0.13 (-g --release 21)
+case	kuna-fixes/pkg/TestSwitchCaseOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchCaseOrder
+# kuna-fixes/src/pkg/TestSwitchCaseScope.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestSwitchCaseScope	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchCaseScope
+# kuna-fixes/src/pkg/TestSwitchEmptyGroupBreak.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSwitchEmptyGroupBreak	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchEmptyGroupBreak
+# kuna-fixes/src/pkg/TestSwitchExprConstLub.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestSwitchExprConstLub	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchExprConstLub
+# kuna-fixes/src/pkg/TestSwitchExprPolyCast.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestSwitchExprPolyCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchExprPolyCast
+# kuna-fixes/src/pkg/TestSwitchExpressionArmClash.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestSwitchExpressionArmClash	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchExpressionArmClash
+# kuna-fixes/src/pkg/TestSwitchFillerFloor.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestSwitchFillerFloor	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchFillerFloor
+# kuna-fixes/src/pkg/TestSwitchHeadIndent.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestSwitchHeadIndent	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchHeadIndent
+# kuna-fixes/src/pkg/TestSwitchSyntheticDefault.java, javac 21.0.13 (-g --release 21)
+case	kuna-fixes/pkg/TestSwitchSyntheticDefault	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchSyntheticDefault
+# kuna-fixes/src/pkg/TestSwitchTableFillers.java, javac 21.0.13 (-g --release 21)
+case	kuna-fixes/pkg/TestSwitchTableFillers	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchTableFillers
+# kuna-fixes/src/pkg/TestSynchronizedAccessor.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestSynchronizedAccessor	Kuna Fixes	kuna-fixes/classes/pkg/TestSynchronizedAccessor
+# kuna-fixes/src/pkg/TestSynchronizedBreakExit.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17.0.21)
+case	kuna-fixes/pkg/TestSynchronizedBreakExit	Kuna Fixes	kuna-fixes/classes/pkg/TestSynchronizedBreakExit
+# kuna-fixes/src/pkg/TestSynchronizedLockAssignment.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestSynchronizedLockAssignment	Kuna Fixes	kuna-fixes/classes/pkg/TestSynchronizedLockAssignment
+# kuna-fixes/src/pkg/TestSyntheticAccessorCall.kt, kotlinc 2.0.0 -jvm-target 17 (JDK 17)
+case	kuna-fixes/pkg/TestSyntheticAccessorCall	Kuna Fixes	kuna-fixes/classes/pkg/TestSyntheticAccessorCall	kuna-fixes/classes/pkg/TestSyntheticAccessorCallKt
+# kuna-fixes/src/pkg/TestTernaryNumericArms.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestTernaryNumericArms	Kuna Fixes	kuna-fixes/classes/pkg/TestTernaryNumericArms
+# kuna-fixes/src/pkg/TestThrowableCast.kt, kotlinc 2.0.0 -jvm-target 17, then checkcast java/lang/Throwable inserted before each athrow, as Kotlin 1.3's JVM backend (okio 2.6, okhttp 4.7) emits it
+case	kuna-fixes/pkg/TestThrowableCast	Kuna Fixes	kuna-fixes/classes/pkg/TestThrowableCast
+# kuna-fixes/src/pkg/TestThrowsClassName.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestThrowsClassName	Kuna Fixes	kuna-fixes/classes/pkg/TestThrowsClassName
+# kuna-fixes/src/pkg/TestTopLevelModality.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestTopLevelModality	Kuna Fixes	kuna-fixes/classes/pkg/TestTopLevelModality
+# kuna-fixes/src/pkg/TestTryCatchNotFlag.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestTryCatchNotFlag	Kuna Fixes	kuna-fixes/classes/pkg/TestTryCatchNotFlag
+# kuna-fixes/src/pkg/TestTwrClassVersion.java, javac 17.0.21 (--release 8 -g, class version 52)
+case	kuna-fixes/pkg/TestTwrClassVersion	Kuna Fixes	kuna-fixes/classes/pkg/TestTwrClassVersion
+# kuna-fixes/src/pkg/TestTwrDesugaringShape.java, javac 17.0.21 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestTwrDesugaringShape	Kuna Fixes	kuna-fixes/classes/pkg/TestTwrDesugaringShape
+# kuna-fixes/src/pkg/TestTwrLibraryResource.java, javac 17.0.21 (-source 17 -target 17 -g; the resource classes pkglib.TwrLock, pkglib.TwrStream on its classpath, not in the case)
+case	kuna-fixes/pkg/TestTwrLibraryResource	Kuna Fixes	kuna-fixes/classes/pkg/TestTwrLibraryResource
+# kuna-fixes/src/pkg/TestTypeAnnotationArgumentScope.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestTypeAnnotationArgumentScope	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeAnnotationArgumentScope
+# kuna-fixes/src/pkg/TestTypeAnnotationQualifiedName.java, javac 17.0.20.1 (-g, against a lib.AnnotatedHolder that is not in the input)
+case	kuna-fixes/pkg/TestTypeAnnotationQualifiedName	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeAnnotationQualifiedName
+# kuna-fixes/src/pkg/TestTypeParameterId.kt, kotlinc 2.0.0 (-Xlambdas=class)
+case	kuna-fixes/pkg/TestTypeParameterId	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeParameterId
+# kuna-fixes/src/pkg/TestTypeSwitchEnumLabel.java, javac 21.0.12.1 -g
+case	kuna-fixes/pkg/TestTypeSwitchEnumLabel	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeSwitchEnumLabel
+# kuna-fixes/src/pkg/TestTypeSwitchLabelLookup.java, javac 25.0.5 -g
+case	kuna-fixes/pkg/TestTypeSwitchLabelLookup	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeSwitchLabelLookup
+# kuna-fixes/src/pkg/TestTypeSwitchPatternType.java, javac 21.0.12.1 (no -g)
+case	kuna-fixes/pkg/TestTypeSwitchPatternType	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeSwitchPatternType
+# kuna-fixes/src/pkg/TestUnboxedArgumentType.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestUnboxedArgumentType	Kuna Fixes	kuna-fixes/classes/pkg/TestUnboxedArgumentType
+# kuna-fixes/src/pkg/TestUnboxingCastType.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestUnboxingCastType	Kuna Fixes	kuna-fixes/classes/pkg/TestUnboxingCastType
+# kuna-fixes/src/pkg/TestUncheckedCallResultCast.java, javac 17.0.20.1
+case	kuna-fixes/pkg/TestUncheckedCallResultCast	Kuna Fixes	kuna-fixes/classes/pkg/TestUncheckedCallResultCast
+# kuna-fixes/src/pkg/TestUncheckedGenericCast.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestUncheckedGenericCast	Kuna Fixes	kuna-fixes/classes/pkg/TestUncheckedGenericCast
+# kuna-fixes/src/pkg/TestUncheckedTypePattern.java, javac 17.0.20.1 (-source 17 -target 17 -g)
+case	kuna-fixes/pkg/TestUncheckedTypePattern	Kuna Fixes	kuna-fixes/classes/pkg/TestUncheckedTypePattern
+# kuna-fixes/src/pkg/TestUnderscoreNames.kt, kotlinc 2.0.0 -jvm-target 17
+case	kuna-fixes/pkg/TestUnderscoreNames	Kuna Fixes	kuna-fixes/classes/pkg/TestUnderscoreNames
+# kuna-fixes/src/pkg/TestUnescapedNames.kt, kotlinc 2.0.0 -jvm-target 17 -language-version 1.9
+case	kuna-fixes/pkg/TestUnescapedNames	Kuna Fixes	kuna-fixes/classes/pkg/TestUnescapedNames
+# kuna-fixes/src/pkg/TestUnlistedAnonymousClass.kt, kotlinc 2.0.0 (-jvm-target 17, JDK 17.0.21)
+case	kuna-fixes/pkg/TestUnlistedAnonymousClass	Kuna Fixes	kuna-fixes/classes/pkg/TestUnlistedAnonymousClass	kuna-fixes/classes/pkg/UnlistedQueue	kuna-fixes/classes/pkg/UnlistedTask	kuna-fixes/classes/pkg/UnlistedHandler	kuna-fixes/classes/pkg/UnlistedSink	kuna-fixes/classes/pkg/UnlistedSource
+# kuna-fixes/src/pkg/TestUnreadBlockLocal.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUnreadBlockLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestUnreadBlockLocal
+# kuna-fixes/src/pkg/TestUnrepresentableType.kt, kotlinc 2.0.0 -jvm-target 17 -Xlambdas=class (JDK 17.0.21)
+case	kuna-fixes/pkg/TestUnrepresentableType	Kuna Fixes	kuna-fixes/classes/pkg/TestUnrepresentableType
+# kuna-fixes/src/pkg/TestUnseenClassOverload.java, javac 17.0.21 (-g, against pkg/UnseenSink, which is not in the case)
+case	kuna-fixes/pkg/TestUnseenClassOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestUnseenClassOverload
+# kuna-fixes/src/pkg/TestVarMergeLiveness.kt, kotlinc 2.0.0
+case	kuna-fixes/pkg/TestVarMergeLiveness	Kuna Fixes	kuna-fixes/classes/pkg/TestVarMergeLiveness
+# kuna-fixes/src/pkg/TestVarMergeLostDefinition.java, javac 17.0.21
+case	kuna-fixes/pkg/TestVarMergeLostDefinition	Kuna Fixes	kuna-fixes/classes/pkg/TestVarMergeLostDefinition
+# kuna-fixes/src/pkg/TestVarMergeLvtWidening.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestVarMergeLvtWidening	Kuna Fixes	kuna-fixes/classes/pkg/TestVarMergeLvtWidening
+# kuna-fixes/src/pkg/TestVarMergeNarrowing.java, javac 17.0.20.1 (no -g)
+case	kuna-fixes/pkg/TestVarMergeNarrowing	Kuna Fixes	kuna-fixes/classes/pkg/TestVarMergeNarrowing
+# kuna-fixes/src/pkg/TestVarMergeUnrelatedType.java, javac 17.0.21.0.3 (no -g)
+case	kuna-fixes/pkg/TestVarMergeUnrelatedType	Kuna Fixes	kuna-fixes/classes/pkg/TestVarMergeUnrelatedType
+# kuna-fixes/src/pkg/TestVarargArrayLength.java, javac 17.0.21.0.3 (-g)
+case	kuna-fixes/pkg/TestVarargArrayLength	Kuna Fixes	kuna-fixes/classes/pkg/TestVarargArrayLength
+# kuna-fixes/src/pkg/TestVarargFromMetadata.kt, kotlinc 2.0.0 (-jvm-target 17 -no-stdlib -no-reflect, JDK 17)
+case	kuna-fixes/pkg/TestVarargFromMetadata	Kuna Fixes	kuna-fixes/classes/pkg/TestVarargFromMetadata
+# kuna-fixes/src/pkg/TestVarargsSpreadResolution.java, javac 17.0.21 (-g)
+case	kuna-fixes/pkg/TestVarargsSpreadResolution	Kuna Fixes	kuna-fixes/classes/pkg/TestVarargsSpreadResolution
+# kuna-fixes/src/pkg/TestWhenBreak.kt, kotlinc 2.0.0 (-jvm-target 17)
+case	kuna-fixes/pkg/TestWhenBreak	Kuna Fixes	kuna-fixes/classes/pkg/TestWhenBreak
+# kuna-fixes/src/pkg/TestWhenCaseType.kt, kotlinc 2.0.0 (-Xlambdas=class)
+case	kuna-fixes/pkg/TestWhenCaseTypeKt	Kuna Fixes	kuna-fixes/classes/pkg/TestWhenCaseTypeKt
+# kuna-fixes/src/pkg/TestWildcardArrayBound.java, javac 17.0.20.1 (-g)
+case	kuna-fixes/pkg/TestWildcardArrayBound	Kuna Fixes	kuna-fixes/classes/pkg/TestWildcardArrayBound
+# kuna-fixes/src/pkg/TestQualifiedSuperEmpty.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestQualifiedSuperEmpty	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedSuperEmpty
+# kuna-fixes/src/pkg/TestSelectingCast.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSelectingCast	Kuna Fixes	kuna-fixes/classes/pkg/TestSelectingCast
+# kuna-fixes/src/pkg/TestVarargsGenericRival.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestVarargsGenericRival	Kuna Fixes	kuna-fixes/classes/pkg/TestVarargsGenericRival
+# kuna-fixes/src/pkg/TestStaticInitExit.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitExit	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitExit
+# kuna-fixes/src/pkg/TestNarrowConstLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNarrowConstLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowConstLocal
+# kuna-fixes/src/pkg/TestCapturedListAdd.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestCapturedListAdd	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedListAdd
+# kuna-fixes/src/pkg/TestLocalGenericNoDebug.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestLocalGenericNoDebug	Kuna Fixes	kuna-fixes/classes/pkg/TestLocalGenericNoDebug
+# kuna-fixes/src/pkg/TestDiamondWildcardArg.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestDiamondWildcardArg	Kuna Fixes	kuna-fixes/classes/pkg/TestDiamondWildcardArg
+# kuna-fixes/src/pkg/TestParameterNamesNoDebug.java, javac 21.0.13.1 (-parameters -g:none --release 17)
+case	kuna-fixes/pkg/TestParameterNamesNoDebug	Kuna Fixes	kuna-fixes/classes/pkg/TestParameterNamesNoDebug
+# kuna-fixes/src/pkg/TestStaticFieldBehindLambda.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticFieldBehindLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticFieldBehindLambda
+# kuna-fixes/src/pkg/TestNarrowLocalIncrement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNarrowLocalIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestNarrowLocalIncrement
+# kuna-fixes/src/pkg/TestTernaryIntLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestTernaryIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTernaryIntLocal
+# kuna-fixes/src/pkg/TestCompoundIntLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCompoundIntLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestCompoundIntLocal
+# kuna-fixes/src/pkg/TestIncrementBeforeCondition.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestIncrementBeforeCondition	Kuna Fixes	kuna-fixes/classes/pkg/TestIncrementBeforeCondition
+# kuna-fixes/src/pkg/TestStaticInitializerOrder.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitializerOrder	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitializerOrder
+# kuna-fixes/src/pkg/TestFieldReadAfterCall.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFieldReadAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestFieldReadAfterCall
+# kuna-fixes/src/pkg/TestRecordPatternNestedType.java, javac 21.0.13.1 (-g:none --release 21)
+case	kuna-fixes/pkg/TestRecordPatternNestedType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternNestedType
+# kuna-fixes/src/pkg/TestSerializableLambda.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSerializableLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestSerializableLambda
+# kuna-fixes/src/pkg/TestConstantCapture.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestConstantCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestConstantCapture
+# kuna-fixes/src/pkg/TestBoxedIncrementOperand.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBoxedIncrementOperand	Kuna Fixes	kuna-fixes/classes/pkg/TestBoxedIncrementOperand
+# kuna-fixes/src/pkg/TestNullLocalType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullLocalType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullLocalType
+# kuna-fixes/src/pkg/TestLambdaReceiver.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLambdaReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaReceiver
+# kuna-fixes/src/pkg/TestEcjReturnedCondition.java, ECJ 3.46.100 (-g -17)
+case	kuna-fixes/pkg/TestEcjReturnedCondition	Kuna Fixes	kuna-fixes/classes/pkg/TestEcjReturnedCondition
+# kuna-fixes/src/pkg/TestEcjStringSwitch.java, ECJ 3.46.100 (-g -17)
+case	kuna-fixes/pkg/TestEcjStringSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEcjStringSwitch
+# kuna-fixes/src/pkg/TestForUpdateInElse.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForUpdateInElse	Kuna Fixes	kuna-fixes/classes/pkg/TestForUpdateInElse
+# kuna-fixes/src/pkg/TestRawFieldErasure.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestRawFieldErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestRawFieldErasure
+# kuna-fixes/src/pkg/TestBridgeEntryLoop.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBridgeEntryLoop	Kuna Fixes	kuna-fixes/classes/pkg/TestBridgeEntryLoop	kuna-fixes/classes/pkg/TestBridgeEntryLoopBase
+# kuna-fixes/src/pkg/TestNullArrayLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullArrayLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestNullArrayLocal
+# kuna-fixes/src/pkg/TestQualifiedInheritedInner.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestQualifiedInheritedInner	Kuna Fixes	kuna-fixes/classes/pkg/TestQualifiedInheritedInner	kuna-fixes/classes/pkg/TestQualifiedInheritedInnerBase
+# kuna-fixes/src/pkg/TestLambdaReceiverGeneric.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLambdaReceiverGeneric	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaReceiverGeneric
+# kuna-fixes/src/pkg/TestCapturedConstantType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCapturedConstantType	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedConstantType
+# kuna-fixes/src/pkg/TestNestedLambdaCapturedGeneric.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNestedLambdaCapturedGeneric	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedLambdaCapturedGeneric
+# kuna-fixes/src/pkg/TestNullReceiverType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestNullReceiverType	Kuna Fixes	kuna-fixes/classes/pkg/TestNullReceiverType
+# kuna-fixes/src/pkg/TestAnonymousVarReceiver.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestAnonymousVarReceiver	Kuna Fixes	kuna-fixes/classes/pkg/TestAnonymousVarReceiver
+# kuna-fixes/src/pkg/TestListedInnerMember.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestListedInnerMember	Kuna Fixes	kuna-fixes/classes/pkg/TestListedInnerMember
+# kuna-fixes/src/pkg/TestLambdaInstantiatedType.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestLambdaInstantiatedType	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaInstantiatedType
+# kuna-fixes/src/pkg/TestExplicitLambdaParams.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestExplicitLambdaParams	Kuna Fixes	kuna-fixes/classes/pkg/TestExplicitLambdaParams
+# kuna-fixes/src/pkg/TestTypeVariableLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestTypeVariableLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeVariableLocal
+# kuna-fixes/src/pkg/TestTypeVariableScope.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestTypeVariableScope	Kuna Fixes	kuna-fixes/classes/pkg/TestTypeVariableScope
+# kuna-fixes/src/pkg/TestFinallyBodyThrows.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFinallyBodyThrows	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyBodyThrows
+# kuna-fixes/src/pkg/TestForEachArrayIncrement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestForEachArrayIncrement	Kuna Fixes	kuna-fixes/classes/pkg/TestForEachArrayIncrement
+# kuna-fixes/src/pkg/TestExitCopiedIntoTry.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestExitCopiedIntoTry	Kuna Fixes	kuna-fixes/classes/pkg/TestExitCopiedIntoTry
+# kuna-fixes/src/pkg/TestRecordPatternInstanceofType.java, javac 21.0.13.1 (-g:none --release 21)
+case	kuna-fixes/pkg/TestRecordPatternInstanceofType	Kuna Fixes	kuna-fixes/classes/pkg/TestRecordPatternInstanceofType
+# kuna-fixes/src/pkg/TestStaticInitAfterCall.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticInitAfterCall	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticInitAfterCall
+# kuna-fixes/src/pkg/TestNestedAlreadyCaught.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestNestedAlreadyCaught	Kuna Fixes	kuna-fixes/classes/pkg/TestNestedAlreadyCaught
+# kuna-fixes/src/pkg/TestFinallyRethrowOutside.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestFinallyRethrowOutside	Kuna Fixes	kuna-fixes/classes/pkg/TestFinallyRethrowOutside
+# kuna-fixes/src/pkg/TestEmptyEnumSwitch.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestEmptyEnumSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEmptyEnumSwitch	kuna-fixes/classes/pkg/EmptySwitchColor
+# kuna-fixes/src/pkg/TestEnumConstantSwitchArgs.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestEnumConstantSwitchArgs	Kuna Fixes	kuna-fixes/classes/pkg/TestEnumConstantSwitchArgs
+# kuna-fixes/src/pkg/TestStaticCompoundAssign.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticCompoundAssign	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticCompoundAssign
+# kuna-fixes/src/pkg/TestStaticBlockInPlace.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticBlockInPlace	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticBlockInPlace
+# kuna-fixes/src/pkg/TestInstanceCompoundAssign.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestInstanceCompoundAssign	Kuna Fixes	kuna-fixes/classes/pkg/TestInstanceCompoundAssign
+# kuna-fixes/src/pkg/TestStaticLambdaSelfRead.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticLambdaSelfRead	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticLambdaSelfRead
+# kuna-fixes/src/pkg/TestRawTargetLambda.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawTargetLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestRawTargetLambda
+# kuna-fixes/src/pkg/TestLambdaLocalReads.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestLambdaLocalReads	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaLocalReads
+# kuna-fixes/src/pkg/TestRawReceiverCheckcast.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawReceiverCheckcast	Kuna Fixes	kuna-fixes/classes/pkg/TestRawReceiverCheckcast
+# kuna-fixes/src/pkg/TestSignatureParameterTypes.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestSignatureParameterTypes	Kuna Fixes	kuna-fixes/classes/pkg/TestSignatureParameterTypes
+# kuna-fixes/src/pkg/TestUncontainedArguments.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUncontainedArguments	Kuna Fixes	kuna-fixes/classes/pkg/TestUncontainedArguments
+# kuna-fixes/src/pkg/TestVariableArrayErasure.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestVariableArrayErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestVariableArrayErasure
+# kuna-fixes/src/pkg/TestGenericArgumentOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestGenericArgumentOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestGenericArgumentOverload
+# kuna-fixes/src/pkg/TestDeduplicatedLambdaCaptures.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestDeduplicatedLambdaCaptures	Kuna Fixes	kuna-fixes/classes/pkg/TestDeduplicatedLambdaCaptures
+# kuna-fixes/src/pkg/TestSyntheticReceiverCapture.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestSyntheticReceiverCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestSyntheticReceiverCapture
+# kuna-fixes/src/pkg/TestCapturedVariableMerge.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestCapturedVariableMerge	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedVariableMerge
+# kuna-fixes/src/pkg/TestRawLambdaSelection.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawLambdaSelection	Kuna Fixes	kuna-fixes/classes/pkg/TestRawLambdaSelection
+# kuna-fixes/src/pkg/TestBlankFinalConstant.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestBlankFinalConstant	Kuna Fixes	kuna-fixes/classes/pkg/TestBlankFinalConstant
+# kuna-fixes/src/pkg/TestInitializerLocalClass.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestInitializerLocalClass	Kuna Fixes	kuna-fixes/classes/pkg/TestInitializerLocalClass
+# kuna-fixes/src/pkg/TestCapturedSlotReuse.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCapturedSlotReuse	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedSlotReuse
+# kuna-fixes/src/pkg/TestOverloadUnseenArgument.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestOverloadUnseenArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestOverloadUnseenArgument
+# kuna-fixes/src/pkg/TestLossyConversionChain.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLossyConversionChain	Kuna Fixes	kuna-fixes/classes/pkg/TestLossyConversionChain
+# kuna-fixes/src/pkg/TestUpdateOnOnePath.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpdateOnOnePath	Kuna Fixes	kuna-fixes/classes/pkg/TestUpdateOnOnePath
+# kuna-fixes/src/pkg/TestUnboxingSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUnboxingSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestUnboxingSelectsOverload
+# kuna-fixes/src/pkg/TestLoopInFinally.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLoopInFinally	Kuna Fixes	kuna-fixes/classes/pkg/TestLoopInFinally
+# kuna-fixes/src/pkg/TestConcatTagCharacters.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestConcatTagCharacters	Kuna Fixes	kuna-fixes/classes/pkg/TestConcatTagCharacters
+# kuna-fixes/src/pkg/TestUpcastSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpcastSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestUpcastSelectsOverload
+# kuna-fixes/src/pkg/TestWideningSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestWideningSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestWideningSelectsOverload
+# kuna-fixes/src/pkg/TestUpdateInLastCase.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpdateInLastCase	Kuna Fixes	kuna-fixes/classes/pkg/TestUpdateInLastCase
+# kuna-fixes/src/pkg/TestMixedWidening.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestMixedWidening	Kuna Fixes	kuna-fixes/classes/pkg/TestMixedWidening
+# kuna-fixes/src/pkg/TestForInitPair.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForInitPair	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitPair
+# kuna-fixes/src/pkg/TestSwitchArmStore.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSwitchArmStore	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchArmStore
+# kuna-fixes/src/pkg/TestPatternChainSlots.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestPatternChainSlots	Kuna Fixes	kuna-fixes/classes/pkg/TestPatternChainSlots
+# kuna-fixes/src/pkg/TestTwrAssignedLocal.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestTwrAssignedLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTwrAssignedLocal
+# kuna-fixes/src/pkg/TestCastBranchOldClass.java, javac 21.0.13.1 (-g --release 11)
+case	kuna-fixes/pkg/TestCastBranchOldClass	Kuna Fixes	kuna-fixes/classes/pkg/TestCastBranchOldClass
+# kuna-fixes/src/pkg/TestForInitReassigned.java, javac 21.0.13.1 (-g:lines --release 17)
+case	kuna-fixes/pkg/TestForInitReassigned	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitReassigned
+# kuna-fixes/src/pkg/TestSwitchArmScope.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSwitchArmScope	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchArmScope
+# kuna-fixes/src/pkg/TestForUpdateList.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForUpdateList	Kuna Fixes	kuna-fixes/classes/pkg/TestForUpdateList
+# kuna-fixes/src/pkg/TestForInitOuterCounter.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestForInitOuterCounter	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitOuterCounter
+# kuna-fixes/src/pkg/TestRawTargetGenericCall.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawTargetGenericCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawTargetGenericCall
+# kuna-fixes/src/pkg/TestCapturedRawLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCapturedRawLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedRawLocal
+# kuna-fixes/src/pkg/TestRawArrayElement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawArrayElement	Kuna Fixes	kuna-fixes/classes/pkg/TestRawArrayElement
+# kuna-fixes/src/pkg/TestCurriedLambdaRaw.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCurriedLambdaRaw	Kuna Fixes	kuna-fixes/classes/pkg/TestCurriedLambdaRaw
+# kuna-fixes/src/pkg/TestRawFieldReceiverCall.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawFieldReceiverCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawFieldReceiverCall
+# kuna-fixes/src/pkg/TestDiamondLambdaRaw.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestDiamondLambdaRaw	Kuna Fixes	kuna-fixes/classes/pkg/TestDiamondLambdaRaw
+# kuna-fixes/src/pkg/TestUnassignableValue.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestUnassignableValue	Kuna Fixes	kuna-fixes/classes/pkg/TestUnassignableValue

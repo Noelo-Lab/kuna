@@ -1,0 +1,86 @@
+{
+ "artifacts": {
+  "com.google.crypto.tink:tink:1.24.0": {
+   "sha256": "463bb0cddc8131379c4f87d8185a0314f651286c28e52a8dea5df206d8a3e175",
+   "url": "https://repo1.maven.org/maven2/com/google/crypto/tink/tink/1.24.0/tink-1.24.0.jar"
+  },
+  "com.google.crypto.tink:tink:1.24.0:sources": {
+   "sha256": "7db673f12a7366fde354ab8ead40769f9f5b6027493b83f9c29bba6bd927baf5",
+   "url": "https://repo1.maven.org/maven2/com/google/crypto/tink/tink/1.24.0/tink-1.24.0-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "com.google.code.findbugs:jsr305:3.0.2",
+   "sha256": "766ad2a0783f2687962c8ad74ceecc38a28b9f72a2d085ee438b7813e928d0c7"
+  },
+  {
+   "coord": "com.google.code.gson:gson:2.13.2",
+   "sha256": "dd0ce1b55a3ed2080cb70f9c655850cda86c206862310009dcb5e5c95265a5e0"
+  },
+  {
+   "coord": "com.google.errorprone:error_prone_annotations:2.41.0",
+   "sha256": "a56e782b5b50811ac204073a355a21d915a2107fce13ec711331ad036f660fcc"
+  },
+  {
+   "coord": "com.google.guava:failureaccess:1.0.1",
+   "sha256": "a171ee4c734dd2da837e4b16be9df4661afab72a41adaf31eb84dfdaf936ca26"
+  },
+  {
+   "coord": "com.google.guava:guava:30.1.1-android",
+   "sha256": "355f79352f8c252f2bdaa06c687c4836a38016caccfc4c28d16ae77ecfdffa2f"
+  },
+  {
+   "coord": "com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+   "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99"
+  },
+  {
+   "coord": "com.google.http-client:google-http-client:1.43.3",
+   "sha256": "60aca7428c5a1ff3655b70541a98ff3d70dded48ac1324dae1af39f1b61914af"
+  },
+  {
+   "coord": "com.google.j2objc:j2objc-annotations:2.8",
+   "sha256": "f02a95fa1a5e95edb3ed859fd0fb7df709d121a35290eff8b74dce2ab7f4d6ed"
+  },
+  {
+   "coord": "com.google.protobuf:protobuf-java:4.33.6",
+   "sha256": "c24b2464ecfe9ac1d44e3a8fe281fca09e6ad2ca73dbd689dd7d6d719df987b5"
+  },
+  {
+   "coord": "commons-codec:commons-codec:1.11",
+   "sha256": "e599d5318e97aa48f42136a2927e6dfa4e8881dff0e6c8e3109ddbbff51d7b7d"
+  },
+  {
+   "coord": "commons-logging:commons-logging:1.2",
+   "sha256": "daddea1ea0be0f56978ab3006b8ac92834afeefbd9b7e4e6316fca57df0fa636"
+  },
+  {
+   "coord": "io.grpc:grpc-context:1.27.2",
+   "sha256": "bcbf9055dff453fd6508bd7cca2a0aa2d5f059a9c94beed1f5fda1dc015607b8"
+  },
+  {
+   "coord": "io.opencensus:opencensus-api:0.31.1",
+   "sha256": "f1474d47f4b6b001558ad27b952e35eda5cc7146788877fc52938c6eba24b382"
+  },
+  {
+   "coord": "io.opencensus:opencensus-contrib-http-util:0.31.1",
+   "sha256": "3ea995b55a4068be22989b70cc29a4d788c2d328d1d50613a7a9afd13fdd2d0a"
+  },
+  {
+   "coord": "org.apache.httpcomponents:httpclient:4.5.14",
+   "sha256": "c8bc7e1c51a6d4ce72f40d2ebbabf1c4b68bfe76e732104b04381b493478e9d6"
+  },
+  {
+   "coord": "org.apache.httpcomponents:httpcore:4.4.16",
+   "sha256": "6c9b3dd142a09dc468e23ad39aad6f75a0f2b85125104469f026e52a474e464f"
+  },
+  {
+   "coord": "org.checkerframework:checker-compat-qual:2.5.5",
+   "sha256": "11d134b245e9cacc474514d2d66b5b8618f8039a1465cdc55bbc0b34e0008b7a"
+  },
+  {
+   "coord": "org.conscrypt:conscrypt-openjdk-uber:2.7.0",
+   "sha256": "a82c2efe7d75df6cb077cb72a3cbd9bb437fb9624d62b469013f10114b0cffa4"
+  }
+ ]
+}

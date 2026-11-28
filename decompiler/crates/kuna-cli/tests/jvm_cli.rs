@@ -1,0 +1,1023 @@
+//! The JVM engine's CLI surface: routing, every subcommand's text and JSON,
+//! the project export, selection, options, capability errors and exit codes.
+//! Every run passes `--option jvm_include_runtime off`, so nothing depends on
+//! a JDK being installed.
+
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+
+use serde_json::Value;
+
+use crate::common;
+
+const NO_JDK: [&str; 3] = ["--option", "jvm_include_runtime", "off"];
+
+fn fixtures() -> PathBuf {
+    common::repo_root().join("decompiler/managed/kuna-jvm/fixtures")
+}
+
+fn jar() -> String {
+    fixtures().join("app.jar").display().to_string()
+}
+
+fn classes_dir() -> String {
+    fixtures().join("classes").display().to_string()
+}
+
+fn main_class() -> String {
+    fixtures().join("classes/com/ex/Main.class").display().to_string()
+}
+
+/// `decompiler/managed/kuna-jvm/fixtures/kotlin/classes`: `Counter.kt` and `Counters.kt` compiled by kotlinc 2.0.0.
+fn kotlin_dir() -> String {
+    fixtures().join("kotlin/classes").display().to_string()
+}
+
+fn kuna(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .expect("spawn kuna")
+}
+
+/// `kuna <sub> <args..> --option jvm_include_runtime off`.
+fn jvm(args: &[&str]) -> Output {
+    let mut all: Vec<&str> = args.to_vec();
+    all.extend(NO_JDK);
+    kuna(&all)
+}
+
+fn stdout(out: &Output) -> String {
+    String::from_utf8(out.stdout.clone()).expect("UTF-8 stdout")
+}
+
+fn stderr(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+fn ok(out: &Output) -> String {
+    assert_eq!(out.status.code(), Some(0), "stderr: {}", stderr(out));
+    stdout(out)
+}
+
+fn json(out: &Output) -> Value {
+    serde_json::from_str(&ok(out)).expect("a JSON document")
+}
+
+fn keys(v: &Value) -> Vec<&str> {
+    v.as_object().expect("object").keys().map(String::as_str).collect()
+}
+
+fn scratch_dir(stem: &str) -> PathBuf {
+    let dir = common::scratch_file(stem, "d");
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+const METHODS: &str = "\
+com.ex.Main.<init>(I)V
+com.ex.Main.main([Ljava/lang/String;)V
+com.ex.Main.check(Ljava/lang/String;)Z
+com.ex.Main.add(II)I
+com.ex.Main.add(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+com.ex.Main$1.<init>()V
+com.ex.Main$1.run()V
+com.ex.Main$Checker.<init>()V
+com.ex.Main$Checker.verify(Ljava/lang/String;)Z
+com.ex.util.Helper.<init>()V
+com.ex.util.Helper.twice(I)I
+com.ex.util.Helper.loop(I)I
+";
+
+#[test]
+fn a_jar_and_a_directory_list_the_same_methods() {
+    assert_eq!(ok(&jvm(&["functions", &jar()])), METHODS);
+    assert_eq!(ok(&jvm(&["functions", &classes_dir()])), METHODS);
+}
+
+#[test]
+fn a_class_file_brings_its_nested_classes_unless_told_not_to() {
+    let listed = ok(&jvm(&["functions", &main_class()]));
+    assert!(listed.contains("com.ex.Main$Checker.verify(Ljava/lang/String;)Z"), "{listed}");
+    assert!(!listed.contains("com.ex.util.Helper"), "{listed}");
+    let alone = ok(&jvm(&["functions", &main_class(), "--option", "jvm_siblings", "off"]));
+    assert!(alone.contains("com.ex.Main.check(Ljava/lang/String;)Z"), "{alone}");
+    assert!(!alone.contains("Checker"), "{alone}");
+}
+
+#[test]
+fn a_fat_macho_still_takes_the_native_path() {
+    let fat = common::fixture("macho_fat");
+    let head = std::fs::read(&fat).unwrap();
+    assert_eq!(&head[..4], &[0xCA, 0xFE, 0xBA, 0xBE], "the fixture shares the class-file magic");
+    let out = kuna(&["functions", &fat, "--json"]);
+    let text = stdout(&out) + &stderr(&out);
+    assert!(!text.contains("\"engine\": \"jvm\"") && !text.contains("JVM"), "{text}");
+}
+
+#[test]
+fn raw_image_inputs_stay_native() {
+    let out = kuna(&["decompile", &jar(), "0x0", "--raw-image"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("--raw-image requires --target"), "{}", stderr(&out));
+}
+
+#[test]
+fn decompiling_a_class_prints_its_compilation_unit() {
+    let unit = ok(&jvm(&["decompile", &jar(), "com.ex.Main"]));
+    assert!(unit.starts_with("package com.ex;\n\nimport com.ex.util.Helper;\n"), "{unit}");
+    assert!(unit.contains("   public static boolean check(String key) {\n"), "{unit}");
+    assert!(unit.contains("   static class Checker {\n"), "{unit}");
+    for spelling in ["com/ex/Main", "Main", "Main.class"] {
+        assert_eq!(ok(&jvm(&["decompile", &jar(), spelling])), unit, "{spelling}");
+    }
+    assert_eq!(ok(&jvm(&["decompile", &main_class()])), unit, "a lone class file needs no target");
+}
+
+#[test]
+fn a_nested_class_prints_its_own_part() {
+    let nested = ok(&jvm(&["decompile", &jar(), "com.ex.Main.Checker"]));
+    assert!(nested.starts_with("static class Checker {\n   static boolean verify(String key) {\n"), "{nested}");
+    assert!(nested.ends_with("}\n"), "{nested}");
+    assert_eq!(ok(&jvm(&["decompile", &jar(), "com.ex.Main$Checker"])), nested);
+}
+
+#[test]
+fn a_method_prints_its_slice_without_indentation() {
+    let check = ok(&jvm(&["decompile", &jar(), "com.ex.Main.check"]));
+    assert_eq!(
+        check,
+        "public static boolean check(String key) {\n   return key.length() == 16 && Main.Checker.verify(key);\n}\n"
+    );
+    assert_eq!(ok(&jvm(&["decompile", &jar(), "com.ex.Main#check"])), check);
+    assert_eq!(ok(&jvm(&["decompile", &jar(), "com/ex/Main.check(Ljava/lang/String;)Z"])), check);
+    assert_eq!(ok(&jvm(&["decompile", &main_class(), "check"])), check);
+}
+
+#[test]
+fn overloads_print_together_unless_a_descriptor_picks_one() {
+    let out = jvm(&["decompile", &jar(), "com.ex.Main.add"]);
+    let both = ok(&out);
+    assert!(both.contains("public int add(int a, int b) {") && both.contains("public String add(String a, String b) {"), "{both}");
+    assert!(stderr(&out).contains("2 overloads"), "{}", stderr(&out));
+    let one = ok(&jvm(&["decompile", &jar(), "com.ex.Main.add(II)I"]));
+    assert_eq!(one, "public int add(int a, int b) {\n   return this.base + a + b;\n}\n");
+}
+
+#[test]
+fn misses_name_the_nearest_class_or_method() {
+    let out = jvm(&["decompile", &jar(), "com.ex.Mian"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("did you mean \"com.ex.Main\"?"), "{}", stderr(&out));
+    let out = jvm(&["decompile", &jar(), "com.ex.Main.chek"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("did you mean \"com.ex.Main.check\"?"), "{}", stderr(&out));
+    let out = jvm(&["decompile", &jar(), "com.ex.Main.add(J)J"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("its overloads are com.ex.Main.add(II)I"), "{}", stderr(&out));
+    let out = jvm(&["decompile", &jar()]);
+    assert_eq!(out.status.code(), Some(2), "a jar needs a target");
+}
+
+#[test]
+fn decompile_json_is_the_native_document_with_java_records() {
+    let doc = json(&jvm(&["decompile", &jar(), "com.ex.Main.check", "--json"]));
+    assert_eq!(
+        keys(&doc),
+        ["binary", "engine", "language", "omitted", "count", "error", "runtime", "functions", "classes", "assertions"]
+    );
+    assert_eq!(doc["engine"], "jvm");
+    assert_eq!(doc["language"], "java");
+    assert_eq!(doc["omitted"], serde_json::json!(["variables", "types", "stack_objects"]));
+    assert_eq!(doc["count"], 1);
+    assert!(doc["error"].is_null() && doc["runtime"].is_null());
+    assert_eq!(doc["classes"], serde_json::json!([]));
+    assert_eq!(doc["assertions"], serde_json::json!([]));
+    let record = &doc["functions"][0];
+    assert_eq!(
+        keys(record),
+        [
+            "name", "address", "address_hex", "aliases", "object_location", "size", "code", "error",
+            "unstructured_gotos", "line_mappings", "class", "method", "descriptor", "access", "path", "language",
+            "line", "nested_errors", "warnings"
+        ]
+    );
+    assert_eq!(record["name"], "com.ex.Main.check");
+    assert!(record["address"].is_null() && record["address_hex"].is_null() && record["object_location"].is_null());
+    assert_eq!(record["size"], 22, "the bytecode length");
+    assert_eq!(record["descriptor"], "(Ljava/lang/String;)Z");
+    assert_eq!(record["access"], serde_json::json!(["public", "static"]));
+    assert_eq!(record["path"], "com/ex/Main.java");
+    assert_eq!(record["language"], "java");
+    assert!(record["code"].as_str().unwrap().starts_with("public static boolean check(String key) {\n"));
+    let line = record["line"].as_u64().unwrap() as usize;
+    let unit = ok(&jvm(&["decompile", &jar(), "com.ex.Main"]));
+    assert!(unit.lines().nth(line - 1).unwrap().contains("check(String key)"), "line {line}");
+    let mappings = record["line_mappings"].as_array().unwrap();
+    assert!(!mappings.is_empty());
+    for m in mappings {
+        assert!(m["line_number"].as_u64().unwrap() >= 1);
+        assert!(m["addresses"].as_array().unwrap().iter().all(|a| a.as_u64().unwrap() < 22));
+    }
+}
+
+#[test]
+fn decompile_json_of_a_class_carries_the_unit_and_its_methods() {
+    let doc = json(&jvm(&["decompile", &jar(), "com.ex.Main", "--json", "--omit", "line_mappings"]));
+    assert_eq!(doc["omitted"], serde_json::json!(["line_mappings", "variables", "types", "stack_objects"]));
+    let classes = doc["classes"].as_array().unwrap();
+    assert_eq!(classes.len(), 1);
+    assert_eq!(
+        keys(&classes[0]),
+        ["name", "path", "language", "size", "code", "status", "error", "note", "nested_errors"]
+    );
+    assert_eq!(classes[0]["status"], "decompiled");
+    assert_eq!(classes[0]["name"], "com.ex.Main");
+    assert_eq!(classes[0]["code"].as_str().unwrap(), ok(&jvm(&["decompile", &jar(), "com.ex.Main"])));
+    let names: Vec<&str> = doc["functions"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert!(names.contains(&"com.ex.Main$Checker.verify") && names.contains(&"com.ex.Main$1.run"), "{names:?}");
+    assert!(doc["functions"][0].get("line_mappings").is_none());
+}
+
+#[test]
+fn decompile_all_text_is_every_unit_under_a_class_header() {
+    let text = ok(&jvm(&["decompile-all", &jar()]));
+    assert!(text.starts_with("// Class: com.ex.Main  (com/ex/Main.java)\npackage com.ex;\n"), "{text}");
+    assert!(text.contains("\n// Class: com.ex.util.Helper  (com/ex/util/Helper.java)\npackage com.ex.util;\n"), "{text}");
+}
+
+#[test]
+fn decompile_all_triage_narrows_to_method_slices() {
+    let text = ok(&jvm(&["decompile-all", &jar(), "--filter", "loop|verify"]));
+    assert!(text.starts_with("// Method: com.ex.Main$Checker.verify(Ljava/lang/String;)Z  (com/ex/Main.java:"), "{text}");
+    assert!(text.contains("// Method: com.ex.util.Helper.loop(I)I  (com/ex/util/Helper.java:"), "{text}");
+    assert!(!text.contains("// Class:"), "{text}");
+    let doc = json(&jvm(&["decompile-all", &jar(), "--json", "--sort", "size", "--limit", "1"]));
+    assert_eq!(doc["count"], 1);
+    assert_eq!(doc["total"], 12, "every method of the class files");
+    assert_eq!(doc["functions"][0]["name"], "com.ex.Main.main");
+    assert_eq!(doc["classes"], serde_json::json!([]));
+}
+
+#[test]
+fn mixed_class_and_method_targets_print_each_method_once() {
+    let text = ok(&jvm(&["decompile-all", &jar(), "--functions", "com.ex.Main.check,com.ex.util.Helper"]));
+    assert!(text.starts_with("// Class: com.ex.util.Helper  (com/ex/util/Helper.java)\n"), "{text}");
+    assert_eq!(text.matches("// Method:").count(), 1, "{text}");
+    assert!(text.contains("// Method: com.ex.Main.check(Ljava/lang/String;)Z  (com/ex/Main.java:"), "{text}");
+}
+
+#[test]
+fn decompile_all_json_lists_methods_and_units() {
+    let doc = json(&jvm(&["decompile-all", &jar(), "--json"]));
+    assert!(doc.get("total").is_none(), "no triage, no total");
+    let classes: Vec<&str> = doc["classes"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect();
+    assert_eq!(classes, ["com.ex.Main", "com.ex.util.Helper"]);
+    assert_eq!(doc["count"].as_u64().unwrap() as usize, doc["functions"].as_array().unwrap().len());
+    let only = json(&jvm(&["decompile-all", &jar(), "--json", "--functions", "com.ex.util.Helper", "--omit", "classes"]));
+    assert!(only.get("classes").is_none());
+    assert!(only["omitted"].as_array().unwrap().contains(&Value::from("classes")));
+    let names: Vec<&str> = only["functions"].as_array().unwrap().iter().map(|f| f["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["com.ex.util.Helper.<init>", "com.ex.util.Helper.twice", "com.ex.util.Helper.loop"]);
+}
+
+#[test]
+fn worker_count_does_not_change_a_byte() {
+    let dir = common::repo_root().join("decompiler/managed/kuna-jvm/corpus/classes/java17").display().to_string();
+    let one = ok(&jvm(&["decompile-all", &dir, "--json", "--jobs", "1"]));
+    let eight = ok(&jvm(&["decompile-all", &dir, "--json", "--jobs", "8"]));
+    assert!(one == eight, "--jobs 1 and --jobs 8 differ");
+    assert!(one.matches("\"name\": ").count() > 38);
+}
+
+#[test]
+fn decompile_project_writes_a_java_source_tree() {
+    let out_dir = scratch_dir("jvm-project");
+    let out = jvm(&["decompile-project", &jar(), "-o", out_dir.to_str().unwrap()]);
+    let summary = ok(&out);
+    let main = std::fs::read_to_string(out_dir.join("com/ex/Main.java")).unwrap();
+    let helper = std::fs::read_to_string(out_dir.join("com/ex/util/Helper.java")).unwrap();
+    assert_eq!(main, ok(&jvm(&["decompile", &jar(), "com.ex.Main"])));
+    assert!(helper.starts_with("package com.ex.util;\n"), "{helper}");
+    let expected = format!(
+        "wrote {}: 2 .java files ({} bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed\n",
+        out_dir.display(),
+        main.len() + helper.len()
+    );
+    assert_eq!(summary, expected);
+    let files: Vec<PathBuf> = walk(&out_dir);
+    assert_eq!(files.len(), 2, "{files:?}");
+}
+
+#[test]
+fn decompile_project_defaults_to_input_dot_kuna() {
+    let dir = scratch_dir("jvm-project-default");
+    let copy = dir.join("app.jar");
+    std::fs::copy(jar(), &copy).unwrap();
+    ok(&jvm(&["decompile-project", copy.to_str().unwrap()]));
+    assert!(dir.join("app.jar.kuna/com/ex/Main.java").is_file());
+}
+
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            out.extend(walk(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn functions_json_is_the_inventory() {
+    let doc = json(&jvm(&["functions", &jar(), "--json"]));
+    assert_eq!(keys(&doc), ["binary", "engine", "count", "total", "error", "functions", "classes"]);
+    assert_eq!(doc["count"], 12);
+    assert_eq!(doc["total"], 12);
+    let check = &doc["functions"][2];
+    assert_eq!(
+        keys(check),
+        ["name", "address", "address_hex", "aliases", "object_location", "size", "class", "method", "descriptor", "access"]
+    );
+    assert_eq!(check["name"], "com.ex.Main.check");
+    assert_eq!(check["size"], 22);
+    let classes = doc["classes"].as_array().unwrap();
+    assert_eq!(classes.len(), 4);
+    assert_eq!(keys(&classes[0]), ["name", "outer", "source_file", "size", "access"]);
+    let checker = classes.iter().find(|c| c["name"] == "com.ex.Main$Checker").unwrap();
+    assert_eq!(checker["outer"], "com.ex.Main");
+    assert_eq!(checker["access"], serde_json::json!(["static"]));
+    let biggest = json(&jvm(&["functions", &jar(), "--json", "--sort", "size", "--limit", "1"]));
+    assert_eq!(biggest["functions"][0]["name"], "com.ex.Main.main");
+    assert_eq!(biggest["total"], 12);
+    let filtered = ok(&jvm(&["functions", &jar(), "--filter", "Helper", "--min-size", "5"]));
+    assert_eq!(filtered, "com.ex.util.Helper.<init>()V\ncom.ex.util.Helper.loop(I)I\n", "twice is 4 bytes of bytecode");
+}
+
+#[test]
+fn jvm_options_resolve_by_name() {
+    let default = ok(&jvm(&["decompile", &jar(), "com.ex.util.Helper.loop"]));
+    assert!(default.contains("total--;"), "{default}");
+    for value in ["off", "0", "false"] {
+        ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--option", "jvm_decompile_finally", value]));
+    }
+}
+
+#[test]
+fn bad_options_and_native_flags_are_usage_errors() {
+    let cases: &[(&[&str], &str)] = &[
+        (&["--option", "loweredswitch", "off"], "a native-engine option"),
+        (&["--option", "jvm_no_such_option", "on"], "unknown JVM option"),
+        (&["--option", "jvm_decompile_finaly", "on"], "did you mean jvm_decompile_finally?"),
+        (&["--option", "jvm_decompile_finally", "maybe"], "invalid value"),
+        (&["--option", "decompile-finally", "off"], "did you mean jvm_decompile_finally?"),
+        (&["--isa", "arm"], "--isa is a native-engine flag"),
+        (&["--define-function", "0x10"], "native-engine flag"),
+        (&["--mode", "bogus"], "unknown --mode"),
+        (&["--language", "c"], "decompiles to Java"),
+        (&["--language", "kotlin"], "cannot write a Java class as Kotlin"),
+        (&["--no-such-flag"], "unknown option --no-such-flag"),
+    ];
+    let jar = jar();
+    for (extra, message) in cases {
+        let mut args = vec!["decompile", jar.as_str(), "com.ex.Main"];
+        args.extend_from_slice(extra);
+        let out = jvm(&args);
+        assert_eq!(out.status.code(), Some(2), "{extra:?}: {}", stderr(&out));
+        assert!(stderr(&out).contains(message), "{extra:?}: {}", stderr(&out));
+    }
+    ok(&jvm(&["decompile", &jar, "com.ex.Main", "--mode", "fast"]));
+}
+
+#[test]
+fn the_global_image_flag_is_refused_in_both_spellings() {
+    let jar = jar();
+    let cases: &[&[&str]] = &[
+        &["decompile", &jar, "com.ex.Main", "--image", "libobjc.A.dylib"],
+        &["decompile", &jar, "com.ex.Main", "--image=libobjc.A.dylib"],
+        &["decompile", "--image", "libobjc.A.dylib", &jar, "com.ex.Main"],
+        &["functions", &jar, "--image=CoreFoundation"],
+        &["decompile-all", &jar, "--image", "CoreFoundation"],
+    ];
+    for args in cases {
+        let out = jvm(args);
+        assert_eq!(out.status.code(), Some(2), "{args:?}: {}", stderr(&out));
+        let err = stderr(&out);
+        assert!(err.contains("--image is a native-engine flag"), "{args:?}: {err}");
+        assert!(!err.contains("--image="), "{args:?}: {err}");
+        assert!(err.contains("JVM input (jar)"), "{args:?}: {err}");
+        assert!(out.stdout.is_empty(), "{args:?}");
+    }
+}
+
+#[test]
+fn a_jvm_option_on_a_native_input_points_at_the_jvm_catalog() {
+    let elf = common::fixture("arraycoverwidth_x86_64");
+    let out = kuna(&["decompile", &elf, "vm", "--option", "jvm_decompile_finally", "off"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("kuna catalog --engine jvm"), "{}", stderr(&out));
+}
+
+#[test]
+fn a_named_jdk_that_is_missing_is_an_error() {
+    let out = kuna(&["decompile", &jar(), "com.ex.Main", "--option", "jvm_include_runtime", "/no/such/jdk"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("--option jvm_include_runtime /no/such/jdk"), "{}", stderr(&out));
+}
+
+#[test]
+fn the_other_subcommands_answer_with_capability_errors() {
+    for (sub, what) in [
+        ("strings", "string inventory"),
+        ("xrefs", "cross-reference index"),
+        ("disassemble", "bytecode listing"),
+        ("read", "bytecode listing"),
+        ("decompile-graph", "program graph"),
+        ("crypto", "crypto-constant scan"),
+        ("raw-pcode", "p-code"),
+        ("unpack", "nothing to unpack"),
+    ] {
+        let out = kuna(&[sub, &jar()]);
+        assert_eq!(out.status.code(), Some(1), "{sub}");
+        let err = stderr(&out);
+        assert!(err.contains("JVM input (jar)") && err.contains(what) && err.contains("kuna docs jvm"), "{sub}: {err}");
+        assert!(out.stdout.is_empty(), "{sub}");
+    }
+    let out = kuna(&["functions", &jar(), "--summary"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("no call graph yet"), "{}", stderr(&out));
+}
+
+/// `decompiler/managed/kuna-jvm/fixtures/dex`: the `src/` programs compiled by d8 (see `regen.sh`).
+fn dex(name: &str) -> String {
+    fixtures().join("dex").join(name).display().to_string()
+}
+
+#[test]
+fn a_dex_file_decompiles_like_a_jar() {
+    let out = ok(&jvm(&["decompile", &dex("release.dex"), "dx.Arith"]));
+    assert!(out.contains("public class Arith {"), "{out}");
+    assert!(out.contains("static int ternary(int"), "{out}");
+    assert!(!out.contains("$VF: Couldn't be decompiled"), "{out}");
+    let method = ok(&jvm(&["decompile", &dex("debug.dex"), "dx.Wide.fib(I)J"]));
+    assert!(method.contains("long a = 0L;") && method.contains("return a;"), "{method}");
+}
+
+#[test]
+fn an_apk_reads_every_classes_dex() {
+    let v = json(&jvm(&["functions", &dex("app.apk"), "--json"]));
+    let names: Vec<&str> = v["functions"]
+        .as_array()
+        .expect("functions")
+        .iter()
+        .map(|f| f["name"].as_str().expect("name"))
+        .collect();
+    assert_eq!(v["count"].as_u64(), Some(names.len() as u64));
+    assert!(names.contains(&"dx.Flow.packed") && names.contains(&"kx.Point.plus"), "{names:?}");
+    let flow = ok(&jvm(&["decompile", &dex("app.apk"), "dx.Flow"]));
+    assert!(flow.contains("switch (") && flow.contains("synchronized"), "{flow}");
+}
+
+#[test]
+fn d8_desugaring_is_undone() {
+    let out = ok(&jvm(&["decompile-all", &dex("sugar.dex")]));
+    assert!(!out.contains("$VF: Couldn't be decompiled"), "{out}");
+    assert!(!out.contains("ExternalSyntheticBackport") && !out.contains("RecordTag"), "{out}");
+    assert!(out.contains("record Point(int x, long y, String name, List<String> tags, boolean on, double w)"), "{out}");
+    assert!(out.contains("\"ab\".repeat(n)") && out.contains("List.of(s, \"b\", \"c\")"), "{out}");
+    assert!(out.contains("xs.forEach(this::add);"), "{out}");
+    let holder = ok(&jvm(&["decompile", &dex("sugar-release.dex"), "sx.Sugar$Holder"]));
+    assert!(holder.contains("Objects.requireNonNull(name)") && !holder.contains("namex"), "{holder}");
+    let lower = ok(&jvm(&["decompile", &dex("sugar-release.dex"), "sx.Sugar$Params.lower"]));
+    assert!(lower.contains("char[] ") && !lower.contains("(Object[])"), "{lower}");
+    let wrap = ok(&jvm(&["decompile", &dex("sugar-release.dex"), "sx.Sugar$Params.wrap"]));
+    assert!(wrap.contains("Executors.callable(r, null)") && !wrap.contains("var0"), "{wrap}");
+    let params = ok(&jvm(&["decompile", &dex("sugar-release.dex"), "sx.Sugar$Params"]));
+    assert!(params.contains("return c >= 3 && c <= 9;") && params.contains("Collections.emptyList()"), "{params}");
+    let flow = ok(&jvm(&["decompile", &dex("debug.dex"), "dx.Flow.locked(I)I"]));
+    assert!(flow.contains("synchronized (LOCK) {") && !flow.contains("$VF"), "{flow}");
+}
+
+/// A class that switches on two enums has two `$SwitchMap$` arrays in one
+/// synthetic class; d8's release build fills the first entry of each through
+/// a register, and the first one's `try` starts an instruction later.
+#[test]
+fn d8_switch_maps_of_two_enums_are_switches() {
+    for (m, arm) in [("state", "case BLOCKED:\n         r += 20;"), ("unit", "case HOURS:\n         r += 20;")] {
+        let sw = ok(&jvm(&["decompile", &dex("maps-release.dex"), &format!("mx.Maps.{m}")]));
+        assert!(sw.contains("switch (") && sw.contains(arm) && !sw.contains("SwitchMap") && !sw.contains("$VF"), "{sw}");
+    }
+}
+
+#[test]
+fn d8_register_sharing_is_undone() {
+    for f in ["shapes.dex", "shapes-release.dex"] {
+        let color = ok(&jvm(&["decompile", &dex(f), "vx.Shapes$Color"]));
+        assert!(color.contains("RED,\n   GREEN,\n   BLUE,\n   GRAY;"), "{f}: {color}");
+        let arms = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.arms"]));
+        assert!(arms.contains(" = new StringBuilder(") && !arms.contains("var1000"), "{f}: {arms}");
+        let ranges = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.ranges"]));
+        assert!(ranges.contains(" = ~") && ranges.contains(" - 1;") && !ranges.contains("(boolean)"), "{f}: {ranges}");
+        let version = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.version"]));
+        assert!(version.contains(" = null;") && !version.contains(" = var"), "{f}: {version}");
+        let from = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.from"]));
+        assert!(from.contains("Shapes.Kind var") && !from.contains("var3 = r.lowerKind()"), "{f}: {from}");
+        let label = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.label"]));
+        assert!(label.contains("return \"item \" + name + \" #\" + n;"), "{f}: {label}");
+        let failure = ok(&jvm(&["decompile", &dex(f), "vx.Shapes$Failure"]));
+        assert!(failure.contains("      super(\"failed at \" + ") && !failure.contains(" = String.valueOf("), "{f}: {failure}");
+        let rethrow = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.rethrow"]));
+        assert!(rethrow.contains("} catch (IOException | RuntimeException "), "{f}: {rethrow}");
+        let as_int = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.asInt"]));
+        assert!(as_int.contains("boolean var1 = bytes.length >= 4;") && !as_int.contains("(boolean)"), "{f}: {as_int}");
+        let bound = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.bound"]));
+        assert!(bound.contains("return s::len;") && !bound.contains("requireNonNull"), "{f}: {bound}");
+        let checked = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.checked"]));
+        assert!(checked.contains("Objects.requireNonNull(s);"), "{f}: {checked}");
+        for m in ["unit", "seconds", "hoisted"] {
+            let sw = ok(&jvm(&["decompile", &dex(f), &format!("vx.Shapes.{m}")]));
+            assert!(sw.contains("switch (") && sw.contains("case SECONDS:") && !sw.contains("SwitchMap"), "{f}: {sw}");
+        }
+        if f == "shapes.dex" {
+            let paint = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.paint"]));
+            assert!(paint.contains("case RED:\n         return \"r\";"), "{f}: {paint}");
+        }
+    }
+}
+
+#[test]
+fn a_kotlin_class_from_dex_prints_as_kotlin() {
+    let out = ok(&jvm(&["decompile", &dex("kotlin.dex"), "kx.Point"]));
+    assert!(out.contains("data class Point(") && out.contains("operator fun plus"), "{out}");
+}
+
+#[test]
+fn a_garbled_dex_is_refused_cleanly() {
+    let bad = common::scratch_file("garbled", "dex");
+    let mut bytes = std::fs::read(dex("release.dex")).expect("fixture");
+    bytes.truncate(2000);
+    std::fs::write(&bad, &bytes).unwrap();
+    let out = kuna(&["decompile-all", bad.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("unreadable DEX file"), "{}", stderr(&out));
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn a_directory_without_classes_says_so() {
+    let empty = scratch_dir("jvm-empty");
+    let out = kuna(&["functions", empty.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("no .class files under"), "{}", stderr(&out));
+}
+
+#[test]
+fn a_library_without_classes_adds_nothing_and_fails_nothing() {
+    let dir = scratch_dir("jvm-classless-lib");
+    let empty_jar = dir.join("kmp-root.jar");
+    let mut eocd = b"PK\x05\x06".to_vec();
+    eocd.resize(22, 0);
+    std::fs::write(&empty_jar, &eocd).unwrap();
+    let empty_dir = scratch_dir("jvm-classless-lib-dir");
+    let plain = ok(&jvm(&["decompile", &jar(), "com.ex.Main"]));
+    for lib in [&empty_jar, &empty_dir] {
+        let with = ok(&jvm(&["decompile", &jar(), "com.ex.Main", "--lib", lib.to_str().unwrap()]));
+        assert_eq!(with, plain, "{}", lib.display());
+    }
+    let out = jvm(&["decompile-all", empty_jar.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "as an input it has nothing to decompile");
+}
+
+#[test]
+fn help_on_a_jvm_input_is_the_jvm_usage() {
+    for sub in ["decompile", "decompile-all", "decompile-project", "functions"] {
+        let out = kuna(&[sub, &jar(), "--help"]);
+        assert_eq!(out.status.code(), Some(0));
+        let err = stderr(&out);
+        assert!(err.starts_with(&format!("usage: kuna {sub} <class|jar|dir>")), "{sub}: {err}");
+    }
+}
+
+#[test]
+fn catalog_lists_jvm_rows_on_request() {
+    let native: Vec<Value> = serde_json::from_str(&ok(&kuna(&["catalog", "--json"]))).unwrap();
+    assert!(native.iter().all(|r| r.get("engine").is_none()), "the default catalog is unchanged");
+    let rows: Vec<Value> = serde_json::from_str(&ok(&kuna(&["catalog", "--engine", "jvm", "--json"]))).unwrap();
+    assert!(!rows.is_empty());
+    for row in &rows {
+        assert_eq!(row["engine"], "jvm");
+        assert!(row["option"].as_str().unwrap().starts_with("jvm_"));
+        assert!(!row["symptoms"].as_array().unwrap().is_empty());
+        assert!(["transform", "analysis", "core"].contains(&row["tier"].as_str().unwrap()));
+    }
+    let finally = rows.iter().find(|r| r["option"] == "jvm_decompile_finally").unwrap();
+    assert_eq!(finally["aliases"], serde_json::json!([]));
+    assert_eq!(&keys(finally)[..3], ["option", "values", "default"]);
+    let all: Vec<Value> = serde_json::from_str(&ok(&kuna(&["catalog", "--engine", "all", "--json"]))).unwrap();
+    assert_eq!(all.len(), native.len() + rows.len());
+    assert!(all[..native.len()].iter().all(|r| r["engine"] == "native"));
+    let one: Vec<Value> =
+        serde_json::from_str(&ok(&kuna(&["catalog", "--json", "--option", "jvm_decompile_finally"]))).unwrap();
+    assert_eq!(one.len(), 1);
+    assert_eq!(one[0]["option"], "jvm_decompile_finally");
+    let transforms: Vec<Value> =
+        serde_json::from_str(&ok(&kuna(&["catalog", "--engine", "jvm", "--json", "--tier", "transform"]))).unwrap();
+    assert!(!transforms.is_empty() && transforms.len() < rows.len());
+    let check = ok(&kuna(&["catalog", "--check"]));
+    assert!(check.contains("JVM engine options"), "{check}");
+    assert_eq!(kuna(&["catalog", "--engine", "bogus"]).status.code(), Some(2));
+    assert_eq!(kuna(&["catalog", "--markdown", "--engine", "all"]).status.code(), Some(2));
+    let miss = kuna(&["catalog", "--engine", "jvm", "--option", "loweredswitch"]);
+    assert_eq!(miss.status.code(), Some(1));
+}
+
+/// The kuna-fixes case of fix `lambda_wildcard_return` (`decompiler/managed/kuna-jvm/corpus/kuna-fixes/`).
+fn kuna_fix_class() -> String {
+    common::repo_root()
+        .join("decompiler/managed/kuna-jvm/corpus/kuna-fixes/classes/pkg/TestMethodRefWildcardReceiver.class")
+        .display()
+        .to_string()
+}
+
+#[test]
+fn kuna_fixes_have_no_switch() {
+    let class = kuna_fix_class();
+    let method = "pkg.TestMethodRefWildcardReceiver.objects";
+    let fixed = jvm(&["decompile", &class, method]);
+    assert!(ok(&fixed).contains("return this.types.map(factory::create);"), "{}", stdout(&fixed));
+    assert!(!stderr(&fixed).contains("warning:"), "{}", stderr(&fixed));
+
+    let failed = |extra: &[&str]| {
+        let mut args = vec!["decompile-all", class.as_str(), "--json"];
+        args.extend(extra);
+        let doc = json(&jvm(&args));
+        doc["functions"].as_array().unwrap().iter().filter(|f| !f["error"].is_null()).count()
+    };
+    assert_eq!(failed(&[]), 0);
+}
+
+#[test]
+fn docs_embed_the_jvm_topics() {
+    for topic in ["jvm", "options-jvm"] {
+        let body = ok(&kuna(&["docs", topic]));
+        let file = std::fs::read_to_string(common::repo_root().join(format!("docs/{topic}.md"))).unwrap();
+        assert!(body == file, "stale embedded {topic}");
+    }
+}
+
+#[test]
+fn test_jvm_runs_corpus_cases() {
+    let text = ok(&kuna(&["test", "--jvm", "--name", "default/pkg/TestEnhancedForLoops"]));
+    assert!(text.starts_with("jvm: 1/1 cases matched"), "{text}");
+    let doc: Value = serde_json::from_str(&ok(&kuna(&["test", "--jvm", "--name", "TestEnhancedForLoops", "--json"]))).unwrap();
+    assert_eq!(doc["passing"], serde_json::json!(["jvm:default/pkg/TestEnhancedForLoops"]));
+    assert_eq!(doc["jvm_footer"], serde_json::json!([1, 1]));
+    let miss = kuna(&["test", "--jvm", "--name", "no-such-case"]);
+    assert_eq!(miss.status.code(), Some(2));
+    assert_eq!(kuna(&["test", "--jvm", "--datatests"]).status.code(), Some(2));
+    assert_eq!(kuna(&["test", "--jvm", "--baseline", "x.txt"]).status.code(), Some(2));
+    assert_eq!(kuna(&["test", "--save-digests"]).status.code(), Some(2));
+}
+
+/// A copy of the manifest with one case's digest broken: `--out` writes the run's text,
+/// `--save-digests` restores the digest.
+#[test]
+fn test_jvm_writes_texts_and_re_records_kuna_digests() {
+    let id = "default/pkg/TestEnhancedForLoops";
+    let tests_jvm = common::repo_root().join("decompiler/managed/kuna-jvm/corpus");
+    let text = std::fs::read_to_string(tests_jvm.join("cases.tsv")).unwrap();
+    let at = text.find(&format!("case\t{id}\t")).unwrap();
+    let digest_at = |record: &str| at + text[at..].find(&format!("\n{record}\t")).unwrap() + record.len() + 2;
+    let k = digest_at("kuna");
+    let pinned = &text[k..k + 16];
+    let zero = "0000000000000000";
+    let broken = format!("{}{zero}{}", &text[..k], &text[k + 16..]);
+    let header = "kuna-jvm-corpus\t1\n";
+    let broken = broken.replacen(header, &format!("{header}root\t{}\n", tests_jvm.display()), 1);
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("jvm-corpus-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let manifest = dir.join("cases.tsv");
+    std::fs::write(&manifest, &broken).unwrap();
+    let (m, out) = (manifest.display().to_string(), dir.join("out").display().to_string());
+    let run = |extra: &[&str]| kuna(&[&["test", "--jvm", "--manifest", &m, "--name", id][..], extra].concat());
+
+    let red = run(&["--out", &out, "--save-digests"]);
+    assert_eq!(red.status.code(), Some(1), "{}", stderr(&red));
+    assert!(stdout(&red).contains(&format!("[jvm] {id}: Mismatch digest {pinned}, pinned {zero}")), "{}", stdout(&red));
+    assert!(stderr(&red).contains(&format!("{id}: {zero} -> {pinned}")), "{}", stderr(&red));
+    assert!(dir.join("out").join(format!("{id}.java")).is_file());
+    let saved = std::fs::read_to_string(&manifest).unwrap();
+    assert_eq!(saved, broken.replacen(&format!("kuna\t{zero}"), &format!("kuna\t{pinned}"), 1));
+    let green = run(&[]);
+    assert!(stdout(&green).starts_with("jvm: 1/1 cases matched"), "{}", stdout(&green));
+    assert_eq!(run(&["--out", &out]).status.code(), Some(2), "a used --out directory");
+}
+
+#[test]
+fn a_reader_that_walks_away_is_not_a_panic() {
+    let dir = common::repo_root().join("decompiler/managed/kuna-jvm/corpus/classes/java8").display().to_string();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_kuna"))
+        .args(["functions", &dir])
+        .args(NO_JDK)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let out = child.wait_with_output().unwrap();
+    assert!(!stderr(&out).contains("panicked"), "{}", stderr(&out));
+    assert_eq!(out.status.code(), Some(0));
+}
+
+const COUNTER: &str = "\
+package com.ex.kt
+
+public class Counter(start: Int) {
+   public final var count: Int
+      private set
+
+   public final var label: String
+
+   init {
+      this.count = start
+      this.label = \"counter\"
+   }
+
+   public fun bump(by: Int = 1): Int {
+      this.count += by
+      return this.count
+   }
+
+   public companion object {
+      public fun of(text: String): Counter {
+         return Counter(text.length)
+      }
+   }
+}
+";
+
+#[test]
+fn a_kotlin_class_prints_as_kotlin_and_language_java_prints_it_as_java() {
+    let kotlin = ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter"]));
+    assert_eq!(kotlin, COUNTER);
+    let java = ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java"]));
+    assert!(java.starts_with("package com.ex.kt;\n\nimport kotlin.Metadata;\n"), "{java}");
+    assert!(java.contains("\npublic final class Counter {\n"), "{java}");
+    assert!(java.contains("\n   public final int bump(int by) {\n"), "{java}");
+    assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--option", "jvm_kt_enable", "off"])), java);
+    assert_eq!(ok(&jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "auto"])), kotlin);
+    let out = jvm(&["decompile", &kotlin_dir(), "com.ex.kt.Counter", "--language", "java", "--option", "jvm_kt_enable", "on"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(stderr(&out).contains("--language java writes every class as Java"), "{}", stderr(&out));
+}
+
+#[test]
+fn kotlin_members_are_selected_by_their_jvm_names() {
+    let dir = kotlin_dir();
+    let getter = ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter.getCount"]));
+    assert_eq!(getter, "public final var count: Int\n   private set\n");
+    let bump = ok(&jvm(&["decompile", &dir, "Counter.bump"]));
+    assert_eq!(bump, "public fun bump(by: Int = 1): Int {\n   this.count += by\n   return this.count\n}\n");
+    let of = ok(&jvm(&["decompile", &dir, "Counter.Companion.of"]));
+    assert!(of.starts_with("public fun of(text: String): Counter {\n"), "{of}");
+    assert_eq!(ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter$Companion.of"])), of);
+    let companion = ok(&jvm(&["decompile", &dir, "Counter.Companion"]));
+    assert!(companion.starts_with("public companion object {\n"), "{companion}");
+    let top = ok(&jvm(&["decompile", &dir, "com.ex.kt.CountersKt.quadruple"]));
+    assert!(top.starts_with("public fun quadruple(x: Int): Int {\n   return applyTwice({ it: Int ->\n"), "{top}");
+    let init = ok(&jvm(&["decompile", &dir, "Counter.<init>"]));
+    assert!(init.starts_with("init {\n"), "{init}");
+
+    let out = jvm(&["decompile", &dir, "Counter.count"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains("a Kotlin property is selected by its JVM accessors: \"com.ex.kt.Counter.getCount\""),
+        "{}",
+        stderr(&out)
+    );
+    for folded in ["Counter.bump$default", "CountersKt.quadruple$lambda$0"] {
+        let out = jvm(&["decompile", &dir, folded]);
+        assert_eq!(out.status.code(), Some(1), "{folded}");
+        let err = stderr(&out);
+        assert!(err.contains("has no declaration of its own in the Kotlin source") && err.contains("--language java"), "{err}");
+        let java = ok(&jvm(&["decompile", &dir, folded, "--language", "java", "--option", "jvm_remove_synthetic", "off"]));
+        assert!(java.contains(folded.rsplit('.').next().unwrap()), "{folded}: {java}");
+    }
+}
+
+#[test]
+fn a_property_getter_and_setter_share_one_declaration() {
+    let dir = kotlin_dir();
+    let text = ok(&jvm(&["decompile-all", &dir, "--filter", "Label"]));
+    assert_eq!(
+        text,
+        "// Method: com.ex.kt.Counter.getLabel()Ljava/lang/String;, com.ex.kt.Counter.setLabel(Ljava/lang/String;)V  \
+         (com/ex/kt/Counter.kt:7)\npublic final var label: String\n\n"
+    );
+    let doc = json(&jvm(&["decompile-all", &dir, "--json", "--filter", "Label"]));
+    let records = doc["functions"].as_array().unwrap();
+    assert_eq!(records.len(), 2, "one record per JVM method");
+    assert_eq!(records[0]["method"], "getLabel");
+    assert_eq!(records[1]["method"], "setLabel");
+    assert_eq!(records[0]["code"], records[1]["code"]);
+    assert_eq!(records[0]["line"], records[1]["line"]);
+    assert_eq!(
+        ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter.setLabel"])),
+        ok(&jvm(&["decompile", &dir, "com.ex.kt.Counter.getLabel"]))
+    );
+}
+
+#[test]
+fn json_records_carry_the_language_of_their_unit() {
+    let doc = json(&jvm(&["decompile-all", &kotlin_dir(), "--json", "--omit", "line_mappings"]));
+    assert_eq!(doc["language"], "kotlin");
+    for record in doc["functions"].as_array().unwrap() {
+        assert_eq!(record["language"], "kotlin", "{record}");
+        assert!(record["path"].as_str().unwrap().ends_with(".kt"), "{record}");
+    }
+    let classes: Vec<(&str, &str)> = doc["classes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["path"].as_str().unwrap(), c["language"].as_str().unwrap()))
+        .collect();
+    assert_eq!(classes, [("com/ex/kt/Counter.kt", "kotlin"), ("com/ex/kt/CountersKt.kt", "kotlin")]);
+    let java = json(&jvm(&["decompile-all", &kotlin_dir(), "--json", "--language", "java"]));
+    assert_eq!(java["language"], "java");
+    assert!(java["functions"].as_array().unwrap().iter().all(|r| r["language"] == "java"));
+    assert_eq!(java["classes"][0]["path"], "com/ex/kt/Counter.java");
+    let text = ok(&jvm(&["decompile-all", &kotlin_dir()]));
+    assert!(text.starts_with("// Class: com.ex.kt.Counter  (com/ex/kt/Counter.kt)\npackage com.ex.kt\n"), "{text}");
+
+    let mixed = scratch_dir("jvm-mixed-languages");
+    for (from, to) in [
+        ("kotlin/classes/com/ex/kt/CountersKt.class", "CountersKt.class"),
+        ("classes/com/ex/util/Helper.class", "Helper.class"),
+    ] {
+        std::fs::copy(fixtures().join(from), mixed.join(to)).unwrap();
+    }
+    let doc = json(&jvm(&["decompile-all", mixed.to_str().unwrap(), "--json"]));
+    assert_eq!(doc["language"], "mixed");
+    let languages: Vec<(&str, &str)> = doc["classes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["name"].as_str().unwrap(), c["language"].as_str().unwrap()))
+        .collect();
+    assert_eq!(languages, [("com.ex.kt.CountersKt", "kotlin"), ("com.ex.util.Helper", "java")]);
+}
+
+#[test]
+fn decompile_project_writes_kotlin_classes_as_kt_files() {
+    let out_dir = scratch_dir("jvm-project-kotlin");
+    let summary = ok(&jvm(&["decompile-project", &kotlin_dir(), "-o", out_dir.to_str().unwrap()]));
+    let counter = std::fs::read_to_string(out_dir.join("com/ex/kt/Counter.kt")).unwrap();
+    let counters = std::fs::read_to_string(out_dir.join("com/ex/kt/CountersKt.kt")).unwrap();
+    assert_eq!(counter, COUNTER);
+    assert_eq!(
+        summary,
+        format!(
+            "wrote {}: 2 .kt files ({} bytes); classes: 2 ok, 0 failed; methods: 10 ok, 0 failed\n",
+            out_dir.display(),
+            counter.len() + counters.len()
+        )
+    );
+    assert_eq!(walk(&out_dir).len(), 2);
+    let java_dir = scratch_dir("jvm-project-kotlin-as-java");
+    let summary = ok(&jvm(&["decompile-project", &kotlin_dir(), "-o", java_dir.to_str().unwrap(), "--language", "java"]));
+    assert!(summary.contains(": 2 .java files ("), "{summary}");
+    assert!(java_dir.join("com/ex/kt/Counter.java").is_file() && java_dir.join("com/ex/kt/CountersKt.java").is_file());
+
+    let mixed = scratch_dir("jvm-project-mixed-input");
+    std::fs::copy(fixtures().join("kotlin/classes/com/ex/kt/CountersKt.class"), mixed.join("CountersKt.class")).unwrap();
+    std::fs::copy(fixtures().join("classes/com/ex/util/Helper.class"), mixed.join("Helper.class")).unwrap();
+    let mixed_out = scratch_dir("jvm-project-mixed");
+    let summary = ok(&jvm(&["decompile-project", mixed.to_str().unwrap(), "-o", mixed_out.to_str().unwrap()]));
+    assert!(summary.contains(": 1 .java files, 1 .kt files ("), "{summary}");
+}
+
+fn warnings(out: &Output) -> Vec<String> {
+    stderr(out).lines().filter(|l| l.starts_with("warning: ")).map(str::to_string).collect()
+}
+
+#[test]
+fn a_flagged_vf_comment_is_a_warning_not_a_failure() {
+    let class = common::repo_root().join("decompiler/managed/kuna-jvm/corpus/classes/java25/pkg/TestAssertsEnabled.class").display().to_string();
+    let out = jvm(&["decompile", &class, "pkg.TestAssertsEnabled.test7"]);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(warnings(&out), ["warning: pkg.TestAssertsEnabled.test7()V: $VF: Could not resugar all assert statements!"]);
+    let doc = json(&jvm(&["decompile", &class, "pkg.TestAssertsEnabled.test7", "--json"]));
+    let record = &doc["functions"][0];
+    assert!(record["error"].is_null());
+    assert_eq!(record["warnings"], serde_json::json!(["$VF: Could not resugar all assert statements!"]));
+    let plain = json(&jvm(&["decompile", &class, "pkg.TestAssertsEnabled.test", "--json"]));
+    assert_eq!(plain["functions"][0]["warnings"], serde_json::json!([]));
+}
+
+
+/// `decompiler/managed/kuna-jvm/fixtures/failures/classes`: class files broken by construction (its `README.md`).
+fn failures_dir() -> String {
+    fixtures().join("failures/classes").display().to_string()
+}
+
+const CAST: &str = "ClassCastException: class java.lang.Float cannot be cast to class java.lang.Integer";
+
+#[test]
+fn a_failure_inside_a_lambda_fails_the_enclosing_method() {
+    let dir = failures_dir();
+    let escape = jvm(&["decompile", &dir, "com.ex.fail.Nested.escape"]);
+    assert_eq!(escape.status.code(), Some(1), "its only selected method failed: {}", stderr(&escape));
+    assert!(stdout(&escape).contains("// $VF: Couldn't be decompiled"), "{}", stdout(&escape));
+    assert_eq!(
+        warnings(&escape),
+        [format!(
+            "warning: com.ex.fail.Nested.escape(I)Ljava/lang/Runnable;: in \
+             com.ex.fail.Nested.lambda$escape$1(I)Ljava/lang/Runnable;: {CAST}"
+        )]
+    );
+    let later = jvm(&["decompile", &dir, "com.ex.fail.Nested.later"]);
+    assert_eq!(later.status.code(), Some(1));
+    assert_eq!(
+        warnings(&later),
+        [format!("warning: com.ex.fail.Nested.later(Ljava/lang/StringBuilder;)Ljava/lang/Runnable;: {CAST}")]
+    );
+
+    let class = jvm(&["decompile", &dir, "com.ex.fail.Nested"]);
+    assert_eq!(class.status.code(), Some(0), "a class target exits 0 when the class was written");
+    let told = warnings(&class);
+    assert_eq!(told.len(), 5, "each failed body once: {told:#?}");
+    assert!(told.iter().any(|w| w.starts_with("warning: com.ex.fail.Nested: in com.ex.fail.Nested.lambda$static$0")));
+
+    let doc = json(&jvm(&["decompile-all", &dir, "--json"]));
+    let record = |name: &str| {
+        doc["functions"].as_array().unwrap().iter().find(|f| f["name"] == name).cloned().unwrap()
+    };
+    let escape = record("com.ex.fail.Nested.escape");
+    assert!(escape["error"].as_str().unwrap().starts_with("in com.ex.fail.Nested.lambda$escape$1("), "{escape}");
+    assert_eq!(escape["nested_errors"].as_array().unwrap().len(), 1);
+    assert_eq!(record("com.ex.fail.Nested.both")["nested_errors"].as_array().unwrap().len(), 2);
+    let later = record("com.ex.fail.Nested.later");
+    assert_eq!(later["error"], serde_json::json!(CAST));
+    assert!(later["nested_errors"].as_array().unwrap().is_empty());
+    assert!(record("com.ex.fail.Nested.plain")["error"].is_null());
+    let class = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == "com.ex.fail.Nested").unwrap();
+    assert_eq!(class["status"], "decompiled");
+    assert!(class["error"].is_null());
+    assert_eq!(class["nested_errors"].as_array().unwrap().len(), 1, "the field initializer's lambda: {class}");
+    let broken = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == "com.ex.fail.Broken").unwrap();
+    assert_eq!(broken["status"], "decompiled", "bodies that fail while processed fail alone: {broken}");
+    assert_eq!(broken["nested_errors"].as_array().unwrap().len(), 1, "a failed method header in a field initializer: {broken}");
+    assert_eq!(record("com.ex.fail.Broken.lambda")["nested_errors"].as_array().unwrap().len(), 1);
+
+    let out = scratch_dir("jvm-nested-failures");
+    let summary = ok(&jvm(&["decompile-project", &dir, "-o", &out.display().to_string()]));
+    assert!(
+        summary.ends_with("; classes: 3 ok, 1 failed; methods: 3 ok, 6 failed; outside methods: 2 failed\n"),
+        "{summary}"
+    );
+}
+
+#[test]
+fn a_class_that_fails_whole_is_failed_not_hidden() {
+    let dir = failures_dir();
+    let reason = format!("Class com/ex/fail/Whole couldn't be fully decompiled: {CAST}");
+    let class = jvm(&["decompile", &dir, "com.ex.fail.Whole"]);
+    assert_eq!(class.status.code(), Some(1));
+    assert!(stdout(&class).contains("$VF: Unable to decompile class"), "{}", stdout(&class));
+    assert!(stderr(&class).contains(&format!("error: could not decompile com.ex.fail.Whole: {reason}")), "{}", stderr(&class));
+    let method = jvm(&["decompile", &dir, "com.ex.fail.Whole.size"]);
+    assert_eq!(method.status.code(), Some(1));
+    assert!(stderr(&method).contains(&reason), "{}", stderr(&method));
+    assert!(!stderr(&method).contains("no declaration of its own"), "{}", stderr(&method));
+
+    let all = jvm(&["decompile-all", &dir, "--json"]);
+    assert!(stderr(&all).contains(&format!("warning: could not decompile com.ex.fail.Whole: {reason}")));
+    let doc = json(&all);
+    let status = |name: &str| {
+        let c = doc["classes"].as_array().unwrap().iter().find(|c| c["name"] == name).cloned().unwrap();
+        (c["status"].as_str().unwrap().to_string(), c["error"].clone())
+    };
+    assert_eq!(status("com.ex.fail.Whole"), ("failed".into(), serde_json::json!(reason)));
+    assert_eq!(status("com.ex.fail.Mark"), ("decompiled".into(), Value::Null));
+
+    let whole = fixtures().join("failures/classes/com/ex/fail/Whole.class").display().to_string();
+    let only = jvm(&["decompile-all", &whole, "--json"]);
+    assert_eq!(only.status.code(), Some(1), "no class decompiled");
+    let doc: Value = serde_json::from_str(&stdout(&only)).unwrap();
+    assert_eq!(doc["error"], serde_json::json!(format!("no class of {whole} could be decompiled")));
+}
+
+#[test]
+fn an_anonymous_class_inside_a_failed_body_is_hidden() {
+    let doc = json(&jvm(&["decompile-all", &failures_dir(), "--functions", "com.ex.fail.Nested$2", "--json"]));
+    let class = &doc["classes"][0];
+    assert_eq!(class["status"], "hidden");
+    assert!(class["error"].is_null() && class["code"].is_null());
+    assert!(class["note"].as_str().unwrap().contains("is not in the decompiled source"), "{class}");
+}

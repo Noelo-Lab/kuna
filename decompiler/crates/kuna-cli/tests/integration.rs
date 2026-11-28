@@ -961,6 +961,10 @@ mod elf_unwind;
 #[path = "e500_arguments.rs"]
 mod e500_arguments;
 
+#[cfg(feature = "jvm")]
+#[path = "jvm_cli.rs"]
+mod jvm_cli;
+
 #[path = "cvf_trace.rs"]
 mod cvf_trace;
 

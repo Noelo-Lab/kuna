@@ -1,0 +1,66 @@
+{
+ "artifacts": {
+  "com.h2database:h2:2.5.252": {
+   "sha256": "90b11dc413da82070ef15fc943282c1408e6ffd34fa68998335fea8603b5ff20",
+   "url": "https://repo1.maven.org/maven2/com/h2database/h2/2.5.252/h2-2.5.252.jar"
+  },
+  "com.h2database:h2:2.5.252:sources": {
+   "sha256": "ff3d277f962df614283d0a754949eea1e4685ed645f603a590f19c5dbbdb83b3",
+   "url": "https://repo1.maven.org/maven2/com/h2database/h2/2.5.252/h2-2.5.252-sources.jar"
+  }
+ },
+ "deps": [
+  {
+   "coord": "jakarta.servlet:jakarta.servlet-api:6.1.0",
+   "sha256": "8a31f465f3593bf2351531a5c952014eb839da96a605b5825b93dd54714c48c4"
+  },
+  {
+   "coord": "javax.servlet:javax.servlet-api:4.0.1",
+   "sha256": "83a03dd877d3674576f0da7b90755c8524af099ccf0607fc61aa971535ad7c60"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-analysis-common:9.12.0",
+   "sha256": "8c79d8741f711cc6d7501805b03f7b5f505805d09cab1beb95f0be24b6d27655"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-core:9.12.0",
+   "sha256": "6c7b774b75cd8f369e246f365a47caa54ae991cae6afa49c7f339e9921ca58a0"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-facet:9.12.0",
+   "sha256": "3c07754f0a1f45ba42a637faa8568c18507defa6b77a1ed71af291cd4e7ac603"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-queries:9.12.0",
+   "sha256": "3b4da6b1673e4edd141c7b86538cc61f6ff3386106f1f5e179c9fe2d30ea2fca"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-queryparser:9.12.0",
+   "sha256": "fc866b7bbfc199436feb24be7dd5c575445342eb283bfe07dd519eab131d3675"
+  },
+  {
+   "coord": "org.apache.lucene:lucene-sandbox:9.12.0",
+   "sha256": "2262f39a241f435dba61f230e7528205c34f4bf0008faa57f0808476bb782996"
+  },
+  {
+   "coord": "org.locationtech.jts:jts-core:1.20.0",
+   "sha256": "6a783d8f9dba3d3cf7265435f134402f63c05838aa6cbcc4297ad3a5b2842baf"
+  },
+  {
+   "coord": "org.osgi:org.osgi.service.jdbc:1.1.0",
+   "sha256": "c1d14cb34d76bedc4b48cf9859e5d8d4b848d0fb40fc700f2be66f8829cad424"
+  },
+  {
+   "coord": "org.osgi:osgi.annotation:8.1.0",
+   "sha256": "68afeb86a5322675d4dfe3df5863c7d8a37b34c18e3a8e41553f1ab3ac15d78f"
+  },
+  {
+   "coord": "org.osgi:osgi.core:8.0.0",
+   "sha256": "41c24d187f67aaaf4745fab78fd1da66de7f37dd82581dbbbc9ba89645ba0166"
+  },
+  {
+   "coord": "org.slf4j:slf4j-api:2.0.16",
+   "sha256": "a12578dde1ba00bd9b816d388a0b879928d00bab3c83c240f7013bf4196c579a"
+  }
+ ]
+}

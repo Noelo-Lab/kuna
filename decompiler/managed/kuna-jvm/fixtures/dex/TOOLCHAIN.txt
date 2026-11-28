@@ -1,0 +1,3 @@
+javac 21.0.13.1
+D8 8.13.25 (build fdd12f220c9b37fb01acdb33edfdf0c5ead3122d from go/r8bot (luci-r8-custom-ci-archive-us-east1-b-0-ngbi))
+info: kotlinc-jvm 2.0.0 (JRE 21.0.13.1+2-1-22.04.1-Ubuntu)

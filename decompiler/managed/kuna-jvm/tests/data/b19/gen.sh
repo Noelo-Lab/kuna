@@ -1,0 +1,13 @@
+#!/bin/sh
+# Regenerates the fixture classes (JDK 21).
+# inconsistent/ pairs b/X.class (Y an inner class) with b/X$Y.class from a build
+# where Y is a static nested class, so the two InnerClasses entries disagree.
+set -e
+cd "$(dirname "$0")"
+javac --release 21 -d classes src/b/*.java
+tmp=$(mktemp -d)
+javac --release 21 -d "$tmp/v1" src_inconsistent/v1/b/X.java
+javac --release 21 -d "$tmp/v2" src_inconsistent/v2/b/X.java
+mkdir -p inconsistent/b
+cp "$tmp/v2/b/X.class" inconsistent/b/X.class
+cp "$tmp/v1/b/X\$Y.class" 'inconsistent/b/X$Y.class'

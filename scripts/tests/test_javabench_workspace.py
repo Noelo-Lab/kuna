@@ -1,0 +1,113 @@
+"""javabench's workspace convention: every path under one directory, none without it.
+
+The metric tests need tree-sitter and a JDK and live in scripts/javabench/tests; this part needs
+neither, so it runs everywhere.
+"""
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+from scripts.javabench import fetch, projects
+
+ROOT = Path(__file__).resolve().parents[2]
+ENV_KEYS = ("JAVABENCH_WORKSPACE", "JAVABENCH_DATASET", "JAVABENCH_RESULTS", "JAVABENCH_JDK25")
+
+
+class WorkspaceTests(unittest.TestCase):
+    def setUp(self):
+        self.saved = {k: os.environ.get(k) for k in ENV_KEYS}
+        for k in ENV_KEYS:
+            os.environ.pop(k, None)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def tearDown(self):
+        for k, v in self.saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_paths_resolve_under_the_workspace(self):
+        root = projects.configure(self.tmp.name)
+        self.assertEqual(projects.DATASET_DIR, root / "dataset")
+        self.assertEqual(projects.RESULTS_DIR, root / "results")
+        self.assertEqual(projects.TOOLS_DIR, root / "tools")
+        self.assertEqual(projects.LOCK_DIR, root / "locks")
+        self.assertEqual(projects.get("guava").dir, root / "dataset" / "guava")
+        self.assertTrue(projects.JDKS[25].startswith(str(root / "tools")))
+        self.assertEqual(os.environ["JAVABENCH_WORKSPACE"], str(root))
+
+    def test_per_directory_overrides_win(self):
+        os.environ["JAVABENCH_DATASET"] = os.path.join(self.tmp.name, "elsewhere")
+        projects.configure(self.tmp.name)
+        self.assertEqual(projects.DATASET_DIR, Path(self.tmp.name) / "elsewhere")
+
+    def test_pins_are_the_lock_until_the_workspace_has_one(self):
+        projects.configure(self.tmp.name)
+        pin = json.loads((projects.PINS_DIR / "guava.json").read_text())
+        self.assertEqual(fetch._load_lock("guava"), pin)
+        self.assertTrue(all(len(d["sha256"]) == 64 for d in pin["deps"]))
+        own = projects.LOCK_DIR / "guava.json"
+        own.parent.mkdir(parents=True)
+        own.write_text('{"artifacts": {}, "deps": []}')
+        self.assertEqual(fetch._load_lock("guava"), {"artifacts": {}, "deps": []})
+        self.assertEqual(sorted(p.stem for p in projects.PINS_DIR.glob("*.json")), sorted(projects.KNOWN))
+
+    def test_without_a_workspace_the_cli_stops_with_one_line(self):
+        env = {k: v for k, v in os.environ.items() if k not in ENV_KEYS}
+        env["PYTHONPATH"] = str(ROOT)
+        r = subprocess.run([sys.executable, "-m", "scripts.javabench", "report", "some-run"], cwd=self.tmp.name,
+                           env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stderr.strip(), projects.NO_WORKSPACE)
+        self.assertIn("JAVABENCH_WORKSPACE", r.stderr)
+        self.assertIn("scripts/javabench/README.md", r.stderr)
+
+    def test_the_workspace_option_names_the_directory(self):
+        env = {k: v for k, v in os.environ.items() if k not in ENV_KEYS}
+        env["PYTHONPATH"] = str(ROOT)
+        r = subprocess.run([sys.executable, "-m", "scripts.javabench", "--workspace", "ws", "report", "no-such-run"],
+                           cwd=self.tmp.name, env=env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not a javabench run: no-such-run", r.stderr)
+
+
+class ProjectSetTests(unittest.TestCase):
+    def test_sets_select_their_projects(self):
+        names = lambda sel: [p.name for p in projects.selected(sel)]
+        self.assertEqual(names(None), list(projects.PROJECTS))
+        self.assertEqual(names(["insample"]), list(projects.PROJECTS))
+        self.assertEqual(names(["heldout1"]), list(projects.HELDOUT1))
+        self.assertEqual(names(["heldout2"]), list(projects.HELDOUT2))
+        self.assertEqual((len(projects.PROJECTS), len(projects.HELDOUT1), len(projects.HELDOUT2)), (5, 11, 10))
+        self.assertEqual(len(names(["all"])), 26)
+        self.assertEqual(names(["guava", "heldout1", "antlr4"])[:2], ["guava", "antlr4"])
+        sets = (set(projects.PROJECTS), set(projects.HELDOUT1), set(projects.HELDOUT2))
+        self.assertFalse(sets[0] & sets[1] or sets[0] & sets[2] or sets[1] & sets[2])
+        with self.assertRaises(SystemExit):
+            projects.selected(["heldout"])
+        with self.assertRaises(SystemExit):
+            projects.selected(["no-such-project"])
+
+    def test_every_project_is_pinned(self):
+        for name, proj in projects.KNOWN.items():
+            pin = json.loads((projects.PINS_DIR / f"{name}.json").read_text())
+            if proj.kind != "maven":
+                continue
+            for coord in proj.modules:
+                self.assertRegex(pin["artifacts"][coord]["sha256"], r"^[0-9a-f]{64}$", coord)
+                self.assertRegex(pin["artifacts"][coord + ":sources"]["sha256"], r"^[0-9a-f]{64}$", coord)
+            locked = {":".join(d["coord"].split(":")[:2]) for d in pin["deps"]}
+            for coord in proj.dep_coords:
+                ga = ":".join(coord.split(":")[:2])
+                if ga not in proj.self_artifacts:
+                    self.assertIn(ga, locked, f"{name}: {coord}")
+
+
+if __name__ == "__main__":
+    unittest.main()
