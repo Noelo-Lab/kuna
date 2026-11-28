@@ -501,6 +501,16 @@ read a float argument register: an x86-64 `xmm0` written after a `pxor`, an
 ARM hard-float double forwarded or computed in `d0`, and a variadic callee
 that must not receive a leftover `xmm0`.
 
+`kuna-revisitcalls.xml` loads the committed gcc -O2 -mavx2 `floatcalls`
+fixture and decompiles `kills`, whose four float call results each reach a
+store of a global. A later heritage pass revisits the eight-byte `XMM0_Qa`
+after the first narrowed each call's creation of `xmm0` to the four bytes the
+store reads; the call is guarded again, so no store reads the value from before
+its call and every result is assigned, stored or summed. Its CLI companion,
+`tests/cli/floatcalls-stated-float-results-reach-their-readers.json`, checks the
+same fixture under the default callee-first `decompile-all`, where stated float
+returns reach callers that move `xmm0` whole.
+
 `kuna-callproto.xml` checks a tail jump through a variadic function pointer with
 nothing stated, with a call-site prototype, and with one parameter placed in a
 register. Its CLI companion covers both decompile surfaces and the rejection of

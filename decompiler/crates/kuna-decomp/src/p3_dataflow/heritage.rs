@@ -958,6 +958,9 @@ pub struct Heritage {
     /// it would have guarded, in guard order, those calls and the kept ones.
     #[allow(clippy::type_complexity)]
     persist_skips: Option<(usize, usize, Vec<BlockId>, Vec<crate::context::OpId>, crate::kuna_fasthash::FxHashSet<crate::context::OpId>)>,
+    /// The calls the next `guard_calls` guards again for their effect alone
+    /// ([`super::kuna_revisitcalls`]).
+    retired_calls: Option<Vec<crate::context::OpId>>,
     /// (kuna) This pass's user operations with memory effects
     /// ([`super::kuna_memoryguard::memory_ops`]), found at most once.
     memory_ops: Option<Vec<crate::context::OpId>>,
@@ -1041,6 +1044,7 @@ impl Heritage {
             persist_memory: Default::default(),
             persist_pruned: Vec::new(),
             persist_skips: None,
+            retired_calls: None,
             memory_ops: None,
             halt_loops: None,
             halt_loop_marks: BTreeMap::new(),
@@ -1867,6 +1871,7 @@ impl Heritage {
         let holdind = (fl & varnode_flags::addrtied) != 0;
         let mut deferred: Vec<crate::context::OpId> = Vec::new();
         self.persist_skips = None;
+        let retired = self.retired_calls.take();
         let readonly = self.readonly_unguarded && (fl & varnode_flags::readonly) != 0 && write.is_empty();
         let mut pruned = false;
         // (kuna) `option calloverlap off|auto|in|full` — the two upstream partial-range
@@ -1891,6 +1896,9 @@ impl Heritage {
         };
         for fc in qlst.iter_mut() {
             let op = fc.get_op();
+            if retired.as_ref().is_some_and(|calls| !calls.contains(&op)) {
+                continue;
+            }
             let own_output = fd
                 .obank()
                 .get(op)
@@ -1909,7 +1917,8 @@ impl Heritage {
             }
             let trans_addr = Address::new(Rc::clone(&spc), off);
             if own_output {
-                if fc.is_input_active()
+                if retired.is_none()
+                    && fc.is_input_active()
                     && tryregister
                     && (crate::kuna_lockedreturnarg::argument_in_locked_output(fc)
                         || crate::kuna_varargretreg::argument_in_own_output(fd, fc, &trans_addr, size))
@@ -2085,7 +2094,22 @@ impl Heritage {
             // tracks whether this range became a fresh output trial (controls the
             // `markIndirectCreation` in0 flag).
             let mut possibleoutput = false;
-            if !preserved && fc.is_output_active() && tryregister {
+            if retired.is_some() {
+                if !preserved && fc.is_output_active() && tryregister {
+                    let output_character = fc.proto().characterize_as_output(&trans_addr, size);
+                    if output_character != Containment::NoContainment
+                        && effecttype != effect_type::KILLEDBYCALL
+                        && fc.proto().is_auto_killed_by_call()
+                    {
+                        effecttype = effect_type::KILLEDBYCALL;
+                    }
+                    if output_character == Containment::ContainedBy
+                        && self.guard_trial_overlap(fd, fc, addr, &trans_addr, size, write)
+                    {
+                        effecttype = effect_type::UNAFFECTED;
+                    }
+                }
+            } else if !preserved && fc.is_output_active() && tryregister {
                 let output_character = fc.proto().characterize_as_output(&trans_addr, size);
                 if output_character != Containment::NoContainment {
                     if effecttype != effect_type::KILLEDBYCALL && fc.proto().is_auto_killed_by_call() {
@@ -2141,7 +2165,8 @@ impl Heritage {
             // parameter trial and append the argument Varnode to the CALL op.  This
             // is what makes a register/stack argument appear as a call argument —
             // the `func(args)` rendering this wave targets.
-            if fc.is_input_active()
+            if retired.is_none()
+                && fc.is_input_active()
                 && tryregister
                 && !self.guard_counted_float_input(fd, fc, addr, size)
                 && !self.guard_joined_stack_input(fd, fc, addr, &trans_addr, size)
@@ -2591,6 +2616,51 @@ impl Heritage {
         fc.get_active_input().register_trial(trunc_addr, trunc_size);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let _ = fd.op_insert_input(op, vn, nin);
+    }
+
+    /// (kuna) Guard `calls` again over the revisited range `[addr, addr+size)`
+    /// for their effect alone ([`super::kuna_revisitcalls`]).
+    fn guard_retired_calls(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        addr: &Address,
+        size: int4,
+        calls: Vec<crate::context::OpId>,
+        write: &mut Vec<crate::context::VarnodeId>,
+    ) {
+        let usepoint = Address::new_invalid();
+        let fl = fd.get_arch().query_global_properties(addr, size, &usepoint)
+            | fd.query_local_properties(addr, size, &usepoint);
+        self.retired_calls = Some(calls);
+        self.guard_calls(fd, fl, addr, size, write, None, None);
+        self.retired_calls = None;
+    }
+
+    /// (kuna) Rebuild the pieces of [`Self::guard_output_overlap`] for the
+    /// return storage inside `[addr, addr+size)` that the active call `fc`
+    /// already holds an output trial for, as a call guarded again for its effect
+    /// registers none ([`super::kuna_revisitcalls`]).
+    fn guard_trial_overlap(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+        write: &mut Vec<crate::context::VarnodeId>,
+    ) -> bool {
+        use kuna_num::pcoderaw::VarnodeData;
+        let mut vdata = VarnodeData::default();
+        if !fc.proto().get_biggest_contained_output(trans_addr, size, &mut vdata) {
+            return false;
+        }
+        let trunc_addr = addr + vdata.offset.wrapping_sub(trans_addr.get_offset()) as i64;
+        let trunc_size = vdata.size as int4;
+        if fc.get_active_output().which_trial(&trunc_addr, trunc_size) < 0 {
+            return false;
+        }
+        self.guard_output_overlap(fd, fc.get_op(), addr, size, &trunc_addr, trunc_size, write);
+        true
     }
 
     /// Guard a range that properly contains an active call's return storage (C++
@@ -5323,6 +5393,11 @@ impl Heritage {
                 idx += 1;
                 continue;
             }
+            let retired_calls = if memrange.new_addresses() {
+                Vec::new()
+            } else {
+                super::kuna_revisitcalls::retired_creation_calls(fd, &removevars, &writevars)
+            };
             if !removevars.is_empty() {
                 // removeRevisitedMarkers (heritage.cc:245): deletes stale
                 // MULTIEQUAL/INDIRECT markers from a previous pass over a now-
@@ -5338,6 +5413,9 @@ impl Heritage {
             let add_indirects = memrange.new_addresses();
             let revisit = memrange.old_addresses();
             let fl = self.guard(fd, &memrange.addr, size, add_indirects, revisit, &mut readvars, &mut writevars);
+            if !retired_calls.is_empty() {
+                self.guard_retired_calls(fd, &memrange.addr, size, retired_calls, &mut writevars);
+            }
             // calcMultiequals(writevars): the realized engine takes the write
             // *blocks* (the C++ derives them as `write[i]->getDef()->getParent()`
             // — the block each normalized write is defined in).  Inputs/written

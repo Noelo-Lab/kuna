@@ -351,6 +351,34 @@ the store of those bytes would die. A marker that one partition holds is left
 to that partition's own revisit, as before, so a refinement that cuts no marker
 is unchanged.
 
+**A revisited range's call kills (kuna).** A range revisited for old addresses
+alone runs none of the guards; its full-size markers from the earlier pass stay
+as writes. A marker narrower than the range is retired all the same, and an
+INDIRECT becomes a SUBPIECE of the range read just after its op, which upstream
+leaves to the replacement INDIRECT the same pass's guards put at that op. With
+no guard run, that read reaches the value from before the op, and for an
+INDIRECT *creation* the caller then reads what it held before a call that
+killed those bytes or returned its result in them. This is routine after AVX
+code: every VEX instruction writes all of `zmm0`, so the first pass guards each
+call over 64 bytes; a `vmovss %xmm0,sink` after a call reads four of them, so
+`RulePullsubIndirect` narrows the call's creation to those four; and an
+argument read of the eight-byte `XMM0_Qa` that a later pass adds at another
+call revisits those eight bytes. gcc -O2 -mavx2 `sink = i2f_div(n, 5); sink =
+twice(f[1]) + sink;` printed `i2f_div(..,5); sink = v7;` with `v7` the last
+float its loop computed; under `calloverlap off` the value carried across every
+call made the `main` of a gcc -O2 program take the `xmm0` it never reads
+(`unsigned long main(unsigned long a0,int a1)`, `kuna-earlyrestart.xml`). `place_multiequals` names the live calls whose
+creation such a revisit retires and which keep no full-size marker of the range
+(`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_revisitcalls.rs
+(retired_creation_calls)`) and guards each again over the whole range for its
+effect alone (`heritage.rs (Heritage::guard_retired_calls)`): a range the call
+kills gets its creation back, a call still recovering its result rebuilds the
+return-slot pieces around the output trial it already holds
+(`heritage.rs (Heritage::guard_trial_overlap)`), and no input or output trial is
+registered, so no call gains an argument or a result the first pass did not
+propose. The retired SUBPIECEs read the rebuilt creation, and a result whose
+trial survives is the call's output again.
+
 **Accesses that wrap past the top of a space (kuna, #1034).** Address arithmetic
 is modular in the size of the space, so an access can name bytes at both ends
 of it: an 8-byte load from ram `0xfffffffffffffffb` reads five bytes below the
@@ -925,8 +953,7 @@ The output side has the mirror exception
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/kuna_calloverlap.rs
 (auto_float_output)`): a call whose output is not locked gets the output guard
 when the only model return slot inside the range is the model's first float
-return slot and sits at the range's low end, and nothing in the run states or
-has recovered a returned value for the callee. gcc -O2 findutils `pred_newer`
+return slot and sits at the range's low end. gcc -O2 findutils `pred_newer`
 moves the `double` result of an unprototyped `difftime` with `movapd
 %xmm0,%xmm1`, a 16-byte read, and before this rule printed the sum of a
 variable nothing assigns after a bare `difftime();`. The guard proposes the
@@ -934,20 +961,34 @@ return slot only; the output trial becomes the call's result where a read after
 the call reaches it, and dead-code elimination removes it everywhere else, so a
 call whose `xmm0` the caller overwrites first gains no result. A range holding
 several return slots, a later float slot (x86-64 `XMM1_Qa`, the second half of
-a two-double return) and general slots keep the legacy behavior. So does a
-callee `decompile-all` recovered returning a value (its callee-first ledger,
-chapter 04 `voidret`): a caller that keeps such a callee's float as integer
-bits (`movq %xmm0,%rbx`) has the output trial dropped there, and the guard
-having marked the range unaffected, the pre-call `xmm0` would then pass
-through the call. A callee recovered `void` still takes the guard; the read it
-files is the evidence `voidret` redoes the callee with. Its callers are then
-decompiled again against the recovered return, which they state, so the guard
-does not run there a second time: in the default callee-first `decompile-all`
-an ELF import's PLT entry gains the `double` return (`double difftime(void)`)
-and its callers keep the read unassigned. A single-function decompile, a
-`decompile-all` with `protoorder off`, and a call through a PE import's IAT
-slot or a function pointer have no ledger entry for the callee, and connect
-the result.
+a two-double return) and general slots keep the legacy behavior. What the run
+states or has recovered for the callee does not matter, with one exception: a
+callee `decompile-all` decompiled first and recovered returning a `float` or
+`double` (chapter 04 `protoorder`, `callrettype`, `voidret`) takes the guard as
+an unprototyped one does, unless it is a `floatbits` helper whose float is only
+the bits of its float-register input (chapter 05). Such a helper's readers keep
+those bits as integers (`fbits(fb_negf(a))`), and the read the guard connected
+would make `voidret` withdraw the float the helper's own body proves, printing
+`int fb_negf(int a0)` for a function the convention calls with a float. Nor
+does a callee whose decoded body proves it never writes the slot (chapter 04
+`calleepreserves`, the same evidence that keeps a killed register): the
+caller's own value is still there after the call. gcc's `-fipa-ra` keeps a
+`double` argument in `xmm0` across a call to `int bump(int *p)`, which never
+touches it, and `double keep_int(double x, int *p) { int k = bump(p); return x
+* x + k; }` printed `return v2 * v2 + (double)v1;` with `v2` never assigned and
+its parameter `x` gone; it prints `return a0 * a0 + (double)v1;` again, and
+`keep_void`, whose callee returns nothing and also leaves `xmm0` alone, no
+longer prints `v1 = (double)flip(a0);`. It used to be left out, for fear that a caller dropping
+the output trial would carry the pre-call `xmm0` across the call; the carry was
+the revisit gap above, now closed for every call, and leaving such callees out
+only left their callers reading a variable nothing assigns: SLib
+`ScrollBar::vfunc_54` printed `sub_14006d0b0(a1); v14 = v15;` with `v15` never
+assigned once `sub_14006d0b0` stated its `float` return, a caller whose AVX code
+heritages all of `zmm0` lost every stated result the same way, and in the
+default callee-first `decompile-all` an ELF import's PLT entry gained its
+`double` return (`double difftime(void)`) only for its callers to lose the read.
+They now read the result (`v14 = sub_14006d0b0(a1);`), and a caller that keeps
+the float as integer bits (`movq %xmm0,(%rsp)`) reads those bits.
 `off` disables the partial-range guards; `in` and `full` retain their broader
 opt-in behavior.
 

@@ -1,0 +1,33 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!-- P3 heritage, a revisited range's call guards. No issue number: found while
+     reviewing a float-return PR. `kills` (decompiler/crates/kuna-analysis/tests/fixtures/floatcalls.c,
+     gcc -O2 -mavx2) stores four float call results into a global with
+     `vmovss %xmm0,sink`. Each VEX instruction writes the whole zmm0, so the
+     first heritage pass guards each call over 64 bytes, and the store reads
+     four of them, so RulePullsubIndirect narrows each call's creation of xmm0
+     to those four. A later pass adds an argument read of the eight-byte
+     XMM0_Qa at a call, which revisits that range for old addresses only:
+     removeRevisitedMarkers turned each narrowed creation into a SUBPIECE of the
+     range after the call, and no guard of the pass rebuilt the call's kill, so
+     the store read the value from before the call: `i2f_div(..,5); sink = v7;`
+     with v7 the loop's last float, and `twice(..)` dropped its result for the
+     same reason. Heritage now guards each such call again over the whole range
+     for its effect, and every result reaches its store. Correctness fix, no
+     option; one pass, default settings. All five fail before the fix.
+-->
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/floatcalls_gcc_O2_avx2</com>
+  <com>read symbols</com>
+  <com>load function kills</com>
+  <com>decompile</com>
+  <com>print C</com>
+</script>
+<stringmatch name="revisitcalls #1: the first call's result is assigned" min="1" max="1">^  v[0-9]+ = i2f_div\(</stringmatch>
+<stringmatch name="revisitcalls #2: the second call's result is stored" min="1" max="1">^  sink = .*i2f_div\(</stringmatch>
+<stringmatch name="revisitcalls #3: the last call's result is summed" min="1" max="1">twice\(v[0-9]+\[1\]\) \+ sink</stringmatch>
+<stringmatch name="revisitcalls #4: no call drops its result" min="0" max="0">^  (i2f_div|scl|twice)\(</stringmatch>
+<stringmatch name="revisitcalls #5: no store reads a value from before a call" min="0" max="0">^  sink = v[0-9]+;$</stringmatch>
+</decompilertest>
