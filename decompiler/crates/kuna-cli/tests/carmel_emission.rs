@@ -6395,6 +6395,31 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     later_r3[2] = r3_write;
     let mut unreachable_odd_tail = register;
     unreachable_odd_tail[7] = a0;
+    let wide_register = |selector| {
+        let mut code = [nop; 12];
+        code[0] = [if selector == 0xa5 { 0xa0 } else { 0x80 }, 0, 0x10, 0xce, 0x80, selector];
+        code[1] = a0;
+        code[8] = a1;
+        code[9] = ret;
+        code
+    };
+    let count_a0l = wide_register(0xa4);
+    let count_a0h = wide_register(0xa6);
+    let count_ff1 = wide_register(0xa5);
+    let count_r0 = wide_register(0xa8);
+    let count_rn0 = wide_register(0xaa);
+    let mut older_ex = vec![a0];
+    older_ex.extend(count_a0l);
+    let mut earlier_ex = vec![a0, nop];
+    earlier_ex.extend(count_a0l);
+    let mut next_r0 = count_r0;
+    let r0_write = [0x80, 0, 2, 0xc6, 0x52, 0x80];
+    next_r0[1] = r0_write;
+    let mut later_r0 = count_r0;
+    later_r0[2] = r0_write;
+    let register_inputs = &["A0L", "A1L", "A0H", "R0", "RN0", "FF1", "ECFG"][..];
+    let counts = "2,0,3,2,5,4,0";
+    let initial_one = "1,0,3,1,5,4,0";
     let left_multiply = [0x4b, 0x9b, 0xe7, 0x2a, 0xa7, 0x0b];
     let right_multiply = [0x2a, 0xa7, 0x0b, 0x4b, 0x9b, 0xe7];
     let mut paired_left = [nop; 14];
@@ -6435,6 +6460,15 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         (&register[..], "0", &["A1L", "ECFG", "R3"][..], "A1L", &[("0,0,2", 2)][..]),
         (&next_r3[..], "0", &["A0L", "ECFG", "R3"][..], "A0L", &[("0,0,1", 5)][..]),
         (&later_r3[..], "0", &["A0L", "ECFG", "R3"][..], "A0L", &[("0,0,1", 3)][..]),
+        (&count_a0l[..], "0", register_inputs, "A1L", &[(counts, 2)][..]),
+        (&count_a0h[..], "0", register_inputs, "A1L", &[(counts, 3)][..]),
+        (&count_ff1[..], "0", register_inputs, "A1L", &[(counts, 4)][..]),
+        (&count_r0[..], "0", register_inputs, "A1L", &[(counts, 2)][..]),
+        (&count_rn0[..], "0", register_inputs, "A1L", &[(counts, 5)][..]),
+        (&older_ex[..], "0", register_inputs, "A1L", &[(initial_one, 1)][..]),
+        (&earlier_ex[..], "0", register_inputs, "A1L", &[(initial_one, 2)][..]),
+        (&next_r0[..], "0", register_inputs, "A1L", &[(initial_one, 2)][..]),
+        (&later_r0[..], "0", register_inputs, "A1L", &[(initial_one, 1)][..]),
         (&unreachable_odd_tail[..], "0", &["R3"][..], "LC1", &[("2", 2)][..]),
         (&paired_left[..], "0", multiply_inputs, "LC1", &[(disabled, 0xc040), (address_only, 0xc041), (enabled, 0xc041)][..]),
         (&paired_left[..], "0", multiply_inputs, "X1", &[(disabled, 0x54ad), (address_only, 0x1234)][..]),

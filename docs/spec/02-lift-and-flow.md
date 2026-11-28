@@ -3979,6 +3979,10 @@ bound only becomes a terminal issue if it is an actual sequential slot.
 The lift admits a following write to `R3` only when classified as a D2
 write, before the count is sampled. A write one issue later does not
 change the count, and an unclassified write or transfer is rejected.
+The wide register-count form reads at OF. That sample excludes the
+immediately preceding issue's classified EX write, but includes a
+classified immediate D2 write in the following issue. Unproved adjacent
+writes and transfers are not treated as sequential register reads.
 For a paired compact `MPYUS` and `REPEAT R3`, the earlier address gate
 reserves `R7+RN7` and old `R3`, applies the R3 postmodifier, and latches
 `X1` or `X2`. Only the later result gate can publish `A5H` and the MAC flags;

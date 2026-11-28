@@ -51,6 +51,7 @@ pub(crate) struct PhaseDecode<'a> {
     staged_data: Option<u64>,
     repeat_r3: Option<u64>,
     repeat_d2_write: Option<u64>,
+    repeat_of: Option<u64>,
     ff: Option<FfOps>,
 }
 
@@ -80,6 +81,7 @@ impl<'a> PhaseDecode<'a> {
         let staged_data = index(b"carmel_staged_wb_data");
         let repeat_r3 = index(b"carmel_prove_repeat_r3_sample");
         let repeat_d2_write = index(b"carmel_repeat_d2_write");
+        let repeat_of = index(b"carmel_repeat_register_at_of");
         let ff = (|| Some(FfOps {
             capture: index(b"carmel_capture_ff_before_ex")?,
             fetch: index(b"carmel_sample_ff_at_of")?,
@@ -97,7 +99,7 @@ impl<'a> PhaseDecode<'a> {
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
             fixed_read_tick, fixed_load, fixed_store, end_unmodeled, omitted, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
-            staged_data, repeat_r3, repeat_d2_write, ff })
+            staged_data, repeat_r3, repeat_d2_write, repeat_of, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -112,6 +114,7 @@ impl<'a> PhaseDecode<'a> {
         let mut address_ex = Vec::new();
         let mut repeat_samples = Vec::new();
         let mut repeat_writes = Vec::new();
+        let mut repeat_operand_fetches = Vec::new();
         for (_, op_id) in fd.obank().iter_all() {
             let op = fd.obank().get(op_id).unwrap();
             if op.get_parent().is_none() { continue; }
@@ -162,12 +165,17 @@ impl<'a> PhaseDecode<'a> {
                 repeat_samples.push(op_id);
             } else if Some(index) == self.repeat_d2_write {
                 repeat_writes.push(op_id);
+            } else if Some(index) == self.repeat_of {
+                repeat_operand_fetches.push(op_id);
             } else if index == self.admission {
                 reads = true;
             }
         }
         if !repeat_samples.is_empty() {
             prove_repeat_samples(fd, visits, &repeat_samples, self.repeat_d2_write)?;
+        }
+        if !repeat_operand_fetches.is_empty() {
+            bind_repeat_operands(fd, visits, &repeat_operand_fetches, self)?;
         }
         for write in repeat_writes {
             lower_copy(fd, write, 1);
@@ -479,13 +487,7 @@ fn prove_repeat_samples(
         let register = fd.vbank().get(marker.get_in(2).unwrap()).unwrap();
         let writes = op.get_out().and_then(|out| fd.vbank().get(out))
             .is_some_and(|out| out.overlap_range(register.get_addr(), register.get_size()) >= 0);
-        let transfer = match op.code() {
-            OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
-                !fd.vbank().get(op.get_in(0).unwrap()).unwrap().is_constant()
-            }
-            OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => true,
-            _ => false,
-        };
+        let transfer = exits_issue(fd, op);
         let early = d2_write.is_some_and(|index| userop(fd, op) == Some(index));
         if transfer || (writes && !early) {
             return Err(sample_error(fd, id, "R3 repeat count"));
@@ -493,6 +495,114 @@ fn prove_repeat_samples(
     }
     for &sample in samples {
         fd.op_destroy(sample);
+    }
+    Ok(())
+}
+
+fn exits_issue(fd: &Funcdata, op: &PcodeOp) -> bool {
+    match op.code() {
+        OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH => {
+            !fd.vbank().get(op.get_in(0).unwrap()).unwrap().is_constant()
+        }
+        OpCode::CPUI_BRANCHIND | OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_RETURN => true,
+        _ => false,
+    }
+}
+
+// OF sees the first younger D2 write, but not the immediately older issue's
+// EX write. Prove the neighboring issue phases before binding the count.
+fn bind_repeat_operands(
+    fd: &mut Funcdata, visits: &VisitedMap, samples: &[OpId], phases: &PhaseDecode<'_>,
+) -> KunaResult<()> {
+    let mut neighbors = BTreeMap::<Address, Vec<OpId>>::new();
+    let mut windows = Vec::with_capacity(samples.len());
+    for &sample in samples {
+        let op = fd.obank().get(sample).unwrap();
+        let at = op.get_addr();
+        let next = at + i64::from(visits.get(at).ok_or_else(|| sample_error(fd, sample, "repeat OF count"))?.size);
+        if !visits.contains_key(&next) {
+            return Err(sample_error(fd, sample, "repeat OF successor"));
+        }
+        let previous = visits.range(..at.clone()).next_back().map(|(a, _)| a)
+            .filter(|a| contiguous(visits, a, at));
+        let block = op.get_parent().unwrap();
+        let incoming = fd.bblocks_ref().block(block);
+        if fd.bb_op_head(block) == Some(sample) {
+            let direct = incoming.size_in() != 0 && (0..incoming.size_in()).all(|i| {
+                fd.bb_op_tail(incoming.get_in(i)).is_some_and(|end| {
+                    Some(fd.obank().get(end).unwrap().get_addr()) == previous
+                })
+            });
+            if !direct && (at != fd.get_address() || incoming.size_in() != 0) {
+                return Err(sample_error(fd, sample, "repeat OF predecessor"));
+            }
+        }
+        if previous.is_none() && at != fd.get_address() {
+            return Err(sample_error(fd, sample, "repeat OF predecessor"));
+        }
+        if let Some(previous) = previous {
+            neighbors.entry(previous.clone()).or_default();
+        }
+        neighbors.entry(next.clone()).or_default();
+        windows.push((sample, previous.cloned(), next));
+    }
+    for (_, id) in fd.obank().iter_all() {
+        let op = fd.obank().get(id).unwrap();
+        if op.get_parent().is_some() {
+            if let Some(ops) = neighbors.get_mut(op.get_addr()) { ops.push(id); }
+        }
+    }
+    for (sample, previous, next) in windows {
+        let live = fd.obank().get(sample).unwrap().get_in(1).unwrap();
+        let operand = fd.vbank().get(live).unwrap();
+        let mut old_ex = None;
+        let mut young_d2 = None;
+        for (younger, address) in previous.iter().map(|a| (false, a)).chain([(true, &next)]) {
+            let ops = &neighbors[address];
+            let ex = ops.iter().copied().find(|&id| phases.register_ex.is_some_and(|index| {
+                userop(fd, fd.obank().get(id).unwrap()) == Some(index)
+            }));
+            for &id in ops {
+                let op = fd.obank().get(id).unwrap();
+                let marker = userop(fd, op);
+                if exits_issue(fd, op) || matches!(op.code(), OpCode::CPUI_LOAD | OpCode::CPUI_STORE)
+                    || marker.is_some_and(|index| Some(index) == phases.reset || Some(index) == phases.end_unmodeled)
+                {
+                    return Err(sample_error(fd, sample, "repeat OF issue boundary"));
+                }
+                let writes = op.get_out().and_then(|v| fd.vbank().get(v))
+                    .is_some_and(|out| out.overlap_range(operand.get_addr(), operand.get_size()) >= 0);
+                if !writes { continue; }
+                if phases.repeat_d2_write.is_some_and(|index| marker == Some(index)) {
+                    if younger {
+                        let value = fd.vbank().get(op.get_in(1).unwrap()).unwrap();
+                        if !value.is_constant() || young_d2.replace(value.get_offset()).is_some() {
+                            return Err(sample_error(fd, sample, "repeat OF younger D2 value"));
+                        }
+                    }
+                } else if let Some(ex) = ex {
+                    if !younger { old_ex = Some(ex); }
+                } else {
+                    return Err(sample_error(fd, sample, "repeat OF register write"));
+                }
+            }
+        }
+        let size = operand.get_size();
+        if let Some(value) = young_d2 {
+            let value = fd.new_constant(size, value);
+            fd.op_set_input(sample, value, 1)?;
+        } else if let Some(before) = old_ex {
+            let address = fd.obank().get(before).unwrap().get_addr().clone();
+            let register = operand.get_addr().clone();
+            let copy = fd.new_op(1, address);
+            fd.op_set_opcode(copy, type_op_for(OpCode::CPUI_COPY));
+            let input = fd.new_varnode(size, &register, None);
+            fd.op_set_input(copy, input, 0)?;
+            let value = fd.new_unique_out(size, copy)?;
+            fd.op_insert_before(copy, before);
+            fd.op_set_input(sample, value, 1)?;
+        }
+        lower_copy(fd, sample, 1);
     }
     Ok(())
 }

@@ -213,6 +213,7 @@ define pcodeop carmel_data_only_ex;
 define pcodeop carmel_address_only_ex;
 define pcodeop carmel_prove_repeat_r3_sample;
 define pcodeop carmel_repeat_d2_write;
+define pcodeop carmel_repeat_register_at_of;
 define pcodeop carmel_zero_repeat_count;
 define register offset=0x160 size=56 [ contextreg ];
 define context contextreg
@@ -2481,6 +2482,19 @@ wide_dynamic_loop_endpoint: address is wide_loop_end [ address = (inst_start + w
 # The cold AGU route samples A0H before any subsequent issue can write it.
 :REPEAT "A0H",wide_dynamic_loop_endpoint is carmel_of_route=2 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_loop_dynamic_prefix=0 & wide_14_22=0x13a & wide_loop_tag=1 & wide_repeat_delay=0 & wide_0_9=0x26 & wide_dynamic_loop_endpoint & $(BLOCK_LOOP_PLAN) {
     arm_block_loop(A0H, 4:1, $(ARM_LOOP_PLAN));
+}
+
+wide_repeat_register: "A0L" is wide_loop_dynamic_prefix=0 & wide_0_9=0xa4 { export A0L; }
+wide_repeat_register: "A0H" is wide_loop_dynamic_prefix=0 & wide_0_9=0xa6 { export A0H; }
+wide_repeat_register: "R0" is wide_loop_dynamic_prefix=0 & wide_0_9=0xa8 { export R0; }
+wide_repeat_register: "RN0" is wide_loop_dynamic_prefix=0 & wide_0_9=0xaa { export RN0; }
+wide_repeat_register: "FF1" is wide_loop_dynamic_prefix=2 & wide_0_9=0xa5 { export FF1; }
+
+:REPEAT wide_repeat_register,wide_dynamic_loop_endpoint is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1
+    & wide_14_22=0x13a & wide_loop_tag=0 & wide_repeat_delay=0 & hw_loop_actions=0 & carmel_phase_emit=1
+    & wide_repeat_register & wide_dynamic_loop_endpoint & $(BLOCK_LOOP_PLAN) {
+    local count:2 = carmel_repeat_register_at_of(wide_repeat_register);
+    arm_block_loop(count, 0x14:1, $(ARM_LOOP_PLAN));
 }
 
 
@@ -14434,6 +14448,10 @@ literal_word: literal is wide_immediate_0 & wide_immediate_22 [ literal = wide_i
 :MOVE "A4",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x8c & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A4 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
 :MOVE "A5",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0x8d & wide_14_22=0x119 & literal_word { local staged:4; stage_move(literal_word, staged); A5 = sext(literal_word); EST = (EST & 0xffc4) | staged(2); }
 :MOVE "R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa0 & wide_14_22=0x119 & literal_word { R0 = literal_word; }
+:MOVE "R0",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa0
+    & wide_14_22=0x119 & literal_word & carmel_phase_emit=1 {
+    R0 = carmel_repeat_d2_write(literal_word);
+}
 :MOVE "R1",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa1 & wide_14_22=0x119 & literal_word { R1 = literal_word; }
 :MOVE "R2",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa2 & wide_14_22=0x119 & literal_word { R2 = literal_word; }
 :MOVE "R3",literal_word is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_2_11=0xa3 & wide_14_22=0x119 & literal_word { R3 = literal_word; }

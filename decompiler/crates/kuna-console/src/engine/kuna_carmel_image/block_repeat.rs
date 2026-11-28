@@ -57,7 +57,8 @@ impl LoopSetup {
         }
         if issue == Issue::WideMarked
             && ((left_low == 0x10 && matches!(right & !0x3800, 0x8000 | 0x8402))
-                || (left_low == 0 && right == 0x8426))
+                || (left_low == 0 && matches!(right, 0x80a4 | 0x80a6 | 0x80a8 | 0x80aa | 0x8426))
+                || (left_low == 0x20 && right == 0x80a5))
         {
             return Some(Self { delay, end_words, count: LoopCount::AddressStage });
         }
