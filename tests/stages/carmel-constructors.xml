@@ -1,0 +1,22 @@
+<decompilertest>
+<binaryimage arch="Carmel:BE:24:default:default">
+<!-- addone, TASKING -O2, linked at CODE word 0x2e. -->
+<bytechunk space="code" offset="0x8a" readonly="true">a1ac202bd800</bytechunk>
+<symbol space="code" offset="0x8a" name="FUN_00002e"/>
+<!-- Enter the sequential right slot without the left slot's increment of A1L. -->
+<bytechunk space="code" offset="0x3000" readonly="true">a1ac6221ac202bd8002bec00</bytechunk>
+<symbol space="code" offset="0x3003" name="FUN_001001"/>
+</binaryimage>
+<script>
+  <com>lo fu FUN_00002e</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu FUN_001001</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="CARMEL #1: both entries return the incremented parameter" min="2" max="2">return \([^;]+ \+ 1\)</stringmatch>
+<stringmatch name="CARMEL #2: both independent slots finish without a truncated lift" min="0" max="0">[Uu]nimplemented|[Tt]runcat|[Bb]ad instruction</stringmatch>
+<stringmatch name="CARMEL #3: an odd entry does not lift the left accumulator" min="0" max="0">[Aa]1[Ll]</stringmatch>
+</decompilertest>

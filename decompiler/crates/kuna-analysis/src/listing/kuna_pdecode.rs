@@ -1119,7 +1119,8 @@ fn probe(kit: &Kit, inputs: &ParallelInputs<'_>) -> Result<(), Refusal> {
                     super::classify::classify(&a.ops, vma, a.len),
                     super::classify::classify(&b.ops, vma, b.len),
                 );
-                if ca.flow != cb.flow || ca.flows != cb.flows || ca.fall_through != cb.fall_through
+                if ca.flow != cb.flow || ca.call_count != cb.call_count
+                    || ca.flows != cb.flows || ca.fall_through != cb.fall_through
                 {
                     return Err(Refusal::KitDisagrees);
                 }
@@ -1232,6 +1233,7 @@ pub(super) fn compare(parallel: &WalkState, serial: &WalkState) -> usize {
                 if a.len != b.len
                     || a.fall_through != b.fall_through
                     || a.flow != b.flow
+                    || a.call_count != b.call_count
                     || a.flows != b.flows
                     || a.mnemonic != b.mnemonic
                     || a.operands != b.operands
@@ -1376,6 +1378,7 @@ mod tests {
         InsnLite {
             addr,
             len,
+            call_count: 0,
             fall_through: Some(addr + u64::from(len)),
             flow: Default::default(),
             flows: Vec::new(),

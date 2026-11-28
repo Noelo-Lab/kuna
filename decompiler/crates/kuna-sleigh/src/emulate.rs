@@ -503,15 +503,7 @@ pub mod emulate_memory {
 
     /// C++ `EmulateMemory::executeBranchind`
     pub fn execute_branchind<T: EmulateMemory + ?Sized>(emu: &mut T) -> KunaResult<()> {
-        let op = current_op(emu);
-        let memstate = Rc::clone(emu.get_memory_state());
-        let off = memstate.borrow().get_value_data(op.get_input(0))?;
-        let spc = Rc::clone(
-            op.get_addr()
-                .get_space()
-                .expect("executeBranchind: instruction address with null space (C++ UB)"),
-        );
-        emu.set_execute_address(&Address::new(spc, off))
+        execute_indirect_transfer(emu)
     }
 
     /// C++ `EmulateMemory::executeCall`
@@ -522,15 +514,18 @@ pub mod emulate_memory {
 
     /// C++ `EmulateMemory::executeCallind`
     pub fn execute_callind<T: EmulateMemory + ?Sized>(emu: &mut T) -> KunaResult<()> {
+        execute_indirect_transfer(emu)
+    }
+
+    fn execute_indirect_transfer<T: EmulateMemory + ?Sized>(emu: &mut T) -> KunaResult<()> {
         let op = current_op(emu);
-        let memstate = Rc::clone(emu.get_memory_state());
-        let off = memstate.borrow().get_value_data(op.get_input(0))?;
-        let spc = Rc::clone(
-            op.get_addr()
-                .get_space()
-                .expect("executeCallind: instruction address with null space (C++ UB)"),
-        );
-        emu.set_execute_address(&Address::new(spc, off))
+        let memstate = emu.get_memory_state().borrow();
+        let value = memstate.get_value_data(op.get_input(0))?;
+        let spc = op.get_addr().get_space().expect("indirect transfer without a code space");
+        let off = memstate.get_translate().indirect_target_offset(spc, value);
+        let target = Address::new(Rc::clone(spc), off);
+        drop(memstate);
+        emu.set_execute_address(&target)
     }
 
     /// C++ `EmulateMemory::executeCallother`
@@ -1012,6 +1007,15 @@ pub(crate) mod test_support {
     /// mirroring the minimal C++ Architecture bootstrap order (the
     /// translate.rs test fixture without the join space).
     pub fn test_manager(big_end: bool) -> AddrSpaceManager {
+        test_manager_with_code(big_end, "ram", 8, 1)
+    }
+
+    pub(super) fn test_manager_with_code(
+        big_end: bool,
+        name: &str,
+        address_size: u32,
+        word_size: u32,
+    ) -> AddrSpaceManager {
         let mut manager = AddrSpaceManager::new();
         manager.insert_space(Rc::new(ConstantSpace::new())).unwrap();
         manager.insert_space(Rc::new(OtherSpace::new(1))).unwrap();
@@ -1019,10 +1023,10 @@ pub(crate) mod test_support {
         manager
             .insert_space(Rc::new(AddrSpace::new(
                 spacetype::IPTR_PROCESSOR,
-                "ram",
+                name,
                 big_end,
-                8,
-                1,
+                address_size,
+                word_size,
                 3,
                 addrspace_flags::hasphysical,
                 1,
@@ -1281,11 +1285,19 @@ mod tests {
         make_program: impl FnOnce(&AddrSpaceManager) -> BTreeMap<u64, (i32, Vec<TestOp>)>,
         userops: Vec<String>,
     ) -> Env {
-        let manager = Rc::new(test_manager(false));
+        build_env_in(test_manager(false), make_program, userops)
+    }
+
+    fn build_env_in(
+        manager: AddrSpaceManager,
+        make_program: impl FnOnce(&AddrSpaceManager) -> BTreeMap<u64, (i32, Vec<TestOp>)>,
+        userops: Vec<String>,
+    ) -> Env {
+        let manager = Rc::new(manager);
         let program = make_program(&manager);
         let trans: Rc<dyn Translate> =
             Rc::new(TestTranslator::new(&manager, program, userops));
-        let ram = Rc::clone(manager.get_space_by_name("ram").unwrap());
+        let ram = Rc::clone(manager.get_default_code_space().unwrap());
         let register = Rc::clone(manager.get_space_by_name("register").unwrap());
         let unique = Rc::clone(manager.get_space_by_name("unique").unwrap());
 
@@ -1519,6 +1531,25 @@ mod tests {
         assert_eq!(bytes, [12, 0, 0, 0, 0, 0, 0, 0]);
         // the LOAD source is still the load-image data
         assert_eq!(mem.get_value(&env.ram, 0x2000, 8).unwrap(), 0x8877665544332211);
+    }
+
+    #[test]
+    fn indirect_transfer_in_an_unrelated_three_byte_code_space_keeps_byte_offsets() {
+        let manager = test_manager_with_code(false, "code", 2, 3);
+        let mut env = build_env_in(manager, |spaces| {
+            BTreeMap::from([
+                (0x1200, (3, vec![TestOp {
+                    opc: OpCode::CPUI_BRANCHIND,
+                    out: None,
+                    ins: vec![cst(spaces, 0x120c, 2)],
+                }])),
+                (0x120c, (3, Vec::new())),
+                (0x3624, (3, Vec::new())),
+            ])
+        }, Vec::new());
+        env.emulator.set_execute_address(&Address::new(Rc::clone(&env.ram), 0x1200)).unwrap();
+        env.emulator.execute_instruction().unwrap();
+        assert_eq!(env.emulator.get_execute_address().get_offset(), 0x120c);
     }
 
     #[test]

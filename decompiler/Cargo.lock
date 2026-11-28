@@ -308,6 +308,8 @@ dependencies = [
  "kuna-sleigh",
  "object",
  "regex",
+ "serde_json",
+ "sha2",
  "syn 2.0.117",
  "unicode-ident",
 ]

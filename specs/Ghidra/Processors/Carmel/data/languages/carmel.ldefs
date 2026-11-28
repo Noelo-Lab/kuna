@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<language_definitions>
+  <language processor="Carmel" endian="big" size="24" variant="default"
+            version="0.1" slafile="carmel.sla" processorspec="carmel.pspec"
+            id="Carmel:BE:24:default">
+    <description>Infineon Carmel DSP (initial subset)</description>
+    <compiler name="default" spec="carmel.cspec" id="default"/>
+  </language>
+</language_definitions>

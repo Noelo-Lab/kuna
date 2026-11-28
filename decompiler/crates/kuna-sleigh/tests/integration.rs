@@ -8,6 +8,9 @@ mod arm_neon_vldm_regression;
 #[path = "arm_pop_return.rs"]
 mod arm_pop_return;
 
+#[path = "carmel_pcode.rs"]
+mod carmel_pcode;
+
 #[path = "combined_decode.rs"]
 mod combined_decode;
 

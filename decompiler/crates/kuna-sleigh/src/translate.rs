@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 use kuna_base::address::Address;
 use kuna_base::error::{KunaError, KunaResult};
 use kuna_base::marshal::{AttributeId, Decoder, ElementId, IdRegistry, ATTRIB_SIZE, ATTRIB_SPACE};
+use kuna_base::space::AddrSpace;
 use kuna_base::xml::DocumentStorage;
 use kuna_num::float::FloatFormat;
 use kuna_num::opcodes::{OpCode, OpcodeDecoder};
@@ -483,6 +484,11 @@ pub trait Translate: RegisterLookup {
 
     /// Whether a lift can consume delay slots beyond the instruction's encoding.
     fn may_have_delay_slots(&self) -> bool { true }
+
+    /// Convert the operand of an indirect transfer to an execution byte offset.
+    fn indirect_target_offset(&self, _space: &AddrSpace, value: u64) -> u64 {
+        value
+    }
 
     /// \brief Get the length of a machine instruction
     ///

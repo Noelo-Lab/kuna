@@ -127,6 +127,7 @@ mod tests {
         Insn {
             addr,
             len: 3,
+            call_count: 0,
             fall_through: addr.checked_add(3),
             flow: FlowType {
                 has_fallthrough: true,
@@ -147,6 +148,7 @@ mod tests {
         assert_eq!(actual.len, expected.len);
         assert_eq!(actual.fall_through, expected.fall_through);
         assert_eq!(actual.flow, expected.flow);
+        assert_eq!(actual.call_count, expected.call_count);
         assert_eq!(actual.flows, expected.flows);
         assert_eq!(actual.mnemonic, expected.mnemonic);
         assert_eq!(actual.operands, expected.operands);

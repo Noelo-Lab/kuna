@@ -659,6 +659,9 @@ including a `typedef` you asserted earlier in the same run.
 A `data` declaration replaces inferred strings that overlap its byte range,
 including one that runs past either end. Interior named data and previous
 explicit declarations retain their mappings.
+For a named processor space, the address uses that space's units. For example,
+`data [data,0x4100] volatile unsigned short sample` binds Carmel DATA word
+`0x4100`, not CODE word `0x4100`.
 
 The bare address retains the default mapping. To select another processor space,
 use `[space,addr]` as one token with the exact, case-sensitive space name. The
@@ -1573,6 +1576,23 @@ with other segments in DS.
 `decompile-graph` and the graph-backed `--summary`/`--reachable-from` need an
 object-file view and refuse it with a capability error, as for a TE.
 
+### TASKING Carmel images
+
+Kuna recognizes TASKING Carmel relocatable `.obj` and `.out` files and
+absolute IEEE-695 and binary TIOF images. Numeric CODE addresses use
+24-bit words, just as for a Carmel raw image, but do not need `--raw-image`
+or `--base`. Relocatable symbols are placed at synthetic addresses, not
+at their eventual linker-script locations.
+
+Intel HEX and Motorola S-record files omit the Carmel bank map. Set
+`KUNA_TASKING_CARMEL_CODE=on` only for exports containing instructions in CODE
+without CLIW words or ROM initialization data. For example:
+
+```sh
+KUNA_TASKING_CARMEL_CODE=on kuna disassemble \
+  tests/fixtures/carmel/containers/sparse.srec 0xfffc --addr --count 2
+```
+
 ### Headerless raw images
 
 `--raw-image` loads a file that has no object header. It is separate from
@@ -1582,6 +1602,11 @@ name its decoder with `--target <SLEIGH-language-id>`, map file offset zero with
 `decompile` uses its positional address, and the inventory commands accept
 repeatable `--entry` or `--addr` values. `disassemble`, `read`, and `raw-pcode`
 take a numeric address or range instead and do not discover functions.
+On Carmel, the base is an even CODE word address and the file must contain
+complete six-byte fetches. A listing row covers one or two three-byte words.
+`--count` counts rows; byte counts and sizes still use bytes.
+Wide `LINK` lists the selected address register, control register, or DATA
+operand with its signed negative frame displacement.
 
 ```bash
 kuna decompile payload.bin 0x4001 --raw-image \
@@ -1612,7 +1637,9 @@ segment of its target.
 
 Raw images carry no symbols, so there is no object-backed discovery tier to
 run; `rawdiscover` sweeps the executable bytes for direct call
-targets and hands them, with the seeds, to the ordinary recursive descent, so
+targets and hands them, with the seeds, to the ordinary recursive descent.
+Branches in the same instruction, including an explicit post-call
+continuation, are not callees. Thus
 `functions` reports what the image calls rather than only what you typed:
 
 ```bash
@@ -3511,6 +3538,10 @@ resumes on 4 and a Thumb listing that has decoded a 2-byte row resumes on 2.
 In raw word-addressed images an undecoded row runs to the next CODE word.
 Staying on the grid is also what lets the literal pool below be recognized at
 all: a pool word is only folded when it starts a decoded row.
+
+In raw word-addressed images, undecoded bytes instead run to the next CODE
+word. For example, a Carmel address that names the second word of a wide
+issue is not an instruction start and is listed as `.byte`.
 
 ### Literal pools are listed as data
 

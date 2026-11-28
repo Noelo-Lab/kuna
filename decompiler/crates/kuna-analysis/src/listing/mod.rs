@@ -979,6 +979,7 @@ mod tests {
         Insn {
             addr,
             len: 1,
+            call_count: 0,
             fall_through: addr.checked_add(1),
             flow: Default::default(),
             flows: Vec::new(),
@@ -1068,7 +1069,7 @@ mod tests {
                 assert!(resumed.function_at(0x100510).is_none());
                 let partition = |listing: &Listing| {
                     listing.instructions()
-                        .map(|(&at, insn)| (at, insn.len, insn.fall_through, insn.flow, insn.flows.clone()))
+                        .map(|(&at, insn)| (at, insn.len, insn.fall_through, insn.flow, insn.call_count, insn.flows.clone()))
                         .collect::<Vec<_>>()
                 };
                 assert_eq!(partition(&resumed), partition(&fresh));

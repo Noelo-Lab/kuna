@@ -2351,6 +2351,9 @@ mod tests {
         // and kuna-devirtualize-interp / an in-function bytecode interpreter devirtualized (deobfuscate devirtualize)
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
+        // and kuna-sparc-call-continuation / a delayed call has one function target
+        // and kuna-sparc64-large-frame / an untrained, corroborated SPARC64 gap entry
+        // and kuna-sparc32-call-gap / a speculative caller does not absorb the following entry
         // and kuna-regionedgeorder-preset / mode aggressive leaves regionedgeorder off
         // and kuna-cxxalloc / the C++ allocation operators keep their arguments and are __cdecl on i386
         // and kuna-narrow-word-compare / a 16-bit sum keeps its wrap before == on a two-byte-int target
@@ -2362,7 +2365,8 @@ mod tests {
         // and kuna-wholeinputarg / a stated parameter the caller hands on whole is passed whole
         // and kuna-wholeinputarg-be / its big-endian twin
         // and kuna-arm-variadic-double / an ARM hard-float double handed on in a core pair is a parameter
-        assert_eq!(count, 965, "corpus file count drifted");
+        // and carmel-constructors / Carmel CODE word addresses and odd sequential entries
+        assert_eq!(count, 969, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

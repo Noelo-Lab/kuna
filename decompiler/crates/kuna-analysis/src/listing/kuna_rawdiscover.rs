@@ -169,7 +169,7 @@ fn sweep_call_targets(
             };
             if counts {
                 out.extend(
-                    c.flows.iter().copied().filter(|t| in_ranges(exec_ranges, *t)),
+                    c.calls().iter().copied().filter(|t| in_ranges(exec_ranges, *t)),
                 );
             }
             vma = vma.saturating_add(u64::from(decoded.len));

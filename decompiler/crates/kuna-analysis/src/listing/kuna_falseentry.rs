@@ -55,6 +55,7 @@ pub struct Step {
     pub is_call: bool,
     pub fall_through: Option<u64>,
     pub flows: Vec<u64>,
+    pub call_count: usize,
     /// Flow provably continues into `fall_through` (see [`super::kuna_poolextents`]).
     pub continues: bool,
     /// Alignment padding or zero fill.
@@ -64,6 +65,14 @@ pub struct Step {
 }
 
 impl Step {
+    fn calls(&self) -> &[u64] {
+        &self.flows[..self.call_count]
+    }
+
+    fn branches(&self) -> &[u64] {
+        &self.flows[self.call_count..]
+    }
+
     fn end(&self, at: u64) -> u64 {
         at.wrapping_add(u64::from(self.len))
     }
@@ -81,11 +90,11 @@ impl Step {
     /// Live successors: static targets of branches and calls, and the proven
     /// fall-through. `calls` says whether call targets are followed.
     fn successors(&self, calls: bool) -> impl Iterator<Item = u64> + '_ {
-        let targets = (calls || !self.is_call).then_some(self.flows.iter().copied());
+        let targets = if calls { &self.flows } else { self.branches() };
         self.fall_through
             .filter(|_| self.continues)
             .into_iter()
-            .chain(targets.into_iter().flatten())
+            .chain(targets.iter().copied())
             .chain(self.cases.iter().copied())
     }
 }
@@ -130,9 +139,7 @@ pub fn interior_entries(
             continue;
         }
         let Some(insn) = read(at) else { continue };
-        if insn.is_call {
-            called.extend(insn.flows.iter().copied());
-        }
+        called.extend(insn.calls().iter().copied());
         work.extend(insn.fall_through.into_iter().chain(insn.flows.iter().copied()).chain(insn.cases.iter().copied())
             .filter(|t| !seen.contains(t)));
     }
@@ -230,17 +237,15 @@ impl Region {
                 continue;
             }
             let Some(insn) = read(at) else { continue };
-            if !insn.is_call {
-                if insn.kind == FlowKind::ConditionalBranch {
-                    for &t in &insn.flows {
-                        self.branches_to.entry(t).or_insert(at);
-                    }
-                }
-                for &t in &insn.cases {
+            if insn.kind == FlowKind::ConditionalBranch {
+                for &t in insn.branches() {
                     self.branches_to.entry(t).or_insert(at);
                 }
-                self.targets.extend(insn.flows.iter().chain(&insn.cases).copied());
             }
+            for &t in &insn.cases {
+                self.branches_to.entry(t).or_insert(at);
+            }
+            self.targets.extend(insn.branches().iter().chain(&insn.cases).copied());
             if let Some(next) = insn.runs_into(at) {
                 self.runs_into.entry(next).or_insert(at);
             }
@@ -313,6 +318,7 @@ pub(crate) fn scan(
                 is_call: insn.flow.is_call,
                 fall_through: insn.fall_through,
                 flows: insn.flows.clone(),
+                call_count: insn.call_count as usize,
                 continues: super::kuna_poolextents::falls_through_with(insn, &returns, true),
                 filler: filler(insn.mnemonic.as_str(), &insn.operands, wide),
                 cases,
@@ -329,7 +335,7 @@ pub(crate) fn scan(
         let continues = c.fall_through.is_some()
             && (!(c.flow.is_call || c.flow.kind == FlowKind::CallOther)
                 || (c.flow.is_call && (c.flow.is_conditional || c.flow.is_computed))
-                || (c.flow.is_call && c.flows.first().is_some_and(|t| returns.contains(t))));
+                || matches!(c.calls(), [target] if returns.contains(target)));
         let cases = if dispatch(c.flow.is_computed, c.flow.is_jump, c.flow.is_call) {
             inline_table(at, decoded.len)
         } else {
@@ -341,6 +347,7 @@ pub(crate) fn scan(
             is_call: c.flow.is_call,
             fall_through: c.fall_through,
             flows: c.flows,
+            call_count: c.call_count,
             continues,
             filler: filler(&decoded.mnemonic, &decoded.operands, wide),
             cases,
@@ -399,6 +406,7 @@ mod tests {
             is_call: kind == FlowKind::Call,
             fall_through: fall.then_some(0),
             flows: flows.to_vec(),
+            call_count: if kind == FlowKind::Call { flows.len() } else { 0 },
             continues: fall,
             filler: false,
             cases: Vec::new(),

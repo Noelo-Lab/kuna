@@ -1,0 +1,1 @@
+adp int witness[3] = { 0x1234, 0x5678, 0x9abc };

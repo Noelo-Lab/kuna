@@ -349,16 +349,11 @@ impl Body {
             let raw: Vec<RawOp> =
                 cap.ops().iter().map(|op| RawOp { opcode: op.opcode, in0: op.ins.first().cloned() }).collect();
             let c = classify(&raw, vma, len);
-            let mut next = Vec::new();
-            let mut halts = false;
-            if c.flow.is_call {
-                for &t in &c.flows {
-                    self.callees.push(t);
-                    halts |= ctx.arch.symboltab.function_is_no_return_across_scopes(&Address::new(Rc::clone(ctx.code), t));
-                }
-            } else {
-                next.extend(c.flows.iter().copied());
-            }
+            let mut next = c.branches().to_vec();
+            self.callees.extend_from_slice(c.calls());
+            let halts = !c.flow.is_conditional && matches!(c.calls(), [target] if {
+                ctx.arch.symboltab.function_is_no_return_across_scopes(&Address::new(Rc::clone(ctx.code), *target))
+            });
             if let Some(f) = c.fall_through.filter(|_| !halts) {
                 next.push(f);
             }

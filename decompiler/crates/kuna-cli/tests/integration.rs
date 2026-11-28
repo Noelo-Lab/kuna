@@ -87,6 +87,10 @@ mod arm_conditional_switch;
 mod arm_constant_shift;
 #[path = "wide_shift_emission.rs"]
 mod wide_shift_emission;
+#[path = "carmel_emission.rs"]
+mod carmel_emission;
+#[path = "carmel_formats.rs"]
+mod carmel_formats;
 #[path = "wrap_add_emission.rs"]
 mod wrap_add_emission;
 

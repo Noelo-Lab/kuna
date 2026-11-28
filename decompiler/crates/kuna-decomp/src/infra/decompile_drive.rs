@@ -1147,6 +1147,7 @@ fn generate_flow_once(
     for line in recovered.iter().flat_map(|body| &body.header) {
         fd.warning_header(line);
     }
+    let carmel_phase = crate::p2_lift::kuna_carmel_phase::PhaseDecode::enter(env.arch());
     let mut flow = FlowInfo::new(fd, &env);
     flow.set_lr_branches(lr_branches);
     if let Some((baddr, eaddr)) = range {
@@ -1213,6 +1214,9 @@ fn generate_flow_once(
     // `ActionStart` is a stub, so it is driven here, exactly as the C++
     // `followFlow`→`startProcessing` order runs it before the action pipeline).
     data.structure_reset();
+    if let Some(phase) = carmel_phase {
+        phase.lower(&mut data, &target_snapshot)?;
+    }
     // C++ startProcessing also calls sortCallSpecs() (dominance order for the
     // call-spec list); now that qlst exists, sort it.
     data.sort_call_specs();

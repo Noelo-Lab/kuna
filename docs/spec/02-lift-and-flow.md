@@ -3843,6 +3843,1852 @@ budget is reported as a coverage note, since its import calls are then missing.
 
 ## 2.5 Arch quirks
 
+**Carmel CODE issues.** Raw CODE, read-only XML CODE, and executable regions
+of TASKING images are framed in complete six-byte fetches. A sequential
+fetch exposes two independent three-byte instructions; a parallel or wide
+fetch exposes only its even start. The console stores byte offsets internally
+and preserves odd CODE word addresses at the command boundary. It does not
+compact omitted slots or decode missing ROM as padding.
+
+The Carmel console listing applies CrossView-style syntax to the framed
+issue without requiring a SLEIGH semantic constructor. It uses the complete
+fetch even at an odd entry because some compact right-slot operands depend
+on the preceding slot's display fields. Unknown text does not invent
+execution, and recognizing the syntax of an unimplemented form does not let
+flow follow past it.
+
+A sequential right address update may take its register route from the
+paired left CODE word even when flow enters at the odd address. The
+framer resolves the covered indexed, increment, and decrement forms
+with a left `NOP` to the `R0` address port. They use its configured
+address mode without accessing DATA. The parallel encodings and other
+left descriptors are not assigned that route.
+
+Parallel roots sample both compact lanes before committing their register
+effects. A Carmel delay is measured in issues, not fetches. For a one-issue
+delay the loader paints the following issue's byte length. For longer delays
+the translator counts independently decoded issues. It checks that each issue
+is mapped before adding its p-code. Nested transfers and unimplemented delay
+effects stop lift instead of introducing a control-flow edge. The translator
+keeps the uop range for a memory-bearing slot until the whole instruction is
+built. It rejects memory in a multi-issue delay, another memory effect
+outside that range, or a local backedge that crosses it.
+`kuna_carmel_delay.rs` owns the policy: it applies only to a language with
+alignment 3 whose default `code` space has three-byte words and which defines
+the `carmel_issue` context field. Every other language keeps the ordinary
+byte-budget delay-slot path. The same language check limits the emulator's
+conversion of Carmel indirect CODE-word operands to byte offsets: the SLEIGH
+translator does not rescale an indirect target for an unrelated three-byte
+code space.
+
+Compact `ADD` can use `FF12` as an unsigned 32-bit input or store the
+low 32 bits of the sum into it, with `FF1` below `FF2`. Its address-unit
+register input is a value, not a DATA access: `Rn` is zero-extended
+and `RNn` is sign-extended. The single-word FF and X destinations take
+the upper result word and test zero above the low word. The parallel
+right slot reverses the X destination selectors and uses its own flag
+lane. These register results do not apply the DATA store's `SR1` shift.
+
+The shifted MAC reads the signed upper 24 bits of the 40-bit FF
+backing, including the guard above `FF2`. Full-width FF writes replace
+the guard; a write to either 16-bit FF register leaves it unchanged.
+Compact `NEG` and `ABS` to DATA use the signed 40-bit input. The word
+form tests zero above the discarded low word; all forms limit before
+applying the store's `SR1` shift.
+In the qualified sequential form, the two operand captures can update
+`X1` even when their later result gates veto the FF or accumulator
+write. The following word `MOVE` samples only `FF2` at execution.
+The two-DATA form captures both old addresses before the next sequential
+slot stores. Same-parity reads from one interleaved DATA bank stop
+before the MAC result. The following word `ADDC` consumes the MAC carry;
+it publishes flags before limiting and shifting the value for DATA.
+The `R2` and `R3` postmodifiers use the cached `RM2` alignment in implicit
+modulo mode. An instruction that writes `RM2` also refreshes that cache.
+
+An unallocated opcode in the second slot of a recognized sequential
+fetch can be omitted before issue. It contributes neither effects nor
+a clock. The lift handles the unallocated compact arithmetic selectors
+in a proved fallthrough region ending at one return. It does not
+recover redirects across the displaced issue addresses.
+
+For compact `ADD` with a half result and a first operand selector `30` or
+`31`, the unbound input is zero and the other word supplies the result.
+The accumulator `ADD` form with a postincrementing DATA input and selector
+`30` or `31` in the second position instead sign-extends the DATA word. It
+reads the incoming address and updates the pointer without writing X.
+In signed compact `MPY`, selectors `30` and `31` in the first position
+mirror the other accumulator-half input and do not write X. With a
+postincrementing DATA input first, these selectors in the second position
+supply zero but do not suppress the first input's DATA read, pointer
+update, or X latch write.
+
+These interpretations apply to sequential issues and parallel issues with
+a NOP peer; they do not assume a source for tokens in an active pair.
+Either sequential slot and the parallel left lane use CE1 and X1. The
+parallel right lane uses CE2 and X2. Address enable can reserve DATA and
+update the pointer and any connected X latch even when CE vetoes the
+arithmetic. Arithmetic updates its own lane's flags and preserves any
+already-set L bit.
+
+In the compact `MPYR` and short `ADDC` pairs with a disconnected right shifter,
+only the right address phase is active. It can decrement `R1` without reading
+DATA or writing a shift result. If the multiply also updates `R1`, the right
+decrement wins and the issue stops before either DATA operand is fetched.
+The non-updating peer does not reserve a DATA read.
+
+Compact signed half-register `CMP` sets Z and M from the signed comparison
+and clears V in its issue lane. It preserves the lane's other arithmetic
+bits and the other lane. CE feedback samples the incoming flags before
+the comparison replaces Z and M. An unqualified compact `POP EST` or wide
+absolute DATA `LOAD EST` instead replaces the low fifteen status bits
+with a DATA word. `POP EST` reads at the incremented word-addressed `SP`.
+The new flags are visible to a conditional branch in the next issue.
+
+Compact `MOVE PSTATUS,*Rn` uses address enable for the DATA read and
+status write. A qualified parallel-right issue uses CE2; either
+sequential slot uses CE1. The DATA word replaces the low status bits,
+and the instruction restores the live counter and CODE bounds from the
+first saved loop frame. Postmodification applies after sampling the
+address, even if the result predicate is false but address enable is set.
+
+Wide extended and unbound guard-source `CALLABS` reads only DATA word
+`0xffff` and zero-extends it to a CODE word address. The encoded literal
+and adjacent DATA word do not drive the target. CE1/CE2 address enable
+can redirect and decrement `SP` by two without writing a link. Execution
+enable also writes the link to old `SP` and `SP-1`. The call retires
+at most five exposed issues but saves two CODE words per encoded delay.
+
+Compact `TRAP` in either sequential slot or with an inactive parallel peer
+stacks the ordinary next CODE word address, high word at old `SP` and low
+word at `SP-1`, then uses the decremented stack pointer. Sources 2 and 3
+redirect past the next framed issue without executing it. Source 1 selects
+its vector when no trap is active and skips an issue when accepted inside
+another trap. Duplicate sources 1 and 2 and nested source 3 are ignored.
+Sources 4 through 255 redirect through `INTBASE` without changing the
+nesting state. Vectored targets are indirect CODE word addresses, not
+assumed fall-throughs.
+
+Block repeat uses four numbered frames. A compact register count is sampled
+after the next issue; address-stage counts preserve their DATA read or address
+update, and publish the count and bounds at execute. Immediate bounds publish
+separately, before any dynamic execute publication at the same issue. The
+Carmel loader plans each phase at a physical issue; the lifted frame owns the
+pending values. Loop bounds and restart targets remain CODE word addresses.
+For `REPEAT R3`, a zero count stops after publishing the bounds. An odd
+bound only becomes a terminal issue if it is an actual sequential slot.
+The lift admits a following write to `R3` only when classified as a D2
+write, before the count is sampled. A write one issue later does not
+change the count, and an unclassified write or transfer is rejected.
+The wide register-count form reads at OF. That sample excludes the
+immediately preceding issue's classified EX write, but includes a
+classified immediate D2 write in the following issue. Unproved adjacent
+writes and transfers are not treated as sequential register reads.
+For wide `REPEAT CE1 *R0++`, the earlier address admission permits the
+postmodifier and one DATA word read from old `R0`; that word supplies the
+OF count. The later CE update neither cancels that loop nor starts a
+loop whose address stage was skipped.
+For a paired compact `MPYUS` and `REPEAT R3`, the earlier address gate
+reserves `R7+RN7` and old `R3`, applies the R3 postmodifier, and latches
+`X1` or `X2`. Only the later result gate can publish `A5H` and the MAC flags;
+it cannot revive an operand fetch that was not admitted. The loop count
+uses the postmodified pointer without waiting for the MAC result.
+At a terminal issue only the active top frame can retire. An already-selected
+redirect belongs to that terminal issue; an adjacent terminal issue cannot
+consume it. A tail with a single established restart target uses a direct
+edge; a saved or ambiguous restart uses the active frame's address.
+
+For covered compact and wide loop transfers, `CONTINUE` decrements the
+active numbered count before its exposed issues run. It restarts at that
+frame's start only while a count remains; otherwise it branches to the
+encoded exit. `BREAK` samples its predicate before its exposed issues and
+pops the frame after them only if taken, without decrementing the count.
+Wide encodings expose at most three issues for `CONTINUE` and two for
+`BREAK`.
+
+For a compact conditional/unconditional direct transfer pair with selector
+zero or one, the fixed result picks one branch. It retires the lesser
+encoded delay, plus one issue for selector zero with right delay three.
+Both encoded targets must be distinct, forward, aligned, backed CODE
+fetches past the maximum delay window. The loader admits only NOP and
+independent low-accumulator increments in the bounded peer window, and
+requires bounded speculative target fetches even on the unselected path.
+
+The zero-delay external-condition `GOTO` and `CALL` forms, in an
+unqualified wide issue or compact left slot with a NOP peer, test
+`I0`–`I3` or their complements. `carmel_sample_gpp()` is a board
+input operation: the low four bits of its byte result supply the pin
+levels, with one sample per executed predicate. It is not a read of
+`EST` or `CETBL`. An image with no input provider can explicitly set
+`carmel_gpp_disconnected=1` on these issues; neither polarity is then
+asserted and no callback occurs. Without that context, the sample
+remains in the lifted program. Unassigned selectors 31 and 59 do not
+sample the board. An untaken conditional `CALL` still stores the
+link at old `SP` and `SP-1`; only a taken call decrements `SP` and
+transfers. Speculative fetches are not architectural edges.
+The compact zero-delay `CALL EQ1` with a NOP peer tests the incoming
+lane-1 zero flag and follows the same link-store rule.
+
+The covered CE1 wide `LOAD` execution ports are enabled by the address
+stage (`CE1` or `CECFG1.AEN`), not by the late result predicate. This
+includes the fixed FF1, X1, MINMAX, CECFG1 and USER_IO ports and the
+loop-control ports. PSTATUS loads restore the live counter and bounds
+from saved frame 1. Split DATA inputs form an even 24-bit CODE address
+from the first word and the low byte of the second; the address updates
+the live bound and the saved bound selected by PSTATUS. Neither indirect
+input advances its pointer. BTR1 instead needs a true late predicate,
+even when AEN permits the PACFG update. The early EST view does not
+replace the retired status word: CE feedback and the following compact
+INC use the guest flag state, not the debugger-visible EX transient.
+
+The four `LOADCE` routes write the selected configuration registers and
+truth-table bytes when address qualification permits it. The complemented
+form inverts only the upper truth-table byte. Both banks sample the same
+incoming `EST` before either publishes its new CE bit; an unselected
+static bank retains its latch. A pure `NOP` takes one further feedback
+step for dynamic banks without changing arithmetic flags or static
+latches.
+
+Wide signed `EXTRACT` into `CETBL` takes a signed word from `ECFG`,
+`CECFG1`, or `FFTV` and writes the low word of the sign-extended field.
+It updates Z and M, but both CE banks sample the incoming flags and old
+table. The next issue can use the new table.
+
+For the wide long-DATA extract with a word source and a long DATA descriptor,
+the three pointers update before bus arbitration. The extract reads both
+operands at their old addresses and writes the zero-extended result to the
+old destination. A carry-only wide shift can reserve the same number of
+DATA words without driving a store. Both operations publish the CE bits
+from incoming flags, independently of the arithmetic flags they update.
+
+Unqualified compact `BANKXCHG` swaps selected `R`/`RN` pairs and
+their two-bit `PACFG` fields, and selected `RM`/`RL` pairs, with the
+shadow bank. It does not access DATA. Bit 1 additionally exchanges the
+whole accumulator and `EST` with their shadows: `A3` in the right
+parallel lane, `A2` otherwise. The supported parallel peers are NOP
+and unqualified register `CMPU`. A result exchange saves the incoming
+`EST` and restores the shadow word in place of the same-issue compare
+flags. Without a result exchange, the comparison publishes its own
+C/Z. Compact `CMPU` updates CE using the incoming feedback, not the
+comparison's newly produced C/Z. For the qualified compact form with
+address mask `0xd01` and an accumulator/`EST` exchange, the address
+dispatch uses the rail and address bypass sampled five issue clocks
+earlier. The accumulator and shadow `EST` exchange additionally requires
+the current EX rail. On veto the incoming CE bits survive, and a
+parallel comparison still publishes its C/Z. The younger address gate
+sees the sampled rail, not the restored or retained `EST` bits.
+`kuna_carmel_phase.rs` binds the older sample before SSA; it rejects a
+qualified read if any incoming path lacks enough modeled issue clocks.
+An unqualified wide direct `GOTO` without a delay slot records its own
+issue clock and three refill clocks. The phase pass carries those samples
+across that modeled redirect instead of requiring adjacent CODE addresses.
+The covered compact parallel `GOTO EQ2` with one delay issue shares the
+slot clock and three refill clocks on both outcomes. The phase pass
+accepts those edges only if the decoder proved one slot clock; otherwise
+it discards the branch's samples and retains the existing status effects.
+The unqualified absolute DATA `LOAD EST` advances a proved single-read
+clock: admission uses the pre-load rails, while the low 15 bits of the
+loaded word replace `EST` for subsequent clocks. The marker authorizes
+only that one read, not arbitrary DATA effects.
+
+For the compact qualified rounded `FF1`/`FF2` multiply to a DATA word,
+admission reserves the old `R7` address, advances the pointer, and
+samples the first factor into the lane's X register. The later EX
+predicate gates the DATA write. The covered unqualified wide
+`MOVE FF2,A0L` supplies its new value to this operand-fetch stage
+without an intervening issue. The rounded port uses a 16-bit quantum,
+or 17 bits with `ECFG.SR1`, and rounds ties upward.
+This store can consume a proved incoming address sample, but does not
+contribute to the proof of a later sample.
+
+Parallel compact `MOVE` from two high accumulator halves to DATA samples
+each address gate separately from its EX result predicate. Admitted
+addresses reserve their ports even when a store is vetoed. Two enabled
+stores to the same word, or two reservations on the same interleaved
+port, stop before either write commits. Unqualified lanes bypass both
+gates; enabled lanes apply the signed `ECFG.SR1` shift before writeback.
+
+In the paired `MPYUS` long and `ADDABS` short store, the long reservation
+uses the incoming pointer and its physical successor, regardless of
+postmodifier. The multiply reads `X1` and `RN6`, while `ADDABS` reads
+its own DATA word. SR1 shifts the complete signed long before its
+two-word split. A long and a short can share a flexible-bank word
+when the bus has room; the right short retires after the long.
+
+For two compact `MPYSU` long stores, the left DATA operand is sampled
+into `X1` from the old `R4` before either write. The right multiply uses
+its own two `A0H` inputs. Four reservations need two ports on each bus:
+both pairs can straddle the seam, except when both claim the same
+interleaved ports.
+
+In the qualified `MAX` and `SUBC` pair, MAX compares unsigned 40-bit
+inputs and shifts a strict right selection into `BTR1` before DATA
+arbitration. The short subtract uses the incoming right carry and
+the DATA word captured before its source postincrement. A port stop
+can leave the trace and pointers updated without publishing either
+DATA result or the new `EST`.
+
+The mixed signed/unsigned compact multiply fetches a signed word at
+old `R7` and an unsigned word at `R2+RN2`. Address admission advances
+`R7`, but the later predicate alone writes the product's high word
+to `FF1` or `FF2`. A following operand-fetch consumer sees the older
+FF value, while an EX consumer sees the completed write. One intervening
+idle issue makes the new value visible to operand fetch. Lowering
+binds the operand to a proved phase on every incoming path rather
+than assuming textual instruction order.
+
+Signed immediate `MOVE` distinguishes the early address-qualified ports
+from late DATA or accumulator results. The indexed store captures the old
+address and updates the pointer when AEN permits it, even if the late
+predicate vetoes the store. `ECFG`, `MINMAX`, CE configuration, `PSTATUS`,
+`USER_IO`, and `PACFG` use their connected control ports. `PSTATUS`
+refreshes the live counter and bounds from saved frame 1; the immediate
+`USER_IO` port writes the full word. `OP3` discards the signed value but
+still publishes flags. CE-qualified writes to `A0L` and `A1L` use the
+retired result predicate, not AEN. An immediate write to `EST` changes
+only the transient EX view.
+
+Qualified compact literal `MOVU` to `RM0`, `RM2`, `RM4`, or `RM6` uses
+the five-clock address-admission sample, not the later result predicate.
+An admitted issue writes the literal and refreshes modulo alignment.
+The parallel right lane selects CE2; the parallel left lane and
+the independently executed sequential right slot select CE1.
+The issue publishes CE feedback on either path without setting ALU flags.
+
+Accumulator-address `SWAP` samples the decoder's eight-way issue slot.
+Its incoming slot is explicit lift state, not derived from CODE alignment.
+The phase pass advances the slot at each proved clock, including known
+redirect refill clocks. Every path to the sample must prove the same
+offset relative to entry; unmodeled clocks and differing offsets do not
+become an assumed slot zero.
+
+The address selector picks a word from a padded accumulator bank. The
+read uses the pre-result address. The late store writes the incoming
+register word through the new address when that word aliases the result.
+The CE1 form admits the DATA read using the earlier address sample or
+its address override. The later result predicate does not reopen a
+vetoed read and suppresses both writes when false.
+
+Physical operand and status cells are indexed by the same eight issue slots.
+A cell sampled without a producer in the current issue takes the retained
+value in that slot, not a constant implied by the mnemonic. The entry cells
+are explicit incoming state. At a control-flow join a cell remains bound
+only if its physical slot is proved and every incoming path preserves or
+explicitly writes that cell.
+
+For the immediate-first-operand wide `MAC` routes, operand fetch latches
+`X1` from DATA: slot four selects `0x0010`, slot five selects `0x0000`, and
+the remaining slots select `0xffff`. The signed-by-unsigned route updates
+the two-word result low word first. The rounded MINMAX route rounds ties
+upward; the FF2 route samples its addend before the previous issue's late
+write becomes visible. The scheduled DATA lift refuses an unproved overlap
+between operand fetch and an older store rather than reading already-written
+DATA.
+
+Qualified rounded multiply separates address admission from result enable.
+The first five issues use explicit incoming admission samples; after five
+proved clocks the sample comes from the preceding issue history. An admitted
+connected operand fetch can update `X1` even when the result is disabled.
+An operand-token peer redirects the words into prepared inputs instead;
+multiply uses the retained cells of that physical slot.
+
+Signed extraction with an inactive result port can still update flags using
+its retained ALU bitmap. The operand and status cells are separate from the
+architectural destination; a disconnected result does not imply no state
+change.
+
+A sequential right self-increment writes its high half independently of the
+preceding left slot. The separately issued operation uses the sequential
+flag lane. Compact field operations keep address modification, bus
+reservation, and result writeback distinct: a sequential long descriptor
+can consume both words while reserving one, unlike the corresponding
+parallel primary port.
+
+Unqualified wide `RESET` applies control-field masks at D2. The
+retirement check follows decoded issue boundaries; the two slots of a
+sequential fetch are separate issues. It proves the four older issues,
+or traces their contents back to a function entry. At a nonzero entry
+at least two older issues are required to exclude the startup alias. The
+physical CODE-zero issue can survive in RA when it immediately precedes
+RESET. A covered register-only compact `INC` or signed `CMP` at CODE
+zero in RA or already in EX runs after the execution-control reset.
+It publishes fresh lane flags after the EST clear; the increment also
+uses the new ECFG.
+An older literal DATA write already in WB still retires with the old
+shift configuration. These execution effects do not move the PACFG
+clear ahead of address updates.
+An indexed copy already in EX reads the DATA value captured at OF,
+before a same-clock older WB store can overwrite it. It uses the reset
+shift configuration and publishes after that older store.
+An older unqualified indexed DATA copy or signed DATA load in RA or OF
+retains its address updates under the old PACFG but does not read DATA or
+publish its result. This suppression requires a straight-line path to
+RESET; a path bypassing RESET must keep the original operand and writes.
+Covered register-only `INC` or signed `CMP` in a canceled RA or OF slot
+leaves both the destination and its lane flags unchanged.
+A surviving `LOAD CE1,X1,A0L` at EX uses its earlier address admission
+with the forwarded accumulator word; RESET still clears the CE feedback.
+The first two issues of a proved entry window have no older flag or
+static-latch producer: the dynamic LUT selects bit zero and static
+admission is closed unless bypass is set. Otherwise the five-clock
+admission history must be proved. RESET suppresses both the X1 write
+and its feedback when it cancels RA or OF.
+An unproved window is not lifted as a serial register clear.
+
+The compact signed DATA load into `A2` postmodifies `R0` or `R1` by
+its corresponding `RNn`. Its sign-extended result updates the active
+lane's flags without clearing sticky L or the other lane's flags.
+
+The compact signed DATA `MOVE` with indexed destination and fixed
+source postincrement captures both old addresses. The address stage
+advances the two distinct pointers even if late CE blocks the store.
+The stored word is arithmetically shifted by `ECFG.SR1`, and the copy
+does not set ALU flags. Two update requests for the same pointer are
+not this legal route.
+
+The unqualified compact `MOVE` short literal to `A5H` zero-extends the
+five-bit source. It leaves `A5L` and the guard intact and sets zero in
+the physical result lane without clearing sticky L. An unqualified
+`MOVE FF12,*R0` captures one DATA word without changing `R0` and
+forwards it to a following `MOVE *R6+=RN6,FF12`. The idle peer chooses
+which physical FF register the active slot uses. The store postmodifies
+`R6`, writes its old address with the `ECFG.SR1` word shift, and leaves
+the arithmetic flags intact, as does the load.
+
+The qualified sequential right `MOVE` samples `FF2` at operand fetch.
+Early CE1 admission captures old `R6` and applies its indexed update;
+the later CE1 result gate independently controls the `SR1` DATA store.
+The explicit modulo window uses all sixteen bits of `RM6`.
+The implicit window uses the saved alignment mask and a signed sum
+before truncation. A guest write to active `RM6` refreshes the mask; its
+entry value is not inferred from `RM6` alone.
+
+Sequential `ADDABS CE1,A5,*R0--,A3` captures the old DATA address
+and decrements `R0` at early admission. The late gate can still veto
+the accumulator write. A signed DATA word adds to the magnitude of
+the full 40-bit `A3`; `A5` gets the wrapped result even when automatic
+limiting suppresses sticky loss.
+
+A compact long `MOVE` from saved `LEA1` addresses DATA at `Rn + RNn`
+without modifying `Rn`. `SR1` shifts the zero-extended 24-bit saved
+address as one value before storing the low and high words. The two
+16-bit word addresses wrap independently.
+
+Sequential `SUBC CE1,*R7+=RN7,A1L,R7` uses old `R7` as both the
+right operand and the DATA destination. It subtracts the incoming
+borrow, sets flags before limiting, and applies `SR1` to the full
+signed result before extracting the stored word. This single DATA
+write does not interrupt the established issue history. The next
+`MOVE CE1,*R0--,INTBASE` uses its own early admission to decrement
+`R0` and the newer flags to decide whether to write. If the two
+addresses alias, the right store retires last.
+
+For covered compact long arithmetic with an inactive peer, the widened
+result determines status before limiting. A long DATA write publishes two
+16-bit words and wraps its second address in the DATA bank. A qualified
+`CLRBTR` clears only its physical backtrace port; a veto preserves it.
+
+The wide MAC flag sink computes on a full-width addend of -1, without a
+DATA read or write. The fallback word lane sign-extends DATA at `0xffff`
+and aligns it to bit 16 when `ECFG.MS` also doubles the product.
+For MACR on this lane, rounding ties upward precedes flag calculation;
+`SR1` moves the rounding boundary to bit 17. For unrounded operations
+`SR1` does not enter flag calculation. Limiting and the final DATA
+shift select the stored word separately from the arithmetic flags.
+MACSU bypasses DATA limiting.
+The unqualified `MSU FF1,*R5++` source pair samples DATA at the
+old `R5` and latches `FF1` into `X1` independently of the result port.
+The result multiplexer selects a complete `A5` update, the flags-only
+lane with addend -1, the fallback DATA word, or the high-word result
+into `A0L` without changing its high half or guard.
+
+Wide nonaccumulating multiply has its own result mux. Guard and
+disconnected control selectors discard the product without driving
+arithmetic status; they do not suppress an enabled first-input fetch or
+its `X1` latch. The full flags-only lane uses the product without a MAC
+addend. The narrow flags-only lane and the `FF1`, `X1`, and saved `LC1`
+word results instead test zero after dropping the low word and report
+extension and narrowing loss separately. An explicit `X1` result
+supersedes its earlier operand latch. The extra literal connects to the
+second input only; the corresponding first-input selector reads DATA
+at `0xffff` and latches that word. `MPYR` rounds ties upward. `SR1`
+moves the rounding boundary and shifts the stored pair on the long
+DATA port only. A qualified long DATA result captures the old pointer
+and performs the address update and operand latch when AEN allows
+them, even if the execution predicate suppresses the result and flags.
+
+The unqualified `A0` multiply routes with short DATA inputs reserve
+the original pointer addresses and postincrement before operand fetch.
+When both reads contend for a restricted bank, both address updates
+survive but neither `X1` nor `A0` changes. The first DATA input latches
+into `X1`; a DATA operand in the second input does not. The mixed
+product zero-extends its first word, sign-extends its second, and
+bypasses ALIM. The signed accumulating pair uses the full signed `A1`
+addend and enables ALIM.
+
+The register forms sample `FF1` at operand fetch. An adjacent early
+`MOVE` or `LOAD` forwards its new value; a late `EXTRACTZ` does not.
+With one intervening issue, the late value is visible as well. Only
+the first multiplier input can latch `FF1` into `X1`.
+
+The short absolute DATA product writes the high word; its EQ test
+examines the entire product above the low word, including the guard
+bits. A long absolute DATA product tests the full product for zero,
+as does the accumulator result. Both DATA ports apply `SR1` after
+testing zero; the long port writes the shifted low word first.
+`RN5,*R4--` route samples DATA at the old pointer and decrements `R4`;
+`RN5`, not the DATA operand, drives the early `X1` latch. The `A1H`
+result changes only that half. A connected `FF1` first input loads
+`X1`, whereas accumulator halves and the literal square bypass it.
+Unqualified register square forms use the same 16-bit word for both
+multiplier inputs. The signed and unsigned `A1L` forms leave `X1`
+alone; the unsigned `FF1` form publishes that word to `X1`. CE feedback
+samples incoming EST, before the product updates its arithmetic flags.
+The DATA square reads the word at the old `R0` once, latches it in `X1`,
+and advances `R0` by one. Its implicit modulo window is aligned to a
+power-of-two span; the explicit window uses `RL0`. The rounded
+accumulating form adds signed `A2` to the square and rounds ties upward
+at the 16-bit boundary, regardless of the rounding-mode bit.
+An unqualified signed `MOVE` from `X1` to `A3` sign-extends the
+published word into the whole accumulator.
+
+The unqualified saved-loop `ADDC2` routes zero-extend the full 24-bit
+saved address and add a signed word plus incoming carry 2. A word
+result tests zero above the low half; a long DATA result tests the
+whole sum. The word store samples DATA at `R7+RN7` without changing
+either register. DATA destinations are displaced from `R7` and apply
+the `SR1` shift after computing flags; a long store writes low then high.
+CE feedback uses incoming EST.
+An unqualified literal `MOVE` to `RN7` writes the full 16-bit index,
+without applying the DATA store shift or changing arithmetic flags.
+
+The supported CE-qualified wide `DIVIDE` forms distinguish a short absolute
+DATA operand from a literal and from a long absolute DATA operand. Long
+DATA contains the low word first; the second word address wraps. The trial
+subtract tests the signed 40-bit dividend after doubling it, before
+truncating the result. Low, high and guard accumulator views select different
+physical windows. In the admitted A0 views, the result can reach part of A1
+without overwriting the remaining halves of A0 or A1. A CE veto suppresses
+all of those result writes.
+
+The CE2 address-only destination decrements `R2` by one under CE2 or its
+address override; it does not read or write DATA. The disconnected long
+result instead reads both DATA words starting at `R2+RN2`, wrapping the
+second word address, without modifying `R2` or publishing a result.
+Both routes preserve arithmetic flags while advancing CE feedback.
+
+Unqualified wide `DIVTRACE` with word or long DATA selects signed inputs
+at the physical port width. Two short DATA ports align their words at bit
+16; when a short dividend is paired with a long or accumulator divisor,
+the short dividend starts at bit 0. A successful trial subtracts before
+doubling and appends one to the selected BTR (including equality); a
+failed trial doubles the original dividend and appends zero. The result
+port writes either the high word or the low-first long pair. SR1 does
+not shift these writes. Both DATA reads must be admitted before the trace
+or remainder can be published.
+
+The covered CE-qualified compact register `ADD` and `OR` forms decode
+the X source selector separately from the physical ALU. Selector 14
+reads `X1` on the primary ALU, including a sequential right issue, and
+`X2` on the secondary ALU of a parallel packet. Selector 15 explicitly
+reads `X2`. For the covered half-result `ADD`, the signed word sum
+drives the selected accumulator half and the physical lane's flags;
+the other half and guard are not written. Whole-accumulator `ADD` sign
+extends the inputs, while `OR` combines their unsigned bit patterns.
+A CE veto preserves the result storage and arithmetic/logic flags
+without suppressing normal CE feedback.
+
+The covered wide reversed subtract and add-absolute forms bind the
+short right source independently of the full left selector. Short
+selectors `0x7d` and `0x7f` supply zero on these operators, but are not
+ordinary `ADD` sources. Selector `0x7e` samples signed `FF1`, not the
+`FF2:FF1` pair. Reversed subtract swaps the inputs before applying the
+borrow from the selected incoming carry bank. Add-absolute takes the
+magnitude of the encoded left input. ALU flags describe the unscaled
+40-bit result, with a word destination ignoring the discarded low bits
+for the zero test. DATA writeback applies `ECFG.SR1`; a word writes the
+high half, while a long writes the low word first and wraps the next
+DATA address. The postincrement form writes the old pointer's address.
+A false predicate suppresses DATA writes and arithmetic flags, but the
+pointer still advances when the selected CE address enable is set.
+
+The compact rotate forms with indexed DATA still run their address
+generators on the secondary ALU of a parallel packet. A permitted
+postmodify updates the source pointer and any encoded destination
+pointer, but the secondary rotate reserves no DATA read or write port
+and does not replace its arithmetic flags. The primary word rotate
+reads the old source address, shifts through the primary carry, and
+writes the indirect DATA result only when its CE predicate allows it.
+
+Compact `NEG` and `ABS` with the connected `FF12` input can write indirect
+DATA through `R0` with an inactive right lane. `FF2:FF1` enters the
+40-bit adder zero-extended. Flags describe the unshifted arithmetic
+result; saturation and auto-limit set the loss bit, and `ECFG.SR1`
+shifts the limited value before its DATA words are selected. The short
+port writes the high word. The long port writes the low word at `R0`
+and the high word at the next 16-bit DATA word address. Neither changes
+`R0` or `FF12`.
+
+The supported compact signed `MOVE` long DATA selectors use the
+nonmodifying `R6 + RN6` address, independent of the encoded upper selector
+group. The low word comes first, and the next word wraps in DATA space.
+Accumulator input sign-extends the two words to 40 bits; accumulator
+output uses the full 40-bit source for shifting and limiting before
+storing the two result words. A false CE2 on the covered parallel
+store preserves both words. The saved loop-address store zero-extends its
+24-bit input to the pair; the reverse route ignores the high byte and
+clears the low address bit, updating both live and saved loop starts
+even on a CE veto. The separately addressable sequential right store
+does not execute its left neighbor; on entry at that left issue, the
+qualified indexed ADDC retires as a separate read-modify-write.
+
+The wide signed `MOVE` DATA mux supports the indirect and postincrement
+routes with at least one long DATA operand. It samples both old word
+addresses. Each postincrement uses its own operand's stride, one for a
+word and two for a long, with the selected pointer's address mode.
+The source is a signed word or a low-word-first long; the saved loop
+start and end sources instead extend their unsigned 24-bit values.
+`ECFG.SR1` shifts the sampled value before storing it. A long write
+uses the low word at the old destination and the high word at the next
+wrapping DATA address. A short destination takes the high word of a
+long source. CE can permit address generation and operand fetch while
+vetoing the DATA write. Arithmetic flags stay unchanged; CE feedback
+is still published. A pair of postincrements of the same pointer
+remains unimplemented rather than assuming that both updates retire.
+
+For the signed `MOVE` register result, a whole accumulator supplies its
+upper word to the selected accumulator half. The result flags use the
+guard byte and upper word together. Saturation mode can suppress a new
+limit flag without clamping the word or clearing a prior limit flag.
+By contrast, the `X1`/`X2` and `FF1`/`FF2` latches accept an unshifted
+half-register or DATA word when the address-generation path is enabled,
+even if CE vetoes the arithmetic result. Their DATA routes read the old
+pointer, and the latches leave the arithmetic flags unchanged.
+
+The supported compact paired stack routes allocate two DATA words.
+`PUSH` writes the first source at old `SP` and the second just below it;
+the open second selector supplies `0xffff`. `POP` consumes the top word
+for the second selector and the next word for the first. A connected
+`ASTATUS` result writes only its low two bits, and an open first selector
+discards its word without changing the stack stride. `FF12` on these
+routes is `FF1` followed by `FF2`, not a single accumulator write. The
+register pairs use `R0` with `R4` or `ASTATUS`, `ASTATUS` with `R4`
+or an open second source, and an open first destination with `R4`.
+`R0,R4` POP uses the right lane; `FF12` PUSH is a left sequential issue.
+The other covered routes use the left lane with an inactive right lane.
+These compact ports do not inherit wide-pair `EST` or predication effects.
+
+A compact accumulator `PUSH` stores the high word at old `SP` and the
+low word below it. The guard is not stored. FFT mode sets the sticky
+request if any of the high word's top six bits are set. Compact
+accumulator `POP` reconstructs the two words and sign-extends the high
+word into the guard. It sets zero and sign from the complete restored
+value. A marked wide `POP` to halves of distinct accumulators leaves the
+other halves and guards alone. It computes zero and sign for each word
+in its own flag lane. For these accumulator forms, CE samples incoming
+feedback, before the new stack flags are published. A wide pair aimed
+at two halves of the same accumulator has result contention and is not lifted.
+
+In the covered compact parallel logic routes, a CE veto does not
+suppress DATA address generation when the physical lane's override is
+enabled. Two postincrements of the same pointer capture consecutive
+addresses. Both lanes sample data before publishing results or updating
+status. Full accumulator writeback wins over a half of that accumulator,
+and two half writes can both land, but both cases stop for contention
+when the overlapping result ports are enabled. `X2` has separate
+storage but shares `A0`'s contention selector. The paired `FF12` MAC
+result supersedes a direct `FF1` or `FF2` write without stopping; the
+suppressed word result still contributes its lane's status. Two
+enabled paired FF writers contend after the right result lands. The
+modeled contention path stops after register writeback and before
+status publication; it does not fall through. Two unconditional
+writes to the same direct FF word remain unimplemented.
+
+In the covered compact two-DATA MAC and secondary `OP1`/`OP2` packets, the
+left reads feed temporary ports rather than the multiplier or `X1`.
+The unchanged accumulator drives the first status lane. The secondary
+operation sees zero inputs and updates only its status lane, although its
+encoded DATA address updates still run when CE2 or its address override
+allows them. With the covered inactive left slot, the secondary XOR
+instead reads DATA and writes the word to the original destination
+address when CE2 permits. Other peer and operand routes can exhaust the
+physical read ports and are not inferred from these forms.
+
+For the unqualified primary `MPY` forms with an idle peer, only the
+first physical multiplier input can load `X1`. Accumulator halves and
+`X1` itself bypass the latch; a second DATA or register input does not
+replace it. A second `X1` operand uses the incoming latch. Register
+sources and effective addresses are sampled before postmodify, including
+when the same address register supplies both a DATA address and a
+multiply input. Indexed reads use the sum but do not advance the pointer.
+An unbound first `OP3` squares the other source: it fetches and
+postmodifies a DATA operand only once and follows that source's latch
+rule. A dual DATA fetch stops after address updates if both addresses
+request the same single-read bank. An explicit `X1` destination publishes
+the product's high word instead of the input latch, with zero and loss
+flags for the narrow result rather than the full accumulator.
+The corresponding unsigned `OP3` DATA form also fetches once and fills
+`X1`. Fractional mode doubles the unsigned product; automatic limiting
+does not clamp it. In the mixed-sign primary forms with first-position
+`OP1` or `OP2` and an accumulator-half source, the other multiplier
+input is disconnected. The whole destination becomes zero, the primary
+`Z` flag is set, and the `X1` latch is unchanged.
+
+The covered CE-qualified mixed squares paired with a right `OR` keep
+address admission distinct from result publication. An admitted
+disconnected DATA input still advances its pointer and reserves a read
+port. Read-port contention is checked after both address updates, but before
+either result. The right `OR` uses the old register value if the left
+address lane also modifies that register. It zero-extends its word inputs,
+so bit 15 alone cannot set the secondary negative flag. The two result
+gates and flag updates are independent.
+
+The covered compact register-half `MPY` forms select signedness separately
+for their DATA input and `RN` factor. The DATA input uses the address before
+postmodify and fills `X1` or `X2` according to the physical slot. The result
+changes only the selected accumulator half, and `Z` ignores the low 16
+product bits but not the guard bits. Each slot updates its own status
+bank, preserving the other bank and previously set loss bits. In the
+paired form, the rounded primary multiply samples its incoming CE1.
+The address override lets it fetch and fill `X1` without writing a result.
+Rounding adds a half-word bias, including its carry, even with `ECFG.R`
+set. The two lanes reserve the DATA reads before either commits a result;
+an oversubscribed bus stops before either result or latch is published.
+
+Covered compact indexed multiply forms select the short DATA pointer bank
+opposite the long DATA destination. The physical issue lane independently
+selects the `X` latch and the `EST` flag bank. Only the first input loads
+that latch, even when a second DATA input is fetched. A qualified veto
+suppresses the product and its flags; the address override still permits
+operand fetch, the first-input latch, and the encoded pointer update.
+Paired operations read their inputs before either lane writes DATA, and
+the long result uses the captured destination rather than the advanced
+pointer.
+
+In the covered parallel compact routes, a qualified left logical shift
+writes the low 32 bits to DATA and derives flags from the full 40-bit
+shift. Its unconditional secondary `ADDABS` reads `X2` for either latch
+selector and writes a half-register independently of the shift predicate.
+The primary `SUBC` high-half `RMW1` route computes flags but has no
+register writeback. The paired secondary `MPYUS` writes the high product
+word to the selected half, not to the primary RMW register.
+
+An open accumulator input on the covered long `ADDABS` route selects the
+unsigned `FF12` pair. The stored sum uses the incoming accumulator even
+when the paired secondary multiply replaces that accumulator. Secondary
+multiply operand fetch updates `X2` and can advance pointers when the
+address override permits fetch even though CE2 vetoes the result. The
+latch receives the first DATA word, not the second.
+In the covered paired DATA `ADDABS`/`SUB`, both lanes reserve their
+qualified addresses before result qualification. The short store uses
+the incoming source address despite its postincrement. A conflicting
+DATA bus reservation stops before either result or status is published.
+In these routes, `ECFG.FFT` tests signed bits 31:26 of each qualified
+DATA result. A magnitude strictly greater than the low five bits of
+`FFTV` sets sticky `EST` bit 14. The test ignores the accumulator guard
+and sees automatic limiting and the DATA right shift where applicable,
+but not final DATA saturation. The register-half `ADDABS` and multiply
+results do not drive this test.
+
+The unqualified sequential indexed `ADD RMW1` to an address or stride
+register writes a word sum without selecting the arithmetic flag mux.
+Unrecognized compact selectors remain unlifted rather than being
+interpreted as inactive slots.
+
+In the compact `OR` with three indirect DATA operands, the two source
+bank bits are independent; the destination uses the opposite bank from
+the second source. The left and right packet forms use the same address
+selection and update their respective ALU status banks. The covered
+compact `EXTRACTZ` reads the descriptor width and offset from consecutive
+words. The descriptor bank selects the opposite short result bank:
+the result is stored at old `R3` or `R7`, and only that pointer advances
+by its own indexed stride.
+
+The covered wide `OR` consumes signed DATA displacements in encoded
+operand order, beginning with the destination if it has a displacement:
+the first operand of this kind receives the low byte, the second receives
+the high byte, and a third receives zero. A displaced read uses base plus
+displacement without updating the pointer. A displacement postmodify uses
+the incoming base for DATA and separately publishes the pointer update.
+Both reads use pre-update inputs even when a read shares the destination
+pointer. Two source postmodifies of the same pointer are not lifted.
+
+In the covered dual compact arithmetic packets with `OP1`/`OP2`, both
+temporary DATA reads use the incoming addresses. The two AGUs still
+advance their pointers. With a secondary accumulator result, neither
+temporary drives either ALU; the secondary subtract uses the incoming
+carry. With a secondary DATA destination, the first left word also
+drives the left ALU. The secondary operation can update its status lane
+but does not store to the encoded destination. That route requires
+operand-fetch context (`carmel_of_route=2`) establishing the first
+address on the low bus at that issue, after any earlier pointer updates.
+Without that binding the DATA-destination form remains unlifted: a third
+high-bus read can stop at operand fetch after the AGU advances and
+before either lane writes back.
+
+A secondary compact `LSHIFT` with an `OP1` or `OP2` selector requests both
+temporary DATA words but writes neither its encoded destination nor its
+flag bank. The paired accumulator `ADDABS` has only its first direct
+input connected; the paired word `ADDABS` has both connected. With `FF1`
+the shifter requests no temporary reads, and both direct inputs reach
+either left ALU form. These requests use the incoming addresses even
+when the AGU updates the pointers. A bus-capacity or single-port conflict
+stops after the address updates, before the left result or flags publish.
+
+Covered wide `LOAD` forms distinguish accumulator writeback from pointer
+and `PACFG` setup. An operand that initializes a pointer does not also
+overwrite the encoded bound register.
+
+Compact register `LOAD` programs the two-bit `PACFG` lane in decode and
+writes the corresponding pointer in execute. Both ports use address-stage
+qualification, independently of accumulator writeback. Sequential slots
+use CE1; parallel slots use their respective CE bank. If both parallel
+loads qualify, the right lane's configuration reaches the single decode
+port before contention stops the packet, and neither pointer changes.
+
+Wide logical operations on address-register words write the saved counter
+`LC1`, not the active counter `LC`. The flag-only long DATA form still
+postincrements its address register by two words and computes status from
+the complete 40-bit result without writing an operand.
+
+The wide literal `ADD` into `A0` from `GB1` zero-extends the incoming guard
+byte and sign-extends the literal. With `A0` as the source, the `A0L` result
+writes only the upper word of the 40-bit arithmetic result into `A0L`.
+Zero status in this word mode tests the bits above the discarded low word,
+including the guard. The `EST` destination uses the same word status but
+does not write the arithmetic result word.
+
+Wide `SUB RMW2,A0L,*R4` aligns both signed words in the upper arithmetic
+lane and writes to the second input's effective address. DATA saturation
+and right shift follow the arithmetic status calculation. The split
+long-source `SUB` with implicit DATA reads stays unlifted because its
+operand fetch can stop depending on issue history. The guard-byte
+read/modify/write `SUB` also stays unlifted: without a new flag mask,
+prior issues can change its zero status.
+
+For covered CE2 `LIM8` forms, a signed word outside the unsigned byte range
+sets sticky `L1` even when the result port is disconnected. Connected
+selectors write the clamped word to the input's `RM6` port, `FF1`, or the
+saved counter `LC1`; the listing retains the encoded selector names. A CE2
+veto suppresses both writeback and the limit flag update.
+
+The unqualified wide `LIM8` form to `RN4` selects a pointer from `R0`–`R7`
+or an increment from `RN0`–`RN7` using the low four bits of its extended
+source selector. The upper half aliases the lower. It clamps the signed
+input to the unsigned byte range regardless of CE and sets sticky `L1`
+for inputs outside that range.
+
+Covered wide `LIM` forms use signed flag and accumulator words directly.
+The apparent literal selector reads one DATA word through the implicit
+operand-fetch route, not from the encoded extra word. The reset route
+reads `0xffff` and the routed zero address reads DATA word zero; an
+unknown route remains unlifted. A word destination takes a word input
+unchanged but takes the upper word of a limited 40-bit accumulator input.
+It preserves the other
+accumulator lanes, or writes the saved `LC1` rather than `LC` for the loop
+selector. A whole-accumulator destination instead sign-extends a word
+input or receives the entire accumulator result clamped to signed 32 bits.
+The explicit limit does not depend on `ECFG`. Zero uses the selected
+result width; sign and extension come from the pre-clamp input and
+clamping sets sticky `L1`. The extended disconnected result clears carry
+and overflow and refreshes extension and sticky loss without replacing
+zero or sign.
+Short DATA addresses use the incoming pointer; their signed byte
+postdisplacement updates it once. CE vetoes the result and flags, not
+address generation when the address override is set.
+
+An implicit DATA transfer to `*R5+=RN5` copies the low word from `0xffff`.
+Its long form captures the high word from the operand-fetch route before either
+word is stored. Both forms advance `R5` once by `RN5`; the long form uses the
+high word's sign and tests both words for zero. `ECFG` neither scales nor
+clamps these DATA transfers.
+
+Covered unqualified wide `ADD` and `XOR` select their operand banks from
+the result route. The accumulator ADD route reads signed address and
+flag words, saved loop bounds, full accumulators, or constant minus one.
+The implicit source depends on the operand-fetch route, not the encoded
+extra word. A disconnected route supplies zero; the reset route reads
+DATA word `0xffff`; the routed zero address reads DATA word zero. The
+whole-accumulator ADD sign-extends the word. The long DATA ADD uses one
+unsigned word on the reset route and the same word on both input lanes
+on the routed zero address. It stores low then high at consecutive
+wrapping word addresses. An unknown route is not guessed from CODE
+placement. A long input
+to a narrow `XOR` result still determines zero and extension from the
+full logical value before the low word is written. The covered guard
+selectors discard the result and retain arithmetic flags while the
+source DATA access postincrements. For `RMW2` with an accumulator half
+on the second input, that half receives the result; the first input's
+DATA cell is not written.
+
+Selected wide add/subtract word results take the high result word. A guard
+byte can feed the low arithmetic lane without reaching this word; zero
+status ignores that discarded low lane. The address-register result bank
+also changes source routing, including the `RL6`/`RL0` inputs to the `SP`
+result and the `FF1`/`X2` inputs to the `RM6` result. A long result retains
+both low words and sets loss of precision when the discarded guard is not
+a sign extension.
+
+The covered reversed long subtract captures the original `R1` destination
+before its displacement update. On the observed operand-fetch route, its
+input combines the encoded DATA word with the high word from DATA address
+zero. Its other input comes from DATA address `0xffff`. The covered
+absolute word subtract takes its first input from `R4` before postincrement
+and its second from DATA address `0xffff` on the same operand-fetch route. Both
+forms require established operand-fetch context, not a particular CODE
+address. The CE1 veto suppresses the long store and ALU flags but does not
+suppress the address update when the override is enabled. The disconnected
+`PSTATUS` result still runs its DATA address effect. The covered `MSU`
+latches its first input into `X1` and sends the high result word to
+`INTBASE` without driving arithmetic status.
+
+Covered wide `ROUND` forms capture the original `R1` DATA address before
+the indexed `RN1` update. An explicit long `*R1` source samples that word
+and its wrapping successor before either is written. The extended selector
+instead takes its low input from `DATA[0xffff]`. For a long result, its high
+input needs an established operand-fetch context: the reset route uses
+`DATA[A0L]`, and the observed subsequent route uses `DATA[0]`. Neither is
+the encoded extra word, and an unknown high route remains unimplemented.
+The short result uses only the implicit low input and leaves the second
+destination word unchanged.
+The `FF1` word form instead reads `DATA[R6+RN6]` without modifying `R6`.
+When its CE predicate succeeds it copies that word unchanged and publishes
+its zero and sign flags.
+
+The long operation rounds ties upward or to even according to `ECFG.R`.
+`SR1` moves the rounding boundary one bit higher before scaling the long
+result; automatic limiting or unscaled saturation clamps a positive
+extension before the store, while arithmetic status describes the
+pre-limit result. The two DATA words are stored at the captured address
+and its wrapping successor. Unqualified forms execute independently of the
+CE table and still publish CE feedback. A qualifier vetoes the store and
+arithmetic flag update, but its AGU override still permits the `R1` update.
+
+The plain indirect `ROUND` source samples the words at `R1` and its
+wrapping successor without modifying `R1`. The connected `A2L` route
+rounds at bit 16 even when `SR1` is set. `ALIM` clamps a positive
+extension to `0x7fff`; saturation mode alone suppresses a new sticky
+`L` without clamping the register. The two extended result banks
+still read both DATA words when address generation is enabled, but
+publish neither a result nor arithmetic flags.
+
+Wide `ABS` binds an extended source selector together with its result
+bank. The covered accumulator forms take a signed 40-bit `A0` or the
+signed constant `-1`. The covered `FF2` form takes a signed word,
+computes the magnitude in the upper word of the 40-bit ALU, and writes
+back that word. Flags describe the magnitude before automatic limiting;
+an input at the negative 40-bit limit wraps and sets overflow. The
+implicit DATA forms remain unimplemented: identical CODE and architectural
+inputs can produce different sampled words after older issues have run.
+
+Covered wide accumulating multiply forms distinguish guard and control
+writeback. The guard adds its unsigned byte at bit 16, or at bit zero
+for the shifted-addend variant, and takes bits 16–23 of the sum. It
+leaves the accumulator halves unchanged and bypasses automatic limiting.
+The signed, unsigned, and mixed products use their own operand extension
+and the incoming multiply scale. The square selector reads its other
+operand twice and can feed that word to `X1`. A DATA source samples its
+effective word address even when its address generator also updates the
+pointer. A first DATA operand feeds `X1`; an accumulator-half first
+operand does not.
+
+The connected control results accumulate from the old register word
+aligned at bit 16. They write the upper result word without automatic
+limiting, even when `ECFG.ALIM` is set. The covered rounded control form
+rounds ties upward even when `ECFG.R` is set. The routes include `FF1`
+through its alternate selector and full-word
+`ECFG`, `CECFG1`, and `PACFG` writes. A zero product can leave a control
+word unchanged without disconnecting the port. Neither the guard nor
+these control results drive the arithmetic flags; conditional-execution
+feedback still publishes.
+
+The printed wide ALU selector does not always identify a write port. Direct
+`PSTATUS` and `USER_IO` can discard the result, while the covered SUB aliases
+write the upper word of an unaligned difference without driving ALU flags.
+The `io_space` selector can drive word flags without accessing IO. The
+covered MSU `LC` selector updates the saved `LC1`, not the active counter.
+An MSU word DATA result tests for zero without its discarded low bits.
+
+The covered wide `ADD` routes drive the real `INTBASE` result and the
+primary arithmetic flags. `LSA1` and `LEA1` contribute unsigned 24-bit
+values in the low arithmetic lane; `PSTATUS` and `USER_IO` contribute
+signed words there. `LC1`, `INTBASE`, and `PACFG` use the aligned signed
+word lane. The mirrored open selector supplies zero, leaving an
+accumulator input at its full 40-bit width. The result takes the upper
+word after ALU limiting; the flags see the sum before limiting, and
+zero tests the bits above the discarded low word. Conditional forms
+can veto the register and arithmetic flags without suppressing CE
+feedback. The bare DATA selector does not read the extension literal;
+its address is not determined by the instruction and its lift remains
+unsupported.
+
+Covered wide accumulating multiplier control routes also take the high
+result word without driving arithmetic flags or applying ALU limiting.
+Rounded control results break half ties upward, regardless of the ALU
+rounding mode. A saved-bound result replaces only the low word: `MACHUS`
+uses the old `LSA1` upper byte as its addend, while `MACSU` adds the
+whole unsigned 24-bit `LEA1`. The counter result updates `LC1`, not `LC`.
+The `PSTATUS` result clears depth bit two and clears both remaining
+depth bits when repeat is inactive. It refreshes the live counter and
+bounds from the selected loop frame, or bank one when no frame has
+been activated. Loop activation and retirement change that selection;
+the arithmetic `PSTATUS` write does not select a bank using its new
+depth. These result routes do not suppress the independent first-input
+`X1` latch or the postincrement of a DATA source.
+
+In the covered CE1 `ADD` to `R4`, the DATA input uses the incoming `R4`.
+The address unit then applies its displacement, and permitted ALU
+writeback replaces that update with the high result word. A veto can
+leave the address update in place without writing the arithmetic
+result or flags. The `LSA1` and `LEA1` inputs retain all 24 bits;
+`PSTATUS` and `USER_IO` are signed words in the low arithmetic lane,
+so a zero high word does not imply a disconnected input. The `LC`
+selector reads `LC1` and aligns both inputs to the high word.
+
+The compact indexed word `MOVE` from `R0` or `R1` fetches DATA using the
+old pointer and then advances it by the corresponding `RN`, including
+bit-reversed addition when configured. It sign-extends the word into an
+accumulator and updates the issuing lane's zero and negative flags. An
+address override can advance the pointer and fetch DATA while the result
+predicate suppresses accumulator and arithmetic flag writeback.
+
+The compact indexed long `MOVE` from `PC` stores the low then high word
+at `R1+RN1` and leaves `R1` unchanged. The sampled CODE word is the third
+physical successor, counting sequential slots individually; it does not
+follow a parallel direct branch's target. `ECFG.SR1` shifts the full
+value before splitting it. The framer requires a mapped, register-only
+sample window and a mapped, forward target for the covered branch peer.
+
+Covered wide address transfers add the low 16-bit displacement to a word
+source or the `R3` address unit. Saving a CODE address preserves its upper
+byte. The open input supplies all ones; the open result discards the sum.
+
+For the marked displacement `MOVE`, the source word is at the selected
+pointer plus the signed low byte of the extension, with 16-bit wrapping.
+The pointer result forms deliver that word to a selected register. The
+DATA-result form uses a separate write address, the incoming `R0`; it
+stores one word, arithmetically shifted by one when `ECFG.SR1` is set. The
+address calculation itself does not modify either pointer.
+
+Selected CE2 logical shifts read configuration words, shift right by one,
+and take carry from the input's low bit. The status destination discards
+the word but still drives carry. The unconnected configuration input
+rejects at decode, even when CE2 would veto execution.
+
+For the covered wide `LSHIFT` with a count at `DATA[R1]`, `A1L` goes
+into bits 16–31 and the word result writes the high word to `FF1`.
+The whole-accumulator `LEA` input selects the saved loop-end bank by
+loop depth, with bank one selected at depth zero. It uses the unsigned
+24-bit bound without word alignment and writes all 40 bits of `A0`.
+Both forms drive arithmetic feedback; a zero count keeps incoming carry,
+which is distinct from a disconnected result preserving all arithmetic
+flags. Disconnected loop-bound word and flag-only results remain
+unimplemented: they fetch the DATA count but do not execute a shift, and
+can publish a stale result from a previous issue. The `IOSPACE` input
+that can observe such a result is also unimplemented.
+
+Covered wide logical read-modify-write forms send the high result word to
+aliased control registers. `PSTATUS` keeps its two depth bits only when the
+repeat-active bit is set. A low-word destination instead publishes the
+result's zero flag. A postincremented DATA destination stores at the
+original address, before the updated pointer is used by another issue.
+
+In the covered three-operand wide logical forms, the result bank also
+selects the extended first word input: `RL4` selects the address/flag
+bank (`RM4`, `MINMAX`, `FF1`); `ECFG` selects the configuration bank
+(`EST`, `CETBL`, `BTR1`). The register-result XOR is unqualified, while
+the covered OR reads `RM4` twice and writes `RL4` only when CE1 enables it.
+The logic updates zero, minus and extension flags without replacing
+carry or loss; CE feedback is published separately.
+
+The indexed DATA-result forms remain unlifted. The extended first
+selector can reserve a second operand-fetch word without encoding its
+address. A direct `0x8f` selector requests a word, even with a long
+result. Neither the first input's address nor whether all requests fit
+the available DATA ports follows from the instruction's CODE address.
+
+A compact word `MOVE` through postincremented `R3` addresses the old pointer.
+The CE address override can commit the increment without the DATA write;
+the result uses an arithmetic right shift by one when `ECFG.SR1` is set.
+Two unqualified stores through this port use the old pointer and its
+16-bit successor. Only the pointer update to the next pair applies modulo
+addressing; it does not wrap the two addresses within the issued pair.
+
+The covered qualified wide `SUB` requires an explicitly established reset
+operand-fetch route. The first input reads `DATA[0xffff]`, not the encoded
+extension word. The other input reads `DATA[R2]`; a reused DATA result
+writes that same word only when CE1 enables it. The word and flag-only
+destinations compute extension and loss for the word lane, while a whole
+accumulator receives the sign-extended difference. The EST destination
+publishes status, not a copy of the result word. The lift does not infer
+the reset route from the CODE address; an unknown input route is unimplemented.
+
+The two-operand wide logic form uses a separate result multiplexer. An
+accumulator half takes the low word and still computes flags from the full
+result. A guard takes the low byte of the high word without publishing
+arithmetic flags. Two DATA selectors using the same pointer read the old
+address; the covered indexed form advances it only once and writes to the
+original cell.
+
+In the covered qualified wide logic forms, the undriven I/O operand is
+zero, not `USER_IO`. The CE1 word routes write `INTBASE` or saved `LC1`
+only when enabled. Saved loop address inputs participate at full 24-bit
+width when computing zero, even though writeback is only a word. The CE2
+long DATA route writes neither an ALU result nor ALU flags, but
+postdecrements `R6` by two words when CE2 or its address-update override
+permits it.
+
+The disconnected binary ports are not interchangeable. The covered
+unqualified `SUBRC1` with result selector `0xd3` still fetches two DATA
+words at `R + RN` but produces neither a result nor arithmetic flags.
+With word inputs and result selector `0xd8`, it discards the result but
+computes status from signed words aligned to the high lane, including
+the incoming carry. Neither route accesses I/O. For CE1 wide logic with
+`0xd8` as the first input, that input supplies zero; the postdecrement
+source reads one word at the incoming pointer. The address-update
+override can perform the fetch and decrement even if CE1 vetoes the
+accumulator-half write and logic status update.
+
+In the covered unqualified wide logic with result selector `0xd8`, no
+register or I/O result is written. The DATA input still reads two words
+at the old pointer and advances it by the signed displacement. The
+logic flags use the long DATA value and the zero-extended incoming
+register word, even when that register is the updated pointer. For the
+qualified short `XOR`, selector `0x4e` supplies 40 bits of ones. The
+absolute DATA word is zero-extended before XOR, so the sign flag is set
+even when the low result word is zero. CE2 controls flags and the
+single-word store; its address override can still allow the read.
+
+In the covered qualified `MUL` and `MULUS` forms, the address override
+allows the DATA fetch, its postincrement, and the multiplier input latch
+even when CE vetoes accumulator and ALU flag writeback. A compact right
+parallel multiply uses `X2` and the second flag lane. The wide form uses
+`X1` and the first flag lane under either qualifier, and its unsigned
+first operand bypasses product limiting.
+
+The qualified wide DATA unary forms with a disconnected result still fetch
+their operand. The address override can run postincrement without publishing
+new arithmetic flags. `ROL` puts the fetched operand's top bit in carry;
+`ROR` uses its low bit. `INC` and `NOT` do not replace arithmetic status when
+the result is disconnected. The fractional `ADDL`, `SUBH` and `SUBL` forms
+instead publish the status of adjusting the implicit all-ones accumulator.
+
+For covered unqualified DATA rotates, operand fetch uses the incoming
+pointer. A postmodify reaches the address port even when a later result
+overwrites the same pointer. In the long-input, short-result `ROR` forms,
+the short writeback is zero and the arithmetic flags are not replaced.
+Same-width `ROR` rotates through carry and writes the connected result;
+the long `ROL` short result takes the rotated high word with the incoming
+carry also OR-ed into its least significant bit.
+
+In the covered CE2 adjustments with a DATA destination, the old effective
+address supplies the left arithmetic input but the result does not write
+DATA. Address updates still run when the address override is set. When both
+operands displace a pointer, the low byte applies to the destination and the
+high byte to the source. `ADDH` and `SUBH` shift a signed word source into
+the high half but consume a signed long source without a shift. A connected
+accumulator receives the entire 40-bit result.
+
+For covered wide immediate `MOVU` forms with a disconnected result, the
+literal cannot reach DATA, an address register, or an accumulator half.
+An admitted DATA descriptor still updates its pointer, using the indexed
+word step or the fixed long decrement. The result ALU sees zero and sets
+the primary `Z` flag only if both early admission and late execution allow
+it. The CE lookup uses the incoming flags, not the newly produced zero.
+
+Wide immediate `ADDL` and `SUBL` use an unsigned literal in the low word.
+`ADDH` and `SUBH` sign-extend the literal and shift it into the high word.
+They adjust the full 40-bit accumulator, computing carry and overflow
+across that width. Nonzero limiting-mode bits suppress the sticky overflow
+update without saturating the accumulator or suppressing the overflow flag.
+
+Wide `ADDL A0,A2` reads both halves and the guards of its accumulators
+and writes all 40 bits of `A0` without accessing DATA or advancing `R7`.
+It computes 40-bit carry from unsigned inputs, and checks overflow
+with a signed left input and a zero-extended right input. Status uses
+the wrapped sum. Saturation mode suppresses the sticky overflow update
+without clamping this route. Automatic limiting clamps when bits 31 and
+32 differ and sets the sticky flag. The indexed short and long `R7` forms
+and the disconnected result stay unlifted: their flags can depend on
+prior issues even with identical architectural operand state.
+
+For covered qualified compact `ADD` and `SUB` word read-modify-write forms,
+the left parallel lane computes flags but cannot write back to the first
+accumulator half; the right lane and sequential issues can. Address and
+flag-word register results wrap without feeding the arithmetic flags.
+The DATA result writes the captured operand address, not the postmodified
+pointer. Its width and shift controls apply after the widened status is
+computed.
+
+Wide `ADD2` and `SUB2` operate on independent lanes: the lower lane wraps
+at 16 bits without carrying or borrowing into the upper 24-bit lane.
+Full arithmetic results retain the upper lane's guard byte; narrow
+result ports receive only the upper lane, truncated to the port width.
+The raw first unbound source reads `DATA[0xffff]`, while that selector
+in the second source takes the signed extra literal. A discard port has
+no register write. The lifted RMW routes use the selected input as the
+destination, including a guard-byte write and the `OP3` alias of input 2.
+Two word inputs to the covered short-result form feed the upper lane.
+
+Wide `SETBIT`, `CLEARBIT`, and `CHANGEBIT` to the six accumulator guard
+ports operate on zero, not the old guard byte. They replace only that byte
+and preserve arithmetic flags. `TESTBIT` reads the actual guard byte and
+updates only Z among arithmetic flags; it writes no accumulator lane.
+The split eight-bit index is never reduced modulo eight: an out-of-range
+index supplies a zero mask. CE1 or CE2 can veto either result, even when
+the corresponding address-enable bit is set. Both CE feedback bits sample
+incoming `EST`, before the new Z becomes visible. The two unallocated guard
+selectors do not lift.
+
+Covered wide `TESTBIT`, `SETBIT`, `CHANGEBIT`, and `CLEARBIT` forms
+use the full eight-bit immediate. The bit unit is 40 bits wide: an index
+of 40 or higher selects no bit. `TESTBIT` sign-extends the `RN1` word or
+the long indirect `R0` value before testing. A long DATA operand uses
+the lower 16 bits at the original pointer and the upper 16 bits at the
+next word; there is no pointer update. Its mutations use zero-extended
+DATA, set the zero flag from the 40-bit result, and store only the low 32
+bits, so indices 32–39 can affect the flag but cannot wrap into a DATA
+write. `A0` mutations also set the zero flag from the full result; `RN1`
+mutations only write the low word and leave the zero flag alone.
+Predicated forms sample incoming CE state, and a veto suppresses the
+architectural write and zero-flag update. The separate guard byte path
+retains its own rules.
+
+Wide `MIN2` and `MAX2` compare their two signed 16-bit lanes independently,
+ignoring source guard bytes. Full results take their guard from the sign of
+the selected upper word. Strict left wins shift into `BTR1` for the upper
+lane and `BTR2` for the lower lane; ties shift zero. CE gates the result
+and trace writes in qualified forms. A disconnected extrema result port
+can still publish backtraces. The covered displaced long source reads
+both words at its captured address and updates the pointer once. Packed
+computation preserves the arithmetic flags.
+The accumulator-plus-literal `MIN2` sign-extends the literal across both
+lanes. A short accumulator destination receives only the selected upper
+word; both lane comparisons still update their backtraces.
+
+Covered compact `EXTRACTS` and `EXTRACTZ` use the low five descriptor
+bits for width and the low five bits of its high word for offset. The
+two flag-word aliases exchange those roles. A primary long DATA descriptor
+reads width at its base and offset at the next DATA word, and the short
+source is sign-extended before selection. A parallel right issue can
+postmodify its short source or its descriptor pointer, but reserves
+neither DATA read and cannot write a result or flags. A sequential
+right issue uses the primary result path. Read-modify-write stores use
+the captured operand address, not the postmodified pointer.
+
+Covered compact logical `RMW1` routes deliver the result to an accumulator
+half. Disconnected increment, address, and flag-word ports receive zero
+without publishing ALU flags. `RMW2` writes DATA instead of the register.
+
+Primary compact accumulator `MIN` and `MAX` compare signed 40-bit
+operands. The backtrace variants shift in one only when the other
+operand strictly replaces the destination; ties shift in zero.
+Comparison flags describe the wrapped difference of the original
+operands. The compact word `MAXM` compares the two signed words,
+preserves the other accumulator lanes, and records the old DATA
+address only on replacement, even though the pointer always advances.
+
+Compact word `MINMU` can instead take its record from an address
+register without reading DATA. It samples that register before the
+optional indexed update, and writes the sample to `MINMAX` only when
+the unsigned source strictly improves the destination. The indexed
+form uses bit reversal or the selected modulo window, including the
+full-width explicit bound. On a qualified issue the address stage may
+run without the comparison and its writeback.
+
+In the covered wide `MINM` and `MAXM` forms, a strict improvement updates
+`MINMAX` from the reference register or the captured DATA address, not the
+value stored there. A guard result takes the low byte of the selected
+upper word. An accumulator source or a non-word reference can select the
+upper word even when the comparison ties or keeps the old operand. Guard,
+flag-word and `X1` result ports in these forms preserve comparison flags;
+accumulator result ports publish signed or unsigned comparison flags.
+An enabled reference address stage still postmodifies the pointer when the
+comparison keeps the old value or a qualified result is vetoed.
+
+The wide word form with a `PACFG` reference records the register value,
+not the encoded payload or a DATA address. Its implicit destination
+word is at `DATA[0xffff]`. The corresponding source selector reads
+that same DATA word for signed comparisons but takes the encoded
+literal for unsigned ones. The distinct all-ones selector represents
+a 40-bit comparison operand, even when its destination drops data
+writeback; the comparison can still update flags and `MINMAX`.
+
+The covered stored `MAX`, `MAXU`, and `MINBTR2` forms sample the unbound
+word selector at `DATA[0xffff]`, not the encoded literal and not the
+adjacent wrapped DATA cell. A separate literal selector still uses its
+encoded word. The operation compares word inputs and stores the selected
+word at the captured `R7`; long destinations add a sign- or zero-extended
+high word at the next wrapped address. `MINBTR2` shifts the comparison
+decision into `BTR2`. CE2 can enable postmodify without enabling writeback;
+when both stages are vetoed, neither address nor result changes.
+
+Stored unsigned `MINU` with the covered accumulator sources compares
+the full unsigned inputs. Its connected `R4` port takes the upper word
+when an input is a full accumulator, or the selected word when both
+inputs are halves. `C` reports the second input less than or equal to
+the first; `Z` reports equality at the input widths. The two extended
+result banks drive neither writeback nor `C`/`Z`. CE feedback remains
+independent of the result bank.
+
+For the wide traced word extrema, `MINBTR1` and `MINUBTR1` shift a
+strict right-hand win into `BTR1`; `MAXUBTR2` uses `BTR2`. The trace
+compares full inputs before writeback selects the result lane. A full
+accumulator, long DATA operand, `USER_IO`, or `PSTATUS` can select the
+upper word even when the left operand wins. The control inputs compare
+as words with the operation's signedness. Address, loop, flag-word, and
+X-register destinations do not publish new comparison flags. The loop
+result is `LC1`, not `LC`.
+
+For the covered stored `MIN` and `MINU`, guard operands are unsigned
+bytes even in signed comparisons. The extra literal in the second
+source is a word; the all-ones source is 40 bits. Short results take
+the upper word when either operand is wider or narrower than a word,
+whereas long DATA stores publish the selected low 32 bits, low word
+first. A disconnected stored result can still publish comparison
+flags. The postdisplacement DATA port writes the captured word address;
+its signed displacement updates the pointer at the address stage and
+does not depend on whether CE allows writeback.
+
+In the covered split-source `MINM` and `MINMU`, the left input is the
+old destination and the right input determines the comparison. The
+separate reference supplies `MINMAX` only on strict replacement; its
+width can select the upper result word without changing the comparison.
+Guard destinations take bits 32–39, and a disconnected word result can
+still update `MINMAX`. A `CECFG2` result does not feed its own CE
+feedback; the following issue can observe the new configuration.
+
+For covered wide shift routes, the word result uses the upper half of
+the low 32-bit lane. The word and long carry taps differ, and the guard
+can keep the zero flag clear when the written word is zero.
+The supported wide `LSHIFT` long DATA input takes its low word through
+`R5` and its high word at the wrapped next address. A flags-only word
+result ignores the low half for `Z` and takes right-shift carry from the
+upper half. A whole `A0` result includes both halves and the guard and
+uses the 40-bit left carry tap. The carry-only result discards the
+shifter value, takes left carry at the 32-bit tap and right carry from
+the low lane, and does not change `Z`, `M`, or `E`.
+
+The `USER_IO` input to the flags-only word result enters unaligned.
+Its count is read from `R4` plus the signed displacement, without
+modifying `R4`. A nonzero `USER_IO` can set `Z` at small counts because
+the result's low half is not tested; the extra field is not a second
+literal input or an unaddressed DATA read.
+For positive counts above 32 this input retains the bit-zero carry
+tap, unlike the long DATA input.
+
+The `INTBASE` word result takes the upper shifter word. Its `LC1`,
+`PACFG`, and `INTBASE` inputs are zero-extended words aligned at bit
+16, and the logical operation does not apply arithmetic limiting.
+
+The covered memory-result `EXTRACTZ` takes its field descriptor from
+`FF2:FF1`, but the unbound `IOSPACE` source supplies zero. It still writes
+zero to the incoming `R0` address, postdecrements `R0`, and sets `Z`
+without changing unrelated arithmetic flags.
+
+The covered wide `EXTRACTZ` long descriptor reads the width at the incoming
+DATA address and the offset at its wrapped successor; each uses five bits.
+Guard sources are zero-extended, whereas the `FF2` source is sign-extended
+before field selection. The `R2` long result stores its low word and then
+zero at the next DATA address. The flag-word route writes the low word to
+`FF1`; the signed displacement postmodifies the descriptor pointer, not the
+address used to fetch the descriptor.
+
+The immediate-descriptor `EXTRACTZ` into `A0` reads through the selected
+address register without changing it. A short source is sign-extended.
+A long source takes its high word from the wrapped next DATA address.
+The result is zero-extended from the selected field, and `Z` replaces
+the arithmetic flags.
+
+For the long indirect DATA source and `BTR2` result, descriptor selectors
+`0x7c` and `0x7e` both take the low five bits of `FF2` for width and
+`FF1` for offset; the extra payload is not an immediate descriptor.
+The source is the signed word pair at the incoming address register and
+its wrapped successor, without postmodify. `EXTRACTS` sign-extends the
+selected field and `EXTRACTZ` zero-extends it; an empty field yields zero.
+`BTR2` gets the low word, but `Z` and `M` describe the untruncated result,
+and both CE banks sample incoming feedback. Selector `0x7d` is rejected
+before issue, not treated as an alias of either binding.
+
+The covered CE1 short store uses `FF2` for width and `FF1` for offset, not
+`X1`. CE1 enables the store and flag write, while its address-override bit
+can enable postmodify alone. The enabled zero-extending forms update `Z`
+and clear `M`; the disconnected and saved-loop-start `EXTRACTS` result ports
+retain both flags and leave the result destination unchanged despite DATA
+operand allocation and postmodify. Both CE banks sample incoming feedback,
+not the `Z` flag produced by the same issue.
+
+The covered wide `INSERT` DATA and guard routes use the low five bits of
+`FF2` for width and `FF1` for offset. The CE1 indexed result samples the
+long word at incoming `R2` and its wrapped successor before any store.
+Its CE1 address override can advance `R2` by `RN2` without allowing either
+DATA word or the arithmetic flags to be written. The CE1 guard result
+reads the long word at `R1` plus a signed displacement without modifying
+`R1`; it writes bits 16–23 of the insertion to `GB2`, but tests the low word
+for `Z`, leaving the accumulator halves unchanged.
+
+The unqualified long `INSERT` result uses `R1` plus a signed displacement
+for the two destination words and samples the short source at incoming
+`R2` before `R2` postincrements. The three reads must fit the DATA read
+ports before publication. Both long results store the low word first and
+test the low 32 bits for `Z`; the FFT magnitude tap can also set its sticky
+flag when enabled. Other status bits are preserved, and both CE banks
+sample incoming feedback, not the new `Z` from the same issue.
+
+The covered unqualified arithmetic shifts write the upper result word.
+The two short stores sample their signed input at `DATA[0xffff]`;
+the indexed store takes its count from `RL0`, while the incrementing
+store uses `RN2`. The long-source control result reads two words at the
+incoming `R7` and its wrapped successor, then postmodifies `R7` by the
+signed displacement. The signed seven-bit count comes from `RN5`; the
+upper result word goes to the selected `CECFG1`, `CECFG2`, or `CETBL`
+port. Both CE banks sample incoming `EST`, configuration, and truth
+table before that write and the new shifter flags take effect. If a
+configuration write switches a bank to static mode, the sampled bit
+is retained; a subsequent issue can evaluate the new table in a
+dynamic bank.
+
+The long-source accumulator route uses the same address and count inputs,
+but publishes the upper result word into the selected accumulator's low
+half, preserving its upper word and guard. For both long-source routes,
+`ECFG.ALIM` clamps on the shifter's extension flag `E` and sets sticky
+`L`. Carry, zero, sign, and extension describe the pre-limit result.
+
+The disconnected register and long DATA result ports
+can still publish carry. The disconnected loop-address route only reads
+the count at incoming `R4` and postmodifies that pointer; it leaves the
+arithmetic flags and loop address unchanged. The implicit circular window starts
+at zero; the explicit window uses the programmed bound. A DATA allocation
+or decode stop is not a supported retirement.
+
+Unqualified immediate `ASHIFT` interprets the low seven bits of the
+extension word as a signed count and bounds the shift to 40 bits.
+The short indirect `RMW1` form captures the incoming `R0`–`R7` address,
+aligns the signed DATA word to bits 16–31, and writes the upper result
+word back without modifying the pointer. The `A1` to `A0L` form shifts
+all 40 source bits but changes only `A0L`. The left carry tap is bit 31
+for the aligned DATA word and bit 39 for the full accumulator; right
+carry is relative to bit 16 for both. `Z`, `M`, and `E` describe bits
+16–39 of the pre-limit result. `ALIM` clamps on `E` and sets sticky `L`.
+
+The wide literal `LSHIFT` with no connected result still fetches one
+DATA count word when early CE2 admission permits it. The count routes
+use either `R0` plus a signed byte without modifying `R0`, or old `R1`
+followed by its configured one-word postincrement. A veto suppresses
+the read and the address update. Only carry can change, and only when
+the later CE2 predicate executes the shift; count zero holds carry.
+Neither route writes DATA.
+Implicit modulo uses the saved alignment mask of `RM0` and a signed sum
+before truncation. An admitted guest write to `RM0` refreshes the mask
+using the value actually written, after any narrowing.
+
+Covered compact word shifts align their input to the upper word of the
+40-bit shifter. They publish the selected word but set `Z`, `M`, and `E`
+from the entire aligned result, and select carry from the 16-bit input
+lane on a left shift. The count is signed: six bits from the word
+immediate or seven low bits from the count register. `ASHIFT` applies
+`ALIM` after sampling flags. The covered full-accumulator logical form
+zero-extends its `RN` source, clips its count to 40 bits, and takes carry
+from the 40-bit lane. A qualified shift on the active lane publishes its
+result and status only when CE1 is enabled. The same compact opcode in
+the parallel right lane of a NOP pair does not shift or write DATA, but
+the indexed long DATA form still updates its pointer; a sequential right
+slot instead executes its admitted shifter form.
+
+The unqualified compact half-register immediate `ASHIFT` clips a left
+shift at 24 bits and a sign-filled right shift at 17 bits. It updates
+only the destination half and uses the pre-limit extension flag to
+select saturation, retaining the guard, the other half, and the other
+ALU's flags. The secondary slot of a parallel NOP pair does not shift;
+both positions of a sequential pair execute on the primary word shifter.
+
+For covered wide signed/unsigned multiply-subtract forms, the result bank
+selects the extended addend and result width. The first multiplier source
+publishes to `X1`. `ALIM` inhibits new loss status without clamping the result.
+
+Lifted compact delayed `EQ` reads the incoming `EST` condition before any
+delay issue executes. The delay runs on both paths, including when the
+transfer itself is the right slot of a sequential fetch.
+
+Direct-count wide `REP` takes an unsigned 16-bit count from the encoded
+literal or one DATA word. The literal form does not access DATA. Both run
+three setup issues. The replay endpoint is encoded in fetches, not in
+issues. A sequential fetch can put both slots in the replay range or
+only its left slot if that fetch is the endpoint. Positive counts repeat
+the range only when the endpoint has not already passed; zero skips the
+first issue after setup and leaves any following issues to execute once.
+
+The marked R0 address forms use that replay range with the original
+pointer as the count; no DATA read supplies it. Their word and long
+postmodifiers advance R0 by one and two words respectively, including
+when the sampled count is zero. The unmodified form leaves R0 intact.
+
+The CE2 form with a long R4 descriptor uses the same replay range. The
+address gate alone admits the access and postmodifier: a veto makes the
+body fall through once. An admitted operation reads a single 16-bit
+count at the original R4 address, even when the descriptor advances R4
+by two words or by a signed displacement.
+
+The marked wide single repeat in family `0x13c`, variant 0, with
+encoded delay three and an extended count selector samples one 16-bit
+word at DATA `0xffff`; the encoded address field does not name a DATA
+access, and no address register is written. The count is independent of
+the condition enables. Three following issues execute before the replay
+unit acts. The console admits the single-issue layout where those three
+issues and the encoded endpoint each occupy an entire fetch. The
+endpoint then executes exactly the sampled number of times, including
+zero, before flow continues past it. Split-fetch layouts can produce a
+different replay range and are not lifted by this constructor.
+
+The guarded compact `RETURN EQ1` and `RETI EQ1` forms count at most six
+complete parallel increment issues, including when the encoded delay is
+seven. They sample incoming `EST` before the delay and read the two DATA
+link words only on the taken path. `RETI EQ1` also changes trap state only
+on that path. The mapped CODE guard does not validate a runtime link.
+An ordinary compact `RETURN` with an inactive right lane can retire two
+or three following issues. In the undelayed CE1 form, either execution or
+address enable allows the stack pop and transfer.
+
+Unconditional wide `GOABS A0` samples the 32-bit accumulator payload
+before any delay issue can change it. The accumulator guard byte does not
+contribute. Encoded delays six and seven both retire five issues. The
+indirect operand is a CODE word address; an out-of-range payload does not
+wrap into mapped CODE. Stated jump-table destinations can resolve the
+computed edge without replacing the operand with a constant.
+Compact unconditional `GOABS (R0)` with an inactive right lane samples the
+low target word at `R0` and the high word at `R0+1`, without modifying
+`R0` or the stack. It admits up to three following delay issues.
+
+Unconditional wide `CALLABS (R0)` takes the low target word from DATA
+at `R0` and the high word from DATA at `R0+1`, without changing `R0`.
+It pushes a two-word stack link for `inst_start + 2 + 2 * encoded_delay`.
+At most five following issues retire before the call; the explicit
+continuation follows the pushed link rather than the extent of those issues.
+Compact unconditional `CALLABS` with an inactive right lane uses the same
+link rule. It admits zero through three delay issues and samples either the
+two DATA words at `R0` or the low 32 bits of `A0` before executing them.
+In the undelayed CE1 `CALLABS A0` form with an inactive right lane,
+execution enable pushes the link and calls. With address enable alone,
+`SP` decreases by two and the instruction jumps without writing either
+link word. With neither enable it falls through without touching the stack.
+
+Compact `RETI` with an inactive right lane samples the two DATA link words
+and admits zero through three delay issues. Undelayed CE1 can veto the pop
+and transfer unless execution or address enable is set. A taken `RETI`
+releases the newest active trap source without changing `PSTATUS`; with
+no active trap it clears bit four of `PSTATUS`. Ordinary `RETURN` does not
+consume trap state.
+The saved link is a CODE word address: `RETI` loads the low half at
+`SP+1` and the high half at `SP+2`, advances `SP` by two, and returns
+indirectly to the assembled link. An odd link can name a real sequential
+right slot; it is not rounded down to the fetch root.
+
+`TRAPCTX` is lift state, not an encoded register operand. The compact
+`TRAP 1` through `TRAP 3` forms with an inactive right lane and a following
+complete issue record accepted sources there and push a two-word link.
+An already-active source 1 or 2 is ignored, and source 3 is ignored when
+any trap is active. Source 1 vectors through `INTBASE` when no trap is
+active; accepted non-vectored entries skip the following issue.
+An ignored entry leaves both `SP` and DATA alone and flows to the ordinary
+next issue. An accepted nested entry writes its own frame below the older
+frame, leaving the older return address intact. Skipping an issue never
+changes the value written to the link.
+
+Lifted absolute peripheral moves use separate `io` and `ext` spaces
+with 16-bit words. Neither aliases a `data` word at the same numeric address.
+The covered long-DATA I/O source does not drive a DATA value onto the bus.
+It advances `R0` by two, including when only address enable is set. Zero
+is written to the I/O word only when execution is enabled.
+
+The wide `0xf0` source drives zero without reading DATA. Its qualified
+forms gate that I/O write, not the two condition-enable writebacks.
+
+The covered disconnected wide I/O and EXT load selectors have no register
+writeback. The lift retains the bus read and, for the covered qualified
+forms, controls it with the selected predicate or address-enable override.
+Volatile bus declarations preserve these reads in emitted C.
+
+An I/O word transfer is 16 bits, but its encoded word address is 22 bits;
+the high bits of an admitted port must not alias its low 16-bit counterpart.
+This address identifies a port, not a guarantee that a device backs it.
+Wide indexed I/O/DATA moves access the original DATA word and update its
+pointer once. The covered displaced and absolute EXT loads send the word to
+DATA; the EXT source's ninth address bit is independent of the DATA address.
+
+The indexed long R1 destination updates R1 with RN1 but has no connected
+DATA writeback. The EXT read still takes place at the encoded word address.
+The covered signed immediate R0 form accepts only an unsigned 16-bit address
+literal. Excess immediate bits are not silently truncated into a register
+write or lifted as ordinary fallthrough.
+
+The covered signed immediate absolute DATA form writes word zero. The
+stored short word is taken after the signed SR1 shift and participates in
+the sticky FFT tap; it does not write an address register.
+
+Covered qualified wide `TRANSFER` forms publish at address generation,
+controlled by the early admission sample, not by the later predicate
+writeback. The `IOSPACE` selector on their address path reads or writes
+a separate 16-bit address latch, not `INTBASE` or the I/O bus. An
+unbound register source contributes `0xffff`; an `R3` source applies
+the configured modulo window before publishing its address.
+
+The mixed compact MAC and add packets keep each lane’s 40-bit arithmetic
+result separate from its physical write port. A narrow destination can
+receive the high word or an accumulator guard without changing which
+result supplies its ALU flags. Predicate and address enable independently
+control result publication and address updates; parallel lanes sample their
+DATA inputs before either lane’s stores become visible.
+
+For the lifted `LINK` forms, address enable can update `SP` and the
+selected frame register even when the result predicate suppresses the
+DATA store. Static CE-table loads that configure both banks sample the
+same incoming `EST`; one new latch cannot feed the other within that issue.
+
+`LINK` and compact `LEAVE` publish both CE latches even when the
+predicate blocks the frame access. The banks sample the same condition
+taps. Address enable can allow `LEAVE CE1` to restore the frame without
+forcing the CE1 latch true.
+
+If a wide `LINK` writes `CECFG1`, `CECFG2`, or `CETBL`, the incoming
+controls enable the address phase. The store then evaluates the selected
+predicate using the updated controls; it still saves the old register
+word at the old `SP`. The updated controls also determine the feedback
+from both banks. A static predicate samples the incoming CE latch.
+
+For a wide `LINK` with a disconnected frame port, address enable changes
+only `SP`. The selected CE bank independently gates a 16-bit all-ones
+store at the old `SP`, not the computed one. The store can set sticky
+high-word status when `ECFG` bit four is set.
+
+Wide single-word `PUSH` and `POP` publish both CE latches even when
+address processing is disabled. Address enable alone can decrement `SP`
+for `PUSH`, but the store also needs execution enable. A performed store
+can set sticky high-word status. For a direct-register `POP`, address
+enable is sufficient to read the word at old `SP+1` and update both the
+destination and `SP`.
+
+Covered wide paired `PUSH` and `POP` reserve two DATA words on `SP`
+when address processing is enabled, independent of the execution
+predicate and of the short or long `R6` postincrement. The disconnected
+first `PUSH` register port supplies all ones; the disconnected second
+port repeats the first word. A first DATA selector instead displaces
+the accumulator word to old `SP` and supplies all ones at old `SP-1`.
+The predicated `PUSH` stores require execution enable. With `ECFG` bit
+four set, the connected source can set sticky high-word status; the
+all-ones open port cannot. The paired `POP` reads its top word at old
+`SP+1`: the direct `RN4` port accepts it before writeback predication,
+while the `A3L` port and its word flags require
+execution enable.
+
+In the covered unqualified paired `POP` forms, the second DATA selector
+controls the store width, regardless of the first selector's width. The
+address units run on either known route. On the reset route the
+fallback store reads `DATA[RL6]`, applies the `ECFG` fractional shift,
+and writes its low word at `0xffff`. A long result stores sign extension
+at `DATA[A0L]`. The disconnected route suppresses those writes. With
+an `X1` or `X2` first selector, the second selector also loads that latch
+from its original DATA address. The covered extended second register
+selectors instead route the old `SP+1` word to `RN4` or to the 12-bit
+`RM2` port. The two-long DATA combinations do not lift.
+The qualified `FF1` port instead latches its indexed `R4` input when CE
+or AEN admits the address phase, even when CE vetoes
+the fallback DATA store. The qualified paired ALU routes keep this
+address phase separate from the accumulator, latch, and flag writeback.
+
+In the compact `LSHIFT CE1 ... || POP CE2 RL2,R5` form with an immediate
+count of seventeen, the shift publishes the high result word to `FF1`
+and takes its flags from the 40-bit result. Address enable alone can let
+the parallel `POP` advance `SP` and load `R5` and `RL2` from old `SP+1`
+and `SP+2`, respectively. The shift and the stack access qualify
+separately; both CE latches update after the packet.
+
+Compact paired register `PUSH` uses the word saved at the old `SP` for
+the sticky-status check. Sequential `PUSH FF12` uses two word stores
+without that check. The fixed register pairs publish both CE latches.
+Compact accumulator `POP` sets zero and negative in the right flag
+bank only when it occupies the right side of a parallel issue; a
+sequential `POP` uses the left bank. CE feedback for that issue samples
+the flags from before the `POP`.
+
+The covered single wide postincrement `POP` advances `SP` and `R7` by
+one DATA word or two for a long operand. The fixed stride does not use
+`RN7`; the `R7` update still uses its configured address window. In the
+qualified forms, address enable can advance both registers even when CE
+vetoes the stores. The operands are read from old `R7` and, for a long
+result, old `R7+1`. With the reset operand-fetch route established
+(`carmel_of_route=2`), CE1 writes to `DATA[0xffff]` and optionally
+`DATA[A0L]`, while CE2 writes to `DATA[A0L]` and optionally `DATA[A1L]`.
+Other operand-fetch states need not use those addresses: without the
+binding the listing is retained but the qualified form does not lift.
+The covered unqualified long form instead reads old `SP+1` and
+`SP+2`, and writes old `R7` and `R7+1`.
+
+Both source words are sampled before either store. The normal long
+writeback requires distinct, available DATA ports; simultaneous writes
+to the same address are not a completed `POP`. `ECFG.SR1` does not shift
+these words. The enabled store can set sticky high-word status with
+`ECFG` bit four set if bits 15:10 of its last word are nonzero.
+There is no ALU flag result; both CE feedback bits are recomputed.
+The issue falls through by two CODE words.
+
+Only a covered immutable CLIW record in a normalized bank can specialize a
+reference. Located TASKING images and XML can supply such a bank. Raw CODE
+and writable, partial, or ambiguous banks retain the encoded index in
+disassembly and produce `unimpl`.
+
+For the covered register-only CLIW forms, template bits 48:47 jointly
+select `RN4`–`RN7` for an ALU1 sign-extending move and the first MAC2
+multiplicand. Both lanes sample the same word; MAC2 also updates `X2`
+before accumulator writeback. The two lanes update their own status bits.
+The MAC1 `FF12` move instead sign-extends `FF1:FF2`, with `FF1` the high
+word. The MAC1 word add and subtract use an unshifted signed register
+word and a full accumulator, independent of the fractional multiply bit.
+
+The covered standalone MAC1 multiply routes select the two word inputs
+before writeback. A first flag-register input loads `X1`; an accumulator
+half or `X1` itself bypasses that latch, as does the second input. The
+opcode controls each factor's signedness independently. `ECFG.MS`
+doubles the product, and plain products with an unsigned factor bypass
+automatic limiting. The multiply-add and multiply-subtract read their
+own full 40-bit addend, even when it also names the destination.
+Subtraction reports carry out of the 40-bit complement adder. Rounded
+products and multiply-adds use the upward half-tie bias and clear the low
+word after limiting. A high-word result writes only the selected half;
+its zero flag ignores the discarded low word but includes the guard.
+MAC1 publishes its own arithmetic status and sticky limit, leaving the
+other lane's arithmetic status intact.
+Dynamic CE feedback samples the incoming flags, not this MAC's result.
+
+The covered ALU1 rounded add and both subtract directions round half
+ties upward even when `ECFG.R` is set. The biased adder supplies carry
+before the low result word is cleared. The divide forms both read
+distinct dividend and divisor inputs, independently of the destination.
+Plain divide tests twice the dividend minus the sign-extended divisor
+scaled by `2^16`, inserting the successful trial bit in the result.
+Divide-with-trace tests the unscaled subtraction before doubling and
+shifts the trial bit into `BTR1` instead. These two forms preserve
+arithmetic status. The covered invocation refreshes condition feedback;
+these routes neither consume DATA operands nor model other lane mixes.
+
+The covered aligned signed-by-unsigned MAC uses two captured short DATA
+addresses and publishes the destination postdecrement and signed source
+displacement before the read arbiter. The old destination word supplies the aligned addend and
+the old source word supplies the unsigned multiplier. With multiply
+scaling disabled, only the sign of the destination word contributes;
+with scaling enabled, its signed word contributes to the doubled product.
+The high word is taken after SR1 without ALIM or DATA saturation changing
+the stored value. Arithmetic flags are based on the unshifted sum.
+
+The covered CLIW DATA templates bind MA1 and MA2 to the independent R0
+and R4 address generators, or combine MA1 and its continuation into a
+two-word operand. The ALUs and MACs sample the incoming accumulator and
+DATA values, even when another lane publishes a new value to the same
+register. A predicate inhibits its execution lane, not operand fetch or
+the independent LOAD lane. In the four-port postincrement form, MA3 and
+MA4 use the next physical R4 and R0 addresses respectively; consecutive
+calls to the same template see the published updates. The covered
+`MAXM` form records the effective DATA word address in `MINMAX` on
+replacement. These routes do not invoke peripheral plug-ins.
+
+The covered bank-15 word operands are read by the template even when the
+invocation has zero DATA access qualifiers; their distinct pointers step
+by one. MA23 uses the MA2 base for a two-word indirect access without
+updating either pointer. A long MA34 or MA12 postincrement uses its base
+once and steps by two. The low DATA word becomes FF2 and the next word
+becomes FF1; an ALU in the same issue reads the old FF1:FF2 pair.
+Inactive address selectors, including the alternate unbound encoding,
+do not introduce DATA effects.
+
+With a MAC1 short input on the continuation of a long access, the
+invocation reserves the short read as well as the whole long pair. The
+two-word address update precedes arbitration. The short continuation word,
+not the low word of the pair, feeds the selected MAC input. `X1` captures
+the first factor; the second can come from an independently sampled register.
+In the bank-15 single-read form, the other pointer still postincrements
+without reserving a DATA read.
+In implicit modulo mode, the update uses the same cached alignment as
+other native R4 address generators. A compact RM4 write or a bank
+exchange that replaces RM4 recalculates that alignment.
+
+Bank-14 CLIW terminal addressing separates the template's DATA source from
+the terminal selector. A normal MA4 suffix completes the long MA3 input
+at MA3's base; a long MA4 prefix supplies its own base. The admitted ALU1
+moves read the low word and its wrapping successor, then sign-extend into
+the accumulator guard. MA2 postincrement still runs. An indexed MA3 also
+reads at its incoming pointer before publishing its pointer update.
+
+Some bank-15 templates reserve a long operand while assigning only one of
+its address cells. The other cell is an explicit incoming value or is
+bound to a proved writer in the same physical issue slot. Templates with
+only one assigned ALU operand use the same rule. The lift does not infer a
+zero address or operand.
+
+The covered split stack stores use both reserved addresses even when
+arithmetic is vetoed. A stack address update alone does not imply a DATA
+read or store.
+
+The covered PowerPlug-marked route requires explicit `carmel_powerplug_absent`
+target context. Without an installed provider, the core still consumes the
+MA3 and MA4 words, and undriven MA1 and MA2 writes publish zero. With a
+configured or unknown provider, the lift does not assume those outputs;
+they depend on the installed slot mask and the phase-specific callback
+results.
+
+A register-MAC template takes both operands from registers. It can still
+issue DATA reads for bound MA3 and MA4 ports. Terminal selectors 24 and 27
+leave MA4 unbound; 25 and 26 read one word at incoming `SP+1` and then advance
+`SP` by two and one word respectively. An unconsumed DATA read does not feed
+the product. Nonvolatile DATA reads whose values are discarded can be removed
+from emitted C. A missing, writable, or unsupported template still stops lift.
+
+The supported dual destinations write a DATA operand and the physical
+accumulator for the producing lane. Short MAC1 drives only A0H and one
+DATA word; long MAC2 drives A1 and both DATA words. Register limiting,
+DATA saturation and the DATA-only right shift are independent. The
+ALU1 full-accumulator move copies the low and high words into the
+addressed pair; the continuation qualifier does not create another
+store. An execution predicate vetoes both writebacks of a dual
+destination, not an independently configured address update or LOAD.
+
+For the covered CLIW address layouts without a left wide marker, MA1's
+first immediate is replaced by the encoded byte length of the trailing
+address records. An indirect MA1 uses this length as a DATA displacement;
+a postmodified MA1 keeps its incoming effective address and uses the
+length as its update. Marked layouts keep the ordinary immediate, even
+when an unused trailing port changes from indirect to indexed. The
+address pass is independent of the immutable template's execution
+predicate. Write-qualified ports without a template result clear their
+addressed words, including the two words of a long port or stack push.
+
+When two short CLIW address operations chain through R2, both reads use
+the incoming pointer and the merged update is applied once. Without a
+left wide marker the first read is displaced by the width of the next
+address record; the second read keeps its original offset. Opposite
+steps cancel, two forward steps add two, and the indexed update uses RN2.
+Neither of the bound move results is predicated in these layouts.
+
+In the merged R7 writeback layout, MA1 clears a word at the old R3
+address. An unmarked issue uses the eleven encoded trailing bytes as
+a DATA-word displacement; the MAC1 condition includes the final
+four-byte immediate or three-byte indexed writeback record. The R7
+update and MA1 store are unconditional. The bound `A1 + A2` result
+is gated by late CE1 independently.
+
+For the short postmodify MA1 and MA2 routes with only a register
+accumulator add active, each write-qualified port independently
+stores zero at its incoming DATA address. Read qualifiers do not
+feed the add or emit a DATA read. All configured address updates run
+even when neither port writes, including the long MA34 postincrement.
+
+The marked CLIW register-product form with unqualified MA1 and MA2,
+MA2 `R4++`, and MA3 `R3+=RN3` retains both address updates alongside
+the signed MAC1 result and its status and condition feedback. MA4
+selector 8 updates `R0++`; 14 updates `R2--`; 25 and 26 advance `SP`
+by two and one DATA words respectively. Selectors 24 and 27–31 have
+no terminal writeback. `CETBL` contributes to condition feedback but
+does not gate the MAC or these updates. The MAC samples register halves,
+not MA4 or any other DATA port. The address updates do not introduce a
+p-code DATA load or store.
+
 **(kuna) SPARC struct return — `option sparcstructret`, default on, SPARC-gated,
 `decompiler/crates/kuna-decomp/src/p2_lift/kuna_sparcstructret.rs
 (kuna_sparc_struct_ret_trap_producer)` (from Ghidra issue GH-6882).** The SPARC ABI

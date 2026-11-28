@@ -125,6 +125,7 @@ pub(crate) mod kuna_frameflow;
 pub mod kuna_framereplay;
 mod kuna_thumbframes;
 mod kuna_sparcprologue;
+mod kuna_callresume;
 pub(crate) use kuna_framecache::ArmFrames;
 pub mod kuna_ptrentry;
 use crate::pass::{AnalysisCtx, AnalysisOutput, AnalysisPass, Phase};
@@ -279,11 +280,24 @@ struct ProbedInsn {
     kind: FlowKind,
     is_call: bool,
     is_terminal: bool,
+    /// All outgoing branch edges require resumption from this instruction's call.
+    post_call_branches: bool,
     fall_through: Option<u64>,
     flows: Vec<u64>,
+    call_count: usize,
     mnemonic: Rc<str>,
     operands: String,
     reusable: Option<Rc<crate::listing::kuna_decodereuse::ReusableDecode>>,
+}
+
+impl ProbedInsn {
+    fn calls(&self) -> &[u64] {
+        &self.flows[..self.call_count]
+    }
+
+    fn branches(&self) -> &[u64] {
+        &self.flows[self.call_count..]
+    }
 }
 
 impl<'a> GapDecoder<'a> {
@@ -386,13 +400,18 @@ impl<'a> GapDecoder<'a> {
         let memo = Rc::clone(self.memo.as_ref().filter(|_| !self.keep_ops)?);
         let (translate, space) = (self.translate, Rc::clone(&self.code_space));
         memo.recall(translate, &space, vma, |m| {
-            Rc::new(ProbedInsn {
+            if !self.frame_probe && kuna_callresume::candidate(m.flow, m.fall_through, m.flows.len() > m.call_count) {
+                return None;
+            }
+            Some(Rc::new(ProbedInsn {
                 // The memo only certifies lifts confined to this instruction.
                 len: m.len, encoded_len: m.len, kind: m.flow.kind, is_call: m.flow.is_call, is_terminal: m.flow.is_terminal,
+                post_call_branches: false,
                 fall_through: m.fall_through, flows: m.flows.to_vec(), mnemonic: self.intern_mnemonic(m.mnemonic),
+                call_count: m.call_count,
                 operands: m.operands.to_string(), reusable: Some(Rc::clone(m.reusable)),
-            })
-        })
+            }))
+        }).flatten()
     }
 
     fn intern_mnemonic(&mut self, text: &str) -> Rc<str> {
@@ -423,10 +442,14 @@ impl<'a> GapDecoder<'a> {
         };
         if self.scratch.len == 0 { return None; }
         let c = crate::listing::classify::classify(&self.scratch.ops, vma, self.scratch.len);
+        let call_count = c.calls().len();
+        let post_call_branches = !self.frame_probe
+            && kuna_callresume::candidate(c.flow, c.fall_through, !c.branches().is_empty())
+            && kuna_callresume::all_branches_after_call(&self.scratch.ops);
         if let (Some(memo), Some(certified)) = (self.memo.as_ref().filter(|_| !self.keep_ops), &reusable) {
             let decoded = &self.scratch;
             if let Some(shared) = memo.keep(vma, certified.context(), decoded.len, c.flow, c.fall_through,
-                &c.flows, &decoded.mnemonic, &decoded.operands) {
+                &c.flows, call_count, &decoded.mnemonic, &decoded.operands) {
                 reusable = Some(shared);
             }
         }
@@ -444,8 +467,10 @@ impl<'a> GapDecoder<'a> {
             record.kind = c.flow.kind;
             record.is_call = c.flow.is_call;
             record.is_terminal = c.flow.is_terminal;
+            record.post_call_branches = post_call_branches;
             record.fall_through = c.fall_through;
             record.flows.clone_from(&c.flows);
+            record.call_count = call_count;
             record.mnemonic = mnemonic;
             record.operands.clone_from(&decoded.operands);
             record.reusable = reusable;
@@ -454,7 +479,8 @@ impl<'a> GapDecoder<'a> {
             Some(Rc::new(ProbedInsn {
                 len: decoded.len, encoded_len, kind: c.flow.kind, is_call: c.flow.is_call,
                 is_terminal: c.flow.is_terminal, fall_through: c.fall_through,
-                flows: c.flows, mnemonic, operands: decoded.operands.clone(), reusable,
+                post_call_branches,
+                flows: c.flows, call_count, mnemonic, operands: decoded.operands.clone(), reusable,
             }))
         }
     }
@@ -785,7 +811,7 @@ fn follow_subroutine(
         if insn.is_terminal {
             extend_linear = false;
             did_terminate = true;
-            if !decoder.frame_probe {
+            if !decoder.frame_probe && (!insn.is_call || insn.branches().is_empty()) {
                 continue;
             }
         }
@@ -800,35 +826,43 @@ fn follow_subroutine(
         let mut event = RunEvent {
             addr: vma, branches: Vec::new(), adds_info: false, corroborated: false,
         };
-        for &target in &insn.flows {
+        for &target in insn.calls() {
             if !decoder.in_exec(target) {
                 if speculative.contains(&vma) {
                     continue 'follow;
                 }
                 return None; // flow leaves the executable image (`!memory.contains`)
             }
-            if insn.is_call {
-                // Upstream: "calls always add info".
+            // Upstream: "calls always add info".
+            corroborated = true;
+            event.corroborated = true;
+            if !strict || listing.is_instruction_start(target) {
+                adds_info = true;
+                event.adds_info = true;
+            }
+        }
+        if insn.post_call_branches {
+            continue;
+        }
+        for &target in insn.branches() {
+            if !decoder.in_exec(target) {
+                if speculative.contains(&vma) {
+                    continue 'follow;
+                }
+                return None; // flow leaves the executable image (`!memory.contains`)
+            }
+            // Upstream: "jumps must jump to existing code".
+            if listing.is_instruction_start(target) {
                 corroborated = true;
                 event.corroborated = true;
-                if !strict || listing.is_instruction_start(target) {
-                    adds_info = true;
-                    event.adds_info = true;
-                }
-            } else {
-                // Upstream: "jumps must jump to existing code".
-                if listing.is_instruction_start(target) {
-                    corroborated = true;
-                    event.corroborated = true;
-                }
-                if extend_linear { event.branches.push(target); }
-                if speculative.contains(&vma) {
-                    speculative.insert(target);
-                } else {
-                    speculative.remove(&target);
-                }
-                worklist.push(target); // branch target → intra-routine successor
             }
+            if extend_linear { event.branches.push(target); }
+            if speculative.contains(&vma) {
+                speculative.insert(target);
+            } else {
+                speculative.remove(&target);
+            }
+            worklist.push(target); // branch target → intra-routine successor
         }
         if extend_linear {
             let fall = vma.checked_add(u64::from(insn.len));
@@ -1036,6 +1070,7 @@ fn aif_candidates(
     if !hist.values().any(|&c| c >= FINGERPRINT_THRESHOLD) {
         return Vec::new();
     }
+    let sparc_v9 = roots.is_none() && kuna_sparcprologue::is_v9(decoder);
 
     let mut accepted: BTreeSet<u64> = BTreeSet::new();
     let mut claimed = ClaimedCode::default();
@@ -1153,7 +1188,18 @@ fn aif_candidates(
                 || padding_entry.is_some_and(|at| !entry_allowed(decoder, at)) {
                 Probe::Reject
             } else {
-                probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate, padding_entry)
+                let trained = probe_gap_start(decoder, listing, &hist, gap_start, gap_hi, aifcorroborate, padding_entry);
+                if matches!(trained, Probe::Reject) && sparc_v9 && padding_entry.is_none()
+                    && kuna_sparcprologue::v9_entry(decoder, gap_start, scan_end)
+                    && !claimed.overlaps(gap_start, gap_start + 11)
+                {
+                    match check_valid_subroutine_with_policy(decoder, listing, gap_start, gap_start, gap_hi, false, None) {
+                        Some((body, true)) => Probe::Accept(body),
+                        _ => trained,
+                    }
+                } else {
+                    trained
+                }
             };
             // (kuna, `aifbracket`) A fragment of the enclosing known function is
             // refused but, like an `aif precise` refusal, consumes its body.
@@ -1209,14 +1255,14 @@ fn aif_candidates(
                         bodies.insert(entry, body.iter().copied().filter(|&at| at >= entry)
                             .map(|at| (at, decoder.recorded(at))).collect());
                     }
-                    if decoder.straight_line.is_some() {
-                        let reached: Vec<u64> = body.iter().filter_map(|&at| decoder.probe(at))
-                            .flat_map(|insn| {
-                                let taken = (insn.kind == FlowKind::ConditionalBranch).then(|| insn.flows.clone());
-                                insn.fall_through.into_iter().chain(taken.into_iter().flatten())
-                            })
-                            .collect();
-                        decoder.straight_line.as_mut().unwrap().extend(reached);
+                    if let Some(mut reached) = decoder.straight_line.take() {
+                        for insn in body.iter().filter_map(|&at| decoder.probe(at)) {
+                            reached.extend(insn.fall_through);
+                            if insn.kind == FlowKind::ConditionalBranch {
+                                reached.extend(insn.branches());
+                            }
+                        }
+                        decoder.straight_line = Some(reached);
                     }
                     accepted.insert(entry);
                 }
@@ -1864,6 +1910,7 @@ mod tests {
             fall_through: Some(addr + 4),
             flow: Default::default(),
             flows: Vec::new(),
+            call_count: 0,
             mnemonic: mnemonic.to_string().into(),
             operands: String::new(),
             pcode: None,

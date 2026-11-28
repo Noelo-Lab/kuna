@@ -1,0 +1,9 @@
+{
+  "code": "8c6000dc61c2 2bd8002bec00 2b00182bec00 a1ac202b2018 2bd8002bec00 a1ac622bd800 21ac2031aa20 3194002bec00 80feddc6424c 801234c64000 808e4cc64040 abec002bd800",
+  "cliw": "8097e0fffff03fffff7ffff8",
+  "entries": {
+    "cliw": 0,
+    "control": 4,
+    "arithmetic": 12
+  }
+}

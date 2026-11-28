@@ -1,0 +1,208 @@
+//! Prove which older issue slots can overlap a Carmel D2 reset.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use kuna_base::{address::Address, error::{KunaError, KunaResult}};
+use kuna_num::opcodes::OpCode;
+
+use crate::{context::OpId, flow::VisitedMap, funcdata::Funcdata};
+
+#[derive(Clone, Copy)]
+enum Stage {
+    Ra,
+    Of,
+    Ex,
+    Wb,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Execute {
+    Register(OpId),
+    Data(OpId),
+    AddressOnly(OpId),
+}
+
+#[derive(Default)]
+pub(super) struct IssueEffects {
+    pub idle: bool,
+    pub execute: Option<Execute>,
+    pub operand_fetch: Option<OpId>,
+    pub staged_data: Option<OpId>,
+    pub reset_ex_end: Option<OpId>,
+}
+
+pub(super) enum AddressAdmission {
+    Entry,
+    History,
+}
+
+#[derive(Default)]
+pub(super) struct Overlap {
+    pub canceled: BTreeSet<OpId>,
+    pub admission: BTreeMap<OpId, AddressAdmission>,
+}
+
+type IssueEdges<'a> = BTreeMap<u64, Option<&'a Address>>;
+
+fn add_edge<'a>(edges: &mut IssueEdges<'a>, from: &Address, to: Option<&'a Address>) {
+    if to == Some(from) {
+        return;
+    }
+    edges.entry(from.get_offset()).and_modify(|other| {
+        if *other != to {
+            *other = None;
+        }
+    }).or_insert(to);
+}
+
+/// Visit logical issue edges, ignoring the internal branches of one p-code expansion.
+fn issue_edges(fd: &Funcdata) -> (IssueEdges<'_>, IssueEdges<'_>) {
+    let address = |id| fd.obank().get(id).unwrap().get_addr();
+    let mut incoming = BTreeMap::new();
+    let mut outgoing = BTreeMap::new();
+    let mut link = |from, to| {
+        add_edge(&mut incoming, to, from);
+        if let Some(from) = from {
+            add_edge(&mut outgoing, from, Some(to));
+        }
+    };
+    let graph = fd.bblocks_ref();
+    for index in 0..fd.bblocks_get_size() {
+        let block = fd.bblocks_get_block(index);
+        let mut prior = None;
+        let mut op = fd.bb_op_head(block);
+        if let Some(head) = op {
+            let edges = graph.block(block);
+            for edge in 0..edges.size_in() {
+                let from = fd.bb_op_tail(edges.get_in(edge)).map(address);
+                link(from, address(head));
+            }
+        }
+        while let Some(id) = op {
+            let addr = address(id);
+            if let Some(from) = prior {
+                link(Some(from), addr);
+            }
+            prior = Some(addr);
+            op = fd.bb_op_next(id);
+        }
+    }
+    (incoming, outgoing)
+}
+
+/// Move only the straight-line control effects, not the physical issue marker.
+fn d2_before_ex(fd: &mut Funcdata, d2: OpId, end: OpId, ex: OpId) -> KunaResult<()> {
+    if fd.obank().get(d2).unwrap().get_parent() != fd.obank().get(end).unwrap().get_parent() {
+        return Err(KunaError::lowlevel("Nonlinear Carmel RESET control effects"));
+    }
+    let mut op = fd.bb_op_next(d2);
+    while let Some(id) = op {
+        if id == end {
+            return Ok(());
+        }
+        op = fd.bb_op_next(id);
+        fd.op_uninsert(id);
+        fd.op_insert_before(id, ex);
+    }
+    Err(KunaError::lowlevel("Unterminated Carmel RESET control effects"))
+}
+
+fn wb_after_operand_fetch(fd: &mut Funcdata, mark: OpId, ex: OpId) -> KunaResult<()> {
+    let store = fd.bb_op_next(mark).filter(|&id| fd.obank().get(id).is_some_and(|op|
+        op.code() == OpCode::CPUI_STORE && op.get_addr() == fd.obank().get(mark).unwrap().get_addr()))
+        .ok_or_else(|| KunaError::lowlevel("Missing Carmel staged DATA write"))?;
+    fd.op_uninsert(store);
+    fd.op_insert_before(store, ex);
+    Ok(())
+}
+
+pub(super) fn lower_control(fd: &mut Funcdata, visits: &VisitedMap, resets: &[OpId],
+                            effects: &BTreeMap<u64, IssueEffects>) -> KunaResult<Overlap> {
+    let (incoming, outgoing) = issue_edges(fd);
+    let entry = fd.get_address();
+    let mut reorder = Vec::new();
+    let mut overlap = Overlap::default();
+    for &id in resets {
+        let address = fd.obank().get(id).unwrap().get_addr();
+        let mut current = address;
+        let Some(end) = effects.get(&address.get_offset()).and_then(|issue| issue.reset_ex_end) else {
+            return Err(KunaError::lowlevel("Missing Carmel RESET execution controls"));
+        };
+        let mut execute = None;
+        let mut wb = None;
+        let mut stages = [Stage::Ra, Stage::Of, Stage::Ex, Stage::Wb].into_iter();
+        let proved = loop {
+            let Some(stage) = stages.next() else { break true };
+            let prior = match incoming.get(&current.get_offset()) {
+                Some(Some(prior)) if outgoing.get(&prior.get_offset()) == Some(&Some(current))
+                    && visits.get(*prior).is_some_and(|visit|
+                        *prior + i64::from(visit.size) == *current) => *prior,
+                None if current == entry => {
+                    // A nonzero entry needs both younger stages filled to avoid its startup alias.
+                    break entry.get_offset() == 0 || matches!(stage, Stage::Ex | Stage::Wb);
+                }
+                _ => break false,
+            };
+            let Some(issue) = effects.get(&prior.get_offset()) else { break false };
+            if !issue.idle {
+                match stage {
+                    Stage::Ra if prior.get_offset() == 0 => {
+                        // Physical RA address zero survives, but only the covered entry EX can move.
+                        if prior == entry && !incoming.contains_key(&0) {
+                            if matches!(issue.execute, Some(Execute::Register(_) | Execute::AddressOnly(_))) {
+                                current = prior;
+                                execute = issue.execute;
+                                break true;
+                            }
+                        }
+                        break false;
+                    }
+                    Stage::Ra | Stage::Of => {
+                        let Some(fetch) = issue.operand_fetch else { break false };
+                        overlap.canceled.insert(fetch);
+                    }
+                    Stage::Ex => {
+                        execute = issue.execute;
+                        if execute.is_none() {
+                            break false;
+                        }
+                    }
+                    Stage::Wb => {
+                        wb = issue.staged_data;
+                        if wb.is_none() {
+                            break false;
+                        }
+                    }
+                }
+            }
+            current = prior;
+        };
+        if !proved {
+            return Err(KunaError::lowlevel(format!("Unproved Carmel RESET retirement window at CODE {:#x}",
+                                                  address.get_offset() / 3)));
+        }
+        match execute {
+            Some(Execute::AddressOnly(mark)) => {
+                let sample = if current == entry && !incoming.contains_key(&entry.get_offset()) {
+                    AddressAdmission::Entry
+                } else {
+                    AddressAdmission::History
+                };
+                overlap.admission.insert(mark, sample);
+            }
+            Some(Execute::Register(ex)) => reorder.push((id, end, ex, None)),
+            Some(Execute::Data(ex)) => reorder.push((id, end, ex, wb)),
+            None => {}
+        }
+    }
+    for (d2, end, ex, wb) in reorder {
+        if let Some(mark) = wb {
+            wb_after_operand_fetch(fd, mark, ex)?;
+        }
+        d2_before_ex(fd, d2, end, ex)?;
+    }
+    for &id in resets {
+        fd.op_destroy(id);
+    }
+    Ok(overlap)
+}

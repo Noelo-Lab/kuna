@@ -43,6 +43,9 @@ use crate::translate::{
     TranslateBase, UniqueLayout,
 };
 
+#[path = "sleigh/kuna_carmel_delay.rs"]
+mod kuna_carmel_delay;
+
 #[cfg(test)]
 #[path = "sleigh/operand_tests.rs"]
 mod operand_tests;
@@ -1090,6 +1093,9 @@ struct SleighBuilder<'a> {
     uniq_space: Rc<AddrSpace>,
     uniquemask: u32,
     uniqueoffset: u64,
+    /// Displacement within the pre-resolved delay range of a split Carmel schedule.
+    split_delay_offset: Option<i32>,
+    carmel_delay_uops: kuna_carmel_delay::DelayUops,
     cache: &'a mut PcodeCacher,
 }
 
@@ -1374,7 +1380,7 @@ impl PcodeBuilder for SleighBuilder<'_> {
     }
 
     /// C++ `SleighBuilder::delaySlot`.
-    fn delay_slot(&mut self, _op: &OpTpl) -> KunaResult<()> {
+    fn delay_slot(&mut self, op: &OpTpl) -> KunaResult<()> {
         let saved_cur = self.cur.clone();
         let saved_ctx = self.cur_ctx;
         let saved_cross = self.cross_ctx;
@@ -1382,9 +1388,13 @@ impl PcodeBuilder for SleighBuilder<'_> {
 
         let baseaddr = self.contexts[self.cur_ctx].addr.clone();
         let fall_base = self.contexts[self.cur_ctx].ctx.get_length();
-        let delay_byte_cnt = self.contexts[self.cur_ctx].ctx.get_delay_slot();
-        let mut fall_offset = fall_base;
-        let mut bytecount = 0i32;
+        let (mut fall_offset, delay_budget) = match self.split_delay_offset {
+            Some(offset) => (fall_base + offset, op.get_in(0).get_offset().get_real() as i32),
+            None => (fall_base, self.contexts[saved_ctx].ctx.get_delay_slot()),
+        };
+        let mut consumed = 0i32;
+        let carmel_start = self.engine.uses_carmel_issues().then_some(self.cache.issued.len());
+        let counted = carmel_start.is_some() && self.engine.carmel_counted_delay(&self.contexts[saved_ctx].ctx);
         loop {
             let newaddr = &baseaddr + i64::from(fall_offset);
             self.set_unique_offset(&newaddr);
@@ -1408,10 +1418,18 @@ impl PcodeBuilder for SleighBuilder<'_> {
             let tpl = handle.map(|h| self.templ(h));
             self.build(tpl, -1)?;
             fall_offset += len;
-            bytecount += len;
-            if bytecount >= delay_byte_cnt {
+            consumed += if counted { 1 } else { len };
+            if consumed >= delay_budget {
                 break;
             }
+        }
+        if let Some(offset) = &mut self.split_delay_offset {
+            *offset = fall_offset - fall_base;
+        }
+        if let Some(start) = carmel_start {
+            self.carmel_delay_uops.record(
+                self.engine, self.cache, start, counted && consumed > 1, fall_base,
+            )?;
         }
         self.cur = saved_cur;
         self.cur_ctx = saved_ctx;
@@ -1868,7 +1886,7 @@ impl Sleigh {
     }
 
     /// C++ `Sleigh::resolve`: build the constructor tree (disassembly state).
-    fn resolve(&self, pos: &mut ParserContext, reuse_matches: bool) -> KunaResult<()> {
+    fn resolve(&self, pos: &mut ParserContext, reuse_matches: bool, inside_carmel_delay: bool) -> KunaResult<()> {
         self.load_fill_context(pos)?;
         // loadContext: pull context words for the current address.
         {
@@ -1876,6 +1894,9 @@ impl Sleigh {
             let mut cache = self.cache.borrow_mut();
             let addr = pos.addr.clone();
             cache.get_context(&**db, &addr, &mut pos.context);
+            if inside_carmel_delay {
+                kuna_carmel_delay::select_single_issue(&**db, pos);
+            }
         }
         pos.set_delay_slot(0);
         pos.clear_commits();
@@ -1970,7 +1991,15 @@ impl Sleigh {
                 if let Some(h) = handle {
                     let ds = self.base.templates[h].delay_slot();
                     if ds > 0 {
-                        walker.ctx.set_delay_slot(ds as i32); // C++ uint4 -> int4
+                        let ds = ds as i32; // C++ uint4 -> int4
+                        // A split Carmel schedule has one successive slice per
+                        // delay directive. All slices are decoded before any build.
+                        let previous = if self.carmel_split_delay(walker.ctx) {
+                            walker.ctx.get_delay_slot()
+                        } else {
+                            0
+                        };
+                        walker.ctx.set_delay_slot(previous + ds);
                     }
                 }
             }
@@ -2063,7 +2092,7 @@ impl Sleigh {
         addr: &Address,
         state: ParseState,
     ) -> KunaResult<ParserContextGuard> {
-        self.obtain_context_with_match_cache(addr, state, false)
+        self.obtain_context_with_match_cache(addr, state, false, false)
     }
 
     fn obtain_context_with_match_cache(
@@ -2071,10 +2100,11 @@ impl Sleigh {
         addr: &Address,
         state: ParseState,
         reuse_matches: bool,
+        inside_carmel_delay: bool,
     ) -> KunaResult<ParserContextGuard> {
         self.context_queries.set(self.context_queries.get().wrapping_add(1));
         let mut pos = self.checkout_context(addr);
-        self.resolve(&mut pos, reuse_matches)?;
+        self.resolve(&mut pos, reuse_matches, inside_carmel_delay)?;
         if state == ParseState::Disassembly {
             return Ok(pos);
         }
@@ -2578,11 +2608,14 @@ impl Sleigh {
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, 1)?;
         }
+        self.check_carmel_fetch(baseaddr)?;
         self.last_commits.borrow_mut().clear();
-        let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some())?;
+        let mut pos = self.obtain_context_with_match_cache(baseaddr, ParseState::Pcode, assembly.is_some(), false)?;
+        let carmel_delay = pos.get_delay_slot() > 0 && self.uses_carmel_issues();
+        let counted = carmel_delay && self.carmel_counted_delay(&pos);
         if let Some(image) = image {
             Self::check_mapped_instruction(image, baseaddr, pos.get_length())?;
-            if pos.get_delay_slot() > 0 {
+            if pos.get_delay_slot() > 0 && !carmel_delay {
                 return Err(KunaError::lowlevel("Checked instruction translation does not support delay slots"));
             }
         }
@@ -2596,17 +2629,30 @@ impl Sleigh {
         let mut contexts: Vec<ResolvedCtx> = std::mem::take(&mut *self.ctx_vec.borrow_mut());
         contexts.clear();
         if pos.get_delay_slot() > 0 {
-            let mut bytecount = 0i32;
+            let mut consumed = 0i32;
             loop {
                 let delayaddr = &pos.addr + i64::from(fall_offset);
-                let mut delaypos = self.obtain_context(&delayaddr, ParseState::Pcode)?;
-                self.apply_commits(&delaypos)?;
+                if let Some(image) = image {
+                    Self::check_mapped_instruction(image, &delayaddr, 1)?;
+                }
+                if carmel_delay {
+                    self.check_carmel_fetch(&delayaddr)?;
+                }
+                let mut delaypos =
+                    self.obtain_context_with_match_cache(&delayaddr, ParseState::Pcode, false, carmel_delay)?;
                 let len = delaypos.get_length();
+                if carmel_delay && (!counted && len != pos.get_delay_slot() || delaypos.get_delay_slot() > 0) {
+                    return Err(KunaError::unimpl("Invalid Carmel delay issue", pos.get_length()));
+                }
+                if let Some(image) = image {
+                    Self::check_mapped_instruction(image, &delayaddr, len)?;
+                }
+                self.apply_commits(&delaypos)?;
                 delaypos.parsestate = ParseState::Pcode;
                 contexts.push(ResolvedCtx { addr: delayaddr, ctx: delaypos });
                 fall_offset += len;
-                bytecount += len;
-                if bytecount >= pos.get_delay_slot() {
+                consumed += if counted { 1 } else { len };
+                if consumed >= pos.get_delay_slot() {
                     break;
                 }
             }
@@ -2638,13 +2684,18 @@ impl Sleigh {
             uniq_space,
             uniquemask: umask,
             uniqueoffset: (contexts[0].addr.get_offset() & u64::from(umask)) << 8,
+            split_delay_offset: (counted && self.carmel_split_delay(&contexts[0].ctx)).then_some(0),
+            carmel_delay_uops: kuna_carmel_delay::DelayUops::default(),
             cache: &mut cache,
         };
         builder.cur.point = Some(contexts[0].ctx.base_state);
         let main_ct = builder.walker().get_constructor_inner()?;
         let handle = table.get_constructor(main_ct)?.get_templ();
         let tpl = handle.map(|h| &self.base.templates[h]);
-        match builder.build(tpl, -1) {
+        let built = builder.build(tpl, -1).and_then(|()| {
+            builder.carmel_delay_uops.validate(builder.cache, contexts[0].ctx.get_length())
+        });
+        match built {
             Ok(()) => {}
             Err(KunaError::Unimpl { .. }) => {
                 // C++ rethrows with a descriptive message + instruction_length.
@@ -2666,6 +2717,9 @@ impl Sleigh {
                 return Err(KunaError::unimpl(s, fall_offset));
             }
             Err(e) => return Err(e),
+        }
+        if builder.split_delay_offset.is_some_and(|offset| offset + contexts[0].ctx.get_length() != fall_offset) {
+            return Err(KunaError::unimpl("Invalid split Carmel delay schedule", fall_offset));
         }
         cache.resolve_relatives()?;
         cache.emit(baseaddr, emit);
@@ -2777,6 +2831,14 @@ impl Translate for Sleigh {
     }
     fn may_have_delay_slots(&self) -> bool {
         self.base.max_delay_slot_bytes() != 0
+    }
+
+    fn indirect_target_offset(&self, space: &AddrSpace, value: u64) -> u64 {
+        if space.get_word_size() == 3 && space.get_name() == "code" && self.uses_carmel_issues() {
+            AddrSpace::address_to_byte(value, space.get_word_size())
+        } else {
+            value
+        }
     }
 
     fn instruction_length(&self, baseaddr: &Address) -> KunaResult<i32> {

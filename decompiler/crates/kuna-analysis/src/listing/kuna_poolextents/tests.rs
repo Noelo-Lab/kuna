@@ -43,6 +43,7 @@ fn plain(addr: u64, mnemonic: &str, operands: &str) -> Insn {
     Insn {
         addr,
         len: 4,
+        call_count: 0,
         fall_through: Some(addr + 4),
         flow: FlowType { kind: FlowKind::Fallthrough, has_fallthrough: true, ..Default::default() },
         flows: Vec::new(),
@@ -72,6 +73,7 @@ fn call(addr: u64, callee: u64) -> Insn {
     let mut i = plain(addr, "bl", &format!("0x{callee:x}"));
     i.flow = FlowType { kind: FlowKind::Call, is_call: true, has_fallthrough: true, ..Default::default() };
     i.flows = vec![callee];
+    i.call_count = 1;
     i
 }
 

@@ -5,6 +5,8 @@
 
 pub mod funcdata_resolveflow;
 pub mod flow;
+pub(crate) mod kuna_carmel_phase;
+mod kuna_carmel_reset;
 pub mod kuna_ppc32piccalls;
 pub mod kuna_ppc32lrflow;
 pub mod kuna_armflowcontext;
