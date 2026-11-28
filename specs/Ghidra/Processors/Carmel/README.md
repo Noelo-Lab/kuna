@@ -128,6 +128,9 @@ still exchanges only one word at the original address.
 A DATA selector in the second operand can advance its own pointer; it
 does not read a second DATA word. Two updates to the same pointer are
 not lifted.
+Selected accumulator-address forms select a word from a padded register
+bank using the issue slot. When the address aliases the result, the read
+uses the old word and the store uses the new address.
 Selected wide address transfers add the immediate displacement to a word
 source, including saved CODE addresses and the `R3` address unit.
 Selected qualified `TRANSFER` and `NOT LC1,*R3++` lifts require a proved

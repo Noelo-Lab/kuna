@@ -959,6 +959,26 @@ fn wide_swap_peer_data_selector_updates_its_pointer_without_reading_that_cell() 
 }
 
 #[test]
+fn wide_register_address_swap_rechecks_an_aliased_result_for_the_store() {
+    for (slot, from) in [0x8030, 0xab43, 0x62, 0, 0x5040, 0x9876, 0x25, 0].into_iter().enumerate() {
+        let mut m = Machine::new(0, &[(0x900000, 0xc34222), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("CARMEL_ISSUE_SLOT", slot as u64), ("A0", 0x62ab438030), ("A1", 0x2598765040)]);
+        let word = 0x2695;
+        let to = if slot == 0 { word } else { from };
+        m.seed_data(to, 0x49e5);
+        m.seed_data(from, word);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!(m.reg("A0"), 0x62ab430000 | word);
+        assert_eq!(m.reg("A1"), 0x2598765040);
+        assert_eq!(m.data(to), 0x8030, "slot {slot}");
+        if to != from {
+            assert_eq!(m.data(from), word);
+        }
+    }
+}
+
+#[test]
 fn link_uses_address_enable_before_its_independently_predicated_store() {
     for (config, table, sp, frame, saved) in [
         (0, 0, 0x4040, 0xc048, 0x2299),

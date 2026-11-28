@@ -4154,6 +4154,20 @@ The parallel right lane selects CE2; the parallel left lane and
 the independently executed sequential right slot select CE1.
 The issue publishes CE feedback on either path without setting ALU flags.
 
+Accumulator-address `SWAP` samples the decoder's eight-way issue slot.
+Its incoming slot is explicit lift state, not derived from CODE alignment.
+The phase pass advances the slot at each proved clock, including known
+redirect refill clocks. Every path to the sample must prove the same
+offset relative to entry; unmodeled clocks and differing offsets do not
+become an assumed slot zero.
+
+The address selector picks a word from a padded accumulator bank. The
+read uses the pre-result address. The late store writes the incoming
+register word through the new address when that word aliases the result.
+The CE1 form admits the DATA read using the earlier address sample or
+its address override. The later result predicate does not reopen a
+vetoed read and suppresses both writes when false.
+
 Unqualified wide `RESET` applies control-field masks at D2. The
 retirement check follows decoded issue boundaries; the two slots of a
 sequential fetch are separate issues. It proves the four older issues,

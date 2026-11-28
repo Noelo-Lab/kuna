@@ -4887,6 +4887,63 @@ fn tracked_carmel_entry_specs(destination: &Path, tracked: &[(&str, u16)], site:
 }
 
 #[test]
+fn carmel_swap_uses_issue_slot_and_both_qualifiers() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RETURN: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let temp = tempfile::tempdir().unwrap();
+    let [binary, specs, source, exe] = ["swap.bin", "specs", "swap.c", "swap.exe"]
+        .map(|name| temp.path().join(name));
+    tracked_carmel_entry_specs(&specs, &[("CARMEL_ISSUE_SLOT", 0), ("A1L", 0x5040), ("A4H", 0x2468)], 0x1000, 0);
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short cell;\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (name, age) in [("redirect", 0), ("short_age", 4), ("long_age", 6)] {
+        let mut code = [NOP; 10];
+        let result = if age == 0 {
+            code[0] = [0x2b, 0x00, 0x40, 0x2b, 0xec, 0]; // GOTO +8 WORD, four elapsed clocks
+            code[4] = [0x90, 0, 0, 0xc3, 0x42, 0x22];
+            code[5] = RETURN;
+            "A0L"
+        } else {
+            code[8 - age] = [0x21, 0xac, 0xe6, 0x2b, 0xec, 0]; // INC A3L
+            code[8] = [0x25, 0xc0, 0xb8, 0xc3, 0x5a, 0x71];
+            code[9] = RETURN;
+            "A5L"
+        };
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let address = if age == 0 { 0x5040 } else { 0x2468 };
+        let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        kuna.arg("decompile").arg(&binary).env("KUNA_SPECS", &specs).args([
+            "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+            "--base", "0x1000", "--json", "--assert-strict", "--assert", &format!("return %{result} unsigned short"),
+            "--assert", &format!("data [data,{address:#x}] volatile unsigned short cell"),
+        ]);
+        for (i, input) in [result, "A3L", "EST", "CECFG1", "CECFG2", "CETBL", "ECFG"].into_iter().enumerate() {
+            kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);
+        }
+        let output = common::process::required_output(&mut kuna);
+        let doc: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let function = &doc["functions"][0];
+        let text = function["code"].as_str().unwrap();
+        assert!(function["error"].is_null() && !text.contains("halt_"), "{doc}");
+        writeln!(c, "#define sub_1000 {name}\n{text}\n#undef sub_1000").unwrap();
+        for (table, aen, taken) in if age == 0 { [(0, 0, true), (1, 0, true), (2, 0, true), (2, 0x1000, true)] }
+            else { [(0, 0, false), (1, 0, false), (2, 0, age == 6), (2, 0x1000, true)] }
+        {
+            let (reg, data) = if taken { (0x9104, 0x8423) } else { (0x8423, 0x9104) };
+            writeln!(calls, "cell=0x9104; if ({name}(0x8423,0xffff,0,{},0,{table},0) != {reg} || cell != {data}) return 1;",
+                     0x0ee8 | aen).unwrap();
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &exe, &c);
+}
+
+#[test]
 fn carmel_compact_pc_store_samples_three_physical_successors() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

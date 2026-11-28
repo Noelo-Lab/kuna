@@ -1,4 +1,4 @@
-//! Bind Carmel's address-admission and FF operand-fetch samples before SSA.
+//! Bind Carmel's address-admission, operand-fetch and issue-slot samples before SSA.
 
 use std::{collections::{BTreeMap, BTreeSet, VecDeque}, rc::Rc};
 
@@ -52,6 +52,7 @@ pub(crate) struct PhaseDecode<'a> {
     repeat_r3: Option<u64>,
     repeat_d2_write: Option<u64>,
     repeat_of: Option<u64>,
+    issue_slot: Option<u64>,
     ff: Option<FfOps>,
 }
 
@@ -82,6 +83,7 @@ impl<'a> PhaseDecode<'a> {
         let repeat_r3 = index(b"carmel_prove_repeat_r3_sample");
         let repeat_d2_write = index(b"carmel_repeat_d2_write");
         let repeat_of = index(b"carmel_repeat_register_at_of");
+        let issue_slot = index(b"carmel_sample_issue_slot");
         let ff = (|| Some(FfOps {
             capture: index(b"carmel_capture_ff_before_ex")?,
             fetch: index(b"carmel_sample_ff_at_of")?,
@@ -99,7 +101,7 @@ impl<'a> PhaseDecode<'a> {
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
             fixed_read_tick, fixed_load, fixed_store, end_unmodeled, omitted, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
-            staged_data, repeat_r3, repeat_d2_write, repeat_of, ff })
+            staged_data, repeat_r3, repeat_d2_write, repeat_of, issue_slot, ff })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -110,6 +112,7 @@ impl<'a> PhaseDecode<'a> {
         let mut ff_fetches = false;
         let mut ff_late_visibility = false;
         let mut reads = false;
+        let mut slot_fetches = false;
         let mut resets = Vec::new();
         let mut address_ex = Vec::new();
         let mut repeat_samples = Vec::new();
@@ -167,6 +170,8 @@ impl<'a> PhaseDecode<'a> {
                 repeat_writes.push(op_id);
             } else if Some(index) == self.repeat_of {
                 repeat_operand_fetches.push(op_id);
+            } else if Some(index) == self.issue_slot {
+                slot_fetches = true;
             } else if index == self.admission {
                 reads = true;
             }
@@ -225,7 +230,7 @@ impl<'a> PhaseDecode<'a> {
             fd.op_set_opcode(query, type_op_for(OpCode::CPUI_COPY));
             fd.op_set_input(query, mask, 0)?;
         }
-        if !reads && !ff_fetches && !ff_late_visibility && dual_reads.is_empty() {
+        if !reads && !ff_fetches && !ff_late_visibility && !slot_fetches && dual_reads.is_empty() {
             for (marker, _, kind) in markers {
                 match kind {
                     Mark::Copy => lower_copy(fd, marker, 1),
@@ -292,6 +297,9 @@ impl<'a> PhaseDecode<'a> {
                     Event::RawFfRead(op) if proof.ff & FF_OLDER != 0 => {
                         return Err(sample_error(fd, op, "FF input stage after late write"));
                     }
+                    Event::IssueSlot(op) if !proof.slot_offsets.is_power_of_two() => {
+                        return Err(sample_error(fd, op, "issue slot"));
+                    }
                     _ => {}
                 }
                 proof = event.advance(proof);
@@ -327,6 +335,16 @@ impl<'a> PhaseDecode<'a> {
                         fd.op_set_input(read, sample, 0)?;
                     }
                     Event::FfFetch(read) => lower_copy(fd, read, if proof.ff == FF_OLDER { 2 } else { 1 }),
+                    Event::IssueSlot(read) => {
+                        let offset = proof.slot_offsets.trailing_zeros();
+                        if offset == 0 {
+                            lower_copy(fd, read, 1);
+                        } else {
+                            let offset = fd.new_constant(1, u64::from(offset));
+                            fd.op_set_opcode(read, type_op_for(OpCode::CPUI_INT_ADD));
+                            fd.op_set_input(read, offset, 0)?;
+                        }
+                    }
                     _ => {}
                 }
                 proof = event.advance(proof);
@@ -386,6 +404,7 @@ impl<'a> PhaseDecode<'a> {
                 }
                 Some(index) if self.ff.is_some_and(|ff| index == ff.fetch) => trace.events.push(Event::FfFetch(id)),
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
+                Some(index) if Some(index) == self.issue_slot => trace.events.push(Event::IssueSlot(id)),
                 Some(index) if Some(index) == self.end_unmodeled => trace.events.push(Event::Barrier(false)),
                 Some(index) if Some(index) == self.redirect => {
                     trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
@@ -692,6 +711,7 @@ enum Event {
     Barrier(bool),
     Tick(OpId, bool),
     Read(OpId),
+    IssueSlot(OpId),
     FfFetch(OpId),
     FfVisibility(bool),
     RawFfRead(OpId),
@@ -701,14 +721,16 @@ enum Event {
 struct Proof {
     age: usize,
     ff: u8,
+    slot_offsets: u8,
 }
 
 impl Proof {
-    const ENTRY: Self = Self { age: 0, ff: FF_UNKNOWN };
-    const TOP: Self = Self { age: CLOCKS, ff: 0 };
+    const ENTRY: Self = Self { age: 0, ff: FF_UNKNOWN, slot_offsets: u8::MAX };
+    const TOP: Self = Self { age: CLOCKS, ff: 0, slot_offsets: 0 };
 
     fn join(self, other: Self) -> Self {
-        Self { age: self.age.min(other.age), ff: self.ff | other.ff }
+        Self { age: self.age.min(other.age), ff: self.ff | other.ff,
+            slot_offsets: self.slot_offsets | other.slot_offsets }
     }
 }
 
@@ -718,11 +740,13 @@ impl Event {
             Self::Barrier(keep_ff) => Proof {
                 age: 0,
                 ff: if keep_ff { proof.ff } else { FF_UNKNOWN | (proof.ff & FF_OLDER) },
+                slot_offsets: u8::MAX,
             },
             Self::FfVisibility(late) => Proof { ff: if late { FF_OLDER } else { FF_LIVE }, ..proof },
             Self::Tick(_, late) => Proof {
                 age: (proof.age + 1).min(CLOCKS),
                 ff: if late { FF_OLDER } else { FF_LIVE },
+                slot_offsets: proof.slot_offsets.rotate_left(1),
             },
             _ => proof,
         }
@@ -754,7 +778,7 @@ fn incoming_proofs(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], trace
         let proof = if i == 0 && block.size_in() == 0 && trace.first.as_ref() == Some(fd.get_address()) {
             // A real function entry observes its supplied register values,
             // unlike an unproved intra-function redirect or loop backedge.
-            Proof { ff: FF_LIVE, ..Proof::ENTRY }
+            Proof { ff: FF_LIVE, slot_offsets: 1, ..Proof::ENTRY }
         } else if i == 0 || block.size_in() == 0 {
             Proof::ENTRY
         } else {

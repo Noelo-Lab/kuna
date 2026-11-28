@@ -188,6 +188,10 @@ define register offset=0x300 size=1 [
     __CE_ADDRESS_HISTORY_3 __CE_ADDRESS_HISTORY_4
 ];
 define register offset=0x308 size=2 [ __FF1_BEFORE_EX __FF2_BEFORE_EX ];
+
+# Incoming decoder slot, independent of the CODE address.
+define register offset=0x30c size=1 [ CARMEL_ISSUE_SLOT ];
+define pcodeop carmel_sample_issue_slot;
 define pcodeop carmel_record_admission;
 define pcodeop carmel_read_address_admission;
 define pcodeop carmel_known_redirect;
@@ -4694,6 +4698,95 @@ swap_address: "*"^swap_base is swap_register_address=0 & wide_7_7=0 & swap_modif
     unary_ce(CECFG1, flags, CETBL, 0, ce1);
     unary_ce(CECFG2, flags, CETBL, 1, ce2);
     EST = (flags & 0xcfff) | (ce1 << 12) | (ce2 << 13);
+}
+
+swap_issue_slot: is carmel_phase_emit=0 { local issue_index:1 = CARMEL_ISSUE_SLOT & 7; export issue_index; }
+swap_issue_slot: is carmel_phase_emit=1 {
+    local issue_index:1 = carmel_sample_issue_slot(CARMEL_ISSUE_SLOT);
+    issue_index = issue_index & 7;
+    export issue_index;
+}
+
+macro swap_tile_address(issue_index, w0, w1, w2, w3, w4, w5, w6, w7, address) {
+    address = w0;
+    if (issue_index == 0) goto <selected>;
+    address = w1;
+    if (issue_index == 1) goto <selected>;
+    address = w2;
+    if (issue_index == 2) goto <selected>;
+    address = w3;
+    if (issue_index == 3) goto <selected>;
+    address = w4;
+    if (issue_index == 4) goto <selected>;
+    address = w5;
+    if (issue_index == 5) goto <selected>;
+    address = w6;
+    if (issue_index == 6) goto <selected>;
+    address = w7;
+  <selected>
+}
+
+swap_tile_load: is carmel_phase_emit=0 { }
+swap_tile_load: is carmel_phase_emit=1 { carmel_single_data_load(); }
+swap_tile_store: is carmel_phase_emit=0 { }
+swap_tile_store: is carmel_phase_emit=1 { carmel_single_data_store(); }
+
+macro swap_tile_result(issue_index, alias, address, word, incoming, old) {
+    old = word;
+    word = incoming;
+    if (issue_index != alias) goto <store>;
+    address = incoming;
+  <store>
+}
+
+macro swap_tile_feedback(incoming) {
+    local flags:2 = (EST & 0xcfc4) | (zext(incoming == 0) << 3) | (zext(incoming >= 0x8000) << 4);
+    publish_ce_feedback(flags, EST);
+}
+
+:SWAP "A0","A0L" is carmel_issue=5 & carmel_single_issue=0 & hw_loop_actions=0
+    & wide_left=0x900000 & wide_right=0xc34222 & swap_issue_slot & swap_tile_load & swap_tile_store & ce_tick {
+    build swap_issue_slot;
+    local address:2;
+    local guard0:2 = zext(GB0);
+    local guard1:2 = zext(GB1);
+    swap_tile_address(swap_issue_slot, A0L, A0H, guard0, 0:2, A1L, A1H, guard1, 0:2, address);
+    build swap_tile_load;
+    local word:2 = *[data]:2 address;
+    local old:2;
+    swap_tile_result(swap_issue_slot, 0:1, address, A0L, word, old);
+    build swap_tile_store;
+    *[data]:2 address = old;
+    swap_tile_feedback(word);
+    build ce_tick;
+}
+
+:SWAP "CE1" "A4H","long *(R5+"^wide_move_displacement^")" is
+    carmel_phase_emit=1 & carmel_issue=4 & carmel_single_issue=0 & hw_loop_actions=0
+    & wide_left=0x25c0b8 & wide_right=0xc35a71 & wide_move_displacement
+    & swap_issue_slot & swap_tile_load & swap_tile_store & ce_tick {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    if (!admitted) goto <feedback>;
+    build swap_issue_slot;
+    local address:2;
+    local guard4:2 = zext(GB4);
+    local guard5:2 = zext(GB5);
+    swap_tile_address(swap_issue_slot, A4H, guard4, 0:2, A5L, A5H, guard5, 0:2, 0:2, address);
+    build swap_tile_load;
+    local word:2 = *[data]:2 address;
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    if (enabled == 0) goto <feedback>;
+    local old:2;
+    swap_tile_result(swap_issue_slot, 3:1, address, A5L, word, old);
+    build swap_tile_store;
+    *[data]:2 address = old;
+    swap_tile_feedback(word);
+    goto <finish>;
+  <feedback>
+    clock_ce();
+  <finish>
+    build ce_tick;
 }
 
 # The ALU sees 40 bits; use normalized u64 bit patterns, not 5-byte C arithmetic.
@@ -13521,7 +13614,12 @@ resume_2_6: word_address is epsilon [ word_address = (inst_start + 14) & 0xfffff
 resume_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xffffff; ] { export *[code]:3 word_address; }
 
 :"GOTO" direct_target is ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x0 & slot_13_22=0x158 & direct_target { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto direct_target; }
-:"GOTO" direct_target "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto direct_target; }
+:"GOTO" direct_target "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target & ce_redirect);
+    (slot_mode=0 & nop_right) {
+    build ce_redirect;
+    goto direct_target;
+}
 :"GOTO" direct_target "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; goto direct_target; }
 :^nop_left "||" "GOTO" direct_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target) { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target) { build complete_left; goto direct_target; }
