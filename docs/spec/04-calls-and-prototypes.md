@@ -27,6 +27,23 @@ moves as a single is also typed `float`. Words read only as integers, such as a
 double handed to a base-AAPCS helper in core registers, are left as
 `armfloatreturn` alone leaves them (`kuna_armfloatargs.rs (single_move)`).
 
+A double the code hands on whole in a core register pair is one input typed
+`double` (`kuna_vfpcorepair.rs`). The doubleword `vmov r2,r3,d0` reads `d0`
+whole to give a variadic callee or a base-PCS helper its double in `r2:r3`, but
+heritage refines `d0` into `s0` and `s1`, and copy propagation leaves the call
+reading the two words as its arguments. Two floats moved one by one, or with the
+two-singles `vmov r2,r3,s0,s1`, end in the same IR, so `ActionFuncLink` notes,
+from the raw p-code, each instruction that writes a core register's word pair
+from one d register read whole (`kuna_vfpcorepair.rs (note_moves)`). When the
+two words of a noted d register are read only by one call, as the low and high
+registers of an aligned pair (`r0:r1` or `r2:r3`) that the noted instruction
+wrote, they are joined into the d register, and the rule that splits a
+d-register input read only in halves keeps that input whole.
+`show2(int n, double d) { consume("%d %lf", n, d); }` then takes
+`(double, unsigned int)`, and a caller that forwards both passes both. The call
+keeps its two words, because the same instructions hand a double's bits to a
+64-bit integer parameter (`hash64(bits(d))`). Little-endian images only.
+
 An 8-byte VFP input that no reader takes as a double is not a parameter
 (`kuna_armfloatargs.rs (stray_vector_input)`): followed through copies, merges
 and bitwise lane edits, its value reaches only its own low word and vector user

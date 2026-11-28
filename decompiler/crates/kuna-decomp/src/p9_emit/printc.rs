@@ -8460,6 +8460,10 @@ impl PrintC {
             self.push_cast_close(&target);
             return;
         }
+        if let Some(slice) = crate::kuna_bitcast::shifted_float_storage(fd, op) {
+            self.push_word_slice_ir(fd, arch, op, slice, false);
+            return;
+        }
         // Non-special-print SUBPIECE (printc.cc:892-897): isSubpieceCast decides
         // between opTypeCast and opFunc.
         // The cast arm was previously gated out because it tripped a spurious

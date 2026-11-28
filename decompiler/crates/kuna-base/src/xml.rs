@@ -2361,7 +2361,8 @@ mod tests {
         // and kuna-gotoreduce-auto / an unoptimized function keeps the goto statements it was written with
         // and kuna-wholeinputarg / a stated parameter the caller hands on whole is passed whole
         // and kuna-wholeinputarg-be / its big-endian twin
-        assert_eq!(count, 964, "corpus file count drifted");
+        // and kuna-arm-variadic-double / an ARM hard-float double handed on in a core pair is a parameter
+        assert_eq!(count, 965, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
