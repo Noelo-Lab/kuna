@@ -1,6 +1,6 @@
 //! Port of `org/jetbrains/java/decompiler/modules/decompiler/InitializerProcessor.java`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::assignment_exprent::AssignmentExprent;
 use crate::class_wrapper::{ClassWrapper, StaticBlock, StaticBlocks};
@@ -85,8 +85,8 @@ struct HeadRuns {
 /// and those the rest of `<clinit>` (or a declaration outside the head) mentions.
 struct HeadScan {
     uses: Vec<Vec<i32>>,
-    last_use: HashMap<i32, usize>,
-    outside: HashSet<i32>,
+    last_use: BTreeMap<i32, usize>,
+    outside: BTreeSet<i32>,
     outside_class_def: bool,
 }
 
@@ -145,7 +145,7 @@ impl HeadRuns {
         let head = &self.head;
         let scan = self.scan.get_or_insert_with(|| {
             let uses: Vec<Vec<i32>> = head.iter().map(|e| local_indices(*e)).collect();
-            let mut last_use = HashMap::new();
+            let mut last_use = BTreeMap::new();
             for (at, vars) in uses.iter().enumerate() {
                 for v in vars {
                     last_use.insert(*v, at);
@@ -154,7 +154,7 @@ impl HeadRuns {
             let mut scan = HeadScan {
                 uses,
                 last_use,
-                outside: HashSet::new(),
+                outside: BTreeSet::new(),
                 outside_class_def: false,
             };
             scan_outside(root, chain, &mut scan);
