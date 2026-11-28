@@ -1,0 +1,134 @@
+<decompilertest>
+<binaryimage arch="AARCH64:LE:64:v8A">
+<!--
+    A stated parameter a function hands on whole to a call is passed whole.
+    P4 active-parameter trials (`p4_calls/kuna_wholeinputarg.rs`, no option).
+
+    An AArch64 PLT veneer (adrp x16; ldr x17,[x16,#slot]; add x16; br x17)
+    stated as `unsigned int veneer_int(struct Item *p)` passed its pointer to
+    the indirect call cut to the return width: `(*dat_2000)((int4)p)`. The
+    8-byte incoming x0 also has a 4-byte reader, the w0 of the stated return,
+    so heritage splits the register and the call's trial covers only its low
+    piece, read through heritage's own SUBPIECE of the input. The call took
+    that piece either because the SUBPIECE passed the realistic-ancestor test
+    or because fillinMap filled it as a hole below a later argument. Once the
+    trials are mapped, a used trial that is such a piece of a parameter the
+    caller's locked prototype states in that register takes the register.
+
+    Hand-assembled (GNU as, linked at 0x1000, slots at 0x2000):
+      veneer_int   unsigned int  (struct Item *p), slot 0x2000
+      veneer_char  unsigned char (char *p),        slot 0x2008
+      veneer_real  unsigned int  (unsigned int n), slot 0x2010
+      veneer_long  long          (char *p),        slot 0x2018
+      fwd    int (char *p, void *fp):          br x1
+      two    int (char *p, long n, void *fp):  br x2
+      zfwd   unsigned int (char *p, void *fp): mov w0,w0; br x1
+      sfwd   unsigned int (char *p, void *fp): sxtw x0,w0; br x1
+      zread  unsigned int (char *p, void *fp): add w2,w0,#1; br x1
+      sfld   int (struct S { int a; int b; } s, void *fp): br x1
+      vfmt   int (long u, long n): cbz w1; adr x0,"%d"; bl pr
+      pr     int (char *f, ...): ret
+
+    Assert #1 and #2: each veneer passes the whole pointer.
+    Assert #3: so do the two tail calls through an untyped function pointer.
+    Assert #4: no call passes p cut to a narrower integer.
+    Assert #5 (control): a real 32-bit operand still passes 32 bits.
+    Assert #6 (control): with an 8-byte return the register is not split, and
+    no cut pointer appears (main passes nothing there).
+    Assert #7 and #8 (controls): a zero or sign extension the code performs
+    before the call is still passed.
+    Assert #9: the pointer filled in below zread's later argument is whole.
+    Assert #10 (control): a struct's first field passed on stays the field.
+    Assert #11 (control): a variadic call keeps the int its format names.
+    Assert #12: no cut of p hides behind SUB8x or a cast assigned to a local.
+
+    No upstream issue. On the unpatched tree #1 to #4 and #9 fail and the
+    rest pass; with the fix all twelve pass. #10 fails if the stated
+    parameter's type is not checked, #11 if variadic calls are widened.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+100000b0110240f91002009120021fd6100000b0110640f91022009120021fd6
+100000b0110a40f91042009120021fd6100000b0110e40f91062009120021fd6
+20001fd640001fd6e003002a20001fd6007c409320001fd60204001120001fd6
+20001fd6fd7bbfa9fd03009161000034a000001003000094fd7bc1a8c0035fd6
+c0035fd625640000
+</bytechunk>
+<bytechunk space="ram" offset="0x2000">
+0000000000000000000000000000000000000000000000000000000000000000
+</bytechunk>
+<symbol space="ram" offset="0x1000" name="veneer_int"/>
+<symbol space="ram" offset="0x1010" name="veneer_char"/>
+<symbol space="ram" offset="0x1020" name="veneer_real"/>
+<symbol space="ram" offset="0x1030" name="veneer_long"/>
+<symbol space="ram" offset="0x1040" name="fwd"/>
+<symbol space="ram" offset="0x1044" name="two"/>
+<symbol space="ram" offset="0x1048" name="zfwd"/>
+<symbol space="ram" offset="0x1050" name="sfwd"/>
+<symbol space="ram" offset="0x1058" name="zread"/>
+<symbol space="ram" offset="0x1060" name="sfld"/>
+<symbol space="ram" offset="0x1064" name="vfmt"/>
+<symbol space="ram" offset="0x1080" name="pr"/>
+</binaryimage>
+<script>
+  <com>parse line struct Item { unsigned char tag; unsigned int value; };</com>
+  <com>parse line extern unsigned int veneer_int(struct Item *p);</com>
+  <com>parse line extern unsigned char veneer_char(char *p);</com>
+  <com>parse line extern unsigned int veneer_real(unsigned int n);</com>
+  <com>parse line extern long veneer_long(char *p);</com>
+  <com>parse line extern int fwd(char *p, void *fp);</com>
+  <com>parse line extern int two(char *p, long n, void *fp);</com>
+  <com>parse line extern unsigned int zfwd(char *p, void *fp);</com>
+  <com>parse line extern unsigned int sfwd(char *p, void *fp);</com>
+  <com>parse line extern unsigned int zread(char *p, void *fp);</com>
+  <com>parse line struct S { int a; int b; };</com>
+  <com>parse line extern int sfld(struct S s, void *fp);</com>
+  <com>parse line extern int pr(char *f, ...);</com>
+  <com>parse line extern int vfmt(long u, long n);</com>
+  <com>lo fu veneer_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu veneer_char</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu veneer_real</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu veneer_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu fwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zfwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sfwd</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu zread</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu sfld</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu vfmt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="Whole input argument #1: the int-returning veneer passes the whole pointer" min="1" max="1">v1 = \(\*dat_2000\)\(p\);</stringmatch>
+<stringmatch name="Whole input argument #2: the char-returning veneer passes the whole pointer" min="1" max="1">v1 = \(\*dat_2008\)\(p\);</stringmatch>
+<stringmatch name="Whole input argument #3: tail calls through an untyped pointer pass the whole pointer" min="2" max="2">return \(\*fp\)\(p(,n)?\);</stringmatch>
+<stringmatch name="Whole input argument #4: no call passes p cut to a narrower integer" min="0" max="0">[(,]\([A-Za-z_][A-Za-z_0-9 ]*\)p[,)]</stringmatch>
+<stringmatch name="Whole input argument #5: a real 32-bit operand still passes 32 bits" min="1" max="1">v1 = \(\*dat_2010\)\(n\);</stringmatch>
+<stringmatch name="Whole input argument #6: an 8-byte return passes no cut pointer" min="1" max="1">v1 = \(\*dat_2018\)\((p)?\);</stringmatch>
+<stringmatch name="Whole input argument #7: a zero extension before the call is still passed" min="1" max="1">return \(\*fp\)\(\(uint8\)p &amp; 0xffffffff\);</stringmatch>
+<stringmatch name="Whole input argument #8: a sign extension before the call is still passed" min="1" max="1">return \(\*fp\)\(\(int8\)\(int4\)p\);</stringmatch>
+<stringmatch name="Whole input argument #9: a pointer filled in below a later argument is whole" min="1" max="1">return \(\*fp\)\(p,fp,\(int4\)p \+ 1\);</stringmatch>
+<stringmatch name="Whole input argument #10: a struct field passed on stays the field" min="1" max="1">return \(\*fp\)\(s\.a\);</stringmatch>
+<stringmatch name="Whole input argument #11: a variadic call keeps the int its format names" min="1" max="1">return pr\("%d",\(int4\)n\);</stringmatch>
+<stringmatch name="Whole input argument #12: no cut of p through SUB8x or a cast local" min="0" max="0">SUB8[0-9]\(p,|= \([A-Za-z_][A-Za-z_0-9 ]*\)p;</stringmatch>
+</decompilertest>

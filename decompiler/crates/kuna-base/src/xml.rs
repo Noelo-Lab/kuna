@@ -2359,7 +2359,9 @@ mod tests {
         // and kuna-arm-opaque-double / an ARM hard-float double written for an opaque callee is its argument
         // and kuna-passthroughfwdstack / a forwarder's call with a stack argument takes the target's whole run
         // and kuna-gotoreduce-auto / an unoptimized function keeps the goto statements it was written with
-        assert_eq!(count, 962, "corpus file count drifted");
+        // and kuna-wholeinputarg / a stated parameter the caller hands on whole is passed whole
+        // and kuna-wholeinputarg-be / its big-endian twin
+        assert_eq!(count, 964, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
