@@ -247,6 +247,7 @@ define context contextreg
     hw_loop_end_at = (288,313) noflow
     hw_loop_tail_end = (320,343) noflow
     carmel_phase_emit = (352,352) noflow
+    carmel_pc_store_delta = (353,355) noflow
     carmel_of_route = (22,23) noflow
     carmel_cliw_95_64 = (32,63) noflow
     carmel_cliw_63_32 = (64,95) noflow
@@ -8505,6 +8506,31 @@ macro compact_store_saved_lea(pointer, step) {
     compact_store_saved_lea(saved_lea_store_ptr, saved_lea_store_step);
 }
 
+pc_store_sample: sample is carmel_pc_store_delta>=3 & hw_loop_actions=0
+    [ sample = (inst_start + carmel_pc_store_delta) & 0xffffff; ] {
+    export *[const]:4 sample;
+}
+
+macro compact_store_pc(sample) {
+    local address:2 = R1 + RN1;
+    local value:4 = sample >> ((ECFG >> 5) & 1);
+    compact_pair_long_store(address, value);
+    clock_ce();
+}
+
+@define COMPACT_PC_STORE "slot_0_22=0x31e520"
+:MOVE "long *(R1+RN1)","PC" is $(SHIFT_SEQ) & $(COMPACT_PC_STORE) & pc_store_sample {
+    compact_store_pc(pc_store_sample);
+}
+:MOVE "long *(R1+RN1)","PC" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(COMPACT_PC_STORE) & pc_store_sample); (slot_mode=0 & nop_right) {
+    compact_store_pc(pc_store_sample);
+}
+:^nop_left "||" "MOVE" "long *(R1+RN1)","PC" is
+    (carmel_issue=1 & slot_mode=0 & nop_left & pc_store_sample); (slot_mode=0 & $(COMPACT_PC_STORE)) {
+    compact_store_pc(pc_store_sample);
+}
+
 :ADDABS "CE1" "A5","*R0--","A3" is $(SHIFT_SEQ) & slot_0_22=0x1b1b87
     & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
     local admitted:1 = carmel_read_address_admission(1:1);
@@ -13385,6 +13411,13 @@ resume_2_7: word_address is epsilon [ word_address = (inst_start + 16) & 0xfffff
 :"GOTO" direct_target "||" complete_right is (carmel_issue=1 & slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; goto direct_target; }
 :^nop_left "||" "GOTO" direct_target is (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target) { clock_ce(); clock_ce(); clock_ce(); clock_ce(); goto direct_target; }
 :^complete_left "||" "GOTO" direct_target is (carmel_issue=1 & slot_mode=0 & $(COMPACT_COMPUTE) & complete_left); (slot_mode=0 & slot_0_2=0x0 & slot_13_22=0x158 & direct_target) { build complete_left; goto direct_target; }
+:"GOTO" direct_target "||" "MOVE" "long *(R1+RN1)","PC" is
+    (carmel_issue=1 & slot_mode=0 & slot_0_2=0 & slot_13_22=0x158 & direct_target & pc_store_sample);
+    (slot_mode=0 & $(COMPACT_PC_STORE)) {
+    compact_store_pc(pc_store_sample);
+    goto direct_target;
+}
+@undef COMPACT_PC_STORE
 :"GOTO" direct_target "delay 1" is carmel_next_issue_size=3 & ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) & slot_0_2=0x2 & slot_13_22=0x158 & direct_target { clock_ce(); delayslot(3); clock_ce(); clock_ce(); goto direct_target; }
 :"GOTO" direct_target "delay 1" "||" nop_right is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & nop_right) { clock_ce(); delayslot(3); clock_ce(); clock_ce(); goto direct_target; }
 :"GOTO" direct_target "delay 1" "||" complete_right is carmel_next_issue_size=3 & (carmel_issue=1 & slot_mode=0 & slot_0_2=0x2 & slot_13_22=0x158 & direct_target); (slot_mode=0 & $(COMPACT_COMPUTE) & complete_right) { build complete_right; delayslot(3); goto direct_target; }

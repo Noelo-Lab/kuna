@@ -4785,6 +4785,13 @@ accumulator and updates the issuing lane's zero and negative flags. An
 address override can advance the pointer and fetch DATA while the result
 predicate suppresses accumulator and arithmetic flag writeback.
 
+The compact indexed long `MOVE` from `PC` stores the low then high word
+at `R1+RN1` and leaves `R1` unchanged. The sampled CODE word is the third
+physical successor, counting sequential slots individually; it does not
+follow a parallel direct branch's target. `ECFG.SR1` shifts the full
+value before splitting it. The framer requires a mapped, register-only
+sample window and a mapped, forward target for the covered branch peer.
+
 Covered wide address transfers add the low 16-bit displacement to a word
 source or the `R3` address unit. Saving a CODE address preserves its upper
 byte. The open input supplies all ones; the open result discards the sum.

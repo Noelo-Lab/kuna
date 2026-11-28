@@ -4722,6 +4722,62 @@ fn tracked_carmel_entry_specs(destination: &Path, tracked: &[(&str, u16)], site:
 }
 
 #[test]
+fn carmel_compact_pc_store_samples_three_physical_successors() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("pc-store.bin");
+    let source = scratch.path().join("pc-store.c");
+    let executable = scratch.path().join("pc-store.exe");
+    let specs = scratch.path().join("specs");
+    const BASE: &str = "0x11000";
+    tracked_carmel_entry_specs(&specs, &[("R1", 0x4040), ("RN1", 2)], 0x11000, 0);
+    let nop = [0x2b, 0xec, 0];
+    let store = [0x31, 0xe5, 0x20];
+    let split = [[0xab, 0xec, 0], [0x21, 0xac, 0x20]];
+    let mut generated = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\nvolatile unsigned short pc_lo, pc_hi;\n"
+    );
+    let mut calls = String::from("int main(void) {\n");
+    for (i, (root, position, delta, accumulator)) in [
+        ([nop, store], None, 6u32, 8),
+        ([store, nop], Some(1), 4, 9),
+        ([nop, store], Some(2), 5, 9),
+        ([[0xab, 0xec, 0], store], Some(1), 4, 9),
+        ([[0x2b, 0, 0x60], store], Some(1), 4, 8),
+    ].into_iter().enumerate() {
+        let mut code = [[nop; 2]; 11];
+        code[0] = root;
+        if let Some(slot) = position { code[slot] = split; }
+        code[8][0] = [0x2b, 0xd8, 0];
+        fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            BASE, "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", BASE,
+            "--json", "--assert-strict", "--assert", "param 0 %A0L unsigned short a0",
+            "--assert", "param 1 %ECFG unsigned short ecfg", "--assert", "return %A0L unsigned short",
+            "--assert", "data [data,0x4042] volatile unsigned short pc_lo",
+            "--assert", "data [data,0x4043] volatile unsigned short pc_hi",
+        ]);
+        let report: Value = serde_json::from_slice(&common::process::required_output(&mut command).stdout).unwrap();
+        let function = &report["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        let name = format!("store_pc_{i}");
+        writeln!(generated, "#define sub_11000 {name}\n{}\n#undef sub_11000", function["code"].as_str().unwrap()).unwrap();
+        for (ecfg, shift) in [(0, 0), (0x20, 1)] {
+            let pc = (0x11000 + delta) >> shift;
+            writeln!(calls, "pc_lo = pc_hi = 0xffff;\
+                if ({name}(8,{ecfg}) != {accumulator} || pc_lo != {} || pc_hi != {}) return {};",
+                pc & 0xffff, pc >> 16, i + 1).unwrap();
+        }
+    }
+    writeln!(generated, "{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
+}
+
+#[test]
 fn carmel_wide_logic_extended_input_banks() {
     const TARGET: &str = "Carmel:BE:24:default:default";
     const BASE: &str = "0x1860";

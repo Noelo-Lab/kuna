@@ -9,6 +9,7 @@ use kuna_sleigh::loadimage::LoadImage;
 
 mod block_repeat;
 mod conditional_return;
+mod pc_store;
 mod peer_redirect;
 mod single_repeat;
 
@@ -29,6 +30,7 @@ enum Specialization {
     PeerRedirect(peer_redirect::Redirect),
     ConditionalReturn(conditional_return::ReturnDelay),
     DirectRepeat(single_repeat::DirectRepeat),
+    PcStore(pc_store::PcStore),
     ImplicitRepeat,
     AddrUpdateRightR0,
 }
@@ -316,6 +318,9 @@ pub(super) fn frame(
                 paint(&mut result.next_sizes, NEXT, addr, following_size);
             }
             loop_plans.note_fetch(addr, left, &fetch);
+            if let Some((slot, store)) = pc_store::PcStore::parse(left, &fetch) {
+                candidates.push((addr + slot, Specialization::PcStore(store)));
+            }
             if let Some(redirect) = peer_redirect::Redirect::parse(&fetch) {
                 candidates.push((addr, Specialization::PeerRedirect(redirect)));
             } else if let Some(delay) = conditional_return::ReturnDelay::parse(&fetch) {
@@ -347,6 +352,12 @@ pub(super) fn frame(
             Specialization::DirectRepeat(repeat) => {
                 if let Some(plan) = repeat.plan(start, |at| result.issue_size_at(at)) {
                     paint(&mut result.specializations, single_repeat::DIRECT, start, plan);
+                }
+                continue;
+            }
+            Specialization::PcStore(store) => {
+                if let Some(delta) = store.plan(start, |at| result.issue_size_at(at), fetch_at)? {
+                    paint(&mut result.specializations, pc_store::CONTEXT, start, delta);
                 }
                 continue;
             }
