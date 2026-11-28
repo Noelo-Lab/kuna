@@ -19,21 +19,25 @@ struct LoopSetup {
 
 impl LoopSetup {
     fn parse(issue: Issue, fetch: &Fetch) -> Option<Self> {
-        let compact = match issue {
-            Issue::Parallel if fetch[3..] == [0x2b, 0xec, 0] => Some(&fetch[..3]),
-            Issue::SeqLeft => Some(&fetch[..3]),
-            Issue::SeqRight => Some(&fetch[3..]),
-            _ => None,
+        const MAC: [u8; 3] = [0x4b, 0x9b, 0xe7];
+        let (compact, idle_peer) = match issue {
+            Issue::Parallel if fetch[3..] == [0x2b, 0xec, 0] => (Some(&fetch[..3]), true),
+            Issue::Parallel if fetch[3..] == MAC => (Some(&fetch[..3]), false),
+            Issue::Parallel if fetch[..3] == MAC => (Some(&fetch[3..]), false),
+            Issue::SeqLeft => (Some(&fetch[..3]), true),
+            Issue::SeqRight => (Some(&fetch[3..]), true),
+            _ => (None, false),
         };
         if let Some(slot) = compact.filter(|slot| slot[0] & 0x7f == 0x2a) {
-            if (1..0x80).contains(&slot[1]) {
+            if idle_peer && (1..0x80).contains(&slot[1]) {
                 return Some(Self {
                     delay: u64::from(slot[2] & 3),
                     end_words: u64::from((slot[2] >> 2) & !1),
                     count: LoopCount::Immediate,
                 });
             }
-            if issue == Issue::Parallel && matches!(slot[1] & 0xfe, 0xa6 | 0xb0) {
+            let selector = slot[1] & 0xfe;
+            if issue == Issue::Parallel && (selector == 0xa6 || (idle_peer && selector == 0xb0)) {
                 return Some(Self {
                     delay: u64::from(slot[2] & 7),
                     end_words: u64::from((u16::from_be_bytes([slot[1], slot[2]]) >> 3) & 63),

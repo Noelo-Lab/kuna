@@ -3978,6 +3978,11 @@ For `REPEAT R3`, a zero count stops after publishing the bounds. An odd
 bound only becomes a terminal issue if it is an actual sequential slot.
 The lift checks that the first following issue cannot change the sampled
 `R3` or transfer control before capture.
+For a paired compact `MPYUS` and `REPEAT R3`, the earlier address gate
+reserves `R7+RN7` and old `R3`, applies the R3 postmodifier, and latches
+`X1` or `X2`. Only the later result gate can publish `A5H` and the MAC flags;
+it cannot revive an operand fetch that was not admitted. The loop count
+uses the postmodified pointer without waiting for the MAC result.
 At a terminal issue only the active top frame can retire. An already-selected
 redirect belongs to that terminal issue; an adjacent terminal issue cannot
 consume it. A tail with a single established restart target uses a direct

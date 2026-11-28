@@ -6296,7 +6296,8 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     }
     let mut entry = String::from("<context_data><tracked_set space=\"code\">\n");
     for (name, value) in [("PSTATUS", 0x10), ("LOOP_FRAME", 0), ("LOOP_REDIRECT", 0),
-                          ("LOOP_REDIRECT_AT", 0), ("LOOP_TARGET", 0)] {
+                          ("LOOP_REDIRECT_AT", 0), ("LOOP_TARGET", 0), ("R7", 0xc048), ("RN7", 4),
+                          ("RM2", 0), ("RL2", 0), ("RM2_ALIGN", 0xffff)] {
         writeln!(entry, "<set name=\"{name}\" val=\"{value:#x}\"/>").unwrap();
     }
     for bank in 1..=4 {
@@ -6327,6 +6328,18 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     register[10] = ret;
     let mut unreachable_odd_tail = register;
     unreachable_odd_tail[7] = a0;
+    let left_multiply = [0x4b, 0x9b, 0xe7, 0x2a, 0xa7, 0x0b];
+    let right_multiply = [0x2a, 0xa7, 0x0b, 0x4b, 0x9b, 0xe7];
+    let mut paired_left = [nop; 14];
+    paired_left[0] = [0x80, 0xc0, 0x40, 0xc6, 0x42, 0x8c];
+    paired_left[7] = left_multiply;
+    paired_left[13] = ret;
+    let mut paired_right = paired_left;
+    paired_right[7] = right_multiply;
+    let multiply_inputs = &["A5H", "X1", "X2", "ECFG", "EST", "PACFG", "CECFG1", "CECFG2", "CETBL"][..];
+    let disabled = "0x1795,0x54ad,0x7a5c,0,0,0,0,0,0";
+    let address_only = "0x1795,0x54ad,0x7a5c,0,0,0,0x1000,0x1000,0";
+    let enabled = "0x1795,0x54ad,0x7a5c,0,0,0,0,0,0xffff";
     let nested = [[0xa0, 0, 0x0e, 0xce, 4, 0], [0xa0, 0, 6, 0xce, 4, 0], a0, nop, nop, nop, nop, nop, ret];
     let mut coincident = [nop; 12];
     coincident[0] = [0xa0, 0, 0x12, 0xce, 0x0c, 0];
@@ -6343,7 +6356,10 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     let breaking = transfer(break_issue);
     let transfer_inputs = &["A0L", "A1L", "A2L", "A3L", "A4L", "A5L", "ECFG", "EST"][..];
     let mut emitted = String::from(
-        "#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\nvoid carmel_zero_repeat_count(void) { abort(); }\n"
+        "#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n\
+         void carmel_zero_repeat_count(void) { abort(); }\n\
+         void carmel_data_read_conflict(void) { abort(); }\n\
+         volatile unsigned short factor = 0x1234, multiplicand = 0xfffd;\n"
     );
     let mut calls = String::from("int main(void) {\n");
     for (n, (code, base, params, reg, checks)) in [
@@ -6351,6 +6367,12 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         (&register[..], "0", &["A0L", "ECFG", "R3"][..], "A0L", &[("0,0,1", 3), ("0,0,2", 5)][..]),
         (&register[..], "0", &["A1L", "ECFG", "R3"][..], "A1L", &[("0,0,2", 2)][..]),
         (&unreachable_odd_tail[..], "0", &["R3"][..], "LC1", &[("2", 2)][..]),
+        (&paired_left[..], "0", multiply_inputs, "LC1", &[(disabled, 0xc040), (address_only, 0xc041), (enabled, 0xc041)][..]),
+        (&paired_left[..], "0", multiply_inputs, "X1", &[(disabled, 0x54ad), (address_only, 0x1234)][..]),
+        (&paired_left[..], "0", multiply_inputs, "A5H", &[(address_only, 0x1795), (enabled, 0xffff)][..]),
+        (&paired_right[..], "0", multiply_inputs, "LC1", &[(disabled, 0xc040), (address_only, 0xc041)][..]),
+        (&paired_right[..], "0", multiply_inputs, "X2", &[(disabled, 0x7a5c), (address_only, 0x1234)][..]),
+        (&paired_right[..], "0", multiply_inputs, "A5H", &[(address_only, 0x1795), (enabled, 0xffff)][..]),
         (&nested[..], "0", &["A0L", "ECFG"][..], "A0L", &[("10,0", 14)][..]),
         (&nested[..], "0", &[][..], "LC1", &[("", 0)][..]),
         (&nested[..], "0", &[][..], "LC2", &[("", 0)][..]),
@@ -6377,6 +6399,10 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         ]);
         if code.get(3) == Some(&continue_issue) {
             kuna.args(["--assert", "jumptable 6 6"]);
+        }
+        if code.get(7).is_some_and(|slot| [left_multiply, right_multiply].contains(slot)) {
+            kuna.args(["--assert", "data [data,0xc04c] volatile unsigned short factor",
+                       "--assert", "data [data,0xc040] volatile unsigned short multiplicand"]);
         }
         for (i, input) in params.iter().enumerate() {
             kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);

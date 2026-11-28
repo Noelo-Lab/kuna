@@ -8093,6 +8093,51 @@ macro compact_pair_read_check(first, second) {
   <fetch>
 }
 
+# D2 reserves both reads and updates R3. OF latches X even if EX is vetoed.
+# The repeat's count samples R3 separately, after the next D2.
+macro compact_repeat_multiply(gate, cfg, bank, shift, x) {
+    local admitted:1 = carmel_read_address_admission(gate);
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    if (admitted == 0) goto <publish>;
+    local first:2 = R7 + RN7;
+    local second:2 = R3;
+    modify_native_agu(R3, 1:2, RM2, RL2, RM2_ALIGN, 6:4, 4:2);
+    compact_pair_read_check(first, second);
+    x = *[data]:2 first;
+    local word:2 = *[data]:2 second;
+    local enabled:2;
+    unary_ce(cfg, incoming, CETBL, bank, enabled);
+    if (enabled == 0) goto <publish>;
+    local product:8;
+    raw_mac_product(x, word, 0:1, 1:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 1:1, 1:1, 0:1, 0:1, result, active);
+    A5H = result(2);
+    raw_mac_flags(flags, active, shift);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+    carmel_end_unmodeled_issue();
+}
+
+@define COMPACT_R3_REPEAT "slot_mode=0 & slot_16_22=0x2a & slot_15_15=1 & hw_loop_reg_source=19 & loop_register_endpoint & hw_loop_reg_delay"
+with : hw_loop_phase=1 & carmel_issue=1 & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
+:MPYUS "CE1" "A5H","*(R7+RN7)","*R3++" "||" "REPEAT R3",loop_register_endpoint "delay" hw_loop_reg_delay is
+    (slot_mode=0 & slot_0_22=0x4b9be7 & $(BLOCK_LOOP_PLAN)); ($(COMPACT_R3_REPEAT)) {
+    carmel_prove_repeat_r3_sample(loop_start_at, R3);
+    arm_block_loop(0:2, 0x1c:1, $(ARM_LOOP_PLAN));
+    compact_repeat_multiply(1:1, CECFG1, 0:2, 0:4, X1);
+}
+:REPEAT "R3",loop_register_endpoint "delay" hw_loop_reg_delay "||" "MPYUS CE2" "A5H","*(R7+RN7)","*R3++" is
+    ($(COMPACT_R3_REPEAT) & $(BLOCK_LOOP_PLAN)); (slot_mode=0 & slot_0_22=0x4b9be7) {
+    carmel_prove_repeat_r3_sample(loop_start_at, R3);
+    arm_block_loop(0:2, 0x1c:1, $(ARM_LOOP_PLAN));
+    compact_repeat_multiply(2:1, CECFG2, 1:2, 6:4, X2);
+}
+}
+@undef COMPACT_R3_REPEAT
+
 macro compact_mixed_square_commit(lo, hi, guard, incoming, flags) {
     local enabled:2;
     unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
