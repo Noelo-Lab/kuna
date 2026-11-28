@@ -2349,6 +2349,7 @@ mod tests {
         // and kuna-devirtualize / a VM-protected entry stub devirtualized (deobfuscate devirtualize)
         // and kuna-devirtualize-sound / a devirtualized body says nothing false about its program
         // and kuna-devirtualize-interp / an in-function bytecode interpreter devirtualized (deobfuscate devirtualize)
+        // and kuna-devirtualize-frame / a read through a computed frame address stays ahead of a direct write it may read
         // and kuna-spillptr-loadguard / a LOAD through a spilled stack pointer is guarded
         // and kuna-piececover / a byte saved across a wider write of its slot keeps its old value
         // and kuna-regionedgeorder-preset / mode aggressive leaves regionedgeorder off
@@ -2362,7 +2363,7 @@ mod tests {
         // and kuna-wholeinputarg / a stated parameter the caller hands on whole is passed whole
         // and kuna-wholeinputarg-be / its big-endian twin
         // and kuna-arm-variadic-double / an ARM hard-float double handed on in a core pair is a parameter
-        assert_eq!(count, 965, "corpus file count drifted");
+        assert_eq!(count, 966, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

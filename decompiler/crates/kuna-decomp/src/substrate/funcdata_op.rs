@@ -1235,6 +1235,7 @@ impl Funcdata {
                 .expect("cseElimination: op1 has no output (C++ UB)");
             let to = self.obank().get(replace).expect("cse_elimination").get_out()
                 .expect("cseElimination: replace has no output (C++ UB)");
+            self.cse_join_consume(from, to);
             self.total_replace(from, to)?;
             self.op_destroy(op1);
         }
@@ -1243,10 +1244,25 @@ impl Funcdata {
                 .expect("cseElimination: op2 has no output (C++ UB)");
             let to = self.obank().get(replace).expect("cse_elimination").get_out()
                 .expect("cseElimination: replace has no output (C++ UB)");
+            self.cse_join_consume(from, to);
             self.total_replace(from, to)?;
             self.op_destroy(op2);
         }
         Ok(replace)
+    }
+
+    /// (kuna) The Varnode that survives a common-subexpression elimination
+    /// takes the readers of the one it replaces, so it is consumed wherever
+    /// either was.  Upstream leaves its mask as dead-code removal last
+    /// computed it, and until the next pass `RuleOrConsume` and
+    /// `ActionVarnodeProps` could take a bit only the replaced Varnode's
+    /// readers use as unread and drop the value.
+    fn cse_join_consume(&mut self, from: VarnodeId, to: VarnodeId) {
+        let Some(gone) = self.vbank().get(from).map(|v| v.get_consume()) else { return };
+        if let Some(kept) = self.vbank_mut().get_mut(to) {
+            let all = kept.get_consume() | gone;
+            kept.set_consume(all);
+        }
     }
 
     /// Return a unique-space Varnode defined by a COPY of `vn`, usable at `point`

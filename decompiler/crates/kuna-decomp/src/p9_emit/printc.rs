@@ -10683,6 +10683,13 @@ impl PrintC {
             }
         }
 
+        if allow_cast && finalcast.is_none() && !stack.is_empty() {
+            if let (Some(member), Some(value)) = (&ct, fd.vbank().get(vn).map(|v| v.get_type())) {
+                if super::kuna_piecesign::changes_sign(value, member) {
+                    finalcast = Some(std::rc::Rc::clone(value));
+                }
+            }
+        }
         let result_type = finalcast.clone().or(ct);
         PartialWalk { stack, finalcast, unnamed_in, result_type }
     }

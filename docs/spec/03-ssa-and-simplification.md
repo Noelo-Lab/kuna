@@ -1105,7 +1105,24 @@ interpreter's operand-stack slots hold pointers and values in turn, the walk
 takes every read of such a slot for the pointer, and so every slot the
 program's values are copied into would count as a spill. Later passes force the guard's
 whole window (`heritage.rs (Heritage::end_spill_guards)`), as for the guard
-upstream's rerun records. A guard
+upstream's rerun records.
+
+The walk runs before the stack is in SSA form, so it cannot tell which write a
+read of a spill slot sees and walks every read of the slot with one pointer
+state. A slot may be written in more than one: an interpreter's operand-stack
+slot holds the address of a variable at one instruction and that address plus
+an index at another, and a compiler reuses a spill slot the same way. Walked
+with the state of whichever write the walk met first, the reads behind an
+indexed pointer could pass for reads of a plain one, their LOADs got no guard
+before the pass placed its guards, and the rerun after renaming found them too
+late for the ranges already renamed: a direct write that only such a LOAD reads
+was removed as dead. The states written to a slot are therefore joined, to the
+lowest offset and the union of the traversal flags
+(`kuna_spillstate.rs (SpillStates)`), and the walk is repeated, its guards and
+spill records taken back, while a slot was walked with less than its join. A
+slot written in one state is walked once, as before. Of 999 Tigress
+`Virtualize` samples this accounts for 63 of the 83 whose printed C computed
+something else, 57 of them with `--VirtualizeDispatch=direct`. A guard
 is born covering the **entire space**
 (`LoadGuard::set`: minimum 0, maximum the space's highest offset). A STORE
 whose pointer is still a free varnode cannot be classified yet: it is
@@ -2888,6 +2905,17 @@ these steps and prints the same output with the option on or off. Off restores
 the earlier output on truncated targets byte for byte: the port had
 `RulePtrFlow` stubbed out (its op list was always empty), the stack register
 was a single wide input, and `RuleSelectCse` visited every op.
+
+A common-subexpression elimination leaves one of two ops computing the same
+value and gives its output the readers of the other
+(`decompiler/crates/kuna-decomp/src/substrate/funcdata_op.rs (Funcdata::cse_elimination)`).
+The consume masks are those the last dead-code pass computed, one per
+Varnode, and upstream keeps the survivor's: a bit only the replaced Varnode's
+readers use then reads as unconsumed until the next pass, and `RuleOrConsume`
+or `ActionVarnodeProps` may drop the value in between (a `SUBPIECE` kept for
+its top byte took over a twin read in full, and was replaced by zero). The
+survivor's mask becomes the union of the two
+(`funcdata_op.rs (Funcdata::cse_join_consume)`).
 
 `decompiler/crates/kuna-decomp/src/p3_dataflow/subflow.rs (SubvariableFlow)`
 shrinks a logical value out of a larger container: given a *root* varnode and a

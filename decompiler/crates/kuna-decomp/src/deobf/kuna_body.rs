@@ -85,6 +85,9 @@ pub struct BodyPolicy {
     pub restructure_after_deadcode: bool,
     /// The rules for arithmetic residue apply (rule pool).
     pub residue_rules: bool,
+    /// A LOAD is printed ahead of every direct write to frame storage it may
+    /// read (variables).
+    pub loads_before_frame_writes: bool,
 }
 
 /// The facts and policy of a function lifted from its own bytes.
@@ -102,6 +105,7 @@ pub static NATIVE: BodyFacts = BodyFacts {
         inputs_by_dataflow: false,
         restructure_after_deadcode: false,
         residue_rules: false,
+        loads_before_frame_writes: false,
     },
 };
 

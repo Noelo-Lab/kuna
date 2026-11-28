@@ -766,6 +766,16 @@ parameter in one variable, and if the reload that follows a call clobbering the
 same storage is called redundant and silenced, the emitted C returns the call's
 result on a path where the binary returns the parameter.
 
+Upstream looks only at the HighVariable's own instances. A variable that is a
+piece of a larger symbol shares its storage with the pieces laid over it, and a
+write of one of those changes it as well: a two-byte slot copied to, its two
+bytes then written one at a time, and the slot copied to again from the same
+source had the second COPY, which restores the slot, silenced. The writes of
+every variable whose piece intersects the high's piece count as intervening
+(`kuna_overlapwrites.rs (overlapping_writes)`), except those of ops already
+marked non-printing: a PIECE or SUBPIECE view of storage its inputs occupy
+writes nothing.
+
 The copy marker also runs
 `decompiler/crates/kuna-decomp/src/p6_variables/kuna_undefinedcopy.rs` for trim
 copies whose source is an INDIRECT creation explicitly marked as killed by a
@@ -3809,6 +3819,11 @@ COPY or arithmetic operations after lifting, so the ordinary STORE-only alias
 check is insufficient. Known frame ranges use byte overlap; unresolved pointers
 may observe locally aliased storage, while literal global addresses cannot name
 this frame. Marker versions are not writes. The check is enabled by stackviews.
+In a recovered body whose policy asks for it (`BodyPolicy::loads_before_frame_writes`,
+chapter [10](10-deobfuscation.md)) it is always on and counts every write of an
+address-tied frame Varnode: a devirtualized body's frame writes are direct
+COPYs, its reads go through computed addresses, and a read with two uses was
+printed inside both, the second after a write of the slot it reads.
 
 The bounded local policy (always on) is
 `decompiler/crates/kuna-decomp/src/p6_variables/kuna_localstackviews.rs`.

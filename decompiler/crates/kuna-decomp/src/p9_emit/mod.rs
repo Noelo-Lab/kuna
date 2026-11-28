@@ -10,6 +10,7 @@ pub mod printc;
 pub(crate) mod kuna_fieldextract;
 pub(crate) mod kuna_voidtailswitch;
 pub mod kuna_partialconcat;
+pub mod kuna_piecesign;
 pub mod kuna_partialaccess;
 pub mod kuna_widelocal;
 pub mod kuna_postinc; // (kuna `postinc`) `*p++` for a pointer step after its dereference

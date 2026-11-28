@@ -96,6 +96,7 @@ read by one stage:
 | `inputs_by_dataflow` | call prototypes | argument trials skip the local-alias test |
 | `restructure_after_deadcode` | structuring | the structure is rebuilt once dead code may be removed in every space |
 | `residue_rules` | rule pool | the arithmetic-residue rules apply |
+| `loads_before_frame_writes` | variables | a LOAD is printed ahead of every direct write of frame storage it may read |
 
 A deobfuscator states the policy of the bodies it recovers; the reasons for
 the VM devirtualizer's are in §10.2. A stage that needs to treat recovered
