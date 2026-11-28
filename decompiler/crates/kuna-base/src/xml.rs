@@ -2362,7 +2362,8 @@ mod tests {
         // and kuna-wholeinputarg / a stated parameter the caller hands on whole is passed whole
         // and kuna-wholeinputarg-be / its big-endian twin
         // and kuna-arm-variadic-double / an ARM hard-float double handed on in a core pair is a parameter
-        assert_eq!(count, 965, "corpus file count drifted");
+        // and kuna-gotslotimports / a call through an import's GOT slot takes the import's prototype and no-return
+        assert_eq!(count, 966, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

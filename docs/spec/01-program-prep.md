@@ -2450,6 +2450,11 @@ funcsym stream:
   produces nothing rather than guessing at a number that means something else
   there.
 
+  A default-visible function definition in a shared object may be interposed.
+  The loader retains its local address as an ABI-recovery candidate. The
+  read-only fold withholds that address when its prototype carries no-return.
+  Direct calls to the local implementation can still use the body fact.
+
   Applying the relocation is only half of it. `.got` is `SHF_WRITE`, so nothing
   downstream would trust a value read out of it, and the constant fold of
   read-only storage is gated program-wide by `option readonly`
@@ -2651,8 +2656,27 @@ funcsym stream:
   renders the read as the import (`importdata`, chapter [09](09-emission.md)):
   `return imported_counter;`, `return environ;`, `stdout`. Painting the slot also
   lets `ActionDeindirect` bind a call through it (`(*dat_e9f30)()` becomes
-  `__cxa_finalize()`), the binding `peimportcall` gives a PE or Mach-O slot. A slot
-  whose symbol the image defines is never taken. `dynrelocs` already fills it in and
+  `__cxa_finalize()`), the binding `peimportcall` gives a PE or Mach-O slot.
+  Because a call or tail jump through the slot resolves to the slot's
+  `FunctionSymbol`, the slot of an import that may be code (a function or
+  untyped symbol, not a data object or a TLS entity: `function_slots`) also
+  takes the import's address-keyed facts: the library prototypes of `libproto`,
+  `libcsigs`, `libctypes` and `libgccsigs` (through `protos::loaded_import_addrs`)
+  and a `noreturn_known` fact. The by-name prototype park cannot stand in for
+  them, because it lands on the first `FunctionSymbol` of that name. When the
+  link has a PLT or `.plt.got` stub for the import, that first symbol is the
+  stub. GNU ld emits a `.plt.got` stub whenever an import is reached both
+  through its slot and through the PLT: a `-fno-plt` object linked with ordinary
+  ones, or an import whose address is also taken. Calls through the slot then
+  printed `strlen()` for `strlen(a0)`. A no-return fact has no by-name route to
+  the slot, so `call *exit@GOTPCREL(%rip)` used to run on into the next function
+  or `halt_missing()` even with no stub. With `importdata` off no symbol is
+  registered at the slot, so its prototypes park nowhere. Its no-return fact
+  falls back to the import's name like any fact whose address names no function.
+  The commit also records each slot whose FunctionSymbol ends up no-return, and
+  the flow makes a call through one direct (chapter [02](02-lift-and-flow.md)),
+  so resolving it does not restart the function.
+  A slot whose symbol the image defines is never taken. `dynrelocs` already fills it in and
   folds it to the object (`exported_value`, `&exported_value`), and `externref` would
   stop that fold. The same holds for a local GOT entry (`RELATIVE` to an in-image
   object) inside RELRO, which the fold above already renders as the object. A
@@ -2696,6 +2720,11 @@ funcsym stream:
   third user of the same "constant by construction, not by policy" exception, and
   the one that needs no loader pass at all — only the section table the loader
   already reports.
+
+  On x86, treating an import slot as the function it names also requires the
+  whole pointer to be in one readable file-backed load segment, either
+  read-only or sealed by RELRO. A writable slot can be reassigned after
+  relocation; reads there retain their ordinary memory semantics.
 
   An ARM immediate too wide for the instruction encoding is not in the
   instruction: the compiler parks it in a **literal pool** in `.text` and loads it
@@ -3643,7 +3672,9 @@ moves.
   emits the same signature at every concrete address the format resolver reports.
   This is required on PE, where the IAT slot and its `FF 25` veneer are separate
   `FunctionSymbol`s with the same name and a direct call reads the veneer's
-  prototype by entry address.
+  prototype by entry address. On ELF the address list also holds each code
+  import's `GLOB_DAT` slot, which `elfgotimports` registers as a second
+  `FunctionSymbol` of the import's name (see the ELF GOT data imports above).
   ELF relocatable objects also contribute the loader's proven external code targets,
   including undefined `STT_NOTYPE` symbols reached by call relocations. Their
   synthetic target addresses receive the same signature as ordinary imports;
@@ -11740,9 +11771,10 @@ a `_gfortran_` prefix), widened by a Rust wildcard list (`core::panicking::panic
 `runtime.throw`, `runtime.goexit`, …) when source-language detection fires (§1.4),
 or replaced by the PE/Mach-O list (`__fastfail`, `_invoke_watson`, the same GNU
 Fortran block, plus the shared C names) off-ELF. The scan mirrors the exact symbol
-streams the loader installs and emits the *install* address — for a UND import, the
-PLT-stub address, since the `.dynsym` entry is address 0 and demangling means a
-raw-name lookup would miss. One name is matched only as an import and only as
+streams the loader installs and emits the *install* address. For a UND import that
+is the PLT-stub address, since the `.dynsym` entry is address 0 and demangling
+means a raw-name lookup would miss. It is also the import's `GLOB_DAT` slot, the
+`FunctionSymbol` that a `-fno-plt` call through the slot resolves to. One name is matched only as an import and only as
 spelled: `__stack_chk_fail_local`, which glibc `debug/stack_chk_fail_local.c`
 declares `noreturn`, at each import resolver address and each relocatable
 object's undefined code extern, so its call prints `// no-return` and nothing

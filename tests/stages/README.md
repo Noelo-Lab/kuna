@@ -199,6 +199,20 @@ the stub `exit` keeps today's `exit();`. The same glibc image keeps
 `strlen(a0) + 1`, and `sincos`, which no table declares on MIPS, keeps today's
 recovery.
 
+`kuna-gotslotimports.xml` loads GCC x86-64 shared objects whose `-fno-plt`
+code calls and tail-jumps through each import's `GLOB_DAT` slot. Where a PLT
+caller in the same link gives the import a `.plt.got` stub,
+- `first`'s `strlen(a0)` keeps its argument, as do `release`'s `free(a0)`,
+  `length`'s `strlen(a0)` and `same`'s `memcmp(a0,a1,a2)`;
+- `check`'s `exit(2)` is no-return, and so it is where no stub exists.
+
+Main printed `strlen()`, `free()` and `memcmp()`, and ran past `exit` into the
+next function or unmapped memory. The PLT callers and the no-stub image's
+calls stay unchanged. So do the slot calls of a last load with `option
+importdata off`: there no symbol sits at a slot, so its facts park nowhere. A
+strict fix with one pass. The fixtures and their recipe are in
+`tests/fixtures/got-slot-imports/`.
+
 `kuna-ppc64-plt-stubs.xml` checks PowerPC64 ELFv2 shared objects whose
 wrappers call `free` and `strlen` through each linker stub form: GNU ld's
 TOC stub with and without the `r2` save, its pc-relative stub for Power10

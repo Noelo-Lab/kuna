@@ -966,6 +966,28 @@ itself
 `__thiscall` or `__stdcall` import pops what its declaration says instead of
 what the push run in front of it suggests.
 
+(kuna `elfgotimports`) A CALLIND through an ELF import's `GLOB_DAT` slot is
+made direct there as well when the FunctionSymbol at the slot is no-return
+(01, `noreturn_known`)
+(`decompiler/crates/kuna-decomp/src/p2_lift/kuna_msvcimportcall.rs
+(noreturn_import_slot)`). The match is the same one: the target is the word the
+call's own instruction reads from a constant address, and that address is in the
+set the analysis commit recorded after it committed the no-return facts
+(`noreturn_import_slots`) and is painted external. For an x86-64 dynamic
+ELF, the displacement of the RIP-relative transfer must resolve to that slot.
+An absolute word with the same link-time VMA can belong to a different image
+at runtime. The later indirect-call resolution applies the same check before
+adopting an external function's no-return prototype. `ActionDeindirect` restarts
+the function for every no-return callee it resolves. A `-fno-plt` x86-64 image
+calls `__stack_chk_fail` through its slot (`call *__stack_chk_fail@GOTPCREL(%rip)`)
+in nearly every function that has a stack protector, so that restart doubled the
+work on such an image. Made direct here, the call ends the flow the way a call to
+the import's PLT stub does, and the function's other calls are decompiled as they
+are without the no-return fact. A call whose slot address is not a constant of its own
+instruction (an AArch64 `ldr` and `blr`, clang's `-O0` `mov` and `call *%rax`,
+an i386 `call *f@GOT(%ebx)`) is not matched and is still resolved at
+`ActionDeindirect`.
+
 (kuna `--assert callee`) The reader can plant the same indirect override. A
 front-end parks `call site -> callee entry` facts on the architecture, keyed
 by the entry of the function that holds the call, and

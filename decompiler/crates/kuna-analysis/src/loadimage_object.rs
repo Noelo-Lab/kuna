@@ -625,6 +625,7 @@ pub struct ObjectLoadImage {
     ///
     /// Empty for a non-ELF linked image, and with both gates off.
     dynreloc_const: Vec<(u64, u64)>,
+    pub preemptible_functions: Vec<(u64, u64)>,
     /// (kuna) The image's **import pointer slots** as half-open `[lo, hi)` VMA
     /// ranges — the PE Import Address Table words a run-time loader fills with a
     /// resolved import address. [`Self::funcsyms`] carries a `FunctionSymbol` at
@@ -641,6 +642,9 @@ pub struct ObjectLoadImage {
     plt_local: Vec<(u64, u64)>,
     /// MIPS ELF lazy-binding stubs and GOT-proven imports, found once at load.
     mips_linkage: Option<crate::loader::kuna_mipsstubs::MipsLinkage>,
+    /// Each code import's `GLOB_DAT` GOT slot, listed once at load
+    /// ([`crate::loader::kuna_elfgotimports::function_slots`]).
+    got_function_slots: Vec<(u64, Vec<u8>)>,
     elfv1: crate::loader::elfv1::Descriptors,
     elf_functions: ElfFunctionProvenance,
     /// The address space the file bytes map to (C++ `spaceid`, null until
@@ -1248,6 +1252,7 @@ impl ObjectLoadImage {
             built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
+            got_function_slots: crate::loader::kuna_elfgotimports::function_slots(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1271,6 +1276,7 @@ impl ObjectLoadImage {
             data_objects: crate::loader::kuna_globalref::merged_ranges(data_object_rows),
             const_ranges,
             dynreloc_const,
+            preemptible_functions: dynrelocs.preemptible_functions,
             import_slots,
             nullable_relocations: Vec::new(),
             function_address_aliases: Vec::new(),
@@ -1433,6 +1439,7 @@ impl ObjectLoadImage {
             built_by_clang: crate::loader::kuna_spillselects::built_by_clang(&file),
             float_hardware: crate::loader::kuna_armfloatabi::fp_hardware(&file),
             callee_extends_returns: crate::loader::kuna_returnext::callee_extends_returns(&file),
+            got_function_slots: crate::loader::kuna_elfgotimports::function_slots(&file),
             archtype,
             fallback_archtype,
             bytes: Arc::new(SegmentBytes { segments }),
@@ -1460,6 +1467,7 @@ impl ObjectLoadImage {
             // `msvcfpconst`, whose ranges qualify for exactly the same reason —
             // a datum that is known by construction, not by policy — and from
             // a MIPS object's synthetic GOT.
+            preemptible_functions: Vec::new(),
             dynreloc_const: fpconst
                 .const_ranges
                 .into_iter()
@@ -1669,6 +1677,12 @@ impl ObjectLoadImage {
     /// Data-only external references have allocated VMAs but no record here.
     pub fn reloc_symbols(&self) -> &[crate::loader::reloc_object::RelocSymbolInfo] {
         &self.reloc_symbols
+    }
+
+    /// Each code import's `GLOB_DAT` GOT slot and import name
+    /// ([`crate::loader::kuna_elfgotimports::function_slots`]).
+    pub(crate) fn got_function_slots(&self) -> &[(u64, Vec<u8>)] {
+        &self.got_function_slots
     }
 
     /// The loader's **data** symbols as `(vma, name, size)` triples — the
@@ -1941,7 +1955,7 @@ impl LoadImage for ObjectLoadImage {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }
-        for r in &mut self.plt_local {
+        for r in self.plt_local.iter_mut().chain(&mut self.preemptible_functions) {
             r.0 = r.0.wadd(badjust);
             r.1 = r.1.wadd(badjust);
         }

@@ -5318,6 +5318,9 @@ pub(crate) fn bootstrap_object(
     let parsed = is_arm32_language(&arch_id)
         .then(|| kuna_analysis::loadimage_object::parse_object(&*bytes).ok())
         .flatten();
+    sleigh.base_mut().unwrap().x86_dynamic_elf = arch_id.starts_with("x86:LE:")
+        && bytes.starts_with(b"\x7fELF")
+        && matches!(bytes.get(16..20), Some([3, 0, 62 | 3, 0]));
     let mips_linkage = loader.mips_linkage().filter(|_| arch_id.starts_with("MIPS:")).cloned();
     let isa = isa.or_else(|| {
         let file = parsed.as_ref()?;
@@ -5406,6 +5409,9 @@ pub(crate) fn bootstrap_object(
     // paints `Varnode::readonly`; this second list is what lets
     // `ActionVarnodeProps` FOLD those particular reads without the program-wide
     // `option readonly`. Empty for a non-ELF, an `ET_REL` object, or the gate off.
+    let mut preemptible = std::mem::take(&mut loader.preemptible_functions);
+    preemptible.sort_unstable();
+    sleigh.base_mut().unwrap().preemptible_functions = Rc::new(preemptible);
     let dynreloc_const: Vec<(u64, u64)> = loader.dynreloc_const_ranges().to_vec();
 
     // (kuna, RE-need `bulk-decompilation-decodes-pe`) The import pointer slots,
@@ -6209,6 +6215,14 @@ fn commit_analysis_output(
         };
         if let Some(sid) = sid {
             prog.arch_mut().symboltab.set_function_no_return(sid, true);
+        }
+    }
+    // (kuna `elfgotimports`) The import slots now no-return, so the flow makes a
+    // call through one direct (`kuna_msvcimportcall::noreturn_import_slot`).
+    for (slot, _) in &out.import_slot_names {
+        let addr = Address::new(Rc::clone(code_space), *slot);
+        if prog.arch().symboltab.function_is_no_return_across_scopes(&addr) {
+            prog.arch_mut().noreturn_import_slots.insert((code_space.get_index(), *slot));
         }
     }
 
