@@ -543,6 +543,9 @@ impl IrEncoder<'_> {
             }
         }
         if let Some(capture) = boundary.filter(|_| !seeded) {
+            for (out, value) in &values {
+                self.write_backing(&mut state, out, value)?;
+            }
             let carried = capture
                 .carried
                 .iter()
@@ -767,16 +770,21 @@ impl IrEncoder<'_> {
     }
 
     fn assign(&self, state: &mut IrState, out: &Out, value: Term) -> Result<(), String> {
+        self.write_backing(state, out, &value)?;
+        state.assign(out, value)
+    }
+
+    fn write_backing(&self, state: &mut IrState, out: &Out, value: &Term) -> Result<(), String> {
         if let Some(storage) = &out.backing {
             let address = self.locations.fixed_address(storage)?;
             state.memory.store(
                 address,
-                &value,
+                value,
                 self.locations.ram_big_endian,
                 &state.defined,
             )?;
         }
-        state.assign(out, value)
+        Ok(())
     }
 }
 

@@ -4187,11 +4187,12 @@ states. With a visit bound, the encoders preserve the path predicates at
 each loop cut. An SMT query checks that at least one input completes on
 both sides before a bounded equivalence result. A separate query must
 prove all cuts unreachable to claim equivalence for the full declared
-model. Register-only induction instead splits each execution at a loop
-cutpoint. The prover establishes a relation between the machine registers
-and final-IR phi values on entry, proves preservation across another
-iteration, compares the exits and checks strict decrease of an unsigned
-ranking term on each iteration. See
+model. Induction splits each execution at a loop cutpoint. The prover
+relates machine register and declared memory values to their final-IR
+phi values. It checks the relation and observed bytes at the cutpoint,
+proves preservation across another iteration, compares the exits and
+checks strict decrease of an unsigned register ranking term on each
+iteration. See
 `docs/features/diffverify/symbolic-memory.md`.
 
 For RV64 integer leaves, the independent ISA check runs the executable's
@@ -4200,6 +4201,14 @@ register reads to the same argument state as the raw-p-code and final-IR
 encoders. An SMT coverage query rules out inputs omitted from the model
 traces. The two observation equalities compose over the common full-width
 `a0` result. See `docs/features/diffverify/formal-rv64.md`.
+
+Symbolic reports archive their exact queries and digests. The certificate
+workflow checks the satisfiable domains with cvc5 and verifies each
+required refutation with Ethos under the CPC signature. Its evidence
+retains the original scope and repeat limits. The evidence export also
+records sampled and external comparisons with their own assurance and
+coverage. See `docs/features/diffverify/proof-certificates.md` and
+`docs/features/diffverify/verification-evidence.md`.
 
 ## 0.7 Feedback edges
 

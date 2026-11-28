@@ -130,27 +130,12 @@ pub(super) fn observed_terms(
     let right_value = normalize(&right)?;
     let (la, lv) = (emitter.name(&left.defined), emitter.name(&left_value));
     let (ra, rv) = (emitter.name(&right.defined), emitter.name(&right_value));
-    let mut mismatch = format!("(or (distinct {la} {ra}) (distinct {lv} {rv})");
-    use std::fmt::Write as _;
-    let mut lmem = left.memory.observed_bytes();
-    let mut rmem = right.memory.observed_bytes();
-    loop {
-        match (lmem.next(), rmem.next()) {
-            (Some((lk, lvalue)), Some((rk, rvalue))) if lk == rk => {
-                if !Rc::ptr_eq(lvalue, rvalue) {
-                    let _ = write!(
-                        mismatch,
-                        " (distinct {} {})",
-                        emitter.name(lvalue),
-                        emitter.name(rvalue)
-                    );
-                }
-            }
-            (None, None) => break,
-            _ => return Err("symbolic backends disagree on the memory projection".into()),
-        }
-    }
-    mismatch.push(')');
+    let mut differences = vec![
+        format!("(distinct {la} {ra})"),
+        format!("(distinct {lv} {rv})"),
+    ];
+    differences.extend(memory_differences(emitter, &left.memory, &right.memory)?);
+    let mismatch = format!("(or {})", differences.join(" "));
     let coverage_gap = (left.memory.enabled()
         || right.memory.enabled()
         || left.memory.needs_coverage_check()
@@ -170,6 +155,31 @@ pub(super) fn observed_terms(
         coverage_gap,
         completion_gap,
     })
+}
+
+pub(super) fn memory_differences(
+    emitter: &mut Emitter,
+    left: &super::memory::Memory,
+    right: &super::memory::Memory,
+) -> Result<Vec<String>, String> {
+    let mut left = left.observed_bytes();
+    let mut right = right.observed_bytes();
+    let mut differences = Vec::new();
+    loop {
+        match (left.next(), right.next()) {
+            (Some((lk, lvalue)), Some((rk, rvalue))) if lk == rk => {
+                if !Rc::ptr_eq(lvalue, rvalue) {
+                    differences.push(format!(
+                        "(distinct {} {})",
+                        emitter.name(lvalue),
+                        emitter.name(rvalue)
+                    ));
+                }
+            }
+            (None, None) => return Ok(differences),
+            _ => return Err("symbolic backends disagree on the memory projection".into()),
+        }
+    }
 }
 
 fn valid(term: &Term) -> bool {

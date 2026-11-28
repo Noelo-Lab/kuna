@@ -92,6 +92,25 @@ impl Memory {
             .map(|(address, cell)| (address, &cell.value))
     }
 
+    pub fn observes_range(&self, address: u64, size: u32) -> bool {
+        self.window_at(address).is_some_and(|window| {
+            window.observed
+                && address
+                    .checked_add(u64::from(size))
+                    .is_some_and(|end| end <= window.start + u64::from(window.size))
+        })
+    }
+
+    pub fn with_fresh_observations(&self, mut fresh: impl FnMut(u64) -> Term) -> Self {
+        let mut memory = self.clone();
+        for (&address, cell) in &mut memory.bytes {
+            if self.observes_range(address, 1) {
+                cell.value = fresh(address);
+            }
+        }
+        memory
+    }
+
     pub fn load(
         &mut self,
         address: Term,

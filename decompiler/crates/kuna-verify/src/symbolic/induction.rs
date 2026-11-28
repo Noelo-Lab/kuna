@@ -15,7 +15,7 @@ use crate::{oracle, state::Env};
 
 use super::byte_file::ByteFile;
 use super::execute::{constant, ir_block, Execution, IrBoundary, RawState};
-use super::memory::Memory;
+use super::memory::{Memory, ReadMode};
 use super::raw_function::{RawBoundary, RawFunction};
 use super::solver::{self, Status};
 use super::terms::{self, Term};
@@ -28,7 +28,12 @@ pub(super) struct Cutpoint {
 }
 
 impl Cutpoint {
-    pub fn infer(program: &Program, register_space: i32) -> Result<Self, String> {
+    pub fn infer(
+        program: &Program,
+        register_space: i32,
+        ram_space: i32,
+        memory: &Memory,
+    ) -> Result<Self, String> {
         // Reduce the IR to a DAG by removing candidate latch edges. The
         // encoders later require every remaining region to be acyclic.
         let mut color = vec![0u8; program.blocks.len()];
@@ -68,21 +73,26 @@ impl Cutpoint {
                     .storage
                     .as_ref()
                     .filter(|storage| {
-                        storage.space.get_index() == register_space
-                            && matches!(storage.size, 1 | 2 | 4 | 8)
+                        let space = storage.space.get_index();
+                        matches!(storage.size, 1 | 2 | 4 | 8)
                             && storage.size == out.size
-                            && out.backing.is_none()
+                            && ((space == register_space && out.backing.is_none())
+                                || (space == ram_space
+                                    && memory.observes_range(storage.off, storage.size)
+                                    && out.backing.as_ref().is_some_and(|backing| {
+                                        storage.covers(backing) && backing.covers(storage)
+                                    })))
                     })
-                    .ok_or("induction requires register-backed header phi values")?;
+                    .ok_or("induction requires register or observed-memory header phi storage")?;
                 Ok((out.slot, storage.clone()))
             })
             .collect::<Result<Vec<_>, String>>()?;
         if carried.is_empty() || carried.len() > 8 {
-            return Err("induction needs one to eight register-backed loop-carried values".into());
+            return Err("induction needs one to eight loop-carried values".into());
         }
         for (i, (_, left)) in carried.iter().enumerate() {
             if carried[..i].iter().any(|(_, right)| overlap(left, right)) {
-                return Err("loop-carried register projections overlap".into());
+                return Err("loop-carried storage projections overlap".into());
             }
         }
         Ok(Self {
@@ -224,6 +234,7 @@ pub(super) struct Function<'a, 'p> {
     pub extent: Range<u64>,
     pub program: &'a Program,
     pub inputs: &'a ByteFile,
+    pub memory: &'a Memory,
     pub output: &'a Storage,
     pub stack_pointer: &'a Storage,
     pub options: &'a Options<'a>,
@@ -231,7 +242,19 @@ pub(super) struct Function<'a, 'p> {
 
 impl Function<'_, '_> {
     pub fn infer(self, domain: String) -> Result<Induction, String> {
-        let cut = Cutpoint::infer(self.program, self.env.register.get_index())?;
+        let register_space = self.env.register.get_index();
+        let cut = Cutpoint::infer(
+            self.program,
+            register_space,
+            self.env.ram.get_index(),
+            self.memory,
+        )?;
+        let register_carried = cut
+            .carried
+            .iter()
+            .filter(|(_, storage)| storage.space.get_index() == register_space)
+            .cloned()
+            .collect::<Vec<_>>();
         let preserved = self
             .options
             .inputs
@@ -259,18 +282,16 @@ impl Function<'_, '_> {
             })
             .filter_map(Result::transpose)
             .collect::<Result<Vec<_>, _>>()?;
-        let registers = cut
-            .carried
+        let registers = register_carried
             .iter()
             .map(|(_, reg)| reg.clone())
             .chain(preserved.iter().cloned())
             .collect::<Vec<_>>();
-        let memory = Memory::default();
         let original = preserved
             .iter()
             .map(|r| self.inputs.read(r.off, r.size))
             .collect::<Result<Vec<_>, _>>()?;
-        let raw = |registers_at_entry: &ByteFile, resume| {
+        let raw = |registers_at_entry: &ByteFile, memory: &Memory, resume| {
             RawFunction {
                 env: self.env,
                 extent: self.extent.clone(),
@@ -285,25 +306,25 @@ impl Function<'_, '_> {
                     resume,
                 }),
             }
-            .run(RawState::new(registers_at_entry, &memory)?)
+            .run(RawState::new(registers_at_entry, memory)?)
         };
-        let ir = |seeds: Option<&[(usize, Term)]>| {
+        let ir = |memory: &Memory, seeds: Option<&[(usize, Term)]>| {
             ir_block(
                 self.program,
                 self.inputs,
-                &memory,
+                memory,
                 self.env,
                 self.output.size,
                 self.options,
                 Some(IrBoundary {
                     block: cut.ir_block,
-                    carried: &cut.carried,
+                    carried: &register_carried,
                     seeds,
                 }),
             )
         };
-        let prefix_raw = raw(self.inputs, false)?;
-        let prefix_ir = ir(None)?;
+        let prefix_raw = raw(self.inputs, self.memory, false)?;
+        let prefix_ir = ir(self.memory, None)?;
         let mut prefix = Emitter::default();
         let prefix_defect =
             synchronization_defect(&mut prefix, &prefix_raw, &prefix_ir, &original)?;
@@ -311,10 +332,26 @@ impl Function<'_, '_> {
 
         let mut arbitrary = self.inputs.clone();
         let mut step_domain = domain.clone();
+        let mut step_memory = self.memory.with_fresh_observations(|address| {
+            fresh(&mut step_domain, &format!("memory{address:x}"), 1)
+        });
         let mut seed_slots = Vec::with_capacity(cut.carried.len());
-        for (index, (slot, reg)) in cut.carried.iter().enumerate() {
-            let value = fresh(&mut step_domain, &format!("carry{index}"), reg.size);
-            arbitrary.write(reg.off, reg.size, &value)?;
+        let mut rank_inputs = Vec::with_capacity(register_carried.len());
+        for (index, (slot, storage)) in cut.carried.iter().enumerate() {
+            let value = if storage.space.get_index() == register_space {
+                let value = fresh(&mut step_domain, &format!("carry{index}"), storage.size);
+                arbitrary.write(storage.off, storage.size, &value)?;
+                rank_inputs.push((index, Rc::clone(&value)));
+                value
+            } else {
+                step_memory.load(
+                    constant(u128::from(storage.off), 8)?,
+                    storage.size,
+                    self.env.ram.is_big_endian(),
+                    &constant(1, 1)?,
+                    ReadMode::Machine,
+                )?
+            };
             seed_slots.push((*slot, value));
         }
         for (index, (flag, _)) in oracle::SYMBOLIC_FLAGS.iter().enumerate() {
@@ -324,8 +361,8 @@ impl Function<'_, '_> {
             let _ = writeln!(step_domain, "(assert (bvule {name}_0 #x01))");
             arbitrary.write(reg.off, reg.size, &value)?;
         }
-        let step_raw = raw(&arbitrary, true)?;
-        let step_ir = ir(Some(&seed_slots))?;
+        let step_raw = raw(&arbitrary, &step_memory, true)?;
+        let step_ir = ir(&step_memory, Some(&seed_slots))?;
         let mut step = Emitter::default();
         let step_defect = synchronization_defect(&mut step, &step_raw, &step_ir, &original)?;
         let checks = vec![
@@ -353,7 +390,7 @@ impl Function<'_, '_> {
         let mut ranks = Vec::new();
         let continue_raw = reaches(&mut step, &step_raw);
         if let Some(next) = &step_raw.boundary {
-            for (index, ((_, now), then)) in seed_slots.iter().zip(&next.values).enumerate() {
+            for ((index, now), then) in rank_inputs.iter().zip(&next.values) {
                 let width = now.width();
                 let from = step.name(now);
                 let to = step.name(then);
@@ -364,16 +401,23 @@ impl Function<'_, '_> {
                         format!("(bvult (bvsub {to} (_ bv{bias} {width})) (bvsub {from} (_ bv{bias} {width})))")
                     };
                     let condition = format!("(and {continue_raw} (not {less}))");
-                    ranks.push((index, bias, query(&step_domain, &step, &condition)));
+                    ranks.push((*index, bias, query(&step_domain, &step, &condition)));
                 }
             }
         }
         Ok(Induction {
             header: json!({
                 "raw_address": format!("{:#x}", cut.raw_address), "ir_block": cut.ir_block,
-                "carried": cut.carried.iter().map(|(slot, reg)| json!({
-                    "slot":slot, "raw_register_offset":format!("{:#x}", reg.off), "bytes":reg.size
-                })).collect::<Vec<_>>(),
+                "carried": cut.carried.iter().map(|(slot, storage)| {
+                    let mut report = json!({"slot":slot,"bytes":storage.size});
+                    let key = if storage.space.get_index() == register_space {
+                        "raw_register_offset"
+                    } else {
+                        "raw_memory_address"
+                    };
+                    report[key] = json!(format!("{:#x}", storage.off));
+                    report
+                }).collect::<Vec<_>>(),
                 "preserved_register_offsets":preserved.iter().map(|reg| json!({
                     "offset":format!("{:#x}", reg.off), "bytes":reg.size
                 })).collect::<Vec<_>>(),
@@ -390,7 +434,7 @@ fn synchronization_defect(
     ir: &Execution,
     preserved: &[Term],
 ) -> Result<String, String> {
-    let base = synchronize(emitter, raw, ir);
+    let base = synchronize(emitter, raw, ir)?;
     let (Some(raw_cut), Some(ir_cut)) = (&raw.boundary, &ir.boundary) else {
         return Ok(base);
     };
@@ -427,7 +471,11 @@ pub(super) fn query(declarations: &str, emitter: &Emitter, assertion: &str) -> S
 
 /// Both sides must reach the same kind of terminal point. Every symbolic
 /// read and return before it must be covered by the machine model.
-pub(super) fn synchronize(emitter: &mut Emitter, left: &Execution, right: &Execution) -> String {
+pub(super) fn synchronize(
+    emitter: &mut Emitter,
+    left: &Execution,
+    right: &Execution,
+) -> Result<String, String> {
     let mut problems = Vec::new();
     for side in [left, right] {
         problems.push(format!("(= {} #x00)", emitter.name(&side.defined)));
@@ -444,7 +492,12 @@ pub(super) fn synchronize(emitter: &mut Emitter, left: &Execution, right: &Execu
     problems.push(format!(
         "(and (not {raw}) (not {ir}) (distinct {raw_value} {ir_value}))"
     ));
-    format!("(or {})", problems.join(" "))
+    problems.extend(terms::memory_differences(
+        emitter,
+        &left.memory,
+        &right.memory,
+    )?);
+    Ok(format!("(or {})", problems.join(" ")))
 }
 
 pub(super) fn reaches(emitter: &mut Emitter, execution: &Execution) -> String {

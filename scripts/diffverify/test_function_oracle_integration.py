@@ -63,6 +63,13 @@ class CrossBackendTests(unittest.TestCase):
             os.environ.get("LD_LLD", "ld.lld"), "-static", "-z", "separate-loadable-segments",
             "-e", "add", object_file, "-o", cls.elf,
         ], check=True)
+        symbols = subprocess.check_output([
+            os.environ.get("LLVM_NM", "llvm-nm"), "--print-size", "--format=posix", cls.elf,
+        ], text=True)
+        cls.symbols = {}
+        for line in symbols.splitlines():
+            name, _, address, size = line.split()
+            cls.symbols[name] = (int(address, 16), int(size, 16))
 
     def capture(self, function, *options, specs=ROOT / "specs"):
         capture = subprocess.check_output([
@@ -79,11 +86,8 @@ class CrossBackendTests(unittest.TestCase):
         if not shutil.which("z3"):
             self.skipTest("install Z3 to run translation validation")
         if stop is None and not whole:
-            symbols = subprocess.check_output([
-                os.environ.get("LLVM_NM", "llvm-nm"), "--print-size", "--format=posix", self.elf,
-            ], text=True)
-            _, _, start, size = next(line.split() for line in symbols.splitlines() if line.split()[0] == name)
-            stop = int(start, 16) + int(size, 16) - 1
+            start, size = self.symbols[name]
+            stop = start + size - 1
         command = [
             self.verify, "prove", self.elf, name, "--sleighpath", ROOT / "specs",
             "--return", "RAX:8", *options,
@@ -119,6 +123,22 @@ class CrossBackendTests(unittest.TestCase):
         self.assertEqual(ir["return"]["size"], 8)
         self.assert_returned(oracle, raw, ir, expected, "XMM0")
 
+    def test_double_rounding_and_special_values_are_observable_as_bits(self):
+        cases = (
+            ("round ties to even", 0x3ff0000000000000, 0x3ca0000000000000, 0x3ff0000000000000),
+            ("negative zero", 0x8000000000000000, 0x8000000000000000, 0x8000000000000000),
+            ("infinity", 0x7ff0000000000000, 0x3ff0000000000000, 0x7ff0000000000000),
+            ("quiet NaN payload", 0x7ff8b00000000002, 0x3ff0000000000000, 0x7ff8b00000000002),
+            ("signaling NaN quieting", 0x7ff0b00000000002, 0x3ff0000000000000, 0x7ff8b00000000002),
+            ("opposite infinities", 0x7ff0000000000000, 0xfff0000000000000, 0xfff8000000000000),
+        )
+        for label, a, b, expect in cases:
+            with self.subTest(label=label):
+                _, oracle, raw, ir = self.observe(
+                    "add_double", "--input-reg", "XMM0", hex(a), "--input-reg", "XMM1", hex(b),
+                )
+                self.assert_returned(oracle, raw, ir, expect, "XMM0")
+
     def test_bounded_loop_and_observable_global_writes(self):
         case, oracle, raw, ir = self.observe("store_loop")
         count = value(case, "RSI") & 7
@@ -127,10 +147,11 @@ class CrossBackendTests(unittest.TestCase):
         for _ in range(count):
             expected = (3 * expected + value(case, "RDI")) & MASK64
         self.assert_returned(oracle, raw, ir, expected)
-        global_region = next(r for r in case["memory"] if r["bytes"].startswith("f0debc9a78563412"))
         self.assertEqual(oracle["memory"], raw["memory"])
         self.assertEqual(raw["memory"], ir["memory"])
-        self.assertEqual(memory_at(raw, int(global_region["address"], 16))[:16], struct.pack("<QQ", expected, expected))
+        for name in ("counter", "zeroed"):
+            address, size = self.symbols[name]
+            self.assertEqual(memory_at(raw, address)[:size], struct.pack("<Q", expected))
         _, _, limited, _ = self.observe("store_loop", "--budget", "10")
         self.assertEqual(limited["status"], "incomplete")
         self.assertEqual(limited["reason"], "UNKNOWN(budget)")
@@ -385,6 +406,30 @@ class CrossBackendTests(unittest.TestCase):
         self.assertEqual(values["unicorn"], "0xffffffff80000000")
         self.assertEqual(values["final-ir"], "0x80000000")
 
+    def test_symbolic_zero_extension_mutation_is_visible_at_full_width(self):
+        code, proof = self.prove(
+            "extend_unsigned", "--opcode-mutant", "0", "--bind", "RDI", "0x80000000", inputs=("RDI",),
+        )
+        self.assertEqual(code, 1, proof.get("reason"))
+        replayed = replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+        self.assertEqual(replayed["independent_replay"], "confirmed")
+        values = replayed["observation_report"]["findings"][0]["values"]
+        self.assertEqual(values["unicorn"], "0x80000000")
+        self.assertEqual(values["final-ir"], "0xffffffff80000000")
+
+    def test_symbolic_partial_register_carry_and_overflow_match_external_execution(self):
+        cases = (
+            ("partial_register", 0x123456789abcde00, 0xff, 0x123456789abcdeff),
+            ("add_carry", 0xffffffffffffffff, 1, 1),
+            ("signed_overflow", 0x7fffffffffffffff, 1, 0x8000000000000001),
+        )
+        for name, a, b, expected in cases:
+            with self.subTest(function=name):
+                code, proof = self.prove(name, whole=True)
+                self.assertEqual((code, proof["classification"]), (0, "MODEL_EQUIVALENCE"), proof.get("reason"))
+                _, oracle, raw, ir = self.observe(name, "--input-reg", "RDI", hex(a), "--input-reg", "RSI", hex(b))
+                self.assert_returned(oracle, raw, ir, expected)
+
     def test_symbolic_mutation_gets_an_independently_reproduced_witness(self):
         code, proof = self.prove("add", "--opcode-mutant", "0")
         self.assertEqual(code, 1, proof.get("reason"))
@@ -491,12 +536,8 @@ class CrossBackendTests(unittest.TestCase):
         self.assertIn("operation budget exhausted", proof["reason"])
 
     def test_unrolling_merges_memory_and_keeps_missing_coverage_inconclusive(self):
-        rows = subprocess.check_output([
-            os.environ.get("LLVM_NM", "llvm-nm"), "--format=posix", self.elf,
-        ], text=True).splitlines()
-        symbols = {name: address for name, _, address, *_ in (row.split() for row in rows)}
-        counter = f'0x{symbols["counter"]}:8'
-        zeroed = f'0x{symbols["zeroed"]}:8'
+        counter = f'{self.symbols["counter"][0]:#x}:8'
+        zeroed = f'{self.symbols["zeroed"][0]:#x}:8'
         options = ("--loop-bound", "2", "--memory", counter)
         code, proof = self.prove("store_loop", *options, "--memory", zeroed, whole=True)
         self.assertEqual((code, proof["classification"]), (0, "BOUNDED_EQUIVALENCE"), proof.get("reason"))
@@ -560,6 +601,45 @@ class CrossBackendTests(unittest.TestCase):
         self.assertEqual((code, proof["classification"]), (3, "INCONCLUSIVE"), proof.get("reason"))
         self.assertEqual(proof["phase"], "rank-decrease")
         self.assertNotIn("ranking", proof["induction"])
+
+    def test_induction_relates_observed_memory_across_the_cutpoint(self):
+        address, size = self.symbols["loop_memory"]
+        name = "add_to_observed_global"
+        code, proof = self.prove(name, "--induct", "--memory", f"{address:#x}:{size}", inputs=("RDI",), whole=True)
+        self.assertEqual((code, proof["classification"]), (0, "MODEL_EQUIVALENCE"), proof.get("reason"))
+        carried = proof["induction"]["cutpoint"]["carried"]
+        self.assertTrue(any(item.get("raw_memory_address") == hex(address) for item in carried))
+        rank = carried[proof["induction"]["ranking"]["carried_index"]]
+        self.assertIn("raw_register_offset", rank)
+
+        initial = MASK64 - 8
+        options = ["--input-reg", "RDI", "0x5"]
+        for offset, byte in enumerate(initial.to_bytes(size, "little")):
+            options.extend(("--memory-byte", hex(address + offset), hex(byte)))
+        _, oracle, raw, ir = self.observe(name, *options)
+        expected = (initial + 15) & MASK64
+        self.assert_returned(oracle, raw, ir, expected)
+        for observation in (oracle, raw, ir):
+            self.assertEqual(memory_at(observation, address)[:size], struct.pack("<Q", expected))
+
+        code, proof = self.prove(name, "--induct", "--memory", f"{address:#x}:{size - 1}", inputs=("RDI",), whole=True)
+        self.assertEqual((code, proof["classification"]), (3, "INCONCLUSIVE"), proof.get("reason"))
+        self.assertEqual(proof["phase"], "encoding")
+
+    def test_induction_checks_memory_even_when_the_return_agrees(self):
+        name = "repeated_caller_write"
+        memory = ("--memory", "0x70003000:8")
+        code, proof = self.prove(name, "--induct", *memory, whole=True)
+        self.assertEqual((code, proof["classification"]), (3, "INCONCLUSIVE"), proof.get("reason"))
+        self.assertEqual(proof["phase"], "loop-preservation-and-suffix-exits")
+        self.assertNotIn("witness", proof)
+
+        code, proof = self.prove(name, "--loop-bound", "1", "--bind", "RSI", "1", *memory, whole=True)
+        self.assertEqual((code, proof["classification"]), (1, "COUNTEREXAMPLE"), proof.get("reason"))
+        report = replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+        self.assertEqual(report["independent_replay"], "confirmed")
+        findings = report["observation_report"]["findings"]
+        self.assertEqual({finding["observable"] for finding in findings}, {"memory-byte"})
 
     def test_whole_function_switch_requires_coverage_of_declared_indirect_targets(self):
         text = subprocess.check_output([
