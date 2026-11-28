@@ -67,6 +67,7 @@ mod kuna_switchextent;
 mod kuna_switchflow;
 mod kuna_switchtable;
 mod kuna_thumbswitch;
+mod kuna_unreadtable;
 mod kuna_a32switch;
 mod kuna_x86listingswitch;
 pub(crate) mod kuna_decodememo;
