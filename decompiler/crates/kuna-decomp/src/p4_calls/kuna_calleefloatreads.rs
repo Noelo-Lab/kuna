@@ -29,7 +29,11 @@
 //! register, so a callee that reads the model's last one, or that tests the
 //! SysV vector-register count in `al` first ([`tests_vector_count`]), is left
 //! alone. So are a callee's `protoorder` statement, a locked or variadic
-//! prototype, an import, and a body the decode could not finish.
+//! prototype, an import, and a body the decode could not finish. A statement
+//! that names a floating-point parameter in the slot still has the slot's
+//! trial registered inside a wider heritaged register ([`contained_read`]), for
+//! the caller's own scoring to decide, and a refused one stays inactive
+//! ([`keep_stated`]): it says the callee takes the register, and no more.
 
 use kuna_base::address::Address;
 use kuna_base::types::int4;
@@ -98,12 +102,14 @@ fn next_slot_only_stored(probe: &CalleeEntryDead, entries: &[ParamEntry], addr: 
 }
 
 /// The argument a call takes from the heritaged range `[addr, addr+size)` that
-/// holds exactly one model input slot, a float slot at its low end the callee
-/// reads ([`read_width`]): the slot's address and as many bytes as the callee
-/// reads, at least the slot's smallest width. x86-64 `XMM0_Qa` is the one slot
-/// inside `xmm0`, and `movss %xmm0,g` reads four bytes of it; a range holding
-/// two slots (ARM `s0` and `s1` inside `d0` on the base model) is not one
-/// argument's storage.
+/// holds exactly one model input slot, a float slot at its low end where the
+/// callee's `protoorder` statement names a floating-point parameter
+/// ([`stated_width`]) or that the callee reads ([`read_width`]): the slot's
+/// address and as many bytes as the statement gives or the callee reads, at
+/// least the slot's smallest width.
+/// x86-64 `XMM0_Qa` is the one slot inside `xmm0`, and `movss %xmm0,g` reads
+/// four bytes of it; a range holding two slots (ARM `s0` and `s1` inside `d0`
+/// on the base model) is not one argument's storage.
 pub fn contained_read(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, size: int4) -> Option<(Address, int4)> {
     if !call.proto().has_model() {
         return None;
@@ -114,8 +120,60 @@ pub fn contained_read(data: &Funcdata, call: &FuncCallSpecs, addr: &Address, siz
         return None;
     }
     let at = Address::new(std::rc::Rc::clone(slot.get_space()), slot.get_base());
-    let width = read_width(data, call, &at, slot.get_size())?.max(slot.get_min_size());
+    let width = stated_width(data, call, &at, slot.get_size())
+        .or_else(|| read_width(data, call, &at, slot.get_size()))?
+        .max(slot.get_min_size());
     Some((at, width))
+}
+
+/// How wide the floating-point parameter is that the `protoorder` statement of
+/// the direct callee of `call` names at the low end `at` of a model float slot
+/// of `size` bytes, when the call's prototype is neither locked nor variadic.
+/// A parameter stated as an integer there is the register's bits, which says
+/// less about what the caller passes and is left to the caller's scoring.
+fn stated_width(data: &Funcdata, call: &FuncCallSpecs, at: &Address, size: int4) -> Option<int4> {
+    if call.is_input_locked() || call.is_dotdotdot() {
+        return None;
+    }
+    let entry = call.get_entry_address();
+    if entry.is_invalid() {
+        return None;
+    }
+    let stated = data.kuna_protoorder_types(entry)?;
+    let (_, width, _) = stated.inputs.iter().find(|(a, w, ty)| {
+        a == at && *w <= size && ty.get_metatype() == crate::dtype::type_metatype::TYPE_FLOAT
+    })?;
+    Some(*width)
+}
+
+/// Leave trial `i` of call `idx` inactive, never definitely not used, when it
+/// sits at the low end of a model float slot where its callee's `protoorder`
+/// statement names a floating-point parameter ([`stated_width`]). The caller's
+/// data flow may refuse the value (ucrtbase `_jn` forwards its own `x` to
+/// `_j0` through `xmm7`), but a definitely-unused trial would drop every later
+/// argument of the call with it.
+pub fn keep_stated(data: &mut Funcdata, idx: int4, i: int4) {
+    let call = data.get_call_specs(idx);
+    let t = call.active_input().get_trial(i);
+    if !t.is_definitely_not_used() || !call.proto().has_model() {
+        return;
+    }
+    let (addr, size) = (t.get_address().clone(), t.get_size());
+    let float = |e: &&ParamEntry| e.get_type() == type_class::TYPECLASS_FLOAT;
+    let Some(slot) = call
+        .proto()
+        .model()
+        .input()
+        .get_entry()
+        .iter()
+        .filter(float)
+        .find(|e| size <= e.get_size() && e.justified_contain(&addr, size) == 0)
+    else {
+        return;
+    };
+    if stated_width(data, call, &addr, slot.get_size()).is_some() {
+        data.get_call_specs_mut(idx).get_active_input().get_trial_mut(i).mark_maybe_use();
+    }
 }
 
 /// Does the callee read, on entry, a general-purpose register that carries the

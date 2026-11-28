@@ -174,26 +174,15 @@ pub(crate) fn auto_register(
 /// Whether the output guard may give the call `fc`, whose output is not
 /// locked, the model's first float return slot as the only output slot inside
 /// this wider register range, at its low end: x86-64 `XMM0_Qa` inside an `xmm0`
-/// the caller moves whole with `movapd` after the call. Only a callee the run
-/// has stated or recovered no returned value for takes it: an import, any
-/// callee of a single-function decompile, or one `decompile-all` recovered
-/// `void`, which the read then hands to `voidret`.
+/// the caller moves whole with `movapd` after the call, or inside the `zmm0`
+/// every VEX instruction writes. A callee the run states or recovered a value
+/// for takes it as an unprototyped one does.
 pub(crate) fn auto_float_output(
-    fd: &crate::funcdata::Funcdata,
     fc: &crate::fspec::FuncCallSpecs,
     addr: &kuna_base::address::Address,
     size: int4,
 ) -> bool {
-    if float_output_slot(fc.proto(), addr, size).is_none() {
-        return false;
-    }
-    let entry = fc.get_entry_address();
-    let Some(space) = entry.get_space() else {
-        return true;
-    };
-    let key = (space.get_index(), entry.get_offset());
-    fd.kuna_callret_stated(key).is_none()
-        && matches!(fd.kuna_callee_returns(key), None | Some(crate::kuna_voidret::Returns::Void))
+    float_output_slot(fc.proto(), addr, size).is_some()
 }
 
 /// The model's first float return slot of `proto`, when the output is not

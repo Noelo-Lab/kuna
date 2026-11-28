@@ -1,7 +1,7 @@
 {
   "data_footer": [
-    5768,
-    5768
+    5773,
+    5773
   ],
   "passing": [
     "data:64-bit logical shift retains unsigned destination",
@@ -5169,6 +5169,11 @@
     "data:reversed save overlap grants no terminal contract",
     "data:reversed save overlap keeps the stub unnamed",
     "data:reversed save overlap retains both caller returns",
+    "data:revisitcalls #1: the first call's result is assigned",
+    "data:revisitcalls #2: the second call's result is stored",
+    "data:revisitcalls #3: the last call's result is summed",
+    "data:revisitcalls #4: no call drops its result",
+    "data:revisitcalls #5: no store reads a value from before a call",
     "data:rodatastring #1: default pipeline recovers the read-only block copy as one builtin_strncpy",
     "data:rodatastring #2: rodatastring off restores the invalid array-typed cast (the filed bug)",
     "data:rust preserves shift32 extraction",

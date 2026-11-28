@@ -1,0 +1,48 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-68d945182a51",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/floatcalls_gcc_O2_avx2",
+    "binary_sha256": "6d66061c876ee70b6904229221624b8ca3dc89f5181e874204c52b78d0b8e68a",
+    "binary_size": 16400,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/floatcalls_gcc_O2_avx2",
+    "selector": "stated_arg",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "^double stated_arg\\(int a0\\)$",
+      "^  return scale\\(\\(double\\)a0\\);$",
+      "^  v[0-9]+ = from_int\\(a1\\);$",
+      "^  return halfsum\\(a0,v[0-9]+\\);$",
+      "^  dsink = whole_result\\(",
+      "^  sink = fsum\\(a0,a1\\);$",
+      "^  sink = fscale\\(\\(float\\)a1",
+      "^  sink = i2f_div\\(a0,3\\);$",
+      "^  sink = scl\\("
+    ],
+    "stdout_absent": [
+      "^  (scale|from_int|halfsum|whole_result|fsum|fscale|i2f_div|scl|twice)\\(",
+      "^  d?sink = v[0-9]+;$",
+      "^void (stores|kills)\\(float a"
+    ]
+  },
+  "notes": "decompile-all states each callee first. A stated float return is the call's result whether the caller reads xmm0 whole (movapd) or in part (movss), a stated double parameter is passed from an xmm0 written whole (pxor), and no store after a call reads the xmm0 from before it. Before: void stated_arg(void) { scale(); }, lost results, and stores/kills stored pre-call values."
+}
