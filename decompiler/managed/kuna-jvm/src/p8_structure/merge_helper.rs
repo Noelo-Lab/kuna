@@ -658,10 +658,13 @@ impl MergeHelper {
             return;
         };
         if stat.get_exprents().expect("exprents").is_empty() {
-            if stat
-                .get_parent()
-                .is_some_and(|p| p.is_switch() || p.is_catch() || p.is_catch_all() || p.is_synchronized())
-            {
+            if stat.get_parent().is_some_and(|p| {
+                p.try_as_switch()
+                    .is_some_and(|sw| sw.get_case_statements().to_vec().last() != Some(&stat))
+                    || p.is_catch()
+                    || p.is_catch_all()
+                    || p.is_synchronized()
+            }) {
                 return;
             }
 

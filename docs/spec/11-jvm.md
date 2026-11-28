@@ -867,9 +867,12 @@ handler reaches whatever follows the `try`, so the case fell into `default` and 
 joined the `break` the try's other paths share, which `LabelHelper` wrote after the `try`: a
 retry loop stopped at the first duplicate (Ghidra's `changeConflictingSymbolNames`), and joda-time's
 and luaj's scanners returned at their first digit (`case '0': .. case '9': default: return
-~position;`). The block's exit is the path's own jump, so under a switch, a catch or
-`synchronized` the emptied block keeps it, and `LabelHelper` leaves it unwritten where falling
-off does reach the loop's end. Case `TestUpdateOnOnePath` (Vineflower prints the same code).
+~position;`). The block's exit is the path's own jump, so in a case other than a switch's last,
+under a catch or under `synchronized` the emptied block keeps it, and `LabelHelper` leaves it
+unwritten where falling off does reach the loop's end; falling off a switch's last case reaches
+the switch's end, so there the block goes as before (jasypt's `default: ..; break;` beside a
+last group of empty cases the update had ended). Cases `TestUpdateOnOnePath` (Vineflower prints
+the same code) and `TestUpdateInLastCase`.
 
 **The increment of a for-each over an array (kuna).** `MergeHelper::match_for_each` makes a
 for-each of `T[] c = a; int n = c.length; int i = 0; while (i < n) { T x = c[i]; ..; i++; }` and
