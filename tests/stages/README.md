@@ -507,9 +507,9 @@ store of a global. A later heritage pass revisits the eight-byte `XMM0_Qa`
 after the first narrowed each call's creation of `xmm0` to the four bytes the
 store reads; the call is guarded again, so no store reads the value from before
 its call and every result is assigned, stored or summed. Its CLI companion,
-`tests/cli/floatcalls-stated-callees-pass-and-return-xmm0.json`, checks the
+`tests/cli/floatcalls-stated-float-results-reach-their-readers.json`, checks the
 same fixture under the default callee-first `decompile-all`, where stated float
-returns and parameters reach callers that move `xmm0` whole.
+returns reach callers that move `xmm0` whole.
 
 `kuna-callproto.xml` checks a tail jump through a variadic function pointer with
 nothing stated, with a call-site prototype, and with one parameter placed in a

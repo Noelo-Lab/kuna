@@ -933,12 +933,10 @@ upper bits across a call or narrow other uses of the physical register.
 Floating-point slots, ambiguous contained entries, unnamed ranges, other
 address widths and memory ranges are excluded, with one exception on each
 side. On the input side, a range that holds exactly one model input slot, a float slot at its low end, gets that
-slot's trial where the direct callee's `protoorder` statement names a floating-point parameter
-there, or the callee stated nothing and its body reads the slot
+slot's trial where the direct callee stated nothing and its body reads the slot
 (`decompiler/crates/kuna-decomp/src/p3_dataflow/heritage.rs
 (guard_call_read_float_input)`, chapter 04 *Callee-read float argument*). The
-trial is as wide as the stated parameter or as the callee reads, never less
-than the slot's minimum: an
+trial is as wide as the callee reads, never less than the slot's minimum: an
 `xmm0` the caller wrote whole with `pxor` and then `cvtsi2ss` passes the four
 bytes a `movss %xmm0,g` callee reads, which simplify to the converted float.
 The output side has the mirror exception
@@ -954,10 +952,14 @@ the call reaches it, and dead-code elimination removes it everywhere else, so a
 call whose `xmm0` the caller overwrites first gains no result. A range holding
 several return slots, a later float slot (x86-64 `XMM1_Qa`, the second half of
 a two-double return) and general slots keep the legacy behavior. What the run
-states or has recovered for the callee does not matter: a callee
-`decompile-all` decompiled first and recovered returning a `float` or `double`
-(chapter 04 `protoorder`, `callrettype`, `voidret`) takes the guard as an
-unprototyped one does. It used to be left out, for fear that a caller dropping
+states or has recovered for the callee does not matter, with one exception: a
+callee `decompile-all` decompiled first and recovered returning a `float` or
+`double` (chapter 04 `protoorder`, `callrettype`, `voidret`) takes the guard as
+an unprototyped one does, unless it is a `floatbits` helper whose float is only
+the bits of its float-register input (chapter 05). Such a helper's readers keep
+those bits as integers (`fbits(fb_negf(a))`), and the read the guard connected
+would make `voidret` withdraw the float the helper's own body proves, printing
+`int fb_negf(int a0)` for a function the convention calls with a float. It used to be left out, for fear that a caller dropping
 the output trial would carry the pre-call `xmm0` across the call; the carry was
 the revisit gap above, now closed for every call, and leaving such callees out
 only left their callers reading a variable nothing assigns: SLib

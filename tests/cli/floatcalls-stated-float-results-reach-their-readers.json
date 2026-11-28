@@ -1,6 +1,6 @@
 {
   "schema": "re-probe/1",
-  "probe_id": "p-68d945182a51",
+  "probe_id": "p-095ca9c6855c",
   "kind": "cli",
   "cmd": [
     "{{KUNA}}",
@@ -28,21 +28,21 @@
       "eq": 0
     },
     "stdout_matches": [
-      "^double stated_arg\\(int a0\\)$",
-      "^  return scale\\(\\(double\\)a0\\);$",
-      "^  v[0-9]+ = from_int\\(a1\\);$",
-      "^  return halfsum\\(a0,v[0-9]+\\);$",
+      "^double stated_arg\\(void\\)$",
+      "^  return scale\\(\\);$",
+      "^  return halfsum\\(\\);$",
       "^  dsink = whole_result\\(",
       "^  sink = fsum\\(a0,a1\\);$",
-      "^  sink = fscale\\(\\(float\\)a1",
+      "^  sink = fscale\\(",
       "^  sink = i2f_div\\(a0,3\\);$",
-      "^  sink = scl\\("
+      "^  sink = scl\\(",
+      "twice\\(\\) \\+ sink"
     ],
     "stdout_absent": [
-      "^  (scale|from_int|halfsum|whole_result|fsum|fscale|i2f_div|scl|twice)\\(",
-      "^  d?sink = v[0-9]+;$",
+      "^  (scale|halfsum|whole_result|fsum|fscale|i2f_div|scl|twice)\\(",
+      "^  d?sink = (v|a)[0-9]+;$",
       "^void (stores|kills)\\(float a"
     ]
   },
-  "notes": "decompile-all states each callee first. A stated float return is the call's result whether the caller reads xmm0 whole (movapd) or in part (movss), a stated double parameter is passed from an xmm0 written whole (pxor), and no store after a call reads the xmm0 from before it. Before: void stated_arg(void) { scale(); }, lost results, and stores/kills stored pre-call values."
+  "notes": "decompile-all states each callee first. A stated float return is the call's result whether the caller reads xmm0 whole (movapd, VEX) or in part (movss), and no store after a call reads the xmm0 from before it. Before: void stated_arg(void) { scale(); }, stores/kills stored pre-call values and gained a float parameter. Stated float arguments in a whole xmm0 are still dropped."
 }

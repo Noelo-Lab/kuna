@@ -2870,26 +2870,8 @@ classified:
   registers the trial of the one float slot inside a wider heritaged register
   (chapter 03), as wide as the callee reads it: `movss %xmm0,g` takes four
   bytes of an `xmm0` the caller zeroed whole with `pxor`, and the call prints
-  `setf((float4)a0)`. A callee whose `protoorder` statement names a
-  floating-point parameter in that slot gets the trial too, as wide as the
-  statement says (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleefloatreads.rs (contained_read)`),
-  and the caller's ordinary scoring decides it. The statement used to cost such
-  a call its argument: this rule leaves a stated callee to the caller, and the
-  wider range gave the caller no trial to score. gcc -O2 `stated_arg`
-  converts its `int` with `pxor %xmm0,%xmm0; cvtsi2sd %edi,%xmm0` before
-  calling `scale`, which states `double scale(double a0)`, and printed
-  `scale();` (`floatcalls.c`); msvcrt's `_jn` printed each `_j0()` and `_j1()`
-  without its `x`. A statement never activates the trial, and one that scoring
-  refuses is left inactive rather than definitely unused
-  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleefloatreads.rs (keep_stated)`),
-  so the call keeps the arguments after it: ucrtbase `_jn` forwards its own `x`
-  to `_j0` through `movaps %xmm7,%xmm0`, a value upstream's realism counts as
-  the caller's input, and still prints `_j0()`. A parameter stated as an
-  integer in a float slot (the register's bits) is left to the caller's scoring
-  alone: ucrtbase's math-error helpers state their `double` operands that way,
-  and taking those registers on the statement's word changed what `pow` and
-  `_yn` recover. A register the caller never
-  touches gets no trial to score; forwarding one untouched is `passthrough`'s.
+  `setf((float4)a0)`. A register the caller never touches gets no trial to
+  score; forwarding one untouched is `passthrough`'s.
 - A definitely-unused trial has its dataflow **freed immediately** — the CALL
   input is replaced with constant 0 so dead-code elimination can reap the
   producer. This is why P4 must iterate with DCE inside mainloop.

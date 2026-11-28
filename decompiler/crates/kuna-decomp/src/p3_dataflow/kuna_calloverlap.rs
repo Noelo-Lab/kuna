@@ -176,13 +176,23 @@ pub(crate) fn auto_register(
 /// this wider register range, at its low end: x86-64 `XMM0_Qa` inside an `xmm0`
 /// the caller moves whole with `movapd` after the call, or inside the `zmm0`
 /// every VEX instruction writes. A callee the run states or recovered a value
-/// for takes it as an unprototyped one does.
+/// for takes it as an unprototyped one does, except a `floatbits` helper whose
+/// float is only the bits of its float-register input: its readers keep those
+/// bits as integers, and a read the guard connected would withdraw the float
+/// the helper's own body proves (`voidret`).
 pub(crate) fn auto_float_output(
+    fd: &crate::funcdata::Funcdata,
     fc: &crate::fspec::FuncCallSpecs,
     addr: &kuna_base::address::Address,
     size: int4,
 ) -> bool {
-    float_output_slot(fc.proto(), addr, size).is_some()
+    if float_output_slot(fc.proto(), addr, size).is_none() {
+        return false;
+    }
+    let entry = fc.get_entry_address();
+    entry
+        .get_space()
+        .is_none_or(|space| !fd.kuna_callee_float_bits((space.get_index(), entry.get_offset())))
 }
 
 /// The model's first float return slot of `proto`, when the output is not

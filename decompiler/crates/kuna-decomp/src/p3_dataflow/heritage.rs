@@ -2089,7 +2089,7 @@ impl Heritage {
                         ) || ((overlap_level >= crate::p3_dataflow::kuna_calloverlap::LEVEL_FULL
                             || (overlap_level == super::kuna_calloverlap::LEVEL_AUTO
                                 && (super::kuna_calloverlap::auto_register(fd.get_arch().manage(), fc.proto(), &trans_addr, size, true)
-                                    || super::kuna_calloverlap::auto_float_output(fc, &trans_addr, size))))
+                                    || super::kuna_calloverlap::auto_float_output(fd, fc, &trans_addr, size))))
                             && self
                                 .try_output_overlap_guard(fd, fc, addr, &trans_addr, size, write))
                         {
@@ -2332,9 +2332,8 @@ impl Heritage {
     }
 
     /// (kuna) Under `calloverlap auto`, register the trial of the one float slot
-    /// inside the heritaged range that the callee's statement names a parameter
-    /// or a callee which stated nothing reads, as wide as the statement gives
-    /// or the callee reads it ([`crate::p4_calls::kuna_calleefloatreads::contained_read`]):
+    /// inside the heritaged range that a callee which stated nothing reads, as
+    /// wide as it reads it ([`crate::p4_calls::kuna_calleefloatreads::contained_read`]):
     /// x86-64 `movss %xmm0,g` takes the low four bytes of an `xmm0` the caller
     /// wrote whole with `pxor`.
     fn guard_call_read_float_input(

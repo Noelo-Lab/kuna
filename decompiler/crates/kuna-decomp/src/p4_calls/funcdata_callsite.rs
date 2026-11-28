@@ -379,7 +379,6 @@ pub fn check_input_trial_use(
         // when no callee could be returning through it.
         crate::p4_calls::kuna_hiddenretarg::rescore_active_trial(data, idx, i);
         crate::p4_calls::kuna_passthrough::mark_forwarded(data, idx, i, vn);
-        crate::p4_calls::kuna_calleefloatreads::keep_stated(data, idx, i);
 
         // If definitely not used, free up the dataflow.
         if data.get_call_specs_mut(idx).get_active_input().get_trial(i).is_definitely_not_used() {

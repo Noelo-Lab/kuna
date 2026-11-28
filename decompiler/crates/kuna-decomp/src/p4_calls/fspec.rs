@@ -1089,11 +1089,6 @@ impl ParamTrial {
         self.flags &= !param_trial_flags::ACTIVE;
         self.flags |= param_trial_flags::CHECKED;
     }
-    /// (kuna) Withdraw a definitely-not-used verdict, leaving the trial inactive.
-    pub fn mark_maybe_use(&mut self) {
-        self.flags &= !(param_trial_flags::ACTIVE | param_trial_flags::DEFNOUSE);
-        self.flags |= param_trial_flags::CHECKED;
-    }
     /// Mark trial as definitely not a parameter (C++ `markNoUse`).
     pub fn mark_no_use(&mut self) {
         self.flags &= !(param_trial_flags::ACTIVE | param_trial_flags::USED);
