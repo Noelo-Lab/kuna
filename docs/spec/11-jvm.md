@@ -1284,6 +1284,12 @@ Vineflower read only the first block, so enum constants built with a switch expr
 argument stayed in a `static` block (`$VF: Failed to inline enum fields`, which javac rejects)
 and so did every static field after such an initializer.
 
+**A compound assignment is no initializer (kuna).** `count += 2` in `<clinit>` is an assignment
+whose right side is the `2` alone, and Vineflower moved it into the declaration as
+`static int count = 2;`, dropping the read of `count`: after an initializer that calls a method
+setting `count` to 10, the field ends at 2 instead of 12. `extract_static_initializers` moves
+only a plain assignment; a compound one stays a statement.
+
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being
 a synthetic argument, so `hideEmptySuper` took it for the implicit call and dropped it. It

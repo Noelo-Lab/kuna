@@ -2080,3 +2080,5 @@ case	kuna-fixes/pkg/TestFinallyRethrowOutside	Kuna Fixes	kuna-fixes/classes/pkg/
 case	kuna-fixes/pkg/TestEmptyEnumSwitch	Kuna Fixes	kuna-fixes/classes/pkg/TestEmptyEnumSwitch	kuna-fixes/classes/pkg/EmptySwitchColor
 # kuna-fixes/src/pkg/TestEnumConstantSwitchArgs.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestEnumConstantSwitchArgs	Kuna Fixes	kuna-fixes/classes/pkg/TestEnumConstantSwitchArgs
+# kuna-fixes/src/pkg/TestStaticCompoundAssign.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticCompoundAssign	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticCompoundAssign
