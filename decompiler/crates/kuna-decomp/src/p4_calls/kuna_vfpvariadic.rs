@@ -14,8 +14,9 @@
 //! sits in a VFP register, and moving only its variadic callee's would break
 //! `return vr(...)`.
 use crate::{
+    context::ArchContext,
     dtype::type_metatype,
-    fspec::{ProtoModel, PrototypePieces},
+    fspec::{FuncProto, ParameterPieces, ProtoModel, PrototypePieces},
     infra::architecture::Architecture,
     modelrules::{register_ids, ModelRule},
 };
@@ -84,4 +85,37 @@ pub fn model(base: &Rc<ProtoModel>, manager: &AddrSpaceManager) -> Option<Rc<Pro
         .ok()?;
     result.output_mut().kuna_prepend_model_rules(rules);
     Some(Rc::new(result))
+}
+
+/// The return storage a recovered prototype parked with an open tail states,
+/// where the variadic rules would move its return value.  Callers lay a parked
+/// list out as a declaration, but the open tail `protoorder` gives every parked
+/// list is a floor for argument recovery, not a variadic signature, so the
+/// return value stays where the default model, and the function itself, put it.
+pub fn parked_output(arch: &ArchContext, pieces: &PrototypePieces) -> Option<ParameterPieces> {
+    if !arch.vfp_variadic || !moves_return(pieces) {
+        return None;
+    }
+    let types = arch.types()?;
+    let closed = PrototypePieces {
+        first_var_arg_slot: -1,
+        input_storage: Vec::new(),
+        output_storage: None,
+        ..pieces.clone()
+    };
+    let mut fp = FuncProto::new();
+    let void_ty = types.get_type_void().ok()?;
+    fp.seed_locked_from_pieces(
+        &closed,
+        Rc::clone(arch.default_fp()?),
+        void_ty,
+        types,
+        arch.manage(),
+    )
+    .ok()?;
+    Some(ParameterPieces {
+        addr: fp.get_output().get_address(),
+        type_: pieces.outtype.clone(),
+        flags: 0,
+    })
 }

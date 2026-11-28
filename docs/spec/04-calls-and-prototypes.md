@@ -4608,8 +4608,8 @@ floating-point return is still laid out in a VFP register, so moving only its
 variadic callee's would break the tail call `return vr(k, 2);` (`b vr`), which
 prints right today because both sides read `d0`. The `protoorder lock` park
 gives every recovered list a variable tail that is a floor for argument
-recovery, not a variadic signature; its fixed prefix and return use the
-ordinary model rules, so a
+recovery, not a variadic signature; on a VFP image those pieces state the
+default model's return storage (`kuna_vfpvariadic::parked_output`), so a
 recovered `float` return is still read from `s0` at its callers.
 
 `force_set` first saves a copy of the full `FuncProto` — model, storage, locks
@@ -6996,10 +6996,15 @@ arguments its callers really pass does not merely fail to describe them — it
 closed parked list deleted 639 arguments at 216 call sites.
 
 The shape of the park is what answers it: **the parked list is a floor, not a
-ceiling.** The pieces mark the prefix with
-`PrototypePieces::RECOVERED_INPUT_TAIL`. Its fixed arguments use the ordinary
-ABI during storage validation and assignment. The call retains the shape `func_link_input` treats as locked *and* input-active (`if !inputlocked
-|| varargs`). The recovered types bind the slots that were recovered and the
+ceiling.** The pieces name the first slot past the recovered parameters as the
+start of a variable tail (`PrototypePieces::first_var_arg_slot`), which is the
+one shape `func_link_input` treats as locked *and* input-active (`if !inputlocked
+|| varargs`). A MIPS model whose variadic rules would move one of the recovered
+parameters (O64 passes every float of a variadic call in the GPRs) marks the
+prefix with `PrototypePieces::RECOVERED_INPUT_TAIL` instead
+(`kuna_protoorder.rs (parked_tail)`): the call spec keeps the same locked and
+variadic shape, but the model rules read the prefix as fixed arguments, so a
+recovered `double` stays in `f12` during storage validation and at every call. The recovered types bind the slots that were recovered and the
 caller's own recovery still runs for everything past them, so no call is
 truncated to the parked list any more; over the same twelve binaries that class
 goes from 639 arguments at 216 sites to zero.
@@ -7018,9 +7023,10 @@ model, so every argument register the convention has becomes a candidate at that
 site again and a caller holding a live value in one of them renders it as an
 argument the machine code never passes. How much that costs is a property of the
 convention — AAPCS has four argument registers and firmware keeps all four busy,
-which is why the ARM column is five times the x86-64 one. The recovered prefix also keeps the ordinary floating-point return storage
-on an ARM image that states the VFP variant (see "Declared variadic prototypes
-on a VFP image").
+which is why the ARM column is five times the x86-64 one. On an ARM image that
+states the VFP variant a variable tail would also move a floating-point return
+value to the core registers, so there the parked pieces name the return storage
+themselves (see "Declared variadic prototypes on a VFP image").
 
 The over-count is answered with evidence rather than with shape, because there is
 no shape that expresses "this parameter may not exist". Both rules read the
