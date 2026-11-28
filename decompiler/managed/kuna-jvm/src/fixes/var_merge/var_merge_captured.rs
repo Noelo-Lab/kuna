@@ -10,6 +10,7 @@
 
 use crate::exprent::Exprent;
 use crate::fixes::util::all_exprents;
+use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::var_version_pair::VarVersionPair;
 
@@ -85,11 +86,19 @@ impl Sites {
     }
 }
 
-/// Whether control can pass from the block `a` to the block `b` by the
-/// statements' successor edges, a statement entered at its first.
+/// Whether control can pass from the block `a` to the block `b`. A
+/// statement passes control along its successor edges; one that is entered
+/// may run any statement it holds; an exception leaves along the exception
+/// edges of every statement around it; and the head block of an `if` or a
+/// `switch` passes control to the statement's branches and on to where the
+/// statement itself leads.
 fn follows(a: Statement, b: Statement) -> bool {
     let mut seen: Vec<Statement> = Vec::new();
-    let mut queue: Vec<Statement> = a.get_all_successor_edges().iter().map(|e| e.get_destination()).collect();
+    let mut queue: Vec<Statement> = Vec::new();
+    leave(a, &mut queue);
+    if let Some(parent) = a.get_parent().filter(|p| (p.is_if() || p.is_switch()) && p.get_first() == Some(a)) {
+        queue.push(parent);
+    }
     while let Some(stat) = queue.pop() {
         if seen.contains(&stat) {
             continue;
@@ -98,8 +107,19 @@ fn follows(a: Statement, b: Statement) -> bool {
             return true;
         }
         seen.push(stat);
-        queue.extend(stat.get_first());
-        queue.extend(stat.get_all_successor_edges().iter().map(|e| e.get_destination()));
+        queue.extend(stat.get_stats().borrow().iter().copied());
+        leave(stat, &mut queue);
     }
     false
+}
+
+/// Adds to `queue` where control goes from `stat`: its successors, and the
+/// handlers of the statements around it.
+fn leave(stat: Statement, queue: &mut Vec<Statement>) {
+    queue.extend(stat.get_all_successor_edges().iter().map(|e| e.get_destination()));
+    let mut around = stat.get_parent();
+    while let Some(outer) = around {
+        queue.extend(outer.get_successor_edges(StatEdge::TYPE_EXCEPTION).iter().map(|e| e.get_destination()));
+        around = outer.get_parent();
+    }
 }
