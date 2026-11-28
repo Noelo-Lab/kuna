@@ -470,7 +470,8 @@ impl<'d, 'a> Method<'d, 'a> {
             let regs = |x: &Insn| self.insn_regs(x);
             let entered = crate::switchmap::entered(&insns, self.code.insns, &handlers);
             let named = |r: u32, s: u32, e: u32| self.debug.locals.iter().any(|l| l.reg == r && l.start < e && s < l.end.max(l.start + 1));
-            crate::concat::rechain(self.dex, &mut insns, &entered, &tries, &regs, &named);
+            let line = |a: u32| self.debug.lines.partition_point(|&(x, _)| x <= a).checked_sub(1).map(|i| self.debug.lines[i].1);
+            crate::concat::rechain(self.dex, &mut insns, &entered, &tries, &regs, &named, &line);
             self.chains = crate::switchmap::rewrite(self.dex, &mut insns, &entered, &tries, &regs);
         }
         let regs = u32::from(self.code.registers);

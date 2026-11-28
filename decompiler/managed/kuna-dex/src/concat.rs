@@ -3,10 +3,12 @@
 //! the builder it was called on), so the chain becomes a builder in a
 //! register and one statement per `append`. `StringBuilder.append` returns
 //! `this`, so the register still holds the call's result: a builder created,
-//! appended to and turned into its string within straight-line code, read
-//! by nothing else and not named by debug info, gets its `move-result`s back
-//! (each `append` writes the register again), and the chain is one
-//! expression as javac wrote it.
+//! appended to and turned into its string within straight-line code on one
+//! source line, read by nothing else and not named by debug info, gets its
+//! `move-result`s back (each `append` writes the register again), and the
+//! chain is one expression as javac wrote it. (A builder the source appends
+//! to in statements of its own looks the same, but its statements are on
+//! lines of their own.)
 
 use std::collections::BTreeSet;
 
@@ -18,12 +20,12 @@ const SB: &[u8] = b"Ljava/lang/StringBuilder;";
 
 /// Inserts the dropped `move-result-object`s of every such chain. `entered`
 /// holds the addresses branches and handlers reach, `tries` the protected
-/// ranges and `named(reg, start, end)` whether debug info names the register
-/// within the range.
-pub fn rechain(dex: &Dex, insns: &mut Vec<Insn>, entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs, named: &dyn Fn(u32, u32, u32) -> bool) {
+/// ranges, `named(reg, start, end)` whether debug info names the register
+/// within the range and `line(addr)` the source line of an address.
+pub fn rechain(dex: &Dex, insns: &mut Vec<Insn>, entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs, named: &dyn Fn(u32, u32, u32) -> bool, line: &dyn Fn(u32) -> Option<u32>) {
     let mut k = 0;
     while k < insns.len() {
-        if let Some(appends) = chain(dex, insns, k, entered, tries, regs, named) {
+        if let Some(appends) = chain(dex, insns, k, entered, tries, regs, named, line) {
             for &j in appends.iter().rev() {
                 let mut res = insns[j].clone();
                 res.op = 0x0c;
@@ -45,7 +47,8 @@ fn method_is(dex: &Dex, x: &Insn, name: &[u8], ret: &[u8]) -> bool {
 }
 
 /// The `append`s without a result of the chain a `new-instance` at `k` starts.
-fn chain(dex: &Dex, insns: &[Insn], k: usize, entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs, named: &dyn Fn(u32, u32, u32) -> bool) -> Option<Vec<usize>> {
+#[allow(clippy::too_many_arguments)]
+fn chain(dex: &Dex, insns: &[Insn], k: usize, entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs, named: &dyn Fn(u32, u32, u32) -> bool, line: &dyn Fn(u32) -> Option<u32>) -> Option<Vec<usize>> {
     let x = &insns[k];
     if x.op != 0x22 || dex.type_desc(x.idx).ok()? != SB {
         return None;
@@ -94,7 +97,8 @@ fn chain(dex: &Dex, insns: &[Insn], k: usize, entered: &BTreeSet<u32>, tries: &[
         }
         j += 1;
     }
-    if appends.is_empty() || named(r, x.addr, insns[j].next()) {
+    let first = line(x.addr);
+    if appends.is_empty() || named(r, x.addr, insns[j].next()) || insns[k..=j].iter().any(|y| line(y.addr) != first) {
         return None;
     }
     Some(appends)
