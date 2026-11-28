@@ -25,6 +25,24 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
       }
    }
 
+   interface Fn<A, R> {
+      R apply(A a);
+   }
+
+   static class Chain<X> {
+      static <Z> Chain<Z> concat(Chain<? extends Z> a, Chain<? extends Z> b) {
+         return null;
+      }
+
+      Seq<X> collect() {
+         return null;
+      }
+   }
+
+   static <F, R> Chain<Holder<R>> mapAll(Chain<F> c, Fn<F, R> f) {
+      return null;
+   }
+
    static class Store {
       Object get() {
          return null;
@@ -80,6 +98,10 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
    public void merge(Bag<String> into, Holder<Bag<String>> h, Store s) {
       into.addAll(h.value);
       into.addAll((Bag<String>) s.get());
+   }
+
+   <T1 extends V, T2 extends V> Seq<Holder<V>> mergeValues(Chain<T1> a, Chain<T2> b) {
+      return Chain.concat(mapAll(a, v -> (V) v), mapAll(b, v -> (V) v)).collect();
    }
 
    @SafeVarargs

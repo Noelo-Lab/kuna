@@ -1372,6 +1372,7 @@ impl ExprProcessor {
     ) -> bool {
         let declared_target = disjoint_generic_cast::take_declared_target();
         let erased_parameter = argument_checkcast::take_erased_parameter();
+        let inferred_parameter = generic_casts::take_inferred_parameter();
         let mut exprent = exprent;
         let mut left_type = left_type.clone();
 
@@ -1402,7 +1403,7 @@ impl ExprProcessor {
                 || left_type.type_ != CodeType::Object)
             && !(right_type.type_ == CodeType::Genvar
                 && left_type.type_ == CodeType::Genvar
-                && generic_casts::variable_below(&exprent.get_named_generics(), &right_type, &left_type));
+                && generic_casts::variable_below(&exprent.get_named_generics(), &right_type, &left_type, inferred_parameter));
         let do_cast_null = cast_null.cast()
             && right_type.type_ == CodeType::Null
             && Self::UNDEFINED_TYPE_STRING != Self::get_type_name(&left_type);

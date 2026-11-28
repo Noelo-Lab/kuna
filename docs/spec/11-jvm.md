@@ -997,7 +997,11 @@ first(raw)` for a raw `Seq raw` passed to `<T> T first(Seq<T>)` no longer drops 
 argument is not taken as raw: kuna writes it with its parameter's type (`addAll((Bag<?
 extends String>) store.get())`), so the call is not unchecked. An
 argument of a type variable passed for a parameter of a type variable that bounds it (`U
-extends T`) needs no cast to it (JLS 4.10.2, `generic_casts::variable_below`).
+extends T`) needs no cast to it (JLS 4.10.2, `generic_casts::variable_below`), where that
+target is fixed: not in a lambda's body, whose result types the enclosing call's inference,
+and not for a parameter of a generic method or a constructor, which javac infers
+(`mark_inferred_parameter`); there the cast decides what is inferred (`Chain.concat(mapAll(a,
+v -> (V) v), ..).collect()` for `T1 extends V` infers `Holder<? extends V>` without it).
 
 **Casts no instruction records (kuna).** A cast between two parameterizations of one class
 erases to nothing, so the class file holds no instruction for it, yet the types can still

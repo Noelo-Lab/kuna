@@ -32,13 +32,48 @@ pub(crate) fn mentions(t: &VarType, var: &str) -> bool {
     })
 }
 
+thread_local! {
+    static INFERRED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Marks the next argument `ExprProcessor.getCastedArgument` writes as
+/// passed for a parameter whose type javac infers (of a generic method or a
+/// constructor), until the returned guard drops.
+#[must_use]
+pub fn mark_inferred_parameter() -> InferredParameter {
+    INFERRED.with(|c| c.set(true));
+    InferredParameter
+}
+
+/// Clears the mark [`mark_inferred_parameter`] set when dropped.
+pub struct InferredParameter;
+
+impl Drop for InferredParameter {
+    fn drop(&mut self) {
+        INFERRED.with(|c| c.set(false));
+    }
+}
+
+/// Whether the argument being written was marked; clears the mark.
+pub fn take_inferred_parameter() -> bool {
+    INFERRED.with(|c| c.replace(false))
+}
+
 /// Whether `sub` and `sup` are type variables (no array, no wildcard) and
 /// `sup` is a bound of `sub`, or of a type variable that bounds it, by the
 /// bounds `named` gives the variables in scope: `sub` is then a subtype of
-/// `sup` (JLS 4.10.2) and converts to it without a cast.
-pub(crate) fn variable_below(named: &JHashMap<VarType, Vec<VarType>>, sub: &VarType, sup: &VarType) -> bool {
+/// `sup` (JLS 4.10.2) and converts to it without a cast. Only where the
+/// target is fixed: in a lambda's body (whose result types the enclosing
+/// call's inference) or for a parameter javac infers (`inferred`), a cast
+/// to `sup` decides what is inferred, and is kept.
+pub(crate) fn variable_below(named: &JHashMap<VarType, Vec<VarType>>, sub: &VarType, sup: &VarType, inferred: bool) -> bool {
     let bare = |t: &VarType| t.type_ == CodeType::Genvar && t.array_dim == 0 && is_exact(t);
-    if !bare(sub) || !bare(sup) {
+    if inferred || !bare(sub) || !bare(sup) {
+        return false;
+    }
+    let in_lambda = crate::decompiler_context::DecompilerContext::get_current_method_wrapper()
+        .is_some_and(|m| m.with(|d| d.method_struct).get_name().starts_with("lambda$"));
+    if in_lambda {
         return false;
     }
     let mut pending = vec![sub.clone()];

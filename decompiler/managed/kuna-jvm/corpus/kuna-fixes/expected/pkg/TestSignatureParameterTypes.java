@@ -3,6 +3,12 @@ package pkg;
 public class TestSignatureParameterTypes<K, V extends CharSequence> {
    TestSignatureParameterTypes.Ref rawRoot;
 
+   static <F, R> TestSignatureParameterTypes.Chain<TestSignatureParameterTypes.Holder<R>> mapAll(
+      TestSignatureParameterTypes.Chain<F> var0, TestSignatureParameterTypes.Fn<F, R> var1
+   ) {
+      return null;
+   }
+
    TestSignatureParameterTypes.Ref rawRef() {
       return this.rawRoot;
    }
@@ -46,6 +52,12 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
       var1.addAll((TestSignatureParameterTypes.Bag<? extends String>)var3.get());
    }
 
+   <T1 extends V, T2 extends V> TestSignatureParameterTypes.Seq<TestSignatureParameterTypes.Holder<V>> mergeValues(
+      TestSignatureParameterTypes.Chain<T1> var1, TestSignatureParameterTypes.Chain<T2> var2
+   ) {
+      return TestSignatureParameterTypes.Chain.concat(mapAll(var1, var0 -> (V)var0), mapAll(var2, var0 -> (V)var0)).collect();
+   }
+
    @SafeVarargs
    static <X> X firstOf(X... var0) {
       return var0.length > 1 ? var0[1] : var0[0];
@@ -58,6 +70,22 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
 
    interface BiFn<A, B, R> {
       R apply(A var1, B var2);
+   }
+
+   static class Chain<X> {
+      static <Z> TestSignatureParameterTypes.Chain<Z> concat(
+         TestSignatureParameterTypes.Chain<? extends Z> var0, TestSignatureParameterTypes.Chain<? extends Z> var1
+      ) {
+         return null;
+      }
+
+      TestSignatureParameterTypes.Seq<X> collect() {
+         return null;
+      }
+   }
+
+   interface Fn<A, R> {
+      R apply(A var1);
    }
 
    static class Holder<T> {
