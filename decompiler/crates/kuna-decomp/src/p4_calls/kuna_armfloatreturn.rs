@@ -930,6 +930,9 @@ pub fn split_double_input(data: &Funcdata, vn: VarnodeId) -> bool {
     if !vfp(addr, 8) || !halves_only(data, vn, 4) {
         return false;
     }
+    if data.get_arch().arm_float_args && crate::p4_calls::kuna_vfpcorepair::forwarded_double(data, vn) {
+        return false;
+    }
     let end = addr.get_offset() + 8;
     !data
         .vbank()
