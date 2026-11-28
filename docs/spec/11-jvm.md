@@ -2374,6 +2374,20 @@ statement inside the case would print as a labeled block); an empty case that le
 (code of the next case that the structuring moved out of the switch, a loop's `break label`) keeps
 Vineflower's rule.
 
+**A store in a switch expression to the variable it initializes (kuna).** SSA gives a store
+inside an arm of a switch expression (`int num = switch (bar) { case 0 -> num = 1; .. }`, `x =
+switch (k) { case 1 -> x = 4; .. }`) a variable of its own, since the store after the switch
+overwrites it, and the declarations put that variable's declaration in the arm: `int num; yield
+num = 1;`, which javac rejects (`num` is in scope in its own initializer), or a second local
+(`byte var3`). javac gives a declared local its slot before it evaluates the initializer, and an
+assigned one holds its slot already, so a local the arms declare takes another slot and a store
+to the target's slot there is the target.
+`decompiler/managed/kuna-jvm/src/fixes/switches.rs (merge_arm_locals)` runs after the
+declarations are placed and makes each variable stored in the arms at the slot of the variable
+that the switch expression's assignment stores (one that holds its values: the same type, or an
+`int` for a constant narrowed to `byte`, `short` or `char`) that variable, its bare declarations
+in the arms dropped. Case `TestSwitchArmStore`.
+
 **Heap reads copied into several uses.**
 `decompiler/managed/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor)`
 copies a value with several uses into each use, and the Kotlin plugin's schedule adds a

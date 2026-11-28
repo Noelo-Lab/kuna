@@ -357,7 +357,7 @@ kuna	5c5e2d0b94889d64
 case	default/pkg/TestDoublePopAfterJump	Default	classes/jasm/pkg/TestDoublePopAfterJump
 kuna	e434ec54de2ac74c
 case	default/pkg/TestDuplicateAssignmentInSwitchExpr	Default	classes/java17/pkg/TestDuplicateAssignmentInSwitchExpr
-kuna	6fbf2edd8fd4aa13
+kuna	ea2a69c183f50799
 case	default/pkg/TestDuplicateLocals	Default	classes/java8nodebug/pkg/TestDuplicateLocals
 kuna	914e54f11ae3a6ec
 case	default/pkg/TestDuplicateSwitchLocals	Default	classes/java8/pkg/TestDuplicateSwitchLocals
@@ -2138,3 +2138,5 @@ case	kuna-fixes/pkg/TestUpdateInLastCase	Kuna Fixes	kuna-fixes/classes/pkg/TestU
 case	kuna-fixes/pkg/TestMixedWidening	Kuna Fixes	kuna-fixes/classes/pkg/TestMixedWidening
 # kuna-fixes/src/pkg/TestForInitPair.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestForInitPair	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitPair
+# kuna-fixes/src/pkg/TestSwitchArmStore.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestSwitchArmStore	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchArmStore

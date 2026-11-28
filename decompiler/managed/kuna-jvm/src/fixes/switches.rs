@@ -8,7 +8,9 @@
 //! switch`; `switch_table_fillers` leaves out the `tableswitch` keys javac
 //! adds for values without a label; `switch_yield_const_retype` lets a
 //! yielded constant keep its own type; [`falls_into`] keeps the `break` of a
-//! case followed by a group of labels that only breaks.
+//! case followed by a group of labels that only breaks; [`merge_arm_locals`]
+//! keeps a store in a switch expression to the variable it initializes one
+//! variable.
 
 use crate::basic_block_statement::BasicBlockStatement;
 use crate::code_constants::{
@@ -30,6 +32,8 @@ use crate::stat_edge::StatEdge;
 use crate::statement::Statement;
 use crate::switch_exprent::SwitchExprent;
 use crate::switch_statement::SwitchStatement;
+use crate::var_exprent::VarExprent;
+use crate::var_processor::VarProcessor;
 use crate::var_type::VarType;
 use crate::yield_exprent::YieldExprent;
 
@@ -491,5 +495,113 @@ impl ConstExprent {
             }
             _ => false,
         }
+    }
+}
+
+/// Merges into `v` each local stored at `v`'s slot inside the switch
+/// expression an assignment stores to `v` (`int num = switch (b) { case 0 ->
+/// num = 1; .. }`, printed with a second `num` declared in the arm, which
+/// javac rejects): javac gives a declared local its slot before it evaluates
+/// the initializer, and an assigned one holds its slot already, so a local
+/// the arms declare takes another slot and a store to `v`'s slot there is
+/// `v`.
+pub fn merge_arm_locals(stat: Statement, varproc: VarProcessor) {
+    for st in stat.get_stats().borrow().to_vec() {
+        merge_arm_locals(st, varproc);
+    }
+    let mut lists = vec![stat.get_var_definitions()];
+    lists.extend(stat.get_exprents());
+    for exprent in lists.iter().flat_map(|l| l.to_vec()) {
+        let Some(assign) = exprent.try_as_assignment() else {
+            continue;
+        };
+        let (Some(v), Some(switch)) = (assign.get_left().try_as_var(), assign.get_right().try_as_switch()) else {
+            continue;
+        };
+        let Some(slot) = varproc.get_var_original_index(v.get_index()) else {
+            continue;
+        };
+        let arms = switch.get_backing().0;
+        let mut vars = Vec::new();
+        let mut stored = Vec::new();
+        each_var(arms, &mut |w, store| {
+            vars.push(w);
+            if store {
+                stored.push(w);
+            }
+        });
+        let merged: Vec<i32> = stored
+            .iter()
+            .filter(|w| {
+                w.get_index() != v.get_index()
+                    && varproc.get_var_original_index(w.get_index()) == Some(slot)
+                    && holds(&v.get_var_type(), &w.get_var_type())
+            })
+            .map(|w| w.get_index())
+            .collect();
+        if merged.is_empty() {
+            continue;
+        }
+        remove_bare_definitions(arms, &merged);
+        for w in vars.into_iter().filter(|w| merged.contains(&w.get_index())) {
+            w.set_index(v.get_index());
+            w.set_version(v.get_version());
+            w.set_definition(false);
+        }
+    }
+}
+
+/// Whether a variable of type `v` can hold every value one of type `w`
+/// holds: the same type, or `int` for one an int constant narrowed.
+fn holds(v: &VarType, w: &VarType) -> bool {
+    v.equals(w)
+        || (v.equals(&VarType::VARTYPE_INT())
+            && [VarType::VARTYPE_BYTE(), VarType::VARTYPE_SHORT(), VarType::VARTYPE_CHAR()]
+                .iter()
+                .any(|t| w.equals(t)))
+}
+
+/// Calls `f` with every variable in the exprents of `stat` and the
+/// statements in it, and whether the occurrence is one the code stores to
+/// (an assignment's target or a bare declaration).
+fn each_var(stat: Statement, f: &mut impl FnMut(VarExprent, bool)) {
+    let mut exprents = stat.get_var_definitions().to_vec();
+    exprents.extend(stat.get_stat_exprents());
+    exprents.extend(stat.get_exprents().map(|e| e.to_vec()).unwrap_or_default());
+    for exprent in exprents {
+        let mut targets = Vec::new();
+        for e in exprent.get_all_exprents_rec_self(true, true) {
+            if let Some(left) = e.try_as_assignment().map(|a| a.get_left()) {
+                targets.push(left);
+            }
+        }
+        if exprent.try_as_var().is_some_and(|v| v.is_definition()) {
+            targets.push(exprent);
+        }
+        for e in exprent.get_all_exprents_rec_self(true, true) {
+            if let Some(var) = e.try_as_var() {
+                f(var, targets.contains(&e));
+            }
+        }
+    }
+    for st in stat.get_stats().borrow().to_vec() {
+        each_var(st, f);
+    }
+}
+
+/// Removes the bare declarations (`int x;`) of the variables `indexes` from
+/// `stat` and the statements in it.
+fn remove_bare_definitions(stat: Statement, indexes: &[i32]) {
+    let mut lists = vec![stat.get_var_definitions()];
+    lists.extend(stat.get_exprents());
+    for list in lists {
+        for e in list.to_vec() {
+            if e.try_as_var().is_some_and(|v| v.is_definition() && indexes.contains(&v.get_index())) {
+                list.remove_item(&e);
+            }
+        }
+    }
+    for st in stat.get_stats().borrow().to_vec() {
+        remove_bare_definitions(st, indexes);
     }
 }

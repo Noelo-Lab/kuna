@@ -32,6 +32,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::var_merge::var_merge_captured;
 use crate::fixes::var_merge::var_merge_liveness;
 use crate::fixes::declaration_scope;
+use crate::fixes::switches;
 use crate::fixes::var_merge;
 use crate::p6_variables::kuna_source_locals;
 use crate::method_descriptor::MethodDescriptor;
@@ -318,6 +319,7 @@ impl VarDefinitionHelper {
         self.set_non_final(root.0, &mut JHashSet::new());
         kuna_source_locals::order_declarations(root.0, varproc);
         self.remap_clashing_names(root.0, mt);
+        switches::merge_arm_locals(root.0, varproc);
         Self::split_mixed_inits(root.0);
     }
 
