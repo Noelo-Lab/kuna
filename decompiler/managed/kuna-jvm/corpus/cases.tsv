@@ -2120,3 +2120,5 @@ case	kuna-fixes/pkg/TestCapturedSlotReuse	Kuna Fixes	kuna-fixes/classes/pkg/Test
 case	kuna-fixes/pkg/TestOverloadUnseenArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestOverloadUnseenArgument
 # kuna-fixes/src/pkg/TestLossyConversionChain.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestLossyConversionChain	Kuna Fixes	kuna-fixes/classes/pkg/TestLossyConversionChain
+# kuna-fixes/src/pkg/TestUpdateOnOnePath.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpdateOnOnePath	Kuna Fixes	kuna-fixes/classes/pkg/TestUpdateOnOnePath

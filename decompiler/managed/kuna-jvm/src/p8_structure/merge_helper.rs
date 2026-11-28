@@ -641,16 +641,16 @@ impl MergeHelper {
             return;
         };
         if stat.get_exprents().expect("exprents").is_empty() {
+            if stat
+                .get_parent()
+                .is_some_and(|p| p.is_switch() || p.is_catch() || p.is_catch_all() || p.is_synchronized())
+            {
+                return;
+            }
+
             let lst = stat.get_all_successor_edges();
             if !lst.is_empty() {
                 stat.remove_successor(lst[0]);
-            }
-
-            if stat
-                .get_parent()
-                .is_some_and(|p| p.is_catch() || p.is_catch_all() || p.is_synchronized())
-            {
-                return;
             }
 
             Self::remove_last_empty_statement(dostat, stat);

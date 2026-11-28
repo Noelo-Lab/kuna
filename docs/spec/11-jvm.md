@@ -836,6 +836,21 @@ on the second held-out benchmark).
 makes it an if: the head's edge into the branch, which now continues the loop, leaves the if, or
 is dropped when the if already has a successor, which goes where the branch went.
 
+**An update reached from one case or one handler (kuna).** When only one path of a loop's body
+reaches its update, javac's `iinc` block has that one predecessor and merges into it, so the
+update ends a switch case (`case '0': break;` beside `default: return i;`) or a catch handler
+(`catch (Duplicate e) {}` beside `try { ..; break; } catch (Invalid e) { break; }`).
+`match_for` takes it as the `for` update, and `clean_empty_statements` then removed the emptied
+block's exit, the loop's `continue`, keeping the block only under a catch or `synchronized`.
+Falling off a case does not reach the end of the loop but the next case, and falling off a
+handler reaches whatever follows the `try`, so the case fell into `default` and the handler
+joined the `break` the try's other paths share, which `LabelHelper` wrote after the `try`: a
+retry loop stopped at the first duplicate (Ghidra's `changeConflictingSymbolNames`), and joda-time's
+and luaj's scanners returned at their first digit (`case '0': .. case '9': default: return
+~position;`). The block's exit is the path's own jump, so under a switch, a catch or
+`synchronized` the emptied block keeps it, and `LabelHelper` leaves it unwritten where falling
+off does reach the loop's end. Case `TestUpdateOnOnePath` (Vineflower prints the same code).
+
 **The increment of a for-each over an array (kuna).** `MergeHelper::match_for_each` makes a
 for-each of `T[] c = a; int n = c.length; int i = 0; while (i < n) { T x = c[i]; ..; i++; }` and
 deletes the `i++` with the other parts. Vineflower took that increment from the last statement in
