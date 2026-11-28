@@ -207,6 +207,15 @@ public class Shapes {
         return "item " + name + " #" + n;
     }
 
+    // d8 calls String.valueOf on a concatenation's reference operands before the chain, so
+    // the converted operand of a super(...) argument was a statement before the call
+    // (spring-boot UnsupportedConfigDataLocationException).
+    static class Failure extends RuntimeException {
+        Failure(Object where, int code) {
+            super("failed at " + where + " (" + code + ")");
+        }
+    }
+
     public static void main(String[] args) {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
@@ -234,7 +243,7 @@ public class Shapes {
         } catch (NullPointerException e) {
             System.out.println("npe");
         }
-        System.out.println(label("a", 2));
+        System.out.println(label("a", 2) + " " + new Failure(null, 3).getMessage());
         for (java.util.concurrent.TimeUnit u : java.util.concurrent.TimeUnit.values()) {
             System.out.print(unit(u) + seconds(u));
         }

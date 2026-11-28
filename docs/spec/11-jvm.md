@@ -2292,7 +2292,16 @@ called on: the chain became a builder in a register and one statement per `appen
 writes the builder's register again, the same reference) when the builder is created,
 appended to and turned into its string by `toString` in straight-line code under one try
 item, nothing else reads or writes its register in between, and debug info does not name
-it, so the chain is one expression and the engine prints the concatenation. In a method
+it, so the chain is one expression and the engine prints the concatenation. d8 also calls
+`String.valueOf` on each reference operand of a concatenation before the chain starts, so the
+converted operand sat in a register across the chain, and a `super(...)` or `this(...)`
+argument became a statement before the call, which javac rejects. Such a call whose one use
+is an `append(String)` later in its block is written at that use, as javac evaluates the
+operand, when nothing it moves past can have an effect it could observe (constants, a new
+`StringBuilder` with no argument, a string literal or a non-negative literal capacity,
+appends of strings or primitives to it, and other such calls whose own appends come
+later), nothing in between writes its argument's register, and the argument is not itself
+an expression folded into the call (it would become a variable). In a method
 without debug locals, references of different types
 that d8 put in one register get one local per type (the type inferred for each value's web),
 so the engine does not type them as one variable of their common supertype. And a value

@@ -57,6 +57,9 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     /// Joins that receive their value on the stack: block to its edges.
     joins: BTreeMap<u32, Join>,
     silent: Vec<bool>,
+    /// `String.valueOf` calls of d8's string concatenation, written where
+    /// their value is appended (see `find_late`).
+    late: Vec<bool>,
     on_stack: Vec<bool>,
     stmts: Vec<(u32, u32)>,
     min_addr: u32,
@@ -137,6 +140,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             next_block: vec![u32::MAX; m.blocks.len()],
             joins: BTreeMap::new(),
             silent: vec![false; m.ops.len()],
+            late: vec![false; m.ops.len()],
             on_stack: vec![false; m.ops.len()],
             stmts: Vec::new(),
             min_addr: u32::MAX,
@@ -400,9 +404,94 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         Ok(())
     }
 
+    /// d8 lowers javac's string concatenation to a `StringBuilder` chain
+    /// and calls `String.valueOf` on each reference operand before the
+    /// chain starts, so the converted operand sits in a register across the
+    /// chain (and a `super(...)` argument becomes a statement before the
+    /// call). Such a call whose one use is an `append(String)` later in its
+    /// block is written at that use, as javac's operand is, when nothing it
+    /// would move past can have an effect it could observe: constants, a new
+    /// `StringBuilder()`, appends of strings or primitives to it, and other
+    /// such calls whose own appends come later; and when nothing between
+    /// writes its argument's register and the argument is not itself an
+    /// expression folded into the call (it would become a variable).
+    fn find_late(&mut self) -> Result<()> {
+        let m = self.m;
+        let is = |k: usize, class: &[u8], name: &[u8], descs: &[&[u8]]| -> Result<bool> {
+            let mi = m.dex.method(m.ops[k].insn.idx)?;
+            Ok(m.dex.type_desc(mi.class)? == class && m.dex.string(mi.name)? == name && descs.contains(&m.dex.proto_desc(mi.proto)?.as_slice()))
+        };
+        const SB: &[u8] = b"Ljava/lang/StringBuilder;";
+        const APPEND: [&[u8]; 7] = [
+            b"(Ljava/lang/String;)Ljava/lang/StringBuilder;",
+            b"(C)Ljava/lang/StringBuilder;",
+            b"(I)Ljava/lang/StringBuilder;",
+            b"(J)Ljava/lang/StringBuilder;",
+            b"(F)Ljava/lang/StringBuilder;",
+            b"(D)Ljava/lang/StringBuilder;",
+            b"(Z)Ljava/lang/StringBuilder;",
+        ];
+        for blk in m.blocks.iter().filter(|b| b.reachable) {
+            for k in (blk.start..blk.end).rev() {
+                let o = &m.ops[k];
+                let Some(d) = o.def.as_ref().filter(|_| o.kind == Kind::Plain && matches!(o.insn.op, 0x71 | 0x77) && o.uses.len() == 1) else { continue };
+                if !is(k, b"Ljava/lang/String;", b"valueOf", &[b"(Ljava/lang/Object;)Ljava/lang/String;"])? {
+                    continue;
+                }
+                let u = self.user[d.id as usize];
+                let single = m.direct_uses[d.id as usize] == 1 && m.web_uses.get(&m.root(d.id)) == Some(&(1, false));
+                if !single || u <= k || u >= blk.end {
+                    continue;
+                }
+                let user = &m.ops[u];
+                if user.kind != Kind::Plain || !matches!(user.insn.op, 0x6e | 0x74) || user.uses.get(1).map(|x| x.val) != Some(d.id) || !is(u, SB, b"append", &APPEND[..1])? {
+                    continue;
+                }
+                let reg = o.uses[0].reg;
+                let src = m.def_op[o.uses[0].val as usize];
+                if src < m.ops.len() && self.candidate(src) {
+                    continue;
+                }
+                let lit = |j: usize, string: bool| {
+                    m.ops[j].uses.first().is_some_and(|x| {
+                        let c = m.def_op[x.val as usize];
+                        m.literal(x.val) && if string { matches!(m.ops[c].insn.op, 0x1a | 0x1b) } else { m.ops[c].insn.lit >= 0 }
+                    })
+                };
+                let mut pure = true;
+                for j in k + 1..u {
+                    let x = &m.ops[j];
+                    if x.kind == Kind::Absorbed || x.insn.op == 0x00 {
+                        continue;
+                    }
+                    let writes = x.def.as_ref().is_some_and(|w| w.reg == reg || is_wide(w.mask) && w.reg + 1 == reg);
+                    let ok = match x.kind {
+                        _ if writes => false,
+                        Kind::NewObject { ty } if m.dex.type_desc(ty)? == SB => {
+                            is(j, SB, b"<init>", &[b"()V"])? || is(j, SB, b"<init>", &[b"(Ljava/lang/String;)V"])? && lit(j, true) || is(j, SB, b"<init>", &[b"(I)V"])? && lit(j, false)
+                        }
+                        _ if matches!(x.insn.op, 0x12..=0x1c) => true,
+                        _ if matches!(x.insn.op, 0x6e | 0x74) => is(j, SB, b"append", &APPEND)?,
+                        _ => self.late[j] && x.def.as_ref().is_some_and(|w| self.user[w.id as usize] > u),
+                    };
+                    if !ok {
+                        pure = false;
+                        break;
+                    }
+                }
+                if pure {
+                    self.late[k] = true;
+                    self.deferred[k] = true;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn run(&mut self) -> Result<()> {
         let m = self.m;
         self.find_joins()?;
+        self.find_late()?;
         self.find_null_checks()?;
         let mut order = layout(m);
         self.regions = crate::region::arrange(m, &mut order);
@@ -485,7 +574,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     fn step(&mut self, k: usize, b: usize) -> Result<()> {
         let m = self.m;
         let o = &m.ops[k];
-        if o.kind == Kind::Absorbed || o.insn.op == 0x00 || self.silent[k] {
+        if o.kind == Kind::Absorbed || o.insn.op == 0x00 || self.silent[k] || self.late[k] {
             return Ok(());
         }
         if let Some(d) = &o.def {
