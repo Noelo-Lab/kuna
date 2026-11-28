@@ -98,7 +98,8 @@ use crate::varnode::varnode_flags;
 /// Container holding the stack system for the renaming algorithm.  Every
 /// disjoint address range (indexed by its initial address) maps to its own
 /// Varnode stack (C++ `typedef map<Address,vector<Varnode *> > VariableStack`).
-pub type VariableStack = BTreeMap<Address, Vec<crate::context::VarnodeId>>;
+/// Renaming only looks stacks up by address, so a hash map serves.
+pub type VariableStack = crate::kuna_fasthash::FxHashMap<Address, Vec<crate::context::VarnodeId>>;
 
 /// A block [`Heritage::rename_recurse`] has entered and not yet left: its
 /// dom-children (`next` is the first not yet walked) and what it pops on exit.
@@ -4691,7 +4692,7 @@ impl Heritage {
         let bblocks = fd.bblocks_ref();
         let root = bblocks.root.expect("rename: bblocks root");
         let start = bblocks.block(root).get_block(0);
-        let mut varstack: VariableStack = VariableStack::new();
+        let mut varstack: VariableStack = VariableStack::default();
         self.rename_recurse(fd, start, &mut varstack)?;
         if !self.halt_loop_reach.is_empty() {
             super::kuna_haltloopguard::mark(fd, &std::mem::take(&mut self.halt_loop_reach));
@@ -7492,7 +7493,7 @@ mod tests {
             let mut h = Heritage::new();
             h.build_info_list(&fd);
             h.build_adt(&fd);
-            let mut stack = VariableStack::new();
+            let mut stack = VariableStack::default();
             match path {
                 "read" | "child" => {
                     append_overflowing_read(&mut fd, blocks[usize::from(path == "child")], &addr);
