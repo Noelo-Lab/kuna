@@ -2128,3 +2128,5 @@ case	kuna-fixes/pkg/TestUnboxingSelectsOverload	Kuna Fixes	kuna-fixes/classes/pk
 case	kuna-fixes/pkg/TestLoopInFinally	Kuna Fixes	kuna-fixes/classes/pkg/TestLoopInFinally
 # kuna-fixes/src/pkg/TestConcatTagCharacters.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestConcatTagCharacters	Kuna Fixes	kuna-fixes/classes/pkg/TestConcatTagCharacters
+# kuna-fixes/src/pkg/TestUpcastSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpcastSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestUpcastSelectsOverload

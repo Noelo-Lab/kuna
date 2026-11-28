@@ -2153,6 +2153,19 @@ without a cast cannot resolve to the invoked method. The early return now holds 
 the one applicable overload is the invoked method; otherwise the casts are decided as for
 an ambiguity. Case `TestOverloadUnseenArgument` (Vineflower prints the same `distance` call).
 
+**An upcast that selects an overload (kuna).** The bytecode's `checkcast` before a call is a
+cast expression, which the printer leaves out when type inference finds its operand already
+of the cast's type (`FunctionExprent::get_inferred_expr_type`); that happens while the call
+is written, after `selecting_cast` has decided, and `selecting_cast` saw the cast's type, the
+invoked method's own, so no cast seemed needed: `arr((Named[]) items)` beside `arr(Item[])`
+printed `arr(items)`, and `take((Named) box.get())` of a `Box<Item>` beside `take(Item)`
+printed `take(box.get())`, both calling the other method. A reference cast whose operand,
+by its written type or by the type its receiver's type arguments give it, converts to the
+cast's type is the one the printer leaves out, so `selecting_cast` decides the call with
+the operand in its place (`upcast_operand`), and writes the cast where javac would
+otherwise select another method. Case `TestUpcastSelectsOverload` (Vineflower prints the same
+calls).
+
 **An unboxing call beside an inherited overload (kuna).** `appendParamList` leaves an unboxing
 call (`value.doubleValue()`) unwritten unless another method of the call's name and arity
 takes, at that position, a reference type the box is an instance of; it asked only the

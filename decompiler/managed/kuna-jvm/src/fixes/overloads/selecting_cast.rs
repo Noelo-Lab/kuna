@@ -15,6 +15,7 @@ use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::function_exprent::FunctionType;
 use crate::fixes::overloads::vararg_spread_resolution::{
     candidates, convertible, more_specific, phase, primitive, same_parameters, written_type,
 };
@@ -57,6 +58,7 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
         if param.try_as_new().is_some_and(|n| n.is_lambda()) {
             return;
         }
+        let param = upcast_operand(param);
         let t = written_type(param, &descriptor.params[i]);
         if !known(&t) {
             return;
@@ -67,6 +69,29 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
     decide(&args, &descriptor.params, &methods, ambiguous);
     if generic_args.iter().zip(&args).any(|(g, t)| !g.equals(t)) {
         decide(&generic_args, &descriptor.params, &methods, ambiguous);
+    }
+}
+
+/// The operand of `e` when `e` is a reference cast its operand's type, as
+/// written or from its receiver's type arguments, already converts to: the
+/// printer leaves such a cast unwritten, so javac resolves the call with the
+/// operand (`arr((CharSequence[]) strings)`, `take((CharSequence) list.get(0))`).
+fn upcast_operand(e: Exprent) -> Exprent {
+    let Some(f) = e.try_as_function().filter(|f| f.get_func_type() == FunctionType::Cast) else {
+        return e;
+    };
+    let ops = f.get_lst_operands();
+    let cast = f.0.get_expr_type();
+    if ops.len() != 2 || primitive(&cast) {
+        return e;
+    }
+    let operand = ops.get(0);
+    let t = written_type(operand, &cast);
+    let g = generic_type(operand, &t).unwrap_or_else(|| t.clone());
+    if t.type_ != CodeType::Null && known(&t) && (convertible(&t, &cast) || convertible(&g, &cast)) {
+        operand
+    } else {
+        e
     }
 }
 
