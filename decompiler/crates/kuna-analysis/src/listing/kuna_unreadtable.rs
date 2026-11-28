@@ -28,6 +28,7 @@
 //! `jmp [slot]` branches on memory rather than a register, and a return is not
 //! a computed jump at all.
 
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use kuna_base::space::AddrSpace;
@@ -35,6 +36,7 @@ use kuna_num::opcodes::OpCode;
 use kuna_num::pcoderaw::VarnodeData;
 use kuna_sleigh::translate::Translate;
 
+use super::kuna_calltable::is_call_table;
 use super::kuna_poolref::PoolImage;
 use super::kuna_switchtable::{
     falls_through, fold, invalidate, is_constant, key_of, keys_overlap, leaves_registers_unknown, previous, survives,
@@ -67,7 +69,7 @@ const MAX_SCALE_STEPS: usize = 8;
 /// What a classification reads besides the code: the read-only image the
 /// table reader reads (`pool`) and every section with file content (`image`),
 /// the executable ranges, the registers the calling convention preserves, the
-/// mapped ranges and the stack pointer.
+/// mapped ranges, the stack pointer and the function entries the walk knows.
 pub(super) struct Reach<'a> {
     pub(super) pool: &'a PoolImage<'a>,
     pub(super) image: &'a PoolImage<'a>,
@@ -75,20 +77,27 @@ pub(super) struct Reach<'a> {
     pub(super) preserved: &'a [(u64, u64)],
     pub(super) mapped: &'a [(u64, u64)],
     pub(super) sp: Option<Key>,
+    pub(super) funcs: &'a BTreeSet<u64>,
 }
 
 /// Does the computed jump at `from`, whose p-code is `jump`, index a table?
 ///
 /// A delta or compact table (an entry added back to a base) is a switch's
-/// shape and nothing else's. A pointer table is a structure's array of
+/// shape and nothing else's, read at an index scaled by the entry's width (a
+/// byte entry unscaled) when its table is at a constant address: MIPS PIC's
+/// local tail call `lw t9, %got(page)(gp); addiu t9, t9, %lo(f); jr t9` adds a
+/// constant to a word read at no index. A pointer table is a structure's array of
 /// function pointers called in tail position as often as a switch, so it
 /// counts only at a constant address whose first [`MIN_ENTRIES`] entries, read
 /// out of `image` (every section with file content, so a computed goto's labels
 /// in `.data.rel.ro` count), land in the executable section holding the jump
-/// (`exec`), as the table reader requires of its own; or indexed off a
-/// register read from above (a base gcc `-fipa-ra` keeps in MIPS `t0`) with the
-/// frame still standing. One indexed off what a load reads, or reached after
-/// the epilogue (`mov 0x1f18(%r14,%rax,8),%rax; pop ...; jmp *%rax`), is not.
+/// (`exec`), as the table reader requires of its own, and are not all function
+/// entries (the walk's own call-table rule: perl's `PL_check[type](op)`); or
+/// indexed off a register read from above (a base gcc `-fipa-ra` keeps in MIPS
+/// `t0`) with the frame still standing and the run stopped short of the
+/// function's entry, where that register is an argument (`o->fn[i](x)`). One
+/// indexed off what a load reads, or reached after the epilogue (`mov
+/// 0x1f18(%r14,%rax,8),%rax; pop ...; jmp *%rax`), is not.
 pub(super) fn indexes_table(
     translate: &dyn Translate,
     code_space: &Rc<AddrSpace>,
@@ -98,10 +107,11 @@ pub(super) fn indexes_table(
     jump: &[FullOp],
     reach: &Reach,
 ) -> bool {
-    let Reach { pool, image, exec, preserved, mapped, sp } = *reach;
+    let Reach { pool, image, exec, preserved, mapped, sp, funcs } = *reach;
     let branch = jump.iter().find(|op| op.opcode == OpCode::CPUI_BRANCHIND).and_then(|op| op.ins.first());
     let Some(want) = branch.and_then(|vn| key_of(vn, data)) else { return false };
-    let (slice, teardown) = straight_slice(translate, code_space, data, decoded, from, jump, want, preserved, sp);
+    let (slice, teardown, at_entry) =
+        straight_slice(translate, code_space, data, decoded, from, jump, want, preserved, sp, funcs);
     let ops = || slice.iter().flat_map(|(_, ops)| ops);
     if !ops().any(|op| op.opcode == OpCode::CPUI_LOAD) || !shaped(&slice, data, pool.ptr_width()) {
         return false;
@@ -136,17 +146,28 @@ pub(super) fn indexes_table(
         };
         let slice = propagate(&slice, given, keep, loaded, data, big, preserved);
         let (dispatch, index) = fold_all(&slice, from, data, pool, preserved);
+        let wrap = |v: u64| v & mask(ptr);
+        let scaled = |width: u32| {
+            index.is_some_and(|(at, op, key)| scale(&slice, at, op, key, data).unwrap_or(1) == u64::from(width))
+        };
         match dispatch {
-            Some(Val::Case { table, base } | Val::Relative { table, base, .. }) => {
-                real(table) || standin(table) || standin(base)
+            Some(Val::Case { table, base }) => {
+                (real(wrap(table)) && scaled(4)) || standin(wrap(table)) || standin(base)
             }
-            Some(Val::Entry { table, width, .. }) if width == ptr && (real(table) || near(table, held)) => {
+            Some(Val::Relative { table, width, base, .. }) => {
+                (real(wrap(table)) && scaled(width)) || standin(wrap(table)) || standin(base)
+            }
+            Some(Val::Entry { table, width, .. })
+                if width == ptr && !teardown && (real(wrap(table)) || near(wrap(table), held)) =>
+            {
+                let table = wrap(table);
                 let read = if real(table) {
-                    !targets(table, from, image, exec, Some(MIN_ENTRIES), MIN_ENTRIES).is_empty()
+                    let entries = targets(table, from, image, exec, Some(MIN_ENTRIES), MIN_ENTRIES);
+                    !entries.is_empty() && !is_call_table(&entries, true, |t| funcs.contains(&t))
                 } else {
-                    !teardown
+                    !at_entry
                 };
-                read && index.is_some_and(|(at, op, key)| scale(&slice, at, op, key, data) == Some(u64::from(ptr)))
+                read && scaled(ptr)
             }
             _ => false,
         }
@@ -237,14 +258,20 @@ fn self_relative(op: &FullOp, vals: &[(Key, Val)], data: Option<&Rc<AddrSpace>>)
 /// while an instruction falls into the next, as far as a call that clobbers
 /// what the chain still wants, keeping only the ops whose output the jump's
 /// target is computed from (and the calls between), or until
-/// [`MAX_IDLE_LOADED`] / [`MAX_IDLE_UNLOADED`] go by without one. What the
-/// chain reads from above where it stops is read as it stands at the jump.
+/// [`MAX_IDLE_LOADED`] / [`MAX_IDLE_UNLOADED`] go by without one, or as far as
+/// a function entry in `funcs`, or once it holds a load with the frame popped
+/// (no pointer table read after the epilogue counts, and an entry added back
+/// to a base needs nothing further up). What the chain reads from above where
+/// it stops is read as it stands at the jump. An instruction that branches within itself
+/// (a `bsf` loop, a `cmov` skip) is no straight-line function of what it reads,
+/// so what it writes is read from above too.
 ///
 /// It follows more than the table reader's own slice (a mask, a rotate's
 /// halves, any scaling), since it only classifies: MIPS's `jr` and ARM's `bx`
 /// clear the ISA bit of their target, and PowerPC's `slwi` is a rotate under a
-/// mask. The flag says whether an instruction on the run pops the frame: adds
-/// a positive constant to the stack pointer `sp`.
+/// mask. The flags say whether an instruction on the run pops the frame (adds
+/// a positive constant to the stack pointer `sp`), and whether the run reached
+/// a function entry, where what it reads from above is what the caller passed.
 #[allow(clippy::too_many_arguments)]
 fn straight_slice(
     translate: &dyn Translate,
@@ -256,27 +283,28 @@ fn straight_slice(
     want: Key,
     preserved: &[(u64, u64)],
     sp: Option<Key>,
-) -> (Vec<(u64, Vec<FullOp>)>, bool) {
+    funcs: &BTreeSet<u64>,
+) -> (Vec<(u64, Vec<FullOp>)>, bool, bool) {
     let mut cap = FullCapture::default();
     let mut need = vec![want];
     let mut out = Vec::new();
-    let mut teardown = false;
+    let (mut teardown, mut at_entry) = (false, false);
     let (mut holds_load, mut idle) = (false, 0);
     let mut cur = from;
     let mut ends_at: Option<u64> = None;
     for step in 0..MAX_SLICE_INSNS {
-        let insn = if step == 0 {
-            jump
+        let (insn, opaque) = if step == 0 {
+            (jump, false)
         } else {
             let Some(len) = decode(translate, cur, code_space, &mut cap) else { break };
             if ends_at.is_some_and(|end| cur.wrapping_add(u64::from(len)) != end) || !falls_through(cap.ops()) {
                 break;
             }
-            cap.ops()
+            (cap.ops(), branches_within(cap.ops(), cur, len))
         };
         teardown |= sp.is_some_and(|sp| insn.iter().any(|op| pops(op, sp, data)));
         let mut kept = Vec::new();
-        let mut call = false;
+        let (mut call, mut computed) = (false, false);
         for op in insn.iter().rev() {
             if op.opcode == OpCode::CPUI_CALLOTHER && op.out.is_none() {
                 continue;
@@ -295,6 +323,10 @@ fn straight_slice(
                 continue;
             }
             need.retain(|&n| !covers(out, n));
+            if opaque {
+                computed = true;
+                continue;
+            }
             holds_load |= op.opcode == OpCode::CPUI_LOAD;
             kept.push(op.clone());
             for k in op.ins.iter().filter(|vn| !is_constant(vn)).filter_map(|vn| key_of(vn, data)) {
@@ -307,14 +339,19 @@ fn straight_slice(
         if clobbered {
             kept.retain(|op| !matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER));
         }
-        let relevant = kept.iter().any(|op| !matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER));
+        let relevant = computed
+            || kept.iter().any(|op| !matches!(op.opcode, OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_CALLOTHER));
         idle = if relevant { 0 } else { idle + 1 };
         if !kept.is_empty() {
             kept.reverse();
             out.push((cur, kept));
         }
         let patience = if holds_load { MAX_IDLE_LOADED } else { MAX_IDLE_UNLOADED };
-        if need.is_empty() || clobbered || idle >= patience {
+        if need.is_empty() || clobbered || idle >= patience || teardown && holds_load {
+            break;
+        }
+        if funcs.contains(&cur) {
+            at_entry = true;
             break;
         }
         let Some(prev) = previous(decoded, cur) else { break };
@@ -322,7 +359,7 @@ fn straight_slice(
         cur = prev;
     }
     out.reverse();
-    (out, teardown)
+    (out, teardown, at_entry)
 }
 
 /// Could `slice` read a table at all, before any fold: does it scale a
@@ -356,6 +393,16 @@ fn pops(op: &FullOp, sp: Key, data: Option<&Rc<AddrSpace>>) -> bool {
         && op.out.as_ref().is_some_and(is_sp)
         && op.ins.first().is_some_and(is_sp)
         && op.ins.get(1).is_some_and(|c| is_constant(c) && c.offset != 0 && c.offset >> (8 * c.size.clamp(1, 8) - 1) & 1 == 0)
+}
+
+/// Does the instruction at `at`, `len` bytes long, whose p-code is `ops`, branch
+/// to an op of its own or to the next instruction?
+fn branches_within(ops: &[FullOp], at: u64, len: u32) -> bool {
+    let next = at.wrapping_add(u64::from(len));
+    ops.iter().any(|op| {
+        matches!(op.opcode, OpCode::CPUI_BRANCH | OpCode::CPUI_CBRANCH)
+            && op.ins.first().is_some_and(|dest| is_constant(dest) || dest.offset == next)
+    })
 }
 
 /// Does a write to `out` replace all of `key`?

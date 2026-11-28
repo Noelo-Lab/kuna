@@ -1,6 +1,6 @@
 # Computed jumps for the reference walk's unread-table record (issue #1824):
-# two that index a jump table the walk cannot read, one whose table it reads,
-# and six that index no table at all. Every case body and every jump target
+# three that index a jump table the walk cannot read, one whose table it reads,
+# and nine that index no table at all. Every case body and every jump target
 # calls or is a function nothing else reaches, so code the walk misses is a
 # missing reference.
 #
@@ -70,6 +70,26 @@ unguarded:
 	jmp	t_u_3
 	.size	unguarded, .-unguarded
 
+# glibc's strcpy: the index is a bsf of a match mask, which no range check
+# bounds, and bsf's p-code counts up from zero in a loop of its own.
+	.globl	bit_index
+	.type	bit_index, @function
+bit_index:
+	bsf	%edi, %edx
+	lea	.Lb_jt(%rip), %r11
+	movslq	(%r11,%rdx,4), %rcx
+	lea	(%r11,%rcx,1), %rcx
+	jmp	*%rcx
+.Lb_0:
+	jmp	t_b_0
+.Lb_1:
+	jmp	t_b_1
+.Lb_2:
+	jmp	t_b_2
+.Lb_3:
+	jmp	t_b_3
+	.size	bit_index, .-bit_index
+
 # gcc -O2 -fPIE: a range check, the base and the dispatch in one block.
 	.globl	resolved
 	.type	resolved, @function
@@ -138,6 +158,40 @@ via_return:
 	jmp	*%rax
 	.size	via_return, .-via_return
 
+# Tail calls through an array of function pointers: one passed in
+# (o->fn[i](x)), and a table of functions perl's PL_check[type](op) and
+# glibc's svcauthsw[flavor] dispatch through, in writable data.
+	.globl	via_array_argument
+	.type	via_array_argument, @function
+via_array_argument:
+	mov	%rdi, %r8
+	and	$3, %esi
+	mov	%edx, %edi
+	jmp	*(%r8,%rsi,8)
+	.size	via_array_argument, .-via_array_argument
+
+	.globl	via_function_table
+	.type	via_function_table, @function
+via_function_table:
+	and	$3, %edi
+	lea	.Lfn_tab(%rip), %rdx
+	mov	(%rdx,%rdi,8), %rax
+	jmp	*%rax
+	.size	via_function_table, .-via_function_table
+
+	.globl	via_table_after_epilogue
+	.type	via_table_after_epilogue, @function
+via_table_after_epilogue:
+	push	%rbx
+	mov	%edi, %ebx
+	call	pick
+	and	$3, %ebx
+	lea	.Lfn_tab(%rip), %rdx
+	mov	(%rdx,%rbx,8), %rax
+	pop	%rbx
+	jmp	*%rax
+	.size	via_table_after_epilogue, .-via_table_after_epilogue
+
 	.globl	pick
 	.type	pick, @function
 pick:
@@ -145,7 +199,7 @@ pick:
 	ret
 	.size	pick, .-pick
 
-	.irp	f, t_c_0, t_c_1, t_c_2, t_c_3, t_u_0, t_u_1, t_u_2, t_u_3, t_r_0, t_r_1, t_r_2, t_r_3, t_p_0
+	.irp	f, t_c_0, t_c_1, t_c_2, t_c_3, t_u_0, t_u_1, t_u_2, t_u_3, t_r_0, t_r_1, t_r_2, t_r_3, t_p_0, t_b_0, t_b_1, t_b_2, t_b_3, t_f_0, t_f_1, t_f_2, t_f_3
 	.globl	\f
 	.type	\f, @function
 \f:
@@ -171,6 +225,19 @@ pick:
 	.long	.Lu_1-.Lu_jt
 	.long	.Lu_2-.Lu_jt
 	.long	.Lu_3-.Lu_jt
+.Lb_jt:
+	.long	.Lb_0-.Lb_jt
+	.long	.Lb_1-.Lb_jt
+	.long	.Lb_2-.Lb_jt
+	.long	.Lb_3-.Lb_jt
 	.p2align 3
 .Lslot:
 	.quad	t_p_0
+
+	.data
+	.p2align 3
+.Lfn_tab:
+	.quad	t_f_0
+	.quad	t_f_1
+	.quad	t_f_2
+	.quad	t_f_3

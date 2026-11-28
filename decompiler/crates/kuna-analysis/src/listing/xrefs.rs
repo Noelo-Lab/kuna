@@ -647,6 +647,7 @@ impl XrefIndex {
             preserved: &preserved,
             mapped: &mapped,
             sp: sp.map(|b| kuna_switchtable::Key::Reg(b.offset, b.size)),
+            funcs: &self.funcs,
         };
         let decoded = |at: u64| self.decoded.contains(&at);
         asked

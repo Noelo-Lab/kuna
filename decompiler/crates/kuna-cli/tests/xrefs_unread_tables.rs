@@ -1,9 +1,9 @@
 //! Issue #1824: a computed jump whose jump table the reference walk cannot read
 //! leaves its case bodies undecoded, and `kuna xrefs` says so in
 //! `coverage.unread_tables` and `coverage.notes` instead of answering an empty
-//! `--to` in silence. A jump through a pointer, an import slot or a returned
-//! value, and a switch whose table the walk reads, add neither
-//! (`unreadtable_x86_64`).
+//! `--to` in silence. A jump through a pointer, an import slot, a returned
+//! value or an array of function pointers, and a switch whose table the walk
+//! reads, add neither (`unreadtable_x86_64`).
 
 use crate::common;
 use serde_json::Value;
@@ -39,17 +39,17 @@ fn an_empty_answer_names_the_jump_tables_the_walk_could_not_read() {
     let notes = notes(&doc);
     assert_eq!(notes.len(), 1, "{notes:?}");
     let note = &notes[0];
-    assert!(note.starts_with("2 computed jumps dispatch through jump tables the walk could not read"), "{note}");
-    assert!(note.contains(" in caller_saved, ") && note.contains(" in unguarded:"), "{note}");
+    assert!(note.starts_with("3 computed jumps dispatch through jump tables the walk could not read"), "{note}");
+    assert!(note.contains(" in caller_saved, ") && note.contains(" in bit_index:"), "{note}");
     let sites = sites(&doc);
     let functions: Vec<&str> = sites.iter().map(|(_, f)| f.as_str()).collect();
-    assert_eq!(functions, ["caller_saved", "unguarded"], "{sites:?}");
+    assert_eq!(functions, ["caller_saved", "unguarded", "bit_index"], "{sites:?}");
     assert!(sites.iter().all(|(at, _)| note.contains(at.as_str())), "{note}");
 }
 
 #[test]
 fn a_function_with_an_unread_table_says_so_and_its_dispatch_does_too() {
-    for function in ["caller_saved", "unguarded"] {
+    for function in ["caller_saved", "unguarded", "bit_index"] {
         let doc = xrefs(&["--from", function]);
         let notes = notes(&doc);
         assert_eq!(notes.len(), 1, "{function}: {notes:?}");
@@ -74,6 +74,9 @@ fn a_read_table_a_tail_call_through_a_pointer_and_a_found_reference_add_no_note(
         "via_loaded_slot",
         "via_vtable",
         "via_return",
+        "via_array_argument",
+        "via_function_table",
+        "via_table_after_epilogue",
     ];
     for function in std::iter::once("resolved").chain(pointers) {
         let doc = xrefs(&["--from", function]);

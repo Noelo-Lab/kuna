@@ -3312,14 +3312,16 @@ nothing names the first three in the image with their functions, since the
 reference asked about may be made in a case body (`coverage.unread_tables` lists
 the same three, `coverage.unread_tables_count` counts them all). A jump through
 a pointer (a structure field, an argument, a GOT or import slot, a vtable, a
-returned value), a PLT stub and a return index no table and add no note, and
-neither does a table the walk read. `kuna decompile` reads a switch through the
-function's own data flow and recovers many of these.
+returned value, an array of function pointers passed in or called after the
+epilogue, a table whose entries are function entries), a PLT stub and a return
+index no table and add no note, and neither does a table the walk read.
+`kuna decompile` reads a switch through the function's own data flow and
+recovers many of these.
 
 ```
 $ kuna xrefs unreadtable_x86_64 --to t_c_0
-note: 2 computed jumps dispatch through jump tables the walk could not read (their base or bound is not proven), at 0x10001b in caller_saved, 0x100052 in unguarded: code only those jumps reach was not decoded, so a reference made there is not in this answer
-# 0 references to t_c_0 @ 0x1000b3
+note: 3 computed jumps dispatch through jump tables the walk could not read (their base or bound is not proven), at 0x10001b in caller_saved, 0x100052 in unguarded, 0x10007a in bit_index: code only those jumps reach was not decoded, so a reference made there is not in this answer
+# 0 references to t_c_0 @ 0x100128
 ```
 
 A target nothing references is exit `0` with `count: 0` — an answer, not a
