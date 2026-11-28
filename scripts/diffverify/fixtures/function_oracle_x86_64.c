@@ -53,6 +53,18 @@ u64 add_with_loop(u64 a, u64 b, u64 n) {
     return result;
 }
 
+u64 loop_with_duplicate_paths(u64 value, u64 count, u64 flag) {
+    __asm__("1: testq %2, %2; jz 2f; addq $3, %0; jmp 3f; "
+            "2: leaq 3(%0), %0; 3: decq %1; jne 1b"
+            : "+&r"(value), "+&r"(count) : "r"(flag) : "cc");
+    return value;
+}
+
+u64 cannot_rank_all_inputs(u64 n) {
+    __asm__("1: addq $2, %0; jne 1b" : "+r"(n) : : "cc");
+    return n;
+}
+
 u64 dispatch(u64 selector, u64 x) {
     switch (selector) {
     case 0: return x + 15;

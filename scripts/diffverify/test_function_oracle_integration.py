@@ -516,6 +516,51 @@ class CrossBackendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "completion query digest differs"):
             replay_proof(proof, self.elf, ROOT / "specs", self.verify)
 
+    def test_induction_proves_a_wrapping_64_bit_loop_without_unrolling(self):
+        code, proof = self.prove("count_down", "--induct", inputs=("RDI",), whole=True)
+        self.assertEqual((code, proof["classification"]), (0, "MODEL_EQUIVALENCE"), proof.get("reason"))
+        self.assertIsNone(proof["scope"]["max_visits_per_raw_instruction_and_ir_block"])
+        self.assertEqual(proof["induction"]["ranking"], {"carried_index": 0, "subtract": 1})
+        queries = proof["induction"]["queries"]
+        self.assertEqual([query["result"] for query in queries], ["sat", "unsat", "sat", "unsat", "sat", "unsat"])
+        for query in queries:
+            text = query["smt2"]
+            self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), query["sha256"])
+            output = subprocess.check_output(["z3", "-in", "-smt2"], input=text, text=True, timeout=10)
+            self.assertEqual(output.splitlines()[0], query["result"])
+
+    def test_induction_relates_two_carried_slots_and_refuses_a_bad_prefix(self):
+        options = ("--induct",)
+        inputs = ("RDI", "RSI", "RDX")
+        code, proof = self.prove("add_with_loop", *options, inputs=inputs, whole=True)
+        self.assertEqual((code, proof["classification"]), (0, "MODEL_EQUIVALENCE"), proof.get("reason"))
+        self.assertEqual(len(proof["induction"]["cutpoint"]["carried"]), 2)
+        code, proof = self.prove("add_with_loop", *options, "--opcode-mutant", "0", inputs=inputs, whole=True)
+        self.assertEqual((code, proof["classification"]), (3, "INCONCLUSIVE"), proof.get("reason"))
+        self.assertEqual(proof["phase"], "loop-initiation-and-prefix-exits")
+        self.assertNotIn("witness", proof)
+
+    def test_induction_relates_different_loop_control_flow_graphs(self):
+        name = "loop_with_duplicate_paths"
+        instructions = subprocess.check_output([
+            os.environ.get("LLVM_OBJDUMP", "llvm-objdump"), f"--disassemble-symbols={name}", self.elf,
+        ], text=True)
+        self.assertEqual(len(re.findall(r"\b(?:je|jne|jz|jnz)\b", instructions)), 2)
+        code, proof = self.prove(name, "--induct", inputs=("RDI", "RSI", "RDX"), whole=True)
+        self.assertEqual((code, proof["classification"]), (0, "MODEL_EQUIVALENCE"), proof.get("reason"))
+        self.assertEqual(proof["scope"]["ir_blocks"], 3)
+        for flag in ("0x0", "0x1"):
+            _, oracle, raw, ir = self.observe(
+                name, "--input-reg", "RDI", "0x5", "--input-reg", "RSI", "0x3", "--input-reg", "RDX", flag,
+            )
+            self.assert_returned(oracle, raw, ir, 14)
+
+    def test_induction_cannot_claim_termination_for_an_odd_stride_domain(self):
+        code, proof = self.prove("cannot_rank_all_inputs", "--induct", inputs=("RDI",), whole=True)
+        self.assertEqual((code, proof["classification"]), (3, "INCONCLUSIVE"), proof.get("reason"))
+        self.assertEqual(proof["phase"], "rank-decrease")
+        self.assertNotIn("ranking", proof["induction"])
+
     def test_whole_function_switch_requires_coverage_of_declared_indirect_targets(self):
         text = subprocess.check_output([
             os.environ.get("LLVM_OBJDUMP", "llvm-objdump"), "--disassemble-symbols=dispatch", self.elf,

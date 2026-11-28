@@ -4115,7 +4115,12 @@ states. With a visit bound, the encoders preserve the path predicates at
 each loop cut. An SMT query checks that at least one input completes on
 both sides before a bounded equivalence result. A separate query must
 prove all cuts unreachable to claim equivalence for the full declared
-model. See `docs/features/diffverify/symbolic-memory.md`.
+model. Register-only induction instead splits each execution at a loop
+cutpoint. The prover establishes a relation between the machine registers
+and final-IR phi values on entry, proves preservation across another
+iteration, compares the exits and checks strict decrease of an unsigned
+ranking term on each iteration. See
+`docs/features/diffverify/symbolic-memory.md`.
 
 ## 0.7 Feedback edges
 

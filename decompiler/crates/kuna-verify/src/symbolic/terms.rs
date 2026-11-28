@@ -249,6 +249,7 @@ mod tests {
             defined: division_guard(op, &inputs).unwrap(),
             memory: Default::default(),
             completed: Rc::new(Expr::Const(1, 8)),
+            boundary: None,
         };
         let obs = observed_terms(&mut emitter, compare(signed), compare(unsigned), false).unwrap();
         let proof = Obligation {
