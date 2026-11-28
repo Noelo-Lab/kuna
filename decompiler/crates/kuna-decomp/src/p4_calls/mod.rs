@@ -81,6 +81,7 @@ pub mod kuna_callrettype; // (kuna) a call returns the type its callee's recover
 pub mod kuna_condexeret; // (kuna) a return trial failed only on a path ActionConditionalExe removes gets one more pass
 pub mod kuna_condexeretuse; // (kuna) a use of a returned value on the branch a re-tested condition rules out does not compete
 pub mod kuna_armfloatargs; // (kuna) an ARM hard-float function takes its scalar VFP inputs at their full widths
+pub mod kuna_vfpcorepair; // (kuna) a double handed on whole in a core register pair is a double parameter
 pub mod kuna_armfloatreturn; // (kuna) an ARM hard-float function returns and takes whole VFP values
 pub mod kuna_x87return;
 pub mod kuna_narrowext; // (kuna) a narrow integer argument or return value is extended as the ABI states
@@ -91,6 +92,7 @@ pub mod kuna_callerargs; // (kuna) a 32-bit ARM parameter every caller passes na
 pub mod kuna_typedcallabi; // (kuna) a declared function-pointer prototype only under the image's float convention
 pub mod kuna_varargretreg; // (kuna) a variadic call's argument in the register its value returns in
 pub mod kuna_lockedreturnarg; // (kuna) a stated return register stays an input trial of the call
+pub mod kuna_wholeinputarg; // (kuna) a stated parameter the caller hands on whole is passed whole
 pub mod kuna_varargsave; // (kuna) the x86-64 System V register-save prologue is va_start, not code
 pub mod kuna_homespill; // (kuna) a Windows x64 argument register spilled to its home slot is a parameter
 pub mod kuna_vfpvariadic; // (kuna) a declared ARM hard-float variadic function returns under the base standard

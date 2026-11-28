@@ -473,6 +473,19 @@ impl PartialEq for Address {
 }
 impl Eq for Address {}
 
+impl std::hash::Hash for Address {
+    /// What [`PartialEq`] compares: the space by identity, then the offset.
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let space = match &self.base {
+            AddrSpacePtr::Null => 0,
+            AddrSpacePtr::Spc(s) => Rc::as_ptr(s) as usize,
+            AddrSpacePtr::Max => usize::MAX,
+        };
+        space.hash(state);
+        self.offset.hash(state);
+    }
+}
+
 impl Ord for Address {
     /// Do an ordering comparison of two addresses.  Addresses are sorted
     /// first on space, then on offset.  So two addresses in the same space
@@ -1885,6 +1898,40 @@ mod tests {
             }
         }
         assert_eq!(pairs, addrs.len() * addrs.len());
+    }
+
+    /// Equal Addresses hash equally, so a hash map keyed by Address finds
+    /// exactly the keys `==` matches, sentinels and same-index spaces included.
+    #[test]
+    fn hash_agrees_with_eq() {
+        use std::collections::HashMap;
+        use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+        let hasher = BuildHasherDefault::<DefaultHasher>::default();
+        let (first, second) = (ram(), ram());
+        let mut addrs = vec![
+            Address::new_extreme(mach_extreme::m_minimal),
+            Address::new_extreme(mach_extreme::m_maximal),
+            Address::default(),
+        ];
+        for spc in [&first, &second, &small_space("a", 1)] {
+            for off in [0u64, 1, 0x1000, u64::MAX] {
+                addrs.push(Address::new(Rc::clone(spc), off));
+            }
+        }
+        let mut map: HashMap<Address, usize> = HashMap::new();
+        for (i, a) in addrs.iter().enumerate() {
+            map.entry(a.clone()).or_insert(i);
+        }
+        for a in &addrs {
+            for b in &addrs {
+                if a == b {
+                    assert_eq!(hasher.hash_one(a), hasher.hash_one(b));
+                }
+            }
+            let first_equal = addrs.iter().position(|b| b == a).unwrap();
+            assert_eq!(map[a], first_equal);
+        }
+        assert_eq!(map.len(), addrs.iter().enumerate().filter(|(i, a)| addrs.iter().position(|b| b == *a) == Some(*i)).count());
     }
 
     #[test]

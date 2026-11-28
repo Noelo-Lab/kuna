@@ -27,6 +27,23 @@ moves as a single is also typed `float`. Words read only as integers, such as a
 double handed to a base-AAPCS helper in core registers, are left as
 `armfloatreturn` alone leaves them (`kuna_armfloatargs.rs (single_move)`).
 
+A double the code hands on whole in a core register pair is one input typed
+`double` (`kuna_vfpcorepair.rs`). The doubleword `vmov r2,r3,d0` reads `d0`
+whole to give a variadic callee or a base-PCS helper its double in `r2:r3`, but
+heritage refines `d0` into `s0` and `s1`, and copy propagation leaves the call
+reading the two words as its arguments. Two floats moved one by one, or with the
+two-singles `vmov r2,r3,s0,s1`, end in the same IR, so `ActionFuncLink` notes,
+from the raw p-code, each instruction that writes a core register's word pair
+from one d register read whole (`kuna_vfpcorepair.rs (note_moves)`). When the
+two words of a noted d register are read only by one call, as the low and high
+registers of an aligned pair (`r0:r1` or `r2:r3`) that the noted instruction
+wrote, they are joined into the d register, and the rule that splits a
+d-register input read only in halves keeps that input whole.
+`show2(int n, double d) { consume("%d %lf", n, d); }` then takes
+`(double, unsigned int)`, and a caller that forwards both passes both. The call
+keeps its two words, because the same instructions hand a double's bits to a
+64-bit integer parameter (`hash64(bits(d))`). Little-endian images only.
+
 An 8-byte VFP input that no reader takes as a double is not a parameter
 (`kuna_armfloatargs.rs (stray_vector_input)`): followed through copies, merges
 and bitwise lane edits, its value reaches only its own low word and vector user
@@ -36,6 +53,26 @@ loads (`it ls; vldr.ls s0,[r2]` beside a call that writes `d0` on the other
 path) leave such a read of the incoming register on paths the code never runs:
 libwebp's NEON transforms and `GetEntropyUnrefined_C` otherwise take an
 `unsigned long long` first parameter.
+
+A copy of the incoming value into memory is a store of the whole double, for
+this rule and for the rule that takes a d-register read only through its two
+words as two words (`kuna_armfloatreturn.rs (in_memory)`). A store to an
+address the function resolves, such as `vstr d0,[r3]` with r3 the address of a
+global, becomes a copy of the register into that global or into an
+address-taken local, and nothing in the function need read that location
+again. `void put_g(double v) { g = v; }` keeps its parameter instead of reading
+an uninitialized `d0`, and glibc's compatibility `totalorder(double, double)`,
+which stores both doubles to the stack and passes their addresses to a call,
+keeps both: the call's effect on that memory still carries the copied value.
+So does a volatile write of the incoming value, and a store after a forward
+merge, such as `g = c ? a : b` or `if (c) v = 0.5; g = v;`, where the incoming
+double reaches memory on the path that keeps it. A store reached only through
+a lane edit, or through a merge around a loop (a merge whose block dominates
+one of its predecessors, `kuna_armfloatreturn.rs (loop_merge)`), is no such
+store: glibc's `printf_size` writes `d5` only in a loop and stores it only on
+the paths where the loop ran, so the incoming `d5` reaches the store only on a
+path that never runs, and is not a parameter. A symbol mapped onto a register
+is not memory.
 
 The AAPCS-VFP back-fill slot is not a parameter. When a single-precision
 parameter fills the low half of a d-register and every later VFP parameter is a
@@ -2484,6 +2521,48 @@ classified:
   (`Architecture::source_lang`, the loader's language verdict with any
   `option sourcelang` force applied) is left alone, because Go passes arguments
   in registers the cspec calls scratch. `off` restores the first-pass verdict.
+
+- (kuna) **A stated parameter the caller hands on whole is passed whole**
+  (`decompiler/crates/kuna-decomp/src/p4_calls/kuna_wholeinputarg.rs (widen)`,
+  always on). When an 8-byte incoming register also has a 4-byte reader, such as
+  the `w0` of a stated `unsigned int` return on AArch64, heritage splits it, and
+  a call's trial there covers only the low piece, read as heritage's own
+  `SUBPIECE(x0(i),0)`. An input at the call slot fails the realistic-ancestor
+  test, but that read is an op and passes it, and a piece the test refuses is
+  still filled in by `fillinMap` when a later argument is active. Either way the
+  callee was handed the caller's pointer cut to the return width: a PLT veneer
+  stated as `unsigned sample(struct Item *p)` printed `(*dat_20000)((int)p)`, as
+  did the stubs kuna's built-in libc prototypes state (`open`, `__snprintf_chk`)
+  and `int f(char *p, void *fp)` tail-calling `fp`, on AArch64, PowerPC64 and
+  RISC-V64. Once `fillinMap` has mapped a non-variadic call's trials, and before
+  its inputs are built, a used trial whose value is that low piece of an unwritten
+  input is widened to the input when the caller's locked prototype states a
+  pointer or integer parameter in exactly that register, the register is exactly
+  the general-purpose entry the trial was mapped to, the piece is that entry's
+  least significant part, no other trial overlaps it, and the callee's own
+  recovered prototype (`protoorder`) states no narrower parameter there. The call
+  then passes `p`. A stated struct passed in the register keeps its field
+  (`fp(s.a)`), and a call to `int g(int)`, recovered before its caller, keeps
+  `g((int)n)`. A zero or sign extension the code performs before the call
+  (`mov w0,w0`, `sxtw x0,w0`) writes the register, so its value is no piece of
+  the input and is passed as it was. Which trials are arguments is unchanged:
+  with an 8-byte return nothing is split and the forwarded pointer stays no
+  argument, as above. A variadic call keeps the width its format gave (x86-64
+  `__printf_chk(1,"%*lu ",w,n)` passes the `int` width in `edx` while the
+  function writes all of `rdx` elsewhere), a recovered or 32-bit parameter keeps
+  its piece, and float entries and stack slots are not widened.
+  The rule names no target. In x86-64 C code the return register `rax` is not
+  an argument register, so a narrow return splits nothing a call reads, but a
+  32-bit read of an incoming `rdi` or `rsi` (`cmp edi,5`) splits it the same
+  way and `fillinMap` fills the piece below a later argument (`ext(n,7)` printed
+  `ext((int)n,7)`); Go's register ABI passes its first argument in `rax`. The
+  widened value is what the register holds at the call; the cut width came from
+  an unrelated read in the caller, not from the callee. A callee nothing
+  describes that takes an `int` gets the same untouched register on AArch64 and
+  x86-64, so `ext_i2((int)n,7)` now prints `ext_i2(n,7)`, as AArch64 already
+  printed it when the caller returned a `long`. PowerPC64 and RISC-V64 callers
+  extend an `int` argument themselves, so there the call writes the register
+  and keeps `ext_i2((long)(int)n,7)`.
 
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side
@@ -7177,7 +7256,8 @@ at a direct, unlocked, non-variadic CALL is an argument when all of these hold:
 - the callee's recovered prototype (`RecoveredTypes`, stated by `protoorder` for a
   callee decompiled first) has a parameter starting at `R`;
 - that list is one `lock` would accept as an **arity claim**, or every register
-  it names is one the callee's body takes (*What a body takes*, below)
+  it names in `R`'s register file is one the callee's body takes (*What a body
+  takes*, below; *A gap stops its own register file* says what a file is)
   (`RecoveredTypes::arity_sound`, computed only while the option is on): every
   parameter is in a register, the callee's body does not read the register its
   next parameter would arrive in (a variadic's register-save prologue does,
@@ -7359,9 +7439,16 @@ entry walk decides, because it follows constant branches (betaflight's
 and its callers would otherwise all gain the argument), with the statement's
 hand-offs added for what it cannot see past a call. An arity-sound list asks the
 walk's `proves_input` as before; any other list must have every register it names
-taken by the body, read on its low byte other than by a store or an alignment
-push -- a list with a register the body never takes in the middle
-(`microsISR`'s recovered `r1`) or at the end is not evidence. Where the walk is
+in `R`'s register file taken by the body, read on its low byte other than by a
+store or an alignment push -- a list with a register the body never takes in the
+middle (`microsISR`'s recovered `r1`) or at the end is not evidence. A register of
+another file is not asked: Debian 12 armhf libasan's
+`__interceptor_modf.part.0` hands the `d0` it is recovered with to an indirect
+call, or saves it around one, so its entry walk sees no read, and that says
+nothing about the `r0` the convention fills apart from it; and glibc MIPS
+o32 libm's `lgamma_r` hands its leading `$f12` to `__lgamma_r_finite`,
+whose recovered list also names the `a0` and `a1` the double consumes, which
+its body never reads. Where the walk is
 incomplete, the first-heritage record answers. A function **calling itself**
 asks its own record and its own entry walk; there is no statement yet, and the
 registers its call can take are the model's argument registers up to the
@@ -7428,8 +7515,34 @@ parameter on the stack that way (tar's `_getopt_long_r` is `push $0; push
 %r9; xor %r9d,%r9d; call`), as is a register the function computed. clang -O2's
 `getopt_long(argc,argv,opts,longopts,index)`, which forwards five registers to
 a seven-parameter `internal` and passes `0, 0` in `r9d` and `[rsp]`, printed
-`internal();`. A body the walk cannot finish -- an import, a thunk, a body past the
-budget -- states nothing, as before. The argument is as wide as the body reads
+`internal();`. The decline is lifted the same way one call further in, at a
+call the callee's body makes: the entry walk follows the stack pointer from
+the callee's entry and records each store it can place against it, through
+the stack pointer or a temporary computed from it
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg/stackargs.rs
+(Stored)`), and at a direct call whose first stack-argument slot of the
+default model the path stored into, the target's run stands whole for the
+reads `reads_through_calls` takes from it. The store is told apart on the
+terms above: a register stored as it stands is a spill, whether the store
+names the register or the temporary a 64-bit move copies it into, so of a
+register's value only a push passes an argument; a pushed register the
+path never wrote that is no argument register of the model is a save or an
+alignment pad, and a format call the resolver says reads no stack argument
+has none. gcc -O2's tar
+`rpl_getopt_long` is `sub $0x10,%rsp; xor %r9d,%r9d; push $0; call
+rpl_getopt_internal`, and `rpl_getopt_internal` reads none of the argument
+registers before it pushes its own stack argument and `&getopt_data` and
+calls `_getopt_internal_r`, whose body reads all six; that run was no list,
+so the forwarder took nothing through its call and a single-function
+decompile printed `return rpl_getopt_internal();`, while `decompile-all`,
+which states the callees first, printed all seven arguments. A forwarder
+whose pushed `%rbx` sits in that slot (`pid_plus` above, called through
+`twice_pid`) still takes only its own `rdi`, and so does one that stores
+clang's stack canary there (`push %rax; mov %fs:0x28,%rax; mov %rax,(%rsp)`
+before the call): were the canary a stack argument, the forwarder's run would
+be the whole register file, which its caller declines, and `twice_cnt` would
+call `cnt_plus()`. A body the walk cannot finish --
+an import, a thunk, a body past the budget -- states nothing, as before. The argument is as wide as the body reads
 it on a little-endian register file; on a big-endian one it is the whole
 register. All of the evidence above applies unchanged, with two additions,
 because the run is bounded only by what the walk saw. The finished list must
@@ -7470,6 +7583,34 @@ argument, never an argument on its own), and the pass acts twice outside it:
   stopping at the first one the function does not forward. The final list must
   be a leading run of the stated one, and a list holding a stack argument is
   left alone.
+
+**A gap stops its own register file.** Parameters are positional within one
+register file, not across files the convention fills independently
+(`kuna_passthrough.rs (extension_past_gaps)`). AAPCS-VFP, AAPCS64 and SysV
+x86-64 allocate float and core argument registers apart, so a stated `d0` or
+`xmm0` parameter the call does not get -- typically one the callee recovered
+as an integer, which the evidence above declines to forward because a
+float-register parameter of integer type is no claim about its kind -- leaves
+every core register after it where it was. Stopping at that first stated
+register dropped every forwarded argument behind it: Debian 12 armhf
+libasan's `__interceptor_modf` is `b __interceptor_modf.part.0`, and with the
+callee recovered as `double part.0(unsigned long long a0,unsigned int a1)`
+(`a0` in `d0`) the wrapper printed `void modf(void)` and the call
+`__interceptor_modf.part.0()`, where `--option protoorder off` kept `r0`.
+gcc -O2 x86-64 `f(double x,int *p)` that moves `x` with `movq %xmm0,%rax` is
+recovered `(unsigned long a0,unsigned int *a1)`, and its tail-calling wrapper
+printed `f()` the same way. A register file is the type class of the model
+input entries the register overlaps, with grouped entries one file, as
+upstream's resource sections count them. So a stated register the call does
+not get stops the extension for the later stated registers of its own file
+only. A register of another file is taken only while the model assigns the
+list kept so far (the settled list included) to exactly its stated storage at
+the callee's stated types. Where a float slot also consumes a core one, the
+register sits elsewhere once the gap is removed, and the extension does not
+take it: Windows x64 groups `xmm0` with `rcx`, and MIPS o32 rules make a
+leading float consume `a0`/`a1`. The pass still never forwards the declined
+float register itself, so the wrapper prints `modf(unsigned int a0)` with
+`__interceptor_modf.part.0(a0)`, as with the option off.
 
 **A forwarded register fills its slot.** A register trial the scoring leaves
 inactive because it stands on the function's own value -- its input Varnode, or
@@ -9914,6 +10055,46 @@ arity-sound and has a float parameter in that register. A live `d0` alone at an
 unknown call is not an argument. For that arity check a recovered VFP parameter
 reads the recovered list as closed, because a variadic callee receives even its
 fixed floats in `r0`-`r3`.
+
+With `armfloatargs`, a call whose callee nothing in the run answers for is scored
+as its `s` registers are (`kuna_armfloatreturn.rs (opaque_callee)`): an
+indirect call, or a direct one with no stated or declared prototype whose body,
+as far as the entry decode reads it, neither reads the register, writes it first,
+nor only returns without touching it. That is an undefined symbol in a
+relocatable object, an import behind a PLT stub that jumps through its GOT slot,
+a wrapper that branches or calls on to such code with the register unwritten, or
+a body the decode cannot finish, such as one kuna decodes in the wrong
+instruction set. There a double the caller computes, loads, converts or moves
+into a `d` register for the call is an argument, so `sink_d(d * 3.0)` keeps its
+argument and the multiply, and glibc's `ostream::_M_insert<double>` passes its
+double to the virtual `num_put::do_put`. As for `s0` and `r0`, a `d0` the caller
+only forwards from its own entry, an earlier call's result left in the register,
+and a value the caller also reads elsewhere are not; the first two are
+limitations those registers share (`gd(fd())` compiles exactly as `fd(); gd();`
+would). A callee whose decoded body never reads the register still answers for
+itself and receives nothing. A call that does not return, by its prototype,
+the halt flow plants after it, or flow's no-return warning at a tail call,
+takes no double this way: what is left in a `d` register at `__stack_chk_fail`
+is the caller's own value. glibc strtod's `round_and_return` shares one call to
+`__stack_chk_fail` between a path that leaves its entry `d0` and one that leaves
+the result it returns, so `d0` there merges the two. Two values reach such a
+call without being a double argument (`kuna_armfloatreturn.rs
+(opaque_non_argument)`): a piece of two single-precision words, such as glibc's
+`acospif` computing a float into `s0` for `__math_invalidf` while it writes `d0`
+whole elsewhere, and a value that also reaches a RETURN, the caller's pending
+result left in `d0` at a call nothing marks as not returning, such as glibc's
+`drand48` shape around a callee that only spins.
+
+At such a call, a single in the AAPCS-VFP back-fill slot below the doubles that
+holds only what the caller left there is that slot, and no later argument fills
+it (`fspec.rs (drop_held_backfill)`): `sink_fd(f, d * 2.0)` passes `f` in `s0` and
+the double in `d1`, and `s1`, still half of the caller's entry `d0`, is no
+argument. A later VFP register counts against the slot only through a trial
+that is active or used (`fspec.rs (backfill_hole)`). gcc -O0 computes
+`sink_fd(f * 2.0f, d * 2.0)`'s arguments in `s13` and `d7` and copies them into
+`s0` and `d1`, so `s13` and `d7` still hold values at the call. They are no
+arguments, `s1` stays the back-fill slot, and neither the call nor the caller
+gains a float for it.
 
 Declared prototypes and explicit return storage keep precedence throughout.
 This is scalar inference, not aggregate or vector ABI reconstruction: a

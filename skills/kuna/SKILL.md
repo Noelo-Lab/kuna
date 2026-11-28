@@ -38,7 +38,8 @@ For a few dozen short functions, `kuna decompile-all ./challenge` is manageable 
 read directly; use a project when assembly or repeated navigation is needed.
 
 Select known targets before decompiling: project export accepts `--functions name1,name2`
-or repeatable `--addr 0x401000`. `--filter REGEX` and `--reachable-from main` are only
+or repeatable `--addr 0x401000`, and either takes `@FILE` (one entry per line, `#` comments)
+for a long list. `--filter REGEX` and `--reachable-from main` are only
 for `functions` and `decompile-all`. Static reachability can miss runtime dispatch.
 
 Use `decompile` for a function needed immediately, a failed function, or an option comparison:

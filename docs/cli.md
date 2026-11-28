@@ -1702,6 +1702,60 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 `decompile_func` + `print_c`), loading + analyzing the binary **once** instead of
 `kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
 
+### `--functions` / `--addr` — a selection, inline or from a file
+
+`--functions a,b,…` selects functions by name or alias, and `--addr` by address,
+`.section+0xOFF` or `INDEX:0xOFF`. Both are repeatable and add up, and a function
+that both select is decompiled once. Either one reads its list from a file when the
+value starts with `@`, so a selection of any size fits on a command line. The same
+holds on `decompile-project` and `decompile-graph`, for a raw image's `--entry`, and
+for `kuna fid query --addr`:
+
+```bash
+kuna functions ./big.exe --json --sort size --limit 500 | jq -r '.functions[].address_hex' > big.txt
+kuna decompile-project ./big.exe -o proj --addr @big.txt
+kuna decompile-all ./a.out --functions @names.txt --json
+grep -v TODO worklist.txt | kuna decompile-all ./a.out --addr @- --json
+```
+
+The file holds one entry per line. Blank lines are skipped, `#` starts a comment
+that runs to the end of its line, and the spaces around an entry are trimmed. A line
+is one whole entry: a `--functions` file is not split on commas, so it can name
+`operator new` or a demangled name that contains a comma, which the inline list
+cannot. In a `--functions` file a `#` starts a comment only at the start of a line
+or after a space or tab, because a name kuna prints can hold one: the Swift thunk
+`M.T.vtable#2.method`, the Rust closure `f::{closure#0}`. A line of an `--addr`
+file is anything `--addr` takes, or a `--define-function` line
+(`start[-end][=name]`), which selects its start. The boundaries file kept for
+`--define-function @FILE` therefore also selects the functions it declares:
+
+```bash
+kuna decompile-project ./packed.exe -o proj --define-function @bounds.txt --addr @bounds.txt
+```
+
+`@-` reads the list from standard input, once per command line. A second `@-` is
+refused, and so is a terminal. A value that starts with `@@` is that value with one
+`@` removed. That is how to select a name that itself starts with `@`, such as the
+MSVC `__fastcall` name `@check@8`: `--functions @@check@8`. Inside an inline comma
+list (`--functions main,@check@8`) and inside a file, `@` is an ordinary character.
+`kuna decompile` takes one function, not a list, so its positional target is
+never read as a file.
+
+A file that cannot be read, a file that lists nothing, and a bad entry are usage
+errors (exit 2). The message names the flag, and for a bad entry the file and line:
+
+```console
+$ kuna decompile-all ./a.out --addr @picked.txt
+error: --addr @picked.txt:3: invalid address "mian"
+```
+
+An empty list is refused rather than read as no selection, which would decompile
+the whole binary. A name the image does not carry is the usual `warning: no
+function named …` for that name, and the run goes on with the rest. Each address
+is one binary search of the inventory, so a long list costs little on its own: on
+`libLLVM-15.so.1` (98,598 functions), selecting all 98,598 addresses from a file
+adds less than a second to a load of about 10 s.
+
 ### Triage — narrowing the run
 
 An unfiltered whole-binary answer is only usable if the caller can narrow it
@@ -3072,6 +3126,9 @@ with the reason, so the text answer never reads as complete when it is not:
  "coverage": {"decoded": true, "section": "__TEXT,__text",
               "code_section": true, "executable": true,
               "unwalked": [{"name","address","address_hex","section"}],
+              "unread_tables_count": N,
+              "unread_tables": [{"address","address_hex",
+                                 "function": {"name","address","address_hex"}}],
               "notes": ["..."]},
  "xrefs": [{"address","address_hex","kind",
             "from_address","from_address_hex","to_address","to_address_hex",
@@ -3189,7 +3246,9 @@ no such gap.
 | `code_section` | That section is marked as code, so every walk decodes it. |
 | `executable` | The image maps that memory executable. `null` when it is in no section, or for a relocatable object. |
 | `unwalked` | The targets of decoded direct calls and branches that lie in executable memory not marked as code, that a symbol names, and that the walk did not decode. The references they make are in no answer; `--from` one decodes it. |
-| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section; a `--to` answer gets one while `unwalked` is not empty, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
+| `unread_tables_count` | How many computed jumps through a jump table the walk could not read (see below) the answer may be missing code behind: for `--from` a function, the ones it dispatches from; for `--from` such a jump, that jump; for a `--to` that finds nothing, every one in the image. Code only they reach was not decoded. `0` otherwise. |
+| `unread_tables` | The first three of those jumps in address order, the ones the note names, with the function each is in (`null` when nothing owns it). |
+| `notes` | The sentences also printed on stderr as `note:`. A `--from` answer gets one unless it is code decoded in a code section, and one when the function (or the jump) asked about dispatches through a jump table the walk could not read (see below); a `--to` answer gets one while `unwalked` is not empty, when it finds nothing and the image has such a jump, and when the image is one entry of a kernel collection and the address is in another entry or in none ([`--option kernelcache`](#--option-kernelcache-id--one-entry-of-an-apple-kernel-collection)). |
 
 An incoming JSON answer may include `target.call_destination_candidate`. It names
 the lowest-address decoded direct call site to the exact selected address. The
@@ -3240,6 +3299,30 @@ no call in between that may overwrite it, and
 `jae` after `cmp $c` admits `c` cases where `ja` admits `c + 1`. A dispatch whose
 check compares another value, or that a branch enters between the check and the
 jump, is still not followed.
+
+A table the walk does not read is not silent. A computed jump whose target is an
+entry read out of a table (a pointer at an index scaled by its width, or a
+narrower entry added back to a base), but whose base or range check the walk
+cannot prove, leaves its case bodies undecoded, and the references they make are
+in no answer: gcc `-fipa-ra` keeps the base in a caller-saved register across a
+call, a float-derived selector has no range check, MIPS PIC loads the base from
+the GOT. `--from` a function that dispatches through such a table says so in
+`coverage.notes`, as does `--from` the jump itself, and a `--to` that finds
+nothing names the first three in the image with their functions, since the
+reference asked about may be made in a case body (`coverage.unread_tables` lists
+the same three, `coverage.unread_tables_count` counts them all). A jump through
+a pointer (a structure field, an argument, a GOT or import slot, a vtable, a
+returned value, an array of function pointers passed in or called after the
+epilogue, a table whose entries are function entries), a PLT stub and a return
+index no table and add no note, and neither does a table the walk read.
+`kuna decompile` reads a switch through the function's own data flow and
+recovers many of these.
+
+```
+$ kuna xrefs unreadtable_x86_64 --to t_c_0
+note: 3 computed jumps dispatch through jump tables the walk could not read (their base or bound is not proven), at 0x10001b in caller_saved, 0x100052 in unguarded, 0x10007a in bit_index: code only those jumps reach was not decoded, so a reference made there is not in this answer
+# 0 references to t_c_0 @ 0x100128
+```
 
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
@@ -4343,7 +4426,9 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--max-fn-memory`/`--mode`/`--option`/
-`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`/`--progress`; no `--json`. Omitted mode is the same
+`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`/`--progress`; no `--json`.
+`--functions` and `--addr` take `@FILE` lists here too
+([above](#--functions----addr--a-selection-inline-or-from-a-file)). Omitted mode is the same
 size-based `auto` policy as the other file front-ends. In particular, a project input
 at least 2 MiB automatically suppresses the exhaustive Listing consumers, prologue
 scan, and AIF gap walk through the `fast` preset, while substituting rooted direct-call
@@ -5285,8 +5370,9 @@ remain readable, but need rebuilding to benefit from the new extents.
 
 ### `kuna fid query` — candidates for an address, without renaming
 
-`kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
+`kuna fid query <binary> --db <file.fid> --addr <address|@FILE> [--addr <address|@FILE> ...] --json`
 reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
+`--addr @FILE` reads them one per line, in the format `decompile-all --addr @FILE` reads.
 The kuna `.fid` database must apply to the binary (see above); Ghidra `.fidbf`
 is not supported.
 

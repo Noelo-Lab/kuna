@@ -291,7 +291,13 @@ emits `f32::from_bits`/`f64::from_bits`, converting the operand with `as
 u32`/`as u64` unless its declared type already is that word, or `to_bits()`;
 a literal operand is narrowed to the transfer's width first. A
 floating constant read as an integer prints its stored bits, preserving NaN
-payloads. An untyped call result does not establish an integer return contract
+payloads. A truncation of a float variable's storage to an integer word reads
+its bits the same way (`kuna_bitcast.rs (truncated_float_storage)`), and one
+above the low end shifts them down first (`kuna_bitcast.rs
+(shifted_float_storage)`), so a double handed on as two words prints
+`(int)((union { double from; unsigned long long to; }){ .from = d }).to` and
+`(int)(((union { double from; unsigned long long to; }){ .from = d }).to >> 0x20)`
+rather than `SUB84(d,4)`. An untyped call result does not establish an integer return contract
 and keeps its existing conversion, unless the callee declares what it returns
 (`kuna_bitcast.rs (states_a_return)`): a locked output, the return its own
 decompile stated to `callrettype`, or a value other than a float its last

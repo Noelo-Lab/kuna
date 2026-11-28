@@ -291,6 +291,8 @@ mod entry_ret_dispatch_cli;
 
 #[path = "entry_selectors.rs"]
 mod entry_selectors;
+#[path = "selection_files_cli.rs"]
+mod selection_files_cli;
 
 #[path = "explicit_branch_assertion_cli.rs"]
 mod explicit_branch_assertion_cli;
@@ -655,6 +657,9 @@ mod xrefs_switch_case_calls;
 
 #[path = "xrefs_unflagged_cli.rs"]
 mod xrefs_unflagged_cli;
+
+#[path = "xrefs_unread_tables.rs"]
+mod xrefs_unread_tables;
 
 #[path = "zero_extended_returns.rs"]
 mod zero_extended_returns;

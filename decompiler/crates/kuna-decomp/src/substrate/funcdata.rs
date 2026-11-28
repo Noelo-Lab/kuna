@@ -203,6 +203,9 @@ pub struct Funcdata {
     /// (kuna `loopcontinue auto`) The jump statements read at the first
     /// heritage pass (`p8_structure/kuna_o0jumps.rs`).
     pub(crate) kuna_o0jumps: Option<Box<crate::p8_structure::kuna_o0jumps::Record>>,
+    /// (kuna `gotoreduce auto`) The goto statements read at the first heritage
+    /// pass (`p8_structure/kuna_o0gotos.rs`).
+    pub(crate) kuna_o0gotos: Option<Box<crate::p8_structure::kuna_o0gotos::Record>>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -665,6 +668,10 @@ pub struct Funcdata {
     /// (kuna `floatreg`) The narrow float registers (ARM `s0`) whose other half
     /// of the pair the function's own code touches.
     kuna_float_pair_halves: std::collections::BTreeSet<(int4, kuna_base::types::uintb)>,
+    /// (kuna `armfloatargs`) Doubleword moves into core register pairs: the d
+    /// register's space and offset, the low register's offset, and the
+    /// instruction's offset.
+    kuna_vfp_core_moves: std::collections::BTreeSet<(int4, kuna_base::types::uintb, kuna_base::types::uintb, kuna_base::types::uintb)>,
     /// (kuna `voidret`) Whether `ancestor_op_use` is scoring that storage, where a
     /// call's result used only on the way to the RETURN counts as the return value.
     kuna_forced_scoring: bool,
@@ -860,6 +867,7 @@ impl Funcdata {
             kuna_o0select: None,
             kuna_o0switch: None,
             kuna_o0jumps: None,
+            kuna_o0gotos: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -983,6 +991,7 @@ impl Funcdata {
             kuna_wide_return: None,
             kuna_zext_word: None,
             kuna_float_pair_halves: std::collections::BTreeSet::new(),
+            kuna_vfp_core_moves: std::collections::BTreeSet::new(),
             kuna_forced_scoring: false,
             kuna_shared_float_call: None,
             kuna_callret_returned: Vec::new(),
@@ -1669,6 +1678,29 @@ impl Funcdata {
     /// (kuna `floatreg`) Does the code touch the other half of this register's pair?
     pub fn kuna_float_pair_half(&self, key: (int4, kuna_base::types::uintb)) -> bool {
         self.kuna_float_pair_halves.contains(&key)
+    }
+
+    /// (kuna `armfloatargs`) Note the instruction at `at` that moves the d
+    /// register at `(space, offset)` whole into the core register pair starting
+    /// at `low`.
+    pub fn kuna_note_vfp_core_move(&mut self, key: (int4, kuna_base::types::uintb, kuna_base::types::uintb), at: kuna_base::types::uintb) {
+        self.kuna_vfp_core_moves.insert((key.0, key.1, key.2, at));
+    }
+
+    /// (kuna `armfloatargs`) The offsets of the instructions that move that d
+    /// register whole into the core register pair starting at `low`.
+    pub fn kuna_vfp_core_moves(
+        &self,
+        key: (int4, kuna_base::types::uintb, kuna_base::types::uintb),
+    ) -> impl Iterator<Item = kuna_base::types::uintb> + '_ {
+        self.kuna_vfp_core_moves
+            .range((key.0, key.1, key.2, 0)..=(key.0, key.1, key.2, kuna_base::types::uintb::MAX))
+            .map(|k| k.3)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn kuna_vfp_core_moves_len(&self) -> usize {
+        self.kuna_vfp_core_moves.len()
     }
 
 
@@ -4648,6 +4680,7 @@ impl Funcdata {
         self.kuna_o0select = None;
         self.kuna_o0switch = None;
         self.kuna_o0jumps = None;
+        self.kuna_o0gotos = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated
@@ -4756,6 +4789,7 @@ impl Funcdata {
         self.guard_only_seen.borrow_mut().clear();
         self.kuna_forced_return_planted.clear();
         self.kuna_float_pair_halves.clear();
+        self.kuna_vfp_core_moves.clear();
         self.kuna_forced_claims.clear();
         self.kuna_zext_word = None;
         self.kuna_narrowret_reads.clear();

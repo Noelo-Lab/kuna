@@ -930,6 +930,9 @@ pub fn split_double_input(data: &Funcdata, vn: VarnodeId) -> bool {
     if !vfp(addr, 8) || !halves_only(data, vn, 4) {
         return false;
     }
+    if data.get_arch().arm_float_args && crate::p4_calls::kuna_vfpcorepair::forwarded_double(data, vn) {
+        return false;
+    }
     let end = addr.get_offset() + 8;
     !data
         .vbank()
@@ -944,8 +947,44 @@ pub fn split_double_input(data: &Funcdata, vn: VarnodeId) -> bool {
         })
 }
 
+/// Is `vn` a memory location, such as the global that a store to a resolved
+/// address becomes? A value copied there leaves the function whole. A symbol
+/// mapped onto a register is no memory.
+pub(crate) fn in_memory(data: &Funcdata, vn: VarnodeId) -> bool {
+    let register = data.get_arch().manage().get_space_by_name("register");
+    data.vbank().get(vn).is_some_and(|v| {
+        (v.is_persist() || v.is_addr_tied())
+            && !v
+                .get_addr()
+                .get_space()
+                .is_some_and(|s| register.is_some_and(|r| r.get_index() == s.get_index()))
+    })
+}
+
+/// Does `op` write `vn` to volatile memory (`write_volatile`, the form a store
+/// to a volatile range takes)?
+pub(crate) fn volatile_write_of(data: &Funcdata, op: &crate::op::PcodeOp, vn: VarnodeId) -> bool {
+    op.code() == OpCode::CPUI_CALLOTHER
+        && op.num_input() > 2
+        && op.get_in(2) == Some(vn)
+        && op
+            .get_in(0)
+            .and_then(|c| data.vbank().get(c))
+            .is_some_and(|c| c.is_constant() && c.get_offset() == crate::userop::BUILTIN_VOLATILE_WRITE as u64)
+}
+
+/// Does the MULTIEQUAL `op` merge a value around a loop: is one of its inputs
+/// carried by an edge from a block its own block dominates?
+pub(crate) fn loop_merge(data: &Funcdata, op: &crate::op::PcodeOp) -> bool {
+    let Some(head) = op.get_parent() else { return true };
+    let graph = data.bblocks_ref();
+    let block = graph.block(head);
+    (0..block.size_in()).any(|i| graph.dominates(head, Some(block.get_in(i))))
+}
+
 /// Every read of `vn` ends in a 4-byte SUBPIECE, directly or through a CAST,
-/// COPY or a right shift by 32 that only such reads consume.
+/// COPY or a right shift by 32 that only such reads consume. A copy into
+/// memory ([`in_memory`]) is a whole read.
 pub(crate) fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
     let Some(value) = data.vbank().get(vn) else { return false };
     depth > 0
@@ -955,7 +994,7 @@ pub(crate) fn halves_only(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
             let small = data.vbank().get(out).is_some_and(|o| o.get_size() <= 4);
             match op.code() {
                 OpCode::CPUI_SUBPIECE => small,
-                OpCode::CPUI_CAST | OpCode::CPUI_COPY => halves_only(data, out, depth - 1),
+                OpCode::CPUI_CAST | OpCode::CPUI_COPY => !in_memory(data, out) && halves_only(data, out, depth - 1),
                 OpCode::CPUI_INT_RIGHT | OpCode::CPUI_INT_SRIGHT => {
                     op.get_in(0) == Some(vn)
                         && op
@@ -1020,8 +1059,11 @@ pub fn unused_vfp_type(
 }
 
 /// A widened call-argument trial needs a callee contract, a stated one or a
-/// body that reads the whole d-register ([`crate::p4_calls::kuna_calleefloatreads`]);
-/// a live d-register alone does not establish that an unknown call consumes a double.
+/// body that reads the whole d-register ([`crate::p4_calls::kuna_calleefloatreads`]),
+/// or, with `armfloatargs`, a callee nothing in the run answers for
+/// ([`opaque_callee`]). There the trial is scored as an s-register trial is: a
+/// double the caller writes for the call is an argument, while one it only
+/// forwards from its own entry or leaves from an earlier call is not.
 pub fn call_input_allowed(
     data: &Funcdata,
     call: &crate::fspec::FuncCallSpecs,
@@ -1049,6 +1091,98 @@ pub fn call_input_allowed(
                 })
         })
         || crate::p4_calls::kuna_calleefloatreads::reads(data, call, addr, size)
+        || (data.get_arch().arm_float_args && opaque_callee(data, call, addr, size))
+}
+
+/// Does nothing in this run answer for whether the callee of `call` reads
+/// `[addr, addr+size)`: an indirect call, or a direct one with no stated
+/// prototype whose body, as far as the entry decode reads it, neither reads the
+/// range, writes it first on every path, nor only returns without touching it?
+/// That is an undefined symbol, a PLT stub that jumps through its GOT slot, a
+/// wrapper that branches or calls on to such code with the range unwritten, or a
+/// body the decode cannot finish. A variadic call passes no VFP arguments, and
+/// a call that does not return admits none: what is left in a d-register at
+/// `__stack_chk_fail` or `abort` is the caller's own value, as in glibc
+/// strtod's `round_and_return`, whose `d0` there merges its entry value with
+/// the results it computes.
+fn opaque_callee(data: &Funcdata, call: &crate::fspec::FuncCallSpecs, addr: &Address, size: i32) -> bool {
+    if call.is_dotdotdot()
+        || call.proto().is_no_return()
+        || crate::p4_calls::kuna_noreturnretuse::call_ends_in_noreturn_halt(data, call.get_op())
+        || data.obank().get(call.get_op()).is_some_and(|op| data.kuna_noreturn_note(op.get_addr()))
+    {
+        return false;
+    }
+    let entry = call.get_entry_address();
+    entry.is_invalid()
+        || (data.kuna_protoorder_types(entry).is_none()
+            && !data.kuna_callee_entry_dead(entry).is_some_and(|probe| {
+                probe.answers()
+                    && (probe.proves_read(addr, size)
+                        || probe.proves_dead(addr, size)
+                        || probe.never_takes(addr, size)
+                        || probe.returns_untouched(addr, size))
+            }))
+}
+
+/// Is the d-register value `vn` that call `index` holds in `[addr, addr+size)`
+/// one only an opaque callee admits ([`opaque_callee`]) and no argument? A
+/// piece of two single-precision words is a float written into s0 beside what
+/// the caller left in s1: glibc's `acospif` computes its NaN into s0 for
+/// `__math_invalidf` while it reads d0 whole elsewhere. A value that also
+/// reaches a RETURN is the caller's pending result, left in d0 at a call that
+/// does not return: glibc's `drand48` computes its double before it checks the
+/// stack guard and calls `__stack_chk_fail`.
+pub fn opaque_non_argument(data: &Funcdata, index: i32, vn: VarnodeId, addr: &Address, size: i32) -> bool {
+    let call = data.get_call_specs(index);
+    data.get_arch().arm_float_args
+        && size == 8
+        && !call.is_input_locked()
+        && call.proto().model().input().get_entry().iter().any(|e| {
+            e.get_type() == type_class::TYPECLASS_FLOAT && e.justified_contain(addr, size) == 0
+        })
+        && opaque_callee(data, call, addr, size)
+        && (pieced(data, vn, 8) || returned(data, vn))
+}
+
+/// Does `vn`, through copies and merges, also reach a RETURN: the caller's
+/// pending result, left in the register on its way out, rather than an argument?
+fn returned(data: &Funcdata, vn: VarnodeId) -> bool {
+    let mut todo = vec![vn];
+    let mut seen = vec![vn];
+    while let Some(cur) = todo.pop() {
+        let Some(node) = data.vbank().get(cur) else { return false };
+        for id in node.descend_iter() {
+            let Some(op) = data.obank().get(id) else { continue };
+            match op.code() {
+                OpCode::CPUI_RETURN => return true,
+                OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL | OpCode::CPUI_INDIRECT => {
+                    if let Some(o) = op.get_out() {
+                        if !seen.contains(&o) && seen.len() < 32 {
+                            seen.push(o);
+                            todo.push(o);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    false
+}
+
+/// Is `vn`, through copies and merges, a PIECE of two smaller values?
+fn pieced(data: &Funcdata, vn: VarnodeId, depth: u32) -> bool {
+    let Some(op) = data.vbank().get(vn).and_then(|v| v.get_def()).and_then(|id| data.obank().get(id)) else {
+        return false;
+    };
+    match op.code() {
+        OpCode::CPUI_PIECE => true,
+        OpCode::CPUI_COPY | OpCode::CPUI_MULTIEQUAL if depth > 0 => {
+            (0..op.num_input()).filter_map(|i| op.get_in(i)).any(|i| i != vn && pieced(data, i, depth - 1))
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]

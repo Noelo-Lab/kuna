@@ -64,6 +64,9 @@ base and numeric libraries, not the whole workspace or their test targets.
 The Rust test profile uses optimization level 1 for real-image tests, with debug
 assertions and integer-overflow checks enabled. Ordinary development builds retain
 Cargo's unoptimized default. Release builds use thin link-time optimization.
+Compare speed only between builds of the same profile, or inside one build with a
+temporary switch: two builds of nearly the same source can differ by a few tenths of
+a percent in executed instructions from code placement alone.
 
 Most crates build their integration tests into one `integration` binary. Register a
 new `tests/x.rs` in that crate's `tests/integration.rs` (`#[path = "x.rs"] mod x;`,

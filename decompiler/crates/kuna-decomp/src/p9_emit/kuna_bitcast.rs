@@ -136,11 +136,10 @@ pub(crate) fn storage_transfer(
     })
 }
 
-/// A low-end integer truncation reads a merged float variable's storage bits.
-pub(crate) fn truncated_float_storage(
-    fd: &Funcdata,
-    op: OpId,
-) -> Option<(Transfer, Rc<Datatype>)> {
+/// An integer SUBPIECE `op` of a word or narrower that reads a merged float
+/// variable's storage bits: the variable, its size, the byte offset read and
+/// the result type.
+fn float_storage_word(fd: &Funcdata, op: OpId) -> Option<(VarnodeId, i32, u64, Rc<Datatype>)> {
     let operation = fd.obank().get(op)?;
     if operation.code() != OpCode::CPUI_SUBPIECE {
         return None;
@@ -153,10 +152,11 @@ pub(crate) fn truncated_float_storage(
     let output = fd.vbank().get(operation.get_out()?)?;
     let offset = fd.vbank().get(operation.get_in(1)?)?;
     let size = source.get_size();
-    if offset.get_offset() != 0
+    if !offset.is_constant()
         || !matches!(size, 4 | 8)
         || !matches!(output.get_size(), 1 | 2 | 4)
         || output.get_size() >= size
+        || offset.get_offset() + output.get_size() as u64 > size as u64
     {
         return None;
     }
@@ -181,7 +181,19 @@ pub(crate) fn truncated_float_storage(
     if !widths_match || result_type.is_enum_type() {
         return None;
     }
-    let target = types.get_base(size, type_metatype::TYPE_UINT).ok()?;
+    Some((input, size, offset.get_offset(), result_type))
+}
+
+/// A low-end integer truncation reads a merged float variable's storage bits.
+pub(crate) fn truncated_float_storage(
+    fd: &Funcdata,
+    op: OpId,
+) -> Option<(Transfer, Rc<Datatype>)> {
+    let (input, size, offset, result_type) = float_storage_word(fd, op)?;
+    if offset != 0 {
+        return None;
+    }
+    let target = fd.get_arch().types()?.get_base(size, type_metatype::TYPE_UINT).ok()?;
     Some((Transfer {
         input,
         target,
@@ -189,6 +201,24 @@ pub(crate) fn truncated_float_storage(
         to_float: false,
         source_pointer: false,
     }, result_type))
+}
+
+/// A whole lane above the low end of such storage, such as a double's high
+/// word handed on in a core register: its bits shifted down, then truncated
+/// (`(int)(bits >> 0x20)`). A truncation that straddles lanes keeps `SUB`.
+pub(crate) fn shifted_float_storage(fd: &Funcdata, op: OpId) -> Option<crate::p9_emit::kuna_floatslice::Slice> {
+    let (input, size, offset, result_type) = float_storage_word(fd, op)?;
+    let width = fd.vbank().get(fd.obank().get(op)?.get_out()?)?.get_size() as u64;
+    if offset == 0 || offset % width != 0 {
+        return None;
+    }
+    Some(crate::p9_emit::kuna_floatslice::Slice {
+        input,
+        source_float: true,
+        source_word: fd.get_arch().types()?.get_base(size, type_metatype::TYPE_UINT).ok()?,
+        target_word: result_type,
+        shift: offset * 8,
+    })
 }
 
 /// Whether a same-width `CAST` of `input` to a float prints as a reinterpretation

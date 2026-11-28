@@ -587,6 +587,93 @@ fn a_parameter_returned_on_some_path_keeps_its_argument() {
     }
 }
 
+// gcc -O2 hard-float ARM and Thumb builds of `armfloatargs_stored.c`: `put_g`
+// only stores its double to a global (`vstr d0,[r3]`), which becomes a copy into
+// the global that nothing reads again, `put_ref` stores it to a stack slot
+// whose address it passes on, and `sel` and `zero_if` store a double an if or a
+// select merges first. Each keeps its doubles, and the callee-first run passes
+// `put_g` the double `call_put` computes. The authored `scaled`
+// (`armfloatargs_merged_store.s`) stores a d5 it wrote in a loop only where the
+// loop ran, and takes no double.
+#[test]
+fn a_double_parameter_only_stored_is_kept_and_passed() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    for build in ["arm", "thumb"] {
+        let bytes = std::fs::read(fixtures.join(format!("armfloatargs_stored_{build}.o"))).unwrap();
+        let code = decompile_with(&bytes, &[]);
+        for line in [
+            "void put_g(double a0)",
+            "void put_gv(double a0)",
+            "void put_two(double a0,double a1)",
+            "void put_gf(float a0)",
+            "void put_ref(double a0)",
+            "void sel(double a0,double a1,int a2)",
+            "  if (a2)\n    a1 = a0;\n  g = a1;\n",
+            "void zero_if(double a0,int a1)",
+            "void call_put(double a0)",
+            "  put_g(a0 + a0);\n",
+        ] {
+            assert!(code.contains(line), "{build}: lacks {line}\n{code}");
+        }
+        assert!(!code.contains("double v1; // d0\n"), "{build}\n{code}");
+    }
+    let bytes = std::fs::read(fixtures.join("armfloatargs_merged_store.o")).unwrap();
+    let code = decompile_with(&bytes, &[]);
+    assert!(code.contains("void scaled(double *a0,char *a1)"), "{code}");
+}
+
+// gcc -O2 hard-float ARM and Thumb builds of `armfloatargs_variadic.c`: `show2`
+// hands its double to a variadic callee with `vmov r2,r3,d0`, which heritage
+// leaves as the call reading `s0` and `s1`. The doubleword move makes them one
+// double, and the callee-first run has `caller` forward both of its inputs. The
+// call still passes the double's two words, as C that compiles. `show_d1` moves
+// `d1`, `show3` moves `d0` beside a `d1` it stores for the call, `pun` hands
+// `d0`'s bits to a 64-bit integer in `r0:r1`, and `two_f`, which moves two floats
+// one by one, keeps its two words. Only the double each takes is asserted:
+// `show_d1`'s and `show3`'s other parameters, `pun`'s return and the forwarded
+// `r1` are as on main.
+#[test]
+fn a_double_handed_on_in_a_core_pair_is_a_double_parameter() {
+    let fixtures =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../kuna-analysis/tests/fixtures");
+    let bits = "((union { double from; unsigned long long to; }){ .from = a0 }).to";
+    let call = format!("  consume(\"%d %lf\",a1,(int){bits},(int)({bits} >> 0x20)); // tail-call\n");
+    for build in ["arm", "thumb"] {
+        let bytes = std::fs::read(fixtures.join(format!("armfloatargs_variadic_{build}.o"))).unwrap();
+        let code = decompile_with(&bytes, &[]);
+        for line in [
+            "void show2(double a0,unsigned int a1)",
+            call.as_str(),
+            "void caller(double a0,unsigned int a1)",
+            "  show2(a0,a1); // tail-call\n",
+            "void show3(double a0,",
+            " pun(double a0)",
+            "void two_f(unsigned int a0,unsigned int a1)",
+            "  sinkw(a0,a1); // tail-call\n",
+            "void show_f(float a0,unsigned int a1)",
+        ] {
+            assert!(code.contains(line), "{build}: lacks {line}\n{code}");
+        }
+        let show_d1 = code.lines().find(|l| l.starts_with("void show_d1(")).unwrap_or_default();
+        assert!(show_d1.contains(" a0,double a1,"), "{build}\n{code}");
+        assert!(!code.contains("SUB84(a"), "{build}\n{code}");
+        if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+            continue;
+        }
+        let body: String = code.lines().skip_while(|l| !l.starts_with("void show2(")).take_while(|l| *l != "}").collect::<Vec<_>>().join("\n");
+        let source = common::scratch_file(&format!("arm-float-variadic-{build}"), "c");
+        std::fs::write(&source, format!("void consume(const char *, ...);\n{body}\n}}\n")).unwrap();
+        let compile = Command::new("cc")
+            .args(["-std=c11", "-fsyntax-only"])
+            .arg(&source)
+            .env("TMPDIR", source.parent().unwrap())
+            .output()
+            .unwrap();
+        assert!(compile.status.success(), "{build}: {}\n{body}", String::from_utf8_lossy(&compile.stderr));
+    }
+}
+
 // clang 14 hard-float ARM and Thumb builds of `armfloatargs_early.c`: `C2`
 // and `C9` return early through `bxgt lr` (`it gt; bxgt lr` in Thumb). `C2`
 // never reads its second float, which `W2` leaves holding `GF2`'s leftover, so
