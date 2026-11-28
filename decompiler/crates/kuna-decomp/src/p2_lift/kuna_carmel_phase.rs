@@ -17,6 +17,9 @@ const CLOCKS: usize = 5;
 const FF_UNKNOWN: u8 = 1;
 const FF_LIVE: u8 = 2;
 const FF_OLDER: u8 = 4;
+const WB_WINDOW: u8 = 0b111;
+const OLDER_WB: u8 = 0b110;
+const ISSUE_CELLS: u16 = 0x3bff;
 
 #[derive(Clone, Copy)]
 struct FfOps {
@@ -25,6 +28,19 @@ struct FfOps {
     execute: u64,
     late_tick: u64,
     visibility: u64,
+}
+
+#[derive(Clone, Copy)]
+struct DataOps {
+    reserve: u64,
+    commit: u64,
+}
+
+#[derive(Clone, Copy)]
+struct CellOps {
+    read: u64,
+    write: u64,
+    tick: u64,
 }
 
 pub(crate) struct PhaseDecode<'a> {
@@ -54,6 +70,8 @@ pub(crate) struct PhaseDecode<'a> {
     repeat_of: Option<u64>,
     issue_slot: Option<u64>,
     ff: Option<FfOps>,
+    data: Option<DataOps>,
+    cells: Option<CellOps>,
 }
 
 impl<'a> PhaseDecode<'a> {
@@ -91,6 +109,15 @@ impl<'a> PhaseDecode<'a> {
             late_tick: index(b"carmel_record_ff_late_admission")?,
             visibility: index(b"carmel_record_ff_visibility")?,
         }))();
+        let data = (|| Some(DataOps {
+            reserve: index(b"carmel_of_reserve_word")?,
+            commit: index(b"carmel_wb_data_commit")?,
+        }))();
+        let cells = (|| Some(CellOps {
+            read: index(b"carmel_read_issue_cell")?,
+            write: index(b"carmel_write_issue_cell")?,
+            tick: index(b"carmel_record_cell_admission")?,
+        }))();
         let (word, bits) = arch.with_context_db(|db| {
             let field = db.get_variable(b"carmel_phase_emit").ok()?;
             Some((field.get_word() as usize, field.get_mask() << field.get_shift()))
@@ -101,7 +128,7 @@ impl<'a> PhaseDecode<'a> {
         Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
             fixed_read_tick, fixed_load, fixed_store, end_unmodeled, omitted, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
-            staged_data, repeat_r3, repeat_d2_write, repeat_of, issue_slot, ff })
+            staged_data, repeat_r3, repeat_d2_write, repeat_of, issue_slot, ff, data, cells })
     }
 
     pub(crate) fn lower(&self, fd: &mut Funcdata, visits: &VisitedMap) -> KunaResult<()> {
@@ -113,6 +140,8 @@ impl<'a> PhaseDecode<'a> {
         let mut ff_late_visibility = false;
         let mut reads = false;
         let mut slot_fetches = false;
+        let mut scheduled_data = false;
+        let mut issue_cells = false;
         let mut resets = Vec::new();
         let mut address_ex = Vec::new();
         let mut repeat_samples = Vec::new();
@@ -123,7 +152,8 @@ impl<'a> PhaseDecode<'a> {
             if op.get_parent().is_none() { continue; }
             let Some(index) = userop(fd, op) else { continue };
             let offset = op.get_addr().get_offset();
-            if index == self.tick || Some(index) == self.fixed_read_tick {
+            if index == self.tick || Some(index) == self.fixed_read_tick
+                || self.cells.is_some_and(|cells| index == cells.tick) {
                 markers.push((op_id, offset, Mark::Tick));
             } else if Some(index) == self.idle_tick {
                 markers.push((op_id, offset, Mark::Idle));
@@ -172,6 +202,11 @@ impl<'a> PhaseDecode<'a> {
                 repeat_operand_fetches.push(op_id);
             } else if Some(index) == self.issue_slot {
                 slot_fetches = true;
+            } else if self.data.is_some_and(|data| index == data.reserve || index == data.commit) {
+                scheduled_data = true;
+                markers.push((op_id, offset, Mark::DataSchedule));
+            } else if self.cells.is_some_and(|cells| index == cells.read || index == cells.write) {
+                issue_cells = true;
             } else if index == self.admission {
                 reads = true;
             }
@@ -230,7 +265,8 @@ impl<'a> PhaseDecode<'a> {
             fd.op_set_opcode(query, type_op_for(OpCode::CPUI_COPY));
             fd.op_set_input(query, mask, 0)?;
         }
-        if !reads && !ff_fetches && !ff_late_visibility && !slot_fetches && dual_reads.is_empty() {
+        if !reads && !ff_fetches && !ff_late_visibility && !slot_fetches
+            && !scheduled_data && !issue_cells && dual_reads.is_empty() {
             for (marker, _, kind) in markers {
                 match kind {
                     Mark::Copy => lower_copy(fd, marker, 1),
@@ -252,7 +288,7 @@ impl<'a> PhaseDecode<'a> {
                 fd.op_destroy(marker);
             } else if kind == Mark::Copy {
                 copies.push(marker);
-            } else if kind == Mark::Redirect {
+            } else if matches!(kind, Mark::Redirect | Mark::DataSchedule) {
                 cleanup.push(marker);
             } else if kind == Mark::FfVisibility {
                 known.entry(offset).or_default().ff = true;
@@ -278,9 +314,9 @@ impl<'a> PhaseDecode<'a> {
         };
         let traces: Vec<_> = blocks.iter().map(|&block| {
             let ports = ff_regs.as_ref().map_or(&[][..], |ports| &ports[..]);
-            self.trace(fd, visits, &known, &delayed, &dual_reads, ports, block)
+            self.trace(fd, visits, &known, &delayed, &dual_reads, ports, scheduled_data, block)
         }).collect();
-        let inputs = incoming_proofs(fd, visits, &blocks, &traces);
+        let inputs = incoming_proofs(fd, visits, &blocks, &traces, issue_cells);
         for (trace, mut proof) in traces.iter().zip(inputs.iter().copied()) {
             for &event in &trace.events {
                 match event {
@@ -300,6 +336,19 @@ impl<'a> PhaseDecode<'a> {
                     Event::IssueSlot(op) if !proof.slot_offsets.is_power_of_two() => {
                         return Err(sample_error(fd, op, "issue slot"));
                     }
+                    Event::OfWord(op) if proof.wb & OLDER_WB != 0 => {
+                        return Err(sample_error(fd, op, "DATA operand fetch with older writeback"));
+                    }
+                    Event::RawLoad(op) if proof.typed_wb & OLDER_WB != 0 => {
+                        return Err(sample_error(fd, op, "DATA read with older writeback"));
+                    }
+                    Event::OpaqueTransfer(op) if proof.typed_wb != 0 => {
+                        return Err(sample_error(fd, op, "DATA writeback before opaque control transfer"));
+                    }
+                    Event::Cell(op, cell, read) if proof.cell_bit(cell)
+                        .is_none_or(|bit| read && proof.cells & bit == 0) => {
+                        return Err(sample_error(fd, op, "issue cell"));
+                    }
                     _ => {}
                 }
                 proof = event.advance(proof);
@@ -313,17 +362,23 @@ impl<'a> PhaseDecode<'a> {
         } else {
             None
         };
+        let cells_base = if issue_cells {
+            let vn = self.translate.get_register_varnode(b"MAC1_MIDDLE_0")
+                .map_err(|_| KunaError::lowlevel("Carmel issue cell storage is missing"))?;
+            Some(Address::new(vn.space.unwrap(), vn.offset))
+        } else {
+            None
+        };
         for (trace, mut proof) in traces.into_iter().zip(inputs) {
             for event in trace.events {
                 match event {
-                    Event::Tick(mark, _) => {
+                    Event::Tick(mark, ..) => {
                         if let Some(slots) = &slots {
                             for i in (1..CLOCKS).rev() {
                                 let previous = fd.new_varnode(1, &slots[i - 1], None);
                                 copy_before(fd, mark, previous, &slots[i])?;
                             }
-                            fd.op_remove_input(mark, 0);
-                            fd.op_set_opcode(mark, type_op_for(OpCode::CPUI_COPY));
+                            lower_copy(fd, mark, 1);
                             fd.new_varnode_out(1, &slots[0], mark)?;
                         } else {
                             fd.op_destroy(mark);
@@ -345,6 +400,18 @@ impl<'a> PhaseDecode<'a> {
                             fd.op_set_input(read, offset, 0)?;
                         }
                     }
+                    Event::Cell(id, cell, read) => {
+                        let slot = proof.slot_offsets.trailing_zeros();
+                        let address = cells_base.as_ref().unwrap() + i64::from(cell * 64 + slot * 8);
+                        if read {
+                            let source = fd.new_varnode(8, &address, None);
+                            fd.op_set_input(id, source, 1)?;
+                            lower_copy(fd, id, 1);
+                        } else {
+                            lower_copy(fd, id, 2);
+                            fd.new_varnode_out(8, &address, id)?;
+                        }
+                    }
                     _ => {}
                 }
                 proof = event.advance(proof);
@@ -361,10 +428,11 @@ impl<'a> PhaseDecode<'a> {
 
     fn trace(
         &self, fd: &Funcdata, visits: &VisitedMap, known: &BTreeMap<u64, Boundary>, delayed: &BTreeMap<u64, bool>,
-        dual_reads: &BTreeSet<u64>, ff_regs: &[Address], block: BlockId,
+        dual_reads: &BTreeSet<u64>, ff_regs: &[Address], scheduled_data: bool, block: BlockId,
     ) -> Trace {
         let mut trace = Trace::default();
         let mut fixed_bus = None;
+        let mut data_access = None;
         let mut current = fd.bb_op_head(block);
         while let Some(id) = current {
             let op = fd.obank().get(id).unwrap();
@@ -379,15 +447,37 @@ impl<'a> PhaseDecode<'a> {
                 trace.last = Some(addr.clone());
                 trace.redirect_edges = 0;
                 fixed_bus = None;
+                data_access = None;
             }
             let marker = userop(fd, op);
+            if scheduled_data {
+                match op.code() {
+                    OpCode::CPUI_LOAD if data_access != Some(OpCode::CPUI_LOAD) => trace.events.push(Event::RawLoad(id)),
+                    OpCode::CPUI_STORE if data_access != Some(OpCode::CPUI_STORE) => trace.events.push(Event::DataStore(false)),
+                    OpCode::CPUI_CALL | OpCode::CPUI_CALLIND | OpCode::CPUI_BRANCHIND | OpCode::CPUI_RETURN =>
+                        trace.events.push(Event::OpaqueTransfer(id)),
+                    _ => {}
+                }
+                if data_access == Some(op.code()) {
+                    data_access = None;
+                }
+            }
             match marker {
                 Some(index) if index == self.tick || Some(index) == self.delay_tick
-                    || Some(index) == self.idle_tick => {
-                    trace.events.push(Event::Tick(id, false));
+                    || Some(index) == self.idle_tick || self.cells.is_some_and(|cells| index == cells.tick) => {
+                    let known_cells = if Some(index) == self.idle_tick {
+                        u16::MAX
+                    } else if self.cells.is_some_and(|cells| index == cells.tick) {
+                        let mask = fd.vbank().get(op.get_in(2).unwrap()).unwrap();
+                        debug_assert!(mask.is_constant() && mask.get_size() == 2);
+                        mask.get_offset() as u16
+                    } else {
+                        0
+                    };
+                    trace.events.push(Event::Tick(id, false, known_cells));
                 }
                 Some(index) if Some(index) == self.fixed_read_tick => {
-                    trace.events.push(Event::Tick(id, false));
+                    trace.events.push(Event::Tick(id, false, 0));
                     fixed_bus = Some(OpCode::CPUI_LOAD);
                 }
                 Some(index) if Some(index) == self.fixed_load => {
@@ -397,7 +487,7 @@ impl<'a> PhaseDecode<'a> {
                     fixed_bus = Some(OpCode::CPUI_STORE);
                 }
                 Some(index) if self.ff.is_some_and(|ff| index == ff.late_tick) => {
-                    trace.events.push(Event::Tick(id, true));
+                    trace.events.push(Event::Tick(id, true, 0));
                 }
                 Some(index) if self.ff.is_some_and(|ff| index == ff.visibility) => {
                     trace.events.push(Event::FfVisibility(ff_is_late(fd, op)));
@@ -405,6 +495,21 @@ impl<'a> PhaseDecode<'a> {
                 Some(index) if self.ff.is_some_and(|ff| index == ff.fetch) => trace.events.push(Event::FfFetch(id)),
                 Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
                 Some(index) if Some(index) == self.issue_slot => trace.events.push(Event::IssueSlot(id)),
+                Some(index) if self.cells.is_some_and(|cells| index == cells.read || index == cells.write) => {
+                    let cell = fd.vbank().get(op.get_in(1).unwrap()).unwrap();
+                    debug_assert!(cell.is_constant() && cell.get_size() == 1);
+                    trace.events.push(Event::Cell(id, cell.get_offset() as u32, self.cells.unwrap().read == index));
+                }
+                Some(index) if self.data.is_some_and(|data| index == data.reserve) => {
+                    trace.events.push(Event::OfWord(id));
+                    fixed_bus = Some(OpCode::CPUI_LOAD);
+                    data_access = fixed_bus;
+                }
+                Some(index) if self.data.is_some_and(|data| index == data.commit) => {
+                    trace.events.push(Event::DataStore(true));
+                    fixed_bus = Some(OpCode::CPUI_STORE);
+                    data_access = fixed_bus;
+                }
                 Some(index) if Some(index) == self.end_unmodeled => trace.events.push(Event::Barrier(false)),
                 Some(index) if Some(index) == self.redirect => {
                     trace.redirect_edges = if delayed.contains_key(&addr.get_offset()) { 2 } else { 1 };
@@ -641,6 +746,7 @@ enum Mark {
     FixedAccess,
     FfVisibility,
     Omitted,
+    DataSchedule,
     Copy,
 }
 
@@ -709,12 +815,17 @@ struct Boundary {
 #[derive(Clone, Copy)]
 enum Event {
     Barrier(bool),
-    Tick(OpId, bool),
+    Tick(OpId, bool, u16),
     Read(OpId),
     IssueSlot(OpId),
     FfFetch(OpId),
     FfVisibility(bool),
     RawFfRead(OpId),
+    OfWord(OpId),
+    RawLoad(OpId),
+    DataStore(bool),
+    OpaqueTransfer(OpId),
+    Cell(OpId, u32, bool),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -722,15 +833,39 @@ struct Proof {
     age: usize,
     ff: u8,
     slot_offsets: u8,
+    wb: u8,
+    typed_wb: u8,
+    cells: u128,
 }
 
 impl Proof {
-    const ENTRY: Self = Self { age: 0, ff: FF_UNKNOWN, slot_offsets: u8::MAX };
-    const TOP: Self = Self { age: CLOCKS, ff: 0, slot_offsets: 0 };
+    const ENTRY: Self = Self { age: 0, ff: FF_UNKNOWN, slot_offsets: u8::MAX, wb: OLDER_WB, typed_wb: 0, cells: 0 };
+    const TOP: Self = Self { age: CLOCKS, ff: 0, slot_offsets: 0, wb: 0, typed_wb: 0, cells: u128::MAX };
 
     fn join(self, other: Self) -> Self {
         Self { age: self.age.min(other.age), ff: self.ff | other.ff,
-            slot_offsets: self.slot_offsets | other.slot_offsets }
+            slot_offsets: self.slot_offsets | other.slot_offsets,
+            wb: self.wb | other.wb, typed_wb: self.typed_wb | other.typed_wb,
+            cells: self.cells & other.cells }
+    }
+
+    fn cell_bit(self, cell: u32) -> Option<u128> {
+        let mask = 1u16.checked_shl(cell)?;
+        (ISSUE_CELLS & mask != 0 && self.slot_offsets.is_power_of_two())
+            .then(|| u128::from(mask) << (self.slot_offsets.trailing_zeros() * 16))
+    }
+
+    fn invalidate_current_cells(self, known: u16) -> u128 {
+        let unknown = ISSUE_CELLS & !known;
+        let mut valid = self.cells;
+        if unknown != 0 && valid != 0 {
+            let mut slots = self.slot_offsets;
+            while slots != 0 {
+                valid &= !(u128::from(unknown) << (16 * slots.trailing_zeros()));
+                slots &= slots - 1;
+            }
+        }
+        valid
     }
 }
 
@@ -741,12 +876,27 @@ impl Event {
                 age: 0,
                 ff: if keep_ff { proof.ff } else { FF_UNKNOWN | (proof.ff & FF_OLDER) },
                 slot_offsets: u8::MAX,
+                wb: WB_WINDOW,
+                typed_wb: proof.typed_wb,
+                cells: 0,
             },
             Self::FfVisibility(late) => Proof { ff: if late { FF_OLDER } else { FF_LIVE }, ..proof },
-            Self::Tick(_, late) => Proof {
+            Self::Tick(_, late, known_cells) => Proof {
                 age: (proof.age + 1).min(CLOCKS),
                 ff: if late { FF_OLDER } else { FF_LIVE },
                 slot_offsets: proof.slot_offsets.rotate_left(1),
+                wb: (proof.wb << 1) & WB_WINDOW,
+                typed_wb: (proof.typed_wb << 1) & WB_WINDOW,
+                cells: proof.invalidate_current_cells(known_cells),
+            },
+            Self::DataStore(typed) => Proof {
+                wb: proof.wb | 1,
+                typed_wb: proof.typed_wb | u8::from(typed),
+                ..proof
+            },
+            Self::Cell(_, cell, false) => Proof {
+                cells: proof.cells | proof.cell_bit(cell).unwrap_or(0),
+                ..proof
             },
             _ => proof,
         }
@@ -765,7 +915,9 @@ fn contiguous(visits: &VisitedMap, from: &Address, to: &Address) -> bool {
     from == to || visits.get(from).is_some_and(|visit| from + i64::from(visit.size) == *to)
 }
 
-fn incoming_proofs(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces: &[Trace]) -> Vec<Proof> {
+fn incoming_proofs(
+    fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], traces: &[Trace], issue_cells: bool,
+) -> Vec<Proof> {
     let graph = fd.bblocks_ref();
     let mut inputs = vec![Proof::TOP; blocks.len()];
     let mut exits = inputs.clone();
@@ -778,7 +930,7 @@ fn incoming_proofs(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], trace
         let proof = if i == 0 && block.size_in() == 0 && trace.first.as_ref() == Some(fd.get_address()) {
             // A real function entry observes its supplied register values,
             // unlike an unproved intra-function redirect or loop backedge.
-            Proof { ff: FF_LIVE, slot_offsets: 1, ..Proof::ENTRY }
+            Proof { ff: FF_LIVE, slot_offsets: 1, cells: if issue_cells { u128::MAX } else { 0 }, ..Proof::ENTRY }
         } else if i == 0 || block.size_in() == 0 {
             Proof::ENTRY
         } else {
@@ -791,7 +943,7 @@ fn incoming_proofs(fd: &Funcdata, visits: &VisitedMap, blocks: &[BlockId], trace
                 } else {
                     match prior.last.as_ref().zip(trace.first.as_ref()) {
                         Some((from, to)) if contiguous(visits, from, to) => exits[predecessor],
-                        _ => Proof::ENTRY,
+                        _ => Proof { typed_wb: exits[predecessor].typed_wb, ..Proof::ENTRY },
                     }
                 }
             }).fold(Proof::TOP, Proof::join)

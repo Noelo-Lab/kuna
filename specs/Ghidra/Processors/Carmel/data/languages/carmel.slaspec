@@ -192,6 +192,24 @@ define register offset=0x308 size=2 [ __FF1_BEFORE_EX __FF2_BEFORE_EX ];
 # Incoming decoder slot, independent of the CODE address.
 define register offset=0x30c size=1 [ CARMEL_ISSUE_SLOT ];
 define pcodeop carmel_sample_issue_slot;
+
+# Each bank contains the eight physical issue slots relative to function entry.
+define register offset=0x340 size=8 [ MAC1_MIDDLE_0 MAC1_MIDDLE_1 MAC1_MIDDLE_2 MAC1_MIDDLE_3 MAC1_MIDDLE_4 MAC1_MIDDLE_5 MAC1_MIDDLE_6 MAC1_MIDDLE_7 ];
+define register offset=0x380 size=8 [ MAC1_RIGHT_0 MAC1_RIGHT_1 MAC1_RIGHT_2 MAC1_RIGHT_3 MAC1_RIGHT_4 MAC1_RIGHT_5 MAC1_RIGHT_6 MAC1_RIGHT_7 ];
+define register offset=0x3c0 size=8 [ MAC1_FLAGS_0 MAC1_FLAGS_1 MAC1_FLAGS_2 MAC1_FLAGS_3 MAC1_FLAGS_4 MAC1_FLAGS_5 MAC1_FLAGS_6 MAC1_FLAGS_7 ];
+define register offset=0x400 size=8 [ ALU1_LEFT_0 ALU1_LEFT_1 ALU1_LEFT_2 ALU1_LEFT_3 ALU1_LEFT_4 ALU1_LEFT_5 ALU1_LEFT_6 ALU1_LEFT_7 ];
+define register offset=0x440 size=8 [ ALU1_RIGHT_0 ALU1_RIGHT_1 ALU1_RIGHT_2 ALU1_RIGHT_3 ALU1_RIGHT_4 ALU1_RIGHT_5 ALU1_RIGHT_6 ALU1_RIGHT_7 ];
+define register offset=0x480 size=8 [ ALU1_FLAGS_0 ALU1_FLAGS_1 ALU1_FLAGS_2 ALU1_FLAGS_3 ALU1_FLAGS_4 ALU1_FLAGS_5 ALU1_FLAGS_6 ALU1_FLAGS_7 ];
+define register offset=0x4c0 size=8 [ VA1_CELL_0 VA1_CELL_1 VA1_CELL_2 VA1_CELL_3 VA1_CELL_4 VA1_CELL_5 VA1_CELL_6 VA1_CELL_7 ];
+define register offset=0x500 size=8 [ VA2_CELL_0 VA2_CELL_1 VA2_CELL_2 VA2_CELL_3 VA2_CELL_4 VA2_CELL_5 VA2_CELL_6 VA2_CELL_7 ];
+define register offset=0x540 size=8 [ VA3_CELL_0 VA3_CELL_1 VA3_CELL_2 VA3_CELL_3 VA3_CELL_4 VA3_CELL_5 VA3_CELL_6 VA3_CELL_7 ];
+define register offset=0x580 size=8 [ VA4_CELL_0 VA4_CELL_1 VA4_CELL_2 VA4_CELL_3 VA4_CELL_4 VA4_CELL_5 VA4_CELL_6 VA4_CELL_7 ];
+define register offset=0x600 size=8 [ ALU2_LEFT_0 ALU2_LEFT_1 ALU2_LEFT_2 ALU2_LEFT_3 ALU2_LEFT_4 ALU2_LEFT_5 ALU2_LEFT_6 ALU2_LEFT_7 ];
+define register offset=0x640 size=8 [ ALU2_RIGHT_0 ALU2_RIGHT_1 ALU2_RIGHT_2 ALU2_RIGHT_3 ALU2_RIGHT_4 ALU2_RIGHT_5 ALU2_RIGHT_6 ALU2_RIGHT_7 ];
+define register offset=0x680 size=8 [ ALU2_FLAGS_0 ALU2_FLAGS_1 ALU2_FLAGS_2 ALU2_FLAGS_3 ALU2_FLAGS_4 ALU2_FLAGS_5 ALU2_FLAGS_6 ALU2_FLAGS_7 ];
+define pcodeop carmel_read_issue_cell;
+define pcodeop carmel_write_issue_cell;
+define pcodeop carmel_record_cell_admission;
 define pcodeop carmel_record_admission;
 define pcodeop carmel_read_address_admission;
 define pcodeop carmel_known_redirect;
@@ -200,6 +218,8 @@ define pcodeop carmel_modeled_delay_mask;
 define pcodeop carmel_fixed_read_admission;
 define pcodeop carmel_single_data_load;
 define pcodeop carmel_single_data_store;
+define pcodeop carmel_of_reserve_word;
+define pcodeop carmel_wb_data_commit;
 define pcodeop carmel_end_unmodeled_issue;
 define pcodeop carmel_omitted_sequential_slot;
 define pcodeop carmel_capture_ff_before_ex;
@@ -662,6 +682,9 @@ define token wide (48)
     wide_38_39 = (38,39)
     bitfield_descriptor = (24,39) hex
     wide_0_22 = (0,22)
+    wide_mac_slot_signed_literal = (24,39) signed
+    wide_mac_slot_kind = (40,47) hex
+    wide_mac_slot_literal = (24,39) hex
     packed_opcode = (15,22)
     packed_dst = (8,14)
     packed_dst_group = (11,14)
@@ -1188,6 +1211,16 @@ attach variables [cliw_alu_62_low_1_0] [A4L A5L _ _];
 attach variables [cliw_alu_57_low_0_0] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
 attach variables [cliw_alu_52_low_0_0] [A0L A1L A2L A3L A4L A5L _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _];
 
+macro phase_of_data_word(address, word) {
+    carmel_of_reserve_word(address, 1:1);
+    word = *[data]:2 address;
+}
+
+macro phase_wb_data_word(address, word) {
+    carmel_wb_data_commit(address, word, 1:1);
+    *[data]:2 address = word;
+}
+
 macro unary_ce_select(cfg, est, shift, bit) {
     local selector:2 = (cfg >> shift) & 0xf;
     local taps:8 = 0x00dcb593a4826071;
@@ -1247,6 +1280,12 @@ macro record_ce_admission() {
     local sample:1;
     ce_admission(sample);
     carmel_record_admission(sample);
+}
+
+macro record_issue_cells(known_cells) {
+    local sample:1;
+    ce_admission(sample);
+    carmel_record_cell_admission(sample, known_cells);
 }
 
 ce_single_tick: is (carmel_phase_emit=0 | hw_loop_actions=1) { }
@@ -1645,6 +1684,16 @@ with : hw_loop_phase=1 {
     & $(COMPACT_COMPUTE) & complete_left & ce_single_tick {
     local incoming:2 = EST;
     build complete_left;
+    publish_ce_feedback(EST & 0xcfff, incoming);
+    build ce_single_tick;
+}
+
+:INC "A0H" is carmel_issue=3 & slot_mode=0 & slot_0_2=0 & slot_6_22=0x86b8
+    & slot_3_5=6 & ce_single_tick {
+    local incoming:2 = EST;
+    local staged:4;
+    stage_inc(A0H, staged);
+    commit_half(A0H, staged, 0);
     publish_ce_feedback(EST & 0xcfff, incoming);
     build ce_single_tick;
 }
@@ -4700,8 +4749,8 @@ swap_address: "*"^swap_base is swap_register_address=0 & wide_7_7=0 & swap_modif
     EST = (flags & 0xcfff) | (ce1 << 12) | (ce2 << 13);
 }
 
-swap_issue_slot: is carmel_phase_emit=0 { local issue_index:1 = CARMEL_ISSUE_SLOT & 7; export issue_index; }
-swap_issue_slot: is carmel_phase_emit=1 {
+issue_slot_sample: is carmel_phase_emit=0 { local issue_index:1 = CARMEL_ISSUE_SLOT & 7; export issue_index; }
+issue_slot_sample: is carmel_phase_emit=1 {
     local issue_index:1 = carmel_sample_issue_slot(CARMEL_ISSUE_SLOT);
     issue_index = issue_index & 7;
     export issue_index;
@@ -4745,16 +4794,16 @@ macro swap_tile_feedback(incoming) {
 }
 
 :SWAP "A0","A0L" is carmel_issue=5 & carmel_single_issue=0 & hw_loop_actions=0
-    & wide_left=0x900000 & wide_right=0xc34222 & swap_issue_slot & swap_tile_load & swap_tile_store & ce_tick {
-    build swap_issue_slot;
+    & wide_left=0x900000 & wide_right=0xc34222 & issue_slot_sample & swap_tile_load & swap_tile_store & ce_tick {
+    build issue_slot_sample;
     local address:2;
     local guard0:2 = zext(GB0);
     local guard1:2 = zext(GB1);
-    swap_tile_address(swap_issue_slot, A0L, A0H, guard0, 0:2, A1L, A1H, guard1, 0:2, address);
+    swap_tile_address(issue_slot_sample, A0L, A0H, guard0, 0:2, A1L, A1H, guard1, 0:2, address);
     build swap_tile_load;
     local word:2 = *[data]:2 address;
     local old:2;
-    swap_tile_result(swap_issue_slot, 0:1, address, A0L, word, old);
+    swap_tile_result(issue_slot_sample, 0:1, address, A0L, word, old);
     build swap_tile_store;
     *[data]:2 address = old;
     swap_tile_feedback(word);
@@ -4764,21 +4813,21 @@ macro swap_tile_feedback(incoming) {
 :SWAP "CE1" "A4H","long *(R5+"^wide_move_displacement^")" is
     carmel_phase_emit=1 & carmel_issue=4 & carmel_single_issue=0 & hw_loop_actions=0
     & wide_left=0x25c0b8 & wide_right=0xc35a71 & wide_move_displacement
-    & swap_issue_slot & swap_tile_load & swap_tile_store & ce_tick {
+    & issue_slot_sample & swap_tile_load & swap_tile_store & ce_tick {
     local admitted:1 = carmel_read_address_admission(1:1);
     if (!admitted) goto <feedback>;
-    build swap_issue_slot;
+    build issue_slot_sample;
     local address:2;
     local guard4:2 = zext(GB4);
     local guard5:2 = zext(GB5);
-    swap_tile_address(swap_issue_slot, A4H, guard4, 0:2, A5L, A5H, guard5, 0:2, 0:2, address);
+    swap_tile_address(issue_slot_sample, A4H, guard4, 0:2, A5L, A5H, guard5, 0:2, 0:2, address);
     build swap_tile_load;
     local word:2 = *[data]:2 address;
     local enabled:2;
     unary_ce(CECFG1, EST, CETBL, 0, enabled);
     if (enabled == 0) goto <feedback>;
     local old:2;
-    swap_tile_result(swap_issue_slot, 3:1, address, A5L, word, old);
+    swap_tile_result(issue_slot_sample, 3:1, address, A5L, word, old);
     build swap_tile_store;
     *[data]:2 address = old;
     swap_tile_feedback(word);
@@ -9722,6 +9771,191 @@ macro wide_mac_control_result(destination, delta) {
 @define WIDE_ACC_MAC_A01 "$(WIDE_ACC_MAC) & wide_acc_mac_first=0x50 & wide_0_0=1 & wide_40_45=0x11"
 @define WIDE_ACC_MAC_A01_WORD "$(WIDE_ACC_MAC_A01) & wide_acc_mac_op=0x28"
 
+# Immediate first-operand syntax still routes the multiplier through OF.
+macro wide_mac_slot_address(slot, address) {
+    address = 0xffff;
+    if (slot != 4) goto <next>;
+    address = 0x10;
+  <next>
+    if (slot != 5) goto <selected>;
+    address = 0;
+  <selected>
+}
+
+macro mac1_routed_status(exact, carry_source, bitmap, flags, value) {
+    local bits:8 = exact & 0xffffffffff;
+    local extended:1 = bits > 0x7fffffff && bits < 0xff80000000;
+    local overflow:1 = exact + 0x8000000000 > 0xffffffffff;
+    local negative:1 = bits >= 0x8000000000;
+    local sat:1 = (ECFG & 0x28) == 8;
+    local limit:1 = (ECFG & 4) != 0;
+    local width:2 = bitmap >> 14;
+    local zero:1 = bits == 0;
+    if (width == 0) goto <calculate>;
+    zero = (bits >> 16) == 0;
+    if (width == 1) goto <calculate>;
+    zero = bits == 0 || width == 3;
+  <calculate>
+    local loss:1 = !sat && !limit && (overflow || (width != 0 && extended));
+    value = exact;
+    if ((bitmap & 0x0804) != 0x0804 || !limit || !extended) goto <scale>;
+    value = 0x7fffffff - zext(negative) * 0xffffffff;
+    loss = 1;
+  <scale>
+    local fft_sample:8 = value;
+    if ((bitmap & 0x100) == 0 || (ECFG & 0x20) == 0) goto <saturate>;
+    value = value s>> 1;
+    fft_sample = value;
+    goto <publish>;
+  <saturate>
+    if ((bitmap & 0x200) == 0 || !sat) goto <publish>;
+    if (exact s> 0x7fffffff) goto <sat_positive>;
+    if (exact s>= -0x80000000) goto <publish>;
+    value = 0xffffffff80000000;
+    loss = 1;
+    goto <publish>;
+  <sat_positive>
+    value = 0x7fffffff;
+    loss = 1;
+  <publish>
+    local active:2 = zext((carry_source & 0x10000000000) != 0) | (zext(overflow) << 1)
+        | (zext(loss) << 2) | (zext(zero) << 3) | (zext(negative) << 4) | (zext(extended) << 5);
+    local writable:2 = bitmap & 0x3f;
+    flags = (flags & (~writable | 4)) | (active & writable);
+    if ((bitmap & 0x400) == 0 || (ECFG & 0x10) == 0) goto <done>;
+    local sample:4 = (fft_sample:4 s>> 26);
+    local threshold:4 = zext(FFTV);
+    if (sample s>= -threshold && sample s<= threshold) goto <done>;
+    flags = flags | 0x4000;
+  <done>
+}
+
+macro mac1_known_operands(left, right) {
+    carmel_write_issue_cell(0:1, left);
+    carmel_write_issue_cell(1:1, right);
+}
+
+macro record_mac1_admission() {
+    record_issue_cells(7:2);
+}
+@define WIDE_MAC_SLOT "carmel_phase_emit=1 & carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & carmel_single_issue=0 & hw_loop_actions=0 & issue_slot_sample"
+
+:MACSU "long *R1",wide_mac_slot_signed_literal,"R3" is
+    $(WIDE_MAC_SLOT) & wide_mac_slot_kind=0xa3 & wide_right=0xa9419f & wide_mac_slot_signed_literal {
+    build issue_slot_sample;
+    local first:2;
+    wide_mac_slot_address(issue_slot_sample, first);
+    local low:2 = R1;
+    local high:2 = low + 1;
+    wide_check_word_and_pair_reads(first, low, high);
+    local left:2;
+    local add_low:2;
+    local add_high:2;
+    phase_of_data_word(first, left);
+    phase_of_data_word(low, add_low);
+    phase_of_data_word(high, add_high);
+    X1 = left;
+    local base:8 = sext(add_high) * 0x10000 + zext(add_low);
+    local middle:8 = sext(left);
+    local right:8 = zext(R3);
+    mac1_known_operands(middle, right);
+    carmel_write_issue_cell(2:1, 0x853f:8);
+    local product:8;
+    raw_mac_product(left, R3, 1:1, 0:1, product);
+    local adder:8 = (base & 0xffffffffff) + (product & 0xffffffffff);
+    local stored:8;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    mac1_routed_status(base + product, adder, 0x853f:2, flags, stored);
+    local stored_low:2 = stored:2;
+    local stored_high:2 = stored(2);
+    phase_wb_data_word(low, stored_low);
+    phase_wb_data_word(high, stored_high);
+    publish_ce_feedback(flags, incoming);
+    record_mac1_admission();
+}
+
+macro mac1_high_addend(operand, bitmap, addend) {
+    addend = sext(operand);
+    if ((ECFG & 1) == 0 && (bitmap & 0x2000) != 0) goto <done>;
+    addend = addend * 0x10000;
+  <done>
+}
+
+:MACR "MINMAX",wide_mac_slot_signed_literal,"*(R3+"^wide_move_displacement^")" is
+    $(WIDE_MAC_SLOT) & wide_mac_slot_kind=0xa3 & wide_right=0xa0ba9e
+    & wide_mac_slot_signed_literal & wide_move_displacement {
+    build issue_slot_sample;
+    local first:2;
+    wide_mac_slot_address(issue_slot_sample, first);
+    local second:2 = R3 + wide_move_displacement;
+    compact_pair_read_check(first, second);
+    local left:2;
+    local right:2;
+    phase_of_data_word(first, left);
+    phase_of_data_word(second, right);
+    X1 = left;
+    local middle:8 = sext(left);
+    local multiplier:8 = sext(right);
+    mac1_known_operands(middle, multiplier);
+    local retained:8 = carmel_read_issue_cell(2:1);
+    local bitmap:2 = retained:2;
+    local product:8;
+    raw_mac_product(left, right, 1:1, 1:1, product);
+    local base:8;
+    mac1_high_addend(MINMAX, bitmap, base);
+    local rounding_bit:4 = zext((bitmap & 0x100) != 0 && (ECFG & 0x20) != 0);
+    local bias:8 = 0x8000 << rounding_bit;
+    local rounded:8 = (base + product + bias) & -(bias * 2);
+    local adder:8 = (base & 0xffffffffff) + (product & 0xffffffffff) + bias;
+    local result:8;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    mac1_routed_status(rounded, adder, bitmap, flags, result);
+    MINMAX = result(2);
+    publish_ce_feedback(flags, incoming);
+    record_mac1_admission();
+}
+
+mac_slot_ff2: is carmel_phase_emit=1 {
+    local addend:2 = carmel_sample_ff_at_of(FF2, __FF2_BEFORE_EX);
+    export addend;
+}
+
+:MACUU "FF2",wide_mac_slot_literal,"*(R5+RN5)" is
+    $(WIDE_MAC_SLOT) & wide_mac_slot_kind=0xad & wide_right=0xab979e & wide_mac_slot_literal
+    & mac_slot_ff2 & ff_capture_before_write & ff_visible_after_wb {
+    build issue_slot_sample;
+    build mac_slot_ff2;
+    local first:2;
+    wide_mac_slot_address(issue_slot_sample, first);
+    local second:2 = R5 + RN5;
+    compact_pair_read_check(first, second);
+    local left:2;
+    local right:2;
+    phase_of_data_word(first, left);
+    phase_of_data_word(second, right);
+    X1 = left;
+    local middle:8 = zext(left);
+    local multiplier:8 = zext(right);
+    mac1_known_operands(middle, multiplier);
+    local bitmap:8 = carmel_read_issue_cell(2:1);
+    local product:8;
+    raw_mac_product(left, right, 0:1, 0:1, product);
+    local base:8;
+    mac1_high_addend(mac_slot_ff2, bitmap:2, base);
+    local adder:8 = (base & 0xffffffffff) + (product & 0xffffffffff);
+    local result:8;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    mac1_routed_status(base + product, adder, bitmap:2, flags, result);
+    build ff_capture_before_write;
+    FF2 = result(2);
+    publish_ce_feedback(flags, incoming);
+    record_mac1_admission();
+    build ff_visible_after_wb;
+}
+
 macro wide_mac_fallback_word(product, subtract, rounded, limit_product) {
     local address:2 = 0xffff;
     local word:2 = *[data]:2 address;
@@ -11711,6 +11945,42 @@ macro wide_extract_zero(source, width, offset, result) {
     local start:4 = zext(offset & 31);
     local mask:4 = 0x7fffffff >> (31 - count);
     result = (source s>> start) & mask;
+}
+
+:ASHIFT "LC1","A0","A1L" is $(WIDE_ORIGINAL_BITS)
+    & wide_40_45=0x11 & wide_0_22=0x73a911 & ce_tick {
+    local incoming:2 = EST;
+    local input:8 = sext(GB0) * 0x100000000 + zext(A0H) * 0x10000 + zext(A0L);
+    local result:8;
+    local flags:2;
+    wide_shift_ports(input, A1L, 32:4, 16:4, 1:1, result, flags);
+    local word:2;
+    wide_shift_word_limit(result, flags, word);
+    LC1 = word;
+    publish_ce_feedback((incoming & 0xcfc6) | flags, incoming);
+    build ce_tick;
+}
+
+:EXTRACTZ "long *R2","GB3",bitfield_descriptor is $(WIDE_ORIGINAL_BITS)
+    & wide_40_45=0xf & wide_0_22=0x768507 & bitfield_descriptor & ce_tick {
+    local destination:2 = R2;
+    local field:2 = bitfield_descriptor;
+    local result:4;
+    wide_extract_zero(zext(GB3), field >> 8, field, result);
+    publish_ce_feedback((EST & 0xcfe7) | (zext(result == 0) << 3), EST);
+    compact_pair_long_store(destination, result);
+    build ce_tick;
+}
+
+:OR "A0","A1L",bitfield_descriptor is $(WIDE_ORIGINAL_BITS)
+    & wide_40_45=0xf & wide_0_22=0x622246 & bitfield_descriptor & ce_tick {
+    local incoming:2 = EST;
+    local result:2 = A1L | bitfield_descriptor;
+    A0L = result;
+    A0H = 0;
+    GB0 = 0;
+    publish_ce_feedback((incoming & 0xcfc7) | (zext(result == 0) << 3), incoming);
+    build ce_tick;
 }
 
 wide_extract_cetbl_source: "ECFG" is wide_0_22=0x7589c1 { export ECFG; }
@@ -15571,6 +15841,420 @@ cliw_mac1_compute: is $(CLIW_EXT_MAC1_FACTORS) & $(CLIW_EXT_MAC1_FULL) &
 @undef CLIW_EXT_NO_LOADS
 @undef CLIW_EXT_CALL
 
+
+macro compact_ports_check_read_three(first, second, third) {
+    if (((first ^ second) & 0x8000) != 0 || ((first ^ third) & 0x8000) != 0) goto <ports>;
+  <full>
+    carmel_data_read_conflict();
+    goto <full>;
+  <ports>
+    compact_pair_read_check(first, second);
+    compact_pair_read_check(first, third);
+    compact_pair_read_check(second, third);
+}
+
+# The sequential form reserves the descriptor's low cell, while OF still
+# consumes both descriptor words. The parallel primary form reserves both.
+macro compact_short_long_inputs(short_address, descriptor_address, reserve_long, word, count, offset) {
+    local upper:2 = descriptor_address + 1;
+    if (reserve_long == 0) goto <pair>;
+    compact_ports_check_read_three(short_address, descriptor_address, upper);
+    goto <fetch>;
+  <pair>
+    compact_pair_read_check(short_address, descriptor_address);
+  <fetch>
+    word = *[data]:2 short_address;
+    count = *[data]:2 descriptor_address;
+    offset = *[data]:2 upper;
+}
+
+:EXTRACTS "A2","*R0--","*R5+=RN5:long" is
+    ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) &
+    slot_12_22=0x344 & slot_9_11=2 & slot_5_8=12 & slot_1_4=13 & slot_0_0=0 {
+    local incoming:2 = EST;
+    local source:2 = R0;
+    local descriptor:2 = R5;
+    modify_ptr(R0, 0:2, RM0, RL0, 0:4, 3:2);
+    modify_ptr(R5, RN5, RM4, RL4, 10:4, 1:2);
+    local word:2;
+    local count:2;
+    local offset:2;
+    compact_short_long_inputs(source, descriptor, 0:1, word, count, offset);
+    local result:4;
+    compact_extract_bits(word, count, offset, 1:1, result);
+    A2 = sext(result);
+    publish_ce_feedback(EST & 0xcfff, incoming);
+}
+
+:AND "A4L","*R2+=RN2","*R4" is
+    ((carmel_issue=2 & slot_mode=1) | (carmel_issue=3 & slot_mode=0)) &
+    slot_15_22=0xc3 & slot_11_14=4 & slot_6_10=10 & slot_1_5=4 & slot_0_0=0 {
+    local incoming:2 = EST;
+    local address:2 = R2;
+    local other_address:2 = R4;
+    modify_ptr(R2, RN2, RM2, RL2, 4:4, 1:2);
+    compact_pair_read_check(address, other_address);
+    local first:2 = *[data]:2 address;
+    local second:2 = *[data]:2 other_address;
+    A4L = first & second;
+    local flags:2 = (incoming & 0xcfc7) | (zext(A4L == 0) << 3);
+    publish_ce_feedback(flags, incoming);
+}
+
+@define COMPACT_INSERT_DATA "slot_12_22=0x329 & slot_9_11=2 & slot_5_8=9 & slot_1_4=13"
+
+# The parallel secondary INSERT issues neither the short fetch nor the long
+# descriptor fetch. Its connected postmodifiers still run in D2.
+compact_insert_secondary: "INSERT" "A5","*R4","*R1+=RN1:long" is
+    slot_12_22=0x329 & slot_9_11=2 & slot_5_8=12 & slot_1_4=9 & slot_0_0=0 {
+    modify_ptr(R1, RN1, RM0, RL0, 2:4, 1:2);
+}
+compact_insert_secondary: "INSERT" "A5","*R1+RN1","*R5+=RN5:long" is
+    $(COMPACT_INSERT_DATA) & slot_0_0=0 {
+    modify_ptr(R5, RN5, RM4, RL4, 10:4, 1:2);
+}
+compact_insert_secondary: "INSERT CE2" "A5","*R1+RN1","*R5+=RN5:long" is
+    $(COMPACT_INSERT_DATA) & slot_0_0=1 {
+    compact_extract_agu(R5, RN5, RM4, RL4, 10:4);
+}
+compact_insert_secondary: "INSERT CE2" "A2","*R1++","*R5+=RN5:long" is
+    slot_12_22=0x328 & slot_9_11=2 & slot_5_8=9 & slot_1_4=13 & slot_0_0=1 {
+    local enabled:2;
+    unary_ce(CECFG2, EST, CETBL, 1:2, enabled);
+    if (enabled == 0 && (CECFG2 & 0x1000) == 0) goto <done>;
+    modify_ptr(R1, 0:2, RM0, RL0, 2:4, 2:2);
+    modify_ptr(R5, RN5, RM4, RL4, 10:4, 1:2);
+  <done>
+}
+
+:^nop_left "||" compact_insert_secondary is
+    (carmel_issue=1 & slot_mode=0 & nop_left); (slot_mode=0 & compact_insert_secondary) {
+    build compact_insert_secondary;
+    publish_alu_ce(EST & 0xcfff);
+}
+
+:INSERT "CE1" "A5","*R1+RN1","*R5+=RN5:long" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(COMPACT_INSERT_DATA) & slot_0_0=1); (slot_mode=0 & nop_right) {
+    local incoming:2 = EST;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0 && (CECFG1 & 0x1000) == 0) goto <publish>;
+    local address:2 = R1 + RN1;
+    local descriptor:2 = R5;
+    modify_ptr(R5, RN5, RM4, RL4, 10:4, 1:2);
+    local word:2;
+    local count:2;
+    local offset:2;
+    compact_short_long_inputs(address, descriptor, 1:1, word, count, offset);
+    if (enabled == 0) goto <publish>;
+    local n:4 = zext(count & 31);
+    local start:4 = zext(offset & 31);
+    local mask:8 = (0x7fffffff:8 >> (31 - n)) << start;
+    local old:8 = sext(A5L) & 0xffffffffff;
+    local source_bits:8 = sext(word);
+    local result:8 = (old & ~mask) | ((source_bits << start) & mask);
+    A5L = result:2;
+    EST = (EST & 0xfff7) | (zext((result & 0xffffffffff) == 0) << 3);
+  <publish>
+    publish_ce_feedback(EST & 0xcfff, incoming);
+}
+
+:MOVE "RN6",compact_frame_delta "||" compact_insert_secondary is
+    (carmel_issue=1 & slot_mode=0 & slot_13_22=0x188 & slot_9_12=14 & compact_frame_delta & slot_0_0=0);
+    (slot_mode=0 & compact_insert_secondary) {
+    build compact_insert_secondary;
+    local value:1 = compact_frame_delta;
+    RN6 = sext(value);
+    publish_alu_ce(EST & 0xcfff);
+}
+
+@define COMPACT_DIRECT_LONG_R0 "slot_10_22=0xc76 & slot_7_9=0 & indexed_peer_shift_count=0 & slot_0_0=0"
+
+macro compact_direct_long_r0(result) {
+    local address:2 = R0;
+    local upper:2 = address + 1;
+    local low:2 = *[data]:2 address;
+    local high:2 = *[data]:2 upper;
+    local dword:4 = (zext(high) << 16) | zext(low);
+    result = sext(dword);
+}
+
+:MOVE "A0","*R0:long" "||" compact_insert_secondary is
+    (carmel_issue=1 & slot_mode=0 & $(COMPACT_DIRECT_LONG_R0)); (slot_mode=0 & compact_insert_secondary) {
+    local incoming:2 = EST;
+    build compact_insert_secondary;
+    local value:5;
+    compact_direct_long_r0(value);
+    A0 = value;
+    local flags:2 = (incoming & 0xcfc4) | (zext(value == 0) << 3) | (zext(value s< 0) << 4);
+    publish_ce_feedback(flags, incoming);
+}
+
+macro compact_ports_movu(dst, word, incoming, shift) {
+    dst = zext(word);
+    local active:2 = (zext(word == 0) << 3) << shift;
+    local flags:2 = (incoming & ~(0x3000 | (0x3b:2 << shift))) | active;
+    publish_ce_feedback(flags, incoming);
+}
+
+:MOVU indexed_load_acc,"*R5++" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_9_22=0x1854 & slot_6_8<6 & indexed_load_acc & slot_1_5=21 & slot_0_0=0);
+    (slot_mode=0 & nop_right) {
+    local incoming:2 = EST;
+    local address:2 = R5;
+    modify_ptr(R5, 0:2, RM4, RL4, 10:4, 2:2);
+    local word:2 = *[data]:2 address;
+    compact_ports_movu(indexed_load_acc, word, incoming, 0:4);
+}
+
+:^nop_left "||" "MOVU" "CE2" compact_aux_acc_dst,compact_frame_delta is
+    (carmel_issue=1 & slot_mode=0 & nop_left);
+    (slot_mode=0 & slot_12_22=0x30b & slot_9_11<6 & compact_aux_acc_dst & compact_frame_delta & slot_0_0=1) {
+    local incoming:2 = EST;
+    local enabled:2;
+    unary_ce(CECFG2, incoming, CETBL, 1:2, enabled);
+    if (enabled == 0) goto <veto>;
+    local literal:1 = compact_frame_delta;
+    local word:2 = zext(literal);
+    compact_ports_movu(compact_aux_acc_dst, word, incoming, 6:4);
+    goto <done>;
+  <veto>
+    publish_ce_feedback(incoming & 0xcfff, incoming);
+  <done>
+}
+
+macro compact_ports_word_alu(address, exact, sum, shift, flags) {
+    local result:8;
+    local active:2;
+    raw_mac_finish(exact, sum, 1:1, 1:1, 1:1, result, active);
+    raw_mac_flags(flags, active, shift);
+    compact_store_scale_40(result, result);
+    compact_pair_fft(exact, result, 1:1, flags);
+    *[data]:2 address = result(2);
+}
+
+macro compact_ports_abs_store(address, lhs, rhs, flags) {
+    local positive:8 = sext(lhs);
+    if (positive s>= 0) goto <add>;
+    positive = -positive;
+  <add>
+    local left:8 = positive << 16;
+    local right:8 = sext(rhs) << 16;
+    local exact:8 = left + right;
+    local sum:8 = left + (right & 0xffffffffff);
+    compact_ports_word_alu(address, exact, sum, 0:4, flags);
+}
+
+:ADDABS "*R4","RN6","X2" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_14_22=0x69 & slot_10_12=4 & slot_13_13=0 & cmp_lhs=14 & slot_1_4=15 & slot_0_0=0);
+    (slot_mode=0 & nop_right) {
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    compact_ports_abs_store(R4, RN6, X2, flags);
+    publish_ce_feedback(flags, incoming);
+}
+
+# The secondary direct register replaces the PReg selector and requests no
+# copies of the two primary reads. All potentially live reads arbitrate in OF.
+:AND "CE1" "A1L","*R3--","*R4++" "||" "SUB" "CE2" "*R1","RN2","*R2+=RN2" is
+    (carmel_issue=1 & slot_mode=0 & slot_15_22=0xc3 & slot_11_14=1 & slot_6_10=27 & slot_1_5=20 & slot_0_0=1);
+    (slot_mode=0 & slot_15_22=0 & slot_11_14=1 & slot_6_10=10 & slot_1_5=10 & slot_0_0=1) {
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    local left:2;
+    local right:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, left);
+    unary_ce(CECFG2, incoming, CETBL, 1:2, right);
+    local left_access:1 = left != 0 || (CECFG1 & 0x1000) != 0;
+    local right_access:1 = right != 0 || (CECFG2 & 0x1000) != 0;
+    local first:2 = R3;
+    local second:2 = R4;
+    local third:2 = R2;
+    if (!left_access) goto <right_agu>;
+    modify_ptr(R3, 0:2, RM2, RL2, 6:4, 3:2);
+    modify_ptr(R4, 0:2, RM4, RL4, 8:4, 2:2);
+  <right_agu>
+    if (!right_access) goto <check_pair>;
+    modify_ptr(R2, RN2, RM2, RL2, 4:4, 1:2);
+    if (!left_access) goto <right_of>;
+    compact_ports_check_read_three(first, second, third);
+    goto <left_of>;
+  <check_pair>
+    if (!left_access) goto <publish>;
+    compact_pair_read_check(first, second);
+  <left_of>
+    local lhs:2 = *[data]:2 first;
+    local rhs:2 = *[data]:2 second;
+    local and_word:2 = lhs & rhs;
+    if (left == 0) goto <right_of>;
+    A1L = and_word;
+    flags = (flags & 0xffc7) | (zext(and_word == 0) << 3);
+  <right_of>
+    if (!right_access) goto <publish>;
+    local subtract_word:2 = *[data]:2 third;
+    if (right == 0) goto <publish>;
+    local minuend:8 = sext(RN2) << 16;
+    local subtrahend:8 = sext(subtract_word) << 16;
+    local sum:8 = (minuend & 0xffffffffff) + ((~subtrahend) & 0xffffffffff) + 1;
+    compact_ports_word_alu(R1, minuend - subtrahend, sum, 6:4, flags);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+}
+
+compact_ports_parallel_step: "RN2" is slot_4_5=1 { export 1:2; }
+compact_ports_parallel_step: "1" is slot_4_5=2 { export 2:2; }
+compact_ports_parallel_step: "-1" is slot_4_5=3 { export 3:2; }
+
+# The next R2 and the physical MAC read address are different outputs.
+macro compact_ports_postmodify_packet(action) {
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    local destination:2 = R0;
+    local primary_left:2 = R4;
+    local primary_right:2 = R2;
+    local product_left:2 = R1;
+    local product_right:2 = R2 - 1;
+    modify_ptr(R0, RN0, RM0, RL0, 0:4, 1:2);
+    modify_ptr(R4, 0:2, RM4, RL4, 8:4, 3:2);
+    modify_ptr(R1, 0:2, RM0, RL0, 2:4, 3:2);
+    if (action == 2) goto <reserve>;
+    if (action == 3) goto <decrement>;
+    modify_ptr(R2, RN2, RM2, RL2, 4:4, 1:2);
+    goto <reserve>;
+  <decrement>
+    modify_ptr(R2, -2:2, RM2, RL2, 4:4, 4:2);
+  <reserve>
+    local upper:2 = (primary_left >> 15) + (primary_right >> 15) + (product_left >> 15) + (product_right >> 15);
+    if (upper == 2) goto <ports>;
+  <full>
+    carmel_data_read_conflict();
+    goto <full>;
+  <ports>
+    compact_pair_read_check(primary_left, primary_right);
+    compact_pair_read_check(primary_left, product_left);
+    compact_pair_read_check(primary_left, product_right);
+    compact_pair_read_check(primary_right, product_left);
+    compact_pair_read_check(primary_right, product_right);
+    compact_pair_read_check(product_left, product_right);
+    local left:2 = *[data]:2 primary_left;
+    local right:2 = *[data]:2 primary_right;
+    local x:2 = *[data]:2 product_left;
+    local y:2 = *[data]:2 product_right;
+    X2 = x;
+    local product:8;
+    raw_mac_product(x, y, 0:1, 0:1, product);
+    local result:8;
+    local active:2;
+    raw_mac_finish(product, product & 0xffffffffff, 0:1, 0:1, 0:1, result, active);
+    A4 = result:5;
+    raw_mac_flags(flags, active, 6:4);
+    compact_ports_abs_store(destination, left, right, flags);
+    publish_ce_feedback(flags, incoming);
+}
+
+:ADDABS "*R0+=RN0","*R4--","*R2" "||" "MPYUU" "A4","*R1--",compact_ports_parallel_step is
+    (carmel_issue=1 & slot_mode=0 & slot_14_22=0x75 & slot_9_13=12 & slot_5_8=14 & slot_1_4=12 & slot_0_0=0);
+    (slot_mode=0 & slot_14_22=0x136 & slot_11_13=4 & slot_6_10=25 & slot_1_3=2 & compact_ports_parallel_step & slot_0_0=0) {
+    build compact_ports_parallel_step;
+    compact_ports_postmodify_packet(compact_ports_parallel_step);
+}
+
+
+:SUBB "CE1" "A5","R5","A3L" "||" compact_insert_secondary is
+    (carmel_issue=1 & slot_mode=0 & slot_13_22=0x74 & slot_10_12=5 & slot_6_9=3 & slot_1_5=5 & slot_0_0=1);
+    (slot_mode=0 & compact_insert_secondary) {
+    local incoming:2 = EST;
+    local input:2 = R5;
+    build compact_insert_secondary;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    local flags:2 = incoming & 0xcfff;
+    if (enabled == 0) goto <publish>;
+    local lhs:8 = sext(input);
+    local rhs:8 = sext(A3L);
+    local carry_bit:8 = zext(incoming & 1);
+    local sum:8 = (lhs & 0xffffffffff) + ((~rhs) & 0xffffffffff) + carry_bit;
+    local result:8;
+    local active:2;
+    raw_mac_finish(lhs - rhs + carry_bit - 1, sum, 0:1, 0:1, 0:1, result, active);
+    A5 = result:5;
+    raw_mac_flags(flags, active, 0:4);
+  <publish>
+    publish_ce_feedback(flags, incoming);
+}
+
+:OR "A0","X1","RN4" "||" "OR" "A1","X2","RN4" is
+    (carmel_issue=1 & slot_mode=0 & slot_13_22=0x354 & slot_10_12=0 & slot_6_9=14 & slot_1_5=12 & slot_0_0=0);
+    (slot_mode=0 & slot_13_22=0x354 & slot_10_12=1 & slot_6_9=15 & slot_1_5=12 & slot_0_0=0) {
+    local incoming:2 = EST;
+    local first:2 = X1 | RN4;
+    local second:2 = X2 | RN4;
+    A0 = zext(first);
+    A1 = zext(second);
+    local flags:2 = (incoming & 0xc1c7) | (zext(first == 0) << 3) | (zext(second == 0) << 9);
+    publish_ce_feedback(flags, incoming);
+}
+
+compact_ports_rmw_word: "RMW1" is slot_11_14=6 { export R0; }
+compact_ports_rmw_word: "RMW2" is slot_11_14=7 { export R1; }
+
+:OR compact_ports_rmw_word,"*R0","*R1" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_15_22=0xd3 & slot_6_10=0 & slot_1_5=1 & slot_0_0=0 & compact_ports_rmw_word);
+    (slot_mode=0 & nop_right) {
+    local incoming:2 = EST;
+    local left:2 = R0;
+    local right:2 = R1;
+    local destination:2 = compact_ports_rmw_word;
+    compact_pair_read_check(left, right);
+    local a:2 = *[data]:2 left;
+    local b:2 = *[data]:2 right;
+    local value:2 = a | b;
+    *[data]:2 destination = value;
+    local flags:2 = (incoming & 0xcfc7) | (zext(value == 0) << 3);
+    publish_ce_feedback(flags, incoming);
+}
+
+:ADD "RMW2","A0L","*R4--" "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & slot_15_22=0x21 & slot_11_14=7 & slot_6_10=16 & slot_1_5=28 & slot_0_0=0);
+    (slot_mode=0 & nop_right) {
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    local address:2 = R4;
+    modify_ptr(R4, 0:2, RM4, RL4, 8:4, 3:2);
+    local rhs:2 = *[data]:2 address;
+    local left:8 = sext(A0L) << 16;
+    local right:8 = sext(rhs) << 16;
+    local sum:8 = (left & 0xffffffffff) + (right & 0xffffffffff);
+    compact_ports_word_alu(address, left + right, sum, 0:4, flags);
+    publish_ce_feedback(flags, incoming);
+}
+
+:MAXBTR "*R0","R0" "||" "MOVE" "*R1","A1H" is
+    (carmel_issue=1 & slot_mode=0 & slot_12_22=0x230 & slot_11_11=0 & slot_6_10=0 & slot_1_5=0 & slot_0_0=0);
+    (slot_mode=0 & slot_10_22=0xc54 & slot_5_9=1 & slot_1_4=9 & slot_0_0=0) {
+    local incoming:2 = EST;
+    local left:2 = R0;
+    local right:2 = R1;
+    local original:2 = *[data]:2 left;
+    local better:1 = original s< left;
+    BTR1 = (BTR1 << 1) | zext(better);
+    if (left == right) goto <stop>;
+    if (((left ^ right) & 0xc001) != 0 || (left & 0xc000) == 0 || (left & 0xc000) == 0xc000) goto <store>;
+  <stop>
+    carmel_data_write_conflict();
+    goto <stop>;
+  <store>
+    local result:2 = original;
+    if (!better) goto <selected>;
+    result = left;
+  <selected>
+    compact_store_word(left, result);
+    compact_store_word(right, A1H);
+    local a:8 = sext(original) << 16;
+    local b:8 = sext(left) << 16;
+    minmax_signed_flags(a, b);
+    publish_ce_feedback(EST & 0xcfff, incoming);
+}
 @include "carmel_cliw_data.sinc"
 
 # Only the qualified short MA1/MA2 write ports are visible to DATA.

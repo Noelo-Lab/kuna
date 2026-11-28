@@ -4168,6 +4168,29 @@ The CE1 form admits the DATA read using the earlier address sample or
 its address override. The later result predicate does not reopen a
 vetoed read and suppresses both writes when false.
 
+Physical operand and status cells are indexed by the same eight issue slots.
+A cell sampled without a producer in the current issue takes the retained
+value in that slot, not a constant implied by the mnemonic. The entry cells
+are explicit incoming state. At a control-flow join a cell remains bound
+only if its physical slot is proved and every incoming path preserves or
+explicitly writes that cell.
+
+For the immediate-first-operand wide `MAC` routes, operand fetch latches
+`X1` from DATA: slot four selects `0x0010`, slot five selects `0x0000`, and
+the remaining slots select `0xffff`. The signed-by-unsigned route updates
+the two-word result low word first. The rounded MINMAX route rounds ties
+upward; the FF2 route samples its addend before the previous issue's late
+write becomes visible. The scheduled DATA lift refuses an unproved overlap
+between operand fetch and an older store rather than reading already-written
+DATA.
+
+A sequential right self-increment writes its high half independently of the
+preceding left slot. The separately issued operation uses the sequential
+flag lane. Compact field operations keep address modification, bus
+reservation, and result writeback distinct: a sequential long descriptor
+can consume both words while reserving one, unlike the corresponding
+parallel primary port.
+
 Unqualified wide `RESET` applies control-field masks at D2. The
 retirement check follows decoded issue boundaries; the two slots of a
 sequential fetch are separate issues. It proves the four older issues,

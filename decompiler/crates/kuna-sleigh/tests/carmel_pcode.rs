@@ -212,6 +212,22 @@ fn inc_wrap_and_status_use_the_widened_alu_and_physical_lane() {
 }
 
 #[test]
+fn sequential_high_half_increment_does_not_contend_with_the_left_slot() {
+    let mut m = Machine::new(0, &[(SEQUENTIAL | INC_A0, 0x21ae30), (NOP, NOP)],
+                             &[(0, 2, 3), (1, 3, 6), (2, 1, 0)], None);
+    m.seed(&[("A0", 0x7a12341133), ("CETBL", 0)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 3);
+    assert_eq!(m.reg("A0"), 0x7a12341134);
+    assert_eq!(m.step(), 6);
+    assert_eq!(m.reg("A0"), 0x7a12351134);
+    assert_eq!(m.reg("EST"), 0);
+    m.seed(&[("A0", 0x7a12341133)]);
+    m.start(1).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!(m.reg("A0"), 0x7a12351133);
+}
+#[test]
 fn compact_half_publication_samples_both_ce_rails_before_lane_writeback() {
     for (fetch, mode, first, flags, next_rails) in [
         ((INC_A0, NOP), 1, 0, 0x0009, 0x3000),
@@ -3662,4 +3678,143 @@ fn wide_divtrace_reserves_both_data_inputs_before_publishing() {
     m.start(0).unwrap();
     assert_eq!(m.emulator.execute_instruction().unwrap_err().explain(), "Userop not hooked");
     assert_eq!((m.reg("BTR1"), m.data(0x40)), (0x1234, 0x2327));
+}
+
+#[test]
+fn compact_sequential_extract_uses_unreserved_descriptor_upper_word() {
+    for (fetch, issue, first) in [((0xb4459a, 0x61a288), 0, 2), ((0xabec00, 0x34459a), 1, 3)] {
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], &[(0, 2, 3), (1, 3, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x4041), ("R5", 0x4048), ("RN5", 2), ("R2", 0x8040), ("RN2", 3), ("R4", 0x48), ("CETBL", 0xffff)]);
+        for (address, value) in [(0x4040, 0x1111), (0x4041, 0x43d2), (0x4048, 5), (0x4049, 3),
+                                 (0x404a, 1), (0x48, 0x5df9), (0x8040, 0x7c4b), (0x8043, 0x1111)] {
+            m.seed_data(address, value);
+        }
+        m.start(issue).unwrap();
+        assert_eq!(m.step(), 3 * (issue + 1));
+        assert_eq!((m.reg("A2"), m.reg("R0"), m.reg("R5"), m.reg("EST")), (0xffff_fffffa, 0x4040, 0x404a, 0x3010));
+        if first == 2 {
+            assert_eq!(m.step(), 6);
+            assert_eq!((m.reg("A4L"), m.reg("R2"), m.reg("EST")), (0x5c49, 0x8043, 0x3000));
+        }
+    }
+}
+
+#[test]
+fn compact_primary_insert_reserves_three_reads_but_secondary_only_updates_addresses() {
+    for (fetch, descriptor, active, stops) in [
+        ((0x32953b, NOP), 0x8100, true, false),
+        ((0x32953b, NOP), 0x4048, true, true),
+        ((NOP, 0x32853b), 0x4048, false, false),
+    ] {
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R1", 0x4040), ("RN1", 2), ("R5", descriptor), ("RN5", 2),
+                  ("A5", 0x89d1dd24b5), ("A2", 0x123456789a), ("CETBL", 0xffff)]);
+        m.seed_data(0x4040, 3);
+        m.seed_data(0x4042, 10);
+        m.seed_data(descriptor, 4);
+        m.seed_data(descriptor + 1, 5);
+        m.start(0).unwrap();
+        if stops {
+            assert_eq!(m.emulator.execute_instruction().unwrap_err().explain(), "Userop not hooked");
+        } else {
+            assert_eq!(m.step(), 6);
+        }
+        assert_eq!(m.reg("R5"), descriptor + 2);
+        assert_eq!(m.reg("R1"), if active { 0x4040 } else { 0x4041 });
+        assert_eq!(m.reg("A5"), if active && !stops { 0x89d1dd2555 } else { 0x89d1dd24b5 });
+        assert_eq!(m.reg("A2"), 0x123456789a);
+        assert_eq!(m.data(0x4042), 10);
+    }
+}
+
+#[test]
+fn compact_parallel_postmodify_indexes_original_pointer_and_latches_x2() {
+    for (right, next) in [(0x4da654, 0x8043), (0x4da664, 0x8040), (0x4da674, 0x803e)] {
+        let mut m = Machine::new(0, &[(0x1d59d8, right), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x40), ("RN0", 1), ("R1", 0x4040), ("R2", 0x8040), ("RN2", 3),
+                 ("R4", 0x48), ("X1", 0xbeef), ("X2", 0x5678), ("CETBL", 0xffff)]);
+        for (a, v) in [(0x48, 0x5df9), (0x8040, 19), (0x803f, 11), (0x4040, 3), (0x8043, 37), (0x803e, 59)] {
+            m.seed_data(a, v);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("R0"), m.reg("R1"), m.reg("R2"), m.reg("R4")), (0x41, 0x403f, next, 0x47));
+        assert_eq!((m.reg("A4"), m.reg("X1"), m.reg("X2")), (33, 0xbeef, 3));
+        assert_eq!((m.data(0x40), m.data(0x8040)), (0x5e0c, 19));
+    }
+}
+
+#[test]
+fn compact_direct_sub_peer_does_not_duplicate_primary_read_reservations() {
+    for (r2, r3, retires) in [(0xc060, 0x8040, true), (0x0060, 0x0040, false)] {
+        let mut m = Machine::new(0, &[(0x618ee9, 0x000a95), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R1", 0x4050), ("R2", r2), ("RN2", 3), ("R3", r3), ("R4", 0x48),
+                 ("A1", 0x6a834cecd0), ("CETBL", 0xffff)]);
+        m.seed_data(0x8040, 0x0580);
+        m.seed_data(0x48, 0x5fff);
+        m.seed_data(r2, 0x1234);
+        m.seed_data(0x4050, 0x3210);
+        m.start(0).unwrap();
+        if retires {
+            assert_eq!(m.step(), 6);
+            assert_eq!((m.reg("A1"), m.data(0x4050), m.reg("EST")), (0x6a834c0580, 0xedcf, 0x3400));
+        } else {
+            assert_eq!(m.emulator.execute_instruction().unwrap_err().explain(), "Userop not hooked");
+            assert_eq!((m.reg("A1"), m.data(0x4050), m.reg("EST")), (0x6a834cecd0, 0x3210, 0));
+        }
+        assert_eq!((m.reg("R2"), m.reg("R3"), m.reg("R4")), (r2 + 3, r3 - 1, 0x49));
+    }
+}
+
+#[test]
+fn compact_or_uses_physical_x_ports_and_selects_the_rmw_store_cell() {
+    let mut m = Machine::new(0, &[(0x6a8398, 0x6a87d8), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+    m.seed(&[("X1", 0x5555), ("X2", 0x6666), ("RN4", 2), ("A0", 0xabcd000000), ("A1", 0x1234000000)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A0"), m.reg("A1"), m.reg("X1"), m.reg("X2")), (0x5557, 0x6666, 0x5555, 0x6666));
+    for (word, values) in [(0x69b002, (0x9577, 0x9456)), (0x69b802, (0x0123, 0x9577))] {
+        let mut m = Machine::new(0, &[(word, NOP), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x40), ("R1", 0x42)]);
+        m.seed_data(0x40, 0x0123);
+        m.seed_data(0x42, 0x9456);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.data(0x40), m.data(0x42)), values);
+    }
+}
+
+#[test]
+fn compact_extremum_reserves_the_unchanged_store_before_feedback() {
+    for (r1, old, btr, allowed) in [(0x4041, 1, 3, true), (0x4041, 0x7fff, 2, true),
+                                     (0x4040, 0x7fff, 2, false), (0x4042, 1, 3, false)] {
+        let mut m = Machine::new(0, &[(0x230000, 0x315032), (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", 0x4040), ("R1", r1), ("A1H", 0x834c), ("BTR1", 1), ("CETBL", 0xffff)]);
+        m.seed_data(0x4040, old);
+        m.seed_data(0x4041, 0x6385);
+        m.seed_data(0x4042, 0x59f6);
+        m.start(0).unwrap();
+        if allowed {
+            assert_eq!(m.step(), 6);
+            assert_eq!((m.data(0x4040), m.data(0x4041)), (old.max(0x4040), 0x834c));
+        } else {
+            assert_eq!(m.emulator.execute_instruction().unwrap_err().explain(), "Userop not hooked");
+            assert_eq!((m.data(0x4040), m.data(0x4041), m.data(0x4042), m.reg("EST")), (old, 0x6385, 0x59f6, 0));
+        }
+        assert_eq!(m.reg("BTR1"), btr);
+    }
+}
+
+#[test]
+fn compact_movu_zero_extends_the_connected_source_and_selects_right_ce() {
+    for (fetch, table, output, pointer) in [((0x30a96a, NOP), 0, 0x8001, 0x4049),
+        ((NOP, 0x30bb7f), 1, 0xfedcba9876, 0x4048), ((NOP, 0x30bb7f), 0x100, 0xbf, 0x4048)] {
+        let mut m = Machine::new(0, &[fetch, (NOP, NOP)], &[(0, 1, 6), (2, 1, 0)], None);
+        m.seed(&[("A5", 0xfedcba9876), ("R5", 0x4048), ("CETBL", table)]);
+        m.seed_data(0x4048, 0x8001);
+        m.seed_data(0x4049, 0x7777);
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("A5"), m.reg("R5")), (output, pointer));
+    }
 }

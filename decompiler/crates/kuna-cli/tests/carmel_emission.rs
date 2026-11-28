@@ -4944,6 +4944,81 @@ fn carmel_swap_uses_issue_slot_and_both_qualifiers() {
 }
 
 #[test]
+fn carmel_literal_mac_uses_the_physical_slot_and_old_ff2() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    const LONG: [u8; 6] = [0xa3, 0xe6, 0x41, 0xa9, 0x41, 0x9f];
+    const MINMAX: [u8; 6] = [0xa3, 0x41, 0x73, 0xa0, 0xba, 0x9e];
+    const FF2: [u8; 6] = [0xad, 0x6f, 0xe2, 0xab, 0x97, 0x9e];
+    let temp = tempfile::tempdir().unwrap();
+    let [binary, specs, source, executable] = ["mac.bin", "specs", "mac.c", "mac.exe"]
+        .map(|name| temp.path().join(name));
+    let mut tracked = [STATIC_CE.as_slice(), &[
+        ("CARMEL_ISSUE_SLOT", 0), ("CETBL", 0), ("EST", 0), ("R1", 0x4040),
+        ("R5", 0x4048), ("RN5", 2), ("MAC1_FLAGS_0", 0), ("MAC1_FLAGS_1", 0),
+        ("MAC1_FLAGS_2", 0), ("MAC1_FLAGS_4", 0), ("MAC1_FLAGS_5", 0), ("MAC1_FLAGS_6", 0),
+        ("FFTV", 0)
+    ]].concat();
+    let mut c = String::from(
+        "#include <stdbool.h>\n#include <stdint.h>\n\
+         #define CONCAT22(h,l) (((uint32_t)(uint16_t)(h)<<16)|(uint16_t)(l))\n\
+         volatile unsigned short at_end, at_10, at_zero, lo, hi, other, rounded_rhs;\n");
+    let mut calls = String::from("int main(void) {\n");
+    for (name, route, at, second, result) in [
+        ("signed_long", LONG, 8, None, "X1"),
+        ("rowslot4", MINMAX, 4, None, "MINMAX"),
+        ("rowslot5", MINMAX, 5, None, "MINMAX"),
+        ("rowslot6", MINMAX, 6, None, "MINMAX"),
+        ("ff_adjacent", FF2, 8, Some(9), "FF2"),
+        ("ff_idle_gap", FF2, 8, Some(10), "FF2"),
+    ] {
+        if route == MINMAX { tracked.push(("R3", 0xc040)); }
+        tracked_carmel_entry_specs(&specs, &tracked, 0x1000, 0);
+        if route == MINMAX { tracked.pop(); }
+        let mut code = [NOP; 16];
+        code[at] = route;
+        if let Some(n) = second { code[n] = route; }
+        code[15] = RET;
+        fs::write(&binary, code.as_flattened()).unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+        command.env("KUNA_SPECS", &specs).arg("decompile").arg(&binary).args([
+            "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default", "--base", "0x1000",
+            "--json", "--assert-strict", "--assert", &format!("return %{result} unsigned short"),
+        ]);
+        for (address, var) in [(0xffff, "at_end"), (0x10, "at_10"), (0, "at_zero"), (0x4040, "lo"),
+            (0x4041, "hi"), (0x404a, "other"), (0xc0b3, "rounded_rhs")] {
+            command.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short {var}")]);
+        }
+        let inputs: &[&str] = if route == LONG { &["R3", "ECFG"] }
+            else if route == MINMAX { &["MINMAX", "ECFG"] } else { &["FF2", "ECFG"] };
+        for (i, input) in inputs.iter().enumerate() {
+            command.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);
+        }
+        let result: Value = serde_json::from_slice(&common::process::required_output(&mut command).stdout).unwrap();
+        let function = &result["functions"][0];
+        assert!(function["error"].is_null(), "{function}");
+        writeln!(c, "#define sub_1000 {name}\n{}\n#undef sub_1000", function["code"].as_str().unwrap()).unwrap();
+        if route == LONG {
+            writeln!(calls, "at_end=3; lo=0xfffe; hi=0xffff;\
+                if ({name}(0xffff,0x20)!=3 || lo!=0x7ffd || hi!=1) return 1;").unwrap();
+        } else if route == MINMAX {
+            let expected = [0, 0xffff, 1][at - 4];
+            writeln!(calls, "at_end=6; at_10=2; at_zero=0xfffe; rounded_rhs=0x4000;\
+                if ({name}(0xffff,0x22)!={expected}) return {at};").unwrap();
+        } else {
+            let expected = if second == Some(9) { 2 } else { 5 };
+            writeln!(calls, "at_end=0x8000; other=6; if ({name}(0xffff,0)!={expected}) return 7;").unwrap();
+        }
+    }
+    writeln!(c, "{calls}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_compact_pc_store_samples_three_physical_successors() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
