@@ -83,8 +83,10 @@ Guarded `RETURN EQ1` and `RETI EQ1` retire up to six delay issues on both
 paths; only a taken return reads the link or retires a trap source.
 Unconditional compact CALL admits up to three delay issues in sequential
 form or with an inactive parallel peer. Compact `CALL NC1` with an inactive
-right lane retires at most two delay issues. It writes the encoded link on
-both paths but decrements `SP` only when it takes the call. Taken calls
+right lane retires at most two delay issues. The sequential compact and
+marked wide `CALL NC1` with encoded delay three also retire two issues.
+These forms test carry before the delayed issues, write the encoded link
+on both paths, and decrement `SP` only when they take the call. Taken calls
 return to the encoded link; vetoed calls continue after the retired delays.
 Compact RETURN admits two or three delay issues with an inactive right lane,
 and an undelayed CE1 form whose address enable can override a veto.

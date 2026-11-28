@@ -656,6 +656,58 @@ fn carmel_predicated_call_keeps_its_encoded_resume_inside_the_caller() {
 }
 
 #[test]
+fn carmel_nc1_call_delay_counts_mixed_issues_but_retains_the_encoded_link() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let nop = [0x2b, 0xec, 0x00];
+    let inc = [0x21, 0xac, 0x20];
+    let split_inc = [0xa1, 0xac, 0x20];
+    let ret = [0x2b, 0xd8, 0x00];
+    let binary = common::scratch_file("carmel-nc1-call", "bin");
+    let source = binary.with_extension("c");
+    let executable = binary.with_extension("exe");
+    for (call, resume, vetoed) in [
+        ([[0xa8, 0x82, 0x63], inc], [[0xab, 0xec, 0], inc], 4),
+        ([[0xc0, 0, 0x18], [0xce, 0x5a, 4]], [inc, nop], 3),
+    ] {
+        let mut code = [[nop; 2]; 16];
+        code[..3].copy_from_slice(&[[inc, nop], call, [split_inc, inc]]);
+        let resume_fetch = if resume[0][0] & 0x80 != 0 { 4 } else { 5 };
+        code[resume_fetch] = resume;
+        code[6] = [ret, nop];
+        code[13..].copy_from_slice(&[[inc, nop], [inc, nop], [ret, nop]]);
+        fs::write(&binary, code.as_flattened().as_flattened()).unwrap();
+        let emit = |entry| {
+            let output = common::process::required_output(
+                Command::new(env!("CARGO_BIN_EXE_kuna")).arg("decompile").arg(&binary).args([
+                    entry, "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                    "--base", "0x1000", "--json", "--define-function", "0x101a=fixture_callee",
+                    "--assert-strict", "--assert", "param 0 %A0L short input",
+                    "--assert", "param 1 %ECFG unsigned short ecfg", "--assert", "return %A0L short",
+                    "--assert", "param fixture_callee::0 %A0L short input",
+                    "--assert", "param fixture_callee::1 %ECFG unsigned short ecfg",
+                    "--assert", "return fixture_callee::%A0L short",
+                ]),
+            );
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            function["code"].as_str().unwrap().to_owned()
+        };
+        let emitted = format!("{}\n{}", emit("0x101a"), emit("0x1000"));
+        fs::write(&source, format!(
+            "#include <stdbool.h>\n{emitted}\n\
+             int main(void) {{ return sub_1000(0, 0) != 6 || sub_1000(-1, 0) != {vetoed}; }}\n"
+        )).unwrap();
+        run_emitted_c(&source, &executable, &emitted);
+    }
+    for file in [binary, source, executable] {
+        fs::remove_file(file).unwrap();
+    }
+}
+
+#[test]
 fn carmel_wide_logic_control_alias_writes_high_word_and_masks_repeat_depth() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
