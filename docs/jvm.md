@@ -284,12 +284,12 @@ the same sources, methods perfect on all metrics:
 
 | project | from the jar | from DEX, kuna | from DEX, jadx 1.5.3 |
 |---|---|---|---|
-| Guava | 98.78% | 80.70% | 42.65% |
-| spring-boot | 99.29% | 76.38% | 57.40% |
-| spring-framework | 99.03% | 74.04% | 62.92% |
-| Ghidra | 98.71% | 73.28% | 56.59% |
-| Elasticsearch | 98.89% | 66.95% | 36.05% |
-| all | 98.88% | 70.74% | 44.31% |
+| Guava | 98.78% | 82.35% | 42.65% |
+| spring-boot | 99.29% | 79.23% | 57.40% |
+| spring-framework | 99.03% | 75.51% | 62.92% |
+| Ghidra | 98.71% | 74.45% | 56.59% |
+| Elasticsearch | 98.89% | 69.63% | 36.05% |
+| all | 98.88% | 72.91% | 44.31% |
 
 Release builds (what APKs ship) carry no local-variable debug info, and d8 optimises more
 (shared values, split returns, rewritten library calls). Built with `--release` instead of
@@ -298,23 +298,23 @@ metrics for kuna / jadx:
 
 | project | from the jar | debug DEX, kuna | release DEX, kuna | release DEX, jadx | structure | types | bytes | classes recompiling |
 |---|---|---|---|---|---|---|---|---|
-| Guava | 98.78% | 80.70% | 65.21% | 38.23% | 92.2 / 88.5% | 83.2 / 82.6% | 67.6 / 38.6% | 69.9 / 48.7% |
-| spring-boot | 99.29% | 76.38% | 62.21% | 47.90% | 90.0 / 90.5% | 79.2 / 80.9% | 64.4 / 48.9% | 77.5 / 59.8% |
-| spring-framework | 99.03% | 74.04% | 61.56% | 52.52% | 88.1 / 88.5% | 79.4 / 81.7% | 63.0 / 52.8% | 77.1 / 68.7% |
-| Ghidra | 98.71% | 73.28% | 60.57% | 49.57% | 84.7 / 84.6% | 77.3 / 78.0% | 61.4 / 50.0% | 80.7 / 73.0% |
-| Elasticsearch | 98.89% | 66.95% | 53.67% | 31.71% | 85.5 / 83.0% | 84.1 / 81.4% | 54.3 / 31.8% | 69.4 / 44.7% |
-| all | 98.88% | 70.74% | 57.38% | 38.57% | 86.6 / 84.8% | 82.1 / 81.0% | 58.4 / 38.8% | 73.2 / 54.7% |
+| Guava | 98.78% | 82.35% | 66.66% | 38.23% | 93.0 / 88.5% | 83.5 / 82.6% | 69.1 / 38.6% | 73.7 / 48.7% |
+| spring-boot | 99.29% | 79.23% | 64.03% | 47.90% | 91.4 / 90.5% | 79.8 / 80.9% | 66.5 / 48.9% | 84.4 / 59.8% |
+| spring-framework | 99.03% | 75.51% | 62.80% | 52.52% | 88.8 / 88.5% | 79.7 / 81.7% | 64.3 / 52.8% | 80.1 / 68.7% |
+| Ghidra | 98.71% | 74.45% | 60.98% | 49.57% | 84.9 / 84.6% | 77.4 / 78.0% | 61.8 / 50.0% | 84.4 / 73.0% |
+| Elasticsearch | 98.89% | 69.63% | 55.43% | 31.71% | 86.2 / 83.0% | 84.5 / 81.4% | 56.1 / 31.8% | 73.2 / 44.7% |
+| all | 98.88% | 72.91% | 58.82% | 38.57% | 87.2 / 84.8% | 82.5 / 81.0% | 59.9 / 38.8% | 77.0 / 54.7% |
 
 What a release build costs both tools: the types metric most (local types come from debug
-info: kuna 96.7% to 82.1%, jadx 93.9% to 81.0%, so neither has much of an edge there), then
+info: kuna 97.4% to 82.5%, jadx 93.9% to 81.0%, so neither has much of an edge there), then
 bytes exact and classes recompiling (d8's release optimisations reach the recompiled code;
-kuna 70.8% to 58.4% and 81.7% to 73.2%, jadx 44.4% to 38.8% and 56.1% to 54.7%), and
-structure least (89.6% to 86.6%, jadx 87.8% to 84.8%). Parameter names survive where the code was
+kuna 72.9% to 59.9% and 86.1% to 77.0%, jadx 44.4% to 38.8% and 56.1% to 54.7%), and
+structure least (91.4% to 87.3%, jadx 87.8% to 84.8%). Parameter names survive where the code was
 compiled with `-parameters`, and line numbers survive.
 
 Most of the remaining loss is structure that differs from javac's (d8's shared comparisons
 and merged returns, string concatenation), `byte`/`int` typed where `boolean` is needed
-(a constant shared between a boolean and an int use), and 518 methods the engine fails
+(a constant shared between a boolean and an int use), and 482 methods the engine fails
 (mostly "parsing failure" on d8 layouts it cannot structure, and `FinallyProcessor` on the
 rest of the `finally` shapes). A `synchronized` block the engine cannot rebuild from d8's
 monitor ranges is among those: its text marks the monitor instructions in comments and

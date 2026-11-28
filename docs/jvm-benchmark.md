@@ -127,7 +127,7 @@ reads:
 | Project | Methods | Perfect on all metrics | Structure perfect | Types perfect | Bytes exact | Classes recompile | Methods lost |
 |---|--:|---|---|---|---|---|---|
 | antlr4 | 1,447 | 83.07% → 97.44% | 95.12% → 99.08% | 98.65% → 99.93% | 83.41% → 98.13% | 98.62% → 99.31% | 0 |
-| h2 | 12,095 | 78.45% → 89.14% | 94.94% → 99.09% | 91.38% → 93.76% | 81.97% → 93.71% | 86.55% → 97.96% | 76 → 0 |
+| h2 | 12,095 | 78.45% → 89.14% | 94.94% → 99.09% | 91.38% → 93.76% | 81.97% → 93.74% | 86.55% → 98.23% | 76 → 0 |
 | httpcore5 | 5,138 | 91.32% → 96.96% | 97.51% → 99.78% | 99.66% → 99.96% | 91.48% → 97.04% | 99.40% → 99.80% | 0 |
 | fastjson2 | 6,645 | 67.96% → 93.27% | 88.50% → 98.50% | 98.86% → 99.74% | 68.16% → 93.56% | 91.14% → 98.41% | 0 |
 | tink | 4,384 | 90.10% → 99.59% | 98.41% → 99.80% | 99.75% → 99.85% | 90.21% → 99.70% | 98.21% → 100.00% | 3 |
@@ -137,10 +137,10 @@ reads:
 | commons-math3 | 8,073 | 87.44% → 97.08% | 97.85% → 99.89% | 99.54% → 99.97% | 87.48% → 97.09% | 96.38% → 97.32% | 4 → 1 |
 | jenetics | 1,915 | 91.49% → 97.28% | 99.41% → 99.95% | 99.41% → 99.89% | 91.85% → 97.39% | 88.51% → 92.53% | 2 → 0 |
 | nashorn | 9,309 | 87.94% → 97.97% | 96.48% → 98.97% | 99.71% → 99.87% | 88.24% → 98.52% | 93.42% → 95.18% | 1 |
-| **all** | 63,189 | 81.68% → 95.49% | 95.80% → 99.28% | 97.69% → 98.52% | 82.52% → 96.60% | 94.12% → 98.04% | 126 → 43 |
+| **all** | 63,189 | 81.68% → 95.49% | 95.80% → 99.28% | 97.69% → 98.52% | 82.52% → 96.60% | 94.12% → 98.09% | 126 → 43 |
 
-60,341 methods perfect instead of 51,610, and 4,254 of 4,339 classes recompile instead of
-4,084. 9,956 methods score better than Vineflower's and 81 worse. h2 and joda-time ship
+60,341 methods perfect instead of 51,610, and 4,256 of 4,339 classes recompile instead of
+4,084. 9,961 methods score better than Vineflower's and 81 worse. h2 and joda-time ship
 without local-variable tables, which is where the types column stays lowest for both tools.
 
 ### Ten projects nothing had been tuned against (`heldout2`)
@@ -253,8 +253,8 @@ Of the text that does not compile, what is left is four sources whose types the
 class file states only in part (generic casts javac compiles to no instruction, a raw
 `new` that looks like a diamond) and two structures (a switch expression as the argument
 of `this(..)`, which Vineflower's own expected text gets wrong the same way, and a local
-class written twice). On kuna's own corpus sources (189 compile) the same command gives
-153 / 35 / 0 with debug information and 133 / 52 / 3 without; one more source carries a
+class written twice). On kuna's own corpus sources (198 compile) the same command gives
+162 / 35 / 0 with debug information and 142 / 53 / 2 without; one more source carries a
 failure comment in both.
 
 ## What the recompiled projects refer to
@@ -317,7 +317,7 @@ loses the reference's null check.
 ## From DEX
 
 The same five projects compiled to DEX with d8 and decompiled from the DEX are scored by the
-same harness against jadx 1.5.3: 70.74% of methods perfect from debug builds (jadx 44.31%)
-and 57.38% from release builds (jadx 38.57%), kuna ahead on each project in both.
+same harness against jadx 1.5.3: 72.91% of methods perfect from debug builds (jadx 44.31%)
+and 58.82% from release builds (jadx 38.57%), kuna ahead on each project in both.
 `docs/jvm.md`, "Android: DEX and APK input", has the per-project tables and what a DEX costs relative to
 the class files.
