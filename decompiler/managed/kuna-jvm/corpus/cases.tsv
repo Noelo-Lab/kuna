@@ -2144,3 +2144,5 @@ case	kuna-fixes/pkg/TestSwitchArmStore	Kuna Fixes	kuna-fixes/classes/pkg/TestSwi
 case	kuna-fixes/pkg/TestPatternChainSlots	Kuna Fixes	kuna-fixes/classes/pkg/TestPatternChainSlots
 # kuna-fixes/src/pkg/TestTwrAssignedLocal.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestTwrAssignedLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTwrAssignedLocal
+# kuna-fixes/src/pkg/TestCastBranchOldClass.java, javac 21.0.13.1 (-g --release 11)
+case	kuna-fixes/pkg/TestCastBranchOldClass	Kuna Fixes	kuna-fixes/classes/pkg/TestCastBranchOldClass

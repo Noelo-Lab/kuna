@@ -366,6 +366,9 @@ fn goto_at(offset: i32) -> Option<(i32, i32)> {
 /// gone) and the then-branch for the code after the if: [`reorder`] then
 /// negates the if.
 fn after_binding(after_jump: i32) -> Option<(i32, i32)> {
+    if !binding_at(after_jump) {
+        return None;
+    }
     let code = code_at(after_jump, 4);
     let ops: Vec<i32> = code.iter().map(|c| c.1).collect();
     if ops.len() == 4
@@ -383,6 +386,9 @@ fn after_binding(after_jump: i32) -> Option<(i32, i32)> {
 /// `after_jump`, its then-branch's start: `aload; checkcast; astore v` not
 /// followed by a `goto` (that of a negated test, [`after_binding`]).
 fn positive_binding(after_jump: i32) -> Option<i32> {
+    if !binding_at(after_jump) {
+        return None;
+    }
     let bind = code_at(after_jump, 4);
     let ops: Vec<i32> = bind.iter().map(|c| c.1).collect();
     (ops.len() == 4
@@ -484,10 +490,30 @@ fn condition_bindings(ifstat: IfStatement, start: i32) -> Vec<(i32, i32)> {
         return Vec::new();
     };
     let mut slots = bindings(start, then_start);
-    if has_lines() && !line_starts_at(then_start) {
+    if has_lines() {
         slots.extend(positive_binding(then_start).map(|slot| (then_start, slot)));
     }
     slots
+}
+
+/// Whether the class of the method being structured can hold `instanceof`
+/// patterns (version 60, Java 16, or later): before it, `aload; checkcast;
+/// astore` after a test is a cast statement (`v = (T) o;`), the same code
+/// as a binding.
+fn patterns() -> bool {
+    METHOD.with(|m| {
+        m.borrow()
+            .as_ref()
+            .is_some_and(|m| m.mt.get_bytecode_version().has_if_pattern_matching())
+    })
+}
+
+/// Whether `aload; checkcast; astore` at `at`, right after a test, can be an
+/// `instanceof` pattern's binding: the class holds patterns, and the
+/// LineNumberTable (when there is one) starts no line there, where a cast
+/// statement on a line of its own starts one.
+fn binding_at(at: i32) -> bool {
+    patterns() && !(has_lines() && line_starts_at(at))
 }
 
 /// Whether the method being structured has a LineNumberTable.
@@ -502,6 +528,9 @@ fn has_lines() -> bool {
 /// The `instanceof` pattern bindings stored in the code from `from` to
 /// `to` (`aload; checkcast; astore`): where each starts, and its slot.
 fn bindings(from: i32, to: i32) -> Vec<(i32, i32)> {
+    if !patterns() {
+        return Vec::new();
+    }
     with_code(|code| {
         code.windows(3)
             .filter(|w| {

@@ -691,7 +691,13 @@ which belongs to the condition) is the then-branch. When the graph has merged th
 (`aload; checkcast; astore`, then a `goto` over the then-branch) into the code after the
 then-branch, and taken the result for the `if`'s body, the code after the `if` is javac's
 then-branch: the `if` is negated, so `if (!(o instanceof T v)) { return ..; } rest` stays a
-guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }`. An `if` whose then-branch is first
+guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }`. The same
+instructions are a cast statement ending the then-branch (`if (t instanceof X) { e = (X) t; } else
+{ .. }`), so the rules that read a binding there (`binding_at`) do so only in a class of version 60
+(Java 16) or later, which can hold patterns, and not where the LineNumberTable starts a line, as a
+statement on a line of its own does and a binding of the condition's line does not; hsqldb's
+`Database.close`, a Java 11 class, printed that `if` negated with its branches swapped (case
+`TestCastBranchOldClass`). An `if` whose then-branch is first
 stays an `if` when that branch ends in a return or throw placed before the code after it,
 and becomes an if-else when the branch reaches the code after the sequence over it (a
 `goto`; the method's shared last `return`, which the graph merges into the branch, counts
