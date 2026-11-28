@@ -2361,7 +2361,8 @@ mod tests {
         // and kuna-gotoreduce-auto / an unoptimized function keeps the goto statements it was written with
         // and kuna-wholeinputarg / a stated parameter the caller hands on whole is passed whole
         // and kuna-wholeinputarg-be / its big-endian twin
-        assert_eq!(count, 964, "corpus file count drifted");
+        // and kuna-mipsimportdecl / a linked MIPS call site identifies its import's declaration
+        assert_eq!(count, 965, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors

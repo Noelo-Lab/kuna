@@ -1,0 +1,149 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    The XML wrapper only provides the harness architecture. The script loads
+    original GCC 7.3 O32 PIC callers linked with Clang/llc 21.1.8 declaration
+    units (tests/fixtures/mips-import-flow/abi and slots, recipes in that
+    directory's README).
+
+    The live proof wrappers contain call-site DIEs and retained CALL16/JALR
+    relocations. Their signatures apply to ordinary GCC callers of the same
+    import. Controls cover linker aliases, a discarded caller, a truncated
+    declaration unit, unsupported parameter storage and a shared GOT stub.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-import-flow/abi/calls-hard.so</com>
+  <com>read symbols</com>
+  <com>lo fu forward_partial</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu machine_args</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_version</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu proof_enum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu proof_float</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wider</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wide_integer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu source_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu orphan_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu release_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu old_version</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-import-flow/abi/calls-soft.so</com>
+  <com>read symbols</com>
+  <com>lo fu forward_partial</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu machine_args</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_version</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu proof_enum</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu proof_float</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wider</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu wide_integer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu source_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu orphan_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu release_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu old_version</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-import-flow/slots/scoped.so</com>
+  <com>read symbols</com>
+  <com>lo fu forward_namespace</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_pointer</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_reference</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_rvalue</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_alias</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_member</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-import-flow/slots/o32-shared.so</com>
+  <com>read symbols</com>
+  <com>lo fu take_one</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu add_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-import-flow/abi/calls-hard.so</com>
+  <com>function bounds 0x15c4 0x15d4 as strlen</com>
+  <com>read symbols</com>
+  <com>lo fu release_result</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MIPSIMPORTDECL: a DW_AT_linkage_name or DW_AT_MIPS_linkage_name declaration forwards both arguments" min="2" max="2">  machine\(a0,a1\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a mangled global declaration forwards its pointer" min="1" max="1">  pass\(a0\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: an lvalue reference parameter is a forwarded pointer" min="1" max="1">  take\(a0\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: an rvalue reference parameter is a forwarded pointer" min="1" max="1">  move_int\(a0\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a typedef of void is a void result" min="1" max="1">  perror\(a0\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: an import sharing another's GOT destination takes no library signature" min="1" max="1">void take_one\(void\)</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: an incompatible declaration of free keeps both arguments and the result" min="3" max="3">  return free\(a0 \+ 1,0x3039\) \+ 1;</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a version of thing that no declaration names keeps its arguments and result" min="2" max="2">  return thing\(a0 \+ 1,0x7b\) \+ 0xb;</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a class member's linkage name vetoes without supplying a signature" min="1" max="1">  bzero\(\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: the complete declaration alone forwards both inputs" min="1" max="1">  partial\(a0,a1\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a second incomplete declaration with the same linkage name vetoes the signature" min="1" max="1">  partial\(\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a nested namespace declaration forwards its pointer" min="1" max="1">  ns_send\(a0\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a renamed call cannot erase an unrelated import result" min="2" max="2">  return source\(a0 \+ 1\) \+ 5;</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a discarded caller cannot erase an unrelated import result" min="2" max="2">  return orphan\(a0 \+ 2\) \+ 7;</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a floating parameter leaves the stub prototype unlocked" min="2" max="2">void wider\(void\)</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a multiword integer leaves the O32 stub prototype unlocked" min="2" max="2">void wide_integer\(void\)</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: a unique required symbol version forwards both arguments" min="2" max="2">  one_version\(a0,a1\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: unsigned enum storage cannot be locked as signed int" min="2" max="2">  unsigned_arg\(0xffffffff\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: an unsupported float argument does not acquire the library pointer" min="0" max="0">  strlen\(v1\);</stringmatch>
+<stringmatch name="MIPSIMPORTDECL: naming a stub before reading symbols preserves its caller result" min="1" max="1">  return strlen\(a0 \+ 1,0x3039\) \+ 1;</stringmatch>
+</decompilertest>

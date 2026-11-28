@@ -618,6 +618,7 @@ pub struct ConsoleProgram {
     /// width-stable `void *` signature, exactly as an imported one did. `false`
     /// on every path with no analysis tier.
     libctypes_refused: bool,
+    mips_library_vetoes: BTreeSet<u64>,
     /// (kuna) What became of each configured `.fid` database at the last
     /// analysis commit (`AnalysisOutput::fid_databases`). Empty when the FID
     /// pass did not run or no database was configured.
@@ -2969,6 +2970,7 @@ impl ConsoleProgram {
     /// named an entry that already carries a locked prototype from a stronger
     /// source.
     fn seed_declared_libc_prototype(&mut self, name: &str, addr: &Address) {
+        if self.mips_library_vetoes.contains(&addr.get_offset()) { return; }
         let (_addr_size, word_size) = self.arch().data_org();
         // The layout is the load-time pass's decision, not a fresh one: only an
         // image whose own target gate passed may be handed the glibc field
@@ -4600,6 +4602,7 @@ fn empty_program(
         dwarf_locals: Vec::new(),
         libctypes_glibc: false,
         libctypes_refused: false,
+        mips_library_vetoes: BTreeSet::new(),
         fid_databases: Vec::new(),
         rust_profile_request: None,
         rust_profile_apply: false,
@@ -5589,6 +5592,7 @@ pub(crate) fn bootstrap_object(
         let (elf32, little) = (linkage.elf32, linkage.little);
         prog.arch_mut().loader_transfer_sites = Rc::new(linkage.transfers.into_iter()
             .map(|(site, _)| Address::new(Rc::clone(&code_space), site)).collect());
+        prog.mips_library_vetoes.extend(elf_functions.ambiguous_mips_stubs.iter().copied());
         prog.arch_mut().loader_mips_imports = Rc::new(elf_functions.imports.iter()
             .map(|&entry| Address::new(Rc::clone(&code_space), entry)).collect());
         prog.arch_mut().loader_glibc_imports = Rc::new(elf_functions.glibc_imports.iter()
@@ -5754,6 +5758,11 @@ fn commit_analysis_output(
     //    producing pass: they fold into the normal symbol/local streams below and
     //    their address-keyed prototypes are applied at step 5a.
     let mut out = out;
+    out.apply_mips_import_declarations();
+    for &entry in &out.mips_import_declarations.entries {
+        prog.arch_mut().symboltab.clear_library_prototype_at(&Address::new(Rc::clone(code_space), entry));
+    }
+    prog.mips_library_vetoes.append(&mut out.mips_import_declarations.entries);
     if let Some(entry) = out.go_chanrecv2 {
         prog.arch_mut().go_chanrecv2 = Some(entry);
     }
@@ -6747,7 +6756,14 @@ fn commit_analysis_output(
     //     one the call actually resolves to. Applied after 5 so an address-keyed
     //     signature wins over a by-name one for the same function, and before the
     //     C++ streams below so DWARF ground truth still wins over both.
+    let mut dwarf_prototypes = out.cpp_dwarf.prototypes;
     for (addr, pieces) in out.prototypes_at {
+        // A verified import declaration carries the return type that an
+        // Itanium function name usually omits. Apply it with DWARF in 5a.
+        if pieces.void_prototype_source == Some(kuna_decomp::fspec::VoidPrototypeSource::Declaration) {
+            dwarf_prototypes.push((addr, pieces));
+            continue;
+        }
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }
@@ -6839,7 +6855,7 @@ fn commit_analysis_output(
     //     uses, and the only one that survives C++ (a demangled template name is
     //     normalized to `maxof`; a qualified name lives in a nested scope the
     //     global by-name query never reaches). Empty when the gate is off.
-    for (addr, pieces) in out.cpp_dwarf.prototypes {
+    for (addr, pieces) in dwarf_prototypes {
         let a = Address::new(Rc::clone(code_space), addr);
         prog.arch_mut().set_function_prototype_pieces_at(&a, pieces);
     }

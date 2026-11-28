@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "0x11ac",
+    "--define-function",
+    "0x11ac=bzero"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/mips-import-flow/slots/o32-shared.so",
+    "binary_sha256": "767f2528e9d3f724dc5bb4e737c064a91fbfae76b9c28162496338311b7f3a47",
+    "binary_size": 13788,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/mips-import-flow/slots/o32-shared.so",
+    "selector": "0x11ac",
+    "selector_kind": "addr"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "void bzero\\(void\\)"
+    ]
+  },
+  "notes": "Naming the shared bzero destination explicitly does not resolve which GOT slot reached it."
+}

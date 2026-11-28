@@ -947,6 +947,7 @@ impl<'a> Types<'a> {
                         input_storage: Vec::new(),
                         kuna_library_names: None,
                         kuna_library_table: false,
+                        void_prototype_source: None,
                     });
                 }
             }

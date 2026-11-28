@@ -232,6 +232,13 @@ const MAX_BACK: u8 = 2;
 
 /// The verdict for `key` in the `option bejoin` mode in force.
 fn take(arch: &Architecture, cache: &mut WideCache, model: &Rc<ProtoModel>, pair: &WidePair, key: Entry) -> bool {
+    // Consult the current declaration before the image-wide evidence cache:
+    // a prototype override in the same session can change this answer.
+    if !arch.loader_mips_imports.is_empty() && arch.manage().get_space(key.0).is_some_and(|space|
+        crate::kuna_gotimportproto::declares_void_at(arch, &Address::new(Rc::clone(space), key.1)))
+    {
+        return false;
+    }
     if arch.be_join == super::BeJoinMode::Callers {
         by_callers(arch, cache, model, pair, key)
     } else {

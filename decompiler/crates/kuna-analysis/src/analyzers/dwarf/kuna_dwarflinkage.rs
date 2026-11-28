@@ -62,15 +62,17 @@ pub(super) fn definitions(
         .collect()
 }
 
+/// Only the standard `DW_AT_linkage_name` binds a definition here.
 fn linkage<'a>(sub: &'a DieSnap, dies: &'a BTreeMap<usize, DieSnap>) -> Option<&'a str> {
-    if !sub.linkage_name.is_empty() {
-        return Some(&sub.linkage_name);
+    let standard = |die: &'a DieSnap| (!die.linkage_name.is_empty() && !die.legacy_linkage_name)
+        .then_some(die.linkage_name.as_str());
+    if let Some(name) = standard(sub) {
+        return Some(name);
     }
     if !sub.origin_is_spec {
         return None;
     }
-    let declaration = dies.get(&sub.origin_ref?)?;
-    (!declaration.linkage_name.is_empty()).then_some(declaration.linkage_name.as_str())
+    standard(dies.get(&sub.origin_ref?)?)
 }
 
 pub(super) fn append(

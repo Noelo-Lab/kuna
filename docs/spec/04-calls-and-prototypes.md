@@ -10683,8 +10683,14 @@ of the very symbol that an import's dynamic symbol version ties to glibc
 or pointer parameters no wider than a pointer, which every MIPS ABI passes in
 its first argument registers. A `free` that takes nothing from another library
 compiles to the same call, so neither the import name, an unversioned symbol,
-another library's version, `GLIBC_PRIVATE`, a debug-info declaration, nor a
-console declaration lifts the void exclusion. A `--define-function` that names
+another library's version, `GLIBC_PRIVATE`, a source-only debug-info
+declaration, nor a console declaration lifts the void exclusion. A fixed DWARF
+declaration tied to a live call by its DWARF origin, return PC and linked
+ELF call relocations is the image's own declaration (`PrototypePieces::void_prototype_source` is
+`VoidPrototypeSource::Declaration`, chapter 01), so its void result binds as
+well. While it is the import's prototype, the register-pair return proof
+skips that import's lazy resolver stub
+(`p4_calls/kuna_bejoin/evidence.rs (take)`). A `--define-function` that names
 the import seeds the table's declaration of that name, which binds only when
 the name is the versioned symbol's own. The table describes glibc's current
 headers and the version name is not compared with it. A caller's `prototype`

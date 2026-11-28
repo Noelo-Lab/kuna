@@ -4516,8 +4516,8 @@ moves.
   callers. Later explicit user prototype assertions retain precedence. Source
   aliases, aggregate register decomposition and high-level receiver syntax are
   separate from this import contract.
-  An externally visible defined DWARF function's exact `DW_AT_linkage_name` also binds its prototype
-  to matching ELF PLT entry addresses
+  An externally visible defined DWARF function's exact `DW_AT_linkage_name` (not the pre-DWARF-4
+  `DW_AT_MIPS_linkage_name`) also binds its prototype to matching ELF PLT entry addresses
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarflinkage.rs`). The linker spelling is taken from the
   definition or its one-hop `DW_AT_specification` declaration. When no explicit
   linker spelling is present, a source name is accepted only if a defined, global
@@ -12141,7 +12141,40 @@ call through the first stub names its import.
 Without a callee prototype, a preserved incoming argument register cannot
 establish import arity: calls with and without that argument can have identical
 instructions. A declared prototype supplies that missing contract
-(`kuna_gotimportproto.rs`, §4). The loader also records, by name, which
+(`kuna_gotimportproto.rs`, §4). The DWARF analyzer supplies one for a void import
+(`analyzers/dwarf/kuna_mipsimportdecl.rs`). It attaches an external declaration to a
+single undefined-function GOT target when both of the following identify it.
+
+- A live subprogram contains a DWARF 5 call site with a return PC and a
+  unit-relative call origin, or the GNU DWARF 4 counterpart. The origin
+  references a declaration with an explicit linkage name, including the
+  legacy MIPS linkage attribute.
+- At that PC, the final executable or shared object retains an
+  `R_MIPS_CALL16` on a GP-relative load into t9 immediately followed by an
+  `R_MIPS_JALR` on a classic call through t9. Both relocations name the
+  same undefined function as the declaration. A versioned relocation must
+  match the dynamic import’s version requirement and stub address. The
+  delay slot ends at the recorded return PC.
+
+The declaration must have a complete fixed C or C++ prototype, a normal
+calling convention, a void result (including typedefs), and no inherited
+signature. File and namespace scope qualify. The accepted parameter classes
+are integer, enum and bool of known size up to the pointer width, and
+ABI-sized pointers, including C++ references. Explicit alignments must agree
+with the selected model. Floating, complex, aggregate and multiword inputs
+leave argument recovery to the existing model.
+
+A linked, incompatible declaration, including one from a truncated unit,
+vetoes a library void guess for its import. A witnessed void result also
+excludes a conflicting non-void library signature. Conflicting witnessed declarations
+also veto it. A name alone, a discarded call site, or a call without the
+retained relocations supplies no declaration and casts no veto. Version
+ambiguity and distinct GOT slots sharing a destination preclude binding.
+The analyzer applies proven declarations after mangled-name inference.
+Naming an import through `--define-function` preserves this evidence.
+Explicit prototype overrides keep their usual precedence.
+
+The loader also records, by name, which
 imports' dynamic symbols require a public `GLIBC_*` version of one of glibc's
 own libraries (`libc.so.6`, `libm.so.6`, `libpthread.so.0`, `libdl.so.2`,
 `librt.so.1`, `libutil.so.1`, `libresolv.so.2`, `libanl.so.1`)

@@ -408,6 +408,7 @@ fn pieces(name: &str, outtype: Option<Rc<Datatype>>, intypes: Vec<Rc<Datatype>>,
         input_storage: Vec::new(),
         kuna_library_names: None,
         kuna_library_table: false,
+        void_prototype_source: None,
     }
 }
 

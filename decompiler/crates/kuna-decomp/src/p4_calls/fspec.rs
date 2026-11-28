@@ -4082,6 +4082,18 @@ pub struct PrototypePieces {
     /// (kuna) Whether a built-in library table supplied this declaration,
     /// rather than the image, a debug-info unit or the caller.
     pub kuna_library_table: bool,
+    /// (kuna `gotimportproto`) The image's own evidence for a fixed void
+    /// signature at an external-symbol GOT call. A synthesized void alone cannot
+    /// establish the arity of an indirect call.
+    pub void_prototype_source: Option<VoidPrototypeSource>,
+}
+
+/// Evidence for a fixed void signature on a MIPS external-symbol GOT call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VoidPrototypeSource {
+    /// A fixed C or C++ DWARF declaration identified by a live call site
+    /// and the linked call's ELF relocations.
+    Declaration,
 }
 
 // =============================================================================

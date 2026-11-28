@@ -1,0 +1,37 @@
+{
+  "schema": "re-probe/1",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile",
+    "{{BIN}}",
+    "release_result",
+    "--define-function",
+    "0x15c4=free"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 60,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "tests/fixtures/mips-import-flow/abi/calls-hard.so",
+    "binary_sha256": "908e4c7bef1f3c4de840f0b3f982d8789ce9b947f81a389946c97db6ad26acf1",
+    "binary_size": 22660,
+    "binary_source": "in-repo",
+    "in_repo_path": "tests/fixtures/mips-import-flow/abi/calls-hard.so",
+    "selector": "release_result",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "return free\\(a0 \\+ 1,0x3039\\) \\+ 1;"
+    ]
+  },
+  "notes": "Naming the import explicitly preserves its linked DWARF evidence when the library table supplies a different prototype."
+}

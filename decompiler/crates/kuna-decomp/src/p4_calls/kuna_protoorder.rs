@@ -735,6 +735,7 @@ fn a_float_can_arrive_in(data: &Funcdata, node: &crate::varnode::Varnode) -> boo
         input_storage: Vec::new(),
         kuna_library_names: None,
         kuna_library_table: false,
+        void_prototype_source: None,
     };
     let mut fp = FuncProto::new();
     if fp.seed_locked_from_pieces(&pieces, Rc::clone(dfp), void_ty, types, arch.manage()).is_err() {
@@ -1540,6 +1541,7 @@ pub fn recovered_pieces(
         input_storage: Vec::new(),
         kuna_library_names: None,
         kuna_library_table: false,
+        void_prototype_source: None,
     };
     let mut storage: Vec<(Address, int4)> = Vec::new();
     for i in 0..nparams {

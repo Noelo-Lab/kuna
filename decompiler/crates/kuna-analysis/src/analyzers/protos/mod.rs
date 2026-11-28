@@ -291,6 +291,7 @@ fn build_pieces(
         input_storage: Vec::new(),
         kuna_library_names: kuna_libcnames::library_names(name).filter(|n| n.params.len() == sig.params.len()),
         kuna_library_table: true,
+        void_prototype_source: None,
     })
 }
 
