@@ -2091,8 +2091,11 @@ impl InvocationExprent {
                 break;
             }
 
-            let raw_target = (!ambiguous && !raw_field && mask.is_none())
-                .then(|| raw_target_cast::argument_cast(self, i))
+            let raw_target = (!raw_field && mask.is_none())
+                .then(|| match ambiguous {
+                    true => raw_target_cast::selecting_cast(self, i),
+                    false => raw_target_cast::argument_cast(self, i),
+                })
                 .flatten();
             if let Some(cast) = raw_target {
                 raw_target_cast::write(&mut buff, lst_parameters.get(i), &cast, indent);

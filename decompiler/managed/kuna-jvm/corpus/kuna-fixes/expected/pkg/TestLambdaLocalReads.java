@@ -9,7 +9,7 @@ public class TestLambdaLocalReads<E extends CharSequence> {
 
    public int fits(String var1, CharSequence var2, Object var3) {
       TestLambdaLocalReads.Fn<String, Integer> var4 = var0 -> var0.length();
-      TestLambdaLocalReads.Fn var5 = var0 -> var0.length();
+      TestLambdaLocalReads.Fn var5 = (TestLambdaLocalReads.Fn<CharSequence, Integer>)(var0 -> var0.length());
       return var4.apply(var1) + var4.apply((String)var3) + var4.apply(null) + (Integer)var5.apply("lit") + (Integer)var5.apply(var2);
    }
 
@@ -29,7 +29,7 @@ public class TestLambdaLocalReads<E extends CharSequence> {
    }
 
    public int passed(String var1) {
-      TestLambdaLocalReads.Fn var2 = var0 -> var0.hashCode();
+      TestLambdaLocalReads.Fn var2 = (TestLambdaLocalReads.Fn<String, Integer>)(var0 -> var0.hashCode());
       return use(var2) + (Integer)var2.apply(var1);
    }
 
@@ -39,7 +39,7 @@ public class TestLambdaLocalReads<E extends CharSequence> {
    }
 
    public int overloaded(CharSequence var1) {
-      TestLambdaLocalReads.Ov var2 = var0 -> var0.hashCode();
+      TestLambdaLocalReads.Ov var2 = (TestLambdaLocalReads.Ov<CharSequence>)(var0 -> var0.hashCode());
       return var2.m(var1);
    }
 

@@ -1307,7 +1307,15 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    when each type argument is within its type parameter's bounds as far as bounds that are
    classes decide and names a class the writing class can name (not anonymous; accessible
    by its `InnerClasses` entry or class file). A `new` of a class outside the input is left
-   as it was: its other constructors are unknown. A lambda written for such a raw parameter
+   as it was: its other constructors are unknown. Two more places take the same cast. An
+   argument that is cast in any case, to select its method among overloads, was cast to the
+   raw interface (`over((Fn) (s -> s.length()))` beside an `over(Pred)`); it is cast to the
+   parameterization instead, which selects the same method, so the other-method condition
+   does not apply (`raw_target_cast::selecting_cast`). And a lambda or method reference
+   assigned to a variable or field whose written type is its raw interface is cast when a
+   parameter is instantiated more specifically (`raw_target_cast::assigned_cast`): `Fn f =
+   (Fn<String, Integer>) (s -> s.length())` for a local that stays raw because it is passed
+   on, stored or captured, which `initializer_local_type` does not type. A lambda written for such a raw parameter
    (when it needs no cast) or under this cast, and one assigned where the written type is
    its raw interface or the instantiated parameterization, declares its own parameters with
    their erased types, its implementation method's; `raw_target_cast::declare_parameters`

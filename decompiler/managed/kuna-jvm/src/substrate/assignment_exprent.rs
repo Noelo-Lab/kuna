@@ -15,6 +15,7 @@ use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_anonymous_objects::kt_unrepresentable_declared_type;
 use crate::fixes::kt_util::writing_kotlin;
 use crate::fixes::lambdas::explicit_lambda_parameters;
+use crate::fixes::lambdas::raw_target_cast;
 use crate::fixes::nested_class_vars;
 use crate::fixes::numeric_types::{implicit_widening_arithmetic, ternary_numeric_arms};
 use crate::rt::{BitSet, JavaEq, JavaHash};
@@ -255,6 +256,8 @@ impl AssignmentExprent {
 
                 if cast_name == ExprProcessor::UNREPRESENTABLE_TYPE_STRING {
                     buffer.append_buffer(&right.to_java(indent));
+                } else if let Some(cast) = raw_target_cast::assigned_cast(&left_type, right) {
+                    raw_target_cast::write(&mut buffer, right, &cast, indent);
                 } else {
                     let _declared = disjoint_generic_cast::mark_declared_target();
                     ExprProcessor::get_casted_exprent_full(

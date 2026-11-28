@@ -44,6 +44,19 @@ thread_local! {
 /// describes; marks a lambda written for a raw parameter whose parameters
 /// keep their erased types.
 pub fn argument_cast(inv: InvocationExprent, index: usize) -> Option<VarType> {
+    cast(inv, index, false)
+}
+
+/// The same cast for an argument that is cast to its parameter's type in any
+/// case, to select `inv`'s method among overloads: the parameterization is a
+/// subtype of the raw type the cast would name and of no other candidate's
+/// parameter that the raw type is not, so it selects the same method, and
+/// the method need not be the only one of its name and arity.
+pub fn selecting_cast(inv: InvocationExprent, index: usize) -> Option<VarType> {
+    cast(inv, index, true)
+}
+
+fn cast(inv: InvocationExprent, index: usize, selecting: bool) -> Option<VarType> {
     if writing_kotlin() || inv.0.is_kotlin() {
         return None;
     }
@@ -63,7 +76,33 @@ pub fn argument_cast(inv: InvocationExprent, index: usize) -> Option<VarType> {
         lambda.set_kuna_erased_params();
         return None;
     }
-    if !sole_method(inv) {
+    if !selecting && !sole_method(inv) {
+        return None;
+    }
+    let cast = instantiated_cast(lambda)?;
+    lambda.set_kuna_erased_params();
+    Some(cast)
+}
+
+/// The cast for `value`, a lambda or method reference assigned to a
+/// variable or field of the type `target`, when `target` is its interface
+/// raw and the `invokedynamic` instantiates a parameter more specifically
+/// than the raw function type: `Fn f = (Fn<String, Integer>) (s ->
+/// s.length())` for a local that stays raw because it is passed on.
+pub fn assigned_cast(target: &VarType, value: Exprent) -> Option<VarType> {
+    if writing_kotlin() || value.is_kotlin() {
+        return None;
+    }
+    let lambda = value.try_as_new().filter(|n| n.is_lambda())?;
+    let (iface, instantiated, sam) = super::functional_method(lambda)?;
+    if target.array_dim != 0 || target.value != iface.value || !is_raw_type(target) {
+        return None;
+    }
+    let instantiated = MethodDescriptor::parse_descriptor(&instantiated);
+    let raw = MethodDescriptor::parse_descriptor(&sam.get_descriptor());
+    if instantiated.params.len() != raw.params.len()
+        || instantiated.params.iter().zip(&raw.params).all(|(a, b)| a.equals(b))
+    {
         return None;
     }
     let cast = instantiated_cast(lambda)?;
