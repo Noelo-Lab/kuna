@@ -1288,7 +1288,12 @@ and so did every static field after such an initializer.
 whose right side is the `2` alone, and Vineflower moved it into the declaration as
 `static int count = 2;`, dropping the read of `count`: after an initializer that calls a method
 setting `count` to 10, the field ends at 2 instead of 12. `extract_static_initializers` moves
-only a plain assignment; a compound one stays a statement.
+only a plain assignment; a compound one stays a statement. The constructors had the same defect:
+an instance block `{ count += 2; }` after `int calls = this.bump();` became `int count = 2;`, and
+`extract_dynamic_initializers` too moves only a plain assignment. It takes the initializers
+from the front of the statements every constructor that calls `super(..)` shares, one at a
+time, and stops at the first it does not move, so no statement kept in a constructor runs
+before an initializer it moved.
 
 **Static blocks written where they run (kuna).** With one `static` block after the fields,
 the order rule keeps every initializer after the first statement that stays, though the

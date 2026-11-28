@@ -732,6 +732,7 @@ impl InitializerProcessor {
                 if let Some(assign_expr) = exprent.try_as_assignment() {
                     if let Some(f_expr) = assign_expr.get_left().try_as_field() {
                         if !f_expr.is_static()
+                            && assign_expr.get_cond_type().is_none()
                             && f_expr.get_classname() == cl.qualified_name()
                             && cl.has_field(
                                 &f_expr.get_name(),
