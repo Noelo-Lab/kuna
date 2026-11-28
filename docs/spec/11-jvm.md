@@ -2187,6 +2187,20 @@ write the conversion back where that is narrower than the operation's or the tar
 type: a cast or kept parentheses in Java, `.toInt()`, `.code` or `.toLong()` in Kotlin,
 which never widens implicitly.
 
+**A widening that rounds, under another conversion (kuna).** `identifySecondaryFunctions`
+leaves every widening conversion unwritten, as Java widens implicitly in its context, and
+leaves the ones it does not judge alone. But the JVM converts only by instruction, so a
+value used in yet another type has a second conversion above the first, and the unwritten
+one then is not converted at all: `(long) (float) i` printed `(long) i`, `(double) (float)
+i` printed `i`, `asDouble((float) i)` printed `asDouble(i)` and `(short) (float) i` printed
+`(short) i`, which skip the rounding to a `float` and differ for values above 2^24
+(fastjson2's `(long) ((float) readInt32Value())`, Vineflower prints the same). A widening
+from `int` or `long` to `float` or from `long` to `double` is exact only for values the
+narrower type holds, so `lossy_widening_operand` writes such a conversion again when its
+parent is a conversion, unless its operand is a `byte`, `short` or `char`, which every
+`float` holds. An exact intermediate step (`(long) (double) i`) stays unwritten, since the
+direct conversion gives the same value. Case `TestLossyConversionChain`.
+
 **Resugaring only javac's shape.** Vineflower resugars try-with-resources, compound
 assignments, compact record constructors, pattern bindings, the null check of an explicit
 outer instance and switch layouts from loose tests, so hand-written code of a similar form

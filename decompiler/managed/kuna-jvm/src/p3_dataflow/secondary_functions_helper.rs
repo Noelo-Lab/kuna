@@ -13,7 +13,7 @@ use crate::exprent::{Exprent, ExprentType};
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::if_statement::IfStatement;
 use crate::p3_dataflow::kuna_javac_boolean_compare;
-use crate::fixes::numeric_types::{compound_assignment_shape, implicit_widening_arithmetic};
+use crate::fixes::numeric_types::{compound_assignment_shape, implicit_widening_arithmetic, lossy_widening_operand};
 use crate::p8_structure::kuna_javac_layout;
 use crate::rt::JHashMap;
 use crate::stat_edge::StatEdge;
@@ -346,6 +346,7 @@ impl SecondaryFunctionsHelper {
             ExprentType::Function => {
                 let fexpr = exprent.as_function();
                 let lst_operands = fexpr.get_lst_operands();
+                lossy_widening_operand::keep_operand(fexpr);
 
                 match fexpr.get_func_type() {
                     Xor => {
