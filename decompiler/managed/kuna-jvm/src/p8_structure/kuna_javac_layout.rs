@@ -465,8 +465,9 @@ fn chained(first: IfStatement, start: i32, next: IfStatement, next_start: i32) -
     let binding = condition_bindings(next, cond_start).first().copied()?.1;
     let stores_in = |from: i32, to: i32| -> Vec<(i32, i32)> {
         with_code(|code| {
-            code.iter()
-                .filter(|c| (from..to).contains(&c.0) && STORES.contains(&c.1))
+            code_between(code, from, to)
+                .iter()
+                .filter(|c| STORES.contains(&c.1))
                 .map(|c| (c.3, if c.1 == OPC_LSTORE || c.1 == OPC_DSTORE { 2 } else { 1 }))
                 .collect()
         })
@@ -543,6 +544,14 @@ fn has_lines() -> bool {
     })
 }
 
+/// The instructions of `code`, sorted by offset, from offset `from` up to
+/// `to`.
+fn code_between(code: &[(i32, i32, i32, i32)], from: i32, to: i32) -> &[(i32, i32, i32, i32)] {
+    let lo = code.partition_point(|c| c.0 < from);
+    let hi = code.partition_point(|c| c.0 < to).max(lo);
+    &code[lo..hi]
+}
+
 /// The `instanceof` pattern bindings stored in the code from `from` to
 /// `to` (`aload; checkcast; astore`): where each starts, and its slot.
 fn bindings(from: i32, to: i32) -> Vec<(i32, i32)> {
@@ -550,7 +559,10 @@ fn bindings(from: i32, to: i32) -> Vec<(i32, i32)> {
         return Vec::new();
     }
     with_code(|code| {
-        code.windows(3)
+        let lo = code.partition_point(|c| c.0 < from);
+        let hi = code.partition_point(|c| c.0 < to).max(lo);
+        code[lo..(hi + 2).min(code.len())]
+            .windows(3)
             .filter(|w| {
                 (from..to).contains(&w[0].0)
                     && w[0].1 == OPC_ALOAD
