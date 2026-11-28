@@ -2106,3 +2106,5 @@ case	kuna-fixes/pkg/TestGenericArgumentOverload	Kuna Fixes	kuna-fixes/classes/pk
 case	kuna-fixes/pkg/TestDeduplicatedLambdaCaptures	Kuna Fixes	kuna-fixes/classes/pkg/TestDeduplicatedLambdaCaptures
 # kuna-fixes/src/pkg/TestSyntheticReceiverCapture.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestSyntheticReceiverCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestSyntheticReceiverCapture
+# kuna-fixes/src/pkg/TestCapturedVariableMerge.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestCapturedVariableMerge	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedVariableMerge

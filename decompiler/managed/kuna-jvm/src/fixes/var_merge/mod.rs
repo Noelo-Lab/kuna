@@ -3,6 +3,7 @@
 //! this file, `var_merge_declared_type` refuses to merge two variables the
 //! LocalVariableTable declares with different (erased or generic) types.
 
+pub(crate) mod var_merge_captured;
 pub(crate) mod var_merge_liveness;
 pub(crate) mod var_merge_narrowing;
 

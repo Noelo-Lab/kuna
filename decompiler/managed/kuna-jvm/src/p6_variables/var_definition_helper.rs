@@ -29,6 +29,7 @@ use crate::function_exprent::FunctionType;
 use crate::generic_type::GenericType;
 use crate::i_fernflower_preferences::IFernflowerPreferences;
 use crate::interpreter_util::InterpreterUtil;
+use crate::fixes::var_merge::var_merge_captured;
 use crate::fixes::var_merge::var_merge_liveness;
 use crate::fixes::declaration_scope;
 use crate::fixes::var_merge;
@@ -1207,6 +1208,9 @@ impl VarDefinitionHelper {
             return Merge::Refused;
         }
         if var_merge::declared_apart(self.root().0, self.varproc(), from, to) {
+            return Merge::Refused;
+        }
+        if var_merge_captured::captured_apart(self.root().0, from, to) {
             return Merge::Refused;
         }
         let Some(merged) = self.get_merged_type(from, to) else {
