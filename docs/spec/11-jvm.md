@@ -704,6 +704,16 @@ times, so that a later pass that changes it back cannot alternate with it withou
 `reorder_if` already makes, applied to the other branch, or one it skips: the
 statements, edges and conditions stay those of the bytecode.
 
+**A finally exit inside a loop (kuna).** Each exit of a `finally` body is an edge of its own
+kind to the body's end, and `reorder_if` took such an edge as the direct path out of an `if`,
+as if falling off the `if` reached the end of the finally. Inside a loop it reaches the next
+iteration: janino's `finally { for (int i = 0; i < count; i++) { .. } }` printed `while (true) {
+if (i >= count) { ; } else { ..; i++; } }`, a loop with no exit (Vineflower prints the same),
+and code after such a loop was lost. The edge is direct only when the statement ends every
+sequence above it up to the finally body
+(`decompiler/managed/kuna-jvm/src/p8_structure/merge_helper.rs (MergeHelper::ends_finally)`);
+otherwise it is judged like any jump, and the loop gets its condition. Case `TestLoopInFinally`.
+
 The option also covers comparisons with a boolean literal. javac compiles `x == false`,
 `x != false` and `!x` to one `ifeq`/`ifne` on the value, but a literal on the left (`false
 == x`: `iconst_0` first, then `if_icmp..`), a comparison with `true` (`iconst_1`, `if_icmp..`)
