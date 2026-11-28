@@ -17,7 +17,7 @@ PYTHON  ?= python3
 # (inside target/, which is gitignored, so a failed run leaves no repo litter).
 GHIDRA_SIM_LOG := $(ENGINE)/target/ghidra-sim.log
 
-.PHONY: all binaries specs test test-stages test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage
+.PHONY: all binaries specs test test-stages verify-corpus test-cli test-tools test-ghidra rust rust-test lint clean check-spec version observatory coverage
 
 all: binaries specs
 
@@ -53,6 +53,18 @@ test-stages: $(BINDIR)/kuna
 	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
 	cd $(ROOT) && $(BINDIR)/kuna test --datatests \
 	  --datatests-dir tests/stages --baseline docs/baseline-stages.json
+
+# diffverify (docs/features/diffverify/): kuna-verify over both corpora, every
+# verdict compared with docs/baseline-verify.json, function by function even
+# where a file's function list changed. Fails only on a function that now
+# differs (a new one included) or a file that can no longer be checked; lost
+# coverage and other changes are listed, with the count of AGREES before/after.
+# Re-record: make verify-corpus VERIFY_ARGS='--save-baseline docs/baseline-verify.json'
+verify-corpus:
+	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-verify
+	@test -n "$$(find $(SPECS) -name '*.sla' -print -quit)" || $(MAKE) specs
+	cd $(ROOT) && $(BINDIR)/kuna-verify corpus tests/datatests tests/stages --trace \
+	  --sleighpath $(SPECS) --baseline docs/baseline-verify.json $(VERIFY_ARGS) > /dev/null
 
 $(BINDIR)/kuna:
 	cd $(ENGINE) && cargo build --$(PROFILE) -p kuna-cli

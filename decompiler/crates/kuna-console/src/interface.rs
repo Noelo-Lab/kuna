@@ -182,6 +182,14 @@ pub struct CommandStream {
     eof: bool,
 }
 
+/// Encode a filename for [`CommandStream::read_filename`].
+pub fn quote_filename(path: &str) -> std::borrow::Cow<'_, str> {
+    if !path.as_bytes().iter().any(|b| b.is_ascii_whitespace() || *b == b'"') {
+        return std::borrow::Cow::Borrowed(path);
+    }
+    std::borrow::Cow::Owned(format!("\"{}\"", path.replace('\\', "\\\\").replace('"', "\\\"")))
+}
+
 impl CommandStream {
     /// Construct a stream over the given command line (C++
     /// `istringstream is(line)`).
@@ -851,6 +859,9 @@ pub struct IfaceStatus {
     /// a `map`, a `kassert`) silently invalidates the reuse rather than needing
     /// its own invalidation hook.
     pub command_seq: u64,
+    /// The words of the last command line resolved to a registered command,
+    /// abbreviations expanded; empty when the line resolved to none.
+    pub last_command: Vec<String>,
 }
 
 /// An open bulk-output redirect (`openfile`/`openfile append`).
@@ -889,6 +900,7 @@ impl IfaceStatus {
             datamap: BTreeMap::new(),
             source,
             command_seq: 0,
+            last_command: Vec::new(),
         }
     }
 
@@ -1142,6 +1154,7 @@ impl IfaceStatus {
         let mut source = std::mem::replace(&mut self.source, Box::new(DetachedSource));
         let line = source.read_line(self);
         self.source = source;
+        self.last_command.clear();
         if line.is_empty() {
             return Ok(false);
         }
@@ -1153,6 +1166,7 @@ impl IfaceStatus {
         let mut expand: Vec<String> = Vec::new();
         let (mut first, mut last) = (0usize, self.comlist.len());
         let mat = self.expand_com(&mut expand, &mut is, &mut first, &mut last);
+        self.last_command.clear();
 
         if mat == 0 {
             self.out("ERROR: Invalid command\n");
@@ -1178,6 +1192,7 @@ impl IfaceStatus {
             Box::new(DummyAction),
         );
         self.command_seq = self.command_seq.wrapping_add(1);
+        self.last_command = self.comlist[first].com.clone();
         let res = action.execute(self, &mut is);
         self.comlist[first].action = action;
         res?;

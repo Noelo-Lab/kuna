@@ -3,6 +3,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 use kuna_console::engine::EntrySelector;
+pub(super) use kuna_console::interface::quote_filename as console_path;
 use super::DecompileArgs;
 
 /// An addressed VMA, excluding section coordinates and invalid numbers.
@@ -21,14 +22,6 @@ fn selected_vma(target: &str, by_address: bool) -> Option<u64> {
         return None;
     }
     u64::from_str_radix(digits, 16).ok()
-}
-
-/// Borrow ordinary paths; quote only characters the console would split.
-pub(super) fn console_path(path: &str) -> Cow<'_, str> {
-    if !path.as_bytes().iter().any(|b| b.is_ascii_whitespace() || *b == b'"') {
-        return Cow::Borrowed(path);
-    }
-    Cow::Owned(format!("\"{}\"", path.replace('\\', "\\\\").replace('"', "\\\"")))
 }
 
 /// The line-based transport cannot carry embedded newlines, even when quoted.

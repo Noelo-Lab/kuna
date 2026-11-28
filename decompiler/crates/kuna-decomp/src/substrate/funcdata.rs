@@ -172,6 +172,7 @@ pub struct Funcdata {
     /// (kuna `varargsave`) Set when the first heritage pass folded this
     /// function's variadic register-save prologue (`p4_calls/kuna_varargsave.rs`).
     pub(crate) kuna_vararg_save: bool,
+    pub(crate) kuna_vararg_folded: Option<crate::kuna_varargsave::Folded>,
     /// (kuna) The argument registers the first heritage saw spilled to their
     /// Windows x64 home slots (`p4_calls/kuna_homespill.rs`).
     pub(crate) kuna_home_spills: Vec<(Address, int4)>,
@@ -852,6 +853,7 @@ impl Funcdata {
             kuna_later_wanted: std::rc::Rc::default(),
             kuna_x87_empty_returns: Vec::new(),
             kuna_vararg_save: false,
+            kuna_vararg_folded: None,
             kuna_home_spills: Vec::new(),
             kuna_flow_ranges: Vec::new(),
             kuna_unoptimized: None,
@@ -2531,6 +2533,11 @@ impl Funcdata {
 
     /// Overall count of heritage passes (C++ `Funcdata::getHeritagePass`,
     /// `funcdata.hh:239` — `heritage.getPass()`).
+    /// (kuna `varargsave`) The register-save stores the fold removed.
+    pub fn vararg_folded(&self) -> Option<&crate::kuna_varargsave::Folded> {
+        self.kuna_vararg_folded.as_ref()
+    }
+
     pub fn get_heritage_pass(&self) -> int4 {
         self.heritage.get_pass()
     }
@@ -4644,6 +4651,7 @@ impl Funcdata {
         self.kuna_fpu_trunc_views.clear();
         self.kuna_x87_empty_returns.clear();
         self.kuna_vararg_save = false;
+        self.kuna_vararg_folded = None;
         self.kuna_home_spills.clear();
         self.kuna_flow_ranges.clear();
         self.kuna_unoptimized = None;

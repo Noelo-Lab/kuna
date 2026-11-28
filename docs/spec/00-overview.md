@@ -4130,6 +4130,93 @@ a partial clone beside it. The root label is set where the variant is selected
 point: it changes nothing the engine emits, and with the variable unset it costs
 one cached read per `apply`.
 
+A rule pool also answers to a per-thread rule cap
+(`decompiler/crates/kuna-decomp/src/infra/kuna_rulecap.rs`), which only the
+differential checker `kuna-verify` arms (`docs/features/diffverify/`, slice C3).
+Armed, every rule application is counted by rule name, in order, with the
+address of the op it rewrote. One named rule can be limited to its first `n`
+applications (`ActionPool::process_op` skips it after that), while every other
+rule and every action runs as usual, so the decompile still completes. The checker
+reruns a decompile that computes something other than the binary with one rule
+held back at a time, and bisects the limit of each rule it agrees without, to
+name the application after which it differs. Unarmed, the pool reads one
+thread-local flag per rule attempt and nothing else changes.
+
+Tier C of the checker compares the machine run with the final IR. For a
+`_Bool` return contract it tests the full recovered value for zero before
+comparing the ABI byte. If a forward overlapping `rep movs` was replaced by
+`memcpy`, the checker compares memory, call traces and the copy's source,
+destination, byte count and direction at the corresponding instruction visit
+before recording the divergence. When the checker models the outer return
+address and knows the call's continuation, a concrete callee that returns to
+an unexpected unmapped address yields `UNKNOWN(unsupported-op)`. A top-level
+return to an unexpected address also yields `UNKNOWN` after calls that ran
+without a stub.
+For x86-32 `cdecl` calls with recovered parameter storage, Tier C tracks which
+mapped stack argument bytes a concrete callee reads before writing them. If
+kuna supplies different bytes there, the machine is rerun with those arguments
+at the callee's entry stack pointer. A change in the callee's return value or
+other observable effects can give `DIFFERS` when the replay completes without a
+stub at the expected return address and stack pointer.
+A register argument replay that loses the concrete callee effect yields
+`UNKNOWN(callee-replay)`. An overlapping copy with pending argument reruns
+yields `UNKNOWN(call-reruns)` after checking the available evidence before the
+copy. Reruns observe returns at the same ABI precision, with x87 rounding and
+NaN quiet-bit equivalence, and also check storage from a supplied contract.
+Discarding a speculative callee restores its execution metadata and machine
+state while charging the steps it spent against the budget.
+
+The opt-in `oracle-case` command gives the interpreters an explicit
+x86-64 SysV entry state and fixed memory permissions. The raw interpreter
+checks fetched instruction bytes against the exported ELF image. The same
+map and architectural state can run in Unicorn without SLEIGH. Each backend
+reports its return, visible memory and execution boundaries with the state
+it could observe. These observations leave the Tier C verdicts unchanged.
+The three-way comparison uses an explicit return projection and observes
+call targets and integer inputs at a declared external boundary. It keeps
+incomplete observations and only compares a call prefix when all three
+executions stop before modeling the call's effects.
+See `docs/features/diffverify/function-oracle.md` for the input model.
+
+The opt-in `kuna-verify prove` surface encodes an explicitly scoped integer
+block over fixed-width bit vectors. The reference executes raw p-code
+with symbolic register bytes and the other path executes final-IR SSA
+slots. The prover checks entry condition satisfiability before asking for
+a difference in arithmetic definedness or returned bits, and records both
+queries for replay. The initial scope is a straight-line x86-64 interval
+ending immediately before a near return. The observation and its limits
+are documented in `docs/features/diffverify/translation-validation.md`.
+Whole-function mode derives the instruction extent from the ELF symbol. It
+keeps independent path states for raw addresses and final-IR SSA edges
+and projects writes to explicit symbolic byte windows. Agreement requires
+the absence of a mismatch and of coverage gaps over the permitted input
+states. With a visit bound, the encoders preserve the path predicates at
+each loop cut. An SMT query checks that at least one input completes on
+both sides before a bounded equivalence result. A separate query must
+prove all cuts unreachable to claim equivalence for the full declared
+model. Induction splits each execution at a loop cutpoint. The prover
+relates machine register and declared memory values to their final-IR
+phi values. It checks the relation and observed bytes at the cutpoint,
+proves preservation across another iteration, compares the exits and
+checks strict decrease of an unsigned register ranking term on each
+iteration. See
+`docs/features/diffverify/symbolic-memory.md`.
+
+For RV64 integer leaves, the independent ISA check runs the executable's
+instruction through Isla's Sail model. It binds the trace's architectural
+register reads to the same argument state as the raw-p-code and final-IR
+encoders. An SMT coverage query rules out inputs omitted from the model
+traces. The two observation equalities compose over the common full-width
+`a0` result. See `docs/features/diffverify/formal-rv64.md`.
+
+Symbolic reports archive their exact queries and digests. The certificate
+workflow checks the satisfiable domains with cvc5 and verifies each
+required refutation with Ethos under the CPC signature. Its evidence
+retains the original scope and repeat limits. The evidence export also
+records sampled and external comparisons with their own assurance and
+coverage. See `docs/features/diffverify/proof-certificates.md` and
+`docs/features/diffverify/verification-evidence.md`.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the
