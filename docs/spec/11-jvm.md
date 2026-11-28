@@ -2271,7 +2271,13 @@ register is another variable (`char[] cs = s.toCharArray()` in `s`'s register). 
 `add-int/lit` becomes `iinc` only when the value it reads is in the local it writes. A
 parameter debug info does not name (a release build) gets a `LocalVariableTable` entry over
 the whole method with its `MethodParameters` name, as javac's `-g` writes one; the engine
-otherwise names a read of it apart from its declaration.
+otherwise names a read of it apart from its declaration. In a method with debug locals, a
+web joined at a phi that no local entry names (no entry covers a def right after it, a use
+at it, or the start of the phi's block; parameter entries aside) is d8's temporary for a
+`?:` or a materialised condition, and gets a local of its own per type, apart from the
+named variables of its register: otherwise the engine merges two such temporaries of one
+register (`T lower` and the `BoundType` after it in Guava `GeneralRange.from`) into one
+variable of their common supertype that a later read cannot take.
 
 **Release builds.** d8's release build also gives each `return` of a boolean method its own
 block where javac shares one `ireturn` for `return c;`: two blocks that only return `true`

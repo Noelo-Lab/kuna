@@ -158,19 +158,29 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
 
     /// The local holding value `v` of register `reg` in category `c`: a
     /// parameter's register d8 reuses for another value gets a second local,
-    /// so the parameter's own keeps the parameter throughout; and in a method
+    /// so the parameter's own keeps the parameter throughout; in a method
     /// without debug locals (a release build) references of different types
-    /// in one register get one local per type, as javac's variables are.
+    /// in one register get one local per type, as javac's variables are; and
+    /// with debug locals, a value joined at a phi that debug info does not
+    /// name (d8's temporary for a `?:` or a materialised condition) is kept
+    /// apart from the register's named variables, one local per type.
     fn local(&mut self, reg: u32, c: Mask, v: u32) -> Result<u16> {
         let m = self.m;
+        let root = m.root(v);
         let param = m.params.contains(&(reg, c));
-        if param && !m.reused.contains(&m.root(v)) {
+        if param && !m.reused.contains(&root) {
             return self.slot(reg, c);
         }
         let mut key = if param { reg | REUSED } else { reg };
-        if let (true, L, Some(t)) = (self.release, c, m.ref_desc(v)) {
+        let temp = !self.release && !m.named.contains(&root) && m.web_uses.get(&root).is_some_and(|w| w.1);
+        let t = match (c, m.ref_desc(v)) {
+            (L, Some(t)) if self.release || temp => Some(t.to_vec()),
+            _ if temp => Some(b"?".to_vec()),
+            _ => None,
+        };
+        if let Some(t) = t {
             let n = self.ref_kinds.len() as u32 + 1;
-            key |= (*self.ref_kinds.entry(t.to_vec()).or_insert(n)).min(0x7fff) << 16;
+            key |= (*self.ref_kinds.entry(t).or_insert(n)).min(0x7fff) << 16;
         }
         self.slot(key, c)
     }

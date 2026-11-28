@@ -167,6 +167,10 @@ pub struct Method<'d, 'a> {
     /// (not the parameter updated in place, nor named as it by debug info):
     /// they get a local of their own.
     pub reused: BTreeSet<u32>,
+    /// Webs debug info names: a def it names right after the def, a use it
+    /// names at the use, or a phi it names where the phi's block starts
+    /// (parameter entries, which start at 0, aside).
+    pub named: BTreeSet<u32>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -259,6 +263,7 @@ impl<'d, 'a> Method<'d, 'a> {
             handler_live: Vec::new(),
             clean_param: Vec::new(),
             reused: BTreeSet::new(),
+            named: BTreeSet::new(),
         };
         m.build_ops(undo)?;
         m.build_blocks()?;
@@ -266,6 +271,7 @@ impl<'d, 'a> Method<'d, 'a> {
         m.number_values()?;
         m.infer_types()?;
         m.classify_params();
+        m.name_webs();
         m.forward_moves();
         Ok(m)
     }
@@ -1026,6 +1032,31 @@ impl<'d, 'a> Method<'d, 'a> {
         reused.retain(|w| !named.contains(w));
         self.reused = reused;
         self.clean_param = clean_param;
+    }
+
+    fn name_webs(&mut self) {
+        let locals: Vec<(u32, u32, u32)> =
+            self.debug.locals.iter().filter(|l| l.start > 0 && l.name != crate::dex::NO_INDEX).map(|l| (l.reg, l.start, l.end.max(l.start + 1))).collect();
+        if locals.is_empty() {
+            return;
+        }
+        let covers = |r: u32, a: u32| locals.iter().any(|&(lr, s, e)| lr == r && s <= a && a < e);
+        let mut named = BTreeSet::new();
+        for o in &self.ops {
+            if let Some(d) = o.def.as_ref().filter(|d| covers(d.reg, o.end)) {
+                named.insert(self.root(d.id));
+            }
+            for u in o.uses.iter().filter(|u| u.val != UNDEF && covers(u.reg, o.insn.addr)) {
+                named.insert(self.root(u.val));
+            }
+        }
+        for (i, (&b, &r)) in self.phi_block.iter().zip(&self.phi_reg).enumerate() {
+            let blk = &self.blocks[b as usize];
+            if blk.start < self.ops.len() && covers(r, self.ops[blk.start].insn.addr) {
+                named.insert(self.root(self.defs + i as u32));
+            }
+        }
+        self.named = named;
     }
 
     /// Removes the register copies d8 makes to line up a range call: a

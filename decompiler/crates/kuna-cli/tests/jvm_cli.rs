@@ -512,6 +512,8 @@ fn d8_register_sharing_is_undone() {
         assert!(ranges.contains(" = ~") && ranges.contains(" - 1;") && !ranges.contains("(boolean)"), "{f}: {ranges}");
         let version = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.version"]));
         assert!(version.contains(" = null;") && !version.contains(" = var"), "{f}: {version}");
+        let from = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.from"]));
+        assert!(from.contains("Shapes.Kind var") && !from.contains("var3 = r.lowerKind()"), "{f}: {from}");
     }
 }
 
