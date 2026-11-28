@@ -1187,6 +1187,7 @@ impl Action for ActionFuncLink {
         crate::p4_calls::kuna_voidret::plant(data);
         crate::kuna_retcallhalf::plant(data);
         crate::kuna_floatreg::note_float_pairs(data);
+        crate::p4_calls::kuna_vfpcorepair::note_moves(data);
         0
     }
 }

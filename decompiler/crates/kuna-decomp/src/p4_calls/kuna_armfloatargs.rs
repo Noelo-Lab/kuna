@@ -1080,6 +1080,19 @@ fn typed_inputs(data: &Funcdata) -> Vec<(Address, i32)> {
             }
         }
     }
+    let words: Vec<VarnodeId> = data
+        .vbank()
+        .iter_def_flag(varnode_flags::input)
+        .filter(|&vn| data.vbank().get(vn).is_some_and(|v| v.get_size() == 4))
+        .collect();
+    for lo in words {
+        let Some(addr) = data.vbank().get(lo).map(|v| v.get_addr().clone()) else { continue };
+        if let Some(hi) = data.find_varnode_input(4, &(&addr + 4)) {
+            if crate::p4_calls::kuna_vfpcorepair::forwarded_words(data, lo, hi) {
+                out.push((addr, 8));
+            }
+        }
+    }
     for i in 0..data.num_calls() {
         let call = data.get_call_specs(i);
         let Some(op) = data.obank().get(call.get_op()).filter(|o| !o.is_dead()) else {
