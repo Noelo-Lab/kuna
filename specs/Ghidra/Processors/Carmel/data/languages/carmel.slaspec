@@ -5180,6 +5180,20 @@ macro transfer_address_word(pointer, modulo, bound, shift, delta, result) {
     result = candidate:2;
 }
 
+:REPEAT "CE1" "*R0++",wide_dynamic_loop_endpoint is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1
+    & wide_40_45=0 & wide_0_22=0x4e8084 & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0
+    & wide_dynamic_loop_endpoint & $(BLOCK_LOOP_PLAN) & ce_tick {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    if (admitted == 0) goto <feedback>;
+    local address:2 = R0;
+    transfer_address_word(R0, RM0, RL0, 0:2, 1:2, R0);
+    local count:2 = *[data]:2 address;
+    arm_block_loop(count, 0x14:1, $(ARM_LOOP_PLAN));
+  <feedback>
+    clock_ce();
+    build ce_tick;
+}
+
 macro wide_adjust_result(left, right, subtract, unsigned_right, sticky_enabled, result) {
     local mask:8 = 0xffffffffff;
     local sign:8 = 0x8000000000;

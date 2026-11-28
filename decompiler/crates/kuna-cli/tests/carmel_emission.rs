@@ -6417,6 +6417,16 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
     next_r0[1] = r0_write;
     let mut later_r0 = count_r0;
     later_r0[2] = r0_write;
+    let mut count_data = vec![[0x80, 0x40, 0x43, 0xc6, 0x52, 0x80], nop, nop, nop, nop, nop, a0];
+    let mut data_loop = count_r0;
+    data_loop[0][0] = 0;
+    data_loop[0][5] = 0x84;
+    count_data.extend(data_loop);
+    let data_inputs = &["A0L", "A1L", "ECFG", "EST", "PACFG", "RM0", "RL0", "CECFG1", "CECFG2", "CETBL"][..];
+    let data_closed = "0xffff,0,0,0,0,3,0x4040,0xee8,0,2";
+    let data_early_open = "0xffff,0,0,0,0,3,0x4040,0xee8,0,1";
+    let data_aen = "0xffff,0,0,0,3,3,0x4040,0x1000,0,0";
+    let data_modulo = "0xffff,0,0,0,2,3,0x4040,0,0,0xffff";
     let register_inputs = &["A0L", "A1L", "A0H", "R0", "RN0", "FF1", "ECFG"][..];
     let counts = "2,0,3,2,5,4,0";
     let initial_one = "1,0,3,1,5,4,0";
@@ -6451,7 +6461,7 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         "#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n\
          void carmel_zero_repeat_count(void) { abort(); }\n\
          void carmel_data_read_conflict(void) { abort(); }\n\
-         volatile unsigned short factor = 0x1234, multiplicand = 0xfffd;\n"
+         volatile unsigned short factor = 0x1234, multiplicand = 0xfffd, count_word = 2;\n"
     );
     let mut calls = String::from("int main(void) {\n");
     for (n, (code, base, params, reg, checks)) in [
@@ -6469,6 +6479,10 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         (&earlier_ex[..], "0", register_inputs, "A1L", &[(initial_one, 2)][..]),
         (&next_r0[..], "0", register_inputs, "A1L", &[(initial_one, 2)][..]),
         (&later_r0[..], "0", register_inputs, "A1L", &[(initial_one, 1)][..]),
+        (&count_data[..], "0", data_inputs, "A1L", &[(data_closed, 1), (data_early_open, 2),
+                                                      (data_aen, 2), (data_modulo, 2)][..]),
+        (&count_data[..], "0", data_inputs, "R0", &[(data_closed, 0x4043), (data_early_open, 0x4044),
+                                                     (data_aen, 0x4040), (data_modulo, 0x4040)][..]),
         (&unreachable_odd_tail[..], "0", &["R3"][..], "LC1", &[("2", 2)][..]),
         (&paired_left[..], "0", multiply_inputs, "LC1", &[(disabled, 0xc040), (address_only, 0xc041), (enabled, 0xc041)][..]),
         (&paired_left[..], "0", multiply_inputs, "X1", &[(disabled, 0x54ad), (address_only, 0x1234)][..]),
@@ -6506,6 +6520,9 @@ fn carmel_block_repeat_publishes_each_bank_and_retires_nested_tails() {
         if code.get(7).is_some_and(|slot| [left_multiply, right_multiply].contains(slot)) {
             kuna.args(["--assert", "data [data,0xc04c] volatile unsigned short factor",
                        "--assert", "data [data,0xc040] volatile unsigned short multiplicand"]);
+        }
+        if code.get(7) == Some(&data_loop[0]) {
+            kuna.args(["--assert", "data [data,0x4043] volatile unsigned short count_word"]);
         }
         for (i, input) in params.iter().enumerate() {
             kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{i}")]);

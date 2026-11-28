@@ -55,10 +55,11 @@ impl LoopSetup {
         if right & 0xc400 == 0x0400 {
             return Some(Self { delay, end_words: end_words & !1, count: LoopCount::Immediate });
         }
-        if issue == Issue::WideMarked
+        if (issue == Issue::WideMarked
             && ((left_low == 0x10 && matches!(right & !0x3800, 0x8000 | 0x8402))
                 || (left_low == 0 && matches!(right, 0x80a4 | 0x80a6 | 0x80a8 | 0x80aa | 0x8426))
-                || (left_low == 0x20 && right == 0x80a5))
+                || (left_low == 0x20 && right == 0x80a5)))
+            || (issue == Issue::WideUnmarked && left_low == 0 && right == 0x8084)
         {
             return Some(Self { delay, end_words, count: LoopCount::AddressStage });
         }

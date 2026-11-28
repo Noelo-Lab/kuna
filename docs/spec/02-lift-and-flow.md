@@ -3983,6 +3983,10 @@ The wide register-count form reads at OF. That sample excludes the
 immediately preceding issue's classified EX write, but includes a
 classified immediate D2 write in the following issue. Unproved adjacent
 writes and transfers are not treated as sequential register reads.
+For wide `REPEAT CE1 *R0++`, the earlier address admission permits the
+postmodifier and one DATA word read from old `R0`; that word supplies the
+OF count. The later CE update neither cancels that loop nor starts a
+loop whose address stage was skipped.
 For a paired compact `MPYUS` and `REPEAT R3`, the earlier address gate
 reserves `R7+RN7` and old `R3`, applies the R3 postmodifier, and latches
 `X1` or `X2`. Only the later result gate can publish `A5H` and the MAC flags;
