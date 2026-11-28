@@ -23,6 +23,7 @@ use crate::fixes::lambdas;
 use crate::fixes::constructor_calls::{self, implicit_outer_instance};
 use crate::fixes::constructor_calls::qualified_super_call;
 use crate::fixes::overloads::vararg_spread_resolution;
+use crate::fixes::nested_class_vars::deduplicated_lambda_captures;
 use crate::list_stack::ListStack;
 use crate::method_descriptor::MethodDescriptor;
 use crate::rt::{BitSet, JHashMap, JHashSet, JList, JavaEq, JavaHash};
@@ -717,6 +718,7 @@ impl NewExprent {
                     buf.append_buffer(&cast);
                 }
                 let method_object = constructor.and_then(|c| c.get_instance());
+                let _site_names = deduplicated_lambda_captures::name_at_site(self, child_node);
                 ClassWriter::new().class_lambda_to_java(
                     child.expect("NullPointerException: child"),
                     &mut buf,

@@ -257,6 +257,19 @@ impl VarProcessor {
         self.with_mut(|d| d.clashing_names.put(pair, name));
     }
 
+    /// kuna fix `deduplicated_lambda_captures`: puts back the clashing name
+    /// `pair` had, or none.
+    pub fn restore_clashing_name(self, pair: VarVersionPair, name: Option<String>) {
+        self.with_mut(|d| match name {
+            Some(name) => {
+                d.clashing_names.put(pair, name);
+            }
+            None => {
+                d.clashing_names.remove(&pair);
+            }
+        });
+    }
+
     /// `clashingNames.values()`, in iteration order.
     pub fn clashing_names(self) -> Vec<String> {
         self.with(|d| d.clashing_names.value_vec())

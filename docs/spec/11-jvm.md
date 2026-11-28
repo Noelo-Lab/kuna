@@ -1327,7 +1327,24 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    Java 8+ class when its initializer is a constant and its type a primitive or `String`:
    `final String s = ""` is a constant variable, which javac inlines rather than captures,
    so the recompiled class lost the `val$s` field and its constructor parameter; the
-   capture in the class file proves the local was not one.
+   capture in the class file proves the local was not one. A lambda's body is its
+   implementation method, whose captured parameters are named once, by the variables the
+   `invokedynamic` that creates it passes. (kuna) javac compiles lambdas of equal bodies
+   to one implementation method when it writes no local variable debug information (its
+   default), so one method is the body of lambdas in several methods and each captures its
+   own variables; the others were printed with the names of the first, `String var5 =
+   var4.toString(); run(() -> var4.hashCode())` for a lambda that captures `var5`, which
+   compiles and reads another variable (Vineflower prints it).
+   `nested_class_vars::deduplicated_lambda_captures` gives the captured parameters, while
+   a lambda is written, the names its own captured arguments have where it is created.
+   Vineflower also inlines the value assigned to a local without a LocalVariableTable entry
+   into the lambda created next that captures only it, when the lambda's body is one call
+   on the capture (javac's lowering of `expr::m` to `rec$ = expr; x -> rec$.m(x)`); the
+   body then names a variable that does not exist and the value is gone (`Object o =
+   c.toString(); add(() -> o.hashCode())` printed `add(() -> var0.hashCode())`).
+   `lambdas::synthetic_receiver_capture` allows the inlining only of what a lambda can
+   capture as written: `this`, a parameter the method never assigns, or a local it assigns
+   once.
 4. **Synthetic accessors.** `decompiler/managed/kuna-jvm/src/p4_calls/nested_member_access.rs
    (NestedMemberAccess::propagate_member_access)` replaces calls to the `access$NNN`
    methods javac generates for private members of nested classes with the field access or

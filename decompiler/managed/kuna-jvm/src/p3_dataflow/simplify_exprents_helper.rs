@@ -27,6 +27,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::invocation_exprent::{InvocationType, Type as InvocationFuncType};
 use crate::jthrow;
 use crate::fixes::constructor_calls::synthetic_null_check_shape;
+use crate::fixes::lambdas::synthetic_receiver_capture;
 use crate::match_engine::MatchEngine;
 use crate::match_node::MatchValue;
 use crate::monitor_exprent::Type as MonitorType;
@@ -291,7 +292,7 @@ impl SimplifyExprentsHelper {
                 continue;
             }
 
-            if Self::is_inlined_method_reference_assign(ssa, current, next) {
+            if Self::is_inlined_method_reference_assign(ssa, current, next, stat) {
                 list.remove_at(index);
                 res = true;
                 continue;
@@ -611,6 +612,7 @@ impl SimplifyExprentsHelper {
         ssa: Option<&SSAConstructorSparseEx>,
         first: Exprent,
         second: Exprent,
+        stat: Statement,
     ) -> bool {
         let Some(ssa) = ssa else {
             return false;
@@ -652,7 +654,9 @@ impl SimplifyExprentsHelper {
                         .get(&key)
                         .map(|p| p.is_synthetic_reference_lambda)
                         .expect("NullPointerException: method properties");
-                    if is_synthetic_reference_lambda {
+                    if is_synthetic_reference_lambda
+                        && synthetic_receiver_capture::capturable(assign.get_right(), stat)
+                    {
                         let constructor = lambda
                             .get_constructor()
                             .expect("NullPointerException: constructor");

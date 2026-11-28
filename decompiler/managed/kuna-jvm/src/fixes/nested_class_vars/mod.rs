@@ -11,6 +11,7 @@
 
 pub(crate) mod captured_var_clash_name;
 pub(crate) mod captured_var_through_cast;
+pub(crate) mod deduplicated_lambda_captures;
 
 use crate::code_constants::ACC_STATIC;
 use crate::code_type::CodeType;

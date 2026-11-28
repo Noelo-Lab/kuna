@@ -11,6 +11,7 @@ pub(crate) mod lambda_return_type_argument;
 pub(crate) mod lambda_type_variable_target;
 pub(crate) mod raw_target_cast;
 pub(crate) mod self_referencing_lambda;
+pub(crate) mod synthetic_receiver_capture;
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;

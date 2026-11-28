@@ -613,7 +613,7 @@ kuna	6a1df5749392c8b7
 case	default/pkg/TestMethodReferenceJ21	Default	classes/java21/pkg/TestMethodReferenceJ21	classes/java21/ext/RefsExt
 kuna	49352144169a2112
 case	default/pkg/TestMethodReferenceJ25	Default	classes/java25/pkg/TestMethodReferenceJ25	classes/java25/ext/RefsExt
-kuna	7d683c67973014cc
+kuna	34505b448b4a879d
 case	default/pkg/TestMethodReferenceLetterClass	Default	classes/java8/pkg/TestMethodReferenceLetterClass
 kuna	229aa73c2ea47cb2
 case	default/pkg/TestMethodReferenceSameName	Default	classes/java8/pkg/TestMethodReferenceSameName
@@ -2102,3 +2102,7 @@ case	kuna-fixes/pkg/TestUncontainedArguments	Kuna Fixes	kuna-fixes/classes/pkg/T
 case	kuna-fixes/pkg/TestVariableArrayErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestVariableArrayErasure
 # kuna-fixes/src/pkg/TestGenericArgumentOverload.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestGenericArgumentOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestGenericArgumentOverload
+# kuna-fixes/src/pkg/TestDeduplicatedLambdaCaptures.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestDeduplicatedLambdaCaptures	Kuna Fixes	kuna-fixes/classes/pkg/TestDeduplicatedLambdaCaptures
+# kuna-fixes/src/pkg/TestSyntheticReceiverCapture.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestSyntheticReceiverCapture	Kuna Fixes	kuna-fixes/classes/pkg/TestSyntheticReceiverCapture
