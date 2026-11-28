@@ -28,6 +28,23 @@ u64 select_cmov(u64 a, u64 yes, u64 no) {
     return no;
 }
 
+u64 partial_register(u64 a, u64 b) {
+    __asm__("movb %b1, %b0" : "+&a"(a) : "q"(b));
+    return a;
+}
+
+u64 add_carry(u64 a, u64 b) {
+    unsigned char carry;
+    __asm__("addq %2, %0; setc %1" : "+&r"(a), "=q"(carry) : "r"(b) : "cc");
+    return a + carry;
+}
+
+u64 signed_overflow(u64 a, u64 b) {
+    unsigned char overflow;
+    __asm__("addq %2, %0; seto %1" : "+&r"(a), "=q"(overflow) : "r"(b) : "cc");
+    return a + overflow;
+}
+
 u64 select_branch(u64 flag, u64 yes, u64 no) {
     return flag ? yes : no;
 }

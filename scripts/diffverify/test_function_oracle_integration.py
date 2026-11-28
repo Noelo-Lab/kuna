@@ -119,6 +119,22 @@ class CrossBackendTests(unittest.TestCase):
         self.assertEqual(ir["return"]["size"], 8)
         self.assert_returned(oracle, raw, ir, expected, "XMM0")
 
+    def test_double_rounding_and_special_values_are_observable_as_bits(self):
+        cases = (
+            ("round ties to even", 0x3ff0000000000000, 0x3ca0000000000000, 0x3ff0000000000000),
+            ("negative zero", 0x8000000000000000, 0x8000000000000000, 0x8000000000000000),
+            ("infinity", 0x7ff0000000000000, 0x3ff0000000000000, 0x7ff0000000000000),
+            ("quiet NaN payload", 0x7ff8b00000000002, 0x3ff0000000000000, 0x7ff8b00000000002),
+            ("signaling NaN quieting", 0x7ff0b00000000002, 0x3ff0000000000000, 0x7ff8b00000000002),
+            ("opposite infinities", 0x7ff0000000000000, 0xfff0000000000000, 0xfff8000000000000),
+        )
+        for label, a, b, expect in cases:
+            with self.subTest(label=label):
+                _, oracle, raw, ir = self.observe(
+                    "add_double", "--input-reg", "XMM0", hex(a), "--input-reg", "XMM1", hex(b),
+                )
+                self.assert_returned(oracle, raw, ir, expect, "XMM0")
+
     def test_bounded_loop_and_observable_global_writes(self):
         case, oracle, raw, ir = self.observe("store_loop")
         count = value(case, "RSI") & 7
@@ -384,6 +400,30 @@ class CrossBackendTests(unittest.TestCase):
         values = replayed["observation_report"]["findings"][0]["values"]
         self.assertEqual(values["unicorn"], "0xffffffff80000000")
         self.assertEqual(values["final-ir"], "0x80000000")
+
+    def test_symbolic_zero_extension_mutation_is_visible_at_full_width(self):
+        code, proof = self.prove(
+            "extend_unsigned", "--opcode-mutant", "0", "--bind", "RDI", "0x80000000", inputs=("RDI",),
+        )
+        self.assertEqual(code, 1, proof.get("reason"))
+        replayed = replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+        self.assertEqual(replayed["independent_replay"], "confirmed")
+        values = replayed["observation_report"]["findings"][0]["values"]
+        self.assertEqual(values["unicorn"], "0x80000000")
+        self.assertEqual(values["final-ir"], "0xffffffff80000000")
+
+    def test_symbolic_partial_register_carry_and_overflow_match_external_execution(self):
+        cases = (
+            ("partial_register", 0x123456789abcde00, 0xff, 0x123456789abcdeff),
+            ("add_carry", 0xffffffffffffffff, 1, 1),
+            ("signed_overflow", 0x7fffffffffffffff, 1, 0x8000000000000001),
+        )
+        for name, a, b, expected in cases:
+            with self.subTest(function=name):
+                code, proof = self.prove(name, whole=True)
+                self.assertEqual((code, proof["classification"]), (0, "MODEL_EQUIVALENCE"), proof.get("reason"))
+                _, oracle, raw, ir = self.observe(name, "--input-reg", "RDI", hex(a), "--input-reg", "RSI", hex(b))
+                self.assert_returned(oracle, raw, ir, expected)
 
     def test_symbolic_mutation_gets_an_independently_reproduced_witness(self):
         code, proof = self.prove("add", "--opcode-mutant", "0")

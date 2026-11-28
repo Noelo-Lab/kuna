@@ -4129,6 +4129,14 @@ encoders. An SMT coverage query rules out inputs omitted from the model
 traces. The two observation equalities compose over the common full-width
 `a0` result. See `docs/features/diffverify/formal-rv64.md`.
 
+Symbolic reports archive their exact queries and digests. The certificate
+workflow checks the satisfiable domains with cvc5 and verifies each
+required refutation with Ethos under the CPC signature. Its evidence
+retains the original scope and repeat limits. The evidence export also
+records sampled and external comparisons with their own assurance and
+coverage. See `docs/features/diffverify/proof-certificates.md` and
+`docs/features/diffverify/verification-evidence.md`.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the

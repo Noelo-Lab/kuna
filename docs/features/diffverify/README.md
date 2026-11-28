@@ -408,6 +408,13 @@ run yet.
 | `c4-decbench-results.md` | slice C4 on the decbench binaries: harness defects found, every `DIFFERS` sorted by cause, the issues filed |
 | `c5-results.md` | slice C5: concolic inputs |
 | `tier-l-results.md` | Tier L: SLEIGH p-code against Unicorn, the spec errors found |
+| `function-oracle.md` | Replayable three-way function observations with Unicorn |
+| `translation-validation.md` | SMT translation validation of integer blocks |
+| `symbolic-memory.md` | Memory, whole-function and loop validation |
+| `formal-rv64.md` | Independent RV64 ALU observations from Sail |
+| `proof-certificates.md` | Checking archived symbolic refutations with Ethos |
+| `verification-evidence.md` | Structured outcomes with scope and assurance |
+| `layered-validation-results.md` | Fixture evidence, timing and memory measurements |
 | `triage.md` | how to decide whether a difference is the spec's, the emulator's, the checker's or the harness's |
 | `mutation.md` | mutation testing: what share of planted faults the check catches |
 | `record.json` | the slices' measured numbers, for scripts |
