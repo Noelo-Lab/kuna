@@ -174,9 +174,11 @@ pub struct GlobalQuery {
     space_indexes: Vec<GlobalSpaceIndex>,
     /// The global scope's owned data ranges (C++ `Scope::rangetree`), for the
     /// `inScope` discovery branch of `queryProperties`.
-    pub owned: kuna_base::address::RangeList,
+    owned: kuna_base::address::RangeList,
     /// The boolean-property map (C++ `Database::flagbase`), for `getProperty`.
-    pub flagbase: kuna_base::partmap::PartMap<Address, uint4>,
+    flagbase: kuna_base::partmap::PartMap<Address, uint4>,
+    /// Both maps' answers for the spaces that hold no point of them.
+    space_props: crate::kuna_spaceprops::SpaceProps,
     /// Every entry's symbol name, built on first use by [`GlobalQuery::has_symbol_name`].
     symbol_name_set: std::cell::OnceCell<std::collections::BTreeSet<Box<str>>>,
     /// Whether any entry carries a parked `func_extra_pop`.
@@ -310,9 +312,26 @@ impl GlobalQuery {
             space_indexes,
             owned,
             flagbase,
+            space_props: Default::default(),
             symbol_name_set: std::cell::OnceCell::new(),
             has_extra_pop,
         }
+    }
+
+    /// The global scope's owned data ranges.
+    pub fn owned(&self) -> &kuna_base::address::RangeList {
+        &self.owned
+    }
+
+    /// The boolean-property map.
+    pub fn flagbase(&self) -> &kuna_base::partmap::PartMap<Address, uint4> {
+        &self.flagbase
+    }
+
+    /// The boolean-property map, to change it.
+    pub fn flagbase_mut(&mut self) -> &mut kuna_base::partmap::PartMap<Address, uint4> {
+        self.space_props.clear();
+        &mut self.flagbase
     }
 
     /// Clone out the flattened entry records (the remote-provider merge input:
@@ -405,7 +424,7 @@ impl GlobalQuery {
     /// C++ `Database::getProperty(addr)` (`database.hh:949`): the boolean
     /// properties (read-only/volatile) painted on a memory range.
     fn get_property(&self, addr: &Address) -> uint4 {
-        *self.flagbase.get_value(addr)
+        self.space_props.property(addr, &self.flagbase, &self.owned)
     }
 
     /// C++ `Scope::findContainer` (`database.cc:2278-2310`) restricted to the
@@ -646,7 +665,7 @@ impl GlobalQuery {
         if let Some(flags) = self.find_container_flags(addr, size, usepoint) {
             // res != 0: use the entry's flags.
             flags
-        } else if self.owned.in_range(addr, size) {
+        } else if self.space_props.in_owned(addr, size, &self.flagbase, &self.owned) {
             // finalscope != 0 (the global scope owns the range, no symbol).
             varnode_flags::mapped
                 | varnode_flags::addrtied

@@ -1122,13 +1122,13 @@ impl RemoteScope {
         // A space participates iff the global scope owns any range in it
         // (C++ `ScopeGhidra::addRange` growing `spacerange`).
         let mut spacerange = vec![false; manager.num_spaces() as usize];
-        for r in base.owned.iter() {
+        for r in base.owned().iter() {
             let idx = r.get_space().get_index() as usize;
             if idx < spacerange.len() {
                 spacerange[idx] = true;
             }
         }
-        let flagbase_default = base.flagbase.clone();
+        let flagbase_default = base.flagbase().clone();
         let snapshot = Rc::new(GlobalQuery::default());
         RemoteScope {
             fetch,
@@ -1661,7 +1661,7 @@ impl RemoteScope {
             entries.extend(st.entries.iter().cloned());
             st.snapshot = Rc::new(GlobalQuery::new(
                 entries,
-                self.base.owned.clone(),
+                self.base.owned().clone(),
                 st.flagbase.clone(),
             ));
             st.dirty = false;
