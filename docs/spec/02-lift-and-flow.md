@@ -5528,6 +5528,13 @@ address record; the second read keeps its original offset. Opposite
 steps cancel, two forward steps add two, and the indexed update uses RN2.
 Neither of the bound move results is predicated in these layouts.
 
+In the merged R7 writeback layout, MA1 clears a word at the old R3
+address. An unmarked issue uses the eleven encoded trailing bytes as
+a DATA-word displacement; the MAC1 condition includes the final
+four-byte immediate or three-byte indexed writeback record. The R7
+update and MA1 store are unconditional. The bound `A1 + A2` result
+is gated by late CE1 independently.
+
 For the short postmodify MA1 and MA2 routes with only a register
 accumulator add active, each write-qualified port independently
 stores zero at its incoming DATA address. Read qualifiers do not

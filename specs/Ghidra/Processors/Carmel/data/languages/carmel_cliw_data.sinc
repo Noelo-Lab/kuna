@@ -633,17 +633,9 @@ macro cliw_skip_move() {
     publish_alu_ce((EST & 0xcfc7) | flags);
 }
 
-# For indirect MA1 the immediate moves the effective store address,
-# not R2, even if the accumulator add is inhibited.
-:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=32 & cliw_address_bank=4 &
-    wide_10_14=2 & wide_8_9=2 & wide_3_7=9 & wide_1_2=1 & wide_0_0=1 &
-    cliw_terminal_ma3_condition=23 & cliw_terminal_ma4=28 {
-    local address:2 = R2 + cliw_skip_unmarked * (4 + 3 + 4);
-    transfer_address_word(R1, RM0, RL0, 2, 1:2, R1);
-    *[data]:2 address = 0:2;
+macro cliw_skip_acc_add(incoming, flags) {
     local enabled:2;
-    local flags:2 = EST & 0xcfff;
-    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    unary_ce(CECFG1, incoming, CETBL, 0, enabled);
     if (enabled == 0) goto <add_done>;
     local first:8;
     local second:8;
@@ -655,7 +647,45 @@ macro cliw_skip_move() {
     write_accumulator40(A0L, A0H, GB0, result);
     flags = (flags & 0xffc4) | lane_flags;
   <add_done>
+}
+
+# For indirect MA1 the immediate moves the effective store address,
+# not R2, even if the accumulator add is inhibited.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=32 & cliw_address_bank=4 &
+    wide_10_14=2 & wide_8_9=2 & wide_3_7=9 & wide_1_2=1 & wide_0_0=1 &
+    cliw_terminal_ma3_condition=23 & cliw_terminal_ma4=28 {
+    local address:2 = R2 + cliw_skip_unmarked * (4 + 3 + 4);
+    transfer_address_word(R1, RM0, RL0, 2, 1:2, R1);
+    *[data]:2 address = 0:2;
+    local flags:2 = EST & 0xcfff;
+    cliw_skip_acc_add(EST, flags);
     publish_alu_ce(flags);
+}
+
+cliw_merged_r7_modifier_bytes: is cliw_terminal_ma4=15 {
+    modify_native_agu(R7, -2:2, RM6, RL6, RM6_ALIGN, 14:4, 4:2);
+    export 4:2;
+}
+cliw_merged_r7_modifier_bytes: is cliw_terminal_ma4=7 & wide_left_mode=0 {
+    modify_native_agu(R7, RN7, RM6, RL6, RM6_ALIGN, 14:4, 1:2);
+    export 3:2;
+}
+
+# The last two short reads reserve successive words of the old R7. No
+# template lane consumes them, and they cannot contend with each other.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=32 & cliw_address_bank=13 &
+    wide_10_14=3 & wide_8_9=2 & wide_3_7=17 & wide_1_2=0 & wide_0_0=1 &
+    (cliw_terminal_ma3_condition=111 | cliw_terminal_ma3_condition=239) &
+    cliw_mac1_predicate & cliw_merged_r7_modifier_bytes {
+    build cliw_merged_r7_modifier_bytes;
+    local mac_condition:1 = cliw_mac1_predicate;
+    local patch:2 = 11 + zext(mac_condition) * cliw_merged_r7_modifier_bytes;
+    local address:2 = R3 + cliw_skip_unmarked * patch;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    cliw_skip_acc_add(incoming, flags);
+    *[data]:2 address = 0:2;
+    publish_ce_feedback(flags, incoming);
 }
 
 # MA2's stack push consumes three four-byte records and displaces MA3.

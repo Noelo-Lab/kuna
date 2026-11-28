@@ -9034,6 +9034,74 @@ fn carmel_cliw_unmarked_ma1_uses_the_trailing_address_width() {
 }
 
 #[test]
+fn carmel_cliw_merged_ma1_store_is_independent_of_the_late_add() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let image = scratch.path().join("cliw.xml");
+    let specs = scratch.path().join("specs");
+    let source = scratch.path().join("cliw.c");
+    let executable = scratch.path().join("cliw");
+    let arch = "Carmel:BE:24:default:default";
+    tracked_carmel_entry_specs(&specs, &[
+        ("R3", 0xc040), ("R7", 0xc048), ("PACFG", 0), ("EST", 0),
+        ("CECFG1", 0), ("CECFG2", 0), ("ECFG", 0),
+        ("A0L", 0x09a4), ("A1L", 0xecd0), ("A1H", 0x834c), ("GB1", 0x6a),
+        ("A2L", 0x4b74), ("A2H", 0xb008), ("GB2", 0x87),
+    ], 0, 0);
+    let cells = [0xc040_u16, 0xc04b, 0xc04c, 0xc04e, 0xc04f];
+    let mut c = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    for address in cells {
+        writeln!(c, "volatile unsigned short data_{address:04x};").unwrap();
+    }
+    let mut calls = String::from("int main(void) {\n");
+    for (row, (packet, cleared, pointer)) in [
+        ("37bc16dd8e89", 0xc04b, 0xc046), ("77bc16dd8e89", 0xc04f, 0xc046),
+        ("379c16dd8e89", 0xc04b, 0xc04c), ("779c16dd8e89", 0xc04e, 0xc04c),
+        ("b7bc16dd8e89", 0xc040, 0xc046), ("f7bc16dd8e89", 0xc040, 0xc046),
+    ].into_iter().enumerate() {
+        fs::write(&image, format!(
+            "<binaryimage arch=\"{arch}\">\n\
+             <bytechunk space=\"code\" offset=\"0\" readonly=\"true\">{packet}2bd8002bec00</bytechunk>\n\
+             <bytechunk space=\"cliw\" offset=\"0x108\" readonly=\"true\">7fffff0465003fffff7ffff8</bytechunk>\n\
+             <symbol space=\"code\" offset=\"0\" name=\"cliw_merged\"/>\n</binaryimage>\n"
+        )).unwrap();
+        for (column, (reg, active, vetoed)) in [("A0L", 0x3844, 0x09a4), ("R7", pointer, pointer)].into_iter().enumerate() {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.env("KUNA_SPECS", &specs).arg("decompile").arg(&image)
+                .args(["cliw_merged", "--target", arch, "--assert-strict",
+                    "--assert", "param 0 %RN7 unsigned short stride",
+                    "--assert", "param 1 %CETBL unsigned short table",
+                    "--assert", &format!("return %{reg} unsigned short")]);
+            for address in cells {
+                command.args(["--assert", &format!("data [data,{address:#x}] volatile unsigned short data_{address:04x}")]);
+            }
+            let output = common::process::required_output(&mut command);
+            let code = String::from_utf8(output.stdout).unwrap();
+            assert!(!code.contains("halt_") && !code.to_lowercase().contains("warning:"), "{code}");
+            let name = format!("merged_{row}_{column}");
+            writeln!(c, "#define cliw_merged {name}\n{code}\n#undef cliw_merged").unwrap();
+            let fail = row * 2 + column + 1;
+            for (table, expected) in [(1, active), (0x100, vetoed)] {
+                for address in cells {
+                    writeln!(calls, "data_{address:04x} = 0x1234;").unwrap();
+                }
+                writeln!(calls, "if ({name}(4,{table:#x}) != {expected:#x}) return {fail};").unwrap();
+                for address in cells {
+                    let expected = if address == cleared { 0 } else { 0x1234 };
+                    writeln!(calls, "if (data_{address:04x} != {expected:#x}) return {fail};").unwrap();
+                }
+            }
+        }
+    }
+    c.push_str(&calls);
+    c.push_str("return 0;\n}\n");
+    fs::write(&source, &c).unwrap();
+    run_emitted_c(&source, &executable, &c);
+}
+
+#[test]
 fn carmel_cliw_extended_source_ports_execute_in_emitted_c() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;
