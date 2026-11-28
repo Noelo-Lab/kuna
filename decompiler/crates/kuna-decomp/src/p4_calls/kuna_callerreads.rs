@@ -94,14 +94,18 @@ pub fn read(arch: &Architecture, data: &Funcdata) -> Option<(Address, int4)> {
 /// `storage`, as `kuna_voidret` does for a function whose callers read it.
 pub fn force(arch: &mut Architecture, entry: &Address, storage: (Address, int4)) {
     if let Some(space) = entry.get_space() {
-        arch.kuna_voidret.forced.insert((space.get_index(), entry.get_offset()), storage);
+        let k = (space.get_index(), entry.get_offset());
+        arch.kuna_voidret.forced.insert(k, storage);
+        arch.kuna_voidret.unsettled.insert(k);
     }
 }
 
 /// Undo [`force`].
 pub fn release(arch: &mut Architecture, entry: &Address) {
     if let Some(space) = entry.get_space() {
-        arch.kuna_voidret.forced.remove(&(space.get_index(), entry.get_offset()));
+        let k = (space.get_index(), entry.get_offset());
+        arch.kuna_voidret.forced.remove(&k);
+        arch.kuna_voidret.unsettled.insert(k);
     }
 }
 

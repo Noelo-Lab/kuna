@@ -261,6 +261,15 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
             let (space, addr, decl) = parse_data(rest).map_err(bad)?;
             Body::Data { addr, space: space.map(str::to_owned), decl: decl.to_string() }
         }
+        "import" => {
+            let (addr, name) = take_token(rest);
+            let addr = parse_vma(addr).ok_or_else(|| bad("import needs a hex <slot>"))?;
+            let (name, tail) = take_token(name);
+            if name.is_empty() || !tail.is_empty() {
+                return Err(bad("import takes exactly <slot> <name>"));
+            }
+            Body::Import { addr, name: name.to_string() }
+        }
         "param" => {
             let (index, rest) = take_token(rest);
             let (func, index) = split_qualifier(index);
@@ -419,8 +428,8 @@ pub fn parse_directive(spec: &str) -> Result<Directive, String> {
         other => {
             return Err(format!(
                 "--assert {raw:?}: unknown directive {other:?} (want one of \
-                 function, typedef, prototype, callproto, data, param, return, comment, flow, jumptable, callee, \
-                 name, type, format, isolate, readonly, volatile, bytes)"
+                 function, typedef, prototype, callproto, data, import, param, return, comment, flow, \
+                 jumptable, callee, name, type, format, isolate, readonly, volatile, bytes)"
             ))
         }
     };

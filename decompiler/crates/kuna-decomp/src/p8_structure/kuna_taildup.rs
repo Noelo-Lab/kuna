@@ -193,6 +193,9 @@ impl Action for ActionTailDup {
                 Some(b) => b,
                 None => continue,
             };
+            if crate::p8_structure::kuna_o0gotos::keeps(data, bb0) {
+                continue;
+            }
             if let Some(chain) = return_call_tail_chain(data, bb0) {
                 // Warn address: the head op of the duplicated tail's first block.
                 let warn_addr = match data

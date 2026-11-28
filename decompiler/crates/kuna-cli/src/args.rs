@@ -32,6 +32,34 @@ pub(crate) fn take_global_image(argv: &mut Vec<String>) -> Result<(), String> {
     Ok(())
 }
 
+/// Rewrite the global `--deobfuscate LIST` as the `--option deobfuscate LIST`
+/// it abbreviates, so every subcommand that takes options takes it.  LIST is
+/// `auto`, `off`, or deobfuscation techniques separated by commas.
+pub(crate) fn lower_deobfuscate(argv: &mut Vec<String>) -> Result<(), String> {
+    const FLAG: &str = "--deobfuscate";
+    let mut i = 0;
+    while i < argv.len() {
+        let value = if argv[i] == FLAG {
+            let value = argv.get(i + 1).cloned().ok_or("--deobfuscate requires a value")?;
+            argv.remove(i + 1);
+            value
+        } else if let Some(value) = argv[i].strip_prefix("--deobfuscate=") {
+            value.to_string()
+        } else {
+            i += 1;
+            continue;
+        };
+        check_deobfuscate(FLAG, &value)?;
+        argv.splice(i..=i, ["--option".to_string(), "deobfuscate".to_string(), value]);
+        i += 3;
+    }
+    Ok(())
+}
+
+fn check_deobfuscate(what: &str, value: &str) -> Result<(), String> {
+    kuna_decomp::kuna_deobf::Selection::parse(value).map(drop).map_err(|e| format!("{what}: {}", e.explain()))
+}
+
 pub(crate) fn report(result: Result<i32, String>) -> i32 {
     match result {
         Ok(status) => status,
@@ -53,6 +81,9 @@ pub(crate) fn take_option(argv: &[String], i: &mut usize) -> Result<(String, Str
         kuna_decomp::kuna_kernelcache::parse_kernelcache(value)
             .map_err(|e| format!("option kernelcache: {}", e.explain()))?;
     }
+    if name == kuna_decomp::kuna_deobf::Selection::NAME {
+        check_deobfuscate("option deobfuscate", value)?;
+    }
     *i += 2;
     Ok((name.clone(), value.clone()))
 }
@@ -70,5 +101,24 @@ mod tests {
         assert!(take_option(&argv("two words"), &mut i).unwrap_err().contains("kernelcache"));
         let mut i = 0;
         assert_eq!(take_option(&argv("IOSurface"), &mut i).unwrap().1, "IOSurface");
+    }
+
+    /// `--deobfuscate LIST`, in either spelling, becomes the option it
+    /// abbreviates, and a technique that does not exist is refused by name.
+    #[test]
+    fn deobfuscate_lowers_to_its_option() {
+        let lower = |args: &[&str]| {
+            let mut argv: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+            lower_deobfuscate(&mut argv).map(|()| argv.join(" "))
+        };
+        assert_eq!(lower(&["bin", "--deobfuscate", "devirtualize", "f"]).unwrap(), "bin --option deobfuscate devirtualize f");
+        assert_eq!(lower(&["bin", "f", "--deobfuscate=off"]).unwrap(), "bin f --option deobfuscate off");
+        assert_eq!(lower(&["bin", "--deobfuscate", "auto", "--deobfuscate=devirtualize"]).unwrap(), "bin --option deobfuscate auto --option deobfuscate devirtualize");
+        assert_eq!(lower(&["bin", "f"]).unwrap(), "bin f");
+        let err = lower(&["bin", "--deobfuscate", "devirtualize,unpack"]).unwrap_err();
+        assert!(err.starts_with("--deobfuscate:") && err.contains("\"unpack\"") && err.contains("devirtualize"), "{err}");
+        assert!(lower(&["bin", "--deobfuscate"]).unwrap_err().contains("requires a value"));
+        let argv: Vec<String> = ["--option", "deobfuscate", "on"].map(String::from).to_vec();
+        assert!(take_option(&argv, &mut 0).unwrap_err().starts_with("option deobfuscate:"));
     }
 }

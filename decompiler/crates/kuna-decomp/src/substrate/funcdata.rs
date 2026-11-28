@@ -203,6 +203,9 @@ pub struct Funcdata {
     /// (kuna `loopcontinue auto`) The jump statements read at the first
     /// heritage pass (`p8_structure/kuna_o0jumps.rs`).
     pub(crate) kuna_o0jumps: Option<Box<crate::p8_structure::kuna_o0jumps::Record>>,
+    /// (kuna `gotoreduce auto`) The goto statements read at the first heritage
+    /// pass (`p8_structure/kuna_o0gotos.rs`).
+    pub(crate) kuna_o0gotos: Option<Box<crate::p8_structure::kuna_o0gotos::Record>>,
     pub(crate) kuna_fpu_trunc_views: Vec<OpId>,
     /// Boolean properties associated with \b this function (C++ `flags`)
     flags: uint4,
@@ -520,6 +523,12 @@ pub struct Funcdata {
     kuna_default_name_end: int4,
     /// Whether the naming pass records [`Self::kuna_name_snapshot`].
     kuna_record_names: bool,
+    /// (kuna deobf) The recovered body the function is lifted from, when a
+    /// deobfuscator recovered one; see [`Self::kuna_body`].
+    kuna_body: Option<std::rc::Rc<crate::kuna_body::RecoveredBody>>,
+    /// (kuna deobf) The blocks whose branch the last structuring of a
+    /// recovered body negated.
+    kuna_structure_flips: Vec<BlockId>,
     /// The numbering the naming pass handed out, by instance identity; see
     /// `kuna_stablenames::snapshot`.
     kuna_name_snapshot: Vec<(String, crate::kuna_stablenames::Keys)>,
@@ -854,6 +863,7 @@ impl Funcdata {
             kuna_o0select: None,
             kuna_o0switch: None,
             kuna_o0jumps: None,
+            kuna_o0gotos: None,
             flags: 0,
             clean_up_index: 0,
             high_level_index: 0,
@@ -940,6 +950,8 @@ impl Funcdata {
             kuna_prior_names: Default::default(),
             kuna_default_name_end: 1,
             kuna_record_names: false,
+            kuna_body: None,
+            kuna_structure_flips: Vec::new(),
             kuna_name_snapshot: Vec::new(),
             kuna_directive_targets: std::collections::BTreeMap::new(),
             kuna_library_aliases: Vec::new(),
@@ -1257,6 +1269,24 @@ impl Funcdata {
 
     pub fn set_kuna_record_names(&mut self, on: bool) {
         self.kuna_record_names = on;
+    }
+    /// (kuna deobf) What the stages after the flow may assume of the body
+    /// and how they analyse it: a recovered body's, or [`NATIVE`]'s for a
+    /// function lifted from its own bytes.
+    ///
+    /// [`NATIVE`]: crate::kuna_body::NATIVE
+    pub fn kuna_body(&self) -> &crate::kuna_body::BodyFacts {
+        self.kuna_body.as_ref().map_or(&crate::kuna_body::NATIVE, |b| &b.facts)
+    }
+    /// (kuna deobf) The recovered body the function is lifted from.
+    pub fn kuna_recovered(&self) -> Option<&std::rc::Rc<crate::kuna_body::RecoveredBody>> {
+        self.kuna_body.as_ref()
+    }
+    pub fn kuna_set_body(&mut self, body: Option<std::rc::Rc<crate::kuna_body::RecoveredBody>>) {
+        self.kuna_body = body;
+    }
+    pub fn kuna_structure_flips_mut(&mut self) -> &mut Vec<BlockId> {
+        &mut self.kuna_structure_flips
     }
 
     /// The numbering the naming pass recorded (empty unless asked to).
@@ -2066,6 +2096,15 @@ impl Funcdata {
     pub fn get_size(&self) -> int4 {
         self.size
     }
+    /// (kuna deobf) Override the declared body size; 0 lifts the flow range.
+    pub fn kuna_set_size(&mut self, size: int4) {
+        self.size = size;
+    }
+    /// (kuna deobf) Replace the architecture view of a function whose flow
+    /// has not been generated, after the symbol table it snapshots moved.
+    pub fn kuna_set_arch(&mut self, glb: ArchHandle) {
+        self.glb = glb;
+    }
     /// Get the program/architecture owning \b this function (C++ `getArch`).
     pub fn get_arch(&self) -> &ArchHandle {
         &self.glb
@@ -2535,6 +2574,12 @@ impl Funcdata {
     /// `heritage.deadRemovalAllowed(spc)`).
     pub fn dead_removal_allowed(&self, spc: &std::rc::Rc<kuna_base::space::AddrSpace>) -> bool {
         self.heritage.dead_removal_allowed(spc)
+    }
+
+    /// (kuna) The first heritage pass at which dead code may be removed in
+    /// every heritaged space.
+    pub fn deadcode_settled_pass(&self) -> int4 {
+        self.heritage.deadcode_settled_pass()
     }
 
     /// Record that dead code has been seen in a space (C++
@@ -4580,7 +4625,11 @@ impl Funcdata {
     /// its locked parts, so a restarted analysis starts where a fresh decompile
     /// does. The W3 IR clears (`clearBlocks`, `obank.clear`, `vbank.clear`) and
     /// the flag/index reset are faithful. Buffered comments survive; the
-    /// restart drive drops the warnings (`refollow_flow`).
+    /// restart drive drops the warnings (`refollow_flow`) and the prototype
+    /// store the analysis attached (`run_pipeline`). What the passes of one
+    /// analysis carry to each other (frame slots and records, latch joins, the
+    /// type plateau, return notes for callers) goes too; what the drive seeded
+    /// before the first pass stays.
     pub fn clear(&mut self) {
         self.kuna_atomic_xadds.clear();
         self.ppc32_pic_calls.clear();
@@ -4603,6 +4652,7 @@ impl Funcdata {
         self.kuna_o0select = None;
         self.kuna_o0switch = None;
         self.kuna_o0jumps = None;
+        self.kuna_o0gotos = None;
         // Clear the analysis-derived flags (the exact mask from funcdata.cc:88).
         self.flags &= !(funcdata_flags::highlevel_on
             | funcdata_flags::blocks_generated
@@ -4620,7 +4670,16 @@ impl Funcdata {
         self.kuna_condstmts_hits.clear();
         self.kuna_fatalchain_relaxed.clear();
         self.kuna_chainfold_any = false;
+        self.kuna_chainfold_given_up = false;
         self.kuna_restart_now = false;
+        self.kuna_infertypes_settled = false;
+        self.kuna_latch_joins = 0;
+        self.kuna_latch_blocks.clear();
+        self.kuna_float_bits_return = false;
+        self.kuna_callret_returned.clear();
+        self.frame_slots.borrow_mut().clear();
+        self.stack_records.borrow_mut().clear();
+        self.cast_objects.borrow_mut().clear();
 
         // localmap->clearUnlocked(); localmap->resetLocalWindow() (funcdata.cc:95):
         // a restart re-derives every symbol the analysis recovered, as a fresh
@@ -5096,18 +5155,24 @@ impl Funcdata {
     }
 
     /// One step up `vn`'s COPY chain (`vn->getDef()->getIn(0)` when `vn` is a
-    /// written COPY), or `None` at the chain source.  Shared by the shadow
-    /// helpers below (C++ inlines the same `while(isWritten && COPY)` walk).
+    /// written COPY, or a SUBPIECE keeping every byte of its input), or `None`
+    /// at the chain source.  Shared by the shadow helpers below (C++ inlines the
+    /// same `while(isWritten && COPY)` walk).
     fn copy_chain_pred(&self, vn: VarnodeId) -> Option<VarnodeId> {
         let v = self.vbank.get(vn)?;
         if !v.is_written() {
             return None;
         }
-        let def = v.get_def()?;
-        if self.obank.get(def).map(|o| o.code())? != OpCode::CPUI_COPY {
-            return None;
+        let def = self.obank.get(v.get_def()?)?;
+        match def.code() {
+            OpCode::CPUI_COPY => def.get_in(0),
+            OpCode::CPUI_SUBPIECE => {
+                let whole = def.get_in(0)?;
+                let off = self.vbank.get(def.get_in(1)?)?.get_offset();
+                (off == 0 && self.vbank.get(whole)?.get_size() == v.get_size()).then_some(whole)
+            }
+            _ => None,
         }
-        self.obank.get(def).and_then(|o| o.get_in(0))
     }
 
     /// Walk `vn` to the end of its COPY chain (`while(isWritten && COPY) vn = in0`).
@@ -5169,13 +5234,7 @@ impl Funcdata {
             if tmpvn == whole {
                 return true;
             }
-            let mut tmpvn = tmpvn;
-            while let Some(pred) = self.copy_chain_pred(tmpvn) {
-                tmpvn = pred;
-                if tmpvn == whole {
-                    return true;
-                }
-            }
+            return self.skip_copy_chain(tmpvn) == self.skip_copy_chain(whole);
         } else if opc == OpCode::CPUI_MULTIEQUAL {
             let recurse = recurse + 1;
             if recurse > 1 {
@@ -5261,14 +5320,7 @@ impl Funcdata {
             if tmpvn == piece {
                 return true;
             }
-            let mut tmpvn = tmpvn;
-            while let Some(pred) = self.copy_chain_pred(tmpvn) {
-                tmpvn = pred;
-                if tmpvn == piece {
-                    return true;
-                }
-            }
-            return false;
+            return self.skip_copy_chain(tmpvn) == self.skip_copy_chain(piece);
         }
         // CPUI_PIECE input is too big, recursively search for another CPUI_PIECE
         self.find_piece_shadow(tmpvn, least_byte, piece)
@@ -6052,6 +6104,14 @@ impl Funcdata {
     /// `with_high_split` for the bank's `update_cover`.
     pub fn high_update_cover(&mut self, id: crate::context::HighVariableId) {
         self.with_high_split(|hb, ctx| hb.update_cover(id, ctx));
+    }
+
+    /// Mark dirty the HighVariables whose member Covers went stale since the
+    /// last call (the C++ `Varnode::setFlags` -> `high->coverDirty()` forward).
+    pub fn sync_cover_dirty_highs(&mut self) {
+        for h in self.vbank_mut().take_cover_dirty_highs() {
+            self.high_bank_mut().cover_dirty(h);
+        }
     }
 
     /// The HighVariable's name representative Varnode (C++

@@ -1,4 +1,7 @@
 // Shared integration-test executable. Process-sensitive tests stay separate.
+#[path = "cxx_allocation_operators.rs"]
+mod cxx_allocation_operators;
+
 #[path = "ppc32_computed_lr.rs"]
 mod ppc32_computed_lr;
 #[path = "mips_elf_selection.rs"]
@@ -57,6 +60,9 @@ mod assert_callee;
 mod assert_named_data;
 #[path = "stated_jump_targets.rs"]
 mod stated_jump_targets;
+
+#[path = "assert_import.rs"]
+mod assert_import;
 
 #[path = "array_member_bits.rs"]
 mod array_member_bits;
@@ -285,6 +291,8 @@ mod entry_ret_dispatch_cli;
 
 #[path = "entry_selectors.rs"]
 mod entry_selectors;
+#[path = "selection_files_cli.rs"]
+mod selection_files_cli;
 
 #[path = "explicit_branch_assertion_cli.rs"]
 mod explicit_branch_assertion_cli;
@@ -394,6 +402,8 @@ mod narrow_extension;
 
 #[path = "narrow_switch_labels.rs"]
 mod narrow_switch_labels;
+#[path = "narrow_compare_emission.rs"]
+mod narrow_compare_emission;
 #[path = "narrow_multiply_emission.rs"]
 mod narrow_multiply_emission;
 

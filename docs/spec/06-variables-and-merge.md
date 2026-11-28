@@ -204,6 +204,43 @@ as live nowhere and an overlapping merge is accepted. This bites the trim COPYs
 joined a high — the merged variable then holds two values that are live at the
 same instant.
 
+The forward also covers the ordinary data-flow edits. Setting or clearing a
+Varnode's definition and adding or removing one of its reads go through the
+`decompiler/crates/kuna-decomp/src/substrate/varnode.rs (VarnodeBank)`, which
+records the member's HighVariable; `funcdata.rs
+(Funcdata::sync_cover_dirty_highs)` marks those variables dirty before every
+intersection test (`merge.rs (MergeIntersect::update_high)`), the effect C++ gets
+from `Varnode::setFlags` notifying the high directly. A piece of a VariableGroup
+is tested with its *extended* Cover, the union of its own members and the members
+of every piece it overlaps, so rebuilding a piece first rebuilds the stale member
+Covers of those overlapping pieces too (`funcdata_merge.rs
+(Funcdata::refresh_high_cover)`), as reading `Varnode::getCover` would upstream.
+Without it a piece created late (a split byte copy, a field store) still held the
+empty Cover it was allocated with. A copy of a 4-byte slot made to keep its old
+value across byte writes into that slot was then merged back into the slot, and
+the printed C read the slot after the bytes had replaced it. The opposite error
+came from Covers left over from an edited function: a loop pointer kept a stale
+range across its own increment and printed through a temporary
+(`v1 = &p[1]; … p = v1;`).
+
+`merge.rs (Merge::inflate_test)`, the arm of `ActionMarkImplied` that asks
+whether an operand is overwritten while an expression waits to be printed at its
+use, reads the Cover of every instance of the operand's variable and of every
+piece overlapping it. It rebuilds each stale one first
+(`MergeContext::vn_refresh_cover`), as `Varnode::getCover` does upstream. A piece written after
+the merge settled still held its old range, so a wider write of a slot between
+an expression over two halfwords of that slot and the expression's use went
+unseen: the C printed `CONCAT22` of halfwords 3 and 1 after the write that
+replaced halfword 1.
+
+Overlapping pieces that hold the same bytes do not collide.
+`funcdata.rs (Funcdata::varnode_partial_copy_shadow)` recognizes a piece copied out
+of a whole and a whole assembled from its pieces. Its COPY-chain walk treats a
+SUBPIECE that keeps every byte of its input as a COPY, and a piece and a whole
+whose COPY chains start at the same Varnode are shadows of each other, so a call
+result stored to a stack struct and also split into its fields, or a revisited
+range rebuilt by `SUB88(CONCAT53(…),0)`, keeps one variable per slot.
+
 The call/store crossing test snapshots operation identities, block indices and
 order positions in `PcodeOpSet`. Those positions are valid only for the IR
 revision at which they were collected. `MergeIntersect::intersection` checks
@@ -2578,10 +2615,22 @@ The local holding a reach's base must also be able to hold it
 integers or unknowns, which ends at the next local and which the store writes by
 byte (`v1[i]`, `((char *)v5)[i]` for the `int4 v5[4]` an ARM word read gives), or,
 for a bounded reach, a float local; in both cases holding all of a bounded
-reach. Any other local is spoiled: a scalar has a fixed size an unbounded index
-can run past, and an array of other elements may not be indexable by byte at
-all (a 16-byte SSE zero-initializer at the base types the buffer `undefined16
-v1[2]`, printed as `v1[0][a0 % 0x18] = a1`, which does not compile). A float
+reach. A 1-, 2-, 4- or 8-byte integer or unknown scalar counts as a one-element
+array of its type. It is what the open range at the base becomes when the next
+local starts one element above it: an ARM handler that saves its second
+argument with `push {r0, r1, r4, lr}` above a 4-byte buffer it zeroes with a
+word store maps the buffer as `uint4 v5` below `uint4 v6`, and the walk writes
+it by byte (`v2 = &v5; ... *(uint1 *)v2 = *a0;`). An unbounded index can run
+past it as past any array that ends at the next local, and the slot check above
+withdraws the guard when anything a guard INDIRECT names lies there. Spoiling
+such a scalar would print the unguarded analysis, which reads the value stored
+before the indexed store in place of the bytes it writes: the zero folds into
+the byte read and deletes the test and call after the walk, and an x86-64
+`((char *)&v1)[a0] = a1` into an `unsigned short v1 = 0x1234` returns
+`0x1234`. Any other local is
+spoiled: an array of other elements may not be indexable by byte at all (a
+16-byte SSE zero-initializer at the base types the buffer `undefined16 v1[2]`,
+printed as `v1[0][a0 % 0x18] = a1`, which does not compile). A float
 piece is spoiled when no single local covers it, or when its local is read as
 an integer while a member of that variable is typed float
 (`kuna_storereach.rs (read_only_as_float)`): such a read prints as a cast,

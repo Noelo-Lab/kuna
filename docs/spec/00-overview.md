@@ -2427,6 +2427,34 @@ declaration is applied after discovery has had its say, because it is an asserti
 that outranks it. Durability is caller-carried — the `@file` form is the artifact,
 and kuna does not write boundaries back into the image.
 
+(kuna, issue #1978) **Selection lists from a file.** The selection flags take the same
+`@file` form, so a selection is not bounded by what fits in an argument vector: a
+selection of 300,000 addresses is a file, not 600,000 arguments. `--functions`,
+`--addr` and a raw image's `--entry`, in the parser that `decompile-all`,
+`decompile-project`, `decompile-graph` and `functions` share
+(`decompiler/crates/kuna-cli/src/decompile_all.rs (parse_args_with_filters)`), and
+`fid query --addr` read a value that starts with `@` through one reader
+(`decompiler/crates/kuna-cli/src/listfile.rs (ListReader)`). The format is the
+`--define-function` file format: one entry per line, `#` comments, blank lines
+skipped. A line is one whole entry, so a name may hold the spaces and commas the
+inline comma list splits on. In a name list a `#` opens a comment only at the start
+of a line or after a blank, because a name kuna prints can hold one (a Swift
+`vtable#2` thunk, a Rust v0 `{closure#0}`). An address line may also be a
+`--define-function` declaration, which selects its start, so a single boundaries
+file declares and selects.
+Repeated flags add up. `--functions` used to keep only its last occurrence, which a
+second list would have dropped without a word. The escapes keep every earlier value
+spellable. `@@` stands for a literal leading `@`, which a decorated MSVC name needs.
+`@-` is standard input, read once per command line. `kuna decompile`'s single target
+is forwarded to the shared parser with its `@` doubled, so a name stays a name there.
+An empty list is an error rather than an empty selection, because an empty `--addr`
+selection means the whole binary. The selection resolves one entry at a time, which
+is why an address lookup is a binary search of the cached, address-ordered inventory
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::find_entry_at)`)
+rather than a scan of a fresh copy of it. The copy cost every address the size of the
+whole inventory, about 40 ms per address on a 98,598-function library, so a list of
+that library's own entries took over an hour to resolve.
+
 (kuna, issue #1438) **A declaration the image does not map** is still honored:
 the entry enumerates, resolves by name and names its call sites, which is what a
 routine in a boot ROM or another module, called at a fixed address, needs. What
@@ -2478,6 +2506,7 @@ lowering) and applied by
 | `typedef <C declaration>` | `parse line` | P5 type-propagation |
 | `prototype <func> <C declaration>` | `map prototype` | P4 prototype-source |
 | `data <addr\|[space,addr]> <C typedeclaration>` | `map address` | P5 const-pointer |
+| `import <slot> <name>` | `map import` | P1 environment-binding |
 | `param [<func>::]<i> <storage> <C typedeclaration>` | `map param` | P4 prototype-source |
 | `return [<func>::]<storage> <C typedeclaration>` | `map return` | P4 prototype-source |
 | `comment [<func>::]<addr> <text>` | `comment instruction` | P9 external-refinement |
@@ -2556,7 +2585,7 @@ the caller never described; and the loader's analysis passes have already run ov
 the file image, so function discovery does not see a recovered layer — its
 functions are declared with `function`/`--define-function` in the same assertion
 file. **Program-scoped** directives (`function`, `typedef`, `prototype`,
-`data`) are applied right after the analysis commit
+`data`, `import`) are applied right after the analysis commit
 (`ConsoleProgram::set_assertions` + `assertions::apply_program_scoped`, called
 from `decompiler/crates/kuna-cli/src/decompile_all.rs (load_program)`), for the
 same reason a declared boundary is: an assertion outranks discovery.
@@ -3189,6 +3218,30 @@ any resolution of kuna's own, so the statement outranks a destination kuna
 would have recovered (the import a GOT-slot call loads). Two `callee`
 directives for one call site leave the later one planted; the same function
 reports the earlier one rejected.
+
+An `import` directive states what the loader would have read from an import
+table entry: the pointer word at `<slot>` holds the address of the external
+function `<name>`. It exists for an image whose table no longer says so. A
+protector that rebuilds the import directory keeps the program's slots and their
+references but drops their names (Themida lists one import per DLL); a program
+that fills a table from `GetProcAddress` or `dlsym`, or an image dumped from
+memory, has slots no table describes at all. The fact is committed in the
+loader's own model of an import slot
+(`decompiler/crates/kuna-console/src/engine.rs (ConsoleProgram::declare_import)`):
+the `externref` property is painted over the word, a `FunctionSymbol` named
+`<name>` is mapped at the slot (renaming one already there), the slot joins the
+import-slot set so the whole-binary inventory does not decompile it as a body,
+and the name's built-in libc signature is parked on the symbol as a declared
+function's is. `ActionDeindirect` then resolves any `CALLIND` whose target is
+the slot's contents through its `isPersist() && isExternalRef()` arm, exactly
+as it does for a slot the PE or Mach-O tables named, so native calls through the
+slot and the calls a devirtualized function makes through it (10, section 10.2)
+both print as calls to `<name>`. A data symbol already covering the slot keeps
+its name for the slot's own reads and writes; the property is ORed into it by
+`Database::kuna_add_range_property`, because upstream's `setAttribute` masks
+`externref` off (only an `ExternRefSymbol` carries it there). The script surface
+lowers the directive to the console command `map import <slot> <name>`
+(`kuna-console/src/ifacedecomp.rs (IfcMapImport)`), which calls the same method.
 
 A `call` (or `callreturn`) override carries one more fact with it: the RET-call
 chain it starts. `push <continuation>; push <target>; ret` is a call spelled
@@ -3875,7 +3928,14 @@ uses stable encounter order for equal-size entries, preserves the effect of the
 exact-size early break, and applies the original use-point validity test.
 Property, naming, container, and callee lookups first isolate the requested
 space, so register, stack, and other non-global varnodes do not scan mappings
-from unrelated spaces.
+from unrelated spaces. Every new varnode also asks the snapshot's property map
+and owned ranges about its storage
+(`decompiler/crates/kuna-decomp/src/substrate/kuna_spaceprops.rs (SpaceProps)`).
+The property map is ordered by space first, so a space holding none of its split
+points reads one value everywhere, that of the last split point below the space,
+and a space holding no owned range is owned nowhere; those answers are taken
+once per space, the first time it is asked about, and dropped if the property
+map is changed.
 
 The copy happens in exactly one place:
 `decompiler/crates/kuna-decomp/src/infra/architecture.rs (build_arch_handle)`,
@@ -4001,6 +4061,25 @@ flip. Restarts are refused outright during jump-table recovery
 (`is_jumptable_recovery_on`, same `apply`). The relocation is behavioral
 plumbing, not semantics: trigger, clear, re-read-P0, re-run are the upstream
 restart contract.
+
+A restarted pass starts from the state the first pass of a fresh drive starts
+from, so what a function prints does not depend on whether it restarted.
+`decompiler/crates/kuna-decomp/src/substrate/funcdata.rs (clear)` keeps what the
+drive seeded before the first pass (the Override store, a declared prototype,
+the attempt's withdrawn flags; the callee seeds `run_pipeline` takes again after
+the re-flow) and drops what the passes of one analysis hand to each other: the
+frame slots and stack records `restructure_varnode` collects, the stack objects
+`castobject` reconciles, the joined loop latches and the blocks they were placed
+in, the type-propagation plateau, the `condfold` give-up and the return notes
+kept for callers. The prototype store needs the drive. Upstream's store exists
+from construction; kuna attaches it late in every pass (`ActionOutputPrototype`),
+and `clear()` keeps it with its output cleared, so `run_pipeline` drops it after
+the re-flow unless the drive seeded one with a declared prototype. Before that, a
+restarted pass saw a store from its first action on, and every reader that asks
+whether the function has a prototype store yet answered as no fresh pass does:
+`returndup auto` read the cleared output as the returned register and split the
+shared epilogue of each unoptimized function that restarted to install a
+re-rolled switch.
 
 Two engine details are output-affecting and deliberately preserved
 (`decompiler/crates/kuna-decomp/src/infra/action.rs`): `Action::perform` is a
@@ -4167,7 +4246,9 @@ under `decompiler/crates/kuna-decomp/src` is arranged as `substrate` (the IR
 containers, §0.3), `infra` (scheduler, god object, drive — this chapter),
 `p0_knowledge` (§0.4), and `p1_partition` … `p9_emit`, which map 1:1 onto
 chapters 01–09 of this spec; the program-preparation tier is
-`decompiler/crates/kuna-analysis/src` (chapter 01). Execution order is §0.6's
+`decompiler/crates/kuna-analysis/src` (chapter 01). `deobf` is the
+deobfuscation plane (chapter [10](10-deobfuscation.md)): it is no phase, and
+holds the deobfuscators together with the hooks the phases call them at. Execution order is §0.6's
 tree — when you need to know *when* a pass runs, read
 `decompiler/crates/kuna-decomp/src/infra/universalaction.rs (universal_sched)`
 and search for the pass's constructor, never the folder.

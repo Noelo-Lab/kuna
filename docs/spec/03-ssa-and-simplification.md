@@ -140,6 +140,14 @@ the walk that finds the candidate element asks for the *predecessor* of the rang
 first, which answers both the "step back from `lower_bound`" and the "already at
 `begin()`" cases in one descent. Every varnode of every heritaged space is
 re-offered to this map on every pass, so it is the most-called map in the phase.
+Nearly every range offered is already held whole by an element, so `add` first
+asks two elements before any walk: the one it returned last (varnodes arrive in
+address order, so a run of versions of one register lands in it), and the one
+that starts exactly at the range's address. An element holds the range when the
+range starts at or after the element's start and ends inside it; the walk would
+find that element first and return it unchanged, so the answer is the same. The
+remembered element is forgotten whenever an element is erased (refinement) or
+the map is cleared, the only other changes to the map.
 
 **The simple case.** For each disjoint range, `heritage.rs (Heritage::collect)`
 partitions the range's varnodes into reads (free), writes (defined), and
@@ -157,7 +165,11 @@ MULTIEQUAL placement order and is therefore observable output — and
 input per in-edge at the head of every merge block. Renaming is the classic
 Cytron et al. dominator-tree stack walk
 (`heritage.rs (Heritage::rename_recurse)`): reads take the top of the
-per-address `VariableStack`, writes push, and the walk pops on exit. A read
+per-address `VariableStack`, writes push, and the walk pops on exit. The stacks
+are only ever looked up by address, never visited in order, so they live in a
+hash map rather than upstream's ordered map. The walk
+keeps an explicit stack of open blocks instead of recursing, since the dominator
+tree of a large function can be tens of thousands of blocks deep. A read
 whose stack is *empty* has no reaching definition — it is materialized as a
 formal **input varnode** of the function; this is how registers read before
 being written become parameters-in-waiting for phase 04. One carve-out: an
@@ -1066,7 +1078,34 @@ guard covers) is flagged the same way. GCC reads a spilled `int`'s low byte
 through `(fp+0x7fb)|3` on SPARC64; which byte depends on the pointer's
 runtime low bits, so it is an indexed access at the pointer's offset.
 Upstream stops at the OR: the LOAD gets no guard, the spill
-looks dead and is deleted, and the result reads a slot nothing wrote. A guard
+looks dead and is deleted, and the result reads a slot nothing wrote.
+**Spilled stack pointers** (always on, kuna): a path value written to a slot
+of the space that has no reader yet continues from every unlinked read of that
+slot (same offset and size), with the offset and traversal flag it had when it
+was written. gcc -O0 keeps `p = &a[0]` in a local and reloads it for each
+`p[i]`, and reads a `va_arg` through the `reg_save_area` pointer `va_start`
+stores in the `va_list`; Tigress pushes `&locals[k]` on its virtual stack and
+pops it for every access. On the space's first pass those reads are not yet linked to the write,
+so upstream stops at the spill and the LOAD through the reloaded pointer gets no
+guard. A slot written directly and read only through that pointer then has no
+reader, so the store is deleted, and so is any branch that guarded only such
+stores: the `if (a > 5) st[1] |= 0x78;` before an indexed loop over `st`, or
+the prologue's register saves a `va_arg` loop reads.
+A LOAD reached through a spill gets a guard marked `LoadGuard::through_spill`;
+a STORE does not, because the rerun after renaming finds it through the linked
+slot, as upstream does. In the pass that found it, a spill guard the value-set
+analysis left unbounded forces writes only below the lowest slot above its
+base that a stack pointer was spilled to
+(`heritage.rs (Heritage::spill_guard_maximum)`). That slot is another local, and
+forcing it would keep the spilled pointers alive as variables (the
+intermediate pointers of the `dupptr` datatest). In a devirtualized body only a
+slot written by a path that did not itself pass through a spill bounds the
+window (`Heritage::direct_spills`, `BodyPolicy::direct_spills`, chapter [10](10-deobfuscation.md)): its
+interpreter's operand-stack slots hold pointers and values in turn, the walk
+takes every read of such a slot for the pointer, and so every slot the
+program's values are copied into would count as a spill. Later passes force the guard's
+whole window (`heritage.rs (Heritage::end_spill_guards)`), as for the guard
+upstream's rerun records. A guard
 is born covering the **entire space**
 (`LoadGuard::set`: minimum 0, maximum the space's highest offset). A STORE
 whose pointer is still a free varnode cannot be classified yet: it is
@@ -1288,6 +1327,13 @@ range in front of it, frame slots included, with no budget and with
 what upstream always does; it is not kuna's default because on a frame slot the
 INDIRECT chain survives into the emitted C as write-backs of values a slot
 already holds. The global LOAD guard runs at `full` too.
+
+A devirtualized body's stack ranges get this guard at every level, in place of
+the indexed and spilled-pointer store windows below
+(`decompiler/crates/kuna-decomp/src/deobf/kuna_body.rs (guards_every_store)`,
+`BodyPolicy::guard_stack_stores`, chapter [10](10-deobfuscation.md)): its frame is rebuilt from the
+emulated interpreter, which stores into it through stack addresses it reloads
+from its own operand stack.
 
 At `off` none of them runs, which is what kuna shipped before the option.
 
@@ -4081,6 +4127,89 @@ into it supplied that second name, so the repetition survived.
 Always on. Upstream Ghidra's rendering prints the same `undefined1 auVarN [16]`
 blobs — this is a deliberate readability divergence, not a fidelity fix, and it
 is inert on every function with no wide multiply.
+
+**Devirtualized residue** (rides on the `devirtualize` technique of option `deobfuscate`, no option of its own) —
+`decompiler/crates/kuna-decomp/src/deobf/kuna_residuerules.rs
+(RuleResidueLogic)`, `(RuleResidueArith)`, `(RuleResiduePiece)` and
+`(RuleResidueCarry)`, four oppool1 rules whose first test is
+the body's policy (`BodyPolicy::residue_rules`), set only for a
+body the devirtualizer replaced with its synthetic program (chapter [10](10-deobfuscation.md), §10.2). Every other function, and so the whole datatest corpus, keeps
+its output byte for byte, and the gate costs one emptiness check per visited
+op. The rules clean up what a VMProtect interpreter leaves after
+devirtualization: its handlers build every logic operation from NOR gates
+(`NOT a` is `NOR(a, a)`, read from two separate VM stack slots, so the two
+operands are equal values computed by distinct ops), write `x - y` as
+`~(~x + y)`, and split a value across two stack cells that heritage then joins
+with a PIECE. Each rewrite is an exact bitvector identity and is taken only when
+the result is strictly smaller than the expression it replaces, so the rules
+reach a fixpoint with each other and with the upstream rules.
+
+`RuleResidueLogic` fires on INT_AND, INT_OR, INT_XOR and INT_NEGATE, and on an
+INT_ADD of two non-constant operands, at least one of them a logic operator,
+whose non-zero masks are disjoint (no carry can occur, so the sum is an OR — the
+way a flag-merging handler joins two masked halves of a word). It gathers the
+tree of such operators below the root, at most 64 nodes, also through a
+truncation (SUBPIECE at offset 0) or a zero extension of one: both commute
+with the bitwise operators provided a NOT under an extension is taken at the
+narrower width, and each leaf remembers how many of its low bytes reach the
+root. Everything else is a leaf, and two leaves are the same leaf when they are
+the same constant, or reach the root through the same width and compute the
+same value through pure operators up to five levels deep. With at most six non-constant leaves it evaluates the tree on each
+assignment of all-zeros or all-ones to every leaf, each leaf restricted to its
+non-zero mask and constants taken as they are. Because the operators act on
+each bit independently, these assignments cover every input exactly. Bit
+positions are then grouped by the column of results they produce: a group that
+is always zero or always one is a constant mask, and every other group is a
+boolean function of the at most three leaves it depends on (a group needing more
+declines the rule). That function is replaced by its minimal formula from a
+table of the cheapest NOT/AND/OR/XOR formula of every function of one, two or
+three variables, built once by enumerating formulas in order of size. The
+candidates are a group's formula alone, masked to the non-constant bits and
+OR'ed with the constant ones, the XOR of a formula with the mask of a
+complementary group, and the OR of every group's formula with or without its
+mask. Each candidate is checked on every assignment and the cheapest correct
+one replaces the root when it costs less than the tree (one per operator, one
+and a half per merging addition, a half per truncation or extension a leaf
+needs or the tree passes through, nothing for an operator over constants). This
+is what turns `~(~v & ~c) & ~(v & ~(~c | ~c))` into `v ^ c`, `~(~x & ~x & 0xffff)
+& 0x815` into `x & 0x815`, and the tested bit of a re-assembled flags word into
+the one flag term that can set it.
+
+`RuleResidueArith` fires on INT_NEGATE, INT_ADD, INT_SUB, INT_MULT by a constant
+and INT_2COMP. It reads the tree of those operators below the root (at most 64)
+as a linear form over the leaves modulo the root's width, with `~x` taken as
+`-x - 1`; equal leaves (the same test as above) cancel. It rewrites only a tree
+containing a NOT whose linear form is cheaper: one operation per term with a
+coefficient other than one, one addition per further term and one for a nonzero
+constant, or a single NOT when the form is exactly `-x - 1`. The result is built
+in the canonical shape the upstream rules use (`x + y * -1`), so `~(~x + y)`
+prints `x - y`, `~-~r + 0xc65cfe5f` prints `0xc65cfe5d - r`, and `~x + 1` prints
+`-x`, while `~x + 5` (no cheaper) is left alone.
+
+`RuleResiduePiece` fires on PIECE. It describes each half as a run of bits of a
+deeper value, following SUBPIECE, logical right shifts by a constant, ZEXT and
+COPY (a SUBPIECE is followed only when the run stays inside it or the
+SUBPIECE reaches the top of its input, so zero fill agrees). When the high half
+is the run directly above the low half's run in the same value, the PIECE
+becomes a COPY of an existing varnode holding exactly the joined run (one of the
+intermediates along either chain), otherwise a COPY, SUBPIECE, logical right
+shift, or a shift followed by a truncation or zero extension of that value. The
+hash loop of a VMProtect "ultra" body reads `v ^= v >> 3` again only after the
+two halves of `v >> 3`, spilled to the 6-byte and 2-byte VM stack cells, are
+recognised as one shift.
+
+`RuleResidueCarry` fires on INT_CARRY and INT_SCARRY. An addition whose operands
+share no set bit (disjoint non-zero masks, or one operand the NOT of a value
+equal to the other) carries out of no position, so neither the unsigned carry
+nor the signed overflow can be set, and the op becomes the constant 0. The
+flags word VMProtect pushes after its NOR-gate NOT carries `CARRY4(~v, v)` and
+`SCARRY4(~v, v)` terms that this removes, after which the logic rule reduces the
+masked word to the flags that really vary. Any other unsigned carry of an
+addition with a NOT operand, `CARRY(x, ~y)` in either order, becomes the
+comparison `y < x`: `x + ~y` is `x - y - 1` modulo the width, which wraps past
+the top exactly when `x` exceeds `y`. That is how an interpreter computes the
+carry for `jb`/`jae`, so a loop test the native code wrote as `cmp i,n; jae`
+prints as `n <= i` instead of `!CARRY4(n,~i)`.
 
 ## 3.6 Early passes
 

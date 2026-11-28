@@ -2603,13 +2603,41 @@ the case targets.
    proof. Each selector value is then emulated in order with its LOADs
    collected; the first one that reads a byte of the map ends the table, and
    the earlier values keep their rows. A table whose first row already lies
-   in the map is left alone. The `selector_domain.S` fixture places a
-   three-row table directly before its byte map, as MSVC lays out its
-   two-stage tables; with a 70,000-entry or writable map, rows 3 to 255 were
-   read from the map and from the bytes after it, and flow left for the
-   addresses they named. Only the selector's own map ends the table: a map
-   placed before the table, another switch's map after it, or padding between
-   table and map is still read as rows.
+   in the map is left alone. When no guard bounds any upstream index, the
+   map's extent is unknown but its start is not:
+   `kuna_bytemaprows.rs (map_base)` takes the constants in the selector LOAD's
+   address (their sum, when the rest of the address is one term), and the map
+   runs up from there. A row read at or past that base is read from the map,
+   as before, unless the compiler folded the index's normalization into the
+   constant (`map - 2 + tag`, or gcc's `movzbl cls-97(%rdi)`), which puts the
+   table's last real rows past the base. So a row there ends the table only
+   when it lands outside the function's own code (between its entry and the
+   next known entry, in its section, `kuna_bytemaprows.rs (own_code)`) and
+   every byte it reads is a selector value below its own
+   (`kuna_bytemaprows.rs (map_bytes)`), as each map byte names a row already
+   kept. A real row that lands outside the function, such as a case gcc moves
+   to the function's split-off `.cold` part below its entry, holds an address
+   or an offset instead and is kept: with the destination test alone, gcc
+   -O2's `switch (cls[c - 'a'])` with an unreachable default ended at its
+   first cold case and lost the cases after it. A row that comes back below
+   the base after one past it leaves the table alone. The cut also runs after
+   a proven domain: an index whose range only its width bounds (a byte tag
+   read straight from memory) reads a shorter map's following bytes as map
+   values, and their rows lie in the map. Before this, a two-stage table whose
+   bounds check the guard analysis did not find (in the stage fixture the
+   check is repeated on both arms of two branches before the dispatch) kept
+   all 256 values of the map byte. In a 34 MB image the rows read from the map
+   named code all over it, mostly below the function where the run-on cut
+   keeps them, and the flow decoded that code for up to 90 seconds, or until
+   the budget stopped it (#1157). The `kuna-bytemap-noguard.xml` stage pins
+   the plain base, the folded base, the byte tag and a folded table with a row
+   in a split-off part. The `selector_domain.S` fixture places a three-row
+   table directly before its byte map, as MSVC lays out its two-stage tables;
+   with a 70,000-entry or writable map, rows 3 to 255 were read from the map
+   and from the bytes after it, and flow left for the addresses they named.
+   Only the selector's own map ends the table: a map placed before the table,
+   another switch's map after it, or padding between table and map is still
+   read as rows.
    **Stranded rows.** The smallest range can belong to a variable in front of
    a map: in `switch (map[mode])` one guard bounds `mode` and a second bounds
    `map[mode] - 8` to the table, and `mode`'s range is the smaller. A value of
@@ -4596,6 +4624,17 @@ traps sit behind a `w0` compare and an `x0` bit test and stay, and plain-AArch64
 bytechunks of the real check, the same compare, a `mov x30` forgery in the
 guard block and in an earlier block, an `x30` load from a non-frame address, and
 a guard that traps when the bits agree).
+
+## 2.11 Recovered bodies
+
+Before the `FlowInfo` is built, `decompile_drive.rs (generate_flow_once)` asks
+the deobfuscation plane whether the function is lifted from a recovered body
+instead of its bytes, and after the plain flow `generate_flow` asks it once
+more (chapter [10](10-deobfuscation.md), §10.1). When a body is recovered, the
+flow follower lifts its overlay through the ordinary translator calls, its
+mapped-byte checks accept overlay addresses, and the instruction bound is at
+least 4,000,000. VM devirtualization (the `devirtualize` technique of `option deobfuscate`) is the plane's first
+deobfuscator (§10.2).
 
 ## Darwin AArch64 stack probes
 

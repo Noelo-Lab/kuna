@@ -1432,6 +1432,8 @@ impl ConsoleProgram {
     /// Deliberately conservative: it only ever returns an entry the enumeration
     /// already knows, so an address that is not a discovered function start is
     /// still `None` and the caller keeps decompiling exactly where it was asked.
+    /// The cached inventory is address-ordered with one record per entry, so this
+    /// is a binary search, not a copy of the list per address (issue #1978).
     pub fn find_entry_at(&self, vma: u64) -> Option<FunctionEntry> {
         let vma = if self.is_declared_entry(vma) { vma } else {
             self.function_address_aliases.get(&vma).copied().unwrap_or(vma)
@@ -1440,9 +1442,11 @@ impl ConsoleProgram {
         if !self.anonymous_entries.is_empty() {
             return self.find_compact_entry_at(want);
         }
-        self.function_entries_canonical()
-            .into_iter()
-            .find(|e| e.addr.get_offset() == want)
+        let entries = self.function_entries_shared();
+        entries
+            .binary_search_by_key(&want, |e| e.addr.get_offset())
+            .ok()
+            .map(|at| entries[at].clone())
     }
 
     /// The address `selector` resolves to: a mapped numeric address with its
@@ -2877,6 +2881,46 @@ impl ConsoleProgram {
             self.seed_declared_libc_prototype(&name, &addr);
         }
         Ok(name)
+    }
+
+    /// Declare the pointer word at `slot` an import of `name` -- what an import
+    /// table entry tells the loader, stated for an image whose table does not.
+    ///
+    /// The loader's own model of an import slot: a `FunctionSymbol` named `name`
+    /// at the slot, `externref` over the word (so `ActionDeindirect` binds a call
+    /// through it to that symbol), and the slot recorded as a pointer word rather
+    /// than a function body. A symbol already at the slot is renamed; the
+    /// built-in signature for `name` is parked there as `declare_function` does.
+    pub fn declare_import(&mut self, slot: Address, name: &str) -> KunaResult<String> {
+        let _load = self.arch().load_scope();
+        let Some(space) = slot.get_space().cloned() else {
+            return Err(KunaError::lowlevel("import slot has no address space"));
+        };
+        let first = slot.get_offset();
+        let ptr = self.arch().data_org().0 as u64;
+        let end = first.saturating_add(ptr);
+        let flag = kuna_decomp::varnode::varnode_flags::externref;
+        self.arch_mut().symboltab.set_property_range(flag, &slot, &Address::new(Rc::clone(&space), end));
+        crate::assertions::repaint_covered_symbols(self, &space, first, end, flag);
+        let type_code = self.arch().types().get_type_code()?;
+        let min_size = self.arch().min_funcsymbol_size;
+        let num_spaces = self.arch().manage().num_spaces() as int4;
+        let arch = self.arch_mut();
+        let (scope, basename) =
+            arch.symboltab.find_create_scope_from_symbol_name(name, "::", None, num_spaces)?;
+        let sym = match arch.symboltab.find_function_across_scopes(&slot) {
+            Some((sym, _)) => {
+                arch.symboltab.rename_symbol(sym, &basename)?;
+                sym
+            }
+            None => arch.symboltab.add_function(scope, &slot, &basename, min_size, type_code)?,
+        };
+        install_named_call_fixup(arch, sym, &basename);
+        self.import_slots.insert(first, end);
+        self.register_symbol(name, slot.clone());
+        self.declared_revision = next_revision();
+        self.seed_declared_libc_prototype(name, &slot);
+        Ok(name.to_string())
     }
 
     /// Ensure a `FunctionSymbol` exists at `addr` without asserting that the

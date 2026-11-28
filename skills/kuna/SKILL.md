@@ -38,7 +38,8 @@ For a few dozen short functions, `kuna decompile-all ./challenge` is manageable 
 read directly; use a project when assembly or repeated navigation is needed.
 
 Select known targets before decompiling: project export accepts `--functions name1,name2`
-or repeatable `--addr 0x401000`. `--filter REGEX` and `--reachable-from main` are only
+or repeatable `--addr 0x401000`, and either takes `@FILE` (one entry per line, `#` comments)
+for a long list. `--filter REGEX` and `--reachable-from main` are only
 for `functions` and `decompile-all`. Static reachability can miss runtime dispatch.
 
 Use `decompile` for a function needed immediately, a failed function, or an option comparison:
@@ -114,6 +115,33 @@ line and pass `--assert @FILE`. For `decompile-all --jobs N` with multiple
 workers, every directive must be a `jumptable`. Use `--jobs 1` for a mixed
 file. For project exports with assertions, use serial, non-streaming mode.
 See `kuna docs cli` for a runnable example and address conventions.
+
+## Read VM-protected functions
+
+Kuna devirtualizes by default: a function protected by a VM-based obfuscator (VMProtect,
+Themida, Tigress Virtualize) prints as the program the VM runs, not as its interpreter.
+Find these by their header, `// warn: devirtualize: VM-protected function recovered (...)`,
+or in `--json` by a warning whose `kind` is `devirtualize`. The header also states what
+the recovery assumed, such as bytecode in writable memory being what the file holds.
+
+- `devirtualize: incomplete: ...` in the header means the recovery was cut short or still
+  holds protector state. Treat that body as a lead, not as the program.
+- A recovered body is not the function's instructions: `kuna disassemble` shows the stub
+  or interpreter and cannot confirm it. A body can also be wrong with no warning (lost
+  stack-array accesses are the known case), so confirm answer-critical logic by execution.
+- `--deobfuscate off` prints the protected code as it is, for studying the VM itself.
+- A recovery can take minutes and several GiB for one function, and `--max-fn-seconds`
+  does not count it (`--max-fn-memory` stops it). In a `--jobs` run a slow one can end as
+  a stalled-worker `error`: decompile that function alone with `kuna decompile`. For a
+  quick first export of a protected binary pass `--deobfuscate off`.
+- `--deobfuscate devirtualize` runs the technique on the requested function without
+  waiting for its detection. Try it with `kuna decompile` on a function that still prints
+  as a stub or dispatch loop.
+- `--assert 'import SLOT NAME'` names a call through an import slot whose name the
+  protector stripped.
+
+`--deobfuscate LIST` takes `auto` (the default), `off`, or technique names separated by
+commas, wherever `--option` is accepted. `devirtualize` is the one technique so far.
 
 ## Follow challenge clues and verify critical operations
 

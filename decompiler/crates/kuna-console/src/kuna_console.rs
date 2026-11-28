@@ -177,6 +177,9 @@ pub fn kuna_live_value(conf: &Architecture, option: &str) -> Option<Cow<'static,
         let choice = kuna_decomp::kuna_kernelcacheboot::KernelcacheBoot::in_force();
         return Some(Cow::Owned(choice.as_str().into_owned()));
     }
+    if option == kuna_decomp::kuna_deobf::Selection::NAME {
+        return Some(Cow::Owned(conf.deobfuscate.value()));
+    }
     Some(Cow::Borrowed(match option {
         "bytearrayc" => on_off(conf.print().options.bytearray_c),
         "partialaccess" => on_off(conf.print().options.partial_access),
@@ -1654,6 +1657,8 @@ pub fn register_kuna_commands(status: &mut IfaceStatus) {
         Box::new(crate::ifacedecomp::IfcOverrideIndirect),
         &["override", "indirect"],
     );
+    // (kuna) Nor this: an import a packer stripped from the import table.
+    status.register_com(Box::new(crate::ifacedecomp::IfcMapImport), &["map", "import"]);
 }
 
 /// Join tokens with single spaces — C++ `joinTokens(tokens,0,tokens.size())`.

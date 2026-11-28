@@ -1,0 +1,61 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    Kuna devirtualize: P2 flow-follow, option deobfuscate (default auto).
+    The script loads the synthetic static x86-64 ELF
+    decompiler/crates/kuna-analysis/tests/fixtures/devirt_vm_x86_64
+    (generator devirt_vm_x86_64.py): `func` is a protector's entry stub,
+    `push 0x5a17; jmp vm_entry`, into a stack-machine interpreter that has
+    its own 64 KiB executable section .vmp0.  Its handlers are dispatched by
+    `push [handlers+op*8]; ret` and its bytecode sits in a high-entropy block,
+    encoding `return arg0 == 0 ? 7 : arg0 + 5` with a JZ that selects the
+    next virtual PC by cmov.
+
+    Pass 1 (`option deobfuscate off`) is the bug: the stub's jump into the
+    interpreter is all the flow follower sees, and `func` decompiles to an
+    empty body (assert #1) with no trace of the protected program.
+    Pass 2 (the default, auto) detects the jump into the foreign VM section,
+    explores the interpreter keyed by native address and virtual PC, forks on
+    the cmov-selected virtual PC, and lifts the recovered program from the
+    synthetic p-code overlay: the header warning (assert #2), the virtual
+    argument as a parameter (#3), the virtual branch as a test of it (#4)
+    and both virtual returns (#5, #6).
+    Pass 3 names the technique (`option deobfuscate devirtualize`), which
+    runs it on the function without waiting for its detection: the same
+    program is recovered, so #2-#6 each match twice.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">
+c3
+</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/devirt_vm_x86_64</com>
+  <com>option deobfuscate off</com>
+  <com>read symbols</com>
+  <com>load function func</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/devirt_vm_x86_64</com>
+  <com>read symbols</com>
+  <com>load function func</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file decompiler/crates/kuna-analysis/tests/fixtures/devirt_vm_x86_64</com>
+  <com>option deobfuscate devirtualize</com>
+  <com>read symbols</com>
+  <com>load function func</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="DEVIRTUALIZE #1: off, the stub decompiles to an empty body" min="1" max="1">void func\(void\)</stringmatch>
+<stringmatch name="DEVIRTUALIZE #2: auto and named, the function is devirtualized" min="2" max="2">devirtualize: VM-protected function recovered</stringmatch>
+<stringmatch name="DEVIRTUALIZE #3: auto and named, the virtual argument becomes a parameter" min="2" max="2">func\(int8 a0\)</stringmatch>
+<stringmatch name="DEVIRTUALIZE #4: auto and named, the virtual JZ is a test of the argument" min="2" max="2">if \(!a0\)</stringmatch>
+<stringmatch name="DEVIRTUALIZE #5: auto and named, the taken arm returns its constant" min="2" max="2">return 7;</stringmatch>
+<stringmatch name="DEVIRTUALIZE #6: auto and named, the fall-through arm returns the virtual ADD" min="2" max="2">return a0 \+ 5;</stringmatch>
+</decompilertest>

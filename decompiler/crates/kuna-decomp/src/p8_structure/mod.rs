@@ -4,7 +4,7 @@
 //! `lib.rs` so public paths (`kuna_decomp::<module>`) are unchanged.
 
 pub mod blockaction;
-mod kuna_domindex;
+mod kuna_compgraph;
 pub mod kuna_clonephiorder;
 pub mod kuna_condfold;
 pub mod kuna_condstmts;
@@ -27,6 +27,7 @@ pub mod kuna_loopbreak_recovery;
 pub mod kuna_loopcontinue;
 pub mod kuna_loopcond;
 pub mod kuna_looptest;
+pub mod kuna_o0gotos;
 pub mod kuna_o0jumps;
 pub mod kuna_o0returns;
 pub mod kuna_o0select;

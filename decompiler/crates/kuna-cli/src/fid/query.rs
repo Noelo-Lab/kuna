@@ -9,7 +9,7 @@ use object::Object;
 use serde_json::json;
 
 fn usage() {
-    eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json\n--json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; addresses are hex (0x optional); single_candidate is an unverified name");
+    eprintln!("usage: kuna fid query <binary> --db <file.fid> --addr <address|@FILE> [--addr <address|@FILE> ...] --json\n--addr @FILE reads one address per line (# comments); --json emits {{binary, database, address, status, ...}} or {{binary, database, queries, ...}} for multiple addresses; addresses are hex (0x optional); single_candidate is an unverified name");
 }
 
 pub(super) fn run(args: &[String]) -> i32 {
@@ -49,6 +49,7 @@ fn parse_args(args: &[String]) -> Result<(&str, &str, Vec<u64>), String> {
     let mut binary = None;
     let mut db_path = None;
     let mut addresses = Vec::new();
+    let mut lists = crate::listfile::ListReader::default();
     let mut json_output = false;
     let mut i = 0;
     while i < args.len() {
@@ -64,7 +65,9 @@ fn parse_args(args: &[String]) -> Result<(&str, &str, Vec<u64>), String> {
                         return Err("duplicate --db".into());
                     }
                 } else {
-                    addresses.push(parse_address(value)?);
+                    addresses.extend(lists.read(opt, value)?.parse_each(opt, parse_address, |entry| {
+                        parse_address(entry).or_else(|e| crate::listfile::declared_start(entry).ok_or(e))
+                    })?);
                 }
             }
             "--json" => json_output = true,

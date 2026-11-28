@@ -1840,6 +1840,10 @@ impl LoadImage for ObjectLoadImage {
         self.segment_info.iter().map(|s| (s.vma, s.size, s.flags)).collect()
     }
 
+    fn kuna_section_names(&self) -> Vec<(u64, u64, String)> {
+        self.section_metadata().iter().map(|s| (s.vma, s.size, s.name.clone())).collect()
+    }
+
     fn inaccessible_segments(&self) -> Vec<(u64, u64)> {
         self.inaccessible_segments.clone()
     }
