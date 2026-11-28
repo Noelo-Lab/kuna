@@ -969,7 +969,16 @@ an unprototyped one does, unless it is a `floatbits` helper whose float is only
 the bits of its float-register input (chapter 05). Such a helper's readers keep
 those bits as integers (`fbits(fb_negf(a))`), and the read the guard connected
 would make `voidret` withdraw the float the helper's own body proves, printing
-`int fb_negf(int a0)` for a function the convention calls with a float. It used to be left out, for fear that a caller dropping
+`int fb_negf(int a0)` for a function the convention calls with a float. Nor
+does a callee whose decoded body proves it never writes the slot (chapter 04
+`calleepreserves`, the same evidence that keeps a killed register): the
+caller's own value is still there after the call. gcc's `-fipa-ra` keeps a
+`double` argument in `xmm0` across a call to `int bump(int *p)`, which never
+touches it, and `double keep_int(double x, int *p) { int k = bump(p); return x
+* x + k; }` printed `return v2 * v2 + (double)v1;` with `v2` never assigned and
+its parameter `x` gone; it prints `return a0 * a0 + (double)v1;` again, and
+`keep_void`, whose callee returns nothing and also leaves `xmm0` alone, no
+longer prints `v1 = (double)flip(a0);`. It used to be left out, for fear that a caller dropping
 the output trial would carry the pre-call `xmm0` across the call; the carry was
 the revisit gap above, now closed for every call, and leaving such callees out
 only left their callers reading a variable nothing assigns: SLib

@@ -179,20 +179,24 @@ pub(crate) fn auto_register(
 /// for takes it as an unprototyped one does, except a `floatbits` helper whose
 /// float is only the bits of its float-register input: its readers keep those
 /// bits as integers, and a read the guard connected would withdraw the float
-/// the helper's own body proves (`voidret`).
+/// the helper's own body proves (`voidret`). Nor does a callee whose decoded
+/// body never writes the slot (`calleepreserves`): the caller's own value is
+/// still there after the call, as gcc's `-fipa-ra` keeps a double in `xmm0`
+/// across a call to `int bump(int *)`.
 pub(crate) fn auto_float_output(
     fd: &crate::funcdata::Funcdata,
     fc: &crate::fspec::FuncCallSpecs,
     addr: &kuna_base::address::Address,
     size: int4,
 ) -> bool {
-    if float_output_slot(fc.proto(), addr, size).is_none() {
+    let Some((slot, slot_size)) = float_output_slot(fc.proto(), addr, size) else {
         return false;
-    }
+    };
     let entry = fc.get_entry_address();
     entry
         .get_space()
         .is_none_or(|space| !fd.kuna_callee_float_bits((space.get_index(), entry.get_offset())))
+        && !crate::p4_calls::kuna_calleepreserves::callee_preserves_range(fd, fc, &slot, slot_size)
 }
 
 /// The model's first float return slot of `proto`, when the output is not

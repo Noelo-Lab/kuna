@@ -1,0 +1,42 @@
+{
+  "schema": "re-probe/1",
+  "probe_id": "p-738077c4bce5",
+  "kind": "cli",
+  "cmd": [
+    "{{KUNA}}",
+    "decompile-all",
+    "{{BIN}}"
+  ],
+  "cwd": "{{WORK}}",
+  "env": {
+    "SLEIGHHOME": "{{SPECS}}"
+  },
+  "stdin": null,
+  "timeout_s": 120,
+  "repeat": 1,
+  "target": {
+    "binary_rel": "decompiler/crates/kuna-analysis/tests/fixtures/floatkeep_gcc_O2_avx2",
+    "binary_sha256": "d94f3f000bf68f84e25c8927a9a9fe64758cded91ccbe26188b65446234dbb3d",
+    "binary_size": 16128,
+    "binary_source": "in-repo",
+    "in_repo_path": "decompiler/crates/kuna-analysis/tests/fixtures/floatkeep_gcc_O2_avx2",
+    "selector": "keep_int",
+    "selector_kind": "name"
+  },
+  "expect": {
+    "exit_code": {
+      "eq": 0
+    },
+    "stdout_matches": [
+      "^double keep_int\\(double a0,",
+      "^  return a0 \\* a0 \\+ \\(double\\)v1;$",
+      "^double keep_void\\(double a0,",
+      "^  return a0 \\* a0;$"
+    ],
+    "stdout_absent": [
+      "^  return v[0-9]+ \\* v[0-9]+",
+      "= \\(double\\)flip\\("
+    ]
+  },
+  "notes": "decompile-all states each callee first. gcc -fipa-ra keeps the double argument in xmm0 across calls to bump and flip, which never write it, and VEX code heritages all of zmm0. The float return guard no longer gives such a call xmm0's float slot. Before: double keep_int(int *a0) { v1 = bump(a0); return v2 * v2 + (double)v1; } with v2 never assigned, and v1 = (double)flip(a0) from a void callee."
+}
