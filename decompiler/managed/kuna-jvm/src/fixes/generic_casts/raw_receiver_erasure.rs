@@ -10,9 +10,11 @@ use crate::exprent::Exprent;
 use crate::field_exprent::FieldExprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::fixes::generic_casts;
+use crate::fixes::lambdas::raw_target_cast;
 use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationType};
-use crate::kuna_static_types::{field_declared, formals, is_bare_var, is_raw_type, param_type};
+use crate::kuna_static_types::{field_declared, formals, is_bare_var, is_raw_type, param_type, supertype_args};
+use crate::rt::JHashMap;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
@@ -50,6 +52,78 @@ pub fn has_raw_receiver(inv: InvocationExprent) -> bool {
         return false;
     }
     inv.get_instance().is_some_and(is_raw)
+}
+
+/// Whether an argument of `inv` has a raw type, as the decompiled program
+/// declares it, where the parameter's type, with the receiver's declared
+/// type arguments for its class's type variables, has type arguments other
+/// than unbounded wildcards: the method is then applicable only by
+/// unchecked conversion, and the call's result type is the erasure of the
+/// declared one (JLS 15.12.2.6), as javac types it. A cast argument is
+/// written with its parameter's type, so it is not taken as raw.
+pub fn has_unchecked_argument(inv: InvocationExprent) -> bool {
+    if inv.0.is_kotlin() || inv.get_functype() == InvocationType::Init {
+        return false;
+    }
+    let Some(desc) = desc_of(inv) else {
+        return false;
+    };
+    let Some(sig) = desc.get_signature() else {
+        return false;
+    };
+    let params = sig.parameter_types();
+    let args = inv.get_lst_parameters();
+    if params.len() != args.len() {
+        return false;
+    }
+    let mut subst: Option<JHashMap<VarType, Option<VarType>>> = None;
+    for (p, a) in params.iter().zip(args.iter()) {
+        let var = p.type_ == CodeType::Genvar && p.array_dim == 0;
+        let cast = a.try_as_function().is_some_and(|f| f.get_func_type() == FunctionType::Cast);
+        if cast || !(var || parameterized(p)) || !is_raw(a) {
+            continue;
+        }
+        if !var {
+            return true;
+        }
+        let map = subst.get_or_insert_with(|| receiver_substitution(inv, desc).unwrap_or_default());
+        if map.contains_key(p) && p.remap(map).is_some_and(|t| parameterized(&t)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `t` is a class type with a type argument other than an unbounded
+/// wildcard.
+fn parameterized(t: &VarType) -> bool {
+    t.type_ == CodeType::Object
+        && t.array_dim == 0
+        && t.try_as_generic().is_some_and(|g| {
+            g.get_arguments().iter().any(|a| {
+                a.as_ref().is_some_and(|a| a.try_as_generic().is_none_or(|ag| ag.get_wildcard() != GenericType::WILDCARD_UNBOUND))
+            })
+        })
+}
+
+/// The type variables of the class declaring `desc` mapped to the type
+/// arguments the declared type of `inv`'s receiver gives that class.
+fn receiver_substitution(inv: InvocationExprent, desc: StructMethod) -> Option<JHashMap<VarType, Option<VarType>>> {
+    if desc.has_modifier(CodeConstants::ACC_STATIC) {
+        return None;
+    }
+    let receiver = declared_type(inv.get_instance()?)?;
+    let owner = desc.get_class_qualified_name();
+    let class_formals = formals(&owner)?;
+    let args = supertype_args(&receiver, &owner)?;
+    if args.len() != class_formals.len() {
+        return None;
+    }
+    let mut map = JHashMap::new();
+    for (f, a) in class_formals.into_iter().zip(args) {
+        map.put(f, Some(a?));
+    }
+    Some(map)
 }
 
 /// Whether `field` is an instance field read through a receiver whose static
@@ -116,7 +190,8 @@ fn declared_type(e: Exprent) -> Option<VarType> {
 
 /// The type `var` is declared with: a parameter's from its method's
 /// signature or descriptor, a local's from the local variable table, or the
-/// variable's own type in a method compiled without one. A variable of an
+/// variable's own type in a method compiled without one; a lambda's
+/// parameter where `raw_target_cast` declares it. A variable of an
 /// enclosing method, which a lambda or a nested class captures, is not
 /// known.
 fn declared_var_type(var: VarExprent) -> Option<VarType> {
@@ -133,7 +208,11 @@ fn declared_var_type(var: VarExprent) -> Option<VarType> {
     }
     let method = processor.get_method();
     if let Some(param) = param_type(var) {
-        return param.filter(|_| !method.get_name().starts_with("lambda$"));
+        if method.get_name().starts_with("lambda$") {
+            let slot = processor.get_var_original_index(var.get_index()).unwrap_or(var.get_index());
+            return raw_target_cast::declared_parameter(method, slot);
+        }
+        return param;
     }
     if var.get_lvt().is_some() {
         return Some(var.get_inferred_expr_type(None));

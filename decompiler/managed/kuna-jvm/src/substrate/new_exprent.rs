@@ -55,6 +55,9 @@ pub struct NewExprentData {
     /// kuna fix `explicit_lambda_parameters`: the lambda declares its
     /// parameters' types.
     pub explicit_lambda_params: bool,
+    /// kuna fix `raw_target_cast`: the lambda is written for a type that
+    /// gives its own parameters their erased types.
+    pub kuna_erased_params: bool,
 }
 
 java_subclass!(pub NewExprent: Exprent, ExprentKind::New(NewExprentData),
@@ -153,6 +156,7 @@ impl NewExprent {
                 inferred_lambda_type: None,
                 outer_checked: false,
                 explicit_lambda_params: false,
+                kuna_erased_params: false,
             }),
         );
         e.add_bytecode_offsets(bytecode_offsets);
@@ -719,6 +723,7 @@ impl NewExprent {
                     method_object,
                     indent,
                     self.d(|d| d.explicit_lambda_params),
+                    self.d(|d| d.kuna_erased_params),
                 );
             } else if !self_reference {
                 ClassWriter::new().write_class(
@@ -1410,6 +1415,10 @@ impl NewExprent {
 
     pub fn set_explicit_lambda_params(self) {
         self.d_mut(|d| d.explicit_lambda_params = true)
+    }
+
+    pub fn set_kuna_erased_params(self) {
+        self.d_mut(|d| d.kuna_erased_params = true)
     }
 
     pub fn set_outer_checked(self) {

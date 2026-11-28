@@ -4,7 +4,7 @@ import java.util.Iterator;
 
 public class TestTypeVariableLocal<T extends Number> {
    <U extends T> void fromArray(U[] var1, TestTypeVariableLocal.Sink<T> var2) {
-      U var3 = (U)var1[0];
+      U var3 = var1[0];
       var2.put(var3);
    }
 

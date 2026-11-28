@@ -2088,3 +2088,15 @@ case	kuna-fixes/pkg/TestStaticBlockInPlace	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestInstanceCompoundAssign	Kuna Fixes	kuna-fixes/classes/pkg/TestInstanceCompoundAssign
 # kuna-fixes/src/pkg/TestStaticLambdaSelfRead.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestStaticLambdaSelfRead	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticLambdaSelfRead
+# kuna-fixes/src/pkg/TestRawTargetLambda.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawTargetLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestRawTargetLambda
+# kuna-fixes/src/pkg/TestLambdaLocalReads.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestLambdaLocalReads	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaLocalReads
+# kuna-fixes/src/pkg/TestRawReceiverCheckcast.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawReceiverCheckcast	Kuna Fixes	kuna-fixes/classes/pkg/TestRawReceiverCheckcast
+# kuna-fixes/src/pkg/TestSignatureParameterTypes.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestSignatureParameterTypes	Kuna Fixes	kuna-fixes/classes/pkg/TestSignatureParameterTypes
+# kuna-fixes/src/pkg/TestUncontainedArguments.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUncontainedArguments	Kuna Fixes	kuna-fixes/classes/pkg/TestUncontainedArguments
+# kuna-fixes/src/pkg/TestVariableArrayErasure.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestVariableArrayErasure	Kuna Fixes	kuna-fixes/classes/pkg/TestVariableArrayErasure

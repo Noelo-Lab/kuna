@@ -22,7 +22,10 @@ use crate::if_exprent::{IfExprent, Type as IfType};
 use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::fixes::generic_casts::unchecked_generic_cast;
+use crate::fixes::generic_casts::uncontained_type_argument;
 use crate::fixes::generic_casts::bounded_inference_cast;
+use crate::fixes::generic_casts;
+use crate::fixes::generic_casts::argument_checkcast;
 use crate::fixes::generic_casts::argument_generic_cast;
 use crate::fixes::generic_casts::receiver_type_arguments;
 use crate::fixes::generic_casts::disjoint_generic_cast;
@@ -1371,6 +1374,8 @@ impl ExprProcessor {
         argument_target: Option<VarType>,
     ) -> bool {
         let declared_target = disjoint_generic_cast::take_declared_target();
+        let erased_parameter = argument_checkcast::take_erased_parameter();
+        let inferred_parameter = generic_casts::take_inferred_parameter();
         let mut exprent = exprent;
         let mut left_type = left_type.clone();
 
@@ -1391,11 +1396,17 @@ impl ExprProcessor {
         }
 
         let right_type = exprent.get_inferred_expr_type(Some(&left_type));
+        if erased_parameter {
+            argument_checkcast::keep(exprent, &left_type);
+        }
         exprent = Self::narrow_generic_cast_type(exprent, &left_type);
 
         let do_cast = !left_type.higher_equal_in_lattice_than(&right_type)
             && (right_type.equals(&VarType::VARTYPE_OBJECT())
-                || left_type.type_ != CodeType::Object);
+                || left_type.type_ != CodeType::Object)
+            && !(right_type.type_ == CodeType::Genvar
+                && left_type.type_ == CodeType::Genvar
+                && generic_casts::variable_below(&exprent.get_named_generics(), &right_type, &left_type, inferred_parameter));
         let do_cast_null = cast_null.cast()
             && right_type.type_ == CodeType::Null
             && Self::UNDEFINED_TYPE_STRING != Self::get_type_name(&left_type);
@@ -1590,6 +1601,9 @@ impl ExprProcessor {
             (Some(left), Some(right)) => (left, right),
             _ => return false,
         };
+        if !ex.is_kotlin() && uncontained_type_argument::needs_cast(ex, left, right) {
+            return true;
+        }
 
         if left.is_generic() && right.is_generic() {
             if Self::should_generic_types_cast(&named, left, right) {

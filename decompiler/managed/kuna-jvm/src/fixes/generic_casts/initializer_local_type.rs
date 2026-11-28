@@ -1,8 +1,10 @@
 //! Fix `initializer_local_type`: in a method compiled without a
 //! LocalVariableTable, a local of a generic class with one assignment, whose
 //! value's type gives that class known type arguments, is declared with them
-//! when its every read is a call on it whose arguments do not depend on them,
-//! or the iterable of a for-each whose variable takes the element type. A
+//! when its every read is a call on it whose arguments do not depend on them
+//! (for a lambda's instantiated parameterization, also one whose arguments
+//! fit the erased type arguments), or the iterable of a for-each whose
+//! variable takes the element type. A
 //! local whose every value, and a for-each variable whose every element, has
 //! the type of a type variable in scope that erases to the local's type is
 //! declared with that variable.
@@ -19,7 +21,7 @@ use crate::function_exprent::FunctionType;
 use crate::fixes::generic_casts::mentions;
 use crate::fixes::lambdas;
 use crate::generic_type::GenericType;
-use crate::kuna_static_types::{formals, param_type, supertype_args};
+use crate::kuna_static_types::{formals, is_bare_var, param_type, supertype_args};
 use crate::root_statement::RootStatement;
 use crate::rt::JHashMap;
 use crate::statement::Statement;
@@ -39,6 +41,7 @@ pub fn type_locals(root: RootStatement, class: StructClass, method: StructMethod
     let mut total: BTreeMap<i32, usize> = BTreeMap::new();
     let mut approved: BTreeMap<i32, usize> = BTreeMap::new();
     let mut rejected: BTreeSet<i32> = BTreeSet::new();
+    let mut dependent: BTreeMap<i32, Vec<crate::invocation_exprent::InvocationExprent>> = BTreeMap::new();
     let exprents = crate::fixes::util::all_exprents(root.0);
     for e in &exprents {
         if let Some(var) = e.try_as_var() {
@@ -64,11 +67,16 @@ pub fn type_locals(root: RootStatement, class: StructClass, method: StructMethod
                     continue;
                 }
             }
-            let receiver = e.try_as_invocation().is_some_and(|inv| {
-                inv.get_instance() == Some(child) && independent_arguments(inv)
-            });
-            if receiver && !var.is_definition() {
+            let Some(inv) = e.try_as_invocation().filter(|inv| inv.get_instance() == Some(child)) else {
+                continue;
+            };
+            if var.is_definition() {
+                continue;
+            }
+            if independent_arguments(inv) {
                 *approved.entry(index).or_insert(0) += 1;
+            } else {
+                dependent.entry(index).or_default().push(inv);
             }
         }
     }
@@ -112,10 +120,16 @@ pub fn type_locals(root: RootStatement, class: StructClass, method: StructMethod
         if processor.kuna_typed(index).is_some() {
             continue;
         }
-        if values.len() != 1
-            || rejected.contains(&index)
-            || total.get(&index) != approved.get(&index)
-        {
+        if values.len() != 1 || rejected.contains(&index) {
+            continue;
+        }
+        let lambda_typed = values[0].try_as_new().and_then(lambdas::instantiated_parameterization);
+        let mut approved_reads = approved.get(&index).copied().unwrap_or(0);
+        if let Some(t) = &lambda_typed {
+            let reads = dependent.get(&index).map_or(&[][..], |r| r.as_slice());
+            approved_reads += reads.iter().filter(|inv| erased_arguments_fit(**inv, t)).count();
+        }
+        if total.get(&index).copied().unwrap_or(0) != approved_reads {
             continue;
         }
         let Some(var) = exprents
@@ -129,15 +143,13 @@ pub fn type_locals(root: RootStatement, class: StructClass, method: StructMethod
             continue;
         }
         let declared = var.get_var_type();
-        let typed = values[0]
-            .try_as_new()
-            .and_then(lambdas::instantiated_parameterization)
-            .unwrap_or_else(|| values[0].get_inferred_expr_type(None));
+        let from_lambda = lambda_typed.is_some();
+        let typed = lambda_typed.unwrap_or_else(|| values[0].get_inferred_expr_type(None));
         if declared.type_ != CodeType::Object
             || declared.array_dim != 0
             || typed.array_dim != 0
             || typed.value != declared.value
-            || !concrete(&typed)
+            || !(from_lambda || concrete(&typed))
             || formals(declared.value_str()).is_none_or(|f| f.is_empty())
         {
             continue;
@@ -456,6 +468,70 @@ fn independent_arguments(inv: crate::invocation_exprent::InvocationExprent) -> b
         !class_formals.iter().any(|f| mentions(p, f.value_str()))
             || a.try_as_new().is_some_and(|n| n.is_lambda())
     })
+}
+
+/// Whether `inv`, a call on a local whose value is a lambda, can be written
+/// on the local declared with `typed`, the parameterization the lambda's
+/// `invokedynamic` instantiates: its class declares no other method of the
+/// call's name and arity, and each argument whose parameter the class's
+/// type variables type is a lambda or method reference, or is passed for a
+/// parameter that is one of those variables bare, which `typed` gives the
+/// erasure of the type argument the source had, as `null` or with a written
+/// type assignable to that erasure. The written type of an argument is no
+/// less specific than the type its instruction gives it (javac's checkcast
+/// included), and each type the argument may be written with (that class, a
+/// parameterization of it, a type variable bounded by it) is a subtype of
+/// that class, so an argument of a class or array type that is a subtype of
+/// the erasure fits; an argument of a primitive type, boxed or not, is not
+/// taken.
+fn erased_arguments_fit(inv: crate::invocation_exprent::InvocationExprent, typed: &VarType) -> bool {
+    let Some(desc) = inv.find_desc() else {
+        return false;
+    };
+    let Some(sig) = desc.get_signature() else {
+        return false;
+    };
+    let owner = desc.get_class_qualified_name();
+    let (Some(class_formals), Some(owner_args)) = (formals(&owner), supertype_args(typed, &owner)) else {
+        return false;
+    };
+    let params = sig.parameter_types();
+    let args = inv.get_lst_parameters();
+    if owner_args.len() != class_formals.len() || params.len() != args.len() {
+        return false;
+    }
+    let own = sig.type_parameters();
+    for (p, a) in params.iter().zip(args.iter()) {
+        if !class_formals.iter().any(|f| mentions(p, f.value_str())) || a.try_as_new().is_some_and(|n| n.is_lambda()) {
+            continue;
+        }
+        if !is_bare_var(p) || own.iter().any(|v| v == p.value_str()) {
+            return false;
+        }
+        let Some(Some(target)) = class_formals.iter().position(|f| f.value == p.value).map(|k| owner_args[k].clone()) else {
+            return false;
+        };
+        if !erasure_accepts(&target, a) {
+            return false;
+        }
+    }
+    lambdas::raw_target_cast::sole_method(inv)
+}
+
+/// Whether `arg` is `null` or of a reference type, by its instruction, that
+/// is `target`, an erased class or array type, or a subtype of it.
+fn erasure_accepts(target: &VarType, arg: Exprent) -> bool {
+    let t = arg.get_expr_type();
+    if t.type_ == CodeType::Null {
+        return true;
+    }
+    if t.array_dim != target.array_dim {
+        return target.array_dim == 0 && t.array_dim > 0 && target.value_str() == "java/lang/Object";
+    }
+    match (t.type_, target.type_) {
+        (CodeType::Object, CodeType::Object) => instance_of(&t.value, &target.value),
+        (a, b) => t.array_dim > 0 && a == b,
+    }
 }
 
 /// Whether every type argument of `t`, to any depth, is a class type: no

@@ -29,6 +29,9 @@ use crate::fixes::lambdas::explicit_lambda_parameters;
 use crate::fixes::lambdas::lambda_argument_overload;
 use crate::fixes::lambdas::lambda_pertinence;
 use crate::fixes::lambdas::lambda_type_variable_target;
+use crate::fixes::lambdas::raw_target_cast;
+use crate::fixes::generic_casts;
+use crate::fixes::generic_casts::argument_checkcast;
 use crate::fixes::generic_casts::raw_receiver_erasure;
 use crate::fixes::kt_names::kt_unescaped_name;
 use crate::fixes::kt_compiler_idioms::kt_inlined_stdlib_call;
@@ -476,6 +479,17 @@ impl InvocationExprent {
     }
 
     pub fn get_inferred_expr_type(self, upper_bound: Option<&VarType>) -> VarType {
+        let inferred = self.inferred_result_type(upper_bound);
+        if raw_receiver_erasure::has_unchecked_argument(self) {
+            return self.get_expr_type();
+        }
+        inferred
+    }
+
+    /// The result type `get_inferred_expr_type` infers, before the erasure an
+    /// unchecked argument makes (JLS 15.12.2.6): the inference still fills
+    /// the call's generics map, which its arguments are written against.
+    fn inferred_result_type(self, upper_bound: Option<&VarType>) -> VarType {
         if self.d(|d| d.kuna_inlined.is_some_and(kt_inlined_stdlib_call::typed_by_use)) {
             return self.get_expr_type();
         }
@@ -2039,6 +2053,9 @@ impl InvocationExprent {
             buf.push_newline_group(indent, 0);
         }
 
+        let raw_receiver = self.get_functype() == Type::General && raw_receiver_erasure::has_raw_receiver(self);
+        let inferred_parameters = self.get_functype() == Type::Init
+            || self.find_desc().and_then(|m| m.get_signature()).is_some_and(|s| !s.type_parameters().is_empty());
         let arg_names = self.d(|d| d.kuna_arg_names.clone());
         let skip_arg = self.d(|d| d.kuna_skip_arg);
         let continuation_arg = self
@@ -2074,21 +2091,30 @@ impl InvocationExprent {
                 break;
             }
 
-            ExprProcessor::get_casted_argument(
-                lst_parameters.get(i),
-                &types[i],
-                &mut buff,
-                indent,
-                if ambiguous {
-                    NullCastType::Cast
-                } else {
-                    NullCastType::DontCastAtAll
-                },
-                ambiguous || raw_field,
-                true,
-                true,
-                kuna_formals.get(i).cloned().flatten(),
-            );
+            let raw_target = (!ambiguous && !raw_field && mask.is_none())
+                .then(|| raw_target_cast::argument_cast(self, i))
+                .flatten();
+            if let Some(cast) = raw_target {
+                raw_target_cast::write(&mut buff, lst_parameters.get(i), &cast, indent);
+            } else {
+                let _erased = (raw_receiver && !writing_kotlin()).then(argument_checkcast::mark_erased_parameter);
+                let _inferred = inferred_parameters.then(generic_casts::mark_inferred_parameter);
+                ExprProcessor::get_casted_argument(
+                    lst_parameters.get(i),
+                    &types[i],
+                    &mut buff,
+                    indent,
+                    if ambiguous {
+                        NullCastType::Cast
+                    } else {
+                        NullCastType::DontCastAtAll
+                    },
+                    ambiguous || raw_field,
+                    true,
+                    true,
+                    kuna_formals.get(i).cloned().flatten(),
+                );
+            }
 
             if let Some(name) = arg_name.filter(|name| !name.is_empty()) {
                 buff.prepend(&format!("{name} = "));

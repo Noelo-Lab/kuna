@@ -1024,6 +1024,68 @@ is of a raw type for a parameter with type arguments (that unchecked conversion 
 result, JLS 15.12.2.6: `V v = this.operate(k, v, rawDecisionMaker)` does not compile);
 javac's `checkcast` of such a value to its erasure is a value of the variable
 (`U u = (U)io.mutate(t)`).
+A local whose value is a lambda takes the parameterization its `invokedynamic` instantiates
+(section 11.11), and for it a call on the local whose arguments the interface's type
+variables type is also accepted, the common `f.apply(x)`, when the local's class declares
+no other method of that name and arity (the parameterized signatures could select another)
+and each such argument is a lambda or method reference, or is passed for a parameter that
+is one of those variables bare and fits the type argument: `null`, or of a class or array
+type, by its instruction, that is that type argument or a subtype of it. The instantiated
+type argument is the erasure of the one the source had, so an argument that fitted the
+source's `A` fits `|A|` as far as it is written with a type assignable to `|A|`; the
+instruction's type (javac's `checkcast` of the argument included) is never more specific
+than the type the argument is written with (that class, a parameterization of it, or a type
+variable bounded by it), so this decides it soundly, and a primitive argument counts as its
+boxing call's class. `Fn var2 = s -> s.length() + 1; .. (Integer) var2.apply(x)` is now
+`Fn<String, Integer> var2 = ..; .. var2.apply(x)`, and a lambda value's parameterization may
+have array arguments (`Bi<String, int[], Integer>`). A read that passes the local, stores it
+or captures it in another lambda still keeps the local raw.
+
+**Parameters without a LocalVariableTable (kuna).** A parameter is declared with its
+signature's type, but without the table its inferred type was its erasure, so every read of
+it inferred less than the text declares: a cast the declaration makes necessary was dropped
+(`return inner.get()` for `Holder<? extends T>` from an `Inner<T> inner` whose `get` returns
+`Holder<? super T>`), and casts it makes redundant were written (`(T) inner.all().get(0)`).
+`VarExprent::get_inferred_expr_type` now gives a parameter of a Java method without a
+LocalVariableTable the type its method's signature declares, when that has type arguments or
+is a type variable (`signature_parameter_type`; a signature that does not cover every
+parameter, such as an inner class constructor's, gives none). The call results it now types
+follow JLS 15.12.2.6: a call one of whose arguments is written with a raw type where the
+parameter, with the receiver's declared type arguments for its class's variables, has type
+arguments other than unbounded wildcards is applicable only by unchecked conversion, and its
+result type is the erasure of the declared one
+(`raw_receiver_erasure::has_unchecked_argument`; `InvocationExprent::get_inferred_expr_type`
+erases the result after its inference has run, since that inference also types the call's
+arguments, which an unchecked call does not erase): `return (R) f.apply(rawRoot, bits)` for a `BiFn<Ref<K, V>, long[],
+R> f` keeps the cast javac requires, and with or without the table `return (String)
+first(raw)` for a raw `Seq raw` passed to `<T> T first(Seq<T>)` no longer drops it. A cast
+argument is not taken as raw: kuna writes it with its parameter's type (`addAll((Bag<?
+extends String>) store.get())`), so the call is not unchecked. An
+argument of a type variable passed for a parameter of a type variable that bounds it (`U
+extends T`) needs no cast to it (JLS 4.10.2, `generic_casts::variable_below`), where that
+target is fixed: not in a lambda's body, whose result types the enclosing call's inference,
+and not for a parameter of a generic method or a constructor, which javac infers
+(`mark_inferred_parameter`); there the cast decides what is inferred (`Chain.concat(mapAll(a,
+v -> (V) v), ..).collect()` for `T1 extends V` infers `Holder<? extends V>` without it).
+
+**Casts no instruction records (kuna).** A cast between two parameterizations of one class
+erases to nothing, so the class file holds no instruction for it, yet the types can still
+decide it is needed. A variable (or `this`) whose type has, at some place, a type variable
+in scope that is not a subtype of `B`, where the target type has `? extends B` (JLS 4.5.1:
+no bound of the variable, through the type variables among its bounds, is of `B`'s class;
+each bound a known class or `Object`), is not assignable to the target, and
+`uncontained_type_argument` (read by `ExprProcessor`'s generic cast test, for a returned,
+assigned or passed value) writes the cast: `return (Node<? extends Node<N>>) this` for a
+`Node<N>` with `N` bounded by `Object`, which printed `return this` and did not compile. A
+variable bounded by `B`'s class or a subclass (`S extends Self<S>`) is left alone, as is any
+value but a variable, whose inferred type may be less exact than javac's. The reverse holds
+for javac's `checkcast` of an array of a type variable to its erasure: the value already has
+the array type the cast would erase, and written, the cast changes it to the bound's array,
+so `for (K k : s.items())` for a `Seq<K> s` and `K extends Item` printed `for (K k :
+(Item[]) s.items())`, which javac rejects. A cast of a value whose inferred type is an array
+of a type variable in scope, to the array of the same dimensions of a class that bounds the
+variable, is not written (`generic_casts::variable_array_erasure`, read by the cast's
+`FunctionExprent::get_inferred_expr_type` before either of its tests), in Java only.
 The pass, like every fix that asks which method a call names before the call is written,
 looks the method up without recording it (`InvocationExprent::find_desc`). The ported
 `get_desc` records what it finds, and a call with a recorded method is written without the
@@ -1222,7 +1284,34 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    accepts for these targets. A parameter whose target type argument is a class with type
    arguments, or whose type in the interface method is generic, leaves the lambda as it
    was: a declared type must equal the target's exactly, and the class file holds only its
-   erasure.
+   erasure. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
+   writes the call, is a raw functional interface has the raw type's function type, whose
+   parameters are the erasures of the interface's (JLS 4.8, 9.9): that holds for a call on
+   a receiver whose written type is raw (`raw_receiver_erasure::has_raw_receiver`), for a
+   `new` of a generic class written without type arguments, and for a parameter the method
+   declares raw. Without a LocalVariableTable this is common (`ArrayList list = new
+   ArrayList(); list.removeIf(s -> s.length() > k)` does not compile), and an explicitly
+   typed lambda cannot help, since its parameter types must equal the raw function type's.
+   When the `invokedynamic` instantiates a parameter more specifically than the raw method's
+   descriptor, `lambdas::raw_target_cast` writes the lambda cast to the parameterization it
+   instantiates (`instantiated_parameterization`): `list.removeIf((Predicate<String>) (s ->
+   s.length() > k))`, `stream.map((Function<String, Integer>) (String::length))`. The raw
+   parameter accepts the cast by widening, and the call's result does not depend on it: a
+   raw member's type is erased, and a raw parameter mentions no type variable to infer. The
+   cast makes the argument pertinent to applicability (JLS 15.12.2.2), so it is written only
+   when the named class and every class it extends or implements are known and declare no
+   other method of that name and arity (`Object`'s members are fixed by JLS 4.3.2), and only
+   when each type argument is within its type parameter's bounds as far as bounds that are
+   classes decide and names a class the writing class can name (not anonymous; accessible
+   by its `InnerClasses` entry or class file). A `new` of a class outside the input is left
+   as it was: its other constructors are unknown. A lambda written for such a raw parameter
+   (when it needs no cast) or under this cast, and one assigned where the written type is
+   its raw interface or the instantiated parameterization, declares its own parameters with
+   their erased types, its implementation method's; `raw_target_cast::declare_parameters`
+   gives them to `raw_receiver_erasure` while the body is written, so a call on such a
+   parameter of a generic class is a call on a raw receiver: in `BiConsumer<List, Integer> f
+   = (l, i) -> { Character[] a = (Character[]) l.stream().map(..).toArray(Character[]::new);
+   }` the cast of the `Object[]` result is kept and the inner lambda is cast in turn.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.
@@ -1976,6 +2065,17 @@ parameter's type
 read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
 inferred type stays, since a constructor infers its class's type arguments from it (a diamond
 inferred from the erasure would not compile).
+Vineflower drops a cast whose operand's inferred type is already of the cast's class, which
+holds where javac inserts the `checkcast` again: javac casts an argument to the erasure of
+its parameter's type in the call's instantiated method type and nowhere else. On a receiver
+of raw type that type is the erasure of the declared one, so `keys.add((Spatial)
+page.getKey(i))` on an `ArrayList keys` written without a LocalVariableTable lost its cast
+(`add` takes `Object`) and the recompiled call its `checkcast`. `InvocationExprent` marks each
+argument of a call on a raw receiver (`argument_checkcast::mark_erased_parameter`), and
+`ExprProcessor::get_casted_argument` then writes a dropped cast of a class (no array) when the
+operand's own erased type is not of that class and the erased parameter type is not of it
+either (`decompiler/managed/kuna-jvm/src/fixes/generic_casts/argument_checkcast.rs (keep)`):
+`keys.add((String) p.key)`, `values.add((Integer) p.pick(3))`.
 The declared type of a call looks past a bridge (`desc_of`): javac gives a public class a public
 forwarder, without a signature, for each public method it inherits from a superclass that is not
 public, and its erased result made a for-each over the call one over a raw iterable, cast to its

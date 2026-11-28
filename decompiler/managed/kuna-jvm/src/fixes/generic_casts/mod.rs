@@ -4,6 +4,7 @@
 //! supertype outside the input from the generic supertypes the known classes'
 //! signatures declare.
 
+pub(crate) mod argument_checkcast;
 pub(crate) mod argument_generic_cast;
 pub(crate) mod bounded_inference_cast;
 pub(crate) mod disjoint_generic_cast;
@@ -12,6 +13,7 @@ pub(crate) mod raw_receiver_erasure;
 pub(crate) mod receiver_type_arguments;
 pub(crate) mod unchecked_call_result_cast;
 pub(crate) mod unchecked_generic_cast;
+pub(crate) mod uncontained_type_argument;
 
 use crate::code_type::CodeType;
 use crate::generic_type::GenericType;
@@ -28,6 +30,94 @@ pub(crate) fn mentions(t: &VarType, var: &str) -> bool {
         g.get_arguments().iter().flatten().any(|a| mentions(a, var))
             || g.get_parent().is_some_and(|p| mentions(&p, var))
     })
+}
+
+thread_local! {
+    static INFERRED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Marks the next argument `ExprProcessor.getCastedArgument` writes as
+/// passed for a parameter whose type javac infers (of a generic method or a
+/// constructor), until the returned guard drops.
+#[must_use]
+pub fn mark_inferred_parameter() -> InferredParameter {
+    INFERRED.with(|c| c.set(true));
+    InferredParameter
+}
+
+/// Clears the mark [`mark_inferred_parameter`] set when dropped.
+pub struct InferredParameter;
+
+impl Drop for InferredParameter {
+    fn drop(&mut self) {
+        INFERRED.with(|c| c.set(false));
+    }
+}
+
+/// Whether the argument being written was marked; clears the mark.
+pub fn take_inferred_parameter() -> bool {
+    INFERRED.with(|c| c.replace(false))
+}
+
+/// Whether `sub` and `sup` are type variables (no array, no wildcard) and
+/// `sup` is a bound of `sub`, or of a type variable that bounds it, by the
+/// bounds `named` gives the variables in scope: `sub` is then a subtype of
+/// `sup` (JLS 4.10.2) and converts to it without a cast. Only where the
+/// target is fixed: in a lambda's body (whose result types the enclosing
+/// call's inference) or for a parameter javac infers (`inferred`), a cast
+/// to `sup` decides what is inferred, and is kept.
+pub(crate) fn variable_below(named: &JHashMap<VarType, Vec<VarType>>, sub: &VarType, sup: &VarType, inferred: bool) -> bool {
+    let bare = |t: &VarType| t.type_ == CodeType::Genvar && t.array_dim == 0 && is_exact(t);
+    if inferred || !bare(sub) || !bare(sup) {
+        return false;
+    }
+    let in_lambda = crate::decompiler_context::DecompilerContext::get_current_method_wrapper()
+        .is_some_and(|m| m.with(|d| d.method_struct).get_name().starts_with("lambda$"));
+    if in_lambda {
+        return false;
+    }
+    let mut pending = vec![sub.clone()];
+    let mut seen: Vec<VarType> = Vec::new();
+    while let Some(v) = pending.pop() {
+        if seen.iter().any(|s| s.value == v.value) {
+            continue;
+        }
+        let Some(bounds) = named.get(&v) else {
+            continue;
+        };
+        for b in bounds.iter().filter(|b| bare(b)) {
+            if b.value == sup.value {
+                return true;
+            }
+            pending.push(b.clone());
+        }
+        seen.push(v);
+    }
+    false
+}
+
+/// Whether the cast to `cast` of `value`'s operand, whose type is `right`,
+/// is javac's cast of an array of a type variable to its erasure: `right`
+/// is an array of a type variable in scope with a bound of the cast's
+/// class, and `cast` that class's array of the same dimensions. The
+/// operand already has the type the cast would erase, so the cast is not
+/// written (`for (K e : c.getEnumConstants())` for a `Class<K> c` and `K
+/// extends Enum<K>`, which `(Enum[])` turned into a loop over `Enum`).
+pub(crate) fn variable_array_erasure(value: crate::exprent::Exprent, right: &VarType, cast: &[VarType]) -> bool {
+    if crate::fixes::kt_util::writing_kotlin()
+        || right.type_ != CodeType::Genvar
+        || right.array_dim == 0
+        || !is_exact(right)
+        || cast.len() != 1
+        || cast[0].type_ != CodeType::Object
+        || cast[0].array_dim != right.array_dim
+    {
+        return false;
+    }
+    value
+        .get_named_generics()
+        .get(&right.resize_array_dim(0))
+        .is_some_and(|bounds| bounds.iter().any(|b| b.type_ == CodeType::Object && b.array_dim == 0 && b.value == cast[0].value))
 }
 
 /// A type argument that is a type, not a wildcard.
