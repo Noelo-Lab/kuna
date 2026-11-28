@@ -2122,3 +2122,5 @@ case	kuna-fixes/pkg/TestOverloadUnseenArgument	Kuna Fixes	kuna-fixes/classes/pkg
 case	kuna-fixes/pkg/TestLossyConversionChain	Kuna Fixes	kuna-fixes/classes/pkg/TestLossyConversionChain
 # kuna-fixes/src/pkg/TestUpdateOnOnePath.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestUpdateOnOnePath	Kuna Fixes	kuna-fixes/classes/pkg/TestUpdateOnOnePath
+# kuna-fixes/src/pkg/TestUnboxingSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUnboxingSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestUnboxingSelectsOverload

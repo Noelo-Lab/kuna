@@ -1925,7 +1925,7 @@ impl InvocationExprent {
                 let st_class = struct_context.get_class(&classname);
 
                 if let Some(st_class) = st_class {
-                    for mt in st_class.get_methods().to_vec() {
+                    for mt in vararg_spread_resolution::candidates(st_class, &name) {
                         if name == mt.get_name()
                             && curr_cls.is_none_or(|c| {
                                 self.can_access(Some(c.with(|d| d.class_struct)), mt)

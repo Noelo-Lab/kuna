@@ -2133,6 +2133,18 @@ without a cast cannot resolve to the invoked method. The early return now holds 
 the one applicable overload is the invoked method; otherwise the casts are decided as for
 an ambiguity. Case `TestOverloadUnseenArgument` (Vineflower prints the same `distance` call).
 
+**An unboxing call beside an inherited overload (kuna).** `appendParamList` leaves an unboxing
+call (`value.doubleValue()`) unwritten unless another method of the call's name and arity
+takes, at that position, a reference type the box is an instance of; it asked only the
+methods the call's own class declares. A subclass calling an overload set of its superclass
+(fastjson2's `NumberSchema.validateInternal(Double value)` returning `validate(value.doubleValue())`,
+with `validate(Double)` and `validate(double)` declared in `JSONSchema`) printed `validate(value)`,
+which calls `validate(Double)`: the boxed overload is applicable without unboxing (JLS 15.12.2,
+phase 1), so it is chosen before any method that needs it. The rivals are now the methods of
+that name the current class can call on the class and its known supertypes, bridges, synthetic
+methods and interfaces' static methods aside (`vararg_spread_resolution::candidates`).
+Case `TestUnboxingSelectsOverload` (Vineflower prints both calls `validate(value)`).
+
 **A callee's unbound class variable (kuna).** `appendParamList` writes each argument
 against its parameter's generic type, remapped through the type arguments the receiver's
 type and the class hierarchy give the callee's class. When neither binds a type variable of
