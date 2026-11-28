@@ -2000,20 +2000,25 @@ macro divide_step(lo, hi, guard, divisor) {
     write_accumulator40(lo, hi, guard, result);
 }
 
+macro divide_trace_remainder(dividend, divisor, btr, result) {
+    local take:1 = dividend >= divisor;
+    btr = (btr << 1) | zext(take);
+    # Subtract before shifting; the trial bit belongs only to BTR.
+    result = dividend;
+    if (!take) goto <shift>;
+    result = dividend - divisor;
+  <shift>
+    result = result * 2;
+}
+
 macro divide_trace(lo, hi, guard, div_lo, div_hi, div_guard, btr) {
     local dividend:8;
     local divisor:8;
     divide_accumulator(lo, hi, guard, dividend);
     divide_accumulator(div_lo, div_hi, div_guard, divisor);
-    local take:1 = dividend >= divisor;
-    local trace:2 = (btr << 1) | zext(take);
-    # Subtract BEFORE shifting; the trial bit belongs to BTR, not the remainder.
-    if (!take) goto <publish>;
-    dividend = dividend - divisor;
-    <publish>
-    local result:8 = dividend * 2;
+    local result:8;
+    divide_trace_remainder(dividend, divisor, btr, result);
     write_accumulator40(lo, hi, guard, result);
-    btr = trace;
 }
 :DIVIDE div_step_dst,div_step_src "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_8_22=0x3023 & (slot_7_7=0 | slot_6_7=2) & div_step_dst & div_step_dst_lo & div_step_dst_hi & div_step_dst_guard & (slot_3_4=0 | slot_2_4=2 | slot_3_4=2 | slot_2_4=6) & div_step_src); (slot_mode=0 & nop_right) { divide_step(div_step_dst_lo, div_step_dst_hi, div_step_dst_guard, div_step_src); }
 :DIVTRACE div_btr1_dst,div_btr1_src,"BTR1" "||" nop_right is (carmel_issue=1 & slot_mode=0 & slot_0_0=0x0 & slot_7_22=0x6048 & (slot_6_6=0 | slot_5_6=2) & div_btr1_dst & div_btr1_dst_lo & div_btr1_dst_hi & div_btr1_dst_guard & (slot_3_3=0 | slot_2_3=2) & div_btr1_src & div_btr1_src_lo & div_btr1_src_hi & div_btr1_src_guard); (slot_mode=0 & nop_right) { divide_trace(div_btr1_dst_lo, div_btr1_dst_hi, div_btr1_dst_guard, div_btr1_src_lo, div_btr1_src_hi, div_btr1_src_guard, BTR1); }
@@ -13241,6 +13246,88 @@ macro wide_div_trace_sink(lo, hi, guard) {
 :DIVIDE "CE1" "A5H","A0L" is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x276 & wide_13_22=0x218 & wide_40_45=0x10 { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; dividend = 0x8000000000 + zext(GB5) * 0x10000 + zext(A5H); local result:8; wide_div_trial(dividend, A0L, 32, 0x800000000000, result); A5H = result:2; GB5 = result(2); <wide_div_disabled> }
 :DIVIDE "CE1" "A5L",wide_div_literal is carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_0_9=0x256 & wide_13_22=0x218 & wide_40_45=0xf & wide_div_literal { local enabled:2; unary_ce(CECFG1, EST, CETBL, 0, enabled); if (enabled == 0) goto <wide_div_disabled>; local dividend:8; wide_div_biased(A5L, A5H, GB5, dividend); local result:8; wide_div_trial(dividend, wide_div_literal:2, 32, 0x800000000000, result); A5L = result:2; A5H = result(2); GB5 = result(4); <wide_div_disabled> }
 :DIVTRACE "discard","A1","BTR2" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_0_10=0x762 & wide_13_22=0x219 & wide_40_45=0x9 { wide_div_trace_sink(A1L, A1H, GB1); }
+
+# A single trace step compares signed inputs of the selected port widths.
+# Bias them by 2^39, as for the whole-accumulator route. A short source
+# comes in at bit 0 or 16; a long DATA source is an unshifted signed pair.
+macro wide_trace_word(word, shift, value) {
+    value = (zext(word ^ 0x8000) << shift) + (0x8000000000 - (0x8000:8 << shift));
+}
+
+macro wide_trace_read_pair(address, next, value) {
+    local low:2 = *[data]:2 address;
+    local high:2 = *[data]:2 next;
+    wide_trace_word(high, 16:4, value);
+    value = value | zext(low);
+}
+
+@define WIDE_DIVTRACE_DATA "carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1"
+:DIVTRACE "*R0","long *R2","BTR1" is $(WIDE_DIVTRACE_DATA) & wide_left=0x820000 & wide_0_22=0x432801 {
+    local next:2 = R2 + 1;
+    wide_check_word_and_pair_reads(R0, R2, next);
+    local word:2 = *[data]:2 R0;
+    local dividend:8;
+    local divisor:8;
+    wide_trace_word(word, 0:4, dividend);
+    wide_trace_read_pair(R2, next, divisor);
+    local result:8;
+    divide_trace_remainder(dividend, divisor, BTR1, result);
+    *[data]:2 R0 = result(2);
+    clock_ce();
+}
+
+:DIVTRACE "*R0","*R2","BTR2" is $(WIDE_DIVTRACE_DATA) & wide_left=0x820000 & wide_0_22=0x432c00 {
+    compact_pair_read_check(R0, R2);
+    local left:2 = *[data]:2 R0;
+    local right:2 = *[data]:2 R2;
+    local dividend:8;
+    local divisor:8;
+    wide_trace_word(left, 16:4, dividend);
+    wide_trace_word(right, 16:4, divisor);
+    local result:8;
+    divide_trace_remainder(dividend, divisor, BTR2, result);
+    *[data]:2 R0 = result(2);
+    clock_ce();
+}
+
+:DIVTRACE "A0L","long *R2","BTR2" is $(WIDE_DIVTRACE_DATA) & wide_left=0x820000 & wide_0_22=0x432e41 {
+    local next:2 = R2 + 1;
+    local dividend:8;
+    local divisor:8;
+    wide_trace_read_pair(R2, next, divisor);
+    wide_trace_word(A0L, 0:4, dividend);
+    local result:8;
+    divide_trace_remainder(dividend, divisor, BTR2, result);
+    A0L = result(2);
+    clock_ce();
+}
+
+:DIVTRACE "long *R0","A1","BTR2" is $(WIDE_DIVTRACE_DATA) & wide_left=0x890000 & wide_0_22=0x432d02 {
+    local next:2 = R0 + 1;
+    local dividend:8;
+    local divisor:8;
+    wide_trace_read_pair(R0, next, dividend);
+    divide_accumulator(A1L, A1H, GB1, divisor);
+    local result:8;
+    divide_trace_remainder(dividend, divisor, BTR2, result);
+    compact_pair_long_store(R0, result);
+    clock_ce();
+}
+
+:DIVTRACE "*"^wide_div_literal,"A4","BTR2" is
+    $(WIDE_DIVTRACE_DATA) & logic_ce_bank=0 & wide_40_45=0xc & wide_0_22=0x432ce2 & wide_div_literal {
+    local address:2 = wide_div_literal;
+    local word:2 = *[data]:2 address;
+    local dividend:8;
+    local divisor:8;
+    wide_trace_word(word, 0:4, dividend);
+    divide_accumulator(A4L, A4H, GB4, divisor);
+    local result:8;
+    divide_trace_remainder(dividend, divisor, BTR2, result);
+    *[data]:2 address = result(2);
+    clock_ce();
+}
+@undef WIDE_DIVTRACE_DATA
 
 @define WIDE_DIV_ABSOLUTE "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_div_ce_bank=0 & wide_13_22=0x218 & wide_40_45=0x3c & wide_div_literal"
 :DIVIDE "CE1" "A5L","*"^wide_div_literal is $(WIDE_DIV_ABSOLUTE) & wide_0_9=0x254 {

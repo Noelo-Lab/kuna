@@ -146,6 +146,8 @@ Other wide effects include selected EXTRACTS, EXTRACTZ, INSERT, DIVIDE,
 divide-with-trace, logic and unary arithmetic routes. Unqualified
 BANKXCHG exchanges selected pointer or accumulator banks. Predicated logic
 uses incoming CE feedback; the language does not model its general publication.
+Wide `DIVTRACE` routes distinguish signed short and long DATA inputs
+and select the trace bank independently of where the remainder is written.
 Marked MOVU supports some register and literal sources to whole accumulators
 or the arithmetic result sink. Parallel lanes sample old registers and publish in
 lane order. Competing accumulator writes and unproved dual transfers stop

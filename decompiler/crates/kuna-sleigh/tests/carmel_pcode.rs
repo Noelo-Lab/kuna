@@ -3589,3 +3589,57 @@ fn wide_data_extract_and_shift_use_incoming_feedback() {
     assert_eq!(m.step(), 24);
     assert_eq!(m.reg("EST"), 0x2001);
 }
+
+#[test]
+fn wide_divtrace_selects_operand_width_and_trace_bank() {
+    for (left, right, pointers, data, stored, traces, a0l) in [
+        (0x820000, 0xc32801, (0x40, 0x8040), [0x2327, 0x1000, 0x2222, 0xf300],
+         [0x1a00, 0x1000, 0x2222, 0xf300], (0x2469, 0x9876), 0x2327),
+        (0x820000, 0xc32801, (0x40, 0x8040), [0x8001, 0x1000, 0x2a03, 0],
+         [0xffff, 0x1000, 0x2a03, 0], (0x2468, 0x9876), 0x2327),
+        (0x820000, 0xc32c00, (0x40, 0x8040), [0x2327, 0x1000, 0x2222, 0xf300],
+         [0x020a, 0x1000, 0x2222, 0xf300], (0x1234, 0x30ed), 0x2327),
+        (0x820000, 0xc32e41, (0x40, 0x8040), [0x2327, 0x1000, 0x2222, 0xf300],
+         [0x2327, 0x1000, 0x2222, 0xf300], (0x1234, 0x30ed), 0x1a00),
+        (0x890000, 0xc32d02, (0x40, 0x8040), [0x2327, 0x1000, 0x2222, 0xf300],
+         [0x4648, 0x21fe, 0x2222, 0xf300], (0x1234, 0x30ed), 0x2327),
+        (0x890000, 0xc32d02, (0xffff, 0x8040), [0, 0, 0x2222, 0xf300],
+         [0xfffa, 0x01fd, 0x2222, 0xf300], (0x1234, 0x30ed), 0x2327),
+    ] {
+        let mut m = Machine::new(0, &[(left, right), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+        m.seed(&[("R0", pointers.0), ("R2", pointers.1), ("A0", 0x1210002327), ("A1", 0xffff010003),
+                 ("BTR1", 0x1234), ("BTR2", 0x9876), ("CETBL", 0), ("ECFG", 0x20)]);
+        let words = [pointers.0, (pointers.0 + 1) & 0xffff, 0x8040, 0x8041];
+        for (address, value) in words.into_iter().zip(data) {
+            m.seed_data(address, value);
+        }
+        m.start(0).unwrap();
+        assert_eq!(m.step(), 6);
+        assert_eq!((m.reg("BTR1"), m.reg("BTR2")), traces);
+        assert_eq!(m.reg("A0"), 0x1210000000 | a0l);
+        assert_eq!((m.reg("R0"), m.reg("R2")), pointers);
+        assert_eq!(words.map(|address| m.data(address)), stored);
+    }
+
+    let mut m = Machine::new(0, &[(0x8cebeb, 0xc32ce2), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A4", 0xf112345678), ("BTR2", 0x8000), ("CETBL", 0)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("BTR2"), m.data(0xebeb)), (1, 0xdb97));
+
+    let mut m = Machine::new(0, &[(0x890000, 0xc32e22), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("A0", 0x1210002327), ("A1", 0xffff010003), ("BTR2", 0x9876)]);
+    m.start(0).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("A0"), m.reg("A1"), m.reg("BTR2")), (0x2421fe4648, 0xffff010003, 0x30ed));
+}
+
+#[test]
+fn wide_divtrace_reserves_both_data_inputs_before_publishing() {
+    let mut m = Machine::new(0, &[(0x820000, 0xc32801), (NOP, NOP)], &[(0, 5, 6), (2, 1, 0)], None);
+    m.seed(&[("R0", 0x40), ("R2", 0x3f), ("BTR1", 0x1234)]);
+    m.seed_data(0x40, 0x2327);
+    m.start(0).unwrap();
+    assert_eq!(m.emulator.execute_instruction().unwrap_err().explain(), "Userop not hooked");
+    assert_eq!((m.reg("BTR1"), m.data(0x40)), (0x1234, 0x2327));
+}

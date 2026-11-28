@@ -4327,6 +4327,16 @@ result instead reads both DATA words starting at `R2+RN2`, wrapping the
 second word address, without modifying `R2` or publishing a result.
 Both routes preserve arithmetic flags while advancing CE feedback.
 
+Unqualified wide `DIVTRACE` with word or long DATA selects signed inputs
+at the physical port width. Two short DATA ports align their words at bit
+16; when a short dividend is paired with a long or accumulator divisor,
+the short dividend starts at bit 0. A successful trial subtracts before
+doubling and appends one to the selected BTR (including equality); a
+failed trial doubles the original dividend and appends zero. The result
+port writes either the high word or the low-first long pair. SR1 does
+not shift these writes. Both DATA reads must be admitted before the trace
+or remainder can be published.
+
 The covered CE-qualified compact register `ADD` and `OR` forms decode
 the X source selector separately from the physical ALU. Selector 14
 reads `X1` on the primary ALU, including a sequential right issue, and
