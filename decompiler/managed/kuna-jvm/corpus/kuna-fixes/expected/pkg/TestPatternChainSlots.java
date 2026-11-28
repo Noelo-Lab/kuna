@@ -51,6 +51,22 @@ public class TestPatternChainSlots {
       return -1;
    }
 
+   boolean bounded(StringBuilder b, Object value, int limit) {
+      if (value instanceof TestPatternChainSlots.Box box) {
+         return box.w < limit;
+      } else {
+         CharSequence text = (CharSequence)(value instanceof CharSequence chars ? chars : String.valueOf(value));
+         int room = limit - b.length();
+         if (text.length() <= room) {
+            b.append(text);
+            return true;
+         }
+
+         b.append(text, 0, room);
+         return false;
+      }
+   }
+
    static class Box implements TestPatternChainSlots.Shape {
       int w;
 

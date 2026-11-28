@@ -455,10 +455,14 @@ fn else_chain(ifstat: IfStatement) -> Option<bool> {
 /// The slot relation of [`pattern_chain`]: `first`'s code runs from
 /// `start` to `next_start`, where `next` starts; `None` when a statement
 /// comes between them (an else-if chain has none): a store before `next`'s
-/// first binding to a slot below it (the temporaries of `next`'s condition
-/// take slots after its bindings).
+/// condition to a slot below its first binding (the temporaries of `next`'s
+/// condition take slots after its bindings).
 fn chained(first: IfStatement, start: i32, next: IfStatement, next_start: i32) -> Option<bool> {
-    let (bind_at, binding) = condition_bindings(next, next_start).first().copied()?;
+    if ternary(next) {
+        return None;
+    }
+    let cond_start = exprent_start(next.get_headexprent().0)?.max(next_start);
+    let binding = condition_bindings(next, cond_start).first().copied()?.1;
     let stores_in = |from: i32, to: i32| -> Vec<(i32, i32)> {
         with_code(|code| {
             code.iter()
@@ -467,7 +471,7 @@ fn chained(first: IfStatement, start: i32, next: IfStatement, next_start: i32) -
                 .collect()
         })
     };
-    if stores_in(next_start, bind_at).iter().any(|&(slot, _)| slot < binding) {
+    if stores_in(next_start, cond_start).iter().any(|&(slot, _)| slot < binding) {
         return None;
     }
     let stores = stores_in(start, next_start);
@@ -477,6 +481,20 @@ fn chained(first: IfStatement, start: i32, next: IfStatement, next_start: i32) -
     let later = stores.iter().any(|&(slot, _)| slot > binding);
     let earlier_binding = condition_bindings(first, start).iter().any(|&(_, b)| b < binding);
     (later || earlier_binding).then_some(true)
+}
+
+/// Whether `ifstat` is the if-else of a conditional expression not yet
+/// rebuilt (a branch that only stores the value on the stack): its bindings
+/// belong to the statement around the expression (`T t = o instanceof X x ?
+/// x : d;` declares `t` before `x`), not to an `if` of their own.
+fn ternary(ifstat: IfStatement) -> bool {
+    [ifstat.get_ifstat(), ifstat.get_elsestat()].into_iter().flatten().any(|branch| {
+        lone_exprent(branch).first().is_some_and(|e| {
+            e.try_as_assignment()
+                .and_then(|a| a.get_left().try_as_var())
+                .is_some_and(|v| v.is_stack())
+        })
+    })
 }
 
 /// The pattern bindings of `ifstat`'s condition, whose code starts at

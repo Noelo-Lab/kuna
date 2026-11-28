@@ -736,8 +736,13 @@ a store in the first `if`'s code to the slot of the second's first binding shows
 (Vineflower's chain is not kept), and a store in it to a later slot, or a binding of its own in an
 earlier one, without that one shows the chain, which `reorder` makes (`Reorder::Else`, the second
 `if` taking the code after it as its own else-branch) when the first `if`'s then-branch ends in a
-return or throw (a branch that ends with a jump is laid out by the rules above). The rule is
-`TransPatterns`', so it is not read in a class ECJ wrote, whose slots follow other rules.
+return or throw (a branch that ends with a jump is laid out by the rules above). The second
+`if`'s bindings are read from its condition, not from statements before it in its head block, a
+store there to a slot below its first binding is a statement between the two (none comes between
+an `if` and its else-if), and the if-else of a conditional expression not yet rebuilt (`T t = o
+instanceof X x ? x : d;`, whose binding belongs to the declaration around it) is not an `if` of
+its own (`ternary`). The rule is `TransPatterns`', so it is not read in a class ECJ wrote, whose
+slots follow other rules.
 Case `TestPatternChainSlots`.
 
 **A finally exit inside a loop (kuna).** Each exit of a `finally` body is an edge of its own
