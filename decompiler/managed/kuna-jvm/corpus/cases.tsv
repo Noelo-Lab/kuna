@@ -735,7 +735,7 @@ kuna	6e1666eedc00ffbe
 case	default/pkg/TestPatternMatchingInline	Default	classes/java16/pkg/TestPatternMatchingInline
 kuna	29327bb18e7abf21
 case	default/pkg/TestPatternMatchingInteger	Default	classes/java17/pkg/TestPatternMatchingInteger
-kuna	8ac41f236a5f3728
+kuna	a116699068813576
 case	default/pkg/TestPatternMatchingInvoke	Default	classes/java16/pkg/TestPatternMatchingInvoke
 kuna	05f15ba264556f23
 case	default/pkg/TestPatternMatchingLocalCapture	Default	classes/java16/pkg/TestPatternMatchingLocalCapture
@@ -807,7 +807,7 @@ kuna	a9c8936f5a256121
 case	default/pkg/TestRecordPatterns7	Default	classes/java21/pkg/TestRecordPatterns7
 kuna	ceafb9a7e35d64b5
 case	default/pkg/TestRecordPatterns8	Default	classes/java21/pkg/TestRecordPatterns8
-kuna	2050519b76ea9df0
+kuna	22dbb123e1f1ab37
 case	default/pkg/TestRecordPatterns9	Default	classes/java21/pkg/TestRecordPatterns9
 kuna	897317a4f44fcc80
 case	default/pkg/TestRecordSimple	Default	classes/java16/pkg/TestRecordSimple
@@ -2140,3 +2140,5 @@ case	kuna-fixes/pkg/TestMixedWidening	Kuna Fixes	kuna-fixes/classes/pkg/TestMixe
 case	kuna-fixes/pkg/TestForInitPair	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitPair
 # kuna-fixes/src/pkg/TestSwitchArmStore.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestSwitchArmStore	Kuna Fixes	kuna-fixes/classes/pkg/TestSwitchArmStore
+# kuna-fixes/src/pkg/TestPatternChainSlots.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestPatternChainSlots	Kuna Fixes	kuna-fixes/classes/pkg/TestPatternChainSlots

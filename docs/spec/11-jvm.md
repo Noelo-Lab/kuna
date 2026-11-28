@@ -714,6 +714,23 @@ times, so that a later pass that changes it back cannot alternate with it withou
 `reorder_if` already makes, applied to the other branch, or one it skips: the
 statements, edges and conditions stay those of the bytecode.
 
+**An if-else chain of patterns, or two statements (kuna).** `if (o instanceof A a) { return ..; }
+if (o instanceof B b) { .. }` and `if (o instanceof A a) { return ..; } else if (o instanceof B b) {
+.. }` are the same code but for the slots: javac declares the bindings of an if-else chain before
+the whole statement, in order (`TransPatterns` hoists them to the outermost `if`), and the locals of
+its branches and the temporaries of its conditions (the subject `this.target` is stored first)
+after them, while an `if` after a statement, or in a block, declares its bindings in the slots the
+code before it freed, from the first one that code took. The rule above read only the first store
+after the then-branch, often the subject's temporary, and so printed Spring's two statements as a
+chain and its chains as two statements (`if (byName) { T s = ..; return s; } else if (f instanceof
+X x)`, where `x`'s slot comes before `s`'s). `decompiler/managed/kuna-jvm/src/p8_structure/kuna_javac_layout.rs
+(pattern_chain)` decides first, for an `if` whose then-branch javac placed first and the `if` that
+follows it with a binding in its condition (`else_chain`: or the `if` it starts the else-branch of):
+a store in the first `if`'s code to the slot of the second's first binding shows two statements
+(Vineflower's chain is not kept), and a store in it to a later slot, or a binding of its own in an
+earlier one, without that one shows the chain, which `reorder` makes (`Reorder::Else`, the second
+`if` taking the code after it as its own else-branch). Case `TestPatternChainSlots`.
+
 **A finally exit inside a loop (kuna).** Each exit of a `finally` body is an edge of its own
 kind to the body's end, and `reorder_if` took such an edge as the direct path out of an `if`,
 as if falling off the `if` reached the end of the finally. Inside a loop it reaches the next
