@@ -1,0 +1,103 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    A call loses every argument when its callee forwards them to a target
+    through a call that also passes stack arguments.
+
+        int getopt_long(int argc, char **argv, const char *opts, const void *lo, int *ix)
+        { return internal(argc, argv, opts, lo, ix, 0, 0); }
+        int internal(int argc, char **argv, const char *opts, const void *lo,
+                     int *ix, int long_only, int posix)
+        { ...; int r = internal_r(argc, argv, opts, lo, ix, long_only, &amp;gdata, posix); ...; }
+
+    gcc 11.4 -O2 (-fno-builtin -fno-stack-protector -fcf-protection=none
+    -fno-asynchronous-unwind-tables), linked -static -nostdlib -Ttext=0x403000
+    -Tdata=0x405000; only .text is here.  It is tar's gnulib getopt shape:
+    getopt_long is `sub $0x10,%rsp; xor %r9d,%r9d; push $0; call internal`,
+    internal hands its six argument registers on untouched and pushes its own
+    stack argument and &amp;gdata above them (`push %rax; lea gdata,%rax; push
+    %rax` built -fpie; internal_np, built -fno-pie, pushes `$0x405000`), and
+    internal_r reads all six registers and both stack arguments.  A
+    single-function decompile printed `internal();` and `internal_np();`:
+    passthrough takes a callee that stated nothing by what its body takes, and
+    internal reads nothing before its call, so what it takes is what
+    internal_r takes, and a run of the whole register file is no arity claim
+    (a variadic register save reads the same).  The decline was lifted only at
+    the decompiled function's own call, never at internal's call to
+    internal_r, which hands internal_r a stack argument and so a full register
+    file.  decompile-all, which states internal_r before internal, printed all
+    seven arguments.
+
+    twice_pid is `sub $8,%rsp; call pid_plus` and pid_plus is `push %rbx; mov
+    %rdi,%rbx; mov $39,%edi; call sys1` with sys1 a syscall() body that reads
+    every argument register: the pushed rbx is a save in the slot of sys1's
+    first stack argument, no argument, so pid_plus takes only its own rdi.
+
+    twice_cnt is `sub $8,%rsp; call cnt_plus` and cnt_plus, hand-assembled in
+    the shape clang -fstack-protector gives a small frame, is `push %rax; mov
+    %fs:0x28,%rax; mov %rax,(%rsp); lea (%rdi,%rdi,2),%eax; add
+    %eax,0x405000; xor %eax,%eax; call sys1`: the canary is a register stored
+    as it stands (through the temporary a 64-bit move copies it into) in
+    sys1's first stack-argument slot, no argument, so cnt_plus takes only rdi.
+
+    Stage: P4 active input-trial scoring (kuna_passthrough.rs, option
+    passthrough, on by default) on the callee probe's through-call reads
+    (kuna_calleedeadarg.rs, stackargs.rs).  Pass 1 is the default; pass 2 sets
+    passthrough off, where getopt_long's call has no arguments.
+-->
+<bytechunk space="ram" offset="0x403000" readonly="true">
+4883ec104531c96a00e8720000004883c418c366662e0f1f8400000000006690
+4883ec1041b9010000006a00e8ef0000004883c418c3662e0f1f840000000000
+89f84889f74889d64889ca488b4c24084101c144034c24104489094d85c07403
+418900488b070fbe0e0fbe0001c84883fa0183d8ffc3662e0f1f840000000000
+8b05921f00008905741f00008b058a1f000089056c1f00008b44240850488d05
+5c1f000050e896ffffff8b15501f00008915621f0000488b15531f0000488915
+641f00008b153e1f00008915501f00005a59c3662e0f1f8400000000000f1f00
+89f84889f74889d64889ca488b4c24084101c144034c24104489094d85c07403
+418900488b070fbe0e0fbe0001c84883fa0183d8ffc3662e0f1f840000000000
+8b05f21e00008905d41e00008b05ea1e00008905cc1e00008b44240850680050
+4000e899ffffff8b15b31e00008915c51e0000488b15b61e0000488915c71e00
+008b15a11e00008915b31e00005a59c34883ec08e8170000004883c4084801c0
+c3662e0f1f8400000000000f1f440000534889fbbf27000000e8120000004801
+d85bc3662e0f1f8400000000000f1f004889f84889f74889d64889ca4d89c24d
+89c84c8b4c24080f05c3660f1f4400005064488b042528000000488904248d04
+7f0104250050400031c0e8c1ffffff59c366662e0f1f8400000000000f1f4000
+4883ec08e8c7ffffff4883c4084801c0c3
+</bytechunk>
+<symbol space="ram" offset="0x403000" name="getopt_long"/>
+<symbol space="ram" offset="0x403020" name="getopt_long_only"/>
+<symbol space="ram" offset="0x403040" name="internal_r"/>
+<symbol space="ram" offset="0x403080" name="internal"/>
+<symbol space="ram" offset="0x4030e0" name="internal_r_np"/>
+<symbol space="ram" offset="0x403120" name="internal_np"/>
+<symbol space="ram" offset="0x403170" name="twice_pid"/>
+<symbol space="ram" offset="0x403190" name="pid_plus"/>
+<symbol space="ram" offset="0x4031b0" name="sys1"/>
+<symbol space="ram" offset="0x4031d0" name="cnt_plus"/>
+<symbol space="ram" offset="0x403200" name="twice_cnt"/>
+</binaryimage>
+<script>
+  <com>lo fu getopt_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu getopt_long_only</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu twice_pid</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu twice_cnt</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option passthrough off</com>
+  <com>lo fu getopt_long</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="passthroughfwdstack #1: only with passthrough off does getopt_long's call lose its arguments" min="1" max="1">internal\(\);</stringmatch>
+<stringmatch name="passthroughfwdstack #2: getopt_long passes the five registers internal forwards to internal_r, and its own r9d and stack argument" min="1" max="1">internal\(a0,a1,a2,a3,a4,0,0\);</stringmatch>
+<stringmatch name="passthroughfwdstack #3: internal_np pushes an immediate as internal_r_np's first stack argument" min="1" max="1">internal_np\(a0,a1,a2,a3,a4,1,0\);</stringmatch>
+<stringmatch name="passthroughfwdstack #4: pid_plus's pushed rbx is a save in sys1's first stack-argument slot, so pid_plus takes only rdi" min="1" max="1">return pid_plus\(a0\) \* 2;</stringmatch>
+<stringmatch name="passthroughfwdstack #5: cnt_plus stores clang's stack canary in sys1's first stack-argument slot, a register as it stands, so cnt_plus takes only rdi" min="1" max="1">return cnt_plus\(a0\) \* 2;</stringmatch>
+</decompilertest>

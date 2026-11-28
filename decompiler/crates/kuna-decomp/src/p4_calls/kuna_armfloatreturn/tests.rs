@@ -285,6 +285,35 @@ fn a_double_input_read_only_in_halves_holds_two_floats() {
     assert!(!halves_only(&data, whole, 4));
 }
 
+/// `g = v` on a double parameter: the store to a resolved address is a COPY
+/// into the global, and nothing in the function reads the global after it.
+/// A copy into another register that only its low word is read from stays a
+/// read in halves, also where a symbol mapped onto that register ties it.
+#[test]
+fn a_double_input_copied_into_memory_is_read_whole() {
+    let (mut data, addr) = function();
+    let whole = data.new_varnode(8, &addr, None);
+    let whole = data.set_input_varnode(whole).unwrap();
+    let global = Address::new(data.get_address().get_space().unwrap().clone(), 0x2000);
+    let copy = output(&mut data, OpCode::CPUI_COPY, &[whole], 8, &global);
+    data.vbank_mut().get_mut(copy).unwrap().set_flags_pub(crate::varnode::varnode_flags::persist);
+    assert!(in_memory(&data, copy));
+    assert!(!halves_only(&data, whole, 4));
+
+    let (mut data, addr) = function();
+    let whole = data.new_varnode(8, &addr, None);
+    let whole = data.set_input_varnode(whole).unwrap();
+    let other = Address::new(addr.get_space().unwrap().clone(), addr.get_offset() + 8);
+    let register = output(&mut data, OpCode::CPUI_COPY, &[whole], 8, &other);
+    let zero = data.new_constant(4, 0);
+    output(&mut data, OpCode::CPUI_SUBPIECE, &[register, zero], 4, &addr);
+    assert!(!in_memory(&data, register));
+    assert!(halves_only(&data, whole, 4));
+    data.vbank_mut().get_mut(register).unwrap().set_flags_pub(crate::varnode::varnode_flags::addrtied);
+    assert!(!in_memory(&data, register));
+    assert!(halves_only(&data, whole, 4));
+}
+
 #[test]
 fn only_a_value_computed_to_be_returned_retires_a_call_leftover() {
     let (mut data, addr) = function();

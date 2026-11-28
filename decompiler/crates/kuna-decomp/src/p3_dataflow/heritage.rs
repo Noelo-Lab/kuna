@@ -98,7 +98,8 @@ use crate::varnode::varnode_flags;
 /// Container holding the stack system for the renaming algorithm.  Every
 /// disjoint address range (indexed by its initial address) maps to its own
 /// Varnode stack (C++ `typedef map<Address,vector<Varnode *> > VariableStack`).
-pub type VariableStack = BTreeMap<Address, Vec<crate::context::VarnodeId>>;
+/// Renaming only looks stacks up by address, so a hash map serves.
+pub type VariableStack = crate::kuna_fasthash::FxHashMap<Address, Vec<crate::context::VarnodeId>>;
 
 /// A block [`Heritage::rename_recurse`] has entered and not yet left: its
 /// dom-children (`next` is the first not yet walked) and what it pops on exit.
@@ -135,12 +136,29 @@ pub struct LocationMap {
     /// Heritaged addresses mapped to range size and pass number
     /// (C++ `map<Address,SizePass> themap`).
     themap: BTreeMap<Address, SizePass>,
+    /// The element the last [`add`](LocationMap::add) returned, as it still
+    /// stands in `themap`: only `add`, `erase` and `clear` change the map.
+    last: Option<(Address, SizePass)>,
+}
+
+/// The answer [`LocationMap::add`] gives for `(addr,size)` when the element
+/// `(key,entry)` of the map holds it: the walk finds that element first
+/// (elements are disjoint and `addr` is not below `key`), and returns at once.
+fn held_by(addr: &Address, size: int4, pass: int4, key: &Address, entry: &SizePass) -> Option<(Address, int4, int4)> {
+    if addr.get_offset() < key.get_offset() {
+        return None;
+    }
+    let where_ = addr.overlap(0, key, entry.size);
+    if where_ == -1 || where_ + size > entry.size {
+        return None;
+    }
+    Some((key.clone(), if entry.pass < pass { 2 } else { 0 }, entry.size))
 }
 
 impl LocationMap {
     /// New empty map.
     pub fn new() -> LocationMap {
-        LocationMap { themap: BTreeMap::new() }
+        LocationMap { themap: BTreeMap::new(), last: None }
     }
 
     /// Mark a new address as \b heritaged (C++ `LocationMap::add`,
@@ -160,7 +178,21 @@ impl LocationMap {
     /// both of which are already in hand here.  (The size used to be re-looked
     /// through [`get`](LocationMap::get), a second descent per call — this map
     /// takes over a million `add`s on a large function.)
+    ///
+    /// Heritage adds every live Varnode on every pass, so most ranges are
+    /// already held by an element: the one the previous call returned (the
+    /// Varnodes come in address order) or the one starting at `addr`. Either
+    /// answers without the walk.
     pub fn add(&mut self, mut addr: Address, mut size: int4, mut pass: int4) -> (Address, int4, int4) {
+        if let Some(hit) = self.last.as_ref().and_then(|(k, e)| held_by(&addr, size, pass, k, e)) {
+            return hit;
+        }
+        if let Some(&entry) = self.themap.get(&addr) {
+            if let Some(hit) = held_by(&addr, size, pass, &addr, &entry) {
+                self.last = Some((addr, entry));
+                return hit;
+            }
+        }
         // We replicate the C++ map-iterator walk against the ordered keys.
         let mut intersect = 0;
 
@@ -196,6 +228,7 @@ impl LocationMap {
                 if where_ + size <= entry.size {
                     // Completely contained in previous element.
                     intersect = if entry.pass < pass { 2 } else { 0 };
+                    self.last = Some((ck.clone(), entry));
                     return (ck, intersect, entry.size);
                 }
                 addr = ck.clone();
@@ -234,6 +267,7 @@ impl LocationMap {
         }
 
         self.themap.insert(addr.clone(), SizePass { size, pass });
+        self.last = Some((addr.clone(), SizePass { size, pass }));
         (addr, intersect, size)
     }
 
@@ -277,6 +311,7 @@ impl LocationMap {
     /// Remove a particular entry (C++ `LocationMap::erase`).
     pub fn erase(&mut self, addr: &Address) {
         self.themap.remove(addr);
+        self.last = None;
     }
 
     /// Borrow the [`SizePass`] keyed by exactly `addr` (the C++ `(*iter).second`
@@ -293,6 +328,7 @@ impl LocationMap {
     /// Clear the map of heritaged ranges (C++ `LocationMap::clear`).
     pub fn clear(&mut self) {
         self.themap.clear();
+        self.last = None;
     }
 }
 
@@ -4656,7 +4692,7 @@ impl Heritage {
         let bblocks = fd.bblocks_ref();
         let root = bblocks.root.expect("rename: bblocks root");
         let start = bblocks.block(root).get_block(0);
-        let mut varstack: VariableStack = VariableStack::new();
+        let mut varstack: VariableStack = VariableStack::default();
         self.rename_recurse(fd, start, &mut varstack)?;
         if !self.halt_loop_reach.is_empty() {
             super::kuna_haltloopguard::mark(fd, &std::mem::take(&mut self.halt_loop_reach));
@@ -6894,6 +6930,130 @@ mod tests {
         assert!(lm.get(&key).unwrap().size >= 0x10);
     }
 
+    /// The upstream `LocationMap::add` walk, without the held-element answers.
+    fn walk_add(map: &mut BTreeMap<Address, SizePass>, mut addr: Address, mut size: int4, mut pass: int4) -> (Address, int4, int4) {
+        let mut intersect = 0;
+        let mut cur = match map.range(..addr.clone()).next_back() {
+            Some((k, v)) => Some((k.clone(), *v)),
+            None => map.range(addr.clone()..).next().map(|(k, v)| (k.clone(), *v)),
+        };
+        if let Some((ck, cv)) = &cur {
+            if addr.overlap(0, ck, cv.size) == -1 {
+                cur = map
+                    .range((std::ops::Bound::Excluded(ck.clone()), std::ops::Bound::Unbounded))
+                    .next()
+                    .map(|(k, v)| (k.clone(), *v));
+            }
+        }
+        if let Some((ck, entry)) = cur {
+            let where_ = addr.overlap(0, &ck, entry.size);
+            if where_ != -1 {
+                if where_ + size <= entry.size {
+                    return (ck, if entry.pass < pass { 2 } else { 0 }, entry.size);
+                }
+                addr = ck.clone();
+                size += where_;
+                if entry.pass < pass {
+                    intersect = 1;
+                    pass = entry.pass;
+                }
+                map.remove(&ck);
+            }
+        }
+        while let Some((nk, nentry)) = map.range(addr.clone()..).next().map(|(k, v)| (k.clone(), *v)) {
+            let where_ = nk.overlap(0, &addr, size);
+            if where_ == -1 {
+                break;
+            }
+            if where_ + nentry.size > size {
+                size = where_ + nentry.size;
+            }
+            if nentry.pass < pass {
+                intersect = 1;
+                pass = nentry.pass;
+            }
+            map.remove(&nk);
+        }
+        map.insert(addr.clone(), SizePass { size, pass });
+        (addr, intersect, size)
+    }
+
+    /// Random adds, passes, refinement-style erase-and-split and clears give the
+    /// same answers and the same map with the held-element answers as without.
+    #[test]
+    fn location_map_add_agrees_with_the_walk() {
+        let mut m = build_manager();
+        m.insert_space(Rc::new(AddrSpace::new(
+            spacetype::IPTR_PROCESSOR,
+            "tiny",
+            false,
+            1,
+            1,
+            3,
+            addrspace_flags::hasphysical,
+            1,
+            1,
+        )))
+        .unwrap();
+        let ram = Rc::clone(m.get_space_by_name("ram").unwrap());
+        let uniq = Rc::clone(m.get_unique_space().unwrap());
+        let tiny = Rc::clone(m.get_space_by_name("tiny").unwrap());
+        let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let (mut held, mut walked) = (0, 0);
+        for _ in 0..300 {
+            let mut lm = LocationMap::new();
+            let mut reference: BTreeMap<Address, SizePass> = BTreeMap::new();
+            let mut pass = 0;
+            let mut prev = Address::new(Rc::clone(&ram), 0);
+            for _ in 0..400 {
+                match next() % 100 {
+                    0..=79 => {
+                        let addr = match next() % 10 {
+                            0..=4 => &prev + (next() % 4) as i64,
+                            5 | 6 => Address::new(Rc::clone(&ram), next() % 96),
+                            7 | 8 => Address::new(Rc::clone(&uniq), next() % 96),
+                            _ => Address::new(Rc::clone(&tiny), (next() % 40 + 232) % 256),
+                        };
+                        prev = addr.clone();
+                        let size = (next() % 12 + 1) as int4;
+                        let hit = lm.last.as_ref().and_then(|(k, e)| held_by(&addr, size, pass, k, e)).is_some()
+                            || lm.themap.get(&addr).and_then(|e| held_by(&addr, size, pass, &addr, e)).is_some();
+                        if hit { held += 1 } else { walked += 1 }
+                        let want = walk_add(&mut reference, addr.clone(), size, pass);
+                        assert_eq!(lm.add(addr, size, pass), want);
+                    }
+                    80..=87 => pass += 1,
+                    88..=97 if !reference.is_empty() => {
+                        let n = (next() as usize) % reference.len();
+                        let (key, entry) = reference.iter().nth(n).map(|(k, v)| (k.clone(), *v)).unwrap();
+                        let curpass = lm.find_pass(&key);
+                        lm.erase(&key);
+                        reference.remove(&key);
+                        let first = (next() % entry.size.max(1) as u64) as int4 + 1;
+                        let pieces = [(key.clone(), first.min(entry.size)), (&key + i64::from(first), entry.size - first)];
+                        for (at, sz) in pieces.into_iter().filter(|p| p.1 > 0) {
+                            let want = walk_add(&mut reference, at.clone(), sz, curpass);
+                            assert_eq!(lm.add(at, sz, curpass), want);
+                        }
+                    }
+                    98 => {
+                        lm.clear();
+                        reference.clear();
+                    }
+                    _ => {}
+                }
+                assert!(lm.themap == reference);
+            }
+        }
+        assert!(held > 10_000 && walked > 10_000, "held {held} walked {walked}");
+    }
+
     // ---- TaskList ---------------------------------------------------------
 
     #[test]
@@ -7333,7 +7493,7 @@ mod tests {
             let mut h = Heritage::new();
             h.build_info_list(&fd);
             h.build_adt(&fd);
-            let mut stack = VariableStack::new();
+            let mut stack = VariableStack::default();
             match path {
                 "read" | "child" => {
                     append_overflowing_read(&mut fd, blocks[usize::from(path == "child")], &addr);

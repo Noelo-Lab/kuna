@@ -1,0 +1,83 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+    kuna `option gotoreduce` value `auto` (the default), P8 goto-quality: in
+    a function the per-function detector (p3_dataflow/kuna_unoptimized.rs)
+    calls unoptimized, a goto to a label the author's own `goto` statements
+    jump to stays a goto (p8_structure/kuna_o0gotos.rs).
+
+    gcc 11 -O0 (-fno-pic -fno-stack-protector -fcf-protection=none) of
+        int find(int *a, int n) {
+            int r = -1; void *p = alloc(8);
+            if (p == 0) goto out;
+            for (int i = 0; i < n; i++) { if (a[i] < 0) goto out; step(p); }
+            r = 0;
+        out:
+            release(p); return r;
+        }
+        void drain(void *p, int n) {
+            for (;;) {
+                int c = check(n);
+                if (c < 0) break;
+                for (int i = 0; i < c; i++) { if (step(p)) break; }
+                if (c == 7) { step(p); break; }
+            }
+            release(p);
+        }
+        int early(int *a, int n) {
+            void *p = alloc(4);
+            if (p == 0) return -1;
+            for (int i = 0; i < n; i++) { if (a[i] == 0) { release(p); return i; } }
+            release(p); return n;
+        }
+    find's two gotos are nop blocks laid out in front of out:, the goto in
+    the loop skipping r = 0.  drain's breaks are nop blocks too, but each
+    leaves the loop out: follows (gcc folds the loop's back jump into the
+    test of its last if, so that arm's break is laid out after the test).
+
+    Pass 1 (default auto): find keeps its goto into out: (#1, #2) and prints
+    release once (#3); drain's break out of the loop is a return as under on
+    (#4, #5); early returns from inside the loop (#6).  Pass 2 (option
+    gotoreduce on): find's loop goto becomes a second release-and-return (#7,
+    #8) and drain and early print as in pass 1 (#9, #10).
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">554889e54883ec2048897de88975e4c745fcffffffffbf08000000e84e010000488945f048837df0007444c745f800000000eb2a8b45f84898488d148500000000488b45e84801d08b0085c07824488b45f04889c7e8390100008345f8018b45f83b45e47ccec745fc00000000eb0490eb0190488b45f04889c7e8fd0000008b45fcc9c3554889e54883ec2048897de88975e48b45e489c7e8ea0000008945f8837df800783cc745fc00000000eb14488b45e84889c7e8d800000085c0750e8345fc018b45fc3b45f87ce4eb0190837df80775bf488b45e84889c7e8b3000000eb0190488b45e84889c7e88d00000090c9c3554889e54883ec2048897de88975e4bf04000000e863000000488945f048837df0007507b8ffffffffeb4fc745fc00000000eb2f8b45fc4898488d148500000000488b45e84801d08b0085c07511488b45f04889c7e8300000008b45fceb1b8345fc018b45fc3b45e47cc9488b45f04889c7e8130000008b45e4c9c3554889e5897dfc8b45fc48985dc3554889e548897df8905dc3554889e5897dfc8b45fc5dc3554889e548897df848837df8000f95c00fb6c05dc3</bytechunk>
+<symbol space="ram" offset="0x100000" name="find"/>
+<symbol space="ram" offset="0x100084" name="drain"/>
+<symbol space="ram" offset="0x1000f2" name="early"/>
+<symbol space="ram" offset="0x10016e" name="alloc"/>
+<symbol space="ram" offset="0x10017c" name="release"/>
+<symbol space="ram" offset="0x100187" name="check"/>
+<symbol space="ram" offset="0x100193" name="step"/>
+</binaryimage>
+<script>
+  <com>lo fu find</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu drain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu early</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>option gotoreduce on</com>
+  <com>lo fu find</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu drain</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu early</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="GOTOREDUCE AUTO #1: find keeps the goto out of its loop (pass 1)" min="1" max="1">^      if \(a0\[v2\] &lt; 0\) goto label_100073;$</stringmatch>
+<stringmatch name="GOTOREDUCE AUTO #2: find keeps its out: label (pass 1)" min="1" max="1">^label_100073:$</stringmatch>
+<stringmatch name="GOTOREDUCE AUTO #3: with gotoreduce on find's loop goto is a second release (pass 2)" min="1" max="1">^        release\(v1\); // return-dupe$</stringmatch>
+<stringmatch name="GOTOREDUCE AUTO #4: with gotoreduce on find's loop test takes the copied tail (pass 2)" min="1" max="1">^      if \(a0\[v2\] &lt; 0\) \{$</stringmatch>
+<stringmatch name="GOTOREDUCE AUTO #5: drain's break out of its loop returns as under on (both passes)" min="2" max="2">^      release\(a0\); // return-dupe$</stringmatch>
+<stringmatch name="GOTOREDUCE AUTO #6: drain's inner break stays a break (both passes)" min="2" max="2">^      if \(step\(a0\)\) break;$</stringmatch>
+<stringmatch name="GOTOREDUCE AUTO #7: early returns from inside its loop (both passes)" min="2" max="2">^      return v2;$</stringmatch>
+<stringmatch name="GOTOREDUCE AUTO #8: early keeps its guard return (both passes)" min="2" max="2">^    return -1;$</stringmatch>
+</decompilertest>

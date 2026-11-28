@@ -24,6 +24,14 @@ keeps its bare return and `if (c) return a; return b;` returns each
 parameter. Under `option returndup on` both guard clauses print wrapped by the
 size rule and the two parameter returns merge into one variable.
 
+`kuna-gotoreduce-auto.xml` checks option `gotoreduce` (default `auto`) on gcc
+-O0 x86-64: a `goto out;` from inside a loop that skips `r = 0;` stays a goto
+into its `out:` label, a `break` out of a `for (;;)` whose last statement is
+`if (c) { S; break; }` returns through a copy of the tail as under `on`, the
+inner loop's `break` stays a `break`, and a function with early `return`s
+prints them as written. Under `option gotoreduce on` the goto out of the loop
+becomes a second release and return.
+
 `kuna-iteregion-auto.xml` checks option `iteregion` (default `auto`) on gcc
 -O0 x86-64: a conditional value that each arm loads into a register before one
 store after the join prints as `?:`, also when one arm is computed, and an
@@ -458,6 +466,35 @@ and callers across signed, unsigned, Boolean and full-width results.
 and narrowed callback results. Its CLI companion compiles complete C and Rust
 output under the same asserted prototypes and checks every byte value and call
 counts. The original fixture is only decompiled.
+
+`kuna-arm-stored-double.xml` checks ARM hard-float double parameters that a
+gcc -O2 function only stores to a global, in ARM and Thumb. `vstr d0,[r3]` to
+the global's address becomes a copy of `d0` into it, the only read of the
+register; that copy reads the whole double, so `put_g`, `put_gv` and `put_two`
+take their doubles instead of reading an uninitialized `d0`, and the float
+control `put_gf` is unchanged. `put_ref` stores its double to a stack slot whose
+address it passes on, `sel` and `zero_if` store a double that a select or an if
+merges first, and an authored `put_mmio` writes `d0` to a range the script marks
+volatile; each keeps its double. An authored `scaled`, glibc's `printf_size`
+shape, writes `d5` only in a loop and stores it only on the paths where the loop
+ran, so it takes no double parameter.
+
+`kuna-arm-opaque-double.xml` checks option `armfloatargs` at gcc -O2 calls whose
+callee nothing describes: undefined symbols in ARM and Thumb objects, imports
+behind PLT stubs in a linked shared object, and a function pointer. A double the
+caller computes, loads, converts or moves into a `d` register for the call is
+passed, which `armfloatargs off` drops with the computation, and the AAPCS-VFP
+back-fill slot below such a double is not filled. An earlier call's result, an
+entry `d0` the caller only forwards and a stored double are not passed, as for
+`s0` and `r0`, and a callee whose body never reads `d0` receives nothing. Authored
+glibc shapes keep their prototypes: a float computed into `s0` beside the
+caller's `s1` is no double, and a double the function returns is no argument of
+the no-return call it makes on another path. gcc -O0 objects compute their
+arguments in scratch registers that still hold values at the call, and those
+leave `s1` the back-fill slot, so no call takes it and no caller gains a float
+for it. Authored glibc strtod shapes share one `__stack_chk_fail` call between a
+path that leaves the entry `d0` and one that leaves the result; a call that does
+not return takes no double.
 
 `kuna-calleefloatreads.xml` checks calls to callees with no prototype that
 read a float argument register: an x86-64 `xmm0` written after a `pxor`, an
@@ -1017,3 +1054,12 @@ still returns the flags, a pop beside an `xmm0` that is only stored still
 returns the popped argument, an eight-byte `struct { float f; int i; }`
 built in the frame and popped into `rax` keeps its `rax` return, and clang
 `-Oz`'s `push 5; pop rax` beside a discarded float read still returns 5.
+
+`kuna-passthrough-filegap-arm.xml` and `kuna-passthrough-filegap.xml` check a
+tail-call wrapper that forwards a double and a pointer untouched, on ARM
+hard-float and SysV x86-64. The callee's stated prototype names the double's
+VFP or XMM register first, as an integer `passthrough` does not forward,
+or as a register its body only stores. The wrapper still takes the pointer in
+`r0` or `rdi` and passes it on, because those conventions fill float and core
+argument registers apart. Before, it printed `bits_tail(void)` and
+`sst_tail(void)` and passed nothing, with one pass.
