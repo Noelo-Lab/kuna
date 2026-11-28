@@ -2558,7 +2558,7 @@ impl InvocationExprent {
             }
         }
 
-        if possible.len() == 1 {
+        if possible.len() == 1 && possible.to_vec()[0].get_descriptor() == string_descriptor {
             return Self::empty_bit_set();
         }
 

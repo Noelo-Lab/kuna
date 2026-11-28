@@ -2103,6 +2103,21 @@ of a `List<String>` is a `String`. Each decision can only add casts. Without the
 compiles and calls `show(String)` (Vineflower prints it so): the descriptor's type matched
 `show(Object)` exactly and no cast seemed needed.
 
+**The one applicable overload is another method (kuna).** `getAmbiguousParameters` wrote
+no cast when exactly one of the overloads of the call's name and arity is applicable to the
+argument types kuna can prove, without asking whether that overload is the invoked
+method. When the argument's type or the invoked method's parameter type is outside the
+class context (a library interface, or the JDK when it is not read), the invoked method is
+not provably applicable, and an overload taking the argument's exact type is: Vector1D's
+`distance(Vector v) { return distance((Point) v); }` was printed `this.distance(v)`, which
+javac resolves to `distance(Vector)`, a call of itself, and `take((CharSequence) s)` beside
+`take(String)` printed `take(s)`. The class file proves the cast: the invocation names the
+other method, and an overload whose parameter is the argument's exact type is applicable by
+identity and more specific than any other one applicable (JLS 15.12.2.5), so the call
+without a cast cannot resolve to the invoked method. The early return now holds only when
+the one applicable overload is the invoked method; otherwise the casts are decided as for
+an ambiguity. Case `TestOverloadUnseenArgument` (Vineflower prints the same `distance` call).
+
 **A callee's unbound class variable (kuna).** `appendParamList` writes each argument
 against its parameter's generic type, remapped through the type arguments the receiver's
 type and the class hierarchy give the callee's class. When neither binds a type variable of
