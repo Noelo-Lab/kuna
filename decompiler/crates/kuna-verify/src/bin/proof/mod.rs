@@ -124,9 +124,16 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     if !whole && loop_bound.is_some() {
         return Err("--loop-bound requires --whole-function".into());
     }
-    if induct && (!whole || loop_bound.is_some() || !memory.is_empty()) {
+    if induct
+        && (!whole
+            || loop_bound.is_some()
+            || memory
+                .iter()
+                .any(|window| window.mode == symbolic::MemoryMode::PrivateStack))
+    {
         return Err(
-            "--induct requires --whole-function without a loop bound or memory windows".into(),
+            "--induct requires --whole-function without a loop bound or private stack windows"
+                .into(),
         );
     }
     let opts = symbolic::Options {

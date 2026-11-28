@@ -36,9 +36,9 @@ accesses respect byte order, length and permissions. The encoders propagate
 memory effects along each path using byte address equality. The initial
 bytes and symbolic register constraints are shared. Whole-function mode
 recognizes the one-byte x86 near return with its original stack slot and
-checks restoration of the entry stack pointer. Cycles require an explicit
-loop bound. Calls, external effects and unsupported instructions are
-reported as incomplete.
+checks restoration of the entry stack pointer. Cycles use bounded
+unrolling or the inductive mode below. Calls, external effects and
+unsupported instructions are reported as incomplete.
 
 Proof artifacts include the input satisfiability, coverage and mismatch
 queries. A satisfiable mismatch in the covered subset takes priority over
@@ -98,22 +98,25 @@ entry addition changes to subtraction in the final IR, and
 ```
 
 The prover identifies a single reachable IR loop header and proposes its
-start address as the raw cutpoint. It uses register-backed phi values to
-infer a relation between the states. It independently executes each
-prefix, then each region from the cutpoint to a return or back to the
-cutpoint. The region encoders follow their own control-flow edges.
+start address as the raw cutpoint. It relates phi values backed by machine
+registers or by storage entirely inside a declared memory window. It
+independently executes each prefix, then each region from the cutpoint
+to a return or back to the cutpoint. The region encoders follow their
+own control-flow edges.
 
 The solver establishes the relation at the first visit, checks preservation
-for arbitrary related states, and checks that both executions continue or
-return together with matching results. A well-founded unsigned ranking
-term must strictly decrease on every continuation. The candidates are
-the carried values and those values minus one modulo their width.
+for arbitrary related registers and memory bytes, and checks that both
+executions continue or return together with matching results. It compares
+the declared memory bytes at each cutpoint and on return. A well-founded
+unsigned ranking term must strictly decrease on every continuation. The
+candidates are register-backed carried values and those values minus one
+modulo their width.
 `count_down` uses the second candidate to prove termination even for an
 initial count of zero, where the first decrement wraps at 64 bits.
 
 `MODEL_EQUIVALENCE` covers unbounded repetition of the validated regions
-over the declared inputs. The model covers one header, register-only
-carried state, and integer returns without arithmetic traps. A failed
+over the declared inputs. The model covers one header, explicit shared or
+image memory windows, and integer returns without arithmetic traps. A failed
 induction check yields `INCONCLUSIVE`. It can involve an abstract
 cutpoint state that the function cannot reach. Use bounded mode to search
 for a concrete difference starting at the function entry.

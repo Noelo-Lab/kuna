@@ -420,9 +420,15 @@ fn encode(
     let ir_blocks = graph.blocks.len();
     let ir_phis = graph.blocks.iter().map(|block| block.phis.len()).sum();
     if opts.induct {
-        if opts.stop.is_some() || opts.loop_bound.is_some() || !opts.memory.is_empty() {
+        if opts.stop.is_some()
+            || opts.loop_bound.is_some()
+            || opts
+                .memory
+                .iter()
+                .any(|window| window.mode == MemoryMode::PrivateStack)
+        {
             return Err(
-                "induction requires whole-function mode without loop or memory limits".into(),
+                "induction requires whole-function mode without a visit bound or private stack windows".into(),
             );
         }
         let induction = induction::Function {
@@ -430,6 +436,7 @@ fn encode(
             extent,
             program: &graph,
             inputs: &inputs,
+            memory: &memory.0,
             output: &projection,
             stack_pointer: &rsp,
             options: opts,

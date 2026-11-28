@@ -51,3 +51,36 @@ bounded countdown, inductive countdown and Sail RV64I ADD examples.
 The switch-table obligation was proved by Z3 under its explicit target
 set. Its CPC proof generation exceeded the 15-second certificate
 budget. [Certificate workflow](proof-certificates.md)
+
+## Loop and memory checks across compilers
+
+The same seven x86-64 functions were checked with Clang 22.1.8 and
+Apple Clang 17.0.0, at `-O0` and `-O2`. Both compilers produced the same
+verdicts at each optimization level. The `-O0` integer, alias and bounded
+checks declared the frame pointer and private stack window. The bounded
+countdown used four visits, and the caller-write case used one visit
+with the count bound to one. Each invocation used a four-second solver
+budget.
+
+| Function | `-O0` | `-O2` |
+|---|---|---|
+| `add` | `MODEL_EQUIVALENCE` | `MODEL_EQUIVALENCE` |
+| `pointer_update` | `MODEL_EQUIVALENCE` | `MODEL_EQUIVALENCE` |
+| `count_down` | `BOUNDED_EQUIVALENCE` | `BOUNDED_EQUIVALENCE` |
+| `loop_with_duplicate_paths` | `INCONCLUSIVE` | `MODEL_EQUIVALENCE` |
+| `add_to_observed_global` | `INCONCLUSIVE` | `MODEL_EQUIVALENCE` |
+| `repeated_caller_write` | `COUNTEREXAMPLE` | `COUNTEREXAMPLE` |
+| `call_inner` | `INCONCLUSIVE` | `INCONCLUSIVE` |
+
+Sixteen of the 28 runs completed an equivalence proof. Four found the
+caller-memory discrepancy, and Unicorn reproduced all four witnesses.
+The eight remaining runs stopped during encoding. At `-O0` the loop frame or header phi storage fell outside
+the induction model. `call_inner` also fell outside the modeled call
+and register state. No run timed out. Wall time ranged from 0.04 to
+0.73 seconds and peak RSS from 62.2 to 89.2 MiB on this host.
+
+For `add_to_observed_global`, both `-O2` builds used an eight-byte
+window at the ELF symbol `loop_memory`. The certificate from the
+Clang 22.1.8 build was checked again with Ethos using the stored
+refutations. Use `llvm-nm` to locate the symbol for another build.
+[Symbolic memory and induction](symbolic-memory.md)

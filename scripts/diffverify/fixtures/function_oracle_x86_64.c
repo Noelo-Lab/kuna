@@ -2,6 +2,7 @@ typedef unsigned long long u64;
 
 volatile u64 counter = 0x123456789abcdef0ULL;
 volatile u64 zeroed;
+volatile u64 loop_memory;
 
 u64 add(u64 a, u64 b) {
     return a + b;
@@ -69,6 +70,27 @@ u64 add_with_loop(u64 a, u64 b, u64 n) {
     __asm__("1: addq $3, %0; decq %1; jne 1b" : "+&r"(result), "+r"(n) : : "cc");
     return result;
 }
+
+u64 add_to_observed_global(u64 count) {
+#pragma clang loop unroll(disable)
+    do {
+        loop_memory += 3;
+        --count;
+    } while (count);
+    return loop_memory;
+}
+
+__asm__(
+    ".type repeated_caller_write,@function\n"
+    ".globl repeated_caller_write\n"
+    "repeated_caller_write:\n"
+    "1: mov %rdi, 8(%rsp)\n"
+    "  dec %rsi\n"
+    "  jne 1b\n"
+    "  mov %rdi, %rax\n"
+    "  ret\n"
+    ".size repeated_caller_write, .-repeated_caller_write\n"
+);
 
 u64 loop_with_duplicate_paths(u64 value, u64 count, u64 flag) {
     __asm__("1: testq %2, %2; jz 2f; addq $3, %0; jmp 3f; "
