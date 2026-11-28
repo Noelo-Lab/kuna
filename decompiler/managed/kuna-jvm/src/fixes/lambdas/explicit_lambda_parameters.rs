@@ -11,7 +11,7 @@
 //! variable of the class of a diamond `new` written there.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -26,7 +26,7 @@ use crate::new_exprent::NewExprent;
 use crate::var_type::VarType;
 
 thread_local! {
-    static ERASED_TARGETS: RefCell<HashSet<Exprent>> = RefCell::new(HashSet::new());
+    static ERASED_TARGETS: RefCell<BTreeSet<Exprent>> = const { RefCell::new(BTreeSet::new()) };
 }
 
 /// Marks the lambda arguments of `inv` the module header describes, as its
