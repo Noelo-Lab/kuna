@@ -159,6 +159,14 @@ impl NestedClassProcessor {
                     if let Some(enclosing_method_wrapper) = enclosing_method_wrapper {
                         Self::set_local_class_definition(enclosing_method_wrapper, child);
                     }
+                    let child_class = child.with(|d| d.class_struct);
+                    if anonymous_classes::initializer_local(node.with(|d| d.class_struct), child_class) {
+                        let methods =
+                            anonymous_classes::initializer_methods(node.get_wrapper().unwrap(), &child_class.qualified_name());
+                        for method in methods.into_iter().filter(|m| Some(*m) != enclosing_method_wrapper) {
+                            Self::set_local_class_definition(method, child);
+                        }
+                    }
                 }
             }
         }
@@ -384,6 +392,18 @@ impl NestedClassProcessor {
             if (child_type == ClassNodeType::Local || child_type == ClassNodeType::Anonymous)
                 && no_enclosing_method
             {
+                if child_type == ClassNodeType::Local && anonymous_classes::initializer_local(node_class, child_class) {
+                    let declaring = node
+                        .get_wrapper()
+                        .map(|w| anonymous_classes::initializer_methods(w, &child_class.qualified_name()))
+                        .unwrap_or_default();
+                    if let Some(method) = declaring.first() {
+                        let mt = method.with(|d| d.method_struct);
+                        let key = InterpreterUtil::make_unique_key(&mt.get_name(), &mt.get_descriptor());
+                        child.with_mut(|d| d.enclosing_method = Some(key));
+                        continue;
+                    }
+                }
                 if !set_enclosing.borrow().is_empty() {
                     let attr = child_class
                         .get_attribute(StructGeneralAttribute::ATTRIBUTE_ENCLOSING_METHOD);

@@ -871,6 +871,9 @@ impl InitializerProcessor {
             &field.get_descriptor().descriptor_string,
         );
         let lst = exprent.get_all_exprents_rec_self(true, true);
+        if class_writing::mentions_initializer_local(cl, &lst) {
+            return false;
+        }
 
         let varproc = method.with(|d| d.varproc);
         for expr in lst {

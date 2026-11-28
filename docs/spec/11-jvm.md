@@ -1341,7 +1341,16 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    Java 8+ class when its initializer is a constant and its type a primitive or `String`:
    `final String s = ""` is a constant variable, which javac inlines rather than captures,
    so the recompiled class lost the `val$s` field and its constructor parameter; the
-   capture in the class file proves the local was not one. A lambda's body is its
+   capture in the class file proves the local was not one. (kuna) A local class declared in
+   a static or an instance initializer has an `EnclosingMethod` attribute that names its
+   class and no method (JVMS 4.7.7). Vineflower takes such a class for a member, finds its
+   name is not `Outer$Name` and writes it as a top-level class `Outer$1Name` of its own,
+   which the initializer then creates by that name. `anonymous_classes::initializer_local`
+   keeps it a local class, and `initializer_methods` gives the methods that declare it: it
+   is declared where it is mentioned, in `<clinit>`, or in each constructor (each holds a
+   copy of the instance initializer), or in the body of a lambda of an initializer. A value
+   that names such a class stays in its block: the class is in scope there only
+   (`class_writing::mentions_initializer_local`). A lambda's body is its
    implementation method, whose captured parameters are named once, by the variables the
    `invokedynamic` that creates it passes. (kuna) javac compiles lambdas of equal bodies
    to one implementation method when it writes no local variable debug information (its

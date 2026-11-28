@@ -5,7 +5,9 @@
 //! `constructor_signature_alignment` trims a constructor signature that omits
 //! only the leading synthetic parameters (kotlinc's pre-IR convention) to the
 //! real parameters; `local_class_anonymous_subclass` counts `new` of an
-//! anonymous class extending a local class as a use of the local class.
+//! anonymous class extending a local class as a use of the local class;
+//! `initializer_local_class` finds the initializers that declare a local
+//! class whose `EnclosingMethod` attribute names no method.
 
 pub(crate) mod anonymous_class_created_elsewhere;
 pub(crate) mod unlisted_anonymous_class;
@@ -149,4 +151,58 @@ fn is_within(node: ClassNode, ancestor: ClassNode) -> bool {
         current = n.with(|d| d.parent);
     }
     false
+}
+
+/// Whether `inner`, listed without an outer class by the `InnerClasses`
+/// attribute of `holder`, is a local class declared in an initializer of
+/// `holder`: its `EnclosingMethod` attribute names `holder` and no method
+/// (JVMS 4.7.7). Vineflower takes such a class for a member, finds its name
+/// is not `Outer$Name`, and writes it as a top-level class `Outer$1Name`
+/// of its own.
+pub fn initializer_local(holder: StructClass, inner: StructClass) -> bool {
+    if crate::fixes::stack_var_inlining::is_kotlin_class(holder) || holder.has_modifier(crate::code_constants::ACC_INTERFACE) {
+        return false;
+    }
+    inner
+        .get_attribute(crate::struct_general_attribute::StructGeneralAttribute::ATTRIBUTE_ENCLOSING_METHOD)
+        .is_some_and(|a| a.get_method_name().is_none() && a.get_class_name().as_deref() == Some(holder.qualified_name().as_str()))
+}
+
+/// Whether `e` names the class `class`: creates it, has its type, or reads
+/// or calls a member of it.
+pub fn mentions_class(e: crate::exprent::Exprent, class: &str) -> bool {
+    let named = |t: VarType| t.type_ == CodeType::Object && t.value.as_deref() == Some(class);
+    e.try_as_new().is_some_and(|n| !n.is_lambda() && named(n.get_new_type()))
+        || e.try_as_var().is_some_and(|v| named(v.get_var_type()))
+        || e.try_as_invocation().is_some_and(|i| i.get_classname() == class)
+        || e.try_as_field().is_some_and(|f| f.get_classname() == class)
+}
+
+/// The methods of `wrapper` that declare the local class `class`, whose
+/// `EnclosingMethod` attribute names no method ([`initializer_local`]): the
+/// class is declared where it is mentioned, in `<clinit>`, or else in each
+/// constructor, which holds a copy of the instance initializer, or else in
+/// the other methods that mention it (the body of a lambda in an
+/// initializer); a class nothing mentions is declared in `<clinit>` or the
+/// first constructor.
+pub fn initializer_methods(wrapper: crate::class_wrapper::ClassWrapper, class: &str) -> Vec<crate::method_wrapper::MethodWrapper> {
+    use crate::code_constants::{CLINIT_NAME, INIT_NAME};
+    let methods: Vec<crate::method_wrapper::MethodWrapper> =
+        wrapper.get_methods().borrow().to_vec().into_iter().filter(|m| m.with(|d| d.root.is_some())).collect();
+    let mentions = |method: &crate::method_wrapper::MethodWrapper| {
+        let root = method.with(|d| d.root).expect("root");
+        crate::fixes::util::all_exprents(root.0).iter().any(|e| mentions_class(*e, class))
+    };
+    let name = |m: &crate::method_wrapper::MethodWrapper| m.with(|d| d.method_struct).get_name();
+    let mentioning: Vec<_> = methods.iter().copied().filter(mentions).collect();
+    for wanted in [CLINIT_NAME, INIT_NAME] {
+        let found: Vec<_> = mentioning.iter().copied().filter(|m| name(m) == wanted).collect();
+        if !found.is_empty() {
+            return found;
+        }
+    }
+    if !mentioning.is_empty() {
+        return mentioning;
+    }
+    [CLINIT_NAME, INIT_NAME].iter().find_map(|wanted| methods.iter().copied().find(|m| name(m) == *wanted)).into_iter().collect()
 }

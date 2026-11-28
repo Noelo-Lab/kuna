@@ -170,6 +170,25 @@ impl EnumBodySeparator {
     }
 }
 
+/// Whether one of `exprents`, the parts of a value assigned in an initializer
+/// of `cl`, names a local class declared in an initializer of `cl`
+/// (`anonymous_classes::initializer_local`): the class is in scope in its
+/// block only, so the value cannot become a field's initializer.
+pub fn mentions_initializer_local(cl: StructClass, exprents: &[Exprent]) -> bool {
+    let Some(node) = DecompilerContext::get_class_processor().get_map_root_classes().borrow().get_cloned(&cl.qualified_name()) else {
+        return false;
+    };
+    let locals: Vec<String> = node
+        .with(|d| d.nested.to_vec())
+        .into_iter()
+        .filter(|c| c.with(|d| d.type_) == ClassNodeType::Local)
+        .map(|c| c.with(|d| d.class_struct))
+        .filter(|c| crate::fixes::anonymous_classes::initializer_local(cl, *c))
+        .map(|c| c.qualified_name())
+        .collect();
+    !locals.is_empty() && exprents.iter().any(|e| locals.iter().any(|l| crate::fixes::anonymous_classes::mentions_class(*e, l)))
+}
+
 /// Whether `value`, assigned to the field `field` in `<clinit>` or the
 /// constructors, is a constant a blank `final` of a primitive type or
 /// `String` is given in a block or a constructor: javac gives `final int F =

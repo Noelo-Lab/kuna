@@ -26,6 +26,7 @@ use crate::nested_class_processor::NestedClassProcessor;
 use crate::nested_member_access::NestedMemberAccess;
 use crate::fixes::anonymous_classes::anonymous_class_created_elsewhere;
 use crate::fixes::anonymous_classes::unlisted_anonymous_class;
+use crate::fixes::anonymous_classes;
 use crate::fixes::overloads::unseen_class_overload;
 use crate::rt::{
     rethrow, try_catch, Caught, JHashMap, JHashSet, JLinkedHashSet, JList, JavaStr, Shared,
@@ -215,7 +216,9 @@ impl ClassesProcessor {
                                         let attr = in_.get_attribute(
                                             StructGeneralAttribute::ATTRIBUTE_ENCLOSING_METHOD,
                                         );
-                                        if attr.is_some_and(|a| a.get_method_name().is_some()) {
+                                        if attr.is_some_and(|a| a.get_method_name().is_some())
+                                            || anonymous_classes::initializer_local(cl, in_)
+                                        {
                                             rec.type_ = ClassNodeType::Local;
                                         } else {
                                             rec.type_ = ClassNodeType::Member;
