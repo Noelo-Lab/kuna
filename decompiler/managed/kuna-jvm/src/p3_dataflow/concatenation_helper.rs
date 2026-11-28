@@ -282,6 +282,7 @@ impl ConcatenationHelper {
                 let mut res: Vec<Exprent> = Vec::new();
                 let mut acc = String::new();
                 let mut parameter_id = 0usize;
+                let mut constant_id = 1usize;
                 for c in recipe.chars() {
                     let unit = c as u32;
                     if unit == TAG_CONST as u32 || unit == TAG_ARG as u32 {
@@ -295,6 +296,28 @@ impl ConcatenationHelper {
                                 .0,
                             );
                             acc.clear();
+                        }
+
+                        if unit == TAG_CONST as u32 {
+                            let constant = bootstrap_arguments
+                                .get(constant_id)
+                                .and_then(|c| c.as_ref())
+                                .filter(|c| c.type_() == CONSTANT_STRING)
+                                .and_then(|c| c.as_primitive().get_string_opt().map(|s| s.to_string()));
+                            constant_id += 1;
+                            match constant {
+                                Some(text) => res.push(
+                                    ConstExprent::new(
+                                        VarType::VARTYPE_STRING(),
+                                        Some(ConstValue::String(text)),
+                                        expr.get_bytecode().as_ref(),
+                                    )
+                                    .0,
+                                ),
+                                None => root.add_comment(
+                                    "$VF: Could not fully resugar string concatentation!",
+                                ),
+                            }
                         }
 
                         if unit == TAG_ARG as u32 {

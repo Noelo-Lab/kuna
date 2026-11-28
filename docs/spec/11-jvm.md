@@ -542,6 +542,16 @@ index == -1)` stays folded); for Java 9+ class files,
 statements from the `$assertionsDisabled` check and the `throw new AssertionError(..)`
 that javac emits.
 
+**Constants the recipe tags (kuna).** The recipe of `makeConcatWithConstants` writes each
+operand as `\u0001` and keeps literal text inline, so javac passes a literal that holds
+`\u0001` or `\u0002` as a bootstrap argument of its own, tagged `\u0002`. `extract_parameters`
+skipped every such tag (Vineflower's "skip extra constants for now"), so the literal
+disappeared: Elasticsearch's `key + (char) (SEPARATOR_BYTE + 1)` printed `this.key + ""`,
+and `key + "a\u0001b" + n` printed `key + n`. Each `\u0002` now takes the next bootstrap
+argument after the recipe, in order, as a string constant (JDK `StringConcatFactory`); a
+non-string argument or a missing one leaves the failure comment. Case
+`TestConcatTagCharacters` (Vineflower prints the same text).
+
 ## 11.9 The main structuring loop
 
 The tree now holds correct but generic statements. The main loop of
