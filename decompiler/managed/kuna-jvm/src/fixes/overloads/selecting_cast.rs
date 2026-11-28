@@ -29,9 +29,10 @@ use crate::var_type::VarType;
 
 /// Marks in `ambiguous` the arguments of `call` to cast to their parameter
 /// types so that it resolves to its method. Only a call whose method and
-/// rivals take no generic parameter types and whose arguments are written
-/// with known types, applicable to its method by strict invocation, is
-/// decided; casting each argument whose type differs from its parameter's
+/// rivals take no generic parameter types, or whose arguments are all
+/// primitive (a generic parameter takes those only by boxing), and whose
+/// arguments are written with known types, applicable to its method by
+/// strict invocation, is decided; casting each argument whose type differs from its parameter's
 /// where a rival's differs leaves the method more specific than every rival
 /// still applicable.
 pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
@@ -66,6 +67,14 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
         generic_args.push(generic_type(param, &t).unwrap_or_else(|| t.clone()));
         args.push(t);
     }
+    let methods: Vec<_> = if methods.iter().any(|(m, _)| generic_parameters(*m)) {
+        if !args.iter().all(primitive) {
+            return;
+        }
+        methods.iter().filter(|(m, _)| !generic_parameters(*m)).cloned().collect()
+    } else {
+        methods.to_vec()
+    };
     decide(&args, &descriptor.params, &methods, ambiguous);
     if generic_args.iter().zip(&args).any(|(g, t)| !g.equals(t)) {
         decide(&generic_args, &descriptor.params, &methods, ambiguous);
@@ -158,7 +167,7 @@ thread_local! {
 
 /// The methods of `call`'s name and of `arity` parameters the current class
 /// can call on `call`'s class, with their descriptors, when there are two or
-/// more and none has a generic parameter type; kept per class context.
+/// more; kept per class context.
 fn rivals(call: InvocationExprent, arity: usize) -> Option<Rivals> {
     let ctx = DecompilerContext::get_struct_context();
     let current = DecompilerContext::get_current_class_node()
@@ -181,8 +190,7 @@ fn rivals(call: InvocationExprent, arity: usize) -> Option<Rivals> {
                 .map(|m| (m, m.method_descriptor()))
                 .filter(|(_, md)| md.params.len() == arity)
                 .collect();
-            (methods.len() > 1 && !methods.iter().any(|(m, _)| generic_parameters(*m)))
-                .then(|| Rc::new(methods))
+            (methods.len() > 1).then(|| Rc::new(methods))
         });
         map.insert(key, found.clone());
         found

@@ -2166,6 +2166,19 @@ the operand in its place (`upcast_operand`), and writes the cast where javac wou
 otherwise select another method. Case `TestUpcastSelectsOverload` (Vineflower prints the same
 calls).
 
+**A primitive argument beside a generic overload (kuna).** `selecting_cast` decided no call
+whose candidates include a method with a generic parameter type, whose erased descriptor is
+not the type javac resolves with; `getAmbiguousParameters` asks only the methods the call's
+class declares when it declares any of that name. A class implementing a generic interface
+(ojalgo's `PrimitiveAggregatorFunction implements AggregatorFunction<Double>`, whose
+`VoidFunction<N>` declares `invoke(N)` and `invoke(double)`) and declaring `invoke(float)`
+printed `invoke(float value) { this.invoke((double) value); }` as `this.invoke(value)`, a
+call of itself. A type variable or a parameterized type takes a primitive argument only by
+boxing (JLS 15.12.2, phase 2), so it is never applicable where the invoked method is applicable
+by strict invocation: when every argument is primitive, the candidates with generic parameter
+types are left out of the decision instead of ending it. Case `TestWideningSelectsOverload`
+(Vineflower prints the same call).
+
 **An unboxing call beside an inherited overload (kuna).** `appendParamList` leaves an unboxing
 call (`value.doubleValue()`) unwritten unless another method of the call's name and arity
 takes, at that position, a reference type the box is an instance of; it asked only the
