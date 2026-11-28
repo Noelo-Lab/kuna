@@ -2091,7 +2091,7 @@ impl InvocationExprent {
                 break;
             }
 
-            if let Some(inner) = lst_parameters.get(i).try_as_invocation() {
+            if let Some(inner) = explicit_lambda_parameters::call_of(lst_parameters.get(i)) {
                 if !writing_kotlin() && raw_target_cast::erased_parameter(self, i) {
                     explicit_lambda_parameters::mark_erased_target(inner);
                 }

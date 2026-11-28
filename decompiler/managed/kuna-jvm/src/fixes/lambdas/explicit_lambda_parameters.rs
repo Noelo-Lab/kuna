@@ -7,7 +7,11 @@
 //! generic call written where its target type is erased (a raw or
 //! non-generic class type) infers nothing from it: `sort(comparing(s ->
 //! s.length()))` on a raw receiver types `s` as `Object`, so a type variable
-//! its result mentions counts as fixed by nothing else.
+//! its result mentions counts as fixed by nothing else, and so does a type
+//! variable of the class of a diamond `new` written there.
+
+use std::cell::RefCell;
+use std::collections::HashSet;
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -21,13 +25,19 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::new_exprent::NewExprent;
 use crate::var_type::VarType;
 
-/// Marks the lambda arguments of `inv` the module header describes.
-pub fn mark(inv: InvocationExprent) {
-    mark_with(inv, false);
+thread_local! {
+    static ERASED_TARGETS: RefCell<HashSet<Exprent>> = RefCell::new(HashSet::new());
 }
 
-/// Marks the lambda arguments of `inv`, a call written where its target type
-/// is erased: a class type without type arguments, which a result of a
+/// Marks the lambda arguments of `inv` the module header describes, as its
+/// argument list is written.
+pub fn mark(inv: InvocationExprent) {
+    let erased = ERASED_TARGETS.with(|t| t.borrow_mut().remove(&inv.0));
+    mark_with(inv, erased);
+}
+
+/// Marks, for [`mark`], the lambda arguments of `inv`, a call written where
+/// its target type is erased: a class type without type arguments, which a result of a
 /// generic class type is compatible with whatever its type arguments are
 /// (JLS 4.10.2), so that the target bounds none of `inv`'s type variables. A
 /// type variable that the result mentions and no other parameter does is
@@ -36,12 +46,15 @@ pub fn mark(inv: InvocationExprent) {
 /// `inv`'s class has no other method of its name and arity.
 pub fn mark_erased_target(inv: InvocationExprent) {
     if !writing_kotlin() && !inv.0.is_kotlin() {
-        mark_with(inv, true);
+        ERASED_TARGETS.with(|t| t.borrow_mut().insert(inv.0));
     }
 }
 
 fn mark_with(inv: InvocationExprent, erased_target: bool) {
-    if inv.get_functype() != InvocationKind::General {
+    let diamond = erased_target
+        && inv.get_functype() == InvocationKind::Init
+        && matches!(&inv.printed_generic_args()[..], [arg] if GenericType::DUMMY_VAR().equals(arg));
+    if inv.get_functype() != InvocationKind::General && !diamond {
         return;
     }
     let args = inv.get_lst_parameters().to_vec();
@@ -55,9 +68,20 @@ fn mark_with(inv: InvocationExprent, erased_target: bool) {
     if formals.len() != args.len() {
         return;
     }
-    let method_vars = sig.type_parameters().clone();
-    let bounds = sig.type_parameter_bounds().clone();
-    let ret = sig.return_type();
+    let mut method_vars = sig.type_parameters().clone();
+    let mut bounds = sig.type_parameter_bounds().clone();
+    let mut ret = sig.return_type();
+    if diamond {
+        let Some(class_sig) = DecompilerContext::get_struct_context()
+            .get_class(&inv.get_classname())
+            .and_then(|c| c.get_signature())
+        else {
+            return;
+        };
+        method_vars.extend(class_sig.fparameters().iter().cloned());
+        bounds.extend(class_sig.fbounds().iter().cloned());
+        ret = Some(class_sig.generic_type().0);
+    }
     let ret_unbound = erased_target
         && ret.as_ref().is_some_and(|r| r.type_ == CodeType::Object && r.array_dim == 0);
     for (i, (formal, arg)) in formals.iter().zip(&args).enumerate() {
@@ -91,7 +115,7 @@ fn mark_with(inv: InvocationExprent, erased_target: bool) {
 /// is a lambda the module header describes, or the lambda arguments of a
 /// call `value` assigned where `target` is erased ([`mark_erased_target`]).
 pub fn mark_assigned(target: &VarType, value: Exprent) {
-    if let Some(inv) = value.try_as_invocation() {
+    if let Some(inv) = call_of(value) {
         if target.type_ == CodeType::Object && target.array_dim == 0 && !target.is_generic() {
             mark_erased_target(inv);
         }
@@ -106,6 +130,18 @@ pub fn mark_assigned(target: &VarType, value: Exprent) {
     if needs_explicit_types(lambda, target, &|_| None) {
         lambda.set_explicit_lambda_params();
     }
+}
+
+/// The call `value` is: a method's, or the constructor of a `new` that is
+/// not a lambda or an anonymous class (whose constructor's class's type
+/// arguments a diamond infers, JLS 15.9.3).
+pub fn call_of(value: Exprent) -> Option<InvocationExprent> {
+    value.try_as_invocation().or_else(|| {
+        value
+            .try_as_new()
+            .filter(|n| !n.is_lambda() && !n.is_anonymous())
+            .and_then(|n| n.get_constructor())
+    })
 }
 
 /// Whether `lambda`, written for the target type `target`, needs its

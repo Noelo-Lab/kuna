@@ -1311,7 +1311,12 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    (`raw_target_cast::sole_method`). The enclosing call's method and result type do not
    change: its parameter is a class type without type arguments, which accepts the call's
    result by widening whatever its type arguments are and mentions no type variable to
-   infer. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
+   infer. A diamond `new` written there is such a call: its class's type variables are
+   inferred as a generic method's whose result is the class parameterized by them (JLS
+   15.9.3), so `Holder h = new Holder<>(s -> s.length())` for `Holder(Fn<T, Integer>)`
+   typed `s` as `Object` and is written `new Holder<>((String s) -> s.length())`; no other
+   constructor of the class may have the arity. The marks are made as the call's own
+   argument list is written, once kuna has decided that a `new` is a diamond. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
    writes the call, is a raw functional interface has the raw type's function type, whose
    parameters are the erasures of the interface's (JLS 4.8, 9.9): that holds for a call on
    a receiver whose written type is raw (`raw_receiver_erasure::has_raw_receiver`), for a
