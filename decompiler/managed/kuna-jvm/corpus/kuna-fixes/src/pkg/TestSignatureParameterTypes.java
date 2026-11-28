@@ -20,6 +20,17 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
       }
    }
 
+   static class Bag<E> {
+      void addAll(Bag<? extends E> b) {
+      }
+   }
+
+   static class Store {
+      Object get() {
+         return null;
+      }
+   }
+
    class Inner<T> {
       Holder<? super T> get() {
          return null;
@@ -64,6 +75,11 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
    public V value(Ref<K, V> ref) {
       V v = ref.value;
       return v.length() > 0 ? v : ref.value;
+   }
+
+   public void merge(Bag<String> into, Holder<Bag<String>> h, Store s) {
+      into.addAll(h.value);
+      into.addAll((Bag<String>) s.get());
    }
 
    @SafeVarargs

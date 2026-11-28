@@ -993,7 +993,9 @@ result type is the erasure of the declared one
 (`raw_receiver_erasure::has_unchecked_argument`, read where `raw_receiver_erasure` erases a
 raw receiver's result): `return (R) f.apply(rawRoot, bits)` for a `BiFn<Ref<K, V>, long[],
 R> f` keeps the cast javac requires, and with or without the table `return (String)
-first(raw)` for a raw `Seq raw` passed to `<T> T first(Seq<T>)` no longer drops it. An
+first(raw)` for a raw `Seq raw` passed to `<T> T first(Seq<T>)` no longer drops it. A cast
+argument is not taken as raw: kuna writes it with its parameter's type (`addAll((Bag<?
+extends String>) store.get())`), so the call is not unchecked. An
 argument of a type variable passed for a parameter of a type variable that bounds it (`U
 extends T`) needs no cast to it (JLS 4.10.2, `generic_casts::variable_below`).
 

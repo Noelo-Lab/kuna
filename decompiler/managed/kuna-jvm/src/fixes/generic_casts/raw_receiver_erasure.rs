@@ -59,7 +59,8 @@ pub fn has_raw_receiver(inv: InvocationExprent) -> bool {
 /// type arguments for its class's type variables, has type arguments other
 /// than unbounded wildcards: the method is then applicable only by
 /// unchecked conversion, and the call's result type is the erasure of the
-/// declared one (JLS 15.12.2.6), as javac types it.
+/// declared one (JLS 15.12.2.6), as javac types it. A cast argument is
+/// written with its parameter's type, so it is not taken as raw.
 pub fn has_unchecked_argument(inv: InvocationExprent) -> bool {
     if inv.0.is_kotlin() || inv.get_functype() == InvocationType::Init {
         return false;
@@ -78,7 +79,8 @@ pub fn has_unchecked_argument(inv: InvocationExprent) -> bool {
     let mut subst: Option<JHashMap<VarType, Option<VarType>>> = None;
     for (p, a) in params.iter().zip(args.iter()) {
         let var = p.type_ == CodeType::Genvar && p.array_dim == 0;
-        if !(var || parameterized(p)) || !is_raw(a) {
+        let cast = a.try_as_function().is_some_and(|f| f.get_func_type() == FunctionType::Cast);
+        if cast || !(var || parameterized(p)) || !is_raw(a) {
             continue;
         }
         if !var {

@@ -37,9 +37,23 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
       return var2.length() > 0 ? var2 : var1.value;
    }
 
+   public void merge(
+      TestSignatureParameterTypes.Bag<String> var1,
+      TestSignatureParameterTypes.Holder<TestSignatureParameterTypes.Bag<String>> var2,
+      TestSignatureParameterTypes.Store var3
+   ) {
+      var1.addAll(var2.value);
+      var1.addAll((TestSignatureParameterTypes.Bag<? extends String>)var3.get());
+   }
+
    @SafeVarargs
    static <X> X firstOf(X... var0) {
       return var0.length > 1 ? var0[1] : var0[0];
+   }
+
+   static class Bag<E> {
+      void addAll(TestSignatureParameterTypes.Bag<? extends E> var1) {
+      }
    }
 
    interface BiFn<A, B, R> {
@@ -67,6 +81,12 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
 
    static class Seq<T> {
       T get(int var1) {
+         return null;
+      }
+   }
+
+   static class Store {
+      Object get() {
          return null;
       }
    }
