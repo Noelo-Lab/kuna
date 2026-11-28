@@ -84,6 +84,8 @@ pub struct DynRelocs {
     /// `[start, stop]` **inclusive** byte ranges of the written slots that
     /// `PT_GNU_RELRO` covers — the ones a reader may treat as constant.
     pub const_ranges: Vec<(u64, u64)>,
+    /// (slot, local definition) candidates subject to dynamic function binding.
+    pub preemptible_functions: Vec<(u64, u64)>,
 }
 
 /// The `RELATIVE` / `GLOB_DAT` / `JUMP_SLOT` `r_type` triple for `machine`, or
@@ -192,6 +194,48 @@ fn implicit_addend(file: &object::File, vma: u64, width: usize, le: bool) -> Opt
     None
 }
 
+/// Whole pages the x86 ELF loader seals after relocation.
+pub(crate) fn protected_pages(bytes: &[u8]) -> Option<(u64, u64)> {
+    relro_range(bytes).map(|(lo, hi)| (lo, hi & !4095))
+}
+
+pub(crate) fn protected_slot(file: &object::File, slot: u64, relro: Option<(u64, u64)>) -> bool {
+    let width = if file.is_64() { 8 } else { 4 };
+    slot.checked_add(width).is_some_and(|end| protected(file, slot, end, relro))
+}
+
+pub(crate) fn protected(file: &object::File, address: u64, end: u64, relro: Option<(u64, u64)>) -> bool {
+    mapped_flags(file, address, end).is_some_and(|flags| {
+        flags & object::elf::PF_R != 0
+            && (flags & object::elf::PF_W == 0
+                || relro.is_some_and(|(lo, hi)| lo <= address && end <= hi))
+    })
+}
+
+pub(crate) fn mapped_flags(file: &object::File, address: u64, end: u64) -> Option<u32> {
+    use object::{ObjectSegment, SegmentFlags};
+    let mut found = None;
+    for segment in file.segments() {
+        let lo = segment.address();
+        let hi = lo.checked_add(segment.size())?;
+        if end <= lo || hi <= address {
+            continue;
+        }
+        let SegmentFlags::Elf { p_flags } = segment.flags() else {
+            return None;
+        };
+        if found.is_some()
+            || address < lo
+            || hi < end
+            || end - lo > segment.data().ok()?.len() as u64
+        {
+            return None;
+        }
+        found = Some(p_flags);
+    }
+    found
+}
+
 /// Walk the image's dynamic relocation tables and produce the statically
 /// knowable writes plus the RELRO-frozen subset of their slots.
 ///
@@ -209,10 +253,22 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
         return out;
     };
     let relro = relro_range(bytes);
+    let dynsym = file.dynamic_symbol_table();
     for (offset, reloc) in file.dynamic_relocations().into_iter().flatten() {
-        let Some(value) = table.classify(file, offset, &reloc).written() else {
-            continue;
-        };
+        let fixup = table.classify(file, offset, &reloc);
+        let Some(value) = fixup.written() else { continue };
+        if fixup.kind == FixupKind::Bind {
+            let symbol = fixup.symbol.and_then(|idx| dynsym.as_ref()?.symbol_by_index(idx).ok());
+            if let Some(s) = symbol {
+                if matches!(s.flags(), object::SymbolFlags::Elf { st_info, .. }
+                    if st_info & 15 == object::elf::STT_GNU_IFUNC) {
+                    continue;
+                }
+                if runtime_function_binding(file, &s) {
+                    out.preemptible_functions.push((offset, value));
+                }
+            }
+        }
         out.writes.push(DynRelocWrite { vma: offset, value, width: table.width as u8 });
 
         if let Some((lo, hi)) = relro {
@@ -224,6 +280,20 @@ pub fn resolve(file: &object::File, bytes: &[u8]) -> DynRelocs {
     }
 
     out
+}
+
+/// A default-visible function in a shared image
+/// can bind elsewhere, including an untyped assembly entry in executable text.
+fn runtime_function_binding<'a>(file: &object::File<'a>, symbol: &impl ObjectSymbol<'a>) -> bool {
+    use object::ObjectSection;
+    let object::SymbolFlags::Elf { st_info, st_other } = symbol.flags() else { return true };
+    let kind = st_info & 15;
+    file.kind() == object::ObjectKind::Dynamic
+        && !symbol.is_local() && st_other & 3 == object::elf::STV_DEFAULT
+        && (kind == object::elf::STT_FUNC
+            || (kind == object::elf::STT_NOTYPE && symbol.section_index()
+                .and_then(|index| file.section_by_index(index).ok())
+                .is_some_and(|section| section.kind() == object::SectionKind::Text)))
 }
 
 /// A linked ELF image's dynamic-relocation tables, as [`resolve`] and
@@ -698,7 +768,7 @@ fn macho_chained(file: &object::File, bytes: &[u8]) -> DynRelocs {
         .filter(|&(vma, _)| fixups.in_readonly_segment(vma))
         .map(|(vma, _)| (vma, vma.wrapping_add(width as u64 - 1)))
         .collect();
-    DynRelocs { writes, const_ranges }
+    DynRelocs { writes, const_ranges, preemptible_functions: Vec::new() }
 }
 
 #[cfg(test)]

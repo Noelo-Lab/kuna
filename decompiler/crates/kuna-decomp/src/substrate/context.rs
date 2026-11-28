@@ -789,6 +789,7 @@ pub struct ArchContext {
     /// [`crate::p2_lift::kuna_chkstkdarwin`].  Copied from the engine
     /// `Architecture` in `build_arch_handle`.
     pub chkstk_darwin: bool,
+    pub x86_dynamic_elf: bool,
     /// (kuna) `option typevote`; read by [`crate::p5_types::kuna_typevote`].
     pub type_vote: bool,
     /// (kuna) `option gobool` mode; read by [`crate::p4_calls::kuna_gobool`].
@@ -1521,6 +1522,8 @@ pub struct ArchContext {
     /// every hand-built fixture and every XML `<binaryimage>` load, which is why
     /// the datatest parity oracle cannot see this field.
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
+    /// Sorted (GOT slot, local implementation) pairs subject to ELF interposition.
+    pub preemptible_functions: Rc<Vec<(u64, u64)>>,
     /// (kuna `litpoolconst`, `ptrfromuse`) `[start, stop]` (inclusive) offsets of
     /// the image's executable, non-writable, file-backed regions — the
     /// instruction stream, and so the literal pools embedded in it. A read
@@ -1686,6 +1689,7 @@ impl ArchContext {
             // copied from the engine Architecture in `build_arch_handle`.
             go_morestack: 1,
             rust_probestack: crate::kuna_rustprobestack::RustProbestackMode::Off,
+            x86_dynamic_elf: false,
             chkstk_darwin: false,
             type_vote: false,
             // (kuna) `option gobool` default auto; copied the same way.
@@ -1894,6 +1898,7 @@ impl ArchContext {
             // (kuna) No dynamic-relocation const slots until a real ELF load
             // installs them (see `Architecture::dynreloc_const`).
             dynreloc_const: Rc::new(Vec::new()),
+            preemptible_functions: Rc::default(),
             // (kuna) No executable read-only ranges until a real object load
             // installs them (see `Architecture::litpool_const`).
             litpool_const: Rc::new(Vec::new()),

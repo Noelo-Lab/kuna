@@ -973,7 +973,11 @@ made direct there as well when the FunctionSymbol at the slot is no-return
 (noreturn_import_slot)`). The match is the same one: the target is the word the
 call's own instruction reads from a constant address, and that address is in the
 set the analysis commit recorded after it committed the no-return facts
-(`noreturn_import_slots`) and is painted external. `ActionDeindirect` restarts
+(`noreturn_import_slots`) and is painted external. For an x86-64 dynamic
+ELF, the displacement of the RIP-relative transfer must resolve to that slot.
+An absolute word with the same link-time VMA can belong to a different image
+at runtime. The later indirect-call resolution applies the same check before
+adopting an external function's no-return prototype. `ActionDeindirect` restarts
 the function for every no-return callee it resolves. A `-fno-plt` x86-64 image
 calls `__stack_chk_fail` through its slot (`call *__stack_chk_fail@GOTPCREL(%rip)`)
 in nearly every function that has a stack protector, so that restart doubled the

@@ -1840,6 +1840,16 @@ impl Funcdata {
             (v.get_addr().clone(), v.get_space().is_big_endian())
         };
         let glb = self.get_arch().clone();
+        if !glb.preemptible_functions.is_empty() {
+            if let Some(target) = crate::p4_calls::kuna_pltlocal::target_of(
+                &glb.preemptible_functions, vaddr.get_offset(),
+            ) {
+                let entry = Address::new(Rc::clone(vaddr.get_space().unwrap()), target);
+                if glb.query_function(&entry).is_some_and(|(_, _, proto)| proto.is_no_return()) {
+                    return Ok(false);
+                }
+            }
+        }
         let mut bytes = [0u8; 32];
         if glb.loader_fill(&mut bytes[..vnsize as usize], &vaddr).is_err() {
             // Could not get value from LoadImage: treat as writeable.

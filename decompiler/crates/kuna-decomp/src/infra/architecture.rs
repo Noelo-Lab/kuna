@@ -302,6 +302,8 @@ pub struct Architecture {
     /// every per-function handle by `build_arch_handle`. Empty on every other
     /// path, so it is inert for the XML datatest oracle.
     pub dynreloc_const: Rc<Vec<(u64, u64)>>,
+    /// Sorted (GOT slot, local implementation) pairs subject to ELF interposition.
+    pub preemptible_functions: Rc<Vec<(u64, u64)>>,
     /// (kuna `pltlocal`) `(stub, definition)` for each PLT stub the image's own
     /// dynamic relocations bind to a function it defines, ascending by stub
     /// (`ObjectLoadImage::plt_local_targets`). Installed by the ELF bootstrap;
@@ -576,6 +578,8 @@ pub struct Architecture {
     /// the target gate of `option chkstkdarwin`.  The XML `<binaryimage>`
     /// bootstrap never sets it.
     pub image_apple: bool,
+    /// The image uses x86 ELF load-relative addresses.
+    pub x86_dynamic_elf: bool,
     /// (kuna `chkstkdarwin`) Remove the calls to the Darwin stack probe
     /// `___chkstk_darwin` from a Darwin AArch64 image before SSA
     /// (`p2_lift/kuna_chkstkdarwin.rs`), so the argument registers it preserves
@@ -2464,6 +2468,7 @@ impl Architecture {
             aggressive_ext_trim: false,
             readonlypropagate: false,
             dynreloc_const: Rc::new(Vec::new()),
+            preemptible_functions: Rc::default(),
             plt_local: Rc::new(Vec::new()),
             litpool_const: Rc::new(Vec::new()),
             arm_pool_extents: Rc::new(Vec::new()),
@@ -2527,6 +2532,7 @@ impl Architecture {
             syscall_regs: crate::kuna_syscallregs::SyscallRegsMode::Off, // (kuna) option syscallregs; reset_defaults sets the shipped default
             image_os_userland: false, // (kuna) a load-time fact; set by the console's `load file`
             image_linux_elf: false, // (kuna) a load-time fact; set by the console's `load file`
+            x86_dynamic_elf: false,
             image_apple: false, // (kuna) a load-time fact; set by the console's `load file`
             peb_names: crate::kuna_pebnames::PebNamesMode::Off, // (kuna) option pebnames; reset_defaults sets the shipped default
             struct_synth: crate::kuna_structsynth::StructSynthMode::Off, // (kuna) option structsynth; reset_defaults sets the shipped default
@@ -3714,6 +3720,7 @@ impl Architecture {
         ctx.fat_str = self.fat_str;
         ctx.go_morestack = self.go_morestack;
         ctx.rust_probestack = self.rust_probestack;
+        ctx.x86_dynamic_elf = self.x86_dynamic_elf;
         ctx.chkstk_darwin = self.chkstk_darwin && self.image_apple && crate::kuna_chkstkdarwin::applies_to(&self.archid);
         ctx.type_vote = self.type_vote;
         ctx.go_bool = self.go_bool;
@@ -3976,6 +3983,7 @@ impl Architecture {
         // (kuna `dynrelocs`) Carry the PT_GNU_RELRO-frozen dynamic-relocation
         // slots so `ActionVarnodeProps` folds those loads with global read-only
         // propagation still off. `Rc` clone: the list is built once at load.
+        ctx.preemptible_functions = Rc::clone(&self.preemptible_functions);
         ctx.dynreloc_const = Rc::clone(&self.dynreloc_const);
         ctx.litpool_const = Rc::clone(&self.litpool_const);
         // Carry the data-type-splitting toggle bits (C++ `glb->split_datatype_config`)

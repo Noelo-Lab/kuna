@@ -55,6 +55,7 @@ pub mod kuna_x64syscall; // (kuna) give the x86-64 SYSCALL user-op the Linux ABI
 pub mod kuna_syscallregs; // (kuna) give the ARM/AArch64/RISC-V/MIPS/PowerPC system-call user-op its register effects
 pub mod kuna_msvcstrappend; // (kuna) collapse an inlined MSVC std::string push_back/append diamond into one call
 pub mod kuna_fastfailnoreturn; // (kuna) a Windows `int 0x29` (__fastfail) ends the flow instead of unbalancing the stack
+pub mod kuna_x86gotslot;
 pub mod kuna_msvcimportcall; // (kuna `msvcsig`) a call through an import slot with a locked MSVC prototype is direct from the flow on
 pub mod kuna_mipsunaligned; // (kuna) lift a MIPS lwl/lwr-style unaligned pair as one whole access
 pub mod kuna_memtag; // (kuna) lift the AArch64 memory-tagging instructions with their tag effect

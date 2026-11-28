@@ -1371,7 +1371,8 @@ impl Action for ActionDeindirect {
             let resolved: Option<(String, Address, std::rc::Rc<crate::fspec::FuncProto>)> =
                 if v.is_persist() && v.is_external_ref() {
                     // Check for a possible external reference.
-                    glb.query_function(v.get_addr())
+                    glb.query_function(v.get_addr()).filter(|(_, _, proto)|
+                        !proto.is_no_return() || crate::kuna_x86gotslot::can_bind_import(data, op, v.get_addr()))
                 } else if v.is_constant() {
                     // Assume the function is in the same space as the calling function;
                     // convert the constant to a byte address in that space.
