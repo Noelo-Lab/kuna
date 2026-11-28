@@ -147,6 +147,8 @@ const MAX_CUTS: usize = 64;
 
 mod byteset;
 use byteset::ByteSet;
+mod stackargs;
+use stackargs::{FirstStackArg, Stored, Temps};
 
 /// What a bounded decode of a callee body proves about its entry liveness.
 ///
@@ -228,6 +230,9 @@ pub struct CalleeEntryDead {
     /// target whose prototype it knew — so each of these is resolved against
     /// that target by [`resolve_forward_transfer`], recursively.
     named_cuts: Vec<(Address, ByteSet)>,
+    /// The indices into [`Self::named_cuts`] of the calls the path set up with
+    /// a stack argument ([`stackargs`]).
+    stack_arg_cuts: Vec<usize>,
     /// How many of [`Self::opaque_cuts`] are a user op inside an instruction
     /// that goes on to return unconditionally, such as ARM's `bx lr` switching
     /// the instruction set on its way back. Read by [`Self::returns_untouched`].
@@ -626,6 +631,7 @@ impl CalleeEntryDead {
         self.cuts.shrink_to_fit();
         self.opaque_cuts.shrink_to_fit();
         self.named_cuts.shrink_to_fit();
+        self.stack_arg_cuts.shrink_to_fit();
         self.trap_cuts.shrink_to_fit();
         if let Some(skipped) = self.skipped.as_deref_mut() {
             skipped.shrink_to_fit();
@@ -682,6 +688,7 @@ impl CalleeEntryDead {
             opaque_cuts: Vec::new(),
             jumps: 0,
             named_cuts: Vec::new(),
+            stack_arg_cuts: Vec::new(),
             returning_opaque: 0,
             return_reads: Vec::new(),
             cond_written: ByteSet::new(),
@@ -938,8 +945,8 @@ const MAX_THROUGH_DEPTH: u32 = 3;
 type RegRead = (int4, u64, int4);
 
 /// [`reads_through_calls`]'s memo for one caller: what each target, asked at
-/// each remaining depth, is shown to take.
-type ThroughMemo = HashMap<(int4, u64, u32), Rc<Vec<RegRead>>>;
+/// each remaining depth with or without a stack argument, is shown to take.
+type ThroughMemo = HashMap<(int4, u64, u32, bool), Rc<Vec<RegRead>>>;
 
 /// (kuna `passthrough`) The probe of `entry`'s body, with what each of its
 /// direct calls hands a target shown to take it.
@@ -952,7 +959,9 @@ type ThroughMemo = HashMap<(int4, u64, u32), Rc<Vec<RegRead>>>;
 /// terms `passthrough` asks of a callee, or, where it stated nothing, its body
 /// takes it ([`taken_reads`]): a variadic's
 /// register-save prologue reads every argument register, and a forwarder into
-/// one would otherwise be read as taking them all. Calls are followed
+/// one would otherwise be read as taking them all. A call the forwarder hands a
+/// stack argument fills the register file, so there the whole run stands
+/// ([`stackargs`]). Calls are followed
 /// [`MAX_THROUGH_DEPTH`] deep, so a cycle of calls ends. Only
 /// [`CalleeEntryDead::reads_live`] grows, so `proves_dead` and `proves_read`
 /// answer exactly as the plain probe does. Statements accumulate over a run, so
@@ -964,7 +973,7 @@ pub fn reads_through_calls(
     memo: &mut ThroughMemo,
 ) -> Option<Rc<CalleeEntryDead>> {
     let dead = probe_cached(arch, entry, reg_idx)?;
-    let reads = add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, MAX_THROUGH_DEPTH - 1, memo));
+    let reads = add_reads_through(&dead, |t, full| taken_reads(arch, t, reg_idx, MAX_THROUGH_DEPTH - 1, full, memo));
     Some(match reads {
         Some(reads_live) => Rc::new(CalleeEntryDead { reads_live, ..(*dead).clone() }),
         None => dead,
@@ -976,17 +985,19 @@ pub fn reads_through_calls(
 /// arity-sound list naming the register, not as a variadic tail. A function
 /// that stated nothing is read by its body: the leading run of the default
 /// model's argument registers it takes
-/// ([`crate::p4_calls::kuna_passthrough::taken_run`]).
+/// ([`crate::p4_calls::kuna_passthrough::taken_run`]), the whole file only at a
+/// call that also passes a stack argument (`full`).
 fn taken_reads(
     arch: &mut crate::architecture::Architecture,
     entry: &Address,
     reg_idx: int4,
     depth: u32,
+    full: bool,
     memo: &mut ThroughMemo,
 ) -> Option<Rc<Vec<RegRead>>> {
     let sp = entry.get_space()?;
     let key = (sp.get_index(), entry.get_offset());
-    if let Some(r) = memo.get(&(key.0, key.1, depth)) {
+    if let Some(r) = memo.get(&(key.0, key.1, depth, full)) {
         return Some(Rc::clone(r));
     }
     let taken = match arch.kuna_protoorder_types.get(&key).cloned() {
@@ -995,7 +1006,7 @@ fn taken_reads(
             let through = if depth == 0 {
                 None
             } else {
-                add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, depth - 1, memo))
+                add_reads_through(&dead, |t, full| taken_reads(arch, t, reg_idx, depth - 1, full, memo))
             };
             let reads = through.unwrap_or_else(|| dead.reads_live.clone());
             reads.into_iter().filter(|r| takes(&stated, r)).collect()
@@ -1005,13 +1016,13 @@ fn taken_reads(
             let through = if depth == 0 {
                 None
             } else {
-                add_reads_through(&dead, |t| taken_reads(arch, t, reg_idx, depth - 1, memo))
+                add_reads_through(&dead, |t, full| taken_reads(arch, t, reg_idx, depth - 1, full, memo))
             }
             .map(|reads_live| CalleeEntryDead { reads_live, ..(*dead).clone() });
             match arch.default_fp().cloned() {
                 Some(model) if dead.complete => {
                     let regs = crate::p4_calls::kuna_passthrough::general_arg_registers(&model);
-                    let run = crate::p4_calls::kuna_passthrough::taken_run(&dead, through.as_ref(), &regs, false);
+                    let run = crate::p4_calls::kuna_passthrough::taken_run(&dead, through.as_ref(), &regs, full);
                     let reads = through.as_ref().map_or(&dead.reads_live, |t| &t.reads_live);
                     reads.iter().filter(|r| run.iter().any(|(a, s)| overlaps_read(a, *s, r))).copied().collect()
                 }
@@ -1021,7 +1032,7 @@ fn taken_reads(
         _ => Vec::new(),
     };
     let out = Rc::new(taken);
-    memo.insert((key.0, key.1, depth), Rc::clone(&out));
+    memo.insert((key.0, key.1, depth, full), Rc::clone(&out));
     Some(out)
 }
 
@@ -1042,6 +1053,35 @@ fn takes(stated: &crate::kuna_protoorder::RecoveredTypes, &(ridx, off, sz): &Reg
     })
 }
 
+/// Where the default model passes a call's first stack argument, for the probe
+/// to record the calls a body hands one ([`stackargs`]). `None` without a stack
+/// pointer in the register space, a stack parameter in the model, or a
+/// general-purpose argument register for a whole run to fill (i386 cdecl).
+fn first_stack_arg(arch: &crate::architecture::Architecture, reg_idx: int4) -> Option<FirstStackArg> {
+    let stack = arch.manage().get_stack_space()?;
+    if stack.num_spacebase() < 1 {
+        return None;
+    }
+    let sp = stack.get_spacebase(0).ok()?;
+    if sp.space.as_ref()?.get_index() != reg_idx {
+        return None;
+    }
+    let model = arch.default_fp()?;
+    let offset = model
+        .input()
+        .get_entry()
+        .iter()
+        .find_map(|e| (e.get_space().get_type() == spacetype::IPTR_SPACEBASE).then(|| e.get_base() as i64))?;
+    let args: ByteSet = crate::p4_calls::kuna_passthrough::general_arg_registers(model)
+        .iter()
+        .flat_map(|(a, size)| {
+            let idx = a.get_space().map_or(-1, |s| s.get_index());
+            (a.get_offset()..a.get_offset() + (*size).max(0) as u64).map(move |b| (idx, b))
+        })
+        .collect();
+    (args.len() > 0).then(|| FirstStackArg { sp: (sp.offset, sp.size), offset, args })
+}
+
 /// The entry-liveness probe of `entry`, from the run's cache or taken now.
 pub(crate) fn probe_cached(
     arch: &mut crate::architecture::Architecture,
@@ -1056,8 +1096,16 @@ pub(crate) fn probe_cached(
             &arch.userops,
             crate::kuna_syscallregs::SyscallFamily::from_archid(&arch.archid),
         );
-        let probed =
-            probe_entry_with(arch.translate(), entry, reg_idx, follow, &traps, &arch.format_stack_args);
+        let first = first_stack_arg(arch, reg_idx);
+        let probed = probe_walk(
+            arch.translate(),
+            entry,
+            reg_idx,
+            follow,
+            &traps,
+            &arch.format_stack_args,
+            first.as_ref(),
+        );
         arch.kuna_callee_dead_cache.insert(key, Rc::new(probed));
     }
     arch.kuna_callee_dead_cache.get(&key).cloned()
@@ -1072,9 +1120,10 @@ pub(crate) fn probe_cached(
 /// (openssh `channel_by_id` pushes all of `rsi` for a variadic `%d`, which would
 /// make `channel_send_open(ssh, int id)`'s `id` 64 bits). An incomplete summary
 /// adds nothing, and neither does an indirect transfer, which names no target.
+/// `target` is also told whether the call passes a stack argument.
 fn add_reads_through(
     dead: &CalleeEntryDead,
-    mut target: impl FnMut(&Address) -> Option<Rc<Vec<RegRead>>>,
+    mut target: impl FnMut(&Address, bool) -> Option<Rc<Vec<RegRead>>>,
 ) -> Option<Vec<RegRead>> {
     if !dead.complete || dead.named_cuts.is_empty() {
         return None;
@@ -1083,8 +1132,8 @@ fn add_reads_through(
     let own = dead.read_bytes();
     let mut reads = dead.reads_live.clone();
     let before = reads.len();
-    for (t, written) in &dead.named_cuts {
-        let Some(inner) = target(t) else { continue };
+    for (i, (t, written)) in dead.named_cuts.iter().enumerate() {
+        let Some(inner) = target(t, dead.stack_arg_cuts.contains(&i)) else { continue };
         for &(ridx, off, sz) in inner.iter() {
             let covered = |b: u64| written.contains(&(idx, b)) || own.contains(&(idx, b));
             if ridx != idx || (off..off + sz.max(0) as u64).any(covered) {
@@ -1137,6 +1186,7 @@ struct Frame {
     at: Address,
     written: ByteSet,
     pushed: Pushed,
+    stored: Stored,
 }
 
 /// The stack slots a path has pushed registers into, and which register bytes
@@ -1345,6 +1395,20 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
     traps: &[uint4],
     stack_args: &std::collections::BTreeMap<u64, usize>,
 ) -> CalleeEntryDead {
+    probe_walk(tr, entry, reg_idx, follow, traps, stack_args, None)
+}
+
+/// [`probe_entry_with`], also recording, with `first`, each direct call the
+/// path hands a stack argument ([`stackargs`]).
+fn probe_walk<T: kuna_sleigh::translate::Translate + ?Sized>(
+    tr: &T,
+    entry: &Address,
+    reg_idx: int4,
+    follow: bool,
+    traps: &[uint4],
+    stack_args: &std::collections::BTreeMap<u64, usize>,
+    first: Option<&FirstStackArg>,
+) -> CalleeEntryDead {
     let mut res = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
     let Some(entry_space) = entry.get_space() else {
         res.complete = false;
@@ -1354,12 +1418,18 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.complete = false;
         return res;
     }
-    let start = vec![Frame { at: entry.clone(), written: ByteSet::new(), pushed: Pushed::default() }];
+    let start = vec![Frame {
+        at: entry.clone(),
+        written: ByteSet::new(),
+        pushed: Pushed::default(),
+        stored: Stored::default(),
+    }];
     let mut skips = Vec::new();
-    walk(tr, &mut res, start, if follow { Skips::Aside(&mut skips) } else { Skips::Dropped }, traps, stack_args);
+    let skip_to = if follow { Skips::Aside(&mut skips) } else { Skips::Dropped };
+    walk(tr, &mut res, start, skip_to, traps, stack_args, first);
     if res.complete && !skips.is_empty() {
         let mut late = CalleeEntryDead { reg_idx, complete: true, ..CalleeEntryDead::default() };
-        walk(tr, &mut late, skips, Skips::Walked, traps, stack_args);
+        walk(tr, &mut late, skips, Skips::Walked, traps, stack_args, first);
         res.skipped = Some(Box::new(late));
     }
     if !res.complete {
@@ -1374,6 +1444,7 @@ pub fn probe_entry_with<T: kuna_sleigh::translate::Translate + ?Sized>(
         res.opaque_cuts.clear();
         res.jumps = 0;
         res.named_cuts.clear();
+        res.stack_arg_cuts.clear();
         res.returning_opaque = 0;
         res.return_reads.clear();
         res.cond_written.clear();
@@ -1401,6 +1472,7 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
     mut skips: Skips<'_>,
     traps: &[uint4],
     stack_args: &std::collections::BTreeMap<u64, usize>,
+    first: Option<&FirstStackArg>,
 ) {
     let mut visited: HashMap<(int4, u64), ByteSet> = HashMap::new();
     let mut budget = MAX_PROBE_INSTRUCTIONS;
@@ -1440,7 +1512,8 @@ fn walk<T: kuna_sleigh::translate::Translate + ?Sized>(
             }
         };
         let skip = if follow { Some(&mut found) } else { None };
-        match step_instruction(res, &emit, frame.written, frame.pushed, &frame.at, len, skip, traps, stack_args) {
+        let paths = (frame.pushed, frame.stored);
+        match step_instruction(res, &emit, frame.written, paths, &frame.at, len, skip, traps, stack_args, first) {
             Some(next) => todo.extend(next),
             None => break,
         }
@@ -1498,7 +1571,12 @@ fn end_at_return(
             targets
                 .iter()
                 .zip(before)
-                .map(|(t, w)| Frame { at: t.clone(), written: w.clone(), pushed: Pushed::default() }),
+                .map(|(t, w)| Frame {
+                    at: t.clone(),
+                    written: w.clone(),
+                    pushed: Pushed::default(),
+                    stored: Stored::default(),
+                }),
         ),
         _ => res.lost |= !targets.is_empty(),
     }
@@ -1571,12 +1649,13 @@ fn step_instruction(
     res: &mut CalleeEntryDead,
     emit: &EntryEmit,
     written: ByteSet,
-    mut pushed: Pushed,
+    (mut pushed, mut stored): (Pushed, Stored),
     at: &Address,
     len: i32,
     skip: Option<&mut Vec<Frame>>,
     traps: &[uint4],
     stack_args: &std::collections::BTreeMap<u64, usize>,
+    first: Option<&FirstStackArg>,
 ) -> Option<Vec<Frame>> {
     let incoming = written.clone();
     let mut cur = written;
@@ -1611,6 +1690,7 @@ fn step_instruction(
         pushed.sp = Some(*sp);
     }
     let mut derived: HashMap<u64, Option<i64>> = HashMap::new();
+    let mut temps = Temps::default();
     let mut this_push = ByteSet::new();
     let mut moved = 0;
     for (k, op) in emit.ops.iter().enumerate() {
@@ -1658,6 +1738,9 @@ fn step_instruction(
         if pushed.sp.is_some() {
             pushed.track(op, res, &mut derived, &mut this_push, &mut moved);
         }
+        if let Some(first) = first {
+            stored.track(op, first, res.reg_idx, base, &mut temps);
+        }
         if op.opc == OpCode::CPUI_STORE {
             res.unpadded_read_bytes.append(&mut this_push);
         }
@@ -1675,6 +1758,10 @@ fn step_instruction(
                     Some(sp) if sp.get_type() == spacetype::IPTR_PROCESSOR => {
                         let t = Address::new(Rc::clone(sp), op.ins[0].offset);
                         res.named_cuts.push((t, cur.clone()));
+                        let pads_only = stack_args.get(&at.get_offset()) == Some(&0);
+                        if first.is_some_and(|f| !pads_only && stored.passes_stack_argument(f)) {
+                            res.stack_arg_cuts.push(res.named_cuts.len() - 1);
+                        }
                     }
                     _ => res.opaque_cuts.push(cur.clone()),
                 }
@@ -1769,10 +1856,10 @@ fn step_instruction(
     }
     let mut next: Vec<Frame> = targets
         .into_iter()
-        .map(|t| Frame { at: t, written: cur.clone(), pushed: pushed.clone() })
+        .map(|t| Frame { at: t, written: cur.clone(), pushed: pushed.clone(), stored: stored.clone() })
         .collect();
     if !ends_flow {
-        next.push(Frame { at: at + len as i64, written: cur, pushed });
+        next.push(Frame { at: at + len as i64, written: cur, pushed, stored });
     }
     Some(next)
 }

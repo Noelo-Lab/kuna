@@ -7496,8 +7496,34 @@ parameter on the stack that way (tar's `_getopt_long_r` is `push $0; push
 %r9; xor %r9d,%r9d; call`), as is a register the function computed. clang -O2's
 `getopt_long(argc,argv,opts,longopts,index)`, which forwards five registers to
 a seven-parameter `internal` and passes `0, 0` in `r9d` and `[rsp]`, printed
-`internal();`. A body the walk cannot finish -- an import, a thunk, a body past the
-budget -- states nothing, as before. The argument is as wide as the body reads
+`internal();`. The decline is lifted the same way one call further in, at a
+call the callee's body makes: the entry walk follows the stack pointer from
+the callee's entry and records each store it can place against it, through
+the stack pointer or a temporary computed from it
+(`decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg/stackargs.rs
+(Stored)`), and at a direct call whose first stack-argument slot of the
+default model the path stored into, the target's run stands whole for the
+reads `reads_through_calls` takes from it. The store is told apart on the
+terms above: a register stored as it stands is a spill, whether the store
+names the register or the temporary a 64-bit move copies it into, so of a
+register's value only a push passes an argument; a pushed register the
+path never wrote that is no argument register of the model is a save or an
+alignment pad, and a format call the resolver says reads no stack argument
+has none. gcc -O2's tar
+`rpl_getopt_long` is `sub $0x10,%rsp; xor %r9d,%r9d; push $0; call
+rpl_getopt_internal`, and `rpl_getopt_internal` reads none of the argument
+registers before it pushes its own stack argument and `&getopt_data` and
+calls `_getopt_internal_r`, whose body reads all six; that run was no list,
+so the forwarder took nothing through its call and a single-function
+decompile printed `return rpl_getopt_internal();`, while `decompile-all`,
+which states the callees first, printed all seven arguments. A forwarder
+whose pushed `%rbx` sits in that slot (`pid_plus` above, called through
+`twice_pid`) still takes only its own `rdi`, and so does one that stores
+clang's stack canary there (`push %rax; mov %fs:0x28,%rax; mov %rax,(%rsp)`
+before the call): were the canary a stack argument, the forwarder's run would
+be the whole register file, which its caller declines, and `twice_cnt` would
+call `cnt_plus()`. A body the walk cannot finish --
+an import, a thunk, a body past the budget -- states nothing, as before. The argument is as wide as the body reads
 it on a little-endian register file; on a big-endian one it is the whole
 register. All of the evidence above applies unchanged, with two additions,
 because the run is bounded only by what the walk saw. The finished list must

@@ -2357,8 +2357,10 @@ mod tests {
         // and kuna-passthrough-filegap(-arm) / a float-register gap keeps the core registers a wrapper forwards
         // and kuna-arm-stored-double / an ARM hard-float double stored only to a global is a parameter
         // and kuna-arm-opaque-double / an ARM hard-float double written for an opaque callee is its argument
+        // and kuna-passthroughfwdstack / a forwarder's call with a stack argument takes the target's whole run
+        // and kuna-gotoreduce-auto / an unoptimized function keeps the goto statements it was written with
         // and kuna-mips-float-arguments / MIPS N32, R6 O32 and O64 arguments take their GCC registers and slots
-        assert_eq!(count, 961, "corpus file count drifted");
+        assert_eq!(count, 963, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
