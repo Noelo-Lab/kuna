@@ -174,7 +174,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     /// in one register get one local per type, as javac's variables are; and
     /// with debug locals, a value joined at a phi that debug info does not
     /// name (d8's temporary for a `?:` or a materialised condition) is kept
-    /// apart from the register's named variables, one local per type.
+    /// apart from the register's named variables, one local per type; and an
+    /// unnamed boolean is kept apart from the register's other ints.
     fn local(&mut self, reg: u32, c: Mask, v: u32) -> Result<u16> {
         let m = self.m;
         let root = m.root(v);
@@ -183,9 +184,11 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             return self.slot(reg, c);
         }
         let mut key = if param { reg | REUSED } else { reg };
+        let unnamed = self.release || !m.named.contains(&root);
         let temp = !self.release && !m.named.contains(&root) && m.web_uses.get(&root).is_some_and(|w| w.1);
         let t = match (c, m.ref_desc(v)) {
             (L, Some(t)) if self.release || temp => Some(t.to_vec()),
+            (I, _) if unnamed && m.booleans.contains(&root) => Some(b"Z".to_vec()),
             _ if temp => Some(b"?".to_vec()),
             _ => None,
         };

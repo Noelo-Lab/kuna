@@ -2281,7 +2281,12 @@ at it, or the start of the phi's block; parameter entries aside) is d8's tempora
 `?:` or a materialised condition, and gets a local of its own per type, apart from the
 named variables of its register: otherwise the engine merges two such temporaries of one
 register (`T lower` and the `BoundType` after it in Guava `GeneralRange.from`) into one
-variable of their common supertype that a later read cannot take.
+variable of their common supertype that a later read cannot take. Likewise an int-like web
+that is a boolean (a def or a use typed `boolean`: a result, field, element, `instance-of`,
+argument, stored value or returned value of a `boolean` method; no def or use typed as
+another int: arithmetic, comparison, length, int-typed result, field, element or argument)
+gets a local apart from the register's other ints when debug info does not name it (in
+any method of a release build), so `int var2 = var1.length >= 4` is a `boolean`.
 
 **Release builds.** d8's release build also gives each `return` of a boolean method its own
 block where javac shares one `ireturn` for `return c;`: two blocks that only return `true`

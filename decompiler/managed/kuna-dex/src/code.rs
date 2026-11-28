@@ -174,6 +174,8 @@ pub struct Method<'d, 'a> {
     /// Handler blocks to the equal handler block that stands for them
     /// (`merge_handlers`).
     pub alias: BTreeMap<u32, u32>,
+    /// Int-like webs whose values are booleans (`boolean_webs`).
+    pub booleans: BTreeSet<u32>,
     /// `sparse-switch` ops rewritten from d8's test chains on a switch map,
     /// by address: their cases and default target (`switchmap.rs`).
     pub chains: BTreeMap<u32, crate::switchmap::Chain>,
@@ -271,6 +273,7 @@ impl<'d, 'a> Method<'d, 'a> {
             reused: BTreeSet::new(),
             named: BTreeSet::new(),
             alias: BTreeMap::new(),
+            booleans: BTreeSet::new(),
             chains: BTreeMap::new(),
         };
         m.build_ops(undo)?;
@@ -1337,6 +1340,7 @@ impl<'d, 'a> Method<'d, 'a> {
         }
         self.tvar = (0..values as u32).map(|v| tfind(&mut tp, v)).collect();
         self.infer_ref_types(&live);
+        self.boolean_webs(&live);
         for &k in &live {
             let o = &self.ops[k];
             if !matches!(o.rel, Rel::ArrayGet | Rel::ArrayPut) {
@@ -1369,6 +1373,71 @@ impl<'d, 'a> Method<'d, 'a> {
             })?;
         }
         Ok(())
+    }
+
+    /// The int-like webs some def of which is a boolean (a `boolean` result,
+    /// field or element, `instance-of`) and none of which is another int
+    /// (arithmetic, a comparison, a length, an int-typed result, field or
+    /// element): d8 puts both in one register, javac's variables keep them
+    /// apart.
+    fn boolean_webs(&mut self, live: &[usize]) {
+        let (mut z, mut n) = (BTreeSet::new(), BTreeSet::new());
+        let ret = |m: &Self, x: &Insn| m.dex.method(x.idx).ok().and_then(|mi| m.dex.proto(mi.proto).ok()).and_then(|p| m.dex.type_desc(p.ret).ok()).map(|d| d == b"Z");
+        let field = |m: &Self, x: &Insn| m.dex.field(x.idx).ok().and_then(|f| m.dex.type_desc(f.ty).ok()).map(|d| d == b"Z");
+        for &k in live {
+            let o = &self.ops[k];
+            let Some(d) = o.def.as_ref().filter(|d| d.mask & I != 0 && !is_wide(d.mask)) else { continue };
+            let x = &o.insn;
+            let kind = match x.op {
+                0x20 | 0x47 => Some(true),
+                0x52 | 0x60 => Some(false),
+                0x55 | 0x63 => Some(true),
+                0x56..=0x58 | 0x64..=0x66 | 0x44 | 0x48..=0x4a | 0x21 | 0x2d..=0x31 | 0x7b..=0xe2 => Some(false),
+                0x53 | 0x54 | 0x61 | 0x62 => None,
+                0x6e..=0x72 | 0x74..=0x78 if o.kind == Kind::Plain => ret(self, x),
+                _ => None,
+            }
+            .or_else(|| if matches!(x.op, 0x52..=0x58 | 0x60..=0x66) { field(self, x) } else { None });
+            match kind {
+                Some(true) => z.insert(self.root(d.id)),
+                Some(false) => n.insert(self.root(d.id)),
+                None => false,
+            };
+        }
+        let boolean_ret = self.dex.type_desc(self.proto.ret).is_ok_and(|d| d == b"Z");
+        for &k in live {
+            let o = &self.ops[k];
+            let x = &o.insn;
+            let params: Option<Vec<bool>> = match x.op {
+                0x6e..=0x72 | 0x74..=0x78 => self.dex.method(x.idx).ok().and_then(|mi| self.dex.proto(mi.proto).ok()).map(|p| {
+                    let own = usize::from(!matches!(x.op, 0x71 | 0x77));
+                    let mut v = vec![false; own];
+                    v.extend(p.params.iter().map(|&t| self.dex.type_desc(t).is_ok_and(|d| d == b"Z")));
+                    v
+                }),
+                _ => None,
+            };
+            for (i, u) in o.uses.iter().enumerate() {
+                if u.val == UNDEF || self.literal(u.val) {
+                    continue;
+                }
+                let boolean = match x.op {
+                    0x0f => Some(boolean_ret),
+                    0x4e => (i == 2).then_some(true),
+                    0x5c => (i == 1).then_some(true),
+                    0x6a => Some(true),
+                    0x6e..=0x72 | 0x74..=0x78 => params.as_ref().and_then(|p| p.get(i).copied()).filter(|&b| b || u.mask & I != 0),
+                    0x7b..=0xe2 => Some(false),
+                    _ => None,
+                };
+                match boolean {
+                    Some(true) => z.insert(self.root(u.val)),
+                    Some(false) => n.insert(self.root(u.val)),
+                    None => false,
+                };
+            }
+        }
+        self.booleans = z.difference(&n).copied().collect();
     }
 
     /// The element category of the array a value holds, when its type is known.

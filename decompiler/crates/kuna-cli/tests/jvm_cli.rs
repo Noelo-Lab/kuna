@@ -522,6 +522,8 @@ fn d8_register_sharing_is_undone() {
         assert!(failure.contains("      super(\"failed at \" + ") && !failure.contains(" = String.valueOf("), "{f}: {failure}");
         let rethrow = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.rethrow"]));
         assert!(rethrow.contains("} catch (IOException | RuntimeException "), "{f}: {rethrow}");
+        let as_int = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.asInt"]));
+        assert!(as_int.contains("boolean var1 = bytes.length >= 4;") && !as_int.contains("(boolean)"), "{f}: {as_int}");
         let bound = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.bound"]));
         assert!(bound.contains("return s::len;") && !bound.contains("requireNonNull"), "{f}: {bound}");
         let checked = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.checked"]));

@@ -266,6 +266,18 @@ public class Shapes {
         return r;
     }
 
+    static void state(boolean b, String m, int n) {
+        if (!b) {
+            throw new IllegalStateException(m + n);
+        }
+    }
+
+    // A materialised boolean argument and an int d8 put in one register (Guava HashCode.asInt).
+    static int asInt(byte[] bytes) {
+        state(bytes.length >= 4, "needs 4 bytes, has ", bytes.length);
+        return (bytes[0] & 255) | (bytes[1] & 255) << 8 | (bytes[2] & 255) << 16 | (bytes[3] & 255) << 24;
+    }
+
     public static void main(String[] args) throws Exception {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
@@ -294,7 +306,7 @@ public class Shapes {
             System.out.println("npe");
         }
         System.out.println(label("a", 2) + " " + new Failure(null, 3).getMessage());
-        System.out.println(rethrow("abc") + " " + hoisted(java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.TimeUnit.HOURS, true));
+        System.out.println(asInt(new byte[] {1, 2, 3, 4}) + " " + rethrow("abc") + " " + hoisted(java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.TimeUnit.HOURS, true));
         try {
             rethrow("io");
         } catch (java.io.IOException e) {
