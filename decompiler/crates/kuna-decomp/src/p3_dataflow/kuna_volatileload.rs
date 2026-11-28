@@ -230,8 +230,8 @@ mod tests {
         manager.insert_space(ram.clone()).unwrap();
         let mut arch = ArchContext::new(manager);
         let mut query = GlobalQuery::default();
-        *query.flagbase.split(&Address::new(ram.clone(), 0x50000004)) = 0;
-        *query.flagbase.split(&Address::new(ram.clone(), 0x50000000)) = varnode_flags::volatil;
+        *query.flagbase_mut().split(&Address::new(ram.clone(), 0x50000004)) = 0;
+        *query.flagbase_mut().split(&Address::new(ram.clone(), 0x50000000)) = varnode_flags::volatil;
         arch.global_query = Some(Rc::new(query));
         Funcdata::new(
             "read",
