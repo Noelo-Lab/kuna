@@ -1347,6 +1347,21 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    parameter of a generic class is a call on a raw receiver: in `BiConsumer<List, Integer> f
    = (l, i) -> { Character[] a = (Character[]) l.stream().map(..).toArray(Character[]::new);
    }` the cast of the `Object[]` result is kept and the inner lambda is cast in turn.
+   (kuna) Inside a lambda's body a captured variable is the enclosing method's variable,
+   with the type that variable is declared with, which `raw_receiver_erasure` did not know
+   for a capture: a lambda created in the body for a call on a captured raw local
+   (`r.one(s -> bag.removeIf(t -> t.length() > s.length()))` for a raw `Bag bag` without a
+   LocalVariableTable) was written implicitly typed for the raw parameter, and its own
+   parameters were `Object`. `raw_target_cast::declare_captures` declares, while a lambda's
+   body is written, each captured parameter of its implementation method with the declared
+   type of the variable the creating `invokedynamic` passes, so the call is seen to be on a
+   raw receiver and the inner lambda is cast. The types are those of the site being
+   written: one implementation method can be the body of lambdas in several methods
+   (`deduplicated_lambda_captures`), and a body that captures a `Bag<String>` parameter in
+   one of them needs no cast. A variable an anonymous or local class captures is typed the
+   same way, from the variable its captured-source record names in the enclosing method
+   (`raw_receiver_erasure::captured_type`), when that method has no LocalVariableTable or
+   the variable is a parameter.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.

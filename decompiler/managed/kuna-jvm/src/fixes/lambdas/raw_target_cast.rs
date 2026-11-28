@@ -19,6 +19,7 @@
 
 use std::cell::RefCell;
 
+use crate::classes_processor::ClassNode;
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -333,9 +334,43 @@ impl Drop for DeclaredParameters {
     }
 }
 
+/// Declares, until the returned guard drops, the captured parameters of the
+/// implementation of `lambda`, the lambda class `node`, while its body is
+/// written, with the types the variables it captures are declared with where
+/// it is created: in the body a captured parameter is that variable. One
+/// implementation can be the body of lambdas in several methods
+/// (`deduplicated_lambda_captures`), so the types are those of the site
+/// being written.
+pub fn declare_captures(lambda: NewExprent, node: ClassNode) -> Option<DeclaredParameters> {
+    let info = node.with(|d| d.lambda_information.clone()).filter(|i| !i.is_method_reference)?;
+    let md_content = MethodDescriptor::parse_descriptor(&info.content_method_descriptor);
+    let md_lambda = MethodDescriptor::parse_descriptor(&info.method_descriptor);
+    let captured = md_content.params.len().checked_sub(md_lambda.params.len())?;
+    let arguments = lambda.get_constructor()?.get_lst_parameters().to_vec();
+    let first = if info.is_content_method_static { 0 } else { 1 };
+    let mut slot = first as i32;
+    let mut params = Vec::new();
+    for (i, p) in md_content.params.iter().take(captured).enumerate() {
+        let declared = arguments
+            .get(first + i)
+            .and_then(|a| a.try_as_var())
+            .and_then(raw_receiver_erasure::declared_var_type);
+        if let Some(t) = declared {
+            params.push((slot, t));
+        }
+        slot += p.stack_size;
+    }
+    if params.is_empty() {
+        return None;
+    }
+    let key = format!("{}{}", info.content_method_name, info.content_method_descriptor);
+    DECLARED.with(|d| d.borrow_mut().push((info.content_class_name.clone(), key, params)));
+    Some(DeclaredParameters)
+}
+
 /// The type the parameter in `slot` of `method`, a lambda's implementation
-/// being written, is declared with, when [`declare_parameters`] gave
-/// it.
+/// being written, is declared with, when [`declare_parameters`] or
+/// [`declare_captures`] gave it.
 pub fn declared_parameter(method: StructMethod, slot: i32) -> Option<VarType> {
     let class = method.get_class_qualified_name();
     let key = format!("{}{}", method.get_name(), method.get_descriptor());
@@ -343,8 +378,8 @@ pub fn declared_parameter(method: StructMethod, slot: i32) -> Option<VarType> {
         d.borrow()
             .iter()
             .rev()
-            .find(|(c, k, _)| *c == class && *k == key)
-            .and_then(|(_, _, params)| params.iter().find(|(s, _)| *s == slot).map(|(_, t)| t.clone()))
+            .filter(|(c, k, _)| *c == class && *k == key)
+            .find_map(|(_, _, params)| params.iter().find(|(s, _)| *s == slot).map(|(_, t)| t.clone()))
     })
 }
 

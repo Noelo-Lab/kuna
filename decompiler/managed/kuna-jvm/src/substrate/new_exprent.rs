@@ -719,6 +719,7 @@ impl NewExprent {
                 }
                 let method_object = constructor.and_then(|c| c.get_instance());
                 let _site_names = deduplicated_lambda_captures::name_at_site(self, child_node);
+                let _site_types = lambdas::raw_target_cast::declare_captures(self, child_node);
                 ClassWriter::new().class_lambda_to_java(
                     child.expect("NullPointerException: child"),
                     &mut buf,
