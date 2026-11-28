@@ -146,6 +146,20 @@ public class Shapes {
         return g + " " + j + " " + p;
     }
 
+    enum Color { RED, GREEN, BLUE, GRAY }
+
+    // d8 switches on ordinal() for an enum of the program, and DEX lists a class's fields by name.
+    static String paint(Color c) {
+        switch (c) {
+            case RED:
+                return "r";
+            case GREEN:
+                return "g";
+            default:
+                return "other";
+        }
+    }
+
     public static void main(String[] args) {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
@@ -163,5 +177,9 @@ public class Shapes {
         System.out.println(arms(1) + " " + arms(4));
         System.out.println(wide(1, 2) + " " + wide(-3, 4));
         System.out.println(zeros(1.5f, -2, null) + " " + zeros(-1f, 3, "o"));
+        for (Color c : Color.values()) {
+            System.out.print(c.ordinal() + paint(c));
+        }
+        System.out.println();
     }
 }

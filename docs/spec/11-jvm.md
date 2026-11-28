@@ -2426,7 +2426,11 @@ member classes, and every class of the file whose `EnclosingClass` or `Enclosing
 names it (the engine links anonymous and local classes through their encloser's
 attribute). Static values become `ConstantValue` for primitives and strings when non-zero
 or the field is final; a final primitive field with no static value (d8 drops trailing
-defaults) that `<clinit>` never writes gets its type's default. Since DEX does not mark a method's class as an interface, a static,
+defaults) that `<clinit>` never writes gets its type's default. DEX lists a class's fields
+sorted by name, but an enum's constants are its fields in declaration order (their ordinals,
+which `values()` and a `switch` on `ordinal()` depend on; d8 switches on `ordinal()` itself
+for an enum of the program); an enum's constant fields are therefore written first, in the
+order its `<clinit>` first stores them, as javac declares and initialises them. Since DEX does not mark a method's class as an interface, a static,
 `super` or direct call is an interface call when the class is an interface defined in the
 file or one of a short list of JDK interfaces. The class-file version is the lowest that
 expresses the class: 50 (or the `min_version` option, down to 49), 51 for method-handle and

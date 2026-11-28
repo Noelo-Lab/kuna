@@ -506,6 +506,8 @@ fn d8_desugaring_is_undone() {
 #[test]
 fn d8_register_sharing_is_undone() {
     for f in ["shapes.dex", "shapes-release.dex"] {
+        let color = ok(&jvm(&["decompile", &dex(f), "vx.Shapes$Color"]));
+        assert!(color.contains("RED,\n   GREEN,\n   BLUE,\n   GRAY;"), "{f}: {color}");
         let arms = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.arms"]));
         assert!(arms.contains(" = new StringBuilder(") && !arms.contains("var1000"), "{f}: {arms}");
         let ranges = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.ranges"]));
@@ -514,6 +516,10 @@ fn d8_register_sharing_is_undone() {
         assert!(version.contains(" = null;") && !version.contains(" = var"), "{f}: {version}");
         let from = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.from"]));
         assert!(from.contains("Shapes.Kind var") && !from.contains("var3 = r.lowerKind()"), "{f}: {from}");
+        if f == "shapes.dex" {
+            let paint = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.paint"]));
+            assert!(paint.contains("case RED:\n         return \"r\";"), "{f}: {paint}");
+        }
     }
 }
 
