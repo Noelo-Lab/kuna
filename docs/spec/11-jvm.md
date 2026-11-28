@@ -2295,8 +2295,10 @@ called on: the chain became a builder in a register and one statement per `appen
 `decompiler/managed/kuna-dex/src/concat.rs` gives the `append`s their results back (each
 writes the builder's register again, the same reference) when the builder is created,
 appended to and turned into its string by `toString` in straight-line code under one try
-item, nothing else reads or writes its register in between, and debug info does not name
-it, so the chain is one expression and the engine prints the concatenation. d8 also calls
+item and on one source line, nothing else reads or writes its register in between, and
+debug info does not name it, so the chain is one expression (a builder the source appends to
+in statements of its own looks the same in a release build, but its statements are on lines
+of their own) and the engine prints the concatenation. d8 also calls
 `String.valueOf` on each reference operand of a concatenation before the chain starts, so the
 converted operand sat in a register across the chain, and a `super(...)` or `this(...)`
 argument became a statement before the call, which javac rejects. Such a call whose one use
@@ -2410,7 +2412,10 @@ it is. javac checks a bound method reference's receiver with `dup`, `Objects.req
 result is unused, right before the reference's lambda class is created. Such a call on the
 receiver of the bound method reference that follows it (one capture, a virtual or interface
 target that is not a synthetic lambda body) is written as javac's sequence inside the
-reference, so the reference stays an operand and what was pending below it (`stream()` of
+reference when the receiver is a parameter, a named variable, a constant, or a value read
+by nothing else, which then folds into the reference as javac's receiver expression (an
+unnamed variable would take the reference's type in the engine). The reference stays an
+operand and what was pending below it (`stream()` of
 `list.stream().anyMatch(name::startsWith)`) stays an expression; a check before a lambda
 that merely captures the variable is a statement of the source and stays one. The lambda
 class of a `new` in a peer file is found there, and the members it names

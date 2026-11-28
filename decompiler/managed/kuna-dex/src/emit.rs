@@ -11,7 +11,7 @@
 //! incoming values are all constants read once at the join's start gets them
 //! on the stack from each edge (`b = x > 3`, `c ? 5 : 7`), as javac writes it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::backport::Call;
 use crate::classfile::{op, Asm, Body, Label, Pool};
@@ -67,6 +67,8 @@ struct Emitter<'m, 'd, 'a, 's, 'p> {
     /// Bound method references whose receiver d8 null-checked just before
     /// them (the check's op to the reference's), written as javac does.
     null_checks: BTreeMap<usize, usize>,
+    /// The receivers of `null_checks`, read by the check and the reference.
+    checked: BTreeSet<u32>,
     /// The two `return true` / `return false` blocks (in layout order) of a
     /// boolean method, which share one `ireturn` as javac's `return c;` does.
     bool_ret: Option<(u32, u32, Label)>,
@@ -147,6 +149,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             regions: Vec::new(),
             bool_ret: None,
             null_checks: BTreeMap::new(),
+            checked: BTreeSet::new(),
             release: m.debug.locals.iter().all(|l| l.start == 0),
             ref_kinds: BTreeMap::new(),
         }
@@ -245,7 +248,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             _ => false,
         };
         let read = matches!(o.insn.op, 0x52..=0x58 | 0x60..=0x66);
-        n == 1 && !phi && m.direct_uses[d.id as usize] == 1 && u > k && u < m.ops.len() && m.ops[u].block == o.block
+        let checked = u32::from(self.checked.contains(&d.id));
+        n == 1 + checked && !phi && m.direct_uses[d.id as usize] == 1 + checked && u > k && u < m.ops.len() && m.ops[u].block == o.block
             && (read || !captured(&m.ops[u]))
     }
 
@@ -375,7 +379,10 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     /// `invokedynamic`; d8 keeps the check as a call whose result is unused
     /// right before the reference's lambda class is created. Such a pair is
     /// written as javac's sequence, so the receiver and what is pending
-    /// below it stay expressions.
+    /// below it stay expressions, when the receiver is a parameter, a named
+    /// variable, a constant, or a value read by nothing else, which then
+    /// folds into the reference (the engine types a variable it would
+    /// otherwise become by the reference).
     fn find_null_checks(&mut self) -> Result<()> {
         let m = self.m;
         if self.sh.verifiable {
@@ -395,9 +402,18 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 let Kind::NewObject { ty } = m.ops[n].kind else { continue };
                 let Some((owner, l)) = m.dex.lambda_in(ty, self.sh.peers) else { continue };
                 let bound = matches!(l.kind, 5 | 9) && l.captures.len() == 1 && !owner.synthetic_method(l.method);
-                if check && bound && m.ops[n].uses.first().map(|u| u.val) == Some(o.uses[0].val) {
+                let v = o.uses[0].val;
+                if !(check && bound && m.ops[n].uses.first().map(|u| u.val) == Some(v)) {
+                    continue;
+                }
+                let src = m.def_op[v as usize];
+                self.checked.insert(v);
+                let kept = src >= m.ops.len() || m.named.contains(&m.root(v)) || m.literal(v) || self.candidate(src) && self.user[v as usize] == n;
+                if kept {
                     self.null_checks.insert(n, k);
                     self.silent[k] = true;
+                } else {
+                    self.checked.remove(&v);
                 }
             }
         }
