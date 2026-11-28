@@ -51,6 +51,7 @@ use crate::statement::{EdgeDirection, Statement};
 use crate::struct_class::StructClass;
 use crate::struct_general_attribute::StructGeneralAttribute;
 use crate::struct_method::StructMethod;
+use crate::var_exprent::VarExprent;
 
 /// The local-variable store opcodes (the `_n` forms are read as these).
 const STORES: [i32; 5] = [OPC_ISTORE, OPC_LSTORE, OPC_FSTORE, OPC_DSTORE, OPC_ASTORE];
@@ -365,6 +366,9 @@ fn goto_at(offset: i32) -> Option<(i32, i32)> {
 /// gone) and the then-branch for the code after the if: [`reorder`] then
 /// negates the if.
 fn after_binding(after_jump: i32) -> Option<(i32, i32)> {
+    if !binding_at(after_jump) {
+        return None;
+    }
     let code = code_at(after_jump, 4);
     let ops: Vec<i32> = code.iter().map(|c| c.1).collect();
     if ops.len() == 4
@@ -382,6 +386,9 @@ fn after_binding(after_jump: i32) -> Option<(i32, i32)> {
 /// `after_jump`, its then-branch's start: `aload; checkcast; astore v` not
 /// followed by a `goto` (that of a negated test, [`after_binding`]).
 fn positive_binding(after_jump: i32) -> Option<i32> {
+    if !binding_at(after_jump) {
+        return None;
+    }
     let bind = code_at(after_jump, 4);
     let ops: Vec<i32> = bind.iter().map(|c| c.1).collect();
     (ops.len() == 4
@@ -406,6 +413,165 @@ fn pattern_if_else(ifstat: IfStatement, after_jump: i32, rest_start: i32) -> boo
             .into_iter()
             .find(|c| STORES.contains(&c.1) && c.3 >= slot)
             .is_some_and(|c| c.3 > slot)
+}
+
+/// Whether an `if` that binds an `instanceof` pattern in its condition is
+/// the else-branch of the `if` before it (`Some(true)`) or a statement after
+/// it (`Some(false)`), from their slots: javac declares the bindings of an
+/// if-else chain before the whole statement, in order, and the locals of its
+/// branches and the temporaries of its conditions after them, while an `if`
+/// after a statement, or in a block, declares its bindings in the slots the
+/// code before it freed. So a store in the first `if`'s code to the slot of
+/// the second's first binding shows two statements, and a store in it to a
+/// later slot, or a binding of its own in an earlier one, without that one
+/// shows the chain; `None` when its code shows neither. Two views: `ifstat`
+/// with `rest`, from `rest_start`, starting with the second `if`
+/// ([`pattern_chain`]); `ifstat` starting the else-branch of the first
+/// ([`else_chain`]). javac's rule: not read in a class ECJ wrote.
+fn pattern_chain(ifstat: IfStatement, rest: &[Statement], rest_start: i32) -> Option<bool> {
+    let mut next = *rest.first()?;
+    while next.is_sequence() {
+        next = next.get_first()?;
+    }
+    chained(ifstat, code_start(ifstat.0)?, next.try_as_if()?, rest_start)
+}
+
+/// [`pattern_chain`] for `ifstat`, which starts the else-branch of an `if`.
+fn else_chain(ifstat: IfStatement) -> Option<bool> {
+    let mut stat = ifstat.0;
+    let outer = loop {
+        let parent = stat.get_parent()?;
+        if let Some(outer) = parent.try_as_if() {
+            break (outer.get_elsestat() == Some(stat)).then_some(outer)?;
+        }
+        if !parent.is_sequence() || parent.get_first() != Some(stat) {
+            return None;
+        }
+        stat = parent;
+    };
+    chained(outer, code_start(outer.0)?, ifstat, code_start(ifstat.0)?)
+}
+
+/// The slot relation of [`pattern_chain`]: `first`'s code runs from
+/// `start` to `next_start`, where `next` starts; `None` when a statement
+/// comes between them (an else-if chain has none): a store before `next`'s
+/// condition to a slot below its first binding (the temporaries of `next`'s
+/// condition take slots after its bindings).
+fn chained(first: IfStatement, start: i32, next: IfStatement, next_start: i32) -> Option<bool> {
+    if ternary(next) {
+        return None;
+    }
+    let cond_start = exprent_start(next.get_headexprent().0)?.max(next_start);
+    let binding = condition_bindings(next, cond_start).first().copied()?.1;
+    let stores_in = |from: i32, to: i32| -> Vec<(i32, i32)> {
+        with_code(|code| {
+            code_between(code, from, to)
+                .iter()
+                .filter(|c| STORES.contains(&c.1))
+                .map(|c| (c.3, if c.1 == OPC_LSTORE || c.1 == OPC_DSTORE { 2 } else { 1 }))
+                .collect()
+        })
+    };
+    if stores_in(next_start, cond_start).iter().any(|&(slot, _)| slot < binding) {
+        return None;
+    }
+    let stores = stores_in(start, next_start);
+    if stores.iter().any(|&(slot, size)| (slot..slot + size).contains(&binding)) {
+        return Some(false);
+    }
+    let later = stores.iter().any(|&(slot, _)| slot > binding);
+    let earlier_binding = condition_bindings(first, start).iter().any(|&(_, b)| b < binding);
+    (later || earlier_binding).then_some(true)
+}
+
+/// Whether `ifstat` is the if-else of a conditional expression not yet
+/// rebuilt (a branch that only stores the value on the stack): its bindings
+/// belong to the statement around the expression (`T t = o instanceof X x ?
+/// x : d;` declares `t` before `x`), not to an `if` of their own.
+fn ternary(ifstat: IfStatement) -> bool {
+    [ifstat.get_ifstat(), ifstat.get_elsestat()].into_iter().flatten().any(|branch| {
+        lone_exprent(branch).first().is_some_and(|e| {
+            e.try_as_assignment()
+                .and_then(|a| a.get_left().try_as_var())
+                .is_some_and(|v| v.is_stack())
+        })
+    })
+}
+
+/// The pattern bindings of `ifstat`'s condition, whose code starts at
+/// `start` (where each starts, and its slot), in order: those its jumps
+/// test, and that of a positive
+/// test stored where the then-branch starts when the LineNumberTable starts
+/// no line there (a statement `T t = (T) o;` after `o instanceof T` is the
+/// same code on a line of its own).
+fn condition_bindings(ifstat: IfStatement, start: i32) -> Vec<(i32, i32)> {
+    let Some(then_start) = fall_through(ifstat) else {
+        return Vec::new();
+    };
+    let mut slots = bindings(start, then_start);
+    if has_lines() {
+        slots.extend(positive_binding(then_start).map(|slot| (then_start, slot)));
+    }
+    slots
+}
+
+/// Whether the class of the method being structured can hold `instanceof`
+/// patterns (version 60, Java 16, or later): before it, `aload; checkcast;
+/// astore` after a test is a cast statement (`v = (T) o;`), the same code
+/// as a binding.
+fn patterns() -> bool {
+    METHOD.with(|m| {
+        m.borrow()
+            .as_ref()
+            .is_some_and(|m| m.mt.get_bytecode_version().has_if_pattern_matching())
+    })
+}
+
+/// Whether `aload; checkcast; astore` at `at`, right after a test, can be an
+/// `instanceof` pattern's binding: the class holds patterns, and the
+/// LineNumberTable (when there is one) starts no line there, where a cast
+/// statement on a line of its own starts one.
+fn binding_at(at: i32) -> bool {
+    patterns() && !(has_lines() && line_starts_at(at))
+}
+
+/// Whether the method being structured has a LineNumberTable.
+fn has_lines() -> bool {
+    METHOD.with(|m| {
+        m.borrow().as_ref().is_some_and(|m| {
+            m.mt.get_attribute(StructGeneralAttribute::ATTRIBUTE_LINE_NUMBER_TABLE).is_some()
+        })
+    })
+}
+
+/// The instructions of `code`, sorted by offset, from offset `from` up to
+/// `to`.
+fn code_between(code: &[(i32, i32, i32, i32)], from: i32, to: i32) -> &[(i32, i32, i32, i32)] {
+    let lo = code.partition_point(|c| c.0 < from);
+    let hi = code.partition_point(|c| c.0 < to).max(lo);
+    &code[lo..hi]
+}
+
+/// The `instanceof` pattern bindings stored in the code from `from` to
+/// `to` (`aload; checkcast; astore`): where each starts, and its slot.
+fn bindings(from: i32, to: i32) -> Vec<(i32, i32)> {
+    if !patterns() {
+        return Vec::new();
+    }
+    with_code(|code| {
+        let lo = code.partition_point(|c| c.0 < from);
+        let hi = code.partition_point(|c| c.0 < to).max(lo);
+        code[lo..(hi + 2).min(code.len())]
+            .windows(3)
+            .filter(|w| {
+                (from..to).contains(&w[0].0)
+                    && w[0].1 == OPC_ALOAD
+                    && w[1].1 == OPC_CHECKCAST
+                    && w[2].1 == OPC_ASTORE
+            })
+            .map(|w| (w[0].0, w[2].3))
+            .collect()
+    })
 }
 
 /// Whether `ifstat` starts the else-branch of an if.
@@ -562,7 +728,24 @@ pub fn reorder(
     );
     let mut body_first = body_start < rest_start;
     let after_jump = fall_through(ifstat);
-    if body_first && after_jump.is_some_and(|f| pattern_if_else(ifstat, f, rest_start)) {
+    let chain = if body_first && !ecj() {
+        pattern_chain(ifstat, &rest, rest_start).or_else(|| else_chain(ifstat))
+    } else {
+        None
+    };
+    if chain == Some(true) && exits_before(body, rest_start) {
+        let else_branch = *rest.last()?;
+        if (next.is_do() || continues_loop(else_branch))
+            && !loop_end_ok(&rest, Reorder::Else, body_start)
+        {
+            return None;
+        }
+        return Some(Reorder::Else);
+    }
+    if body_first
+        && chain != Some(false)
+        && after_jump.is_some_and(|f| pattern_if_else(ifstat, f, rest_start))
+    {
         return None;
     }
     if let Some(after_jump) = after_jump {
@@ -1259,6 +1442,102 @@ pub fn for_header(
         None => false,
     };
     Some((init_line, update_line == cond_line))
+}
+
+/// How many of the assignments `before`, which end right before `init` in
+/// the block ahead of `loop_` (not yet its header's), javac compiled from the
+/// same `for` header
+/// (`for (int i = 0, n = a.length; i < n; i++)`): each assigns another
+/// variable the condition or `update` reads and starts on the line of the
+/// condition, as `init` does (a declaration on a line of its own is a
+/// statement before the loop); with a LocalVariableTable, its entry also
+/// covers the loop from its start to where the loop's code ends (not one of
+/// a later local of the slot, which ECJ's for-each temporaries take) and has
+/// the descriptor of `init`'s variable, and a variable without an entry is a
+/// compiler's temporary.
+pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &[Exprent]) -> usize {
+    let var = |e: Exprent| e.try_as_assignment().and_then(|a| a.get_left().try_as_var());
+    let (Some(head), Some(cond)) = (var(init), loop_.get_condition_exprent()) else {
+        return 0;
+    };
+    let line = |exprent: Exprent| exprent_start(exprent).and_then(line_at);
+    let cond_line = line(cond);
+    if cond_line.is_none() || line(init) != cond_line {
+        return 0;
+    }
+    let exit = loop_code_end(loop_);
+    let loop_start = code_start(loop_.0);
+    let head_lvt = head.get_lvt();
+    let mut taken: Vec<VarExprent> = vec![head];
+    for candidate in before.iter().rev() {
+        let Some(v) = var(*candidate) else {
+            break;
+        };
+        let read = cond.contains_var(v.get_var_version_pair())
+            || update.contains_var(v.get_var_version_pair());
+        if taken.iter().any(|t| t.get_index() == v.get_index())
+            || !read
+            || line(*candidate) != cond_line
+            || reads_own_slot(v, *candidate)
+        {
+            break;
+        }
+        let scoped = match (v.get_lvt(), &head_lvt) {
+            (Some(lvt), Some(head_lvt)) => {
+                lvt.descriptor == head_lvt.descriptor
+                    && loop_start.is_some_and(|start| lvt.get_start() <= start)
+                    && exit.is_some_and(|exit| lvt.get_end() <= exit)
+            }
+            (None, None) => !has_lvt(),
+            _ => false,
+        };
+        if !scoped {
+            break;
+        }
+        taken.push(v);
+    }
+    taken.len() - 1
+}
+
+/// The slot the last store instruction among those `exprent` came from
+/// writes, in the method being structured.
+pub fn store_slot(exprent: Exprent) -> Option<i32> {
+    let offsets = exprent.get_bytecode()?;
+    with_code(|code| {
+        code.iter()
+            .rev()
+            .find(|c| c.0 >= 0 && offsets.get(c.0 as usize) && STORES.contains(&c.1))
+            .map(|c| c.3)
+    })
+}
+
+/// Whether `assign`'s value reads `var`'s slot: a declaration cannot read
+/// the variable it declares, so `n = Math.min(a.length, n)` (whose two
+/// variables SSA may already have told apart) assigns a local declared
+/// before the loop.
+fn reads_own_slot(var: VarExprent, assign: Exprent) -> bool {
+    let slot = |v: VarExprent| {
+        v.get_processor()
+            .and_then(|p| p.get_var_original_index(v.get_index()))
+            .unwrap_or(v.get_index())
+    };
+    let own = slot(var);
+    assign.try_as_assignment().is_some_and(|a| {
+        a.get_right()
+            .get_all_exprents_rec_self(true, true)
+            .into_iter()
+            .any(|e| e.try_as_var().is_some_and(|v| slot(v) == own))
+    })
+}
+
+/// Whether the method being structured has a LocalVariableTable (then a
+/// local without an entry is a compiler's temporary).
+fn has_lvt() -> bool {
+    METHOD.with(|m| {
+        m.borrow()
+            .as_ref()
+            .is_some_and(|m| m.mt.get_local_variable_attr().is_some())
+    })
 }
 
 /// The source line of the instruction at `pc` in the LineNumberTable of the

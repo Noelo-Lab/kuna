@@ -158,9 +158,7 @@ impl DoStatement {
                 buf.append_indent(indent);
                 buf.push_newline_group(indent, 1);
                 buf.append("for (");
-                if let Some(init) = self.get_init_exprent() {
-                    buf.append_buffer(&init.to_java(indent));
-                }
+                self.append_inits(&mut buf, indent);
                 buf.append(";")
                     .append_possible_newline_alt(" ")
                     .append_buffer(&null_slot(self.get_condition_exprent()).to_java(indent))
@@ -216,9 +214,7 @@ impl DoStatement {
         match looptype {
             Type::For | Type::While => {
                 if looptype == Type::For {
-                    if let Some(init) = self.get_init_exprent() {
-                        lst.push(init);
-                    }
+                    lst.extend(self.get_init_exprents());
                 }
                 lst.extend(self.get_condition_exprent());
             }
@@ -246,6 +242,61 @@ impl DoStatement {
         ] {
             if list.first() == Some(oldexpr) {
                 list.set(0, newexpr);
+            }
+        }
+        let inits = self.get_init_exprent_list();
+        if let Some(at) = (1..inits.len()).find(|&i| inits.get(i) == oldexpr) {
+            inits.set(at, newexpr);
+        }
+    }
+
+    /// The initializers of a `for` header in source order: those
+    /// [`add_extra_init`](Self::add_extra_init) added, then the init slot's,
+    /// which the list holds last.
+    pub fn get_init_exprents(self) -> Vec<Exprent> {
+        self.get_init_exprent_list().to_vec()
+    }
+
+    /// Adds `init`, an assignment javac evaluated before the init slot's, to
+    /// the `for` header (`for (int i = 0, n = a.length; ..)`), after the
+    /// extras added before it.
+    pub fn add_extra_init(self, init: Exprent) {
+        let list = self.get_init_exprent_list();
+        list.add_at(list.len().saturating_sub(1), init);
+    }
+
+    /// Removes the initializers [`add_extra_init`](Self::add_extra_init)
+    /// added, in source order.
+    pub fn take_extra_inits(self) -> Vec<Exprent> {
+        let list = self.get_init_exprent_list();
+        let mut extra = Vec::new();
+        while list.len() > 1 {
+            extra.push(list.remove_at(0));
+        }
+        extra
+    }
+
+    /// The `for` header's initializers: one declaration of several
+    /// variables (`int i = 0, j, n = 3`) when each declares its variable, an
+    /// expression list (`i = 0, n = 3`) otherwise.
+    fn append_inits(self, buf: &mut TextBuffer, indent: i32) {
+        for (at, init) in self.get_init_exprents().into_iter().enumerate() {
+            if at == 0 {
+                buf.append_buffer(&init.to_java(indent));
+                continue;
+            }
+            buf.append(", ");
+            let declared = init
+                .try_as_assignment()
+                .map_or(Some(init), |a| Some(a.get_left()))
+                .and_then(|e| e.try_as_var())
+                .filter(|v| v.is_definition());
+            if let Some(var) = declared {
+                var.set_definition(false);
+                buf.append_buffer(&init.to_java(indent));
+                var.set_definition(true);
+            } else {
+                buf.append_buffer(&init.to_java(indent));
             }
         }
     }
@@ -309,12 +360,20 @@ impl DoStatement {
         set_head_slot(&self.get_inc_exprent_list(), inc_exprent);
     }
 
+    /// The init slot: the last initializer of the list, after any extra
+    /// ones ([`add_extra_init`](Self::add_extra_init)).
     pub fn get_init_exprent(self) -> Option<Exprent> {
-        self.d(|d| d.init_exprent.first())
+        self.d(|d| d.init_exprent.last())
     }
 
     pub fn set_init_exprent(self, init_exprent: Exprent) {
-        set_head_slot(&self.get_init_exprent_list(), init_exprent);
+        let list = self.get_init_exprent_list();
+        match list.len() {
+            0 => list.add(init_exprent),
+            n => {
+                list.set(n - 1, init_exprent);
+            }
+        }
     }
 
     pub fn get_looptype(self) -> Type {

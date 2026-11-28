@@ -552,8 +552,42 @@ impl Scopes {
         if anchor.block == d.block || anchor.name.is_none() || !overlap(&d.entries, &anchor.entries) {
             return false;
         }
-        let target = self.before(w);
-        self.move_to(root, i, anchor.block, anchor.seq, target)
+        let (block, target) = self.before_header(w, i);
+        self.move_to(root, i, block, self.decls[w].seq, target)
+    }
+
+    /// Where declaration `i` goes to precede `w`, and in which block. A
+    /// header variable's predecessors print before the loop, in the block
+    /// around its header; but a declaration whose slot follows that of
+    /// another variable the header declares is one of the header's
+    /// declarators (`for (int i = 0, j, n = a.length; ..)`, the slots in
+    /// declaration order), and its bare declaration goes into the header
+    /// before `w`'s.
+    fn before_header(&self, w: usize, i: usize) -> (usize, Target) {
+        let anchor = &self.decls[w];
+        let Place::Header(stat) = &anchor.place else {
+            return (anchor.block, self.before(w));
+        };
+        let d = &self.decls[i];
+        let declarator = stat.try_as_do().filter(|l| l.get_looptype() == DoType::For).and_then(|l| {
+            let inits = l.get_init_exprent_list();
+            let at = inits.to_vec().into_iter().find(|e| {
+                *e == anchor.var.0 || e.try_as_assignment().is_some_and(|a| a.get_left() == anchor.var.0)
+            })?;
+            let follows = self.decls.iter().any(|x| {
+                x.alive
+                    && x.block == anchor.block
+                    && matches!(&x.place, Place::Header(s) if s == stat)
+                    && x.slot.zip(d.slot).is_some_and(|(xs, ds)| xs < ds)
+                    && x.var.get_var_type().equals(&d.var.get_var_type())
+            });
+            (anchor.var.get_var_type().equals(&d.var.get_var_type()) && follows)
+                .then_some(Target { list: inits, before: Some(at) })
+        });
+        match declarator {
+            Some(target) => (anchor.block, target),
+            None => (self.parents[anchor.block].unwrap_or(anchor.block), self.before(w)),
+        }
     }
 
     /// The second rule, for the `catch` parameter `i`: hoists out of its

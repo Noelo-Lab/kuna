@@ -691,7 +691,13 @@ which belongs to the condition) is the then-branch. When the graph has merged th
 (`aload; checkcast; astore`, then a `goto` over the then-branch) into the code after the
 then-branch, and taken the result for the `if`'s body, the code after the `if` is javac's
 then-branch: the `if` is negated, so `if (!(o instanceof T v)) { return ..; } rest` stays a
-guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }`. An `if` whose then-branch is first
+guard instead of becoming `if (o instanceof T v) { rest } else { return ..; }`. The same
+instructions are a cast statement ending the then-branch (`if (t instanceof X) { e = (X) t; } else
+{ .. }`), so the rules that read a binding there (`binding_at`) do so only in a class of version 60
+(Java 16) or later, which can hold patterns, and not where the LineNumberTable starts a line, as a
+statement on a line of its own does and a binding of the condition's line does not; hsqldb's
+`Database.close`, a Java 11 class, printed that `if` negated with its branches swapped (case
+`TestCastBranchOldClass`). An `if` whose then-branch is first
 stays an `if` when that branch ends in a return or throw placed before the code after it,
 and becomes an if-else when the branch reaches the code after the sequence over it (a
 `goto`; the method's shared last `return`, which the graph merges into the branch, counts
@@ -713,6 +719,31 @@ them, so the slots show which form the source had), and for an `if` it has laid 
 times, so that a later pass that changes it back cannot alternate with it without end. Every change is a transformation
 `reorder_if` already makes, applied to the other branch, or one it skips: the
 statements, edges and conditions stay those of the bytecode.
+
+**An if-else chain of patterns, or two statements (kuna).** `if (o instanceof A a) { return ..; }
+if (o instanceof B b) { .. }` and `if (o instanceof A a) { return ..; } else if (o instanceof B b) {
+.. }` are the same code but for the slots: javac declares the bindings of an if-else chain before
+the whole statement, in order (`TransPatterns` hoists them to the outermost `if`), and the locals of
+its branches and the temporaries of its conditions (the subject `this.target` is stored first)
+after them, while an `if` after a statement, or in a block, declares its bindings in the slots the
+code before it freed, from the first one that code took. The rule above read only the first store
+after the then-branch, often the subject's temporary, and so printed Spring's two statements as a
+chain and its chains as two statements (`if (byName) { T s = ..; return s; } else if (f instanceof
+X x)`, where `x`'s slot comes before `s`'s). `decompiler/managed/kuna-jvm/src/p8_structure/kuna_javac_layout.rs
+(pattern_chain)` decides first, for an `if` whose then-branch javac placed first and the `if` that
+follows it with a binding in its condition (`else_chain`: or the `if` it starts the else-branch of):
+a store in the first `if`'s code to the slot of the second's first binding shows two statements
+(Vineflower's chain is not kept), and a store in it to a later slot, or a binding of its own in an
+earlier one, without that one shows the chain, which `reorder` makes (`Reorder::Else`, the second
+`if` taking the code after it as its own else-branch) when the first `if`'s then-branch ends in a
+return or throw (a branch that ends with a jump is laid out by the rules above). The second
+`if`'s bindings are read from its condition, not from statements before it in its head block, a
+store there to a slot below its first binding is a statement between the two (none comes between
+an `if` and its else-if), and the if-else of a conditional expression not yet rebuilt (`T t = o
+instanceof X x ? x : d;`, whose binding belongs to the declaration around it) is not an `if` of
+its own (`ternary`). The rule is `TransPatterns`', so it is not read in a class ECJ wrote, whose
+slots follow other rules.
+Case `TestPatternChainSlots`.
 
 **A finally exit inside a loop (kuna).** Each exit of a `finally` body is an edge of its own
 kind to the body's end, and `reorder_if` took such an edge as the direct path out of an `if`,
@@ -816,7 +847,27 @@ header's only when the LineNumberTable gives them the line of the loop's conditi
 for a header's parts and not for a statement before or in a `while` loop. So `X x = a; while (x !=
 null) { ..; x = x.next; }` stays a `while` loop, `for (; i < n; i++)` with `i` declared before it
 is a `for` without init, and a last statement that the end of an if-else reaches is not taken for
-a `for` update when it has a line of its own. *A value returned after a try whose handlers exit, or
+a `for` update when it has a line of its own. A header that declares several variables (`for (int
+i = 0, n = a.length; i < n; i++)`, javac's code for which is the stores one after another)
+printed with all but the last before the loop, where their scope outlives it, so a local declared
+after the loop could not take the slot javac gave it (ECJ's `exSize` printed as a second local,
+and Vineflower merges it into `i` with the wrong type). `kuna_javac_layout::extra_inits` takes
+the assignments right before the header's into it too when each assigns another variable the
+condition or update reads, starts on the condition's line, does not read its own slot (a
+declaration cannot read the variable it declares: d8's release DEX of Elasticsearch's `size =
+Math.min(docs.length, size)` on the header's line printed a second `long` local; case
+`TestForInitReassigned`), and, with a LocalVariableTable, has the descriptor of the header's
+variable and a scope that ends where the loop's code ends; the loop holds them in source order
+before its init slot (`DoStatement::add_extra_init`).
+`VarDefinitionHelper::set_var_definitions` declares each where it declares the header's, and
+`split_mixed_inits` moves them back before the loop when the header cannot hold them (Java's
+for-init is one declaration of one type or a list of assignments: a variable used after the loop,
+or declared with another type). A declaration that `kuna_source_scopes::hoist` moves before a
+header variable (`before_header`) prints before the loop, so it belongs to the block around the
+loop, where the other declarations of its local are merged into it (`double v; for (..) { v = ..;
+} v = ..;`), unless its slot follows that of another variable the header declares: then it is one
+of the header's declarators (`for (int i = 0, j, n = a.length; ..)`, javac's slots in declaration
+order) and goes into the header. Case `TestForInitPair`. *A value returned after a try whose handlers exit, or
 after a `synchronized` block*: `DeadCodeHelper::incorporate_value_returns` adds a `load; xreturn`
 block to the protected ranges of its predecessors, which puts the `return` into the try; it does
 not when javac reached the block by a `goto` from every predecessor (`jumped_to`: the block does
@@ -2308,6 +2359,16 @@ check of `x` and then loads the constant: removing the check alone printed `retu
 the offset of the loaded constant, and `restore_field_read` writes the constant at that
 offset as the read of the first instance field of `x`'s class (or a superclass) that holds
 its value; where it finds no such constant, the check stays written.
+(kuna) A try-with-resources whose body ends by assigning a local that the code after the try
+returns (`T v; try (R r = ..) { v = e; } return v;`) printed as `try (R r = ..) { return e; }`:
+`TryWithResourcesProcessor` folds such a return into the body, the shape javac's desugaring of a
+`return e` inside gives, which stores `e` in a temporary and returns it right after the close.
+javac declares the temporary after the resource and a local the source declared before the try
+before it, so the return stays after the try when the assignment's store has a lower slot than
+the resource's (`decompiler/managed/kuna-jvm/src/p8_structure/try_with_resources_processor.rs
+(declared_before)`, the slots read by `kuna_javac_layout::store_slot`). Elasticsearch's
+`convertRawTemplateToComponentTemplate` lost its local and its recompiled code. Case
+`TestTwrAssignedLocal`.
 (kuna) A creation `Outer.this.new Inner(..)` whose outer instance javac checks with a
 `requireNonNull` the creation's next argument follows keeps its qualifier also when the check
 already reads the outer instance and the creation still the stack variable holding it
@@ -2356,6 +2417,20 @@ empty case breaks this switch and the case's breaks to there close the switch it
 statement inside the case would print as a labeled block); an empty case that leaves another way
 (code of the next case that the structuring moved out of the switch, a loop's `break label`) keeps
 Vineflower's rule.
+
+**A store in a switch expression to the variable it initializes (kuna).** SSA gives a store
+inside an arm of a switch expression (`int num = switch (bar) { case 0 -> num = 1; .. }`, `x =
+switch (k) { case 1 -> x = 4; .. }`) a variable of its own, since the store after the switch
+overwrites it, and the declarations put that variable's declaration in the arm: `int num; yield
+num = 1;`, which javac rejects (`num` is in scope in its own initializer), or a second local
+(`byte var3`). javac gives a declared local its slot before it evaluates the initializer, and an
+assigned one holds its slot already, so a local the arms declare takes another slot and a store
+to the target's slot there is the target.
+`decompiler/managed/kuna-jvm/src/fixes/switches.rs (merge_arm_locals)` runs after the
+declarations are placed and makes each variable stored in the arms at the slot of the variable
+that the switch expression's assignment stores (one that holds its values: the same type, or an
+`int` for a constant narrowed to `byte`, `short` or `char`) that variable, its bare declarations
+in the arms dropped. Case `TestSwitchArmStore`.
 
 **Heap reads copied into several uses.**
 `decompiler/managed/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor)`

@@ -32,6 +32,7 @@ use crate::interpreter_util::InterpreterUtil;
 use crate::fixes::var_merge::var_merge_captured;
 use crate::fixes::var_merge::var_merge_liveness;
 use crate::fixes::declaration_scope;
+use crate::fixes::switches;
 use crate::fixes::var_merge;
 use crate::p6_variables::kuna_source_locals;
 use crate::method_descriptor::MethodDescriptor;
@@ -232,8 +233,11 @@ impl VarDefinitionHelper {
 
             if let Some(dstat) = stat.try_as_do() {
                 if dstat.get_looptype() == DoType::For {
-                    let init = dstat.get_init_exprent();
-                    if init.is_some_and(|init| self.set_definition(init, index)) {
+                    if dstat
+                        .get_init_exprents()
+                        .into_iter()
+                        .any(|init| self.set_definition(init, index))
+                    {
                         continue;
                     } else {
                         let lst_special = vec![
@@ -315,6 +319,45 @@ impl VarDefinitionHelper {
         self.set_non_final(root.0, &mut JHashSet::new());
         kuna_source_locals::order_declarations(root.0, varproc);
         self.remap_clashing_names(root.0, mt);
+        switches::merge_arm_locals(root.0, varproc);
+        Self::split_mixed_inits(root.0);
+    }
+
+    /// Moves the extra initializers of a `for` header
+    /// (`DoStatement::add_extra_init`) out before the loop when the header
+    /// cannot hold them: Java's for-init is one declaration of variables of
+    /// one type or a list of assignments, and a variable used after the loop
+    /// is declared before it.
+    fn split_mixed_inits(stat: Statement) {
+        for st in stat.get_stats().borrow().to_vec() {
+            Self::split_mixed_inits(st);
+        }
+        let Some(dstat) = stat.try_as_do().filter(|d| d.get_looptype() == DoType::For) else {
+            return;
+        };
+        let inits = dstat.get_init_exprents();
+        if inits.len() < 2 {
+            return;
+        }
+        let declared: Vec<Option<String>> = inits
+            .iter()
+            .map(|e| {
+                let var = e.try_as_assignment().map_or(*e, |a| a.get_left()).try_as_var()?;
+                if !var.is_definition() {
+                    return None;
+                }
+                let text = var.to_java(0).to_string();
+                Some(text.rsplit_once(' ').map_or(String::new(), |(t, _)| t.to_string()))
+            })
+            .collect();
+        let one_declaration = declared.iter().all(|d| d.is_some() && *d == declared[0]);
+        if one_declaration || declared.iter().all(Option::is_none) {
+            return;
+        }
+        let defs = dstat.get_var_definitions();
+        for extra in dstat.take_extra_inits() {
+            defs.add(extra);
+        }
     }
 
     /// Java: findLVT(int, Statement)
@@ -1894,7 +1937,7 @@ impl VarDefinitionHelper {
             } else if let Some(do_stat) = stat.try_as_do() {
                 let mut when_true: JHashSet<VarInMethod> = JHashSet::new();
                 let mut when_false: JHashSet<VarInMethod> = JHashSet::new();
-                if let Some(init) = do_stat.get_init_exprent() {
+                for init in do_stat.get_init_exprents() {
                     self.iterate_clashing_exprent(
                         stat,
                         mt,
