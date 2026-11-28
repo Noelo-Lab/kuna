@@ -2124,3 +2124,5 @@ case	kuna-fixes/pkg/TestCapturedRawLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestC
 case	kuna-fixes/pkg/TestRawArrayElement	Kuna Fixes	kuna-fixes/classes/pkg/TestRawArrayElement
 # kuna-fixes/src/pkg/TestCurriedLambdaRaw.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestCurriedLambdaRaw	Kuna Fixes	kuna-fixes/classes/pkg/TestCurriedLambdaRaw
+# kuna-fixes/src/pkg/TestRawFieldReceiverCall.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawFieldReceiverCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawFieldReceiverCall

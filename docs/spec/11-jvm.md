@@ -2170,6 +2170,13 @@ parameter's type
 read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
 inferred type stays, since a constructor infers its class's type arguments from it (a diamond
 inferred from the erasure would not compile).
+The erasure holds wherever the field read is used: as the receiver of a call or of another
+field read, whose own type is then erased (`(Integer) h.f.apply("x")` for a raw `Holder h`
+whose field is `Fn<T, Integer> f`, `(String) h.next.value`), and as the target of a store,
+which takes the erased type (`h.next = make()` and `h.value = "y"` had been written cast to
+`Holder<T>` and `T`, a variable not in scope); `raw_receiver_erasure` gives such a read the
+field's descriptor type as its declared type, and `AssignmentExprent` writes a store to it
+against that type.
 An element of an array has the component type of the array's static type (JLS 15.10.3), so a
 call on `bags[0]` for a `Bag[] bags` is a call on a raw receiver too; `raw_receiver_erasure`
 took an array access for a receiver of unknown type, and `bags[0].removeIf(t -> t.length() >

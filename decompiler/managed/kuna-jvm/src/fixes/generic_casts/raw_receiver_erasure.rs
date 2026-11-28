@@ -170,6 +170,9 @@ fn declared_type(e: Exprent) -> Option<VarType> {
         if field.get_name().starts_with("this$") || !field_declared(field) {
             return None;
         }
+        if has_raw_field_receiver(field) {
+            return Some(field.get_expr_type());
+        }
         return Some(field.get_inferred_expr_type(None));
     }
     if let Some(func) = e.try_as_function() {
