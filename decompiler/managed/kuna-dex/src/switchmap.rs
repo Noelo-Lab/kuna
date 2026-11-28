@@ -65,14 +65,16 @@ pub type Regs<'r> = &'r dyn Fn(&Insn) -> (Vec<u32>, Vec<u32>);
 /// Rewrites every such chain in `insns` (which branches and handlers reach
 /// at `entered`, and try items cover at `tries`); returns them by the
 /// address of the `sparse-switch` that replaces the first test.
-pub fn rewrite(dex: &Dex, insns: &mut [Insn], entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs) -> BTreeMap<u32, Chain> {
+pub fn rewrite(dex: &Dex, insns: &mut [Insn], code: &[u8], entered: &BTreeSet<u32>, tries: &[(u32, u32)], handlers: &[u32], regs: Regs) -> BTreeMap<u32, Chain> {
     let mut out = BTreeMap::new();
     let mut maps: BTreeSet<u32> = BTreeSet::new();
+    let mut known: Option<Known> = None;
     let mut k = 0;
     while k < insns.len() {
         let x = &insns[k];
         if x.op == 0x44 && maps.contains(&x.b) {
-            if let Some((first, chain, end)) = chain(insns, k, entered, tries, regs) {
+            let consts = known.get_or_insert_with(|| Known::new(insns, code, entered, tries, handlers, regs)).after(k, regs);
+            if let Some((first, chain, end)) = chain(insns, k, consts, entered, tries, regs) {
                 let v = insns[k].a;
                 for n in &mut insns[first + 1..end] {
                     n.op = 0x00;
@@ -105,15 +107,16 @@ fn writes(x: &Insn) -> Option<u32> {
     }
 }
 
-/// The chain of tests on the value `aget` `k` defines: hoisted 32-bit
-/// constants, then consecutive `if-eq`/`if-ne` of that value against
+/// The chain of tests on the value `aget` `k` defines (`consts`: the
+/// registers holding a 32-bit constant on every path to it, d8 hoisting
+/// them anywhere above): hoisted constants, then consecutive `if-eq`/`if-ne` of that value against
 /// constants, which nothing else enters; an `if-ne` ends the chain (its
 /// fall-through is its case, its target the default). A constant loaded
 /// between two tests vanishes with them, so its register must be dead at
 /// every target.
-fn chain(insns: &[Insn], k: usize, entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs) -> Option<(usize, Chain, usize)> {
+fn chain(insns: &[Insn], k: usize, mut consts: BTreeMap<u32, i32>, entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs) -> Option<(usize, Chain, usize)> {
     let v = insns[k].a;
-    let mut consts: BTreeMap<u32, i32> = BTreeMap::new();
+    consts.remove(&v);
     let mut j = k + 1;
     while let Some(x) = insns.get(j) {
         match x.op {
@@ -216,4 +219,110 @@ fn dead(insns: &[Insn], addr: u32, r: u32, tries: &[(u32, u32)], regs: Regs) -> 
         }
     }
     true
+}
+
+/// The registers holding the same 32-bit constant on every path to each
+/// block of the method as d8 wrote it (a handler is entered knowing none,
+/// since an exception leaves from the middle of a block).
+struct Known {
+    insns: Vec<Insn>,
+    starts: Vec<usize>,
+    entry: Vec<Option<BTreeMap<u32, i32>>>,
+}
+
+impl Known {
+    fn new(insns: &[Insn], code: &[u8], entered: &BTreeSet<u32>, tries: &[(u32, u32)], handlers: &[u32], regs: Regs) -> Known {
+        let insns = insns.to_vec();
+        let at = |a: u32| insns.binary_search_by_key(&a, |x| x.addr).ok();
+        let mut lead: BTreeSet<usize> = BTreeSet::from([0]);
+        for (k, x) in insns.iter().enumerate() {
+            if matches!(x.op, 0x0e..=0x11 | 0x27..=0x2c | 0x32..=0x3d) {
+                lead.insert(k + 1);
+            }
+        }
+        for &a in entered.iter().chain(tries.iter().flat_map(|t| [&t.0, &t.1])) {
+            lead.extend(at(a));
+        }
+        lead.retain(|&k| k < insns.len());
+        let starts: Vec<usize> = lead.into_iter().collect();
+        let block = |k: usize| starts.partition_point(|&s| s <= k) - 1;
+        let mut entry: Vec<Option<BTreeMap<u32, i32>>> = vec![None; starts.len()];
+        let mut work: Vec<usize> = vec![0];
+        entry[0] = Some(BTreeMap::new());
+        for &a in handlers {
+            if let Some(k) = at(a) {
+                entry[block(k)] = Some(BTreeMap::new());
+                work.push(block(k));
+            }
+        }
+        while let Some(b) = work.pop() {
+            let mut state = entry[b].clone().unwrap_or_default();
+            let end = starts.get(b + 1).copied().unwrap_or(insns.len());
+            for x in &insns[starts[b]..end] {
+                step(&mut state, x, regs);
+            }
+            let last = &insns[end - 1];
+            let mut succ: Vec<usize> = Vec::new();
+            match last.op {
+                0x0e..=0x11 | 0x27 => {}
+                0x28..=0x2a => succ.extend(u32::try_from(last.target()).ok().and_then(at)),
+                0x32..=0x3d => {
+                    succ.extend(u32::try_from(last.target()).ok().and_then(at));
+                    succ.push(end);
+                }
+                0x2b => {
+                    succ.extend(packed_switch(code, last.target()).map(|p| p.1).unwrap_or_default().iter().filter_map(|&r| at((i64::from(last.addr) + i64::from(r)) as u32)));
+                    succ.push(end);
+                }
+                0x2c => {
+                    succ.extend(sparse_switch(code, last.target()).unwrap_or_default().iter().filter_map(|&(_, r)| at((i64::from(last.addr) + i64::from(r)) as u32)));
+                    succ.push(end);
+                }
+                _ => succ.push(end),
+            }
+            for s in succ.into_iter().filter(|&s| s < insns.len()) {
+                let t = block(s);
+                let merged = match &entry[t] {
+                    None => state.clone(),
+                    Some(old) => old.iter().filter(|(r, v)| state.get(r) == Some(v)).map(|(&r, &v)| (r, v)).collect(),
+                };
+                if entry[t].as_ref() != Some(&merged) {
+                    entry[t] = Some(merged);
+                    work.push(t);
+                }
+            }
+        }
+        Known { insns, starts, entry }
+    }
+
+    /// The known constants right after instruction `k`.
+    fn after(&self, k: usize, regs: Regs) -> BTreeMap<u32, i32> {
+        let b = self.starts.partition_point(|&s| s <= k) - 1;
+        let mut state = self.entry[b].clone().unwrap_or_default();
+        for x in &self.insns[self.starts[b]..=k] {
+            step(&mut state, x, regs);
+        }
+        state
+    }
+}
+
+fn step(state: &mut BTreeMap<u32, i32>, x: &Insn, regs: Regs) {
+    match x.op {
+        0x12..=0x15 => {
+            state.insert(x.a, x.lit as i32);
+        }
+        0x01..=0x03 => match state.get(&x.b).copied() {
+            Some(v) => {
+                state.insert(x.a, v);
+            }
+            None => {
+                state.remove(&x.a);
+            }
+        },
+        _ => {
+            for r in regs(x).1 {
+                state.remove(&r);
+            }
+        }
+    }
 }

@@ -229,6 +229,43 @@ public class Shapes {
         }
     }
 
+    // The constants of two such chains hoisted to the top of the method, above other branches
+    // (Guava CacheBuilderSpec.toCacheBuilder).
+    static int hoisted(java.util.concurrent.TimeUnit a, java.util.concurrent.TimeUnit b, boolean c) {
+        int r = 0;
+        if (a != null) {
+            switch (a) {
+                case SECONDS:
+                    r += 5;
+                    break;
+                case MINUTES:
+                    r += 7;
+                    break;
+                default:
+                    throw new AssertionError(a);
+            }
+        }
+        if (c) {
+            r *= 3;
+        }
+        if (b != null) {
+            switch (b) {
+                case SECONDS:
+                    r += 10;
+                    break;
+                case MINUTES:
+                    r += 20;
+                    break;
+                case HOURS:
+                    r += 30;
+                    break;
+                default:
+                    throw new AssertionError(b);
+            }
+        }
+        return r;
+    }
+
     public static void main(String[] args) throws Exception {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
@@ -257,7 +294,7 @@ public class Shapes {
             System.out.println("npe");
         }
         System.out.println(label("a", 2) + " " + new Failure(null, 3).getMessage());
-        System.out.println(rethrow("abc"));
+        System.out.println(rethrow("abc") + " " + hoisted(java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.TimeUnit.HOURS, true));
         try {
             rethrow("io");
         } catch (java.io.IOException e) {

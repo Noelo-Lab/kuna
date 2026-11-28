@@ -526,9 +526,9 @@ fn d8_register_sharing_is_undone() {
         assert!(bound.contains("return s::len;") && !bound.contains("requireNonNull"), "{f}: {bound}");
         let checked = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.checked"]));
         assert!(checked.contains("Objects.requireNonNull(s);"), "{f}: {checked}");
-        for m in ["unit", "seconds"] {
+        for m in ["unit", "seconds", "hoisted"] {
             let sw = ok(&jvm(&["decompile", &dex(f), &format!("vx.Shapes.{m}")]));
-            assert!(sw.contains("switch (u) {") && sw.contains("case SECONDS:") && !sw.contains("SwitchMap"), "{f}: {sw}");
+            assert!(sw.contains("switch (") && sw.contains("case SECONDS:") && !sw.contains("SwitchMap"), "{f}: {sw}");
         }
         if f == "shapes.dex" {
             let paint = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.paint"]));

@@ -2382,8 +2382,10 @@ A panic in the translation of one method is caught and fails that method the sam
 writes such an array for nothing else. d8's release build changes both sides, and
 `decompiler/managed/kuna-dex/src/switchmap.rs` undoes both before ops are built. A small
 `switch` becomes a chain of `if-eq`/`if-ne` tests of the value read from the array against
-constants: when the tests follow each other (constants only between them, whose registers a
-short walk finds dead at every target) and nothing else enters them, the first becomes a
+constants (a register holds one if a forward pass over the method as d8 wrote it finds that
+constant in it on every path, handlers entered knowing none, since d8 hoists constants above
+other branches): when the tests follow each other (constants only between them, whose
+registers a short walk finds dead at every target) and nothing else enters them, the first becomes a
 `sparse-switch` with each test's case (an `if-ne`'s fall-through, then the chain ends at its
 target, the default) and an explicit default target, written as `lookupswitch`, and the rest
 become `nop`s. And `<clinit>` fills the first entry through the register it stored the new
