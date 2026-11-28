@@ -13484,6 +13484,44 @@ wide_call_target: word_address is wide_call_offset_0 & wide_call_offset_22 [ wor
 :CALL wide_call_target "delay 5" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d5 & wide_call_target & link_2_5 & resume_2_5 [ carmel_counted_delay=1; ] { push_link(link_2_5); delayslot(3); call wide_call_target; goto resume_2_5; }
 :CALL wide_call_target "delay 6" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27d9 & wide_call_target & link_2_6 & resume_2_6 [ carmel_counted_delay=1; ] { push_link(link_2_6); delayslot(3); call wide_call_target; goto resume_2_6; }
 :CALL wide_call_target "delay 7" is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_9_22=0x27dd & wide_call_target & link_2_7 & resume_2_7 [ carmel_counted_delay=1; ] { push_link(link_2_7); delayslot(3); call wide_call_target; goto resume_2_7; }
+
+@define WIDE_CALL_CE1 "carmel_issue=4 & wide_left_mode=0 & wide_right_mode=1 & wide_goto_ce_bank=0 & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 & wide_call_target & link_2_0"
+
+:CALL wide_call_target "CE1" is $(WIDE_CALL_CE1) & wide_9_22=0x27c1 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    clock_ce();
+    carmel_end_unmodeled_issue();
+    if (!admitted) goto inst_next;
+    local old_sp:2 = SP;
+    SP = old_sp - 2;
+    if (enabled == 0) goto <address_only>;
+    store_link(old_sp, link_2_0);
+    call wide_call_target;
+    goto inst_next;
+  <address_only>
+    goto wide_call_target;
+}
+
+:"CALL C1" wide_call_target "CE1" is $(WIDE_CALL_CE1) & wide_2_22=0x139080 {
+    local admitted:1 = carmel_read_address_admission(1:1);
+    local enabled:2;
+    unary_ce(CECFG1, EST, CETBL, 0, enabled);
+    local taken:1 = (EST & 1) != 0;
+    clock_ce();
+    carmel_end_unmodeled_issue();
+    if (!admitted) goto inst_next;
+    if (enabled == 0) goto <address_only>;
+    store_link(SP, link_2_0);
+    if (!taken) goto inst_next;
+    SP = SP - 2;
+    call wide_call_target;
+    goto inst_next;
+  <address_only>
+    goto wide_call_target;
+}
+
 wide_goto_target: wide_word_address is wide_goto_offset_0 & wide_goto_offset_22 [ wide_word_address = (inst_start + (wide_goto_offset_0 | (wide_goto_offset_22 << 22))) & 0xffffff; ] { export *[code]:3 wide_word_address; }
 :"GOTO NC1" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1 & wide_goto_ce_bank=1 & wide_2_22=0x139001 & wide_goto_target { if ((EST & 1) == 0) goto wide_goto_target; }
 :"GOTO" wide_goto_target is carmel_issue=5 & wide_left_mode=1 & wide_right_mode=1

@@ -708,6 +708,64 @@ fn carmel_nc1_call_delay_counts_mixed_issues_but_retains_the_encoded_link() {
 }
 
 #[test]
+fn carmel_undelayed_ce_call_separates_admission_and_link_write() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    const INC: [u8; 6] = [0x21, 0xac, 0x20, 0x2b, 0xec, 0];
+    const RET: [u8; 6] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let temp = tempfile::tempdir().unwrap();
+    let binary = temp.path().join("ce-call.bin");
+    let source = temp.path().join("ce-call.c");
+    let executable = temp.path().join("ce-call");
+    for (opcode, stable) in [([0xcf, 0x82], 3), ([0xce, 0x42], 1)] {
+        for (age, early_veto, early_admit) in [(5, 2, 1), (6, 1, 3)] {
+            let mut code = [NOP; 25];
+            code[9 - age] = [0x21, 0xad, 0x6a, 0x2b, 0xec, 0]; // INC A5L; drives C and Z
+            code[9] = [0, 0, 24, opcode[0], opcode[1], 0];
+            code[10..12].copy_from_slice(&[INC, RET]);
+            code[21..24].copy_from_slice(&[INC, INC, RET]);
+            fs::write(&binary, code.as_flattened()).unwrap();
+            let emit = |entry| {
+                let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+                kuna.arg("decompile").arg(&binary).args([
+                    entry, "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                    "--base", "0x1000", "--json", "--define-function", "0x102a=fixture_callee",
+                    "--assert-strict", "--assert", "return %A0L unsigned short",
+                    "--assert", "param fixture_callee::0 %A0L unsigned short in_a0l",
+                    "--assert", "param fixture_callee::1 %ECFG unsigned short in_ecfg",
+                    "--assert", "return fixture_callee::%A0L unsigned short",
+                ]);
+                let inputs = ["A0L", "ECFG", "EST", "CECFG1", "CECFG2", "CETBL", "A5L"];
+                let inputs = if entry == "0x102a" { &inputs[..2] } else { inputs.as_slice() };
+                for (i, input) in inputs.iter().enumerate() {
+                    kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+                }
+                let output = common::process::required_output(&mut kuna);
+                let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+                let function = &json["functions"][0];
+                assert!(function["error"].is_null(), "{function}");
+                function["code"].as_str().unwrap().to_owned()
+            };
+            let emitted = format!("{}\n{}", emit("0x102a"), emit("0x1000"));
+            fs::write(&source, format!(
+                "#include <stdbool.h>\n#include <stdint.h>\n{emitted}\n\
+                 #define CALL(cfg,tbl,a5) sub_1000(10,0,0,0x0ee8|(cfg),0,tbl,a5)\n\
+                 int main(void) {{\n\
+                   if (CALL(0,0,65535) != 11 || CALL(0x1000,0,65535) != 12) return 1;\n\
+                   if (CALL(0,1,0) != 10+{stable}) return 2;\n\
+                   if (CALL(0,1,65535) != 10+{early_veto}) return 3;\n\
+                   if (CALL(0,2,65535) != 10+{early_admit}) return 4;\n\
+                   return CALL(0x1000,2,65535) != 13;\n\
+                 }}\n"
+            )).unwrap();
+            run_emitted_c(&source, &executable, &emitted);
+        }
+    }
+}
+
+#[test]
 fn carmel_wide_logic_control_alias_writes_high_word_and_masks_repeat_depth() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

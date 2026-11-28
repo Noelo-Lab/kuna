@@ -88,6 +88,11 @@ marked wide `CALL NC1` with encoded delay three also retire two issues.
 These forms test carry before the delayed issues, write the encoded link
 on both paths, and decrement `SP` only when they take the call. Taken calls
 return to the encoded link; vetoed calls continue after the retired delays.
+Undelayed wide relative `CALL CE1` and `CALL C1 CE1` require proved early
+address admission. With admission but a late CE veto, both redirect
+without writing the link; only the unconditional form decrements `SP`.
+With late CE enabled, the conditional form writes the link even if carry
+vetoes the transfer and `SP` update.
 Compact RETURN admits two or three delay issues with an inactive right lane,
 and an undelayed CE1 form whose address enable can override a veto.
 Immediate REPEAT handles one register-only following issue, including zero
