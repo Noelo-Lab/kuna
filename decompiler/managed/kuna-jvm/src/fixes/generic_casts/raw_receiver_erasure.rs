@@ -160,7 +160,8 @@ pub fn is_raw(e: Exprent) -> bool {
 /// The static type the decompiled program gives `e`, when it is declared and
 /// kuna knows the declaration: a variable other than `this` and a lambda
 /// parameter, a field of a known class other than a synthetic outer
-/// instance, a written cast, and a call of a known method.
+/// instance, a written cast, an element of an array of a declared type, and
+/// a call of a known method.
 fn declared_type(e: Exprent) -> Option<VarType> {
     if let Some(var) = e.try_as_var() {
         return declared_var_type(var);
@@ -179,6 +180,9 @@ fn declared_type(e: Exprent) -> Option<VarType> {
             true => Some(func.get_expr_type()),
             false => declared_type(func.get_lst_operands().get(0)),
         };
+    }
+    if let Some(element) = e.try_as_array() {
+        return declared_type(element.get_array()).filter(|t| t.array_dim > 0).map(|t| t.decrease_array_dim());
     }
     if let Some(inv) = e.try_as_invocation() {
         let desc = desc_of(inv)?;

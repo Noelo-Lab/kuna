@@ -2120,3 +2120,5 @@ case	kuna-fixes/pkg/TestCapturedSlotReuse	Kuna Fixes	kuna-fixes/classes/pkg/Test
 case	kuna-fixes/pkg/TestRawTargetGenericCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawTargetGenericCall
 # kuna-fixes/src/pkg/TestCapturedRawLocal.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestCapturedRawLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedRawLocal
+# kuna-fixes/src/pkg/TestRawArrayElement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawArrayElement	Kuna Fixes	kuna-fixes/classes/pkg/TestRawArrayElement

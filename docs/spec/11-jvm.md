@@ -2161,6 +2161,10 @@ parameter's type
 read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
 inferred type stays, since a constructor infers its class's type arguments from it (a diamond
 inferred from the erasure would not compile).
+An element of an array has the component type of the array's static type (JLS 15.10.3), so a
+call on `bags[0]` for a `Bag[] bags` is a call on a raw receiver too; `raw_receiver_erasure`
+took an array access for a receiver of unknown type, and `bags[0].removeIf(t -> t.length() >
+k)` was written without the cast of its lambda for the raw parameter, typing `t` as `Object`.
 Vineflower drops a cast whose operand's inferred type is already of the cast's class, which
 holds where javac inserts the `checkcast` again: javac casts an argument to the erasure of
 its parameter's type in the call's instantiated method type and nowhere else. On a receiver
