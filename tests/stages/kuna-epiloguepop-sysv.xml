@@ -1,0 +1,67 @@
+<decompilertest>
+<binaryimage arch="x86:LE:64:default:gcc">
+<!--
+  GH-1969 on x86-64 System V. clang -O2 gives a float function that makes a
+  call an eight-byte frame with push rax / pop rax: twice is
+  float twice(float x) { g(); return x * 2.0f; }, whose spill of x overwrites
+  the pushed slot, so the pop leaves the slot in rax and the result is in
+  xmm0. halfsel is the issue's function built with -mno-red-zone, and
+  halfsel_redzone the same function with the red zone, which has no push and
+  no pop and must read the same. Control: konst is clang -Oz's
+  int konst(volatile float *p) { (void)*p; return 5; }, whose push 5; pop rax
+  is the return value beside the discarded read left in xmm0.
+-->
+<bytechunk space="ram" offset="0x1000" readonly="true">
+50f30f11442404e834000000f30f10442404f30f58c058c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1020" readonly="true">
+50f20f108708010000f20f11042489f0f30f10048458c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1040" readonly="true">c3</bytechunk>
+<bytechunk space="ram" offset="0x1050" readonly="true">
+f20f108708010000f20f114424f889f0f30f104484f8c3
+</bytechunk>
+<bytechunk space="ram" offset="0x1070" readonly="true">f30f10076a0558c3</bytechunk>
+<symbol space="ram" offset="0x1000" name="twice"/>
+<symbol space="ram" offset="0x1020" name="halfsel"/>
+<symbol space="ram" offset="0x1040" name="g"/>
+<symbol space="ram" offset="0x1050" name="halfsel_redzone"/>
+<symbol space="ram" offset="0x1070" name="konst"/>
+</binaryimage>
+<script>
+  <com>read symbols</com>
+  <com>lo fu twice</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu halfsel</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu halfsel_redzone</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu konst</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="EPILOGUE-POP-SYSV #1: twice returns the doubled float" min="1" max="1">
+^float4 twice\(float4 a0\)$
+^\{$
+^  g\(\);$
+^  return a0 \+ a0;$
+</stringmatch>
+<stringmatch name="EPILOGUE-POP-SYSV #2: halfsel reads as its red-zone build" min="2" max="2">
+^[a-z0-9 ]+ halfsel(_redzone)?\(void \*a0,uint4 a1\)$
+^\{$
+^  unsigned long v1;.*$
+^  $
+^  v1 = \(\(unsigned long \*\)a0\)\[0x21\];$
+^  return \(\(unsigned int \*\)&amp;v1\)\[a1\];$
+</stringmatch>
+<stringmatch name="EPILOGUE-POP-SYSV #3: no function returns the popped slot" min="0" max="0">^unsigned long (twice|halfsel)\(</stringmatch>
+<stringmatch name="EPILOGUE-POP-SYSV #4: a constant pushed and popped stays the return" min="1" max="1">
+^[a-z0-9 ]+ konst\(void\)$
+^\{$
+^  return 5;$
+</stringmatch>
+</decompilertest>

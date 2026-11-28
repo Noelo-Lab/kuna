@@ -242,12 +242,29 @@ kuna decompile ./stripped.bin 0x401040 --addr
 kuna decompile ./a.out main --option compareform canonical
 kuna decompile ./sparc.elf main --option returnpair single
 kuna decompile ./a.out main --language rust
+kuna decompile ./protected.exe main --deobfuscate off
 ```
 
 Drives `decomp_dbg` as a subprocess and captures `print C` via `openfile write`, so
 interactive prompts never pollute the output. `--option NAME VALUE` (repeatable) and
 `--kassert "<args>"` flip phase-model sub-phase assertions per run; `--mode
 auto|reliable|aggressive|fast` applies an option preset (`docs/modes.md`).
+`--deobfuscate LIST` selects the deobfuscation techniques and is accepted by
+every subcommand that takes `--option`, of which it abbreviates one, `--option
+deobfuscate LIST`. `auto` (the default) lets each technique act on the
+functions where it detects its obfuscation, `off` decompiles the protected code
+as it is, and technique names separated by commas run those alone, on the
+requested function, without waiting for their detection. The one technique so
+far is `devirtualize`, which recovers a function protected by a VM-based
+obfuscator (VMProtect, Themida, Tigress Virtualize) with the Pushan algorithm
+(NDSS 2027); the header of a function it recovered starts with `warn:
+devirtualize:`. An unknown technique is an error that lists the known ones.
+A recovery runs under its own work budget, which `--max-fn-seconds` does not
+count: over 48 protected test functions the decompile took 12 s at the median
+and five minutes at most, with up to 3.7 GiB resident. `--max-fn-memory` does
+stop it, and in a `--jobs` run so does the pool's stall watchdog (four times
+`--max-fn-seconds`), which leaves that function an `error` record to decompile
+on its own. `--deobfuscate off` skips it.
 For an AArch64 target (any compiler spec with `<prefersplit>`), a single-function
 decompile also bootstraps its direct callees' recovered parameter types — at most
 32, no recursion, types only — so a split-register argument takes the callee's
@@ -617,6 +634,7 @@ One directive per `--assert`, keyed by intent rather than by phase:
 | `isolate [<func>::]<symbol>` | this local is its own variable: it is not merged with another |
 | `typedef <C declaration>` | intern a `struct`/`union`/`enum`/`typedef` so `type` can name it |
 | `data <addr\|[space,addr]> <C typedeclaration>` | a named, typed global, optionally in a named processor space |
+| `import <slot> <name>` | the pointer word at `<slot>` holds the address of the external function `<name>` |
 | `comment [<func>::]<addr> <text>` | a comment rendered into the C at that instruction |
 | `flow [<func>::]<addr> branch\|call\|callreturn\|return` | the flow out of this instruction is not what kuna decided |
 | `jumptable <site> <target> [<target> ...]` | every taken destination of a computed branch, in hexadecimal code addresses |
@@ -1032,6 +1050,31 @@ second `callee` for the same call site replaces the first, which is reported
 rejected. A call site the function's flow never reaches is refused after the
 decompile, and the run exits non-zero. In the console the same fact is
 `override indirect <callsite> <name|address>`, given after `load function`.
+
+**`import` names a pointer slot the import table does not.** A call through an
+import slot prints the import's name because the loader read the name from the
+import table. A packer that rebuilds the table keeps the slots and drops the
+names: Themida leaves a protected PE's Import Address Table where the linker put
+it and lists one import per DLL, so every other call through it prints as
+`(*dat_403064)(&v4,0,0x10)`. The same holds for a table a program fills itself
+from `GetProcAddress` or `dlsym`, and for a dumped image. When you know what a
+slot holds, from the unprotected build, a debugger or a memory dump, say so:
+
+```console
+$ kuna decompile ./blaster_tiger_protected.exe 0x40134e --addr
+  (*dat_403064)(&v2,0,0x10);
+$ kuna decompile ./blaster_tiger_protected.exe 0x40134e --addr --assert 'import 0x403064 memset'
+  memset(&v2,0,0x10);
+```
+
+The slot becomes what an import table entry makes it: a function symbol named
+`<name>` at the slot, with the slot's pointer word marked as an external
+reference, so every call through it, in native code and in a devirtualized
+function alike, is a call to `<name>` with that name's built-in signature when
+kuna has one. Reads and writes of the slot itself still print it as data, it is
+not listed as a function body, and a symbol already at the slot is renamed. One
+directive names one slot; an `@FILE` of them restores a whole table. In the
+console the fact is `map import <slot> <name>`, given after `read symbols`.
 
 **Known computed-branch destinations.** Use `jumptable SITE TARGET [TARGET ...]`
 when you know every taken destination of one computed jump. Supply hexadecimal
@@ -1658,6 +1701,60 @@ The whole-binary surface (the benchmark + LLM path). Runs **in-process**
 (`kuna_console::engine::bootstrap_from_object` → `commit_pending_analysis` → loop
 `decompile_func` + `print_c`), loading + analyzing the binary **once** instead of
 `kuna decompile`'s subprocess-per-function (≈10×+ faster on a many-function binary).
+
+### `--functions` / `--addr` — a selection, inline or from a file
+
+`--functions a,b,…` selects functions by name or alias, and `--addr` by address,
+`.section+0xOFF` or `INDEX:0xOFF`. Both are repeatable and add up, and a function
+that both select is decompiled once. Either one reads its list from a file when the
+value starts with `@`, so a selection of any size fits on a command line. The same
+holds on `decompile-project` and `decompile-graph`, for a raw image's `--entry`, and
+for `kuna fid query --addr`:
+
+```bash
+kuna functions ./big.exe --json --sort size --limit 500 | jq -r '.functions[].address_hex' > big.txt
+kuna decompile-project ./big.exe -o proj --addr @big.txt
+kuna decompile-all ./a.out --functions @names.txt --json
+grep -v TODO worklist.txt | kuna decompile-all ./a.out --addr @- --json
+```
+
+The file holds one entry per line. Blank lines are skipped, `#` starts a comment
+that runs to the end of its line, and the spaces around an entry are trimmed. A line
+is one whole entry: a `--functions` file is not split on commas, so it can name
+`operator new` or a demangled name that contains a comma, which the inline list
+cannot. In a `--functions` file a `#` starts a comment only at the start of a line
+or after a space or tab, because a name kuna prints can hold one: the Swift thunk
+`M.T.vtable#2.method`, the Rust closure `f::{closure#0}`. A line of an `--addr`
+file is anything `--addr` takes, or a `--define-function` line
+(`start[-end][=name]`), which selects its start. The boundaries file kept for
+`--define-function @FILE` therefore also selects the functions it declares:
+
+```bash
+kuna decompile-project ./packed.exe -o proj --define-function @bounds.txt --addr @bounds.txt
+```
+
+`@-` reads the list from standard input, once per command line. A second `@-` is
+refused, and so is a terminal. A value that starts with `@@` is that value with one
+`@` removed. That is how to select a name that itself starts with `@`, such as the
+MSVC `__fastcall` name `@check@8`: `--functions @@check@8`. Inside an inline comma
+list (`--functions main,@check@8`) and inside a file, `@` is an ordinary character.
+`kuna decompile` takes one function, not a list, so its positional target is
+never read as a file.
+
+A file that cannot be read, a file that lists nothing, and a bad entry are usage
+errors (exit 2). The message names the flag, and for a bad entry the file and line:
+
+```console
+$ kuna decompile-all ./a.out --addr @picked.txt
+error: --addr @picked.txt:3: invalid address "mian"
+```
+
+An empty list is refused rather than read as no selection, which would decompile
+the whole binary. A name the image does not carry is the usual `warning: no
+function named …` for that name, and the run goes on with the rest. Each address
+is one binary search of the inventory, so a long list costs little on its own: on
+`libLLVM-15.so.1` (98,598 functions), selecting all 98,598 addresses from a file
+adds less than a second to a load of about 10 s.
 
 ### Triage — narrowing the run
 
@@ -3187,6 +3284,17 @@ back are indistinguishable from one long one. Without a range check to read, not
 is followed. This is what puts the callees inside a `switch` on
 `kuna decompile-graph`'s callee list.
 
+The base and the range check need not sit in the dispatch's own block. A base
+hoisted above a loop or an `if/else`, or shared by two switches (MSVC keeps one
+`LEA reg,[__ImageBase]` for every table of a function), is found by following the
+one decoded branch into a block nothing falls into, and a range check may sit up
+to 128 instructions above the jump. Either way the check must compare the register
+the table is indexed by, or one it was copied from just above the comparison, with
+no call in between that may overwrite it, and
+`jae` after `cmp $c` admits `c` cases where `ja` admits `c + 1`. A dispatch whose
+check compares another value, or that a branch enters between the check and the
+jump, is still not followed.
+
 A target nothing references is exit `0` with `count: 0` — an answer, not a
 failure. A name that resolves to nothing is exit `1` with the reason on stderr; a
 malformed command line is exit `2` with the usage block.
@@ -4289,7 +4397,9 @@ The project-export face of the same in-process core
 web UI's Download-Binary-Source zip and `kuna_wasm project`). Identical
 load-once/decompile-many path and flags —
 `--functions`/`--addr`/`--max-fn-seconds`/`--max-fn-memory`/`--mode`/`--option`/
-`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`/`--progress`; no `--json`. Omitted mode is the same
+`--isa`/`--slice`/`--target`/`--sleighpath`/`--jobs`/`--stream`/`--progress`; no `--json`.
+`--functions` and `--addr` take `@FILE` lists here too
+([above](#--functions----addr--a-selection-inline-or-from-a-file)). Omitted mode is the same
 size-based `auto` policy as the other file front-ends. In particular, a project input
 at least 2 MiB automatically suppresses the exhaustive Listing consumers, prologue
 scan, and AIF gap walk through the `fast` preset, while substituting rooted direct-call
@@ -5231,8 +5341,9 @@ remain readable, but need rebuilding to benefit from the new extents.
 
 ### `kuna fid query` — candidates for an address, without renaming
 
-`kuna fid query <binary> --db <file.fid> --addr <address> [--addr <address> ...] --json`
+`kuna fid query <binary> --db <file.fid> --addr <address|@FILE> [--addr <address|@FILE> ...] --json`
 reports full-hash candidates without renaming. Addresses are hex, `0x` optional.
+`--addr @FILE` reads them one per line, in the format `decompile-all --addr @FILE` reads.
 The kuna `.fid` database must apply to the binary (see above); Ghidra `.fidbf`
 is not supported.
 

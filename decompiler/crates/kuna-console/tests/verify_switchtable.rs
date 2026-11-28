@@ -441,3 +441,104 @@ fn a_function_called_only_from_a_case_body_has_its_dispatcher_as_caller() {
     }
     assert!(wrong.is_empty(), "case-body callees without their dispatcher:\n{}", wrong.join("\n"));
 }
+
+/// One dispatch of `switchflow_x86_64` (issue #1824) whose base or range check
+/// lies past where the straight step back from the jump stops.
+const FLOW: [Gcc; 5] = [
+    Gcc {
+        shape: "clang: base hoisted above an if/else jmp and a loop head",
+        dispatch: 0x100010,
+        branch: 0x100068,
+        cases: [0x10006a, 0x100074, 0x10007e, 0x100088],
+        callees: [0x100406, 0x100408, 0x10040a, 0x10040c],
+    },
+    Gcc {
+        shape: "MSVC: the first of two switches on one base",
+        dispatch: 0x1000a5,
+        branch: 0x1000c3,
+        cases: [0x1000c5, 0x1000cc, 0x1000d3, 0x1000da],
+        callees: [0x10040e, 0x100410, 0x100412, 0x100414],
+    },
+    Gcc {
+        shape: "MSVC: the second switch, after the first one's case jmps",
+        dispatch: 0x1000a5,
+        branch: 0x1000f6,
+        cases: [0x1000f8, 0x1000ff, 0x100106, 0x10010d],
+        callees: [0x100416, 0x100418, 0x10041a, 0x10041c],
+    },
+    Gcc {
+        shape: "clang: the range check twenty instructions up",
+        dispatch: 0x100115,
+        branch: 0x1001a9,
+        cases: [0x1001ab, 0x1001b2, 0x1001b9, 0x1001c0],
+        callees: [0x10041e, 0x100420, 0x100422, 0x100424],
+    },
+    Gcc {
+        shape: "MSVC: a far jae on the selector the table index was copied from",
+        dispatch: 0x1001c7,
+        branch: 0x10026a,
+        cases: [0x10026c, 0x100271, 0x100276, 0x10027b],
+        callees: [0x100426, 0x100428, 0x10042a, 0x10042c],
+    },
+];
+
+/// Dispatches of `switchflow_x86_64` that must read no table: a far check of
+/// another register, a far check a branch bypasses, a base above a block
+/// boundary under a check of the byte count rather than the index, and a far
+/// check of the register a call then returns in.
+const UNREAD: [(&str, u64, [u64; 4]); 4] = [
+    ("far check of another register", 0x100312, [0x10042e, 0x100430, 0x100432, 0x100434]),
+    ("far check a branch bypasses", 0x1003c2, [0x100436, 0x100438, 0x10043a, 0x10043c]),
+    ("crossed base, check of another value", 0x1003f9, [0x10043e, 0x100440, 0x100442, 0x100444]),
+    ("far check of a register a call overwrites", 0x100560, [0x10056b, 0x10056d, 0x10056f, 0x100571]),
+];
+
+/// Each dispatch reaches exactly its four cases, and each case body's callee
+/// has the dispatching function as its one caller. `far_copy`'s check is
+/// `jae`, so a fifth entry (`shared`'s first case, measured from the same
+/// base) is not one.
+#[test]
+fn a_base_or_range_check_past_a_block_boundary_reaches_exactly_the_cases() {
+    let idx = index_of("switchflow_x86_64");
+    let mut wrong = Vec::new();
+    for fx in FLOW {
+        let mut jumps: Vec<u64> = idx
+            .refs_from_instruction(fx.branch)
+            .iter()
+            .filter(|r| r.kind == XrefKind::Jump)
+            .map(|r| r.to)
+            .collect();
+        jumps.sort_unstable();
+        if jumps != fx.cases {
+            wrong.push(format!("{}: {jumps:#x?}", fx.shape));
+        }
+        for callee in fx.callees {
+            let owners: Vec<Option<u64>> = idx
+                .refs_to(callee)
+                .iter()
+                .filter(|r| matches!(r.kind, XrefKind::Call | XrefKind::Jump))
+                .map(|r| idx.function_containing(r.from))
+                .collect();
+            if owners != [Some(fx.dispatch)] {
+                wrong.push(format!("{}: {callee:#x} reached from {owners:#x?}", fx.shape));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// A check that bounds another value than the table index, that a branch
+/// enters below, or that a call separates from the index, states no case
+/// count, so no entry is read.
+#[test]
+fn a_check_of_another_value_or_one_a_branch_bypasses_reads_no_table() {
+    let idx = index_of("switchflow_x86_64");
+    for (shape, branch, callees) in UNREAD {
+        let jumps: Vec<u64> =
+            idx.refs_from_instruction(branch).iter().filter(|r| r.kind == XrefKind::Jump).map(|r| r.to).collect();
+        assert!(jumps.is_empty(), "{shape}: {jumps:#x?}");
+        for callee in callees {
+            assert!(idx.refs_to(callee).is_empty(), "{shape}: {callee:#x} is reached");
+        }
+    }
+}

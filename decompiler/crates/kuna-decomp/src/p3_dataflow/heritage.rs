@@ -100,6 +100,15 @@ use crate::varnode::varnode_flags;
 /// Varnode stack (C++ `typedef map<Address,vector<Varnode *> > VariableStack`).
 pub type VariableStack = BTreeMap<Address, Vec<crate::context::VarnodeId>>;
 
+/// A block [`Heritage::rename_recurse`] has entered and not yet left: its
+/// dom-children (`next` is the first not yet walked) and what it pops on exit.
+struct RenameFrame {
+    children: Vec<BlockId>,
+    next: usize,
+    writelist: Vec<crate::context::VarnodeId>,
+    guarded: Vec<Address>,
+}
+
 // =============================================================================
 // LocationMap (heritage.hh:38, heritage.cc:34)
 // =============================================================================
@@ -620,6 +629,9 @@ pub struct LoadGuard {
     /// register after the function moved it by a non-constant amount, so the
     /// op addresses dynamically allocated stack, not the frame.
     pub dynamic_stack: bool,
+    /// (kuna) The pointer was reloaded from a stack slot it was spilled to
+    /// (`Heritage::discover_indexed_stack_pointers`).
+    pub through_spill: bool,
 }
 
 impl LoadGuard {
@@ -635,6 +647,7 @@ impl LoadGuard {
             step: 0,
             analysis_state: 0,
             dynamic_stack: false,
+            through_spill: false,
         }
     }
 
@@ -880,6 +893,12 @@ pub struct Heritage {
     /// re-declaring the field.
     #[allow(dead_code)]
     load_copy_ops: Vec<crate::context::OpId>,
+    /// (kuna) Stack slots `discover_indexed_stack_pointers` saw a stack
+    /// pointer spilled to: (offset, size).
+    pointer_spills: Vec<(uintb, int4)>,
+    /// (kuna) The offsets of those slots written by a path that did not
+    /// itself pass through a spill.
+    direct_spills: Vec<uintb>,
     /// (kuna) `calleeprotostack` — the local-alias checker this pass answers
     /// "can a pointer reach this stack slot?" with, gathered at most once per
     /// pass.  See [`crate::p4_calls::kuna_calleeprotostack`].
@@ -976,6 +995,8 @@ impl Heritage {
             indexed_store_bounds: Default::default(),
             deadline: None,
             load_copy_ops: Vec::new(),
+            pointer_spills: Vec::new(),
+            direct_spills: Vec::new(),
             protostack_alias: None,
             protostack_frame_reload: None,
             global_call_ranges: Default::default(),
@@ -1122,6 +1143,12 @@ impl Heritage {
         self.pass > self.get_info(spc).deadcodedelay
     }
 
+    /// (kuna) The first pass at which dead code may be removed in every
+    /// heritaged space.
+    pub fn deadcode_settled_pass(&self) -> int4 {
+        self.infolist.iter().filter(|info| info.space.is_some()).map(|info| info.deadcodedelay + 1).max().unwrap_or(0)
+    }
+
     /// Check dead-code removal safety and mark removal as happened (C++
     /// `deadRemovalAllowedSeen`, `heritage.cc:2847`).
     pub fn dead_removal_allowed_seen(&mut self, spc: &Rc<AddrSpace>) -> bool {
@@ -1170,6 +1197,8 @@ impl Heritage {
         self.load_reads.clear();
         self.load_guard.clear();
         self.store_guard.clear();
+        self.pointer_spills.clear();
+        self.direct_spills.clear();
         self.store_frame_unresolved = None;
         self.store_frame_guarded = false;
         self.protostack_frame_reload = None;
@@ -1677,7 +1706,9 @@ impl Heritage {
                     .map(|s| s.get_type() != spacetype::IPTR_INTERNAL)
                     .unwrap_or(false);
             let stack_effects = crate::kuna_stackeffects::enabled_for(fd, addr, size);
-            let mut guarded_stores = if (high_ptr_possible && level >= LEVEL_FULL) || stack_effects {
+            let every_store = (high_ptr_possible && level >= LEVEL_FULL)
+                || crate::kuna_body::guards_every_store(fd, addr);
+            let mut guarded_stores = if every_store || stack_effects {
                 self.guard_stores(fd, addr, size, write, false)
             } else if high_ptr_possible && guard_stack_bytes {
                 self.guard_stores(fd, addr, size, write, true)
@@ -1687,11 +1718,11 @@ impl Heritage {
                 }
                 Vec::new()
             };
-            if high_ptr_possible && level < LEVEL_FULL && guard_stack_indexed && !stack_effects {
+            if high_ptr_possible && !every_store && guard_stack_indexed && !stack_effects {
                 self.guard_indexed_stores(fd, addr, size, write, &mut guarded_stores);
             }
             if high_ptr_possible {
-                if level < LEVEL_FULL && self.spill_store_budget_ok {
+                if !every_store && self.spill_store_budget_ok {
                     super::kuna_spillstoreguard::build(
                         fd, addr, size, &self.spill_stores, &guarded_stores, &self.spill_store_bounds,
                         &mut self.spill_store_guards, write,
@@ -1858,6 +1889,11 @@ impl Heritage {
             // heritage.cc:1468) because the output-active branch can promote it to
             // `killedbycall`.
             let mut effecttype = fc.proto().has_effect(&trans_addr, size);
+            if effecttype == effect_type::UNKNOWN_EFFECT {
+                if let Some(stated) = crate::kuna_body::call_effect(fd, addr, size) {
+                    effecttype = stated;
+                }
+            }
             if effecttype == effect_type::UNKNOWN_EFFECT
                 && ((super::kuna_leafmemory::preserves(fd, fc, addr, size)
                         && !self.protostack_is_aliased(fd, &spc, addr.get_offset(), 1)
@@ -2072,6 +2108,7 @@ impl Heritage {
             if fc.is_input_active()
                 && tryregister
                 && !self.guard_counted_float_input(fd, fc, addr, size)
+                && !self.guard_joined_stack_input(fd, fc, addr, &trans_addr, size)
             {
                 Self::guard_call_input(fd, fc, addr, &trans_addr, size, overlap_level);
             }
@@ -2305,7 +2342,6 @@ impl Heritage {
         addr: &Address,
         size: int4,
     ) -> bool {
-        use kuna_num::opcodes::OpCode;
         let Some(entry) = crate::kuna_varargretreg::counted_float_entry(fd, fc, addr, size) else {
             return false;
         };
@@ -2321,6 +2357,61 @@ impl Heritage {
         if start != estart {
             return false;
         }
+        self.tiled_input_trial(fd, fc, addr, size, &entry, 8)
+    }
+
+    /// (kuna deobf) In a body recovered from an interpreter, a stack range that is only the
+    /// low piece of an argument slot passes the PIECE of the ranges of this
+    /// pass that tile the whole slot.  The interpreter reads and writes its
+    /// stack in halves, so heritage refines the slots the program's arguments
+    /// later occupy, and the ordinary guard would hand the call only the low
+    /// half of each.  Returns false when the range is not such a piece.
+    fn guard_joined_stack_input(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        trans_addr: &Address,
+        size: int4,
+    ) -> bool {
+        use crate::fspec::Containment;
+        use kuna_base::space::spacetype;
+        if !fd.kuna_body().policy.join_stack_inputs {
+            return false;
+        }
+        let Some(spc) = addr.get_space() else { return false };
+        let slot = spc.get_addr_size() as int4;
+        if spc.get_type() != spacetype::IPTR_SPACEBASE
+            || spc.is_big_endian()
+            || size >= slot
+            || trans_addr.get_offset() % slot as u64 != 0
+        {
+            return false;
+        }
+        if fc.proto().characterize_as_input_param(trans_addr, slot) != Containment::ContainsJustified
+            || fc.get_active_input().which_trial(trans_addr, slot) >= 0
+        {
+            return false;
+        }
+        self.tiled_input_trial(fd, fc, addr, size, trans_addr, slot)
+    }
+
+    /// Register the `width`-byte input trial at `entry` (callee perspective)
+    /// whose first piece is the heritaged range `[addr, size)`: the argument is
+    /// the PIECE of that range and the ranges of this pass that follow it up to
+    /// `width` bytes, the last truncated to fit.  False when they leave a gap.
+    fn tiled_input_trial(
+        &self,
+        fd: &mut crate::funcdata::Funcdata,
+        fc: &mut crate::fspec::FuncCallSpecs,
+        addr: &Address,
+        size: int4,
+        entry: &Address,
+        width: int4,
+    ) -> bool {
+        use kuna_num::opcodes::OpCode;
+        let start = addr.get_offset();
+        let eend = start + width as u64;
         let Some(pos) = (0..self.disjoint.len())
             .find(|&i| self.disjoint.get(i).addr == *addr && self.disjoint.get(i).size == size)
         else {
@@ -2346,12 +2437,12 @@ impl Heritage {
             return false;
         }
         let op = fc.get_op();
-        let call_addr = fd.obank().get(op).expect("guardCountedFloatInput: stale call").get_addr().clone();
+        let call_addr = fd.obank().get(op).expect("tiledInputTrial: stale call").get_addr().clone();
         let big = addr.is_big_endian();
         let mut parts = Vec::with_capacity(tiles.len());
         for (taddr, tsize) in tiles {
             let read = fd.new_varnode(tsize, &taddr, None);
-            fd.vbank_mut().get_mut(read).expect("guardCountedFloatInput: read").set_active_heritage();
+            fd.vbank_mut().get_mut(read).expect("tiledInputTrial: read").set_active_heritage();
             let keep = tsize.min((eend - taddr.get_offset()) as int4);
             if keep == tsize {
                 parts.push(read);
@@ -2362,7 +2453,7 @@ impl Heritage {
             let _ = fd.op_set_input(sub, read, 0);
             let c = fd.new_constant(4, if big { (tsize - keep) as u64 } else { 0 });
             let _ = fd.op_set_input(sub, c, 1);
-            let out = fd.new_unique_out(keep, sub).expect("guardCountedFloatInput: subpiece out");
+            let out = fd.new_unique_out(keep, sub).expect("tiledInputTrial: subpiece out");
             fd.op_insert_before(sub, op);
             parts.push(out);
         }
@@ -2371,16 +2462,16 @@ impl Heritage {
         }
         let mut acc = parts[0];
         for &low in &parts[1..] {
-            let width = fd.vbank().get(acc).map(|v| v.get_size()).unwrap_or(0)
+            let joined = fd.vbank().get(acc).map(|v| v.get_size()).unwrap_or(0)
                 + fd.vbank().get(low).map(|v| v.get_size()).unwrap_or(0);
             let piece = fd.new_op(2, call_addr.clone());
             fd.op_set_opcode(piece, typeop_skeleton(OpCode::CPUI_PIECE));
             let _ = fd.op_set_input(piece, acc, 0);
             let _ = fd.op_set_input(piece, low, 1);
-            acc = fd.new_unique_out(width, piece).expect("guardCountedFloatInput: piece out");
+            acc = fd.new_unique_out(joined, piece).expect("tiledInputTrial: piece out");
             fd.op_insert_before(piece, op);
         }
-        fc.get_active_input().register_trial(&entry, 8);
+        fc.get_active_input().register_trial(entry, width);
         let nin = fd.obank().get(op).map(|o| o.num_input()).unwrap_or(0);
         let _ = fd.op_insert_input(op, acc, nin);
         true
@@ -4215,12 +4306,46 @@ impl Heritage {
     /// The heart of the renaming algorithm (C++ `Heritage::renameRecurse`,
     /// `heritage.cc:2480`).
     ///
-    /// Recursively walks the dominance tree from `bl`; at each block, visits
-    /// ops in execution order, replacing free reads with the top of the
-    /// per-address [`VariableStack`] (creating an input Varnode if the stack is
-    /// empty), pushing writes, threading the INDIRECT "same time" special case,
-    /// filling successor MULTIEQUAL inputs by `getOutRevIndex`, recursing into
-    /// dom-children, then popping this block's writes.
+    /// Walks the dominance tree from `bl` in preorder ([`Self::rename_block`]
+    /// at each block), visiting dom-children in order and popping a block's
+    /// writes once its subtree is done. The walk keeps its own stack of open
+    /// blocks rather than recursing: a large function's dominator tree can be
+    /// tens of thousands of blocks deep.
+    #[allow(clippy::mutable_key_type)]
+    pub fn rename_recurse(
+        &mut self,
+        fd: &mut crate::funcdata::Funcdata,
+        bl: BlockId,
+        varstack: &mut VariableStack,
+    ) -> KunaResult<()> {
+        let mut open = vec![self.rename_block(fd, bl, varstack)?];
+        while let Some(top) = open.last_mut() {
+            if let Some(&child) = top.children.get(top.next) {
+                top.next += 1;
+                let frame = self.rename_block(fd, child, varstack)?;
+                open.push(frame);
+                continue;
+            }
+            let done = open.pop().expect("rename_recurse: open block");
+            for vnout in done.writelist {
+                let key = fd.vbank().get(vnout).expect("rename_recurse: pop out").get_addr().clone();
+                if let Some(stack) = varstack.get_mut(&key) {
+                    stack.pop();
+                }
+            }
+            for key in done.guarded.iter().rev() {
+                self.load_reads.pop(key);
+            }
+        }
+        Ok(())
+    }
+
+    /// One block of [`Self::rename_recurse`]: visits its ops in execution
+    /// order, replacing free reads with the top of the per-address
+    /// [`VariableStack`] (creating an input Varnode if the stack is empty),
+    /// pushing writes, threading the INDIRECT "same time" special case, and
+    /// filling successor MULTIEQUAL inputs by `getOutRevIndex`. Returns what
+    /// the walk pops after the block's dom-children.
     ///
     /// The input-creation sites use `new_entry_input` for complete ABI slots,
     /// then [`kuna_inputtile::new_tiled_input`](crate::p3_dataflow::kuna_inputtile::new_tiled_input)
@@ -4235,12 +4360,12 @@ impl Heritage {
     // and the offset, neither of which mutates after the key is inserted, so
     // the key ordering is stable — a justified false positive.
     #[allow(clippy::mutable_key_type)]
-    pub fn rename_recurse(
+    fn rename_block(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
         bl: BlockId,
         varstack: &mut VariableStack,
-    ) -> KunaResult<()> {
+    ) -> KunaResult<RenameFrame> {
         use kuna_num::opcodes::OpCode;
         let mut writelist: Vec<crate::context::VarnodeId> = Vec::new();
         let mut guarded: Vec<Address> = Vec::new();
@@ -4423,24 +4548,9 @@ impl Heritage {
             }
         }
 
-        // Recurse into dom-children.
         let i = fd.bblocks_ref().block(bl).get_index() as usize;
         let children: Vec<BlockId> = self.domchild[i].clone();
-        for child in children {
-            self.rename_recurse(fd, child, varstack)?;
-        }
-
-        // Pop this block's writes off the stack.
-        for vnout in writelist {
-            let key = fd.vbank().get(vnout).expect("rename_recurse: pop out").get_addr().clone();
-            if let Some(stack) = varstack.get_mut(&key) {
-                stack.pop();
-            }
-        }
-        for key in guarded.iter().rev() {
-            self.load_reads.pop(key);
-        }
-        Ok(())
+        Ok(RenameFrame { children, next: 0, writelist, guarded })
     }
 
     /// (kuna `loadguardreads`) Read each range guarded at the LOAD `op` as
@@ -4540,7 +4650,7 @@ impl Heritage {
     /// Perform the renaming algorithm for the current address ranges (C++
     /// `Heritage::rename`, `heritage.cc:2591`).  Phi placement must already have
     /// happened.
-    // `mutable_key_type`: see the note on [`rename_recurse`](Heritage::rename_recurse).
+    // `mutable_key_type`: see the note on [`rename_block`](Heritage::rename_block).
     #[allow(clippy::mutable_key_type)]
     pub fn rename(&mut self, fd: &mut crate::funcdata::Funcdata) -> KunaResult<()> {
         let bblocks = fd.bblocks_ref();
@@ -5450,6 +5560,12 @@ impl Heritage {
     /// The C++ holds a live `list<PcodeOp*>::const_iterator` inside each
     /// `StackNode`; here each node snapshots its Varnode's descendant op list
     /// (read-only during the walk) and an index cursor — the same DFS order.
+    ///
+    /// (kuna) A path value written to a slot of the space with no reader yet
+    /// (a spilled stack pointer) continues, once the walk is done, from the
+    /// slot's unlinked reads, which this pass's renaming has not yet tied to
+    /// the write; LOADs reached that way are guarded, STOREs are left to the
+    /// rerun after renaming.
     fn discover_indexed_stack_pointers(
         &mut self,
         fd: &mut crate::funcdata::Funcdata,
@@ -5467,6 +5583,7 @@ impl Heritage {
             traversals: uint4,
             descend: Vec<crate::context::OpId>,
             iter: usize,
+            spilled: bool,
         }
 
         // We mark Varnodes independently of the depth-first path to avoid
@@ -5474,6 +5591,7 @@ impl Heritage {
         let mut marked_vn: Vec<crate::context::VarnodeId> = Vec::new();
         let mut path: Vec<StackNode> = Vec::new();
         let mut unknown_stack_storage = false;
+        let mut spills: Vec<(uintb, int4, uintb, uint4)> = Vec::new();
 
         let num_sb = spc.num_spacebase();
         for i in 0..num_sb {
@@ -5491,11 +5609,30 @@ impl Heritage {
             };
             let descend: Vec<crate::context::OpId> =
                 fd.vbank().get(sp_input).expect("sp_input vn").descend_iter().collect();
-            path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0 });
+            path.push(StackNode { vn: sp_input, offset: 0, traversals: 0, descend, iter: 0, spilled: false });
 
             while let Some(cur) = path.last_mut() {
                 if cur.iter >= cur.descend.len() {
                     path.pop();
+                    while path.is_empty() {
+                        let Some((slot, size, offset, traversals)) = spills.pop() else { break };
+                        if self.pointer_spills.contains(&(slot, size)) {
+                            continue;
+                        }
+                        self.pointer_spills.push((slot, size));
+                        let at = Address::new(Rc::clone(spc), slot);
+                        let reads: Vec<crate::context::VarnodeId> = fd
+                            .vbank()
+                            .iter_loc_size_addr(size, &at)
+                            .filter(|&r| fd.vbank().get(r).is_some_and(|v| !v.is_written() && !v.is_mark() && !v.has_no_descend()))
+                            .collect();
+                        for r in reads {
+                            let descend = fd.vbank().get(r).expect("spill read").descend_iter().collect();
+                            fd.vbank_mut().get_mut(r).expect("spill read").set_mark();
+                            marked_vn.push(r);
+                            path.push(StackNode { vn: r, offset, traversals, descend, iter: 0, spilled: true });
+                        }
+                    }
                     continue;
                 }
                 let op = cur.descend[cur.iter];
@@ -5503,6 +5640,7 @@ impl Heritage {
                 let cur_vn = cur.vn;
                 let cur_offset = cur.offset;
                 let cur_traversals = cur.traversals;
+                let cur_spilled = cur.spilled;
 
                 let out_vn = fd.obank().get(op).and_then(|o| o.get_out());
                 if let Some(ov) = out_vn {
@@ -5529,12 +5667,19 @@ impl Heritage {
                                 traversals: $newtrav,
                                 descend: d,
                                 iter: 0,
+                                spilled: cur_spilled,
                             });
                             marked_vn.push(ov);
                         } else if fd.vbank().get(ov).map(|v| v.get_space().get_type()).unwrap_or(spacetype::IPTR_CONSTANT)
                             == spacetype::IPTR_SPACEBASE
                         {
                             unknown_stack_storage = true;
+                            if let Some(v) = fd.vbank().get(ov).filter(|v| Rc::ptr_eq(v.get_space(), spc)) {
+                                spills.push((v.get_offset(), v.get_size(), $newoff, $newtrav));
+                                if !cur_spilled {
+                                    self.direct_spills.push(v.get_offset());
+                                }
+                            }
                         }
                     }};
                 }
@@ -5621,13 +5766,19 @@ impl Heritage {
                         // If ANY path had a traversal (non-constant ADD or MULTIEQUAL),
                         // THIS path must too (the other elements have one path through).
                         if cur_traversals != 0 {
+                            let before = self.load_guard.len();
                             self.generate_load_guard(fd, cur_offset, op, spc);
+                            if self.load_guard.len() > before {
+                                if let Some(guard) = self.load_guard.last_mut() {
+                                    guard.through_spill = cur_spilled;
+                                }
+                            }
                         }
                     }
                     OpCode::CPUI_STORE => {
                         // Make sure the STORE pointer comes from our path.
                         let in1 = fd.obank().get(op).and_then(|o| o.get_in(1));
-                        if in1 == Some(cur_vn) {
+                        if in1 == Some(cur_vn) && !cur_spilled {
                             if cur_traversals != 0 {
                                 self.generate_store_guard(fd, cur_offset, op, spc);
                                 if let Some(guard) = self.store_guard.last_mut().filter(|g| g.op == op) {
@@ -5967,6 +6118,36 @@ impl Heritage {
         fd.op_destroy(op);
     }
 
+    /// (kuna) The last offset whose writes a LOAD guard forces.  A guard
+    /// found through a spilled pointer, in the pass that found it, with no
+    /// range from the value-set analysis, stops below the lowest slot above
+    /// its base that a stack pointer was spilled to: that slot is another
+    /// local, not the object the pointer addresses. In a devirtualized body
+    /// only a slot the walk reached without passing through a spill counts:
+    /// an interpreter's operand-stack slots hold pointers and values in turn,
+    /// so a slot a value is copied into from one is not a pointer.
+    fn spill_guard_maximum(&self, fd: &crate::funcdata::Funcdata, guard: &LoadGuard) -> uintb {
+        if !guard.through_spill || guard.is_range_locked() {
+            return guard.maximum_offset;
+        }
+        let direct = fd.kuna_body().policy.direct_spills;
+        self.pointer_spills
+            .iter()
+            .map(|&(slot, _)| slot)
+            .filter(|slot| !direct || self.direct_spills.contains(slot))
+            .filter(|&slot| slot > guard.minimum_offset)
+            .min()
+            .map_or(guard.maximum_offset, |slot| guard.maximum_offset.min(slot - 1))
+    }
+
+    /// (kuna) After the pass that found them, guards reached through a spill
+    /// force their full range, as the guard upstream finds after renaming.
+    fn end_spill_guards(&mut self) {
+        for guard in self.load_guard.iter_mut() {
+            guard.through_spill = false;
+        }
+    }
+
     /// Mark the boundary of artificial ops introduced by load guards (C++
     /// `Heritage::handleNewLoadCopies`, `heritage.cc:695`).
     ///
@@ -5978,6 +6159,7 @@ impl Heritage {
     /// the sink list is empty and this is the faithful early return.)
     fn handle_new_load_copies(&mut self, fd: &mut crate::funcdata::Funcdata) {
         if self.load_copy_ops.is_empty() {
+            self.end_spill_guards();
             return;
         }
         let mut copy_sinks = std::mem::take(&mut self.load_copy_ops);
@@ -5993,7 +6175,7 @@ impl Heritage {
                 load_ranges.insert_range(
                     Rc::clone(&guard.spc),
                     guard.minimum_offset,
-                    guard.maximum_offset,
+                    self.spill_guard_maximum(fd, guard),
                 );
             }
             for (spc, first, last) in &self.global_load_ranges {
@@ -6024,6 +6206,7 @@ impl Heritage {
             self.propagate_copy_away(fd, op);
         }
         self.load_reads.clear();
+        self.end_spill_guards();
         // (marks on the remaining artificial COPYs die with the local set.)
         // We have handled all the load guard COPY ops (list stays cleared).
     }

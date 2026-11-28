@@ -44,3 +44,7 @@ disallowed_types = "deny"
 opt-level = 1
 debug-assertions = true
 overflow-checks = true
+
+# Inline across crates and codegen units.
+[profile.release]
+lto = "thin"

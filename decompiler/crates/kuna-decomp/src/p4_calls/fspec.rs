@@ -998,6 +998,12 @@ pub mod param_trial_flags {
     /// (kuna) `passthrough`: the caller forwards its own incoming register
     /// here untouched and the callee takes it, so the slot is filled.
     pub const FORWARDED: uint4 = 0x4000;
+    /// (kuna) The value at every live RETURN is the register an epilogue pop
+    /// wrote.
+    pub const EPILOGUE_POP: uint4 = 0x8000;
+    /// (kuna) `armfloatargs`: the AAPCS-VFP back-fill slot, holding only what
+    /// the caller left there; no later argument fills it.
+    pub const BACKFILL_HOLE: uint4 = 0x10000;
 }
 
 /// A register or memory location that may be used to pass a parameter or return
@@ -1177,6 +1183,12 @@ impl ParamTrial {
     /// (kuna) `passthrough`: the caller forwards the callee's parameter here.
     pub fn set_forwarded(&mut self) { self.flags |= param_trial_flags::FORWARDED; }
     pub fn is_forwarded(&self) -> bool { self.flags & param_trial_flags::FORWARDED != 0 }
+    /// (kuna) The value at every live RETURN is the register an epilogue pop wrote.
+    pub fn set_epilogue_pop(&mut self) { self.flags |= param_trial_flags::EPILOGUE_POP; }
+    pub fn has_epilogue_pop(&self) -> bool { self.flags & param_trial_flags::EPILOGUE_POP != 0 }
+    /// (kuna) `armfloatargs`: this is the back-fill slot below doubles.
+    pub fn set_backfill_hole(&mut self) { self.flags |= param_trial_flags::BACKFILL_HOLE; }
+    pub fn is_backfill_hole(&self) -> bool { self.flags & param_trial_flags::BACKFILL_HOLE != 0 }
 
     /// Does this show solid movement into the Varnode (C++ `hasAncestorSolid`)?
     pub fn has_ancestor_solid(&self) -> bool {
@@ -2234,6 +2246,9 @@ impl ParamListStandard {
     /// places those doubles past the pair without this slot, so leaving it out
     /// keeps the remaining parameters in the storage the convention assigns. A
     /// slot the body reads on entry, such as one spilled at -O0, is a parameter.
+    /// A later hit counts only through a trial that is active or used: the
+    /// scratch `s13` and `d7` an -O0 caller computes in still hold values at
+    /// the call, and are no arguments.
     fn backfill_hole(&self, active: &ParamActive, hitlist: &[Option<usize>], grp: usize) -> bool {
         if !self.backfill_holes || grp == 0 {
             return false;
@@ -2260,12 +2275,48 @@ impl ParamListStandard {
         if !paired || !hitlist[grp - 1].is_some_and(|e| float(e, 4)) {
             return false;
         }
+        let live = |e: usize| {
+            (0..active.get_num_trials()).any(|t| {
+                let trial = active.get_trial(t);
+                trial.get_entry() == Some(e) && (trial.is_active() || trial.is_used())
+            })
+        };
         let mut later = hitlist[grp + 1..]
             .iter()
             .flatten()
-            .filter(|&&e| self.entry[e].get_type() == type_class::TYPECLASS_FLOAT)
+            .filter(|&&e| self.entry[e].get_type() == type_class::TYPECLASS_FLOAT && live(e))
             .peekable();
         later.peek().is_some() && later.all(|&e| float(e, 8))
+    }
+
+    /// (kuna) `armfloatargs`: a single-precision trial in the back-fill slot
+    /// ([`Self::backfill_hole`]) that holds only what the caller left there, no
+    /// value it wrote for the call, is that hole, which no later argument fills:
+    /// `sink_fd(f, d * 2.0)` passes `f` in s0 and the double in d1, and s1 still
+    /// holding half of the caller's entry d0 is no argument.
+    fn drop_held_backfill(&self, active: &mut ParamActive, hitlist: &mut [Option<usize>]) {
+        if !self.backfill_holes {
+            return;
+        }
+        for grp in 1..hitlist.len() {
+            let Some(e) = hitlist[grp] else { continue };
+            if self.entry[e].get_type() != type_class::TYPECLASS_FLOAT || self.entry[e].get_size() != 4 {
+                continue;
+            }
+            let trials: Vec<int4> =
+                (0..active.get_num_trials()).filter(|&t| active.get_trial(t).get_entry() == Some(e)).collect();
+            if trials.iter().any(|&t| active.get_trial(t).is_active() || active.get_trial(t).is_unref()) {
+                continue;
+            }
+            hitlist[grp] = None;
+            if self.backfill_hole(active, hitlist, grp) {
+                for t in trials {
+                    active.get_trial_mut(t).set_backfill_hole();
+                }
+            } else {
+                hitlist[grp] = Some(e);
+            }
+        }
     }
 
     /// (kuna) `armfloatreturn`: the d-register entry that fills the hole at
@@ -3065,6 +3116,8 @@ impl ParamListStandard {
             }
         }
 
+        self.drop_held_backfill(active, &mut hitlist);
+
         // Fill in unreferenced trials for missing groups.  `i` is the group
         // index (passed to selectUnreferenceEntry), not just a position.
         let mut covered = 0usize;
@@ -3496,7 +3549,7 @@ impl ParamListStandard {
             };
             // (kuna) `calleefilledarg`: a hole the callee fills itself is
             // never materialised as an argument.
-            if defnouse || active.is_callee_filled(i) {
+            if defnouse || active.is_callee_filled(i) || active.get_trial(i).is_backfill_hole() {
                 continue;
             }
             if !is_act {
@@ -5687,6 +5740,11 @@ impl FuncProto {
         if self.store.is_none() {
             self.store = Some(Box::new(ProtoStoreInternal::new(void_type)));
         }
+    }
+    /// Drop the backing store, leaving the prototype as it was before any
+    /// store was attached.
+    pub fn detach_store(&mut self) {
+        self.store = None;
     }
     /// Borrow the store (panics if none).
     fn store(&self) -> &dyn ProtoStore {

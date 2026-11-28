@@ -1,8 +1,8 @@
 //! `kuna decompile-project` — whole-binary **project export**.
 //!
 //! ```text
-//!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..]
-//!                          [--addr 0xVMA].. [--max-fn-seconds N]
+//!   kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..|@FILE]..
+//!                          [--addr 0xVMA|@FILE].. [--max-fn-seconds N]
 //!                          [--stream | --progress]
 //!                          [--mode auto|reliable|aggressive|fast] [--option N V]..
 //!                          [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load]
@@ -167,8 +167,8 @@ pub(crate) fn emit_completion(completion: ProjectCompletion) -> i32 {
 
 fn usage() {
     eprintln!(
-        "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..] \\\n\
-         \x20                   [--addr 0xVMA].. [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
+        "usage: kuna decompile-project <binary> [-o|--output DIR] [--functions a,b,..|@FILE].. \\\n\
+         \x20                   [--addr 0xVMA|@FILE].. [--max-fn-seconds N] [--max-fn-memory MiB] \\\n\
          \x20                   [--mode auto|reliable|aggressive|fast] \\\n\
          \x20                   [--jobs N|auto] [--jobs-chunk N] [--jobs-full-load] \\\n\
          \x20                   [--stream | --progress] \\\n\
@@ -185,6 +185,8 @@ fn usage() {
          \x20             dat_<hex> data labels with raw bytes); with --functions or\n\
          \x20             --addr, of the selected functions' code only\n\
          \x20 README.md   binary metadata (size, arch, entry, sections, counts)\n\
+         --functions and --addr are repeatable and add up; @FILE reads either list\n\
+         from a file, one entry per line with # comments (see decompile-all -h).\n\
          Unfiltered fast exports default to 10 seconds per function; other runs\n\
          default to 120. --max-fn-seconds overrides that policy (0 disables).\n\
          --max-fn-memory MiB stops a function once the process decompiling it\n\

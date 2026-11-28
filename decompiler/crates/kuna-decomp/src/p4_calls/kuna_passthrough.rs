@@ -42,8 +42,9 @@
 //!   registers, the callee's body does not read the register the next parameter
 //!   would arrive in (a variadic's register-save prologue does), the list does not
 //!   end on the last argument register, and it sits where the convention puts
-//!   those types -- or else every register the list names is one the callee's
-//!   body takes;
+//!   those types -- or else every register the list names in `R`'s register
+//!   file is one the callee's body takes ([`extension_past_gaps`] says what a
+//!   register file is);
 //! * the callee's own body READS `R` before writing it on some path, for a value
 //!   that reaches something ([`crate::p4_calls::kuna_calleedeadarg`]'s
 //!   `proves_input`), or hands it on to a declared parameter or a callee that
@@ -111,9 +112,11 @@
 //! the unused ones on claimed ranges so the sibling and body rescues see what
 //! they see with the option off. [`extend_pending`] runs last in `ActionActiveParam`: a call's
 //! final list, when it is a leading run of the stated one, gains the stated
-//! registers that follow it, up to the first the function does not forward.
-//! `ActionInputPrototype` then makes the function's input a parameter because
-//! the call now reads it.
+//! registers that follow it, up to the first the function does not forward in
+//! the same register file: a stated `d0` or `xmm0` the call does not get stops
+//! the float registers after it, not the core ones the convention fills apart
+//! ([`extension_past_gaps`]). `ActionInputPrototype` then makes the function's
+//! input a parameter because the call now reads it.
 //!
 //! A trial left inactive on the function's own value that the callee takes is
 //! marked forwarded ([`mark_forwarded`]), and `forceInactiveChain` reads a run
@@ -211,10 +214,10 @@ pub struct PassThroughClaim {
 /// ([`self_takes`]). `None` for a locked or variadic call spec (its argument
 /// list is not recovered from trials), an indirect call, a call the caller set
 /// up as variadic, a callee `protoorder` stated nothing for, a stated list that
-/// is not an arity claim and names a register the body does not take, a
-/// register the callee's body is not seen taking, a register the calling
-/// function's own prototype could not take as a parameter, and any call of a
-/// variadic function.
+/// is not an arity claim and names a register of `addr`'s register file the
+/// body does not take, a register the callee's body is not seen taking, a
+/// register the calling function's own prototype could not take as a
+/// parameter, and any call of a variadic function.
 pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: int4) -> Option<int4> {
     if !data.get_arch().pass_through || size <= 0 || data.kuna_passthrough_variadic() {
         return None;
@@ -267,7 +270,15 @@ pub fn stated_width(data: &Funcdata, fc: &FuncCallSpecs, addr: &Address, size: i
     let read = if stated.arity_sound {
         takes(addr, size, false)
     } else {
-        takes(addr, size, true) && stated.inputs.iter().filter(|(a, _, _)| is_register(a)).all(|(a, s, _)| takes(a, *s, true))
+        let named = |same_file: bool| {
+            let file = if same_file { register_file(fc.proto(), addr, size) } else { None };
+            stated
+                .inputs
+                .iter()
+                .filter(|(a, s, _)| is_register(a) && (!same_file || register_file(fc.proto(), a, *s) == file))
+                .all(|(a, s, _)| takes(a, *s, true))
+        };
+        takes(addr, size, true) && (named(false) || named(true))
     };
     if !read {
         return None;
@@ -1843,7 +1854,7 @@ fn reassembled(data: &Funcdata, vn: VarnodeId, addr: &Address, size: int4) -> bo
 /// upstream scoring and the sibling and body rescues settled on is kept as it
 /// is, and must be a leading run of the stated list. Registers are taken in the
 /// stated order and the extension stops at the first one the function does not
-/// forward untouched.
+/// forward untouched, within its register file ([`extension_past_gaps`]).
 pub fn extend_pending(data: &mut Funcdata, pending: &[PendingPassThrough]) -> int4 {
     pending.iter().filter(|p| extend_one(data, p)).count() as int4
 }
@@ -1867,8 +1878,19 @@ fn extend_one(data: &mut Funcdata, p: &PendingPassThrough) -> bool {
     let Some(stated) = stated_registers(data, proto, &entry, p.op) else { return false };
     let have: Vec<Address> = current.iter().map(|(a, _)| a.clone()).collect();
     let offered: Vec<Address> = p.candidates.iter().map(|(a, _, _)| a.clone()).collect();
-    let added: Vec<(Address, int4, VarnodeId)> =
-        extension(&have, &stated, &offered).into_iter().map(|k| p.candidates[k].clone()).collect();
+    let mut picked = extension(&have, &stated, &offered);
+    if !from_body && have.len() + picked.len() < stated.len() && entry != *data.get_address() {
+        if let Some(types) = data.kuna_protoorder_types(&entry) {
+            let files: Vec<_> = types.inputs.iter().map(|(a, s, _)| register_file(proto, a, *s)).collect();
+            let wider = extension_past_gaps(&have, &stated, &offered, |k| files.get(k).copied().flatten(), |kept| {
+                placed_as_stated(data, proto, &types.inputs, kept)
+            });
+            if wider.len() > picked.len() {
+                picked = wider;
+            }
+        }
+    }
+    let added: Vec<(Address, int4, VarnodeId)> = picked.into_iter().map(|k| p.candidates[k].clone()).collect();
     if added.is_empty() || (from_body && (p.body_blocked || have.len() + added.len() != stated.len())) {
         return false;
     }
@@ -1921,6 +1943,96 @@ pub fn extension(have: &[Address], stated: &[Address], offered: &[Address]) -> V
         return Vec::new();
     }
     stated[have.len()..].iter().map_while(|s| offered.iter().position(|a| a == s)).collect()
+}
+
+/// [`extension`] past stated registers the function does not forward, as
+/// indices into `offered`.
+///
+/// Parameters are positional within one register file (`file_of`, by index
+/// into `stated`: the type class of the model entries a register overlaps,
+/// grouped entries one file, as upstream's resource sections count them).
+/// AAPCS-VFP, AAPCS64 and SysV x86-64 fill float and core registers apart, so
+/// an unforwarded `d0` in front of `r0` is no reason to drop `r0`. A gap blocks
+/// the rest of its own file; past one, an offered register is taken only while
+/// `placed` says the model puts the list kept so far, `have` included, exactly
+/// in its stated storage ([`placed_as_stated`]), which a float slot that also
+/// consumes a core one (Windows x64, MIPS o32) does not.
+pub fn extension_past_gaps(
+    have: &[Address],
+    stated: &[Address],
+    offered: &[Address],
+    file_of: impl Fn(usize) -> Option<crate::dtype::type_class>,
+    placed: impl Fn(&[usize]) -> bool,
+) -> Vec<usize> {
+    let mut kept: Vec<usize> = Vec::new();
+    let mut out = Vec::new();
+    let mut blocked: Vec<crate::dtype::type_class> = Vec::new();
+    for (k, addr) in stated.iter().enumerate() {
+        let Some(file) = file_of(k) else { break };
+        if kept.len() < have.len() {
+            if *addr == have[kept.len()] && !blocked.contains(&file) {
+                kept.push(k);
+            } else {
+                blocked.push(file);
+            }
+            continue;
+        }
+        if blocked.contains(&file) {
+            continue;
+        }
+        let Some(pos) = offered.iter().position(|a| a == addr) else {
+            blocked.push(file);
+            continue;
+        };
+        kept.push(k);
+        if !blocked.is_empty() && !placed(&kept) {
+            kept.pop();
+            blocked.push(file);
+            continue;
+        }
+        out.push(pos);
+    }
+    if kept.len() < have.len() {
+        return Vec::new();
+    }
+    out
+}
+
+/// The register file of `[addr, addr+size)` in `proto`'s input list: the type
+/// class of the first entry it overlaps, `TYPECLASS_GENERAL` for a grouped one.
+fn register_file(proto: &crate::fspec::FuncProto, addr: &Address, size: int4) -> Option<crate::dtype::type_class> {
+    if !proto.has_model() {
+        return None;
+    }
+    let e = proto.model().input_opt()?.get_entry().iter().find(|e| e.intersects(addr, size))?;
+    Some(if e.is_grouped() { crate::dtype::type_class::TYPECLASS_GENERAL } else { e.get_type() })
+}
+
+/// Does the call's model put the stated types of `kept` exactly in their
+/// stated storage?
+fn placed_as_stated(
+    data: &Funcdata,
+    proto: &crate::fspec::FuncProto,
+    stated: &[(Address, int4, std::rc::Rc<crate::dtype::Datatype>)],
+    kept: &[usize],
+) -> bool {
+    let arch = data.get_arch();
+    let (Some(types), true) = (arch.types(), proto.has_model()) else { return false };
+    let Ok(void_ty) = types.get_type_void() else { return false };
+    let pieces = crate::fspec::PrototypePieces {
+        intypes: kept.iter().map(|&k| std::rc::Rc::clone(&stated[k].2)).collect(),
+        innames: (0..kept.len()).map(|i| format!("a{i}")).collect(),
+        first_var_arg_slot: -1,
+        ..Default::default()
+    };
+    let mut fp = crate::fspec::FuncProto::new();
+    if fp.seed_locked_from_pieces(&pieces, std::rc::Rc::clone(proto.model()), void_ty, types, arch.manage()).is_err() {
+        return false;
+    }
+    fp.num_params() == kept.len() as int4
+        && kept.iter().enumerate().all(|(i, &k)| {
+            fp.get_param(i as int4).is_some_and(|p| p.get_address() == stated[k].0 && p.get_size() == stated[k].1)
+        })
 }
 
 /// The low `width` bytes of `vn`, as a `SUBPIECE` inserted before `op`: what

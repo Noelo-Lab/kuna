@@ -1227,7 +1227,8 @@ fn usage() {
         "usage: kuna decompile <binary> <name|0xaddr> [--addr] [--json] [--raw] [--regions] \\\n\
          \x20                     [--no-vars] [--omit aliases,ranges,line_mappings,variables,types] \\\n\
          \x20                     [--language auto|c|rust|go] [--mode auto|reliable|aggressive|fast] \\\n\
-         \x20                     [--option N V].. [--kassert ARGS].. \\\n\
+         \x20                     [--option N V].. [--deobfuscate auto|off|TECHNIQUE,..] \\\n\
+         \x20                     [--kassert ARGS].. \\\n\
          \x20                     [--define-function S[-E][=N]|@FILE].. \\\n\
          \x20                     [--assert DIRECTIVE|@FILE].. [--assert-strict] \\\n\
          \x20                     [--types FILE.h|DIR].. [--types-cpp CC] \\\n\
@@ -1255,6 +1256,11 @@ fn usage() {
          `kuna catalog` lists them and `kuna docs options` explains the tiers.\n\
          --mode applies an option preset (`kuna modes`); omitted, `auto` picks one by\n\
          input size.  Explicit --option values win over the preset.\n\
+         --deobfuscate LIST selects the deobfuscation techniques (it abbreviates\n\
+         --option deobfuscate LIST): `auto`, the default, lets each act where it\n\
+         detects its obfuscation; `off` shows the protected code as it is; technique\n\
+         names separated by commas (`devirtualize`: VM-protected functions) run those\n\
+         alone, on this function, without waiting for their detection.\n\
          --language selects the output language; omitted, it follows the binary.\n\
          --max-fn-memory MiB stops the decompile once the process doing it holds\n\
          more than MiB resident and the function added 64 MiB or more, and\n\
@@ -1270,14 +1276,16 @@ fn usage() {
          exclusive end bounds its flow so it stops swallowing its neighbours.\n\
          \n\
          --assert <directive | @file> (repeatable) states a fact the engine could not\n\
-         derive.  The vocabulary is function, typedef, prototype, data, param, return,\n\
-         name, type, format, isolate, comment, flow, jumptable, callee, callproto, readonly, volatile,\n\
-         bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
+         derive.  The vocabulary is function, typedef, prototype, data, import, param,\n\
+         return, name, type, format, isolate, comment, flow, jumptable, callee, callproto,\n\
+         readonly, volatile, bytes -- for instance `prototype login int login(char *user,char *pw)`,\n\
          `type v2 char[16]`,\n\
          `name v2 credbuf`, `readonly 0x404028+8`, `flow 0x1405 return`.\n\
          `format <addr> hex|dec|oct|bin|char [<value>]` sets the form the constant\n\
          read at <addr> is printed in; `isolate <symbol>` keeps a local from being\n\
          merged with another.\n\
+         `import <slot> <name>` says the pointer word at <slot> holds the address of\n\
+         the external function <name>, so a call through it is a call to <name>.\n\
          `bytes <addr> <hex|@FILE>` overlays recovered plaintext -- what a packer\n\
          writes over itself -- onto the loaded image; the file on disk is untouched.\n\
          @FILE holds one per line with `#` comments, which is what makes an override\n\
@@ -1346,7 +1354,11 @@ fn run_in_process(req: &SingleRequest) -> i32 {
         });
     } else {
         argv.push("--functions".into());
-        argv.push(req.target.to_string());
+        argv.push(if req.target.starts_with('@') {
+            format!("@{}", req.target)
+        } else {
+            req.target.to_string()
+        });
     }
     if req.raw_image {
         argv.push("--raw-image".into());

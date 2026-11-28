@@ -64,7 +64,7 @@ class LiveTreeTests(unittest.TestCase):
             if item["group"] is not None:
                 self.assertIn(item["group"], self.groups, item["name"])
             if item["folderPhase"] is not None:
-                self.assertRegex(item["folderPhase"], r"^(P\d|substrate|infra|src)$")
+                self.assertRegex(item["folderPhase"], r"^(P\d|substrate|infra|deobf|src)$")
 
     def test_rules_carry_defining_module(self):
         rules = [item for item in self.sched["passes"] if item["kind"] == "rule"]

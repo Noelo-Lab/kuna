@@ -26,7 +26,11 @@ chapter names only the divergence record that flipped a default
 Structuring operates on a dedicated arena: `sblocks`, a `BlockCopy` mirror of
 the real basic blocks seeded by
 `decompiler/crates/kuna-decomp/src/p8_structure/blockaction.rs
-(ActionBlockStructure)`. Both engines collapse that mirror; neither mutates
+(ActionBlockStructure)`. The tree is built on the main loop's first pass and
+kept until the control-flow graph changes. A devirtualized body is the one
+exception: it is built again once dead code may be removed in every space, and
+each of its structurings first undoes the branch negations of the previous one
+(chapter [10](10-deobfuscation.md), §10.2). Both engines collapse that mirror; neither mutates
 p-code, with one deliberate exception — a branch-condition orientation flip
 (`negateCondition`, needed whenever a schema requires the true edge on the
 other side) is recorded during collapse and its data-flow half (the CBRANCH
@@ -770,10 +774,13 @@ the retired region-structurer roadmap, git history) and made the default S8 engi
 by DIV-12 under `option regionstructure`.
 
 **Input.** When `regionlooprefine` is on, `region_structurer.rs
-(run_region_structurer)` first runs the loop half of the chapter-07 region
-identifier fresh over the real CFG
+(run_region_structurer)` first builds the chapter-07 region identifier fresh
+over the real CFG, runs its loop half
 (`decompiler/crates/kuna-decomp/src/p7_regions/kuna_regionid.rs
-(KunaRegionIdentifier::compute_cyclic)`) and consumes its `kuna_regionid.rs
+(KunaRegionIdentifier::compute_cyclic)`) the first time a loop needs refining
+(`region_structurer.rs (RegionStructurer::cyclic_loops)`; the identifier reads
+only the basic blocks, which structuring leaves alone, and most attempts never
+get that far), and consumes its `kuna_regionid.rs
 (KunaRegionIdentifier::cyclic_loops)` projection: each loop's refined body
 and exit frontier keyed by block start address, which absorbs
 dominated switch-case successors that a purely structural natural-loop walk
@@ -852,6 +859,21 @@ CFG passes take: Bash's `declare_internal` declines 18 times in one `kuna
 decompile`, and each attempt strands a component within its first ~100 of
 ~800 rounds.
 
+Most declines are foreseeable from the shape alone. Without a switch, every
+fold takes one entry component plus members reached only from inside it,
+gives the result its members' out-edges (a sequence those of its last
+member), and adds no edge; only a switch absorbs cases that have no
+successor, and only the switch-loop absorb merges by address. So once no live
+component ends in a switch and no absorb is pending, two components without
+out-edges (two `return`s that no switch gathers) or two without in-edges stay
+apart for good: `region_structurer.rs (components_stay_apart)`. Each round
+asks `region_structurer.rs (RegionStructurer::cannot_converge)` beside the
+stranded test, and `run_region_structurer` asks before any setup and declines
+at once; there it still runs the attempt when the function has recorded jump
+statements, because the short-circuit pre-pass counts the folds the
+`loopcontinue auto` gate refuses and `ActionBlockStructure` reads that count.
+On the decbench O2 `bash`, 3,897 of 6,930 attempts decline before any setup.
+
 **Edge virtualization and its ordering.** When forced to emit a goto, the
 choice of edge is the whole quality game. Candidates are every structured,
 non-self out-edge of a live component (edges inside a mid-fold switch-loop
@@ -868,16 +890,18 @@ the port of `phoenix._last_resort_refinement` +
 components, compute forward immediate dominators, and bucket the candidates —
 *crossing* edges (neither endpoint dominates the other) are virtualized
 before *secondary* edges (destination dominates source); a forward tree edge
-is never chosen. Candidate dominance queries use an iterative dominator-tree
-interval index (`p8_structure/kuna_domindex.rs`) built once per immutable
-snapshot. Subtree containment replaces repeated parent-chain walks; absent
-nodes retain the chain walk's self-dominance behavior. The index is discarded
-with the snapshot, so graph changes cannot leave stale intervals. Interval
-slots are arrays indexed by node arena id (each snapshot has a fresh pool, so
-ids are dense): building costs one immediate-dominator lookup per node plus
-linear array work, and each query is two array reads independent of
-dominator-tree depth, so the index is cheaper than the chain walk even on the
-shallow trees of ordinary functions. Candidate order and ranking are unchanged.
+is never chosen. Each call builds the snapshot afresh as a dense graph
+(`p8_structure/kuna_compgraph.rs`): node `i` is the `i`-th live component,
+parallel edges count once and self-loops count (as in a `networkx.DiGraph`),
+and a synthetic head points at every component without predecessors. One
+deterministic depth-first walk from the head (successors in address-then-index
+order, the largest explored first) gives both the post-order the
+immediate-dominator computation runs over and the `node_seq` tiebreak below.
+Dominance queries read pre-order intervals of the dominator tree, two array
+reads each, and a component the head cannot reach dominates only itself. A
+dominator tree is unique, so the arrays answer exactly what a map-keyed graph
+library would; they only drop its per-node map and allocation work, which
+had made the ordering about a tenth of a small binary's run.
 Within the winning bucket (`sailr_order_within_bucket`): H1;
 then H2 — remove each candidate, recompute post-dominators, and keep the
 edges whose removal yields the *most* post-dominators (most-linear result) —
@@ -885,9 +909,15 @@ bounded by `region_structurer.rs (POSTDOM_MAX_EDGES)` = 10 candidate edges
 and `(POSTDOM_MAX_GRAPH_SIZE)` = 50 nodes, exactly angr's caps, because
 post-dominator recomputation per edge is super-linear; then H3; then the
 post-order `node_seq` tiebreak. `regionedgeorder` only changes *which* edge
-is cut when the structurer is already forced to virtualize, so reducible
-code is byte-identical either way; it remains an opt-in (no DIV has flipped
-it — see the catalog).
+is cut when the structurer is already forced to virtualize, but that happens
+in reducible code too, and an edge cut into the function's exit prints as a
+guard `return` rather than a goto. So the ordering also decides which tail
+prints wrapped and which becomes a guard return, in functions that print no
+goto either way: with it on, `if (a) x = 2; else if (!x) x = 1;` prints its
+inner test as `if (x) return; x = 1;`. It is off in every mode. The
+`aggressive` preset turned it on until the decbench corpus showed the default
+ordering matching the source's control flow in 9 more O2 and 82 more O0
+functions, and in none fewer; `option regionedgeorder on` still selects it.
 
 **Loop refinement (angr, `option regionlooprefine`, flipped on by DIV-14).**
 The base cyclic schemas fold only the clean shape: single entry, one
@@ -1028,7 +1058,7 @@ qualify, and each tier is its own pass:
   `kuna_gotoreduce.rs (MAX_TAIL_BLOCKS)` = 3 blocks and `(MAX_TAIL_OPS)` = 8
   ops, and **any** `CALL`/`CALLIND`/`CALLOTHER`/`STORE` in the tail declines
   the match.
-- `on`, the default, runs that pass and then
+- `on` runs that pass and then
   `decompiler/crates/kuna-decomp/src/p8_structure/kuna_taildup.rs
   (ActionTailDup)` for the return tail that *contains a call* — the
   `free(p); return;` epilogue, which the call-free pass rejects and
@@ -1045,12 +1075,63 @@ qualify, and each tier is its own pass:
   policy that prints fewer casts (`castarith`) can bring a tail within the
   bound. Each duplication is logged (`taildup:`).
 - `off` runs neither and keeps the upstream goto/label rendering.
+- `auto`, the default, is `on`, except that in a function the
+  unoptimized-code detector flags (§ `returndup auto`) both passes leave
+  alone every goto whose target the author's own `goto` statements jump to.
 
 `return` is the setting for the C `goto out;` idiom, where many early-exit
 checks share one cleanup epilogue: `on` gives every check its own copy of the
 cleanup call, which the source does not have, while `return` keeps the
 epilogue behind its label and still turns the call-free return tails into
 early returns. Both tiers were flipped on by DIV-14 (changing zero datatests).
+
+### gotoreduce auto — the gotos an unoptimized function was written with
+
+`decompiler/crates/kuna-decomp/src/p8_structure/kuna_o0gotos.rs`. An
+optimizing compiler threads and merges jumps until a goto in kuna's output
+rarely corresponds to one in the source, and duplicating the return tail is
+right there. An unoptimizing compiler invents no jumps, so a goto to a label
+it can still see is usually the author's `goto out;`, and copying the cleanup
+tail into every `if` gives a graph the source does not have. gcc -O0
+compiles a `goto L;` that is the whole arm of an `if` into a `nop` the test
+jumps to (kept so a debugger can stop on the statement's line), followed by a
+jump to `L` or falling into it, and lays these statement blocks out right
+before `L`. A bare `break;`, `continue;` and void `return;` compile the same
+way, so at the first heritage pass `record` takes such a jump for a `goto`
+only when nothing else explains it:
+
+- it does not come from inside the loop its target follows. The loop is the
+  one whose bottom test or back jump is laid out right before the target and
+  its statement blocks; its range runs from that branch's destination to the
+  branch. When the loop's last statement is `if (c) { S; break; }`, gcc folds
+  the back jump into that test and lays `S` out after it, so a block entered
+  only by the fall-through of a backward test extends the range to the target,
+  unless the test is a `for` or `while` test (reached by the loop's entry jump
+  from before the loop), after which the code is after the loop;
+- it does not come from inside a jump-table `switch` whose cases end at the
+  target (a case starts right after a plain jump to it, or a bare `case K:
+  break;` block only jumps to it); the range runs from the dispatch to the
+  target;
+- the target is not a loop's head or test (a backward branch enters it, or the
+  first branch it runs into goes backward).
+
+Each such edge gets edge-label bit 31 (`GOTO_BIT`; `loopcontinue auto` uses bits
+10..15 and `returndup auto` bits 16..30); a removed block's in-edges keep their
+labels when they are re-pointed at its successor. `keeps` then answers, for the
+first basic block of a goto's target, whether any in-edge carries the bit, and
+`ActionGotoReduce` and `ActionTailDup` skip that goto. A `{ S; goto L; }`
+compiles to a plain jump, exactly like the end of an `if` arm (the two
+graphs are the same), and clang -O0 writes no `nop` at all, so a target reached
+only by plain jumps is duplicated as under `on`. Counting plain jumps as
+evidence (three or more into one target) recovered seven more matches on the
+decbench O0 corpus but printed gotos in four more functions whose source has
+none (else-if arm ends and switch breaks), and was left out. The
+recogniser does not know a `switch` lowered to a compare tree, so a bare
+`case K: break;` reached from such a dispatch counts as a `goto` (bash
+`man2html` `change_to_font`). On the decbench gcc -O0 corpus `auto` makes 45
+more functions match the source's control flow than `on` (45 gained, none
+lost; no -O2 function changes); five functions whose source text has no `goto`
+gain one, three of them through rsyslog's `CHKiRet` macro, which is a `goto`.
 
 ### Releasing a label the duplication passes converted away
 
@@ -2013,7 +2094,10 @@ in-edges are re-pointed at its successor with their labels
 (`BlockGraph::remove_from_flow`), so the tags reach the RETURN block's in-edges
 after simplification; edge flags are only ever cleared by mask. Which reading
 applies, and whether the join computed the returned register, is decided when
-`returndup` runs, against the recovered output storage.
+`returndup` runs, against the storage the RETURN op returns
+(`kuna_o0returns.rs (groups)`). The prototype's output is recovered only after
+`returndup`, so at that point it holds a declared output, which is the RETURN's
+own storage, or nothing.
 
 At `returndup` time `kuna_o0returns.rs (split)` groups the RETURN block's
 in-edges by tag and gives each group its own copy of the epilogue with
