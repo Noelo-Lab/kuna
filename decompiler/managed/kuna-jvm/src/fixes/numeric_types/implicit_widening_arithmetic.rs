@@ -1,7 +1,11 @@
 //! Fix `implicit_widening_arithmetic`: an operation whose operands, as written,
 //! promote to a narrower type than its own gets the widening conversion nearest
 //! its left operand written; a variable assigned an integer operation's result
-//! with no narrowing conversion is at least an `int`.
+//! with no narrowing conversion is at least an `int`. A comparison computes in
+//! the type its two operands have, and a conditional in the type of its arms:
+//! `(double) f == i` written `f == i` compares two `float`s, the `int` rounded,
+//! and `b ? (float) l : (double) l` written `b ? (float) l : l` rounds the
+//! second arm to a `float` too.
 
 use crate::code_type::CodeType;
 use crate::exprent::Exprent;
@@ -119,9 +123,50 @@ fn type_sensitive(func: FunctionType, own: CodeType) -> bool {
     }
 }
 
+/// Writes the conversion that makes the comparison `fexpr` compare in the
+/// floating-point type its operands have, if as written they promote to
+/// another type (an `int` or `long` operand is then rounded to a `float`
+/// where the bytecode converts it to a `double`, or the reverse).
+fn keep_compared(fexpr: FunctionExprent) {
+    let ops = fexpr.get_lst_operands();
+    if ops.len() != 2 {
+        return;
+    }
+    let (left, right) = (ops.get(0), ops.get(1));
+    let own = own_type(left);
+    if own != own_type(right) || !matches!(own, CodeType::Float | CodeType::Double) {
+        return;
+    }
+    if promoted(written_type(left), written_type(right)) != own {
+        let narrow = |e: Exprent| written_type(e) != own_type(e);
+        let _ = (narrow(left) && widen(left)) || (narrow(right) && widen(right));
+    }
+}
+
+/// Writes the conversion that makes the `double` conditional `fexpr` one as
+/// written, if its arms as written promote to `float` and one of them is an
+/// `int` or a `long`, which that promotion would round where the bytecode
+/// converts it to a `double`.
+fn keep_conditional(fexpr: FunctionExprent) {
+    let ops = fexpr.get_lst_operands();
+    if ops.len() != 3 || own_type(fexpr.0) != CodeType::Double {
+        return;
+    }
+    let arms = [written_type(ops.get(1)), written_type(ops.get(2))];
+    if promoted(arms[0], arms[1]) == CodeType::Float && arms.iter().any(|t| matches!(t, CodeType::Int | CodeType::Long)) {
+        widen(fexpr.0);
+    }
+}
+
 /// Run on `fexpr` after its operands: writes the conversion that makes it
 /// compute in its own type, if its written operands promote to a narrower one.
 pub fn keep_widening(fexpr: FunctionExprent) {
+    use FunctionType::*;
+    match fexpr.get_func_type() {
+        Eq | Ne | Lt | Ge | Gt | Le => return keep_compared(fexpr),
+        Ternary => return keep_conditional(fexpr),
+        _ => {}
+    }
     let own = own_type(fexpr.0);
     if !numeric(own) || !type_sensitive(fexpr.get_func_type(), own) {
         return;

@@ -2277,6 +2277,19 @@ parent is a conversion, unless its operand is a `byte`, `short` or `char`, which
 `float` holds. An exact intermediate step (`(long) (double) i`) stays unwritten, since the
 direct conversion gives the same value. Case `TestLossyConversionChain`.
 
+**A comparison and a conditional compute in a type too (kuna).** `implicit_widening_arithmetic`
+wrote a conversion back only for arithmetic. A comparison has no numeric type of its own, but
+its two operands have one in the bytecode (`dcmpl` compares `double`s), and Java compares in
+the promotion of the operand types as written: `(double) f == i` printed `f == i` compares two
+`float`s, the `int` rounded to one, and `(float) i == (double) i` printed `(float) i == i` is
+always true. A comparison whose operands are `float`s or `double`s and promote, as written, to
+another type gets the conversion nearest its left operand written, as arithmetic does. A
+`double` conditional whose arms as written promote to `float` rounds an `int` or `long` arm
+that the bytecode converts to a `double` (`b ? (float) l : (double) l` printed `b ? (float) l :
+l`; javac itself converts each arm straight to the type an unparenthesized initializer or
+argument expects and promotes them first inside parentheses, so the text was right in one
+place and wrong in the other), and gets a conversion written the same way.
+
 **Resugaring only javac's shape.** Vineflower resugars try-with-resources, compound
 assignments, compact record constructors, pattern bindings, the null check of an explicit
 outer instance and switch layouts from loose tests, so hand-written code of a similar form

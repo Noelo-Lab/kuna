@@ -347,6 +347,9 @@ impl SecondaryFunctionsHelper {
                 let fexpr = exprent.as_function();
                 let lst_operands = fexpr.get_lst_operands();
                 lossy_widening_operand::keep_operand(fexpr);
+                if matches!(fexpr.get_func_type(), Eq | Ne | Lt | Ge | Gt | Le | Ternary) {
+                    implicit_widening_arithmetic::keep_widening(fexpr);
+                }
 
                 match fexpr.get_func_type() {
                     Xor => {
