@@ -171,6 +171,9 @@ pub struct Method<'d, 'a> {
     /// names at the use, or a phi it names where the phi's block starts
     /// (parameter entries, which start at 0, aside).
     pub named: BTreeSet<u32>,
+    /// Handler blocks to the equal handler block that stands for them
+    /// (`merge_handlers`).
+    pub alias: BTreeMap<u32, u32>,
     /// `sparse-switch` ops rewritten from d8's test chains on a switch map,
     /// by address: their cases and default target (`switchmap.rs`).
     pub chains: BTreeMap<u32, crate::switchmap::Chain>,
@@ -267,6 +270,7 @@ impl<'d, 'a> Method<'d, 'a> {
             clean_param: Vec::new(),
             reused: BTreeSet::new(),
             named: BTreeSet::new(),
+            alias: BTreeMap::new(),
             chains: BTreeMap::new(),
         };
         m.build_ops(undo)?;
@@ -703,6 +707,43 @@ impl<'d, 'a> Method<'d, 'a> {
         })
     }
 
+    /// javac compiles `catch (A | B e)` to one handler for both types; d8
+    /// gives each type its own handler, a `move-exception` into one register
+    /// and a jump to the shared body. Typed handler blocks that are just that,
+    /// with the same register and the same body, are one code: every try
+    /// item's entry for them names the first of them, and the others are
+    /// never entered.
+    fn merge_handlers(&mut self) {
+        let bare = |m: &Self, h: u32| -> Option<(u32, u32)> {
+            let blk = &m.blocks[h as usize];
+            let ops: Vec<&Op> = m.ops[blk.start..blk.end].iter().filter(|o| o.insn.op != 0x00).collect();
+            let jump = match ops.as_slice() {
+                [x] => x.insn.op == 0x0d,
+                [x, g] => x.insn.op == 0x0d && matches!(g.insn.op, 0x28..=0x2a),
+                _ => false,
+            };
+            match blk.succs.as_slice() {
+                &[j] if jump => Some((ops[0].insn.a, j)),
+                _ => None,
+            }
+        };
+        let mut first: BTreeMap<(u32, u32), u32> = BTreeMap::new();
+        for b in 0..self.blocks.len() {
+            for i in 0..self.blocks[b].handlers.len() {
+                let (ty, h) = self.blocks[b].handlers[i];
+                if ty.is_none() {
+                    continue;
+                }
+                let Some(key) = bare(self, h) else { continue };
+                let rep = *first.entry(key).or_insert(h);
+                if rep != h {
+                    self.alias.insert(h, rep);
+                    self.blocks[b].handlers[i].1 = rep;
+                }
+            }
+        }
+    }
+
     fn build_blocks(&mut self) -> Result<()> {
         if self.ops.is_empty() {
             return Err(err("method has no instructions".to_string()));
@@ -776,6 +817,7 @@ impl<'d, 'a> Method<'d, 'a> {
             blk.try_item = try_item;
             blk.falls_off = falls_off;
         }
+        self.merge_handlers();
         let mut stack = vec![0u32];
         self.blocks[0].reachable = true;
         while let Some(b) = stack.pop() {

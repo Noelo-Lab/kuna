@@ -12,4 +12,7 @@ small0 big0123
 3 3
 npe
 item a #2 failed at null (3)
+3
+log io
+io
 ?0?0?0s1m0?0?0

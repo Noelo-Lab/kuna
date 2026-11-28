@@ -520,6 +520,8 @@ fn d8_register_sharing_is_undone() {
         assert!(label.contains("return \"item \" + name + \" #\" + n;"), "{f}: {label}");
         let failure = ok(&jvm(&["decompile", &dex(f), "vx.Shapes$Failure"]));
         assert!(failure.contains("      super(\"failed at \" + ") && !failure.contains(" = String.valueOf("), "{f}: {failure}");
+        let rethrow = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.rethrow"]));
+        assert!(rethrow.contains("} catch (IOException | RuntimeException "), "{f}: {rethrow}");
         let bound = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.bound"]));
         assert!(bound.contains("return s::len;") && !bound.contains("requireNonNull"), "{f}: {bound}");
         let checked = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.checked"]));

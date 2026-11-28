@@ -1470,6 +1470,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                 for (start, end) in e.coverage(t) {
                     for &(ty, addr) in &t.handlers {
                         let b = m.ops[m.ops.partition_point(|o| o.insn.addr < addr)].block;
+                        let b = m.alias.get(&b).copied().unwrap_or(b);
                         if m.blocks[b as usize].reachable && !skip(b, ty) {
                             table.push((start, end, b, ty));
                         }

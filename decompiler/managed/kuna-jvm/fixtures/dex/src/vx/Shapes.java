@@ -216,7 +216,20 @@ public class Shapes {
         }
     }
 
-    public static void main(String[] args) {
+    // A multi-catch: d8 gives each type its own handler, which joins the shared body.
+    static int rethrow(String s) throws java.io.IOException {
+        try {
+            if (s.equals("io")) {
+                throw new java.io.IOException("io");
+            }
+            return s.length();
+        } catch (java.io.IOException | RuntimeException e) {
+            System.out.println("log " + e.getMessage());
+            throw e;
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
         for (char c = 0; c < 30; c++) {
@@ -244,6 +257,12 @@ public class Shapes {
             System.out.println("npe");
         }
         System.out.println(label("a", 2) + " " + new Failure(null, 3).getMessage());
+        System.out.println(rethrow("abc"));
+        try {
+            rethrow("io");
+        } catch (java.io.IOException e) {
+            System.out.println("io");
+        }
         for (java.util.concurrent.TimeUnit u : java.util.concurrent.TimeUnit.values()) {
             System.out.print(unit(u) + seconds(u));
         }

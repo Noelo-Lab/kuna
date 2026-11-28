@@ -2229,7 +2229,11 @@ call (it fails over when more than one is). Blocks start at branch targets, afte
 returns, throws and the monitor ops, at try boundaries and at handlers; a block in a try range has its handlers as exception successors, and
 reachability follows normal edges and the handlers of blocks with a throwing instruction.
 Unreachable blocks are not translated, and a reachable block that falls off the code is an
-error.
+error. javac compiles `catch (A | B e)` to one handler for both types; d8 gives each type its
+own handler, a `move-exception` into one register and a jump to the shared body. Typed
+handler blocks that are only that, into the same register and on to the same block, are one
+code: every try item's entry for them names the first of them, so the exception table lists
+both types with one handler as javac's does, and the others are never entered.
 
 **Values and webs.** Liveness is computed per register with exception edges taken at each
 throwing op (the state before the op flows to the handler). A forward pass then numbers
