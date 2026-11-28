@@ -94,13 +94,15 @@ cliw_dm_second: is wide_3_7=16 { local addr:2 = R4 + RF4; export addr; }
 @define CLIW_DM_WORD_MPY "$(CLIW_DM) & wide_0_0=0 & index_high_0=0 & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_3_23=0xfffff & tpl_91_95=16 & tpl_78_82=31 & tpl_73_77>=16 & tpl_73_77<=21 & mac_lo & mac_hi & mac_guard"
 
 cliw_mac1_continuation: is cliw_address_bank=13 & cliw_terminal_ma3_condition=24 & cliw_terminal_ma4=24 &
-    wide_10_14=28 & wide_3_7=8 & tpl_83_86=9 & (tpl_87_90=9 | tpl_87_90=12) {
+    wide_10_14=28 & wide_3_7=8 &
+    ((tpl_83_86=9 & (tpl_87_90=9 | tpl_87_90=12)) | (tpl_83_86<8 & tpl_87_90=9)) {
     local base:2 = R0;
     modify_native_agu(R0, 2:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
     export base;
 }
 cliw_mac1_continuation: is cliw_address_bank=13 & cliw_terminal_ma3_condition=28 & cliw_terminal_ma4=8 &
-    wide_10_14=24 & wide_3_7=24 & tpl_83_86=11 & (tpl_87_90=11 | tpl_87_90=12) {
+    wide_10_14=24 & wide_3_7=24 &
+    ((tpl_83_86=11 & (tpl_87_90=11 | tpl_87_90=12)) | (tpl_83_86<8 & tpl_87_90=11)) {
     local base:2 = R4;
     modify_native_agu(R4, 2:2, RM4, RL4, RM4_ALIGN, 8:4, 4:2);
     export base;
@@ -118,7 +120,8 @@ macro cliw_dm_word_multiply(lo, hi, guard, first, second) {
 
 # A short request for the long operand's continuation is a separate RA
 # reservation. Only the short result feeds the MAC operand mux.
-:CLIW template_index is $(CLIW_DM_WORD_MPY) & wide_8_9=1 & wide_1_2=1 & cliw_mac1_continuation & cliw_mac1_first_is_ff {
+:CLIW template_index is $(CLIW_DM_WORD_MPY) & wide_8_9=1 & wide_1_2=1 & tpl_83_86>=8 &
+    cliw_mac1_continuation & cliw_mac1_first_is_ff {
     build cliw_mac1_continuation;
     local address:2 = cliw_mac1_continuation;
     local continuation:2 = address + 1;
@@ -131,6 +134,18 @@ macro cliw_dm_word_multiply(lo, hi, guard, first, second) {
     first = FF1;
   <product>
     cliw_dm_word_multiply(mac_lo, mac_hi, mac_guard, first, second);
+}
+
+:CLIW template_index is $(CLIW_DM_WORD_MPY) & wide_8_9=1 & wide_1_2=1 & tpl_83_86<8 & mac_right &
+    cliw_mac1_continuation {
+    build cliw_mac1_continuation;
+    local address:2 = cliw_mac1_continuation;
+    local continuation:2 = address + 1;
+    compact_mpy_three_reads(address, continuation, continuation);
+    local first:2 = *[data]:2 continuation;
+    cliw_read_discarded(address);
+    cliw_read_discarded(continuation);
+    cliw_dm_word_multiply(mac_lo, mac_hi, mac_guard, first, mac_right);
 }
 
 # Both postincrements are live even though only MA1 reserves a DATA read.
@@ -725,6 +740,611 @@ cliw_skip_last_bytes: is cliw_terminal_ma4=16 { local bytes:2 = 3; export bytes;
   <move_done>
 }
 
+
+@define CLIW_CLOSED "$(CLIW_DM) & cliw_address_bank=12 & cliw_terminal_ma3=24 & cliw_terminal_ma4=24 & wide_10_14=24 & wide_3_7=24 & wide_8_9=1 & wide_1_2=1 & cliw_shared_rn=0"
+@define CLIW_MATCHED_AB "tpl_64_66=4 & tpl_62_63=1 & tpl_57_61=18"
+@define CLIW_CLOSED_IDLE_ALUS "tpl_52_63=0xfff & tpl_64_72=0xff & tpl_3_23=0xfffff"
+@define CLIW_INERT "$(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_CLOSED_IDLE_ALUS) & $(CLIW_DM_NO_LOADS) & cliw_shared_rn=0"
+
+macro cliw_add_sub(left, right, subtract, result, flags) {
+    local mask:8 = 0xffffffffff;
+    local sign:8 = 0x8000000000;
+    local a:8 = left;
+    local b:8 = right ^ (-zext(subtract) & mask);
+    local sum:8 = a + b + zext(subtract);
+    local bits:8 = sum & mask;
+    local overflow:1 = (a ^ b) < sign && (a ^ bits) >= sign;
+    cliw_alu_finish(bits, sum > mask, overflow, ECFG, 0:1, result, flags);
+}
+
+# Both units share the old sources but neither writes the other's destination.
+# The MAC contributes only sticky L when the same bank's ALU is configured.
+:CLIW template_index is $(CLIW_CLOSED) & cliw_mac1_predicate=1 & cliw_alu2_predicate=1 & cliw_mac2_predicate=1 & wide_0_0=1 &
+    $(CLIW_DM_NO_LOADS) & tpl_91_95=16 & tpl_87_90=1 & tpl_83_86=2 & tpl_78_82=31 & tpl_73_77=16 &
+    cliw_mac2_op=16 & cliw_mac2_left=1 & cliw_mac2_right=2 & cliw_mac2_addend_hi=3 & cliw_mac2_addend_lo=7 & cliw_mac2_dest=20 &
+    tpl_67_72=32 & $(CLIW_MATCHED_AB) & tpl_52_56=19 & tpl_18_23=32 & tpl_13_17=17 & tpl_8_12=18 & tpl_3_7=21 & ce_tick {
+    local incoming:2 = EST;
+    local first:2;
+    local second:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, first);
+    unary_ce(CECFG2, incoming, CETBL, 1:2, second);
+    local status:2 = incoming & 0xcfff;
+    if ((first | second) == 0) goto <feedback>;
+    local left:8;
+    local right:8;
+    cliw_alu_sample(A1L, A1H, GB1, left);
+    cliw_alu_sample(A2L, A2H, GB2, right);
+    local add:8;
+    local add_flags:2;
+    cliw_alu_add(left, right, add, add_flags);
+    local product:8;
+    raw_mac_product(A1L, A2L, 1:1, 1:1, product);
+    local multiply:8;
+    local mac_flags:2;
+    raw_mac_finish_limit(product, product & 0xffffffffff, 0:1, 0:1, 0:1, 1:1, multiply, mac_flags);
+    local flags:2 = add_flags | (mac_flags & 4);
+    if (first == 0) goto <lane2>;
+    write_accumulator40(A3L, A3H, GB3, add);
+    write_accumulator40(A0L, A0H, GB0, multiply);
+    status = (status & 0xffc4) | flags;
+  <lane2>
+    if (second == 0) goto <feedback>;
+    write_accumulator40(A5L, A5H, GB5, add);
+    write_accumulator40(A4L, A4H, GB4, multiply);
+    status = (status & 0xf13f) | (flags << 6);
+  <feedback>
+    publish_ce_feedback(status, incoming);
+    build ce_tick;
+}
+
+cliw_ce_pair: is tpl_49_51=3 & tpl_0_2=2 { export 0x1000:2; }
+cliw_ce_pair: is tpl_49_51=2 & tpl_0_2=3 { export 0x2000:2; }
+:CLIW template_index is $(CLIW_CLOSED) & wide_34_46=0x318 & wide_0_0=0 &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_CLOSED_IDLE_ALUS) & cliw_ce_pair & ce_tick {
+    EST = (EST & 0xcfff) | cliw_ce_pair;
+    build ce_tick;
+}
+
+# FF1 latches into X1 at OF regardless of the template's later MAC veto.
+:CLIW template_index is $(CLIW_CLOSED) & cliw_mac1_predicate=1 & cliw_alu2_predicate=0 & cliw_mac2_predicate=0 & wide_0_0=0 &
+    $(CLIW_DM_IDLE2) & $(CLIW_CLOSED_IDLE_ALUS) & $(CLIW_DM_NO_LOADS) &
+    tpl_91_95=16 & tpl_87_90=12 & tpl_83_86=2 & tpl_78_82=31 & tpl_73_77=16 & wide_mpy_ff1_at_of & ce_tick {
+    build wide_mpy_ff1_at_of;
+    local incoming:2 = EST;
+    local status:2 = incoming & 0xcfff;
+    local first:2 = wide_mpy_ff1_at_of;
+    X1 = first;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <feedback>;
+    local flags:2;
+    signed_product_result(A0L, A0H, GB0, first, A2L, flags);
+    status = (status & 0xffc4) | flags;
+  <feedback>
+    publish_ce_feedback(status, incoming);
+    build ce_tick;
+}
+
+macro cliw_stop_read() {
+  <stopped>
+    carmel_data_read_conflict();
+    goto <stopped>;
+}
+macro cliw_four_reads(first, second, third, fourth) {
+    local lower_count:1 = zext(first < 0x8000) + zext(second < 0x8000) +
+                          zext(third < 0x8000) + zext(fourth < 0x8000);
+    if (lower_count == 2) goto <check_ports>;
+    cliw_stop_read();
+  <check_ports>
+    compact_pair_read_check(first, second);
+    compact_pair_read_check(first, third);
+    compact_pair_read_check(first, fourth);
+    compact_pair_read_check(second, third);
+    compact_pair_read_check(second, fourth);
+    compact_pair_read_check(third, fourth);
+}
+cliw_r1_chain_step: is cliw_terminal_ma3=13 { export 0xffff:2; }
+cliw_r1_chain_step: is cliw_terminal_ma3=9 { export 1:2; }
+cliw_r1_chain_write: is cliw_terminal_ma4=5 {
+    modify_native_agu(R1, RN1, RM0, RL0, RM0_ALIGN, 2:4, 1:2);
+}
+cliw_r1_chain_write: is (cliw_terminal_ma3=13 & cliw_terminal_ma4=9) |
+    (cliw_terminal_ma3=9 & cliw_terminal_ma4=13) { }
+
+# MA4's chained address and its indexed writeback sample different bases.
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=11 & cliw_mac1_predicate=0 & cliw_alu2_predicate=1 & cliw_mac2_predicate=0 &
+    wide_10_14=2 & wide_8_9=1 & wide_3_7=22 & wide_1_2=1 & wide_0_0=1 & cliw_shared_rn=0 &
+    cliw_r1_chain_step & cliw_r1_chain_write & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_3_23=0xfffff &
+    tpl_67_72=36 & tpl_64_66=6 & tpl_62_63=3 & tpl_57_61=0 & tpl_52_56=20 {
+    local base:2 = R1;
+    local selected:2 = base + cliw_r1_chain_step;
+    local first:2 = R6;
+    local second:2 = first + RN6;
+    build cliw_r1_chain_write;
+    cliw_four_reads(selected, first, second, base);
+    local value:2 = *[data]:2 selected;
+    cliw_read_discarded(first);
+    cliw_read_discarded(second);
+    cliw_read_discarded(base);
+    local incoming:2 = EST;
+    local status:2 = incoming & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <feedback>;
+    local bits:8 = sext(value) & 0xffffffffff;
+    local flags:2;
+    cliw_alu_status(bits, flags);
+    write_accumulator40(A4L, A4H, GB4, bits);
+    status = (status & 0xffc4) | flags;
+  <feedback>
+    publish_ce_feedback(status, incoming);
+}
+
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & wide_34_46=0x318 & wide_0_0=0 &
+    wide_10_14=28 & wide_3_7=8 & ((wide_8_9=2 & wide_1_2=0) | (wide_8_9=0 & wide_1_2=2)) & wide_8_9 & $(CLIW_INERT) {
+    local lo:2 = R0;
+    local hi:2 = lo + 1;
+    modify_native_agu(R0, 2:2, RM0, RL0, RM0_ALIGN, 0:4, 4:2);
+    if (wide_8_9:1 != 2) goto <feedback>;
+    *[data]:2 lo = 0:2;
+    *[data]:2 hi = 0:2;
+  <feedback>
+    clock_ce();
+}
+
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & cliw_terminal_ma3_condition=8 & cliw_terminal_ma4=24 & wide_0_0=0 &
+    wide_10_14=0 & wide_3_7=28 & wide_8_9=0 & wide_1_2=2 & $(CLIW_INERT) {
+    local hi:2 = R4 + 1;
+    *[data]:2 R4 = 0:2;
+    *[data]:2 hi = 0:2;
+    clock_ce();
+}
+
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & wide_34_46=0x318 & wide_0_0=0 &
+    wide_10_14=25 & wide_3_7=24 & wide_8_9=2 & wide_1_2=1 & $(CLIW_INERT) {
+    local hi:2 = SP - 1;
+    SP = SP - 2;
+    *[data]:2 hi = 0:2;
+    *[data]:2 SP = 0:2;
+    clock_ce();
+}
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & wide_34_46=0x318 & wide_0_0=0 &
+    wide_10_14=24 & wide_3_7=26 & wide_8_9=1 & wide_1_2=3 & $(CLIW_INERT) {
+    local address:2 = SP;
+    SP = SP - 1;
+    cliw_read_discarded(address);
+    *[data]:2 address = 0:2;
+    clock_ce();
+}
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & wide_34_46=0x318 & wide_0_0=0 &
+    wide_10_14=25 & wide_3_7=24 & wide_8_9=1 & wide_1_2=1 & $(CLIW_INERT) {
+    local lo:2 = SP + 1;
+    local hi:2 = SP + 2;
+    SP = hi;
+    cliw_read_discarded(lo);
+    cliw_read_discarded(hi);
+    clock_ce();
+}
+
+# An unmarked stack route can patch the reserved address independently of SP.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_ACC) & cliw_shared_rn=0 & tpl_67_72=32 & wide_left_mode=0 &
+    cliw_address_bank=3 & cliw_terminal_ma3_condition=88 & cliw_terminal_ma4=11 & wide_10_14=29 & wide_3_7=26 &
+    wide_8_9=3 & wide_1_2=1 & wide_0_0=0 {
+    local first:2 = SP + 8;
+    local second:2 = R3;
+    SP = SP + 1;
+    modify_native_agu(R3, 1:2, RM2, RL2, RM2_ALIGN, 6:4, 4:2);
+    compact_pair_read_check(first, second);
+    cliw_read_discarded(first);
+    cliw_read_discarded(second);
+    local left:8;
+    local right:8;
+    local result:8;
+    local flags:2;
+    cliw_alu_sample(A1L, A1H, GB1, left);
+    cliw_alu_sample(A2L, A2H, GB2, right);
+    cliw_alu_add(left, right, result, flags);
+    write_accumulator40(A0L, A0H, GB0, result);
+    publish_ce_feedback((EST & 0xcfc4) | flags, EST);
+}
+
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_MOVE) & cliw_shared_rn=0 & wide_left_mode=0 &
+    cliw_address_bank=4 & cliw_terminal_ma3_condition=62 & cliw_terminal_ma4=24 & wide_10_14=25 & wide_3_7=6 &
+    wide_8_9=0 & wide_1_2=1 & wide_0_0=0 {
+    SP = SP - 2;
+    local value:8 = sext(A1H) & 0xffffffffff;
+    local flags:2;
+    cliw_alu_status(value, flags);
+    write_accumulator40(A0L, A0H, GB0, value);
+    publish_ce_feedback((EST & 0xcfc4) | flags, EST);
+}
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_MOVE) & cliw_shared_rn=0 & wide_left_mode=0 &
+    cliw_address_bank=4 & cliw_terminal_ma3_condition=62 & cliw_terminal_ma4=26 & wide_10_14=24 & wide_3_7=6 &
+    wide_8_9=0 & wide_1_2=1 & wide_0_0=0 {
+    local first:2 = R2;
+    local second:2 = SP + 1;
+    modify_native_agu(R2, RN2, RM2, RL2, RM2_ALIGN, 4:4, 1:2);
+    SP = second;
+    compact_pair_read_check(first, second);
+    cliw_read_discarded(first);
+    cliw_read_discarded(second);
+    local value:8 = sext(A1H) & 0xffffffffff;
+    local flags:2;
+    cliw_alu_status(value, flags);
+    write_accumulator40(A0L, A0H, GB0, value);
+    publish_ce_feedback((EST & 0xcfc4) | flags, EST);
+}
+
+@undef CLIW_INERT
+@undef CLIW_CLOSED_IDLE_ALUS
+@undef CLIW_MATCHED_AB
+@undef CLIW_CLOSED
+
+@define CLIW_WB_IDLE "$(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_52_63=0xfff & tpl_64_72=0xff & tpl_3_23=0xfffff & cliw_shared_rn=0"
+@define CLIW_XOR_ACC "$(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=54 & cliw_shared_rn=0"
+@define CLIW_SUB_ACC "$(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=0 & cliw_shared_rn=0"
+
+macro cliw_stop_write() {
+  <stopped>
+    carmel_data_write_conflict();
+    goto <stopped>;
+}
+macro cliw_check_write_pair(first, second) {
+    if (first == second) goto <conflict>;
+    if (((first ^ second) & 0xc001) != 0) goto <ready>;
+    local region:2 = first & 0xc000;
+    if (region == 0 || region == 0xc000) goto <ready>;
+  <conflict>
+    cliw_stop_write();
+  <ready>
+}
+macro cliw_check_three_writes(word, lower, upper) {
+    if ((((word ^ lower) | (word ^ upper)) & 0x8000) != 0) goto <ports>;
+    cliw_stop_write();
+  <ports>
+    cliw_check_write_pair(word, lower);
+    cliw_check_write_pair(word, upper);
+    cliw_check_write_pair(lower, upper);
+}
+
+# A write-only stack push adds one WB request but no RA request. The POP
+# uses the incremented reserved cell and does not reserve a write.
+:CLIW template_index is $(CLIW_DM) & $(CLIW_WB_IDLE) & cliw_address_bank=11 &
+    cliw_terminal_ma3_condition=85 & cliw_terminal_ma4=21 & wide_10_14=18 & wide_8_9=3 & wide_3_7=26 & wide_0_0=0 &
+    (wide_1_2=1 | wide_1_2=2) & wide_1_2 {
+    local first:2 = R6 + RF4;
+    local last:2 = R1 + RN1;
+    local stack:2 = SP;
+    if (wide_1_2:1 == 1) goto <read_stack>;
+    SP = SP - 1;
+    compact_pair_read_check(first, last);
+    cliw_read_discarded(first);
+    cliw_read_discarded(last);
+    cliw_check_write_pair(first, stack);
+    *[data]:2 first = 0:2;
+    *[data]:2 stack = 0:2;
+    goto <publish>;
+  <read_stack>
+    stack = SP + 1;
+    SP = stack;
+    compact_mpy_three_reads(first, stack, last);
+    cliw_read_discarded(first);
+    cliw_read_discarded(stack);
+    cliw_read_discarded(last);
+    *[data]:2 first = 0:2;
+  <publish>
+    clock_ce();
+}
+
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_WB_IDLE) & wide_left_mode=0 & cliw_address_bank=0 &
+    cliw_terminal_ma3_condition=126 & cliw_terminal_ma4=24 & wide_10_14=16 & wide_8_9=2 & wide_3_7=28 & wide_1_2=2 & wide_0_0=1 {
+    local word:2 = R0 + RF0;
+    local lower:2 = R4;
+    local upper:2 = lower + 1;
+    cliw_check_three_writes(word, lower, upper);
+    *[data]:2 word = 0:2;
+    *[data]:2 lower = 0:2;
+    *[data]:2 upper = 0:2;
+    clock_ce();
+}
+
+# The EX accumulator result survives a failed DATA write reservation. EST
+# and both words wait until the WB arbitration succeeds.
+:CLIW template_index is $(CLIW_XOR_ACC) & wide_left_mode=0 & cliw_address_bank=11 &
+    cliw_terminal_ma3_condition=68 & cliw_terminal_ma4=4 & wide_10_14=13 & wide_8_9=2 & wide_3_7=26 & wide_1_2=2 & wide_0_0=1 {
+    local first:2 = R5;
+    local stack:2 = SP;
+    local read_addr:2 = R0;
+    modify_native_agu(R5, 11:2, RM4, RL4, RM4_ALIGN, 10:4, 4:2);
+    SP = SP - 1;
+    modify_native_agu(R0, RN0, RM0, RL0, RM0_ALIGN, 0:4, 1:2);
+    cliw_read_discarded(read_addr);
+    local incoming:2 = EST;
+    local status:2 = incoming & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <stores>;
+    local left:8;
+    local right:8;
+    local flags:2;
+    cliw_alu_sample(A1L, A1H, GB1, left);
+    cliw_alu_sample(A2L, A2H, GB2, right);
+    local result:8 = left ^ right;
+    cliw_alu_status(result, flags);
+    write_accumulator40(A0L, A0H, GB0, result);
+    status = (status & 0xffc7) | flags;
+  <stores>
+    cliw_check_write_pair(first, stack);
+    *[data]:2 first = 0:2;
+    *[data]:2 stack = 0:2;
+    publish_ce_feedback(status, incoming);
+}
+
+# MA1 captures R7 plus the unmarked-record displacement. An indexed update
+# of that same base starts from incoming R7, not the captured DATA address.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_WB_IDLE) & wide_left_mode=0 & cliw_address_bank=14 &
+    (cliw_terminal_ma3_condition=29 | cliw_terminal_ma3_condition=157) & cliw_mac1_predicate &
+    cliw_terminal_ma4=2 & wide_10_14=15 & wide_8_9=3 & wide_3_7=7 & wide_1_2=0 & wide_0_0=1 {
+    local condition:1 = cliw_mac1_predicate;
+    local first:2 = R7 + 8 + 3 * zext(condition);
+    local long_low:2 = R1;
+    local long_high:2 = long_low + 1;
+    modify_native_agu(R7, RN7, RM6, RL6, RM6_ALIGN, 14:4, 1:2);
+    wide_check_word_and_pair_reads(first, long_low, long_high);
+    cliw_read_discarded(first);
+    cliw_read_discarded(long_low);
+    cliw_read_discarded(long_high);
+    *[data]:2 first = 0:2;
+    clock_ce();
+}
+
+:CLIW template_index is $(CLIW_SUB_ACC) & wide_left_mode=0 & cliw_address_bank=11 &
+    cliw_terminal_ma3_condition=125 & cliw_terminal_ma4=7 & wide_10_14=15 & wide_8_9=0 & wide_3_7=15 & wide_1_2=0 & wide_0_0=0 {
+    local long_low:2 = R1;
+    local long_high:2 = long_low + 1;
+    modify_native_agu(R1, RN1, RM0, RL0, RM0_ALIGN, 2:4, 1:2);
+    modify_native_agu(R7, -2:2, RM6, RL6, RM6_ALIGN, 14:4, 4:2);
+    cliw_read_discarded(long_low);
+    cliw_read_discarded(long_high);
+    local left:8;
+    local right:8;
+    local result:8;
+    local flags:2;
+    cliw_alu_sample(A1L, A1H, GB1, left);
+    cliw_alu_sample(A2L, A2H, GB2, right);
+    cliw_add_sub(left, right, 1:1, result, flags);
+    write_accumulator40(A0L, A0H, GB0, result);
+    publish_ce_feedback((EST & 0xcfc4) | flags, EST);
+}
+
+@undef CLIW_SUB_ACC
+@undef CLIW_XOR_ACC
+@undef CLIW_WB_IDLE
+
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_ACC) & tpl_67_72=0 & cliw_shared_rn=0 & wide_left_mode=0 &
+    cliw_address_bank=1 & cliw_terminal_ma3_condition=175 & cliw_terminal_ma4=15 &
+    wide_10_14=30 & wide_3_7=25 & wide_8_9=2 & wide_1_2=2 & wide_0_0=1 {
+    local lo:2 = SP + 12;
+    local hi:2 = SP - 2;
+    local input:2 = R3;
+    SP = hi;
+    modify_native_agu(R3, -1:2, RM2, RL2, RM2_ALIGN, 6:4, 4:2);
+    cliw_read_discarded(input);
+    local incoming:2 = EST;
+    local status:2 = incoming & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <stores>;
+    local left:8;
+    local right:8;
+    local result:8;
+    local flags:2;
+    cliw_alu_sample(A1L, A1H, GB1, left);
+    cliw_alu_sample(A2L, A2H, GB2, right);
+    cliw_add_sub(left, right, 1:1, result, flags);
+    write_accumulator40(A0L, A0H, GB0, result);
+    status = (status & 0xffc4) | flags;
+  <stores>
+    cliw_check_write_pair(lo, hi);
+    *[data]:2 lo = 0:2;
+    *[data]:2 hi = 0:2;
+    publish_ce_feedback(status, incoming);
+}
+
+# The connected MA1 producer has its own SR1 tap, not the arithmetic
+# saturation path. MA2 is undriven and publishes zero independently.
+:CLIW template_index is $(CLIW_DM) & cliw_address_bank=12 & wide_34_46=0x318 & wide_0_0=0 &
+    wide_10_14=0 & wide_3_7=0 & wide_8_9=2 & wide_1_2=2 & cliw_shared_rn=0 &
+    $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_3_23=0xfffff &
+    tpl_67_72=36 & tpl_64_66=2 & tpl_62_63=0 & tpl_57_61=31 & tpl_52_56=24 {
+    cliw_check_write_pair(R0, R4);
+    local value:2 = A0H s>> ((ECFG >> 5) & 1);
+    *[data]:2 R0 = value;
+    *[data]:2 R4 = 0:2;
+    clock_ce();
+}
+
+# With no provider, the plug-designated lanes still fetch their source
+# words for the two independent core high-word results.
+:CLIW template_index is $(CLIW_DM) & carmel_powerplug_absent=1 & cliw_address_bank=13 & cliw_terminal_ma3_condition=6 &
+    cliw_terminal_ma4=7 & wide_10_14=11 & wide_3_7=11 & wide_8_9=2 & wide_1_2=2 & wide_0_0=0 & cliw_shared_rn=0 &
+    $(CLIW_DM_NO_LOADS) & tpl_91_95=4 & tpl_87_90=15 & tpl_83_86=10 & tpl_78_82=31 & tpl_73_77=10 &
+    cliw_mac2_op=4 & cliw_mac2_left=15 & cliw_mac2_right=11 & cliw_mac2_addend_hi=3 & cliw_mac2_addend_lo=7 & cliw_mac2_dest=11 &
+    tpl_67_72=60 & tpl_64_66=0 & tpl_62_63=2 & tpl_57_61=0 & tpl_52_56=6 &
+    tpl_18_23=60 & tpl_13_17=2 & tpl_8_12=1 & tpl_3_7=6 {
+    local dst:2 = R3;
+    local upper:2 = dst + 1;
+    local src1:2 = R6;
+    local src2:2 = R7;
+    modify_native_agu(R6, RN6, RM6, RL6, RM6_ALIGN, 12:4, 1:2);
+    modify_native_agu(R7, RN7, RM6, RL6, RM6_ALIGN, 14:4, 1:2);
+    modify_native_agu(R3, 2:2, RM2, RL2, RM2_ALIGN, 6:4, 4:2);
+    compact_pair_read_check(src1, src2);
+    local first:2 = *[data]:2 src1;
+    local second:2 = *[data]:2 src2;
+    local incoming:2 = EST;
+    local flags:2 = (zext(first == 0) << 3) | (zext(first s< 0) << 4) |
+                    (zext(second == 0) << 9) | (zext(second s< 0) << 10);
+    A2H = first;
+    A3H = second;
+    *[data]:2 dst = 0:2;
+    *[data]:2 upper = 0:2;
+    publish_ce_feedback((incoming & 0xc104) | flags, incoming);
+}
+
+@define CLIW_CELL_ISSUE "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0"
+@define CLIW_STACK_RHS "$(CLIW_DM) & $(CLIW_CELL_ISSUE) & cliw_address_bank=12 & wide_34_46=0x318 & wide_3_7=24 & wide_8_9=1 & wide_1_2=1 & wide_0_0=0 & cliw_shared_rn=0 & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_3_23=0xfffff & tpl_67_72=36 & tpl_64_66=6 & tpl_62_63=0 & tpl_57_61=31"
+
+macro cliw_cell_address(cell, address) {
+    local numeric:8 = zext(address);
+    carmel_write_issue_cell(cell, numeric);
+}
+
+# These template moves lack an ALU1 right-input writer. SP and the VA
+# addresses still change before the ALU consumes its real issue-slot input.
+cliw_stack_rising: is wide_10_14=25 {
+    local first:2 = SP + 1;
+    local next:2 = SP + 2;
+    cliw_cell_address(6:1, first);
+    cliw_cell_address(7:1, next);
+    SP = next;
+}
+cliw_stack_rising: is wide_10_14=26 {
+    local next:2 = SP + 1;
+    cliw_cell_address(6:1, next);
+    SP = next;
+}
+
+:CLIW template_index is $(CLIW_STACK_RHS) & tpl_52_56=16 & cliw_stack_rising {
+    build cliw_stack_rising;
+    carmel_write_issue_cell(3:1, 0:8);
+    carmel_write_issue_cell(5:1, 0x3f:8);
+    local value:8 = carmel_read_issue_cell(4:1) & 0xffffffffff;
+    local result:8;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    mac1_routed_status((value ^ 0x8000000000) - 0x8000000000, 0:8, 0x3f:2, flags, result);
+    write_accumulator40(A0L, A0H, GB0, result);
+    publish_ce_feedback(flags, incoming);
+    record_issue_cells(0x3bff:2);
+}
+:CLIW template_index is $(CLIW_STACK_RHS) & tpl_52_56=0 & wide_10_14=26 & cliw_stack_rising {
+    build cliw_stack_rising;
+    carmel_write_issue_cell(3:1, 0:8);
+    carmel_write_issue_cell(5:1, 0x403f:8);
+    local value:8 = carmel_read_issue_cell(4:1) & 0xffffffffff;
+    local result:8;
+    local incoming:2 = EST;
+    local flags:2 = incoming & 0xcfff;
+    mac1_routed_status((value ^ 0x8000000000) - 0x8000000000, 0:8, 0x403f:2, flags, result);
+    A0L = result(2);
+    publish_ce_feedback(flags, incoming);
+    record_issue_cells(0x3bff:2);
+}
+
+@define CLIW_LONG_CHAIN "$(CLIW_CELL_ISSUE) & ((carmel_issue=4 & wide_left_mode=0) | (carmel_issue=5 & wide_left_mode=1)) & wide_right_mode=1 & wide_20_22=5 & template_index & carmel_cliw_known=1 & cliw_address_bank=15 & wide_8_9=1 & wide_1_2=1 & wide_0_0=0 & cliw_shared_rn=0 & cliw_skip_unmarked & $(CLIW_DM_IDLE1) & $(CLIW_DM_IDLE2) & $(CLIW_DM_NO_LOADS) & tpl_67_72=36 & tpl_64_66=6 & tpl_62_63=0 & tpl_57_61=0 & tpl_52_56=16 & tpl_18_23=36 & tpl_13_17=26 & tpl_8_12=0 & tpl_3_7=17"
+
+macro cliw_chain_move_results(first, second) {
+    local lhs:8 = first;
+    local rhs:8 = second;
+    local flags1:2;
+    local flags2:2;
+    cliw_alu_status(lhs, flags1);
+    cliw_alu_status(rhs, flags2);
+    carmel_write_issue_cell(3:1, 0:8);
+    carmel_write_issue_cell(4:1, lhs);
+    carmel_write_issue_cell(5:1, 0x3f:8);
+    carmel_write_issue_cell(11:1, 0:8);
+    carmel_write_issue_cell(12:1, rhs);
+    carmel_write_issue_cell(13:1, 0x3f:8);
+    write_accumulator40(A0L, A0H, GB0, lhs);
+    write_accumulator40(A1L, A1H, GB1, rhs);
+    publish_ce_feedback((EST & 0xc104) | flags1 | (flags2 << 6), EST);
+    record_issue_cells(0x3bff:2);
+}
+
+# The late second half is a distinct VA4 cell, not R2+2 or DATA[0].
+:CLIW template_index is $(CLIW_LONG_CHAIN) & cliw_terminal_ma3_condition=30 &
+    cliw_terminal_ma4=12 & wide_10_14=10 & wide_3_7=24 {
+    local first:2 = R2 + 4 * cliw_skip_unmarked;
+    local second:2 = R2 + 1;
+    cliw_cell_address(6:1, first);
+    cliw_cell_address(8:1, second);
+    local high_cell:8 = carmel_read_issue_cell(9:1);
+    local high:2 = high_cell:2;
+    wide_check_word_and_pair_reads(first, second, high);
+    local word:2;
+    local lo:2;
+    local hi:2;
+    phase_of_data_word(first, word);
+    phase_of_data_word(second, lo);
+    phase_of_data_word(high, hi);
+    local pair_bits:8;
+    cliw_dm_sign_pair(lo, hi, pair_bits);
+    cliw_chain_move_results(sext(word) & 0xffffffffff, pair_bits);
+}
+
+# Here the first long pair uses VA2; the independent short uses VA3.
+:CLIW template_index is $(CLIW_LONG_CHAIN) & cliw_terminal_ma3_condition=10 &
+    cliw_terminal_ma4=24 & wide_10_14=30 & wide_3_7=8 {
+    local first:2 = R2 + 4 * cliw_skip_unmarked;
+    local second:2 = R2 + 1;
+    cliw_cell_address(6:1, first);
+    cliw_cell_address(8:1, second);
+    modify_native_agu(R2, 2:2, RM2, RL2, RM2_ALIGN, 4:4, 4:2);
+    local high_cell:8 = carmel_read_issue_cell(7:1);
+    local high:2 = high_cell:2;
+    wide_check_word_and_pair_reads(second, first, high);
+    local lo:2;
+    local hi:2;
+    local word:2;
+    phase_of_data_word(first, lo);
+    phase_of_data_word(high, hi);
+    phase_of_data_word(second, word);
+    local pair_bits:8;
+    cliw_dm_sign_pair(lo, hi, pair_bits);
+    cliw_chain_move_results(pair_bits, sext(word) & 0xffffffffff);
+}
+
+# The prior terminal SP+1 writer can change VA4 without affecting VA3.
+# Only a warm same-slot odd VA4 contends with this odd VA3 in the 0x8000 bank.
+:CLIW template_index is $(CLIW_SKIP) & $(CLIW_SKIP_MPY) & $(CLIW_CELL_ISSUE) & cliw_shared_rn=0 & wide_left_mode=0 &
+    cliw_address_bank=15 & cliw_terminal_ma3_condition=222 & cliw_terminal_ma4=12 & wide_10_14=10 & wide_8_9=2 &
+    wide_3_7=1 & wide_1_2=0 & wide_0_0=0 {
+    local first:2 = R2 + 8;
+    local low:2 = R2 + 1;
+    cliw_cell_address(6:1, first);
+    cliw_cell_address(7:1, R1);
+    cliw_cell_address(8:1, low);
+    local high_cell:8 = carmel_read_issue_cell(9:1);
+    local high:2 = high_cell:2;
+    compact_pair_read_check(low, high);
+    local reserved_lo:2;
+    local reserved_hi:2;
+    phase_of_data_word(low, reserved_lo);
+    phase_of_data_word(high, reserved_hi);
+    carmel_write_issue_cell(2:1, 0x83f:8);
+    local incoming:2 = EST;
+    local status:2 = incoming & 0xcfff;
+    local enabled:2;
+    unary_ce(CECFG1, incoming, CETBL, 0:2, enabled);
+    if (enabled == 0) goto <store>;
+    local first_factor:8 = sext(A1L);
+    local second_factor:8 = sext(A2L);
+    carmel_write_issue_cell(0:1, first_factor);
+    carmel_write_issue_cell(1:1, second_factor);
+    local flags:2;
+    signed_product_result(A0L, A0H, GB0, A1L, A2L, flags);
+    status = (status & 0xffc4) | flags;
+  <store>
+    phase_wb_data_word(first, 0:2);
+    publish_ce_feedback(status, incoming);
+    record_issue_cells(0x3bff:2);
+}
+
+@undef CLIW_LONG_CHAIN
+@undef CLIW_STACK_RHS
+@undef CLIW_CELL_ISSUE
 @undef CLIW_SKIP_MPY
 @undef CLIW_SKIP_ACC
 @undef CLIW_SKIP_MOVE

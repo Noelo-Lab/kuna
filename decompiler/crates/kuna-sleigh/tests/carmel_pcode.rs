@@ -3818,3 +3818,13 @@ fn compact_movu_zero_extends_the_connected_source_and_selects_right_ce() {
         assert_eq!((m.reg("A5"), m.reg("R5")), (output, pointer));
     }
 }
+
+#[test]
+fn compact_odd_addrupdate_binds_increment_through_the_left_descriptor() {
+    let mut m = Machine::with_root_context(1, &[(0x2cf040, NOP), (NOP, NOP)], &[(0, 3, 0), (1, 1, 6)], None,
+        &[(b"carmel_addrupdate_right_r0", 1), (b"hw_loop_phase", 1)]);
+    m.seed(&[("R0", 0x100), ("R4", 0x144), ("A5", 0x89d1dd24b5)]);
+    m.start(1).unwrap();
+    assert_eq!(m.step(), 6);
+    assert_eq!((m.reg("R0"), m.reg("R4"), m.reg("A5")), (0x101, 0x144, 0x89d1dd24b5));
+}

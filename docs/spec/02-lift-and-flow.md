@@ -4184,6 +4184,18 @@ write becomes visible. The scheduled DATA lift refuses an unproved overlap
 between operand fetch and an older store rather than reading already-written
 DATA.
 
+Qualified rounded multiply separates address admission from result enable.
+The first five issues use explicit incoming admission samples; after five
+proved clocks the sample comes from the preceding issue history. An admitted
+connected operand fetch can update `X1` even when the result is disabled.
+An operand-token peer redirects the words into prepared inputs instead;
+multiply uses the retained cells of that physical slot.
+
+Signed extraction with an inactive result port can still update flags using
+its retained ALU bitmap. The operand and status cells are separate from the
+architectural destination; a disconnected result does not imply no state
+change.
+
 A sequential right self-increment writes its high half independently of the
 preceding left slot. The separately issued operation uses the sequential
 flag lane. Compact field operations keep address modification, bus
@@ -5402,6 +5414,16 @@ Wide indexed I/O/DATA moves access the original DATA word and update its
 pointer once. The covered displaced and absolute EXT loads send the word to
 DATA; the EXT source's ninth address bit is independent of the DATA address.
 
+The indexed long R1 destination updates R1 with RN1 but has no connected
+DATA writeback. The EXT read still takes place at the encoded word address.
+The covered signed immediate R0 form accepts only an unsigned 16-bit address
+literal. Excess immediate bits are not silently truncated into a register
+write or lifted as ordinary fallthrough.
+
+The covered signed immediate absolute DATA form writes word zero. The
+stored short word is taken after the signed SR1 shift and participates in
+the sticky FFT tap; it does not write an address register.
+
 Covered qualified wide `TRANSFER` forms publish at address generation,
 controlled by the early admission sample, not by the later predicate
 writeback. The `IOSPACE` selector on their address path reads or writes
@@ -5547,6 +5569,15 @@ shifts the trial bit into `BTR1` instead. These two forms preserve
 arithmetic status. The covered invocation refreshes condition feedback;
 these routes neither consume DATA operands nor model other lane mixes.
 
+The covered aligned signed-by-unsigned MAC uses two captured short DATA
+addresses and publishes the destination postdecrement and signed source
+displacement before the read arbiter. The old destination word supplies the aligned addend and
+the old source word supplies the unsigned multiplier. With multiply
+scaling disabled, only the sign of the destination word contributes;
+with scaling enabled, its signed word contributes to the doubled product.
+The high word is taken after SR1 without ALIM or DATA saturation changing
+the stored value. Arithmetic flags are based on the unshifted sum.
+
 The covered CLIW DATA templates bind MA1 and MA2 to the independent R0
 and R4 address generators, or combine MA1 and its continuation into a
 two-word operand. The ALUs and MACs sample the incoming accumulator and
@@ -5569,9 +5600,9 @@ do not introduce DATA effects.
 
 With a MAC1 short input on the continuation of a long access, the
 invocation reserves the short read as well as the whole long pair. The
-two-word address update precedes arbitration. The admitted multiply uses
-the short continuation word, not the low word of the pair; `X1` captures
-the selected first factor, whether it came from that same word or `FF1`.
+two-word address update precedes arbitration. The short continuation word,
+not the low word of the pair, feeds the selected MAC input. `X1` captures
+the first factor; the second can come from an independently sampled register.
 In the bank-15 single-read form, the other pointer still postincrements
 without reserving a DATA read.
 In implicit modulo mode, the update uses the same cached alignment as
@@ -5584,6 +5615,23 @@ at MA3's base; a long MA4 prefix supplies its own base. The admitted ALU1
 moves read the low word and its wrapping successor, then sign-extend into
 the accumulator guard. MA2 postincrement still runs. An indexed MA3 also
 reads at its incoming pointer before publishing its pointer update.
+
+Some bank-15 templates reserve a long operand while assigning only one of
+its address cells. The other cell is an explicit incoming value or is
+bound to a proved writer in the same physical issue slot. Templates with
+only one assigned ALU operand use the same rule. The lift does not infer a
+zero address or operand.
+
+The covered split stack stores use both reserved addresses even when
+arithmetic is vetoed. A stack address update alone does not imply a DATA
+read or store.
+
+The covered PowerPlug-marked route requires explicit `carmel_powerplug_absent`
+target context. Without an installed provider, the core still consumes the
+MA3 and MA4 words, and undriven MA1 and MA2 writes publish zero. With a
+configured or unknown provider, the lift does not assume those outputs;
+they depend on the installed slot mask and the phase-specific callback
+results.
 
 A register-MAC template takes both operands from registers. It can still
 issue DATA reads for bound MA3 and MA4 ports. Terminal selectors 24 and 27

@@ -307,7 +307,8 @@ pub(super) fn frame(
             }
             if left == Issue::SeqLeft {
                 paint(&mut result.issues, ISSUE, addr + SLOT, Issue::SeqRight as u32);
-                if matches!(fetch, [0xab, 0xec, 0, 0x2c, 0xb4 | 0xf4, 0x20 | 0x40 | 0x60]) {
+                if matches!(fetch, [0xab, 0xec, 0, 0x2c, 0xb4 | 0xf4, 0x20 | 0x40 | 0x60]
+                    | [0xab, 0xec, 0, 0x2c, 0xf0, 0x40]) {
                     candidates.push((addr + SLOT, Specialization::AddrUpdateRightR0));
                 }
                 paint(&mut result.next_sizes, NEXT, addr, SLOT as u32);

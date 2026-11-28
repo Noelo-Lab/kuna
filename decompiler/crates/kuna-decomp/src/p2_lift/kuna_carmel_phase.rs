@@ -14,6 +14,8 @@ use crate::{
 use super::kuna_carmel_reset::{AddressAdmission, Execute, IssueEffects, Overlap, lower_control};
 
 const CLOCKS: usize = 5;
+const MATURE_ENTRY: u8 = 1 << CLOCKS;
+const ANY_ENTRY_AGE: u8 = (MATURE_ENTRY << 1) - 1;
 const FF_UNKNOWN: u8 = 1;
 const FF_LIVE: u8 = 2;
 const FF_OLDER: u8 = 4;
@@ -49,6 +51,7 @@ pub(crate) struct PhaseDecode<'a> {
     saved: (u32, u32),
     tick: u64,
     admission: u64,
+    entry_admission: Option<u64>,
     redirect: Option<u64>,
     delay_tick: Option<u64>,
     delay_mask: Option<u64>,
@@ -82,6 +85,7 @@ impl<'a> PhaseDecode<'a> {
         let index = |name: &[u8]| arch.userops.get_op_by_name(name).map(|op| op.get_index() as u64);
         let tick = index(b"carmel_record_admission")?;
         let admission = index(b"carmel_read_address_admission")?;
+        let entry_admission = index(b"carmel_read_entry_admission");
         let redirect = index(b"carmel_known_redirect");
         let delay_tick = index(b"carmel_delay_slot_admission");
         let delay_mask = index(b"carmel_modeled_delay_mask");
@@ -125,7 +129,7 @@ impl<'a> PhaseDecode<'a> {
         let translate = arch.translate();
         let saved = translate.set_context_read_override(word, 0, 0);
         translate.set_context_read_override(word, saved.0 | bits, saved.1 | bits);
-        Some(Self { translate, word, saved, tick, admission, redirect, delay_tick, delay_mask,
+        Some(Self { translate, word, saved, tick, admission, entry_admission, redirect, delay_tick, delay_mask,
             fixed_read_tick, fixed_load, fixed_store, end_unmodeled, omitted, idle_tick, reset, register_ex, data_ex, address_ex,
             operand_fetch, reset_ex_end,
             staged_data, repeat_r3, repeat_d2_write, repeat_of, issue_slot, ff, data, cells })
@@ -139,6 +143,7 @@ impl<'a> PhaseDecode<'a> {
         let mut ff_fetches = false;
         let mut ff_late_visibility = false;
         let mut reads = false;
+        let mut entry_reads = false;
         let mut slot_fetches = false;
         let mut scheduled_data = false;
         let mut issue_cells = false;
@@ -209,8 +214,11 @@ impl<'a> PhaseDecode<'a> {
                 issue_cells = true;
             } else if index == self.admission {
                 reads = true;
+            } else if Some(index) == self.entry_admission {
+                entry_reads = true;
             }
         }
+        reads |= entry_reads;
         if !repeat_samples.is_empty() {
             prove_repeat_samples(fd, visits, &repeat_samples, self.repeat_d2_write)?;
         }
@@ -320,12 +328,16 @@ impl<'a> PhaseDecode<'a> {
         for (trace, mut proof) in traces.iter().zip(inputs.iter().copied()) {
             for &event in &trace.events {
                 match event {
-                    Event::Read(op) if proof.age != CLOCKS => {
+                    Event::Read(op, false) if proof.age != CLOCKS => {
                         let addr = fd.obank().get(op).unwrap().get_addr();
                         return Err(KunaError::lowlevel(format!(
                             "Unproved Carmel address admission at CODE {:#x}: {} of {CLOCKS} clocks",
                             addr.get_offset() / 3, proof.age,
                         )));
+                    }
+                    Event::Read(op, true) if proof.age != CLOCKS
+                        && !(proof.entry_ages.is_power_of_two() && proof.entry_ages < MATURE_ENTRY) => {
+                        return Err(sample_error(fd, op, "incoming address-admission history"));
                     }
                     Event::FfFetch(op) if !matches!(proof.ff, FF_LIVE | FF_OLDER) => {
                         return Err(sample_error(fd, op, "FF operand fetch"));
@@ -362,6 +374,13 @@ impl<'a> PhaseDecode<'a> {
         } else {
             None
         };
+        let entry_history = if entry_reads {
+            let vn = self.translate.get_register_varnode(b"CE_ADMISSION_BEFORE_0")
+                .map_err(|_| KunaError::lowlevel("Carmel entry admission history storage is missing"))?;
+            Some(Address::new(vn.space.unwrap(), vn.offset))
+        } else {
+            None
+        };
         let cells_base = if issue_cells {
             let vn = self.translate.get_register_varnode(b"MAC1_MIDDLE_0")
                 .map_err(|_| KunaError::lowlevel("Carmel issue cell storage is missing"))?;
@@ -384,8 +403,13 @@ impl<'a> PhaseDecode<'a> {
                             fd.op_destroy(mark);
                         }
                     }
-                    Event::Read(read) => {
-                        let sample = fd.new_varnode(1, &slots.as_ref().unwrap()[CLOCKS - 1], None);
+                    Event::Read(read, allow_entry) => {
+                        let address = if allow_entry && proof.age < CLOCKS {
+                            entry_history.as_ref().unwrap() + i64::from(proof.entry_ages.trailing_zeros())
+                        } else {
+                            slots.as_ref().unwrap()[CLOCKS - 1].clone()
+                        };
+                        let sample = fd.new_varnode(1, &address, None);
                         fd.op_set_opcode(read, type_op_for(OpCode::CPUI_INT_AND));
                         fd.op_set_input(read, sample, 0)?;
                     }
@@ -493,7 +517,9 @@ impl<'a> PhaseDecode<'a> {
                     trace.events.push(Event::FfVisibility(ff_is_late(fd, op)));
                 }
                 Some(index) if self.ff.is_some_and(|ff| index == ff.fetch) => trace.events.push(Event::FfFetch(id)),
-                Some(index) if index == self.admission => trace.events.push(Event::Read(id)),
+                Some(index) if index == self.admission || Some(index) == self.entry_admission => {
+                    trace.events.push(Event::Read(id, index != self.admission));
+                }
                 Some(index) if Some(index) == self.issue_slot => trace.events.push(Event::IssueSlot(id)),
                 Some(index) if self.cells.is_some_and(|cells| index == cells.read || index == cells.write) => {
                     let cell = fd.vbank().get(op.get_in(1).unwrap()).unwrap();
@@ -816,7 +842,7 @@ struct Boundary {
 enum Event {
     Barrier(bool),
     Tick(OpId, bool, u16),
-    Read(OpId),
+    Read(OpId, bool),
     IssueSlot(OpId),
     FfFetch(OpId),
     FfVisibility(bool),
@@ -831,6 +857,7 @@ enum Event {
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Proof {
     age: usize,
+    entry_ages: u8,
     ff: u8,
     slot_offsets: u8,
     wb: u8,
@@ -839,11 +866,13 @@ struct Proof {
 }
 
 impl Proof {
-    const ENTRY: Self = Self { age: 0, ff: FF_UNKNOWN, slot_offsets: u8::MAX, wb: OLDER_WB, typed_wb: 0, cells: 0 };
-    const TOP: Self = Self { age: CLOCKS, ff: 0, slot_offsets: 0, wb: 0, typed_wb: 0, cells: u128::MAX };
+    const ENTRY: Self = Self { age: 0, entry_ages: ANY_ENTRY_AGE, ff: FF_UNKNOWN,
+        slot_offsets: u8::MAX, wb: OLDER_WB, typed_wb: 0, cells: 0 };
+    const TOP: Self = Self { age: CLOCKS, entry_ages: 0, ff: 0,
+        slot_offsets: 0, wb: 0, typed_wb: 0, cells: u128::MAX };
 
     fn join(self, other: Self) -> Self {
-        Self { age: self.age.min(other.age), ff: self.ff | other.ff,
+        Self { age: self.age.min(other.age), entry_ages: self.entry_ages | other.entry_ages, ff: self.ff | other.ff,
             slot_offsets: self.slot_offsets | other.slot_offsets,
             wb: self.wb | other.wb, typed_wb: self.typed_wb | other.typed_wb,
             cells: self.cells & other.cells }
@@ -874,6 +903,7 @@ impl Event {
         match self {
             Self::Barrier(keep_ff) => Proof {
                 age: 0,
+                entry_ages: ANY_ENTRY_AGE,
                 ff: if keep_ff { proof.ff } else { FF_UNKNOWN | (proof.ff & FF_OLDER) },
                 slot_offsets: u8::MAX,
                 wb: WB_WINDOW,
@@ -883,6 +913,7 @@ impl Event {
             Self::FfVisibility(late) => Proof { ff: if late { FF_OLDER } else { FF_LIVE }, ..proof },
             Self::Tick(_, late, known_cells) => Proof {
                 age: (proof.age + 1).min(CLOCKS),
+                entry_ages: ((proof.entry_ages << 1) & ANY_ENTRY_AGE) | (proof.entry_ages & MATURE_ENTRY),
                 ff: if late { FF_OLDER } else { FF_LIVE },
                 slot_offsets: proof.slot_offsets.rotate_left(1),
                 wb: (proof.wb << 1) & WB_WINDOW,
@@ -930,7 +961,8 @@ fn incoming_proofs(
         let proof = if i == 0 && block.size_in() == 0 && trace.first.as_ref() == Some(fd.get_address()) {
             // A real function entry observes its supplied register values,
             // unlike an unproved intra-function redirect or loop backedge.
-            Proof { ff: FF_LIVE, slot_offsets: 1, cells: if issue_cells { u128::MAX } else { 0 }, ..Proof::ENTRY }
+            Proof { entry_ages: 1, ff: FF_LIVE, slot_offsets: 1,
+                cells: if issue_cells { u128::MAX } else { 0 }, ..Proof::ENTRY }
         } else if i == 0 || block.size_in() == 0 {
             Proof::ENTRY
         } else {

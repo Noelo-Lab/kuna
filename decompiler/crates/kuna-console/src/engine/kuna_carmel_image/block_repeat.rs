@@ -20,13 +20,14 @@ struct LoopSetup {
 impl LoopSetup {
     fn parse(issue: Issue, fetch: &Fetch) -> Option<Self> {
         const MAC: [u8; 3] = [0x4b, 0x9b, 0xe7];
-        let (compact, idle_peer) = match issue {
-            Issue::Parallel if fetch[3..] == [0x2b, 0xec, 0] => (Some(&fetch[..3]), true),
-            Issue::Parallel if fetch[3..] == MAC => (Some(&fetch[..3]), false),
-            Issue::Parallel if fetch[..3] == MAC => (Some(&fetch[3..]), false),
-            Issue::SeqLeft => (Some(&fetch[..3]), true),
-            Issue::SeqRight => (Some(&fetch[3..]), true),
-            _ => (None, false),
+        let (compact, idle_peer, count_right) = match issue {
+            Issue::Parallel if fetch[3..] == [0x2b, 0xec, 0] => (Some(&fetch[..3]), true, false),
+            Issue::Parallel if fetch[3..] == MAC => (Some(&fetch[..3]), false, false),
+            Issue::Parallel if fetch[..3] == MAC => (Some(&fetch[3..]), false, false),
+            Issue::Parallel if fetch[..3] == [0x2b, 0xec, 0] => (Some(&fetch[3..]), true, true),
+            Issue::SeqLeft => (Some(&fetch[..3]), true, false),
+            Issue::SeqRight => (Some(&fetch[3..]), true, false),
+            _ => (None, false, false),
         };
         if let Some(slot) = compact.filter(|slot| slot[0] & 0x7f == 0x2a) {
             if idle_peer && (1..0x80).contains(&slot[1]) {
@@ -37,7 +38,7 @@ impl LoopSetup {
                 });
             }
             let selector = slot[1] & 0xfe;
-            if issue == Issue::Parallel && (selector == 0xa6 || (idle_peer && selector == 0xb0)) {
+            if issue == Issue::Parallel && !count_right && (selector == 0xa6 || (idle_peer && selector == 0xb0)) {
                 return Some(Self {
                     delay: u64::from(slot[2] & 7),
                     end_words: u64::from((u16::from_be_bytes([slot[1], slot[2]]) >> 3) & 63),
@@ -55,9 +56,15 @@ impl LoopSetup {
         if right & 0xc400 == 0x0400 {
             return Some(Self { delay, end_words: end_words & !1, count: LoopCount::Immediate });
         }
+        let address_register = (left_low & 0x30 == 0
+            && matches!(right & !0x3800, 0x8426 | 0x8766) && issue == Issue::WideMarked)
+            || (left_low & 0x30 == 0x30 && right & !0x3800 == 0x87b0);
+        if address_register {
+            return Some(Self { delay, end_words, count: LoopCount::AddressStage });
+        }
         if (issue == Issue::WideMarked
             && ((left_low == 0x10 && matches!(right & !0x3800, 0x8000 | 0x8402))
-                || (left_low == 0 && matches!(right, 0x80a4 | 0x80a6 | 0x80a8 | 0x80aa | 0x8426))
+                || (left_low == 0 && matches!(right, 0x80a4 | 0x80a6 | 0x80a8 | 0x80aa))
                 || (left_low == 0x20 && right == 0x80a5)))
             || (issue == Issue::WideUnmarked && left_low == 0 && right == 0x8084)
         {
