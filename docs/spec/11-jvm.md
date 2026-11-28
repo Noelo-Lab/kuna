@@ -848,9 +848,12 @@ printed with all but the last before the loop, where their scope outlives it, so
 after the loop could not take the slot javac gave it (ECJ's `exSize` printed as a second local,
 and Vineflower merges it into `i` with the wrong type). `kuna_javac_layout::extra_inits` takes
 the assignments right before the header's into it too when each assigns another variable the
-condition or update reads, starts on the condition's line, and, with a LocalVariableTable, has
-the descriptor of the header's variable and a scope that ends where the loop's code ends; the
-loop holds them in source order before its init slot (`DoStatement::add_extra_init`).
+condition or update reads, starts on the condition's line, does not read its own slot (a
+declaration cannot read the variable it declares: d8's release DEX of Elasticsearch's `size =
+Math.min(docs.length, size)` on the header's line printed a second `long` local; case
+`TestForInitReassigned`), and, with a LocalVariableTable, has the descriptor of the header's
+variable and a scope that ends where the loop's code ends; the loop holds them in source order
+before its init slot (`DoStatement::add_extra_init`).
 `VarDefinitionHelper::set_var_definitions` declares each where it declares the header's, and
 `split_mixed_inits` moves them back before the loop when the header cannot hold them (Java's
 for-init is one declaration of one type or a list of assignments: a variable used after the loop,

@@ -1445,7 +1445,11 @@ pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &
         };
         let read = cond.contains_var(v.get_var_version_pair())
             || update.contains_var(v.get_var_version_pair());
-        if taken.iter().any(|t| t.get_index() == v.get_index()) || !read || line(*candidate) != cond_line {
+        if taken.iter().any(|t| t.get_index() == v.get_index())
+            || !read
+            || line(*candidate) != cond_line
+            || reads_own_slot(v, *candidate)
+        {
             break;
         }
         let scoped = match (v.get_lvt(), &head_lvt) {
@@ -1474,6 +1478,25 @@ pub fn store_slot(exprent: Exprent) -> Option<i32> {
             .rev()
             .find(|c| c.0 >= 0 && offsets.get(c.0 as usize) && STORES.contains(&c.1))
             .map(|c| c.3)
+    })
+}
+
+/// Whether `assign`'s value reads `var`'s slot: a declaration cannot read
+/// the variable it declares, so `n = Math.min(a.length, n)` (whose two
+/// variables SSA may already have told apart) assigns a local declared
+/// before the loop.
+fn reads_own_slot(var: VarExprent, assign: Exprent) -> bool {
+    let slot = |v: VarExprent| {
+        v.get_processor()
+            .and_then(|p| p.get_var_original_index(v.get_index()))
+            .unwrap_or(v.get_index())
+    };
+    let own = slot(var);
+    assign.try_as_assignment().is_some_and(|a| {
+        a.get_right()
+            .get_all_exprents_rec_self(true, true)
+            .into_iter()
+            .any(|e| e.try_as_var().is_some_and(|v| slot(v) == own))
     })
 }
 

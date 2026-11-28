@@ -1,6 +1,6 @@
 # kuna-jvm regression corpus
 
-The regression corpus of `kuna-jvm`: 968 cases, each a set of class files, the option pairs the
+The regression corpus of `kuna-jvm`: 969 cases, each a set of class files, the option pairs the
 engine runs them with, and the Java or Kotlin text kuna printed for them when the case was last
 reviewed. `make test-jvm` (`kuna test --jvm` from the repository root) runs every case and fails
 on any case whose text changed. `cases.tsv` is the one manifest; it is edited by hand and by
@@ -15,7 +15,7 @@ on any case whose text changed. `cases.tsv` is the one manifest; it is edited by
 | `stackguard/` | not cases: the deep-nesting inputs of `kuna-jvm/tests/kuna_stackguard.rs` |
 
 A case's text is pinned one of two ways: by a `kuna` digest in `cases.tsv` (the 591 cases from
-Vineflower's suite, whose text is not stored), or by an expected file (the 377 kuna cases, set
+Vineflower's suite, whose text is not stored), or by an expected file (the 378 kuna cases, set
 *Kuna Fixes*).
 
 ## Provenance

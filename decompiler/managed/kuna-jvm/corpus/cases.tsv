@@ -2146,3 +2146,5 @@ case	kuna-fixes/pkg/TestPatternChainSlots	Kuna Fixes	kuna-fixes/classes/pkg/Test
 case	kuna-fixes/pkg/TestTwrAssignedLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestTwrAssignedLocal
 # kuna-fixes/src/pkg/TestCastBranchOldClass.java, javac 21.0.13.1 (-g --release 11)
 case	kuna-fixes/pkg/TestCastBranchOldClass	Kuna Fixes	kuna-fixes/classes/pkg/TestCastBranchOldClass
+# kuna-fixes/src/pkg/TestForInitReassigned.java, javac 21.0.13.1 (-g:lines --release 17)
+case	kuna-fixes/pkg/TestForInitReassigned	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitReassigned
