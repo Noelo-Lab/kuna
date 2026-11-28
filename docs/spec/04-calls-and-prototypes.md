@@ -10348,7 +10348,13 @@ tail-calling a complex-double `cboth`, recovered as a 16-byte join, returns
 float holds a float, and a call that writes more of the register than its
 callee returns says nothing (`kuna_voidret.rs (wider_than_return)`): `q0`, read
 whole after a call that returns a `double` in `d0`, is the caller keeping the
-register. Each of these filed a function whose redo printed the same float
+register. So does a result whose only readers are PIECEs that put it back
+into a wider register around it (`kuna_voidret.rs (pieced_into_register)`):
+the 8-byte `XMM0_Qa` result the output guard rebuilds inside a `zmm0` the
+caller keeps whole (chapter 03 *calloverlap*), as ucrtbase `sinf` keeps the
+`double` of its argument-reduction helper `sub_18002b140` before reading it
+back with `movsd %xmm0,%xmm2`. Filed, the helper was withdrawn to `void`
+although its body computes and returns the `double`. Each of these filed a function whose redo printed the same float
 again. On AArch64 glibc libm, 19 such redos, one of them the 1-second
 `__kernel_standard`, made `decompile-all` 10 to 17% slower once doubles stopped
 returning `q0` (`kuna_zerofillreturn.rs`).

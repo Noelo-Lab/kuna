@@ -314,6 +314,7 @@ pub fn record(arch: &mut Architecture, entry: &Address, data: &Funcdata) {
         }
         if arch.kuna_voidret.returns.get(&callee) == Some(&Returns::Float)
             && !wider_than_return(arch, callee, data, outvn)
+            && !pieced_into_register(data, outvn)
             && !(arch.kuna_voidret.float_bits.contains(&callee) && elsewhere_than_return(arch, callee, data, result))
             && !held_as_float(data, outvn, result)
             && !arch
@@ -387,6 +388,27 @@ fn holder(data: &Funcdata, outvn: crate::context::VarnodeId) -> crate::context::
 fn wider_than_return(arch: &Architecture, callee: (int4, uintb), data: &Funcdata, outvn: crate::context::VarnodeId) -> bool {
     let Some((_, size)) = arch.kuna_voidret.storage.get(&callee) else { return false };
     data.vbank().get(outvn).is_some_and(|v| v.get_size() > *size)
+}
+
+/// Is every reader of the call's result `outvn` a PIECE that puts it back into
+/// a wider register around it: `XMM0_Qa` inside the `zmm0` a caller keeps
+/// whole?  As in [`wider_than_return`], the caller then keeps the register, not
+/// the callee's value, which says nothing about the type it holds the result as.
+fn pieced_into_register(data: &Funcdata, outvn: crate::context::VarnodeId) -> bool {
+    let Some(node) = data.vbank().get(outvn) else { return false };
+    let own = node.get_addr();
+    let mut readers = node.descend_iter().filter_map(|r| data.obank().get(r)).filter(|o| !o.is_dead()).peekable();
+    readers.peek().is_some()
+        && readers.all(|o| {
+            o.code() == kuna_num::opcodes::OpCode::CPUI_PIECE
+                && o.get_out().and_then(|x| data.vbank().get(x)).is_some_and(|x| {
+                    let wide = x.get_addr();
+                    x.get_size() > node.get_size()
+                        && wide.get_space().map(|s| s.get_index()) == own.get_space().map(|s| s.get_index())
+                        && wide.get_offset() <= own.get_offset()
+                        && own.get_offset() + node.get_size() as uintb <= wide.get_offset() + x.get_size() as uintb
+                })
+        })
 }
 
 /// (kuna `floatbits`) Does the caller hold the call's result, `result`
