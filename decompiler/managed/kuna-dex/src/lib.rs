@@ -12,6 +12,7 @@ mod backport;
 mod class;
 mod classfile;
 mod code;
+mod concat;
 mod debug;
 mod dex;
 mod emit;

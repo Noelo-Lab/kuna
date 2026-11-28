@@ -2285,7 +2285,15 @@ and `false`, on the same source line, share one `ireturn` again (the constant pu
 the first jumping to the second), so the engine prints the condition; returns on different
 lines were written as such and stay. And it reads `Collections.EMPTY_LIST`, `EMPTY_SET` and
 `EMPTY_MAP` where the code called `emptyList()`, `emptySet()` and `emptyMap()`; such a read
-is written as the call. In a method without debug locals, references of different types
+is written as the call. d8 lowers javac's string concatenation to a `StringBuilder` and, in a
+release build, drops the `move-result` of each `append`, which returns the builder it was
+called on: the chain became a builder in a register and one statement per `append`.
+`decompiler/managed/kuna-dex/src/concat.rs` gives the `append`s their results back (each
+writes the builder's register again, the same reference) when the builder is created,
+appended to and turned into its string by `toString` in straight-line code under one try
+item, nothing else reads or writes its register in between, and debug info does not name
+it, so the chain is one expression and the engine prints the concatenation. In a method
+without debug locals, references of different types
 that d8 put in one register get one local per type (the type inferred for each value's web),
 so the engine does not type them as one variable of their common supertype. And a value
 captured by a lambda body (a synthetic implementation method) stays in a local unless it is a

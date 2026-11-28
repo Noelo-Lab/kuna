@@ -42,19 +42,10 @@ fn switch_map(dex: &Dex, field: u32) -> bool {
     dex.field(field).and_then(|f| dex.string(f.name)).is_ok_and(|n| n.starts_with(b"$SwitchMap$"))
 }
 
-/// A rewritten chain's cases (key, absolute target) and default target.
-pub type Chain = (Vec<(i32, u32)>, u32);
-
-/// The registers an instruction reads and writes.
-pub type Regs<'r> = &'r dyn Fn(&Insn) -> (Vec<u32>, Vec<u32>);
-
-/// Rewrites every such chain in `insns` (the decoded `code`, whose try items
-/// cover `tries` and have `handlers`); returns them by the address of the
-/// `sparse-switch` that replaces the first test.
-pub fn rewrite(dex: &Dex, insns: &mut [Insn], code: &[u8], tries: &[(u32, u32)], handlers: &[u32], regs: Regs) -> BTreeMap<u32, Chain> {
-    let mut out = BTreeMap::new();
+/// The addresses branches, switches and `handlers` reach in `insns`.
+pub fn entered(insns: &[Insn], code: &[u8], handlers: &[u32]) -> BTreeSet<u32> {
     let mut entered: BTreeSet<u32> = handlers.iter().copied().collect();
-    for x in insns.iter() {
+    for x in insns {
         match x.op {
             0x28..=0x2a | 0x32..=0x3d => entered.extend(u32::try_from(x.target())),
             0x2b => entered.extend(packed_switch(code, x.target()).map(|p| p.1).unwrap_or_default().iter().map(|&r| (i64::from(x.addr) + i64::from(r)) as u32)),
@@ -62,12 +53,26 @@ pub fn rewrite(dex: &Dex, insns: &mut [Insn], code: &[u8], tries: &[(u32, u32)],
             _ => {}
         }
     }
+    entered
+}
+
+/// A rewritten chain's cases (key, absolute target) and default target.
+pub type Chain = (Vec<(i32, u32)>, u32);
+
+/// The registers an instruction reads and writes.
+pub type Regs<'r> = &'r dyn Fn(&Insn) -> (Vec<u32>, Vec<u32>);
+
+/// Rewrites every such chain in `insns` (which branches and handlers reach
+/// at `entered`, and try items cover at `tries`); returns them by the
+/// address of the `sparse-switch` that replaces the first test.
+pub fn rewrite(dex: &Dex, insns: &mut [Insn], entered: &BTreeSet<u32>, tries: &[(u32, u32)], regs: Regs) -> BTreeMap<u32, Chain> {
+    let mut out = BTreeMap::new();
     let mut maps: BTreeSet<u32> = BTreeSet::new();
     let mut k = 0;
     while k < insns.len() {
         let x = &insns[k];
         if x.op == 0x44 && maps.contains(&x.b) {
-            if let Some((first, chain, end)) = chain(insns, k, &entered, tries, regs) {
+            if let Some((first, chain, end)) = chain(insns, k, entered, tries, regs) {
                 let v = insns[k].a;
                 for n in &mut insns[first + 1..end] {
                     n.op = 0x00;

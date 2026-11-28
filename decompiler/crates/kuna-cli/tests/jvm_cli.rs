@@ -516,6 +516,8 @@ fn d8_register_sharing_is_undone() {
         assert!(version.contains(" = null;") && !version.contains(" = var"), "{f}: {version}");
         let from = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.from"]));
         assert!(from.contains("Shapes.Kind var") && !from.contains("var3 = r.lowerKind()"), "{f}: {from}");
+        let label = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.label"]));
+        assert!(label.contains("return \"item \" + name + \" #\" + n;"), "{f}: {label}");
         let bound = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.bound"]));
         assert!(bound.contains("return s::len;") && !bound.contains("requireNonNull"), "{f}: {bound}");
         let checked = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.checked"]));

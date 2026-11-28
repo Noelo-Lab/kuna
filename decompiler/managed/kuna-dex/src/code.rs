@@ -464,7 +464,10 @@ impl<'d, 'a> Method<'d, 'a> {
             crate::switchmap::refill(self.dex, &mut insns);
             let tries: Vec<(u32, u32)> = self.code.tries.iter().map(|t| (t.start, t.start + t.count)).collect();
             let regs = |x: &Insn| self.insn_regs(x);
-            self.chains = crate::switchmap::rewrite(self.dex, &mut insns, self.code.insns, &tries, &handlers, &regs);
+            let entered = crate::switchmap::entered(&insns, self.code.insns, &handlers);
+            let named = |r: u32, s: u32, e: u32| self.debug.locals.iter().any(|l| l.reg == r && l.start < e && s < l.end.max(l.start + 1));
+            crate::concat::rechain(self.dex, &mut insns, &entered, &tries, &regs, &named);
+            self.chains = crate::switchmap::rewrite(self.dex, &mut insns, &entered, &tries, &regs);
         }
         let regs = u32::from(self.code.registers);
         let mut k = 0;

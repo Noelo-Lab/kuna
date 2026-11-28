@@ -202,6 +202,11 @@ public class Shapes {
         return x -> s.len(x) + 1;
     }
 
+    // d8's release build drops the results of a string concatenation's appends.
+    static String label(String name, int n) {
+        return "item " + name + " #" + n;
+    }
+
     public static void main(String[] args) {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
@@ -229,6 +234,7 @@ public class Shapes {
         } catch (NullPointerException e) {
             System.out.println("npe");
         }
+        System.out.println(label("a", 2));
         for (java.util.concurrent.TimeUnit u : java.util.concurrent.TimeUnit.values()) {
             System.out.print(unit(u) + seconds(u));
         }
