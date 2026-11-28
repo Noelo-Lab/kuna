@@ -542,6 +542,16 @@ index == -1)` stays folded); for Java 9+ class files,
 statements from the `$assertionsDisabled` check and the `throw new AssertionError(..)`
 that javac emits.
 
+**Constants the recipe tags (kuna).** The recipe of `makeConcatWithConstants` writes each
+operand as `\u0001` and keeps literal text inline, so javac passes a literal that holds
+`\u0001` or `\u0002` as a bootstrap argument of its own, tagged `\u0002`. `extract_parameters`
+skipped every such tag (Vineflower's "skip extra constants for now"), so the literal
+disappeared: Elasticsearch's `key + (char) (SEPARATOR_BYTE + 1)` printed `this.key + ""`,
+and `key + "a\u0001b" + n` printed `key + n`. Each `\u0002` now takes the next bootstrap
+argument after the recipe, in order, as a string constant (JDK `StringConcatFactory`); a
+non-string argument or a missing one leaves the failure comment. Case
+`TestConcatTagCharacters` (Vineflower prints the same text).
+
 ## 11.9 The main structuring loop
 
 The tree now holds correct but generic statements. The main loop of
@@ -704,6 +714,16 @@ times, so that a later pass that changes it back cannot alternate with it withou
 `reorder_if` already makes, applied to the other branch, or one it skips: the
 statements, edges and conditions stay those of the bytecode.
 
+**A finally exit inside a loop (kuna).** Each exit of a `finally` body is an edge of its own
+kind to the body's end, and `reorder_if` took such an edge as the direct path out of an `if`,
+as if falling off the `if` reached the end of the finally. Inside a loop it reaches the next
+iteration: janino's `finally { for (int i = 0; i < count; i++) { .. } }` printed `while (true) {
+if (i >= count) { ; } else { ..; i++; } }`, a loop with no exit (Vineflower prints the same),
+and code after such a loop was lost. The edge is direct only when the statement ends every
+sequence above it up to the finally body
+(`decompiler/managed/kuna-jvm/src/p8_structure/merge_helper.rs (MergeHelper::ends_finally)`);
+otherwise it is judged like any jump, and the loop gets its condition. Case `TestLoopInFinally`.
+
 The option also covers comparisons with a boolean literal. javac compiles `x == false`,
 `x != false` and `!x` to one `ifeq`/`ifne` on the value, but a literal on the left (`false
 == x`: `iconst_0` first, then `if_icmp..`), a comparison with `true` (`iconst_1`, `if_icmp..`)
@@ -835,6 +855,24 @@ on the second held-out benchmark).
 `decompiler/managed/kuna-jvm/src/p8_structure/merge_helper.rs (MergeHelper::drop_else_edge)`
 makes it an if: the head's edge into the branch, which now continues the loop, leaves the if, or
 is dropped when the if already has a successor, which goes where the branch went.
+
+**An update reached from one case or one handler (kuna).** When only one path of a loop's body
+reaches its update, javac's `iinc` block has that one predecessor and merges into it, so the
+update ends a switch case (`case '0': break;` beside `default: return i;`) or a catch handler
+(`catch (Duplicate e) {}` beside `try { ..; break; } catch (Invalid e) { break; }`).
+`match_for` takes it as the `for` update, and `clean_empty_statements` then removed the emptied
+block's exit, the loop's `continue`, keeping the block only under a catch or `synchronized`.
+Falling off a case does not reach the end of the loop but the next case, and falling off a
+handler reaches whatever follows the `try`, so the case fell into `default` and the handler
+joined the `break` the try's other paths share, which `LabelHelper` wrote after the `try`: a
+retry loop stopped at the first duplicate (Ghidra's `changeConflictingSymbolNames`), and joda-time's
+and luaj's scanners returned at their first digit (`case '0': .. case '9': default: return
+~position;`). The block's exit is the path's own jump, so in a case other than a switch's last,
+under a catch or under `synchronized` the emptied block keeps it, and `LabelHelper` leaves it
+unwritten where falling off does reach the loop's end; falling off a switch's last case reaches
+the switch's end, so there the block goes as before (jasypt's `default: ..; break;` beside a
+last group of empty cases the update had ended). Cases `TestUpdateOnOnePath` (Vineflower prints
+the same code) and `TestUpdateInLastCase`.
 
 **The increment of a for-each over an array (kuna).** `MergeHelper::match_for_each` makes a
 for-each of `T[] c = a; int n = c.length; int i = 0; while (i < n) { T x = c[i]; ..; i++; }` and
@@ -2103,6 +2141,59 @@ of a `List<String>` is a `String`. Each decision can only add casts. Without the
 compiles and calls `show(String)` (Vineflower prints it so): the descriptor's type matched
 `show(Object)` exactly and no cast seemed needed.
 
+**The one applicable overload is another method (kuna).** `getAmbiguousParameters` wrote
+no cast when exactly one of the overloads of the call's name and arity is applicable to the
+argument types kuna can prove, without asking whether that overload is the invoked
+method. When the argument's type or the invoked method's parameter type is outside the
+class context (a library interface, or the JDK when it is not read), the invoked method is
+not provably applicable, and an overload taking the argument's exact type is: Vector1D's
+`distance(Vector v) { return distance((Point) v); }` was printed `this.distance(v)`, which
+javac resolves to `distance(Vector)`, a call of itself, and `take((CharSequence) s)` beside
+`take(String)` printed `take(s)`. The class file proves the cast: the invocation names the
+other method, and an overload whose parameter is the argument's exact type is applicable by
+identity and more specific than any other one applicable (JLS 15.12.2.5), so the call
+without a cast cannot resolve to the invoked method. The early return now holds only when
+the one applicable overload is the invoked method; otherwise the casts are decided as for
+an ambiguity. Case `TestOverloadUnseenArgument` (Vineflower prints the same `distance` call).
+
+**An upcast that selects an overload (kuna).** The bytecode's `checkcast` before a call is a
+cast expression, which the printer leaves out when type inference finds its operand already
+of the cast's type (`FunctionExprent::get_inferred_expr_type`); that happens while the call
+is written, after `selecting_cast` has decided, and `selecting_cast` saw the cast's type, the
+invoked method's own, so no cast seemed needed: `arr((Named[]) items)` beside `arr(Item[])`
+printed `arr(items)`, and `take((Named) box.get())` of a `Box<Item>` beside `take(Item)`
+printed `take(box.get())`, both calling the other method. A reference cast whose operand,
+by its written type or by the type its receiver's type arguments give it, converts to the
+cast's type is the one the printer leaves out, so `selecting_cast` decides the call with
+the operand in its place (`upcast_operand`), and writes the cast where javac would
+otherwise select another method. Case `TestUpcastSelectsOverload` (Vineflower prints the same
+calls).
+
+**A primitive argument beside a generic overload (kuna).** `selecting_cast` decided no call
+whose candidates include a method with a generic parameter type, whose erased descriptor is
+not the type javac resolves with; `getAmbiguousParameters` asks only the methods the call's
+class declares when it declares any of that name. A class implementing a generic interface
+(ojalgo's `PrimitiveAggregatorFunction implements AggregatorFunction<Double>`, whose
+`VoidFunction<N>` declares `invoke(N)` and `invoke(double)`) and declaring `invoke(float)`
+printed `invoke(float value) { this.invoke((double) value); }` as `this.invoke(value)`, a
+call of itself. A type variable or a parameterized type takes a primitive argument only by
+boxing (JLS 15.12.2, phase 2), so it is never applicable where the invoked method is applicable
+by strict invocation: when every argument is primitive, the candidates with generic parameter
+types are left out of the decision instead of ending it. Case `TestWideningSelectsOverload`
+(Vineflower prints the same call).
+
+**An unboxing call beside an inherited overload (kuna).** `appendParamList` leaves an unboxing
+call (`value.doubleValue()`) unwritten unless another method of the call's name and arity
+takes, at that position, a reference type the box is an instance of; it asked only the
+methods the call's own class declares. A subclass calling an overload set of its superclass
+(fastjson2's `NumberSchema.validateInternal(Double value)` returning `validate(value.doubleValue())`,
+with `validate(Double)` and `validate(double)` declared in `JSONSchema`) printed `validate(value)`,
+which calls `validate(Double)`: the boxed overload is applicable without unboxing (JLS 15.12.2,
+phase 1), so it is chosen before any method that needs it. The rivals are now the methods of
+that name the current class can call on the class and its known supertypes, bridges, synthetic
+methods and interfaces' static methods aside (`vararg_spread_resolution::candidates`).
+Case `TestUnboxingSelectsOverload` (Vineflower prints both calls `validate(value)`).
+
 **A callee's unbound class variable (kuna).** `appendParamList` writes each argument
 against its parameter's generic type, remapped through the type arguments the receiver's
 type and the class hierarchy give the callee's class. When neither binds a type variable of
@@ -2171,6 +2262,20 @@ operand's type, arithmetic the promotion of its operands', a conditional its arm
 write the conversion back where that is narrower than the operation's or the target's
 type: a cast or kept parentheses in Java, `.toInt()`, `.code` or `.toLong()` in Kotlin,
 which never widens implicitly.
+
+**A widening that rounds, under another conversion (kuna).** `identifySecondaryFunctions`
+leaves every widening conversion unwritten, as Java widens implicitly in its context, and
+leaves the ones it does not judge alone. But the JVM converts only by instruction, so a
+value used in yet another type has a second conversion above the first, and the unwritten
+one then is not converted at all: `(long) (float) i` printed `(long) i`, `(double) (float)
+i` printed `i`, `asDouble((float) i)` printed `asDouble(i)` and `(short) (float) i` printed
+`(short) i`, which skip the rounding to a `float` and differ for values above 2^24
+(fastjson2's `(long) ((float) readInt32Value())`, Vineflower prints the same). A widening
+from `int` or `long` to `float` or from `long` to `double` is exact only for values the
+narrower type holds, so `lossy_widening_operand` writes such a conversion again when its
+parent is a conversion, unless its operand is a `byte`, `short` or `char`, which every
+`float` holds. An exact intermediate step (`(long) (double) i`) stays unwritten, since the
+direct conversion gives the same value. Case `TestLossyConversionChain`.
 
 **Resugaring only javac's shape.** Vineflower resugars try-with-resources, compound
 assignments, compact record constructors, pattern bindings, the null check of an explicit

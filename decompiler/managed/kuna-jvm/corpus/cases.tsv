@@ -2116,3 +2116,21 @@ case	kuna-fixes/pkg/TestBlankFinalConstant	Kuna Fixes	kuna-fixes/classes/pkg/Tes
 case	kuna-fixes/pkg/TestInitializerLocalClass	Kuna Fixes	kuna-fixes/classes/pkg/TestInitializerLocalClass
 # kuna-fixes/src/pkg/TestCapturedSlotReuse.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestCapturedSlotReuse	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedSlotReuse
+# kuna-fixes/src/pkg/TestOverloadUnseenArgument.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestOverloadUnseenArgument	Kuna Fixes	kuna-fixes/classes/pkg/TestOverloadUnseenArgument
+# kuna-fixes/src/pkg/TestLossyConversionChain.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLossyConversionChain	Kuna Fixes	kuna-fixes/classes/pkg/TestLossyConversionChain
+# kuna-fixes/src/pkg/TestUpdateOnOnePath.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpdateOnOnePath	Kuna Fixes	kuna-fixes/classes/pkg/TestUpdateOnOnePath
+# kuna-fixes/src/pkg/TestUnboxingSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUnboxingSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestUnboxingSelectsOverload
+# kuna-fixes/src/pkg/TestLoopInFinally.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestLoopInFinally	Kuna Fixes	kuna-fixes/classes/pkg/TestLoopInFinally
+# kuna-fixes/src/pkg/TestConcatTagCharacters.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestConcatTagCharacters	Kuna Fixes	kuna-fixes/classes/pkg/TestConcatTagCharacters
+# kuna-fixes/src/pkg/TestUpcastSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpcastSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestUpcastSelectsOverload
+# kuna-fixes/src/pkg/TestWideningSelectsOverload.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestWideningSelectsOverload	Kuna Fixes	kuna-fixes/classes/pkg/TestWideningSelectsOverload
+# kuna-fixes/src/pkg/TestUpdateInLastCase.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestUpdateInLastCase	Kuna Fixes	kuna-fixes/classes/pkg/TestUpdateInLastCase

@@ -40,6 +40,7 @@ scripts/javabench/     python package (python3 -m scripts.javabench ..., from th
   java/Recompile.java  javax.tools compile server (one JVM per shard)
   score.py run.py cli.py
   roundtrip.py         round trip of small sources (its own command, see "Round trip")
+  refs.py              what each recompiled method refers to, at benchmark scale (see "Reference sequences")
   pins/<project>.json  every pinned artifact + SHA-256 (the lock the original fetch wrote)
   docs/dataset.md      ranked candidate list, why kept/dropped, pins, calibration
   tests/               hand-made metric tests
@@ -280,8 +281,9 @@ They need the Python packages above and JDK 21 and 17 homes; without a package
 every test is skipped, without a JDK the javac-based ones are. CI has neither,
 so they are not part of `make test-tools`; what `make test-tools` runs is
 `scripts/tests/test_javabench_workspace.py` (the workspace convention and the
-pins, standard library only) and `scripts/tests/test_javabench_roundtrip.py`
-(the round trip's comparison of two listings).
+pins, standard library only), `scripts/tests/test_javabench_roundtrip.py`
+(the round trip's comparison of two listings) and `scripts/tests/test_javabench_refs.py`
+(member resolution and the categories of the reference-sequence comparison).
 
 ## Round trip
 
@@ -307,6 +309,64 @@ the text and the recompiled classes of those sources. `NOCOMPILE` is a defect.
 `DIFF` is a list to read: javac lays out equivalent text differently (a dropped
 dead store, a jump chain), and without debug info it merges lambda bodies that
 are equal, so a recompiled class can lack a `lambda$..$N`.
+
+## Reference sequences
+
+The benchmark's scores compare a decompiler's text with the project's source, so a
+call that resolves to another overload, or a cast that no longer selects one, scores
+as well as the original when the text looks like the source. `refs.py` reads what a
+harness run (`run --full`) already holds: the original class files and, for every
+decompiled file whose text compiled as written (`classes.json` `raw_compiles`), the
+classes javac recompiled from it with the project's javac, `--release` and debug
+flags (`recompile/out-r0/`). It compares every method of every class of the file,
+nested classes included (synthetic and bridge methods aside; a lambda body is
+compared with the body of the lambda at the same place of the recompiled caller), as
+the sequence of what the code refers to: invoked members, `invokedynamic` bootstrap
+and arguments, field reads and writes, the types of `new`, `checkcast`, `instanceof`
+and arrays, constants, arithmetic and conversion operators, array accesses, `athrow`,
+monitors, switch keys grouped by target, and the exception table as (handler type,
+the references the range covers). Local slots, jumps, stack operations and returns
+are left out: a method whose sequences are equal has round-tripped, whatever its
+layout. Two references are the same member when name and descriptor are equal and
+their owners resolve to the same declaration through the project's classpath and the
+JDK's `ct.sym` (a static call or field by the class declaring it, a virtual call by
+the topmost supertype declaring it, so `ArrayList.add` and `List.add` are equal).
+
+```bash
+R=$JAVABENCH_WORKSPACE/results
+python3 -m scripts.javabench.refs $R/kuna-TAG-*  --jobs 8 --out refs.jsonl   # every project of the runs
+python3 -m scripts.javabench.refs --classes a/ b/                          # two class trees, e.g. roundtrip --keep
+```
+
+It prints one `DIFF project categories class#method detail` line per differing
+method and a summary per project (methods compared, equal, differing, then each
+category as "methods where it is the first / methods where it occurs"); `--out`
+writes every differing method as JSON. Categories, most dangerous first: other
+overload, other method called, other owner, call missing / added, field write or read
+missing / added, other field, constant differs / missing / added, lambda capture or
+type differs, string concatenation differs, cast missing / added / of another type,
+operator or conversion differs / missing / added, switch keys differ, exception range
+differs. The rest are layout and are listed so they can be sampled: references moved,
+same references in another order (`same blocks` when every basic block is equal),
+code duplicated or merged (a run of references that also occurs elsewhere: a
+`finally` or a `return` copied), boolean materialization (a condition written as a
+value on one side), string concatenation form (a `StringBuilder` chain for `+`, or
+the reverse), try-with-resources form, and a lambda's instantiated type (generic
+inference).
+
+These are the recompiling javac's choices and are read as equal on both sides: enum
+switch keys, translated through javac's `$SwitchMap$` arrays or ECJ's
+`$SWITCH_TABLE$` methods into the constants; javac 15's `$values()` inlined; javac 19's
+`String.valueOf` of an object operand of `+`, and the static types of the operands of
+an `invokedynamic` concatenation (an `int` and a `byte` print alike, a `char` does
+not); `append(String.valueOf(x))` as `append(x)` (never for `char[]`); the implicit null
+check (`getClass()` before javac 9, `Objects.requireNonNull` after); `iinc` as an add or
+subtract of its constant; capture fields (`val$x`) by their position; a constructor's
+read of its own `this$0`; a cast of the null literal; anonymous and local classes
+paired per enclosing method in javac's order; a switch target that is a `goto` read as
+its destination; members javac before 5 marked synthetic by attribute only; and an enum's
+`values()` and `valueOf(String)`, whose bodies the compiler writes (ECJ's `ENUM$VALUES` is
+javac's `$VALUES`).
 
 ## Harness ceiling
 

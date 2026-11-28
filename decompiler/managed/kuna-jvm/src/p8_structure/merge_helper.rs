@@ -388,6 +388,23 @@ impl MergeHelper {
         false
     }
 
+    /// kuna: whether falling off `stat` reaches the end of a `finally` body, the
+    /// destination of its finally-exit edges: `stat` ends each sequence above it
+    /// up to the handler of a `finally`.
+    pub fn ends_finally(stat: Statement) -> bool {
+        let mut current = stat;
+        while let Some(parent) = current.get_parent() {
+            if let Some(catch_all) = parent.try_as_catch_all() {
+                return catch_all.is_finally() && catch_all.get_handler() == current;
+            }
+            if !parent.is_sequence() || parent.get_stats().borrow().get_last() != current {
+                return false;
+            }
+            current = parent;
+        }
+        false
+    }
+
     pub fn is_direct_path(stat: Statement, endstat: Statement) -> bool {
         let forward_edges =
             stat.get_neighbours_set(Statement::STATEDGE_DIRECT_ALL, EdgeDirection::Forward);
@@ -641,16 +658,19 @@ impl MergeHelper {
             return;
         };
         if stat.get_exprents().expect("exprents").is_empty() {
+            if stat.get_parent().is_some_and(|p| {
+                p.try_as_switch()
+                    .is_some_and(|sw| sw.get_case_statements().to_vec().last() != Some(&stat))
+                    || p.is_catch()
+                    || p.is_catch_all()
+                    || p.is_synchronized()
+            }) {
+                return;
+            }
+
             let lst = stat.get_all_successor_edges();
             if !lst.is_empty() {
                 stat.remove_successor(lst[0]);
-            }
-
-            if stat
-                .get_parent()
-                .is_some_and(|p| p.is_catch() || p.is_catch_all() || p.is_synchronized())
-            {
-                return;
             }
 
             Self::remove_last_empty_statement(dostat, stat);

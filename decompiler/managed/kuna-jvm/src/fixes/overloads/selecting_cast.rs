@@ -15,6 +15,7 @@ use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::function_exprent::FunctionType;
 use crate::fixes::overloads::vararg_spread_resolution::{
     candidates, convertible, more_specific, phase, primitive, same_parameters, written_type,
 };
@@ -28,9 +29,10 @@ use crate::var_type::VarType;
 
 /// Marks in `ambiguous` the arguments of `call` to cast to their parameter
 /// types so that it resolves to its method. Only a call whose method and
-/// rivals take no generic parameter types and whose arguments are written
-/// with known types, applicable to its method by strict invocation, is
-/// decided; casting each argument whose type differs from its parameter's
+/// rivals take no generic parameter types, or whose arguments are all
+/// primitive (a generic parameter takes those only by boxing), and whose
+/// arguments are written with known types, applicable to its method by
+/// strict invocation, is decided; casting each argument whose type differs from its parameter's
 /// where a rival's differs leaves the method more specific than every rival
 /// still applicable.
 pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
@@ -57,6 +59,7 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
         if param.try_as_new().is_some_and(|n| n.is_lambda()) {
             return;
         }
+        let param = upcast_operand(param);
         let t = written_type(param, &descriptor.params[i]);
         if !known(&t) {
             return;
@@ -64,9 +67,40 @@ pub fn mark(call: InvocationExprent, ambiguous: &mut BitSet) {
         generic_args.push(generic_type(param, &t).unwrap_or_else(|| t.clone()));
         args.push(t);
     }
+    let methods: Vec<_> = if methods.iter().any(|(m, _)| generic_parameters(*m)) {
+        if !args.iter().all(primitive) {
+            return;
+        }
+        methods.iter().filter(|(m, _)| !generic_parameters(*m)).cloned().collect()
+    } else {
+        methods.to_vec()
+    };
     decide(&args, &descriptor.params, &methods, ambiguous);
     if generic_args.iter().zip(&args).any(|(g, t)| !g.equals(t)) {
         decide(&generic_args, &descriptor.params, &methods, ambiguous);
+    }
+}
+
+/// The operand of `e` when `e` is a reference cast its operand's type, as
+/// written or from its receiver's type arguments, already converts to: the
+/// printer leaves such a cast unwritten, so javac resolves the call with the
+/// operand (`arr((CharSequence[]) strings)`, `take((CharSequence) list.get(0))`).
+fn upcast_operand(e: Exprent) -> Exprent {
+    let Some(f) = e.try_as_function().filter(|f| f.get_func_type() == FunctionType::Cast) else {
+        return e;
+    };
+    let ops = f.get_lst_operands();
+    let cast = f.0.get_expr_type();
+    if ops.len() != 2 || primitive(&cast) {
+        return e;
+    }
+    let operand = ops.get(0);
+    let t = written_type(operand, &cast);
+    let g = generic_type(operand, &t).unwrap_or_else(|| t.clone());
+    if t.type_ != CodeType::Null && known(&t) && (convertible(&t, &cast) || convertible(&g, &cast)) {
+        operand
+    } else {
+        e
     }
 }
 
@@ -133,7 +167,7 @@ thread_local! {
 
 /// The methods of `call`'s name and of `arity` parameters the current class
 /// can call on `call`'s class, with their descriptors, when there are two or
-/// more and none has a generic parameter type; kept per class context.
+/// more; kept per class context.
 fn rivals(call: InvocationExprent, arity: usize) -> Option<Rivals> {
     let ctx = DecompilerContext::get_struct_context();
     let current = DecompilerContext::get_current_class_node()
@@ -156,8 +190,7 @@ fn rivals(call: InvocationExprent, arity: usize) -> Option<Rivals> {
                 .map(|m| (m, m.method_descriptor()))
                 .filter(|(_, md)| md.params.len() == arity)
                 .collect();
-            (methods.len() > 1 && !methods.iter().any(|(m, _)| generic_parameters(*m)))
-                .then(|| Rc::new(methods))
+            (methods.len() > 1).then(|| Rc::new(methods))
         });
         map.insert(key, found.clone());
         found

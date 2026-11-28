@@ -233,6 +233,63 @@ of `this(..)`, a local declared again in a switch arm, a local class written twi
 kuna's own corpus sources (172 compile) the same command gives 141 / 30 / 0 with debug
 information and 122 / 46 / 3 without; one more source carries a failure comment in both.
 
+## What the recompiled projects refer to
+
+The benchmark's metrics compare a decompiler's text with the project's source, so a call that
+resolves to another overload, or a loop that leaves where the source continues, can score as
+well as the source while the program means something else. `python3 -m scripts.javabench.refs`
+asks the round trip's question of the three sets, from the class files a `run --full` already
+recompiled: for every class of every file whose text compiled as written, it compares each
+method of the original with the recompiled one as the sequence of what the code refers to
+(invoked members, `invokedynamic` arguments, field reads and writes, the types of `new`, casts
+and `instanceof`, constants, operators and conversions, switch keys grouped by target, and the
+references each exception range covers). Owners are resolved through the classpath and the
+JDK, so `ArrayList.add` for `List.add` is the same call, and the recompiling javac's own
+choices (enum switch maps, `$values()`, javac 19's `String.valueOf` in `+`, implicit null
+checks, capture field names, try-with-resources desugaring) read as equal;
+`scripts/javabench/README.md`, "Reference sequences", has the rules. Kuna before and after the
+fixes below:
+
+| Set | Methods compared | Equal | Differing | of which not only layout |
+|---|--:|--:|--:|--:|
+| in-sample | 116,139 → 116,230 | 115,894 → 115,985 | 245 → 245 | 57 → 55 |
+| heldout1 | 61,337 | 60,792 → 60,813 | 545 → 524 | 117 → 95 |
+| heldout2, ecj apart | 41,267 | 40,928 → 40,932 | 339 → 335 | 22 → 18 |
+| ecj | 9,399 | 8,326 → 8,327 | 1,073 → 1,072 | |
+
+More in-sample methods are compared after because two Elasticsearch files now compile. ecj is
+a row of its own: the Eclipse compiler wrote it, and javac's recompilation of the same text
+differs in shape throughout (ECJ's enum switch tables, finally copies and branch layout).
+
+Reading every method whose difference is not only layout found eight shapes of wrong code, each
+in Vineflower too, each now fixed from what the class file proves and pinned by a corpus case
+(spec chapter 11): a cast that selects an overload dropped when the argument's type is outside
+the class context (`distance(Vector v) { return distance((Point) v); }` printed as a call of
+itself, 12 commons-math3 methods, whose benchmark input lacks the codeless `Point` and `Vector`
+interfaces); an upcast that selects an overload (`arr((Named[]) items)`); a widening that
+selects an inherited overload beside a generic one (ojalgo's `invoke(float)` printed calling
+itself); an unboxing beside an inherited boxed overload (fastjson2's
+`validate(value.doubleValue())`, and ojalgo's `invoke(x.doubleValue())` through a generic
+interface); a widening that rounds under another conversion (fastjson2's `(long) (float) i`
+printed `(long) i`); a loop update reached from one switch case or one catch handler (luaj's
+and joda-time's number scanners returned at their first digit, Ghidra's rename retry loop
+stopped at the first duplicate, ECJ's `hasOnlyTrivialExceptionBounds` returned false for every
+bound); a loop inside a `finally` printed with no exit (janino's close loop; an Elasticsearch
+class whose code after such a loop javac rejected now compiles); and a concatenation constant
+holding `\u0001` (Elasticsearch's range-query sentinel printed as `""`).
+
+What is left is layout (blocks in another order, a `finally` or `return` copied or merged, a
+`StringBuilder` chain written as `+`) or not wrong code: casts and conversions javac adds or
+drops because kuna types a local or a generic value more narrowly (`byte` for a local holding
+small constants, a `checkcast` for a generic result), method references javac compiles through
+a synthetic lambda printed as lambdas, upcasts that only silence a varargs warning, and
+exception ranges that cover the same code. Not decided from the class files: 25 commons-math3
+calls whose argument is a class of the input implementing the missing `Vector` interface,
+where only `Vector`'s relation to `Point` would show whether the cast selects (with the full
+jar as context kuna writes it), a `call((Object) null)` beside an `Object...` overload of a
+library class outside the input, and a varargs method reference printed as a lambda, which
+loses the reference's null check.
+
 ## From DEX
 
 The same five projects compiled to DEX with d8 and decompiled from the DEX are scored by the

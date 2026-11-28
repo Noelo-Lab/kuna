@@ -615,6 +615,7 @@ impl IfHelper {
                 noifstat = true;
 
                 ifdirect = ifstat.get_if_edge().unwrap().get_type() == StatEdge::TYPE_FINALLYEXIT
+                    && MergeHelper::ends_finally(from)
                     || MergeHelper::is_direct_path(
                         from,
                         ifstat.get_if_edge().unwrap().get_destination(),
@@ -624,6 +625,7 @@ impl IfHelper {
                 let lst_succs = if_body.get_all_successor_edges();
                 ifdirect = !lst_succs.is_empty()
                     && lst_succs[0].get_type() == StatEdge::TYPE_FINALLYEXIT
+                    && MergeHelper::ends_finally(from)
                     || Self::has_direct_end_edge(if_body, from);
             }
         }
@@ -638,6 +640,7 @@ impl IfHelper {
         let last_succs = last.get_all_successor_edges();
         let elsedirect = !last_succs.is_empty()
             && last_succs[0].get_type() == StatEdge::TYPE_FINALLYEXIT
+            && MergeHelper::ends_finally(from)
             || Self::has_direct_end_edge(last, from);
 
         let successors = ifstat.get_all_successor_edges();
