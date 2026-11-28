@@ -2128,3 +2128,5 @@ case	kuna-fixes/pkg/TestCurriedLambdaRaw	Kuna Fixes	kuna-fixes/classes/pkg/TestC
 case	kuna-fixes/pkg/TestRawFieldReceiverCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawFieldReceiverCall
 # kuna-fixes/src/pkg/TestDiamondLambdaRaw.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestDiamondLambdaRaw	Kuna Fixes	kuna-fixes/classes/pkg/TestDiamondLambdaRaw
+# kuna-fixes/src/pkg/TestUnassignableValue.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestUnassignableValue	Kuna Fixes	kuna-fixes/classes/pkg/TestUnassignableValue

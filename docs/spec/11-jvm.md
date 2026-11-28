@@ -2113,7 +2113,23 @@ casts a value not known to fit. `unchecked_generic_cast`, `unchecked_call_result
 type arguments the value's type gives the target's class with the target's own, and where
 javac would reject the conversion write the source's unchecked cast, through the raw class
 when the two parameterizations are provably distinct (JLS 4.5), or give the chain's first
-call explicit type arguments; bounds and types kuna cannot resolve count as satisfied. `appendParamList` spreads a trailing array and writes
+call explicit type arguments; bounds and types kuna cannot resolve count as satisfied.
+A value written without a cast is cast too where it is not assignable to its target: its
+type gives the target's class a parameterization (it is not raw) with a type argument
+other than the target's where neither is a wildcard, which no subtyping allows (JLS 4.10.2;
+`disjoint_generic_cast::unassignable_target`). Without a LocalVariableTable a local takes
+its initializer's type, so `Fn<E, E> f = (Fn) Ident.INSTANCE; return f;` for an `enum
+Ident implements Fn<Object, Object>` came back as `Ident var0 = Ident.INSTANCE; return
+var0;`, which javac rejects, and an argument `use((Fn) i)` lost its cast, which javac
+emits nothing for, so that `use(i)` called the overload `use(Object)` instead of
+`use(Fn<String, String>)`. A returned or assigned value, whose target the declaration
+fixes, is cast to the raw class: `return (Fn) var0`. An argument for a parameter whose
+declared type does not depend on the call's inference is cast to that type through the raw
+class, `use((Fn<String, String>) (Fn) var0)`, so that no unchecked conversion erases the
+call's result (JLS 15.12.2.6); the parameterized type selects the method the bytecode
+names, as the original's cast did. Neither is done for a lambda, whose type is its target's,
+or in a lambda's body, whose return type can be an inference variable of the call the lambda
+is passed to. `appendParamList` spreads a trailing array and writes
 casts or boxing calls only where `getAmbiguousParameters` finds another overload, while
 javac resolves the written call afresh (JLS 15.12.2): `vararg_array_length`,
 `vararg_spread_resolution`, `unseen_class_overload`, `ambiguous_type_variable_argument`,

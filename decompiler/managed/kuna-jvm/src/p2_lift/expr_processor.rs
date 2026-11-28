@@ -1442,12 +1442,17 @@ impl ExprProcessor {
             cast = unchecked_cast.is_some();
         }
 
+        let lambda = exprent.try_as_new().is_some_and(|n| n.is_lambda());
         let mut through_raw = None;
         if !cast {
-            if let Some((to, raw)) = argument_target
-                .as_ref()
-                .and_then(|formal| argument_generic_cast::cast_for(exprent, formal))
-            {
+            if let Some((to, raw)) = argument_target.as_ref().and_then(|formal| {
+                argument_generic_cast::cast_for(exprent, formal).or_else(|| {
+                    (!lambda && !exprent.is_kotlin())
+                        .then(|| disjoint_generic_cast::unassignable_target(formal, exprent))
+                        .flatten()
+                        .map(|raw| (formal.clone(), Some(raw)))
+                })
+            }) {
                 unchecked_cast = Some(to);
                 through_raw = raw;
                 cast = true;
@@ -1469,6 +1474,11 @@ impl ExprProcessor {
                 &left_type,
                 &right_type,
             );
+        }
+
+        if !cast && declared_target && !lambda && !exprent.is_kotlin() && disjoint_generic_cast::fixed_target() {
+            unchecked_cast = disjoint_generic_cast::unassignable_target(&left_type, exprent);
+            cast = unchecked_cast.is_some();
         }
 
         if cast {
