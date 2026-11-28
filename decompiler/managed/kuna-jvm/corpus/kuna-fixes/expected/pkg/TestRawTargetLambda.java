@@ -2,7 +2,7 @@ package pkg;
 
 public class TestRawTargetLambda<E extends CharSequence> {
    static <T> TestRawTargetLambda.Box<T> boxOf(T var0) {
-      return new TestRawTargetLambda.Box<>((T)var0, var0x -> "b");
+      return new TestRawTargetLambda.Box<>(var0, var0x -> "b");
    }
 
    static void takeRaw(TestRawTargetLambda.Fn var0) {
@@ -63,7 +63,7 @@ public class TestRawTargetLambda<E extends CharSequence> {
       T value;
 
       Box(T var1, TestRawTargetLambda.Fn<T, String> var2) {
-         this.value = (T)var1;
+         this.value = var1;
       }
 
       boolean removeIf(TestRawTargetLambda.Pred<? super T> var1) {

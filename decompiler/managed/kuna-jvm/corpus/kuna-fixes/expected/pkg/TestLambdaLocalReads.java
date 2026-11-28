@@ -35,7 +35,7 @@ public class TestLambdaLocalReads<E extends CharSequence> {
 
    public int checked(TestLambdaLocalReads.Box<String> var1) {
       TestLambdaLocalReads.Fn<String, Integer> var2 = var0 -> var0.hashCode();
-      return var2.apply((String)var1.get());
+      return var2.apply(var1.get());
    }
 
    public int overloaded(CharSequence var1) {

@@ -2068,3 +2068,5 @@ case	kuna-fixes/pkg/TestRawTargetLambda	Kuna Fixes	kuna-fixes/classes/pkg/TestRa
 case	kuna-fixes/pkg/TestLambdaLocalReads	Kuna Fixes	kuna-fixes/classes/pkg/TestLambdaLocalReads
 # kuna-fixes/src/pkg/TestRawReceiverCheckcast.java, javac 21.0.13.1 (-g:none --release 17)
 case	kuna-fixes/pkg/TestRawReceiverCheckcast	Kuna Fixes	kuna-fixes/classes/pkg/TestRawReceiverCheckcast
+# kuna-fixes/src/pkg/TestSignatureParameterTypes.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestSignatureParameterTypes	Kuna Fixes	kuna-fixes/classes/pkg/TestSignatureParameterTypes

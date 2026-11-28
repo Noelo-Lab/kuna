@@ -976,6 +976,26 @@ boxing call's class. `Fn var2 = s -> s.length() + 1; .. (Integer) var2.apply(x)`
 `Fn<String, Integer> var2 = ..; .. var2.apply(x)`, and a lambda value's parameterization may
 have array arguments (`Bi<String, int[], Integer>`). A read that passes the local, stores it
 or captures it in another lambda still keeps the local raw.
+
+**Parameters without a LocalVariableTable (kuna).** A parameter is declared with its
+signature's type, but without the table its inferred type was its erasure, so every read of
+it inferred less than the text declares: a cast the declaration makes necessary was dropped
+(`return inner.get()` for `Holder<? extends T>` from an `Inner<T> inner` whose `get` returns
+`Holder<? super T>`), and casts it makes redundant were written (`(T) inner.all().get(0)`).
+`VarExprent::get_inferred_expr_type` now gives a parameter of a Java method without a
+LocalVariableTable the type its method's signature declares, when that has type arguments or
+is a type variable (`signature_parameter_type`; a signature that does not cover every
+parameter, such as an inner class constructor's, gives none). The call results it now types
+follow JLS 15.12.2.6: a call one of whose arguments is written with a raw type where the
+parameter, with the receiver's declared type arguments for its class's variables, has type
+arguments other than unbounded wildcards is applicable only by unchecked conversion, and its
+result type is the erasure of the declared one
+(`raw_receiver_erasure::has_unchecked_argument`, read where `raw_receiver_erasure` erases a
+raw receiver's result): `return (R) f.apply(rawRoot, bits)` for a `BiFn<Ref<K, V>, long[],
+R> f` keeps the cast javac requires, and with or without the table `return (String)
+first(raw)` for a raw `Seq raw` passed to `<T> T first(Seq<T>)` no longer drops it. An
+argument of a type variable passed for a parameter of a type variable that bounds it (`U
+extends T`) needs no cast to it (JLS 4.10.2, `generic_casts::variable_below`).
 The pass, like every fix that asks which method a call names before the call is written,
 looks the method up without recording it (`InvocationExprent::find_desc`). The ported
 `get_desc` records what it finds, and a call with a recorded method is written without the

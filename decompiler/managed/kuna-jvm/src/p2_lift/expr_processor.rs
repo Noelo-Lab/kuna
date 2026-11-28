@@ -23,6 +23,7 @@ use crate::invocation_exprent::InvocationExprent;
 use crate::jthrow;
 use crate::fixes::generic_casts::unchecked_generic_cast;
 use crate::fixes::generic_casts::bounded_inference_cast;
+use crate::fixes::generic_casts;
 use crate::fixes::generic_casts::argument_checkcast;
 use crate::fixes::generic_casts::argument_generic_cast;
 use crate::fixes::generic_casts::receiver_type_arguments;
@@ -1397,7 +1398,10 @@ impl ExprProcessor {
 
         let do_cast = !left_type.higher_equal_in_lattice_than(&right_type)
             && (right_type.equals(&VarType::VARTYPE_OBJECT())
-                || left_type.type_ != CodeType::Object);
+                || left_type.type_ != CodeType::Object)
+            && !(right_type.type_ == CodeType::Genvar
+                && left_type.type_ == CodeType::Genvar
+                && generic_casts::variable_below(&exprent.get_named_generics(), &right_type, &left_type));
         let do_cast_null = cast_null.cast()
             && right_type.type_ == CodeType::Null
             && Self::UNDEFINED_TYPE_STRING != Self::get_type_name(&left_type);

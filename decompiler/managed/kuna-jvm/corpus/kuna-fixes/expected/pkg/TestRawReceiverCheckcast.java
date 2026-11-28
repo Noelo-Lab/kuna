@@ -19,7 +19,7 @@ public class TestRawReceiverCheckcast<E extends CharSequence> {
    }
 
    public void typed(TestRawReceiverCheckcast.Page<String, Integer> var1, TestRawReceiverCheckcast.Bag<String> var2) {
-      var2.add((String)var1.getKey(0));
+      var2.add(var1.getKey(0));
       var2.add(var1.key);
    }
 
@@ -44,7 +44,7 @@ public class TestRawReceiverCheckcast<E extends CharSequence> {
       }
 
       <X> X pick(X var1) {
-         return (X)var1;
+         return var1;
       }
    }
 }

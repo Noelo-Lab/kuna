@@ -526,7 +526,7 @@ impl InvocationExprent {
         }
 
         let desc = self.d(|d| d.desc);
-        if raw_receiver_erasure::has_raw_receiver(self) {
+        if raw_receiver_erasure::has_raw_receiver(self) || raw_receiver_erasure::has_unchecked_argument(self) {
             return self.get_expr_type();
         }
         if let (Some(desc), Some(mth_cls)) = (desc, mth_cls) {

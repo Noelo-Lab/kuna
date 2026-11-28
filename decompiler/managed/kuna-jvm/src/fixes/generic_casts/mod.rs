@@ -31,6 +31,35 @@ pub(crate) fn mentions(t: &VarType, var: &str) -> bool {
     })
 }
 
+/// Whether `sub` and `sup` are type variables (no array, no wildcard) and
+/// `sup` is a bound of `sub`, or of a type variable that bounds it, by the
+/// bounds `named` gives the variables in scope: `sub` is then a subtype of
+/// `sup` (JLS 4.10.2) and converts to it without a cast.
+pub(crate) fn variable_below(named: &JHashMap<VarType, Vec<VarType>>, sub: &VarType, sup: &VarType) -> bool {
+    let bare = |t: &VarType| t.type_ == CodeType::Genvar && t.array_dim == 0 && is_exact(t);
+    if !bare(sub) || !bare(sup) {
+        return false;
+    }
+    let mut pending = vec![sub.clone()];
+    let mut seen: Vec<VarType> = Vec::new();
+    while let Some(v) = pending.pop() {
+        if seen.iter().any(|s| s.value == v.value) {
+            continue;
+        }
+        let Some(bounds) = named.get(&v) else {
+            continue;
+        };
+        for b in bounds.iter().filter(|b| bare(b)) {
+            if b.value == sup.value {
+                return true;
+            }
+            pending.push(b.clone());
+        }
+        seen.push(v);
+    }
+    false
+}
+
 /// A type argument that is a type, not a wildcard.
 fn is_exact(t: &VarType) -> bool {
     t.try_as_generic()

@@ -134,6 +134,8 @@ impl VarExprent {
             }
         } else if let Some(lvt) = &lvt {
             return lvt.get_var_type();
+        } else if let Some(t) = signature_parameter_type(self) {
+            return t;
         }
         self.get_var_type()
     }
@@ -853,4 +855,19 @@ impl Drop for DefinitionLocker {
             self.var.set_definition(self.is_def);
         }
     }
+}
+
+/// The type `var`, a parameter of a Java method compiled without a
+/// LocalVariableTable, is declared with when the method's signature gives
+/// it type arguments or a type variable: the declaration is written with
+/// that type, so it is the type of every read.
+fn signature_parameter_type(var: VarExprent) -> Option<VarType> {
+    if var.0.is_kotlin() || writing_kotlin() {
+        return None;
+    }
+    let method = var.get_processor()?.get_method();
+    if method.get_local_variable_attr().is_some() || method.get_signature().is_none() {
+        return None;
+    }
+    crate::kuna_static_types::param_type(var).flatten().filter(|t| t.is_generic())
 }
