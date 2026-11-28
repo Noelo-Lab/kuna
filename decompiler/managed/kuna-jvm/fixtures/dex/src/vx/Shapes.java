@@ -160,6 +160,28 @@ public class Shapes {
         }
     }
 
+    // d8's release build writes a small switch on a library enum as tests of its switch map
+    // value (Guava DirectedGraphConnections.of).
+    static String unit(java.util.concurrent.TimeUnit u) {
+        switch (u) {
+            case SECONDS:
+                return "s";
+            case MINUTES:
+                return "m";
+            default:
+                return "?";
+        }
+    }
+
+    static int seconds(java.util.concurrent.TimeUnit u) {
+        switch (u) {
+            case SECONDS:
+                return 1;
+            default:
+                return 0;
+        }
+    }
+
     public static void main(String[] args) {
         int[] starts = {1, 10, 20};
         int[] ends = {5, 15, 25};
@@ -179,6 +201,10 @@ public class Shapes {
         System.out.println(zeros(1.5f, -2, null) + " " + zeros(-1f, 3, "o"));
         for (Color c : Color.values()) {
             System.out.print(c.ordinal() + paint(c));
+        }
+        System.out.println();
+        for (java.util.concurrent.TimeUnit u : java.util.concurrent.TimeUnit.values()) {
+            System.out.print(unit(u) + seconds(u));
         }
         System.out.println();
     }

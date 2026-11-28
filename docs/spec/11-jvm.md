@@ -2354,6 +2354,19 @@ that throws and a `KunaDexError` attribute (a constant-pool string, laid out as
 (`decompiler/managed/kuna-jvm/src/infra/method_processor.rs (code_to_java_schedule)`).
 A panic in the translation of one method is caught and fails that method the same way.
 
+**Switch maps.** javac's `switch` on an enum of another class reads
+`$SwitchMap$...[e.ordinal()]`, an array its synthetic class fills in `<clinit>`, and javac
+writes such an array for nothing else. d8's release build changes both sides, and
+`decompiler/managed/kuna-dex/src/switchmap.rs` undoes both before ops are built. A small
+`switch` becomes a chain of `if-eq`/`if-ne` tests of the value read from the array against
+constants: when the tests follow each other (constants only between them, whose registers a
+short walk finds dead at every target) and nothing else enters them, the first becomes a
+`sparse-switch` with each test's case (an `if-ne`'s fall-through, then the chain ends at its
+target, the default) and an explicit default target, written as `lookupswitch`, and the rest
+become `nop`s. And `<clinit>` fills the first entry through the register it stored the new
+array from; that register reads the field again right after the store (the same reference),
+so the entry is `getstatic`'s as in javac's code and the engine reads every entry of the map.
+
 **Lambdas.** d8 desugars every `invokedynamic` to `LambdaMetafactory` into a class
 `X$$ExternalSyntheticLambdaN`. `decompiler/managed/kuna-dex/src/lambda.rs` recognises
 such a class once per file: it implements one interface, its constructor stores its

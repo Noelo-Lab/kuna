@@ -171,6 +171,9 @@ pub struct Method<'d, 'a> {
     /// names at the use, or a phi it names where the phi's block starts
     /// (parameter entries, which start at 0, aside).
     pub named: BTreeSet<u32>,
+    /// `sparse-switch` ops rewritten from d8's test chains on a switch map,
+    /// by address: their cases and default target (`switchmap.rs`).
+    pub chains: BTreeMap<u32, crate::switchmap::Chain>,
 }
 
 /// An instruction's register uses (push order) and def, with their masks.
@@ -264,6 +267,7 @@ impl<'d, 'a> Method<'d, 'a> {
             clean_param: Vec::new(),
             reused: BTreeSet::new(),
             named: BTreeSet::new(),
+            chains: BTreeMap::new(),
         };
         m.build_ops(undo)?;
         m.build_blocks()?;
@@ -310,6 +314,20 @@ impl<'d, 'a> Method<'d, 'a> {
             )));
         }
         Ok(())
+    }
+
+    /// The registers an instruction reads and writes (both halves of a
+    /// wide value); a malformed one reads every register.
+    fn insn_regs(&self, x: &Insn) -> (Vec<u32>, Vec<u32>) {
+        let regs = |v: &[(u32, Mask)]| v.iter().flat_map(|&(r, m)| if is_wide(m) { vec![r, r + 1] } else { vec![r] }).collect::<Vec<u32>>();
+        match x.op {
+            0x0a | 0x0c => (vec![], vec![x.a]),
+            0x0b => (vec![], vec![x.a, x.a + 1]),
+            _ => match self.shape(x) {
+                Ok((uses, def, _)) => (regs(&uses), regs(&def.into_iter().collect::<Vec<_>>())),
+                Err(_) => ((0..u32::from(self.code.registers)).collect(), vec![]),
+            },
+        }
     }
 
     fn shape(&self, x: &Insn) -> Result<Shape> {
@@ -442,6 +460,11 @@ impl<'d, 'a> Method<'d, 'a> {
         let mut insns = decode(self.code.insns)?;
         if undo {
             crate::nest::rewrite(self.dex, &mut insns);
+            let handlers: Vec<u32> = self.code.tries.iter().flat_map(|t| t.handlers.iter().map(|h| h.1)).collect();
+            crate::switchmap::refill(self.dex, &mut insns);
+            let tries: Vec<(u32, u32)> = self.code.tries.iter().map(|t| (t.start, t.start + t.count)).collect();
+            let regs = |x: &Insn| self.insn_regs(x);
+            self.chains = crate::switchmap::rewrite(self.dex, &mut insns, self.code.insns, &tries, &handlers, &regs);
         }
         let regs = u32::from(self.code.registers);
         let mut k = 0;
@@ -641,7 +664,8 @@ impl<'d, 'a> Method<'d, 'a> {
     }
 
     fn op_at(&self, addr: u32) -> Option<usize> {
-        self.ops.binary_search_by_key(&addr, |o| o.insn.addr).ok()
+        let k = self.ops.partition_point(|o| o.insn.addr < addr);
+        (self.ops.get(k)?.insn.addr == addr).then_some(k)
     }
 
     /// The first op starting at or after `addr`.
@@ -664,6 +688,10 @@ impl<'d, 'a> Method<'d, 'a> {
                 .iter()
                 .map(|&t| at(i64::from(x.addr) + i64::from(t)))
                 .collect::<Result<_>>()?,
+            0x2c if self.chains.contains_key(&x.addr) => {
+                let (cases, default) = &self.chains[&x.addr];
+                cases.iter().map(|c| c.1).chain([*default]).map(|t| at(i64::from(t))).collect::<Result<_>>()?
+            }
             0x2c => crate::insn::sparse_switch(self.code.insns, x.target())?
                 .iter()
                 .map(|&(_, t)| at(i64::from(x.addr) + i64::from(t)))
@@ -722,7 +750,7 @@ impl<'d, 'a> Method<'d, 'a> {
                 .iter()
                 .map(|&t| block_of[self.op_at(t).expect("checked")])
                 .collect();
-            let falls = !matches!(last.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a);
+            let falls = !matches!(last.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a) && !self.chains.contains_key(&last.insn.addr);
             if falls && e < self.ops.len() {
                 succs.push(block_of[e]);
             }

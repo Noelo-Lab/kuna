@@ -21,6 +21,7 @@ mod nest;
 mod reader;
 mod record;
 mod region;
+mod switchmap;
 
 pub use class::ERROR_ATTRIBUTE;
 

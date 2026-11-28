@@ -400,7 +400,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             self.flush()?;
             let next = order.get(i + 1).copied();
-            if falls(&m.ops[blk.end - 1]) {
+            if falls(m, &m.ops[blk.end - 1]) {
                 let f = b as u32 + 1;
                 let stubbed = match self.joins.get(&f) {
                     Some(join) => {
@@ -987,7 +987,11 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             }
             0x2b | 0x2c => {
                 self.push_use(k, 0)?;
-                let next = self.labels[o.block as usize + 1];
+                let chain = m.chains.get(&x.addr);
+                let next = match chain {
+                    Some(&(_, d)) => self.land(o.block, m.ops[m.ops.partition_point(|o| o.insn.addr < d)].block),
+                    None => self.labels[o.block as usize + 1],
+                };
                 let label_at = |e: &Self, rel: i32| -> Label {
                     let t = (i64::from(x.addr) + i64::from(rel)) as u32;
                     let k = e.m.ops.partition_point(|o| o.insn.addr < t);
@@ -1002,10 +1006,11 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
                         self.asm.tableswitch(next, first, &targets);
                     }
                 } else {
-                    let pairs: Vec<(i32, Label)> = sparse_switch(m.code.insns, x.target())?
-                        .iter()
-                        .map(|&(key, r)| (key, label_at(self, r)))
-                        .collect();
+                    let cases = match chain {
+                        Some((cases, _)) => cases.iter().map(|&(key, t)| (key, (i64::from(t) - i64::from(x.addr)) as i32)).collect(),
+                        None => sparse_switch(m.code.insns, x.target())?,
+                    };
+                    let pairs: Vec<(i32, Label)> = cases.iter().map(|&(key, r)| (key, label_at(self, r))).collect();
                     if pairs.windows(2).any(|w| w[0].0 >= w[1].0) {
                         return Err(err("sparse-switch keys are not sorted".to_string()));
                     }
@@ -1458,8 +1463,8 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     }
 }
 
-fn falls(o: &Op) -> bool {
-    !matches!(o.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a)
+fn falls(m: &Method, o: &Op) -> bool {
+    !matches!(o.insn.op, 0x0e..=0x11 | 0x27 | 0x28..=0x2a) && !m.chains.contains_key(&o.insn.addr)
 }
 
 /// Sorted intervals with touching ones joined.
@@ -1503,7 +1508,7 @@ fn layout(m: &Method) -> Vec<u32> {
             order.push(b as u32);
             let blk = &m.blocks[b];
             let last = &m.ops[blk.end - 1];
-            if falls(last) {
+            if falls(m, last) {
                 b += 1;
                 if placed[b] {
                     break;
