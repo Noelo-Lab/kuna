@@ -102,7 +102,7 @@ an expression, enums without the `;` before their members, and the casts and typ
 generic inference needs. Every class that recompiles from Vineflower's output also recompiles
 from kuna's.
 
-Method by method, 15,370 methods score better than Vineflower's on some metric and worse on
+Method by method, 15,371 methods score better than Vineflower's on some metric and worse on
 none, and 32 score worse on at least one: 27 where kuna's layout, local order, declaration
 scope or test-and-cast follows the bytecode and another difference in the method shifts a
 metric (15 lose bytecode similarity, 7 of them while their GED or types improve; 12 have a
@@ -135,7 +135,7 @@ reads:
 | **all** | 63,189 | 81.68% → 95.39% | 95.80% → 99.28% | 97.69% → 98.50% | 82.52% → 96.49% | 94.12% → 97.83% | 126 → 43 |
 
 60,274 methods perfect instead of 51,610, and 4,245 of 4,339 classes recompile instead of
-4,084. 9,895 methods score better than Vineflower's and 87 worse. h2 and joda-time ship
+4,084. 9,895 methods score better than Vineflower's and 88 worse. h2 and joda-time ship
 without local-variable tables, which is where the types column stays lowest for both tools.
 
 ### Ten projects nothing had been tuned against (`heldout2`)
@@ -159,27 +159,27 @@ reads:
 |---|--:|---|---|---|---|---|---|
 | parboiled | 348 | 83.33% → 90.52% | 97.97% → 100.00% | 93.60% → 95.06% | 86.21% → 92.82% | 87.88% → 90.91% | 0 |
 | hsqldb | 9,959 | 75.13% → 88.22% | 92.49% → 98.48% | 89.52% → 92.25% | 78.00% → 92.14% | 94.32% → 97.04% | 2 → 0 |
-| undertow | 7,542 | 86.50% → 97.53% | 95.15% → 99.31% | 99.43% → 99.91% | 86.62% → 97.68% | 94.55% → 98.42% | 0 |
+| undertow | 7,542 | 86.50% → 97.55% | 95.15% → 99.32% | 99.43% → 99.91% | 86.62% → 97.69% | 94.55% → 98.42% | 0 |
 | dsl-json | 1,074 | 80.26% → 98.04% | 95.61% → 100.00% | 99.72% → 100.00% | 80.45% → 98.04% | 93.75% → 98.75% | 0 |
 | jasypt | 673 | 93.16% → 98.37% | 98.66% → 100.00% | 99.67% → 100.00% | 93.31% → 98.37% | 97.44% → 100.00% | 0 |
-| ecj | 10,886 | 59.14% → 69.67% | 84.19% → 92.53% | 95.97% → 98.24% | 59.26% → 70.02% | 88.09% → 94.34% | 136 → 0 |
+| ecj | 10,886 | 59.14% → 69.67% | 84.19% → 92.55% | 95.97% → 98.24% | 59.26% → 70.02% | 88.09% → 94.34% | 136 → 0 |
 | luaj | 2,218 | 80.79% → 85.93% | 96.36% → 99.13% | 95.79% → 96.52% | 82.46% → 87.83% | 90.72% → 92.78% | 0 |
 | junit4 | 1,473 | 90.77% → 97.69% | 97.67% → 99.86% | 99.03% → 99.93% | 90.77% → 97.69% | 96.97% → 97.58% | 0 |
 | ojalgo | 13,686 | 90.68% → 98.30% | 97.65% → 99.76% | 99.82% → 99.93% | 90.81% → 98.45% | 92.53% → 95.07% | 0 |
 | langchain4j | 3,599 | 88.25% → 95.58% | 97.24% → 99.94% | 99.86% → 100.00% | 88.25% → 95.61% | 97.14% → 98.18% | 0 |
-| **all** | 51,458 | 79.56% → 89.38% | 93.36% → 97.93% | 96.70% → 97.90% | 80.29% → 90.37% | 93.29% → 96.51% | 138 → 0 |
+| **all** | 51,458 | 79.56% → 89.38% | 93.36% → 97.93% | 96.70% → 97.90% | 80.29% → 90.38% | 93.29% → 96.51% | 138 → 0 |
 
-45,994 methods perfect instead of 40,939, and 2,849 of 2,952 classes recompile instead of
-2,754. 7,436 methods score better than Vineflower's and 198 worse (ecj 115, hsqldb 51,
+45,995 methods perfect instead of 40,939, and 2,849 of 2,952 classes recompile instead of
+2,754. 7,438 methods score better than Vineflower's and 199 worse (ecj 116, hsqldb 51,
 ojalgo 14, undertow 10, luaj 3, langchain4j 3, dsl-json 2); every method is decompiled.
 
-On ecj the structure column rises to 92.53% while bytes exact falls from the first run's
+On ecj the structure column rises to 92.55% while bytes exact falls from the first run's
 74.41% to 70.02%, with the same 69.67% of methods perfect. ECJ compiles `return a <= b;` as
 two returns of constants, the code javac writes for `if (a <= b) return true; return
 false;`. Where ECJ's line table shows one statement, kuna now prints the returned condition
 the source has, which javac recompiles to one return; the two-statement form recompiled to
 ECJ's bytes and had the wrong structure. 527 methods changed this way. What is left of the
-198: ECJ's array for-each, which both decompilers print as an indexed loop (21 methods where
+199: ECJ's array for-each, which both decompilers print as an indexed loop (21 methods where
 that makes Vineflower's nesting score closer), declarations in code without local-variable
 tables (hsqldb, luaj), and locals kuna keeps where the bytecode has them and the recompiled
 code differs.
@@ -195,33 +195,35 @@ alone with `--release 21`):
 
 | | Round-trips | Code differs | Text does not compile |
 |---|--:|--:|--:|
-| kuna, `-g` | 343 | 103 | 16 |
+| kuna, `-g` | 349 | 104 | 9 |
 | Vineflower 1.12.0, `-g` | 288 | 145 | 29 |
-| kuna, `-parameters -g:none` | 319 | 122 | 21 |
+| kuna, `-parameters -g:none` | 325 | 123 | 14 |
 | Vineflower 1.12.0, `-parameters -g:none` | 245 | 158 | 59 |
 
-With debug information kuna round-trips 57 sources Vineflower does not and Vineflower two
-that kuna does not (`TestDoWhileTrue`, `TestLocalScopes`); without it, 74 and none. A source
+With debug information kuna round-trips 63 sources Vineflower does not and Vineflower two
+that kuna does not (`TestDoWhileTrue`, `TestLocalScopes`); without it, 80 and none. A source
 whose code differs is a list to read, not a defect count: javac lays out equivalent text
 differently, and without debug information it merges equal lambda bodies. Reading kuna's
-lists method by method found fifteen shapes of wrong code that no benchmark project had
-shown, most of them Vineflower's too and several only in code without local-variable tables
-(an `int` local printed as `byte`, an increment folded into a condition that does not always
-evaluate it, static initializers moved into declarations out of order, a constant captured
-by a lambda with the wrong type); each is fixed with a corpus case. Five known shapes are
-left: four in how `try` regions are structured (`finally { throw t; }` moved into its `try`,
-code after a loop copied under a `catch`, a `return` lost from a try-with-resources whose
-`finally` returns, a lost `catch` body), and a record pattern's binding typed `Object`
-without debug information. Of the text that does not compile without debug information,
-what is left is mostly types the class file states only in part: a lambda whose target is
-printed raw, and generic casts javac compiles to no instruction. On kuna's own corpus
-sources (145 compile) the same command gives 120 / 24 / 0 with debug information and
-102 / 37 / 5 without; one more source carries a failure comment in both.
+lists method by method found twenty-three shapes of wrong code that no benchmark project
+had shown, most of them Vineflower's too and several only in code without local-variable
+tables (an `int` local printed as `byte`, an increment folded into a condition that does not
+always evaluate it, a static initializer moved into its declaration ahead of a call that
+runs before it, a constant captured by a lambda with the wrong type, `finally { throw t; }`
+moved into its `try`, code after a loop copied under a `catch` that would catch it, a
+`catch` body taken for the increment of a for-each); each is fixed with a corpus case, and
+no shape of wrong code is known to be left in these lists (the methods whose code differs
+only in the layout of jumps were sampled, not all read). Of the text that does not compile,
+what is left is mostly types the class file states only in part (a lambda whose target is
+printed raw, generic casts javac compiles to no instruction) and three structures (a switch
+expression as the argument of `this(..)`, a local declared again in a switch arm, a local
+class written twice). On kuna's own corpus sources (154 compile) the same command gives
+127 / 26 / 0 with debug information and 109 / 39 / 5 without; one more source carries a
+failure comment in both.
 
 ## From DEX
 
 The same five projects compiled to DEX with d8 and decompiled from the DEX are scored by the
-same harness against jadx 1.5.3: 69.87% of methods perfect from debug builds (jadx 44.31%)
-and 56.56% from release builds (jadx 38.57%), kuna ahead on each project in both.
+same harness against jadx 1.5.3: 69.94% of methods perfect from debug builds (jadx 44.31%)
+and 56.61% from release builds (jadx 38.57%), kuna ahead on each project in both.
 `docs/jvm.md`, "Android: DEX and APK input", has the per-project tables and what a DEX costs relative to
 the class files.

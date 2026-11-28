@@ -273,12 +273,12 @@ the same sources, methods perfect on all metrics:
 
 | project | from the jar | from DEX, kuna | from DEX, jadx 1.5.3 |
 |---|---|---|---|
-| Guava | 98.78% | 80.67% | 42.65% |
+| Guava | 98.78% | 80.70% | 42.65% |
 | spring-boot | 99.29% | 76.33% | 57.40% |
 | spring-framework | 99.03% | 74.02% | 62.92% |
-| Ghidra | 98.71% | 73.01% | 56.59% |
-| Elasticsearch | 98.89% | 65.49% | 36.05% |
-| all | 98.88% | 69.87% | 44.31% |
+| Ghidra | 98.71% | 73.22% | 56.59% |
+| Elasticsearch | 98.89% | 65.54% | 36.05% |
+| all | 98.88% | 69.94% | 44.31% |
 
 Release builds (what APKs ship) carry no local-variable debug info, and d8 optimises more
 (shared values, split returns, rewritten library calls). Built with `--release` instead of
@@ -287,17 +287,17 @@ metrics for kuna / jadx:
 
 | project | from the jar | debug DEX, kuna | release DEX, kuna | release DEX, jadx | structure | types | bytes | classes recompiling |
 |---|---|---|---|---|---|---|---|---|
-| Guava | 98.78% | 80.67% | 65.18% | 38.23% | 92.2 / 88.5% | 83.2 / 82.6% | 67.6 / 38.6% | 69.9 / 48.7% |
+| Guava | 98.78% | 80.70% | 65.21% | 38.23% | 92.2 / 88.5% | 83.2 / 82.6% | 67.6 / 38.6% | 69.9 / 48.7% |
 | spring-boot | 99.29% | 76.33% | 62.06% | 47.90% | 90.0 / 90.5% | 79.2 / 80.9% | 64.2 / 48.9% | 76.6 / 59.8% |
 | spring-framework | 99.03% | 74.02% | 61.56% | 52.52% | 88.1 / 88.5% | 79.4 / 81.7% | 63.0 / 52.8% | 76.8 / 68.7% |
-| Ghidra | 98.71% | 73.01% | 60.33% | 49.57% | 84.6 / 84.6% | 77.2 / 78.0% | 61.1 / 50.0% | 80.7 / 73.0% |
-| Elasticsearch | 98.89% | 65.49% | 52.30% | 31.71% | 85.5 / 83.0% | 84.0 / 81.4% | 52.9 / 31.8% | 68.2 / 44.7% |
-| all | 98.88% | 69.87% | 56.56% | 38.57% | 86.6 / 84.8% | 82.1 / 81.0% | 57.5 / 38.8% | 72.4 / 54.7% |
+| Ghidra | 98.71% | 73.22% | 60.52% | 49.57% | 84.7 / 84.6% | 77.3 / 78.0% | 61.3 / 50.0% | 80.6 / 73.0% |
+| Elasticsearch | 98.89% | 65.54% | 52.33% | 31.71% | 85.5 / 83.0% | 84.0 / 81.4% | 52.9 / 31.8% | 68.1 / 44.7% |
+| all | 98.88% | 69.94% | 56.61% | 38.57% | 86.6 / 84.8% | 82.1 / 81.0% | 57.6 / 38.8% | 72.3 / 54.7% |
 
 What a release build costs both tools: the types metric most (local types come from debug
 info: kuna 96.7% to 82.1%, jadx 93.9% to 81.0%, so neither has much of an edge there), then
 bytes exact and classes recompiling (d8's release optimisations reach the recompiled code;
-kuna 69.9% to 57.5% and 81.3% to 72.4%, jadx 44.4% to 38.8% and 56.1% to 54.7%), and
+kuna 70.0% to 57.6% and 81.2% to 72.3%, jadx 44.4% to 38.8% and 56.1% to 54.7%), and
 structure least (89.6% to 86.6%, jadx 87.8% to 84.8%). Parameter names survive where the code was
 compiled with `-parameters`, and line numbers survive.
 
@@ -305,7 +305,10 @@ Most of the remaining loss is structure that differs from javac's (d8's shared c
 and merged returns, string concatenation), `byte`/`int` typed where `boolean` is needed
 (a constant shared between a boolean and an int use), and 518 methods the engine fails
 (mostly "parsing failure" on d8 layouts it cannot structure, and `FinallyProcessor` on the
-rest of the `finally` shapes). Loading is
+rest of the `finally` shapes). A `synchronized` block the engine cannot rebuild from d8's
+monitor ranges is among those: its text marks the monitor instructions in comments and
+rethrows a `Throwable` local, which javac rejects in a method that does not declare it.
+Loading is
 cheap: on Elasticsearch's APK (21,939 classes in three DEX files, 19.8 MB) `functions` takes
 1.6 s (0.5 s for the jar) and `decompile-all --jobs 8` 43 s at 6.1 GB peak (d8 adds a class
 per lambda). Nine release APKs (R8-optimised, 3,689 classes) decompile with no panic or
