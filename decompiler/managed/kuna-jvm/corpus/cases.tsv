@@ -2154,3 +2154,17 @@ case	kuna-fixes/pkg/TestSwitchArmScope	Kuna Fixes	kuna-fixes/classes/pkg/TestSwi
 case	kuna-fixes/pkg/TestForUpdateList	Kuna Fixes	kuna-fixes/classes/pkg/TestForUpdateList
 # kuna-fixes/src/pkg/TestForInitOuterCounter.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestForInitOuterCounter	Kuna Fixes	kuna-fixes/classes/pkg/TestForInitOuterCounter
+# kuna-fixes/src/pkg/TestRawTargetGenericCall.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawTargetGenericCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawTargetGenericCall
+# kuna-fixes/src/pkg/TestCapturedRawLocal.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCapturedRawLocal	Kuna Fixes	kuna-fixes/classes/pkg/TestCapturedRawLocal
+# kuna-fixes/src/pkg/TestRawArrayElement.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawArrayElement	Kuna Fixes	kuna-fixes/classes/pkg/TestRawArrayElement
+# kuna-fixes/src/pkg/TestCurriedLambdaRaw.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestCurriedLambdaRaw	Kuna Fixes	kuna-fixes/classes/pkg/TestCurriedLambdaRaw
+# kuna-fixes/src/pkg/TestRawFieldReceiverCall.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestRawFieldReceiverCall	Kuna Fixes	kuna-fixes/classes/pkg/TestRawFieldReceiverCall
+# kuna-fixes/src/pkg/TestDiamondLambdaRaw.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestDiamondLambdaRaw	Kuna Fixes	kuna-fixes/classes/pkg/TestDiamondLambdaRaw
+# kuna-fixes/src/pkg/TestUnassignableValue.java, javac 21.0.13.1 (-g:none --release 17)
+case	kuna-fixes/pkg/TestUnassignableValue	Kuna Fixes	kuna-fixes/classes/pkg/TestUnassignableValue

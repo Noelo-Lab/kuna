@@ -10,6 +10,7 @@ use crate::generic_type::GenericType;
 use crate::method_descriptor::MethodDescriptor;
 use crate::fixes::generic_casts;
 use crate::var_exprent::VarExprent;
+use crate::var_processor::VarProcessor;
 use crate::var_type::{get_class, VarType};
 
 /// The declared type of `var` when it is a parameter of its method:
@@ -19,8 +20,12 @@ pub fn param_type(var: VarExprent) -> Option<Option<VarType>> {
     let varproc = var
         .get_processor()
         .unwrap_or_else(DecompilerContext::get_var_processor);
+    param_type_at(varproc, var.get_index())
+}
+
+/// [`param_type`] for the variable `index` of `varproc`'s method.
+pub fn param_type_at(varproc: VarProcessor, index: i32) -> Option<Option<VarType>> {
     let mt = varproc.get_method();
-    let index = var.get_index();
     let slot = varproc.get_var_original_index(index).unwrap_or(index);
     let md = MethodDescriptor::parse_descriptor(&mt.get_descriptor());
     let sig = mt.get_signature();

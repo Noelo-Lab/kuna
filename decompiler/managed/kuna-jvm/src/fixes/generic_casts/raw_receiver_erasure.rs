@@ -13,11 +13,13 @@ use crate::fixes::generic_casts;
 use crate::fixes::lambdas::raw_target_cast;
 use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationType};
-use crate::kuna_static_types::{field_declared, formals, is_bare_var, is_raw_type, param_type, supertype_args};
+use crate::kuna_static_types::{field_declared, formals, is_bare_var, is_raw_type, param_type, param_type_at, supertype_args};
 use crate::rt::JHashMap;
 use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::var_exprent::VarExprent;
+use crate::var_processor::VarProcessor;
+use crate::var_version_pair::VarVersionPair;
 use crate::var_type::{get_class, instance_of, VarType};
 
 /// Whether `param`, a parameter type of a method (not a constructor, whose
@@ -158,7 +160,8 @@ pub fn is_raw(e: Exprent) -> bool {
 /// The static type the decompiled program gives `e`, when it is declared and
 /// kuna knows the declaration: a variable other than `this` and a lambda
 /// parameter, a field of a known class other than a synthetic outer
-/// instance, a written cast, and a call of a known method.
+/// instance, a written cast, an element of an array of a declared type, and
+/// a call of a known method.
 fn declared_type(e: Exprent) -> Option<VarType> {
     if let Some(var) = e.try_as_var() {
         return declared_var_type(var);
@@ -166,6 +169,9 @@ fn declared_type(e: Exprent) -> Option<VarType> {
     if let Some(field) = e.try_as_field() {
         if field.get_name().starts_with("this$") || !field_declared(field) {
             return None;
+        }
+        if has_raw_field_receiver(field) {
+            return Some(field.get_expr_type());
         }
         return Some(field.get_inferred_expr_type(None));
     }
@@ -177,6 +183,9 @@ fn declared_type(e: Exprent) -> Option<VarType> {
             true => Some(func.get_expr_type()),
             false => declared_type(func.get_lst_operands().get(0)),
         };
+    }
+    if let Some(element) = e.try_as_array() {
+        return declared_type(element.get_array()).filter(|t| t.array_dim > 0).map(|t| t.decrease_array_dim());
     }
     if let Some(inv) = e.try_as_invocation() {
         let desc = desc_of(inv)?;
@@ -191,16 +200,17 @@ fn declared_type(e: Exprent) -> Option<VarType> {
 /// The type `var` is declared with: a parameter's from its method's
 /// signature or descriptor, a local's from the local variable table, or the
 /// variable's own type in a method compiled without one; a lambda's
-/// parameter where `raw_target_cast` declares it. A variable of an
-/// enclosing method, which a lambda or a nested class captures, is not
-/// known.
-fn declared_var_type(var: VarExprent) -> Option<VarType> {
+/// parameter, own or captured, where `raw_target_cast` declares it; a
+/// variable of an enclosing method that a nested class captures, as
+/// [`captured_type`] gives it.
+pub(crate) fn declared_var_type(var: VarExprent) -> Option<VarType> {
     let processor = var.get_processor()?;
     let pair = var.get_var_version_pair();
-    if processor.get_this_vars().borrow().contains_key(&pair)
-        || processor.get_external_vars().borrow().contains(&pair)
-    {
+    if processor.get_this_vars().borrow().contains_key(&pair) {
         return None;
+    }
+    if processor.get_external_vars().borrow().contains(&pair) {
+        return captured_type(processor, pair);
     }
     let name = var.get_name();
     if Exprent::with_inferred_lambda_types(|m| m.contains_key(&name)) {
@@ -221,6 +231,36 @@ fn declared_var_type(var: VarExprent) -> Option<VarType> {
         return Some(var.kuna_typed().unwrap_or_else(|| var.get_var_type()));
     }
     None
+}
+
+/// The type the variable of an enclosing method that the variable `pair` of
+/// a nested class's method `processor` captures is declared with, as
+/// [`declared_var_type`] gives it, when that method has no local variable
+/// table or the variable is a parameter.
+fn captured_type(processor: VarProcessor, pair: VarVersionPair) -> Option<VarType> {
+    let (source, original) = processor.get_captured_source(pair)?;
+    if source.get_this_vars().borrow().contains_key(&original) {
+        return None;
+    }
+    if source.get_external_vars().borrow().contains(&original) {
+        return captured_type(source, original);
+    }
+    let method = source.get_method();
+    if let Some(param) = param_type_at(source, original.var) {
+        if method.get_name().starts_with("lambda$") {
+            let slot = source.get_var_original_index(original.var).unwrap_or(original.var);
+            return raw_target_cast::declared_parameter(method, slot);
+        }
+        return param;
+    }
+    if method.get_local_variable_attr().is_some() {
+        return None;
+    }
+    source
+        .kuna_typed(original.var)
+        .filter(|t| t.java || crate::fixes::kt_types::kt_raw_generic_type::visible(&t.type_))
+        .map(|t| t.type_)
+        .or_else(|| source.get_var_type(original))
 }
 
 /// Whether the cast `func` is written: Vineflower leaves out a cast whose

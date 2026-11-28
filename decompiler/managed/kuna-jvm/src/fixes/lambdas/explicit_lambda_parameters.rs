@@ -3,11 +3,21 @@
 //! argument for one is a wildcard or a type variable of the called method
 //! that nothing else fixes, declares its parameters with the types its
 //! `invokedynamic` instantiates: `g((String s) -> s.length())` for
-//! `g(Function<?, ?>)`, where `s -> s.length()` types `s` as `Object`.
+//! `g(Function<?, ?>)`, where `s -> s.length()` types `s` as `Object`. A
+//! generic call written where its target type is erased (a raw or
+//! non-generic class type) infers nothing from it: `sort(comparing(s ->
+//! s.length()))` on a raw receiver types `s` as `Object`, so a type variable
+//! its result mentions counts as fixed by nothing else, and so does a type
+//! variable of the class of a diamond `new` written there.
+
+use std::cell::RefCell;
+use std::collections::BTreeSet;
 
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
 use crate::exprent::Exprent;
+use crate::fixes::kt_util::writing_kotlin;
+use crate::fixes::lambdas::raw_target_cast;
 use crate::generic_type::GenericType;
 use crate::invocation_exprent::{InvocationExprent, Type as InvocationKind};
 use crate::kuna_static_types::is_bare_var;
@@ -15,9 +25,36 @@ use crate::method_descriptor::MethodDescriptor;
 use crate::new_exprent::NewExprent;
 use crate::var_type::VarType;
 
-/// Marks the lambda arguments of `inv` the module header describes.
+thread_local! {
+    static ERASED_TARGETS: RefCell<BTreeSet<Exprent>> = const { RefCell::new(BTreeSet::new()) };
+}
+
+/// Marks the lambda arguments of `inv` the module header describes, as its
+/// argument list is written.
 pub fn mark(inv: InvocationExprent) {
-    if inv.get_functype() != InvocationKind::General {
+    let erased = ERASED_TARGETS.with(|t| t.borrow_mut().remove(&inv.0));
+    mark_with(inv, erased);
+}
+
+/// Marks, for [`mark`], the lambda arguments of `inv`, a call written where
+/// its target type is erased: a class type without type arguments, which a result of a
+/// generic class type is compatible with whatever its type arguments are
+/// (JLS 4.10.2), so that the target bounds none of `inv`'s type variables. A
+/// type variable that the result mentions and no other parameter does is
+/// then fixed by the lambda alone; declared parameters make the lambda
+/// pertinent to applicability (JLS 15.12.2.2), so this is done only where
+/// `inv`'s class has no other method of its name and arity.
+pub fn mark_erased_target(inv: InvocationExprent) {
+    if !writing_kotlin() && !inv.0.is_kotlin() {
+        ERASED_TARGETS.with(|t| t.borrow_mut().insert(inv.0));
+    }
+}
+
+fn mark_with(inv: InvocationExprent, erased_target: bool) {
+    let diamond = erased_target
+        && inv.get_functype() == InvocationKind::Init
+        && matches!(&inv.printed_generic_args()[..], [arg] if GenericType::DUMMY_VAR().equals(arg));
+    if inv.get_functype() != InvocationKind::General && !diamond {
         return;
     }
     let args = inv.get_lst_parameters().to_vec();
@@ -31,16 +68,29 @@ pub fn mark(inv: InvocationExprent) {
     if formals.len() != args.len() {
         return;
     }
-    let method_vars = sig.type_parameters().clone();
-    let bounds = sig.type_parameter_bounds().clone();
-    let ret = sig.return_type();
+    let mut method_vars = sig.type_parameters().clone();
+    let mut bounds = sig.type_parameter_bounds().clone();
+    let mut ret = sig.return_type();
+    if diamond {
+        let Some(class_sig) = DecompilerContext::get_struct_context()
+            .get_class(&inv.get_classname())
+            .and_then(|c| c.get_signature())
+        else {
+            return;
+        };
+        method_vars.extend(class_sig.fparameters().iter().cloned());
+        bounds.extend(class_sig.fbounds().iter().cloned());
+        ret = Some(class_sig.generic_type().0);
+    }
+    let ret_unbound = erased_target
+        && ret.as_ref().is_some_and(|r| r.type_ == CodeType::Object && r.array_dim == 0);
     for (i, (formal, arg)) in formals.iter().zip(&args).enumerate() {
         let Some(lambda) = arg.try_as_new().filter(|n| n.is_lambda() && !n.is_method_reference()) else {
             continue;
         };
-        let lonely = |name: &str| {
+        let lonely = |name: &str, ret_counts: bool| {
             let index = method_vars.iter().position(|v| v == name)?;
-            if ret.as_ref().is_some_and(|r| mentions(r, name))
+            if ret_counts && ret.as_ref().is_some_and(|r| mentions(r, name))
                 || formals.iter().enumerate().any(|(k, f)| k != i && mentions(f, name))
             {
                 return None;
@@ -51,15 +101,26 @@ pub fn mark(inv: InvocationExprent) {
                 Some(_) => None,
             }
         };
-        if needs_explicit_types(lambda, formal, &lonely) {
+        if needs_explicit_types(lambda, formal, &|n| lonely(n, true))
+            || ret_unbound
+                && needs_explicit_types(lambda, formal, &|n| lonely(n, false))
+                && raw_target_cast::sole_method(inv)
+        {
             lambda.set_explicit_lambda_params();
         }
     }
 }
 
 /// Marks `value`, assigned to a variable or field of type `target`, when it
-/// is a lambda the module header describes.
+/// is a lambda the module header describes, or the lambda arguments of a
+/// call `value` assigned where `target` is erased ([`mark_erased_target`]).
 pub fn mark_assigned(target: &VarType, value: Exprent) {
+    if let Some(inv) = call_of(value) {
+        if target.type_ == CodeType::Object && target.array_dim == 0 && !target.is_generic() {
+            mark_erased_target(inv);
+        }
+        return;
+    }
     let Some(lambda) = value.try_as_new().filter(|n| n.is_lambda() && !n.is_method_reference()) else {
         return;
     };
@@ -69,6 +130,18 @@ pub fn mark_assigned(target: &VarType, value: Exprent) {
     if needs_explicit_types(lambda, target, &|_| None) {
         lambda.set_explicit_lambda_params();
     }
+}
+
+/// The call `value` is: a method's, or the constructor of a `new` that is
+/// not a lambda or an anonymous class (whose constructor's class's type
+/// arguments a diamond infers, JLS 15.9.3).
+pub fn call_of(value: Exprent) -> Option<InvocationExprent> {
+    value.try_as_invocation().or_else(|| {
+        value
+            .try_as_new()
+            .filter(|n| !n.is_lambda() && !n.is_anonymous())
+            .and_then(|n| n.get_constructor())
+    })
 }
 
 /// Whether `lambda`, written for the target type `target`, needs its
@@ -123,7 +196,16 @@ fn needs_explicit_types(lambda: NewExprent, target: &VarType, lonely: &dyn Fn(&s
                 .unwrap_or_else(VarType::VARTYPE_OBJECT),
             Some(arg) => {
                 let wildcard = arg.try_as_generic().map_or(GenericType::WILDCARD_NO, |g| g.get_wildcard());
-                if wildcard != GenericType::WILDCARD_NO {
+                if wildcard != GenericType::WILDCARD_NO && arg.type_ == CodeType::Genvar && arg.array_dim == 0 {
+                    let unbounded = fbounds
+                        .get(j)
+                        .and_then(|b| b.first())
+                        .is_none_or(|b| b.value_str() == "java/lang/Object");
+                    match lonely(arg.value_str()) {
+                        Some(bound) if wildcard == GenericType::WILDCARD_SUPER || unbounded => bound,
+                        _ => return false,
+                    }
+                } else if wildcard != GenericType::WILDCARD_NO {
                     if arg.type_ != CodeType::Object || has_args(arg) {
                         return false;
                     }

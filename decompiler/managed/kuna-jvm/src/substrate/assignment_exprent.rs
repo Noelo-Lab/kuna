@@ -3,6 +3,7 @@
 use crate::check_types_result::CheckTypesResult;
 use crate::code_type::CodeType;
 use crate::fixes::generic_casts::disjoint_generic_cast;
+use crate::fixes::generic_casts::raw_receiver_erasure;
 use crate::code_constants::ACC_FINAL;
 use crate::decompiler_context::DecompilerContext;
 use crate::expr_processor::{ExprProcessor, NullCastType};
@@ -176,7 +177,10 @@ impl AssignmentExprent {
 
     pub fn to_java(self, indent: i32) -> TextBuffer {
         let left = self.get_left();
-        let mut left_type = left.get_inferred_expr_type(None);
+        let mut left_type = match left.try_as_field().filter(|f| raw_receiver_erasure::has_raw_field_receiver(*f)) {
+            Some(field) => field.get_expr_type(),
+            None => left.get_inferred_expr_type(None),
+        };
 
         let mut field_in_class_init = false;
         let mut hidden_field = false;

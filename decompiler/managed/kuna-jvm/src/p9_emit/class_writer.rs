@@ -440,7 +440,7 @@ impl ClassWriter {
                 let md_content = MethodDescriptor::parse_descriptor(&li.content_method_descriptor);
                 let md_lambda = MethodDescriptor::parse_descriptor(&li.method_descriptor);
                 let _declared = (explicit_params || erased_params)
-                    .then(|| raw_target_cast::declare_parameters(mt, md_lambda.params.len()));
+                    .then(|| raw_target_cast::declare_parameters(mt, md_lambda.params.len(), erased_params && !explicit_params));
 
                 let mut simple_lambda = false;
                 let mut written = false;

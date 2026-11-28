@@ -19,6 +19,7 @@
 
 use std::cell::RefCell;
 
+use crate::classes_processor::ClassNode;
 use crate::code_constants::CodeConstants;
 use crate::code_type::CodeType;
 use crate::decompiler_context::DecompilerContext;
@@ -34,7 +35,7 @@ use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
-type Declared = (String, String, Vec<(i32, VarType)>);
+type Declared = (String, String, Vec<(i32, VarType)>, bool);
 
 thread_local! {
     static DECLARED: RefCell<Vec<Declared>> = const { RefCell::new(Vec::new()) };
@@ -191,6 +192,26 @@ fn raw_parameter(inv: InvocationExprent, index: usize) -> bool {
     }
 }
 
+/// Whether the parameter at `index` of `inv` has, as kuna writes the call, a
+/// class type without type arguments: a raw one ([`raw_parameter`]), or a
+/// class the method declares the parameter with that is not generic.
+pub(crate) fn erased_parameter(inv: InvocationExprent, index: usize) -> bool {
+    if raw_parameter(inv, index) {
+        return true;
+    }
+    if !matches!(inv.get_functype(), InvocationKind::General | InvocationKind::Init) {
+        return false;
+    }
+    let Some(sig) = inv.find_desc().and_then(|m| m.get_signature()) else {
+        return false;
+    };
+    let declared = sig.parameter_types();
+    declared.len() == inv.get_descriptor().params.len()
+        && declared[index].type_ == CodeType::Object
+        && declared[index].array_dim == 0
+        && !declared[index].is_generic()
+}
+
 /// Whether the class `inv` names, and every class it extends or implements,
 /// is known and declares no method of `inv`'s name and arity with other
 /// parameter types than `inv`'s descriptor. `Object`, when the class context
@@ -287,8 +308,12 @@ fn outermost(class: &str) -> &str {
 /// Declares, until the returned guard drops, the own parameters (those
 /// after the captured values, `own` of them) of the lambda whose
 /// implementation is `content`, while its body is written, with their
-/// erased types: its implementation's.
-pub fn declare_parameters(content: StructMethod, own: usize) -> DeclaredParameters {
+/// erased types: its implementation's. `erased` says the lambda is written
+/// implicitly typed for a type whose function type is erased (the raw
+/// interface, or the parameterization its `invokedynamic` instantiates), so
+/// that a value it returns has the erased return type as its target (a cast
+/// there cannot make the lambda pertinent to applicability, JLS 15.12.2.2).
+pub fn declare_parameters(content: StructMethod, own: usize, erased: bool) -> DeclaredParameters {
     let md = MethodDescriptor::parse_descriptor(&content.get_descriptor());
     let mut slot = if content.has_modifier(CodeConstants::ACC_STATIC) { 0 } else { 1 };
     let mut params = Vec::new();
@@ -300,7 +325,7 @@ pub fn declare_parameters(content: StructMethod, own: usize) -> DeclaredParamete
         slot += p.stack_size;
     }
     let key = format!("{}{}", content.get_name(), content.get_descriptor());
-    DECLARED.with(|d| d.borrow_mut().push((content.get_class_qualified_name(), key, params)));
+    DECLARED.with(|d| d.borrow_mut().push((content.get_class_qualified_name(), key, params, erased)));
     DeclaredParameters
 }
 
@@ -313,9 +338,43 @@ impl Drop for DeclaredParameters {
     }
 }
 
+/// Declares, until the returned guard drops, the captured parameters of the
+/// implementation of `lambda`, the lambda class `node`, while its body is
+/// written, with the types the variables it captures are declared with where
+/// it is created: in the body a captured parameter is that variable. One
+/// implementation can be the body of lambdas in several methods
+/// (`deduplicated_lambda_captures`), so the types are those of the site
+/// being written.
+pub fn declare_captures(lambda: NewExprent, node: ClassNode) -> Option<DeclaredParameters> {
+    let info = node.with(|d| d.lambda_information.clone()).filter(|i| !i.is_method_reference)?;
+    let md_content = MethodDescriptor::parse_descriptor(&info.content_method_descriptor);
+    let md_lambda = MethodDescriptor::parse_descriptor(&info.method_descriptor);
+    let captured = md_content.params.len().checked_sub(md_lambda.params.len())?;
+    let arguments = lambda.get_constructor()?.get_lst_parameters().to_vec();
+    let first = if info.is_content_method_static { 0 } else { 1 };
+    let mut slot = first as i32;
+    let mut params = Vec::new();
+    for (i, p) in md_content.params.iter().take(captured).enumerate() {
+        let declared = arguments
+            .get(first + i)
+            .and_then(|a| a.try_as_var())
+            .and_then(raw_receiver_erasure::declared_var_type);
+        if let Some(t) = declared {
+            params.push((slot, t));
+        }
+        slot += p.stack_size;
+    }
+    if params.is_empty() {
+        return None;
+    }
+    let key = format!("{}{}", info.content_method_name, info.content_method_descriptor);
+    DECLARED.with(|d| d.borrow_mut().push((info.content_class_name.clone(), key, params, false)));
+    Some(DeclaredParameters)
+}
+
 /// The type the parameter in `slot` of `method`, a lambda's implementation
-/// being written, is declared with, when [`declare_parameters`] gave
-/// it.
+/// being written, is declared with, when [`declare_parameters`] or
+/// [`declare_captures`] gave it.
 pub fn declared_parameter(method: StructMethod, slot: i32) -> Option<VarType> {
     let class = method.get_class_qualified_name();
     let key = format!("{}{}", method.get_name(), method.get_descriptor());
@@ -323,9 +382,27 @@ pub fn declared_parameter(method: StructMethod, slot: i32) -> Option<VarType> {
         d.borrow()
             .iter()
             .rev()
-            .find(|(c, k, _)| *c == class && *k == key)
-            .and_then(|(_, _, params)| params.iter().find(|(s, _)| *s == slot).map(|(_, t)| t.clone()))
+            .filter(|(c, k, _, _)| *c == class && *k == key)
+            .find_map(|(_, _, params, _)| params.iter().find(|(s, _)| *s == slot).map(|(_, t)| t.clone()))
     })
+}
+
+/// The cast for `value`, a lambda or method reference returned by the method
+/// being written, whose descriptor's return type is `ret`, when that is the
+/// implementation of a lambda [`declare_parameters`] declares erased: its
+/// function type returns the erasure `ret` whatever type was inferred for
+/// the lambda, and the returned lambda takes it for its target as an
+/// assigned one ([`assigned_cast`]): `a -> (Fn<String, Integer>) (b ->
+/// a.length() + b.length())` for a lambda written as an `Fn<String, Fn>`.
+pub fn returned_cast(ret: &VarType, value: Exprent) -> Option<VarType> {
+    let method = DecompilerContext::get_current_method_wrapper()?.with(|d| d.method_struct);
+    let class = method.get_class_qualified_name();
+    let key = format!("{}{}", method.get_name(), method.get_descriptor());
+    let erased = DECLARED.with(|d| d.borrow().iter().any(|(c, k, _, erased)| *erased && *c == class && *k == key));
+    if !erased {
+        return None;
+    }
+    assigned_cast(ret, value)
 }
 
 /// Whether `t` is the type a lambda written for it gives its own

@@ -1394,7 +1394,30 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    accepts for these targets. A parameter whose target type argument is a class with type
    arguments, or whose type in the interface method is generic, leaves the lambda as it
    was: a declared type must equal the target's exactly, and the class file holds only its
-   erasure. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
+   erasure. A type variable taken through a wildcard (`Fn<? super T, ?>`) counts as the
+   variable itself (JLS 9.9). (kuna) A generic call written where its target type is a class
+   type without type arguments infers nothing from that target: `Cmp<T>` is a subtype of the
+   raw `Cmp` and of `Object` whatever `T` is (JLS 4.10.2), so in `box.sort(Cmp.comparing(s
+   -> s.length()))` on a raw receiver, `takeRaw(Cmp.comparing(..))` for a parameter
+   declared raw or `Object`, or `Cmp c = Cmp.comparing(..)` for a raw local, `T` is
+   `Object` and the text does not compile. Without a LocalVariableTable such targets are
+   common, and where the source wrote them it declared the lambda's parameters.
+   `explicit_lambda_parameters::mark_erased_target` marks the lambda arguments of a call
+   passed for a parameter of such a type as kuna writes it
+   (`raw_target_cast::erased_parameter`) or assigned to a variable or field of one, when
+   the call's result is a class type: a type variable the result mentions then counts as
+   fixed by nothing else, and the lambda is written with its parameters declared as above.
+   The declared types make the lambda pertinent to applicability (JLS 15.12.2.2), so this
+   is done only when the called class has no other method of the name and arity
+   (`raw_target_cast::sole_method`). The enclosing call's method and result type do not
+   change: its parameter is a class type without type arguments, which accepts the call's
+   result by widening whatever its type arguments are and mentions no type variable to
+   infer. A diamond `new` written there is such a call: its class's type variables are
+   inferred as a generic method's whose result is the class parameterized by them (JLS
+   15.9.3), so `Holder h = new Holder<>(s -> s.length())` for `Holder(Fn<T, Integer>)`
+   typed `s` as `Object` and is written `new Holder<>((String s) -> s.length())`; no other
+   constructor of the class may have the arity. The marks are made as the call's own
+   argument list is written, once kuna has decided that a `new` is a diamond. (kuna) A lambda or method reference passed for a parameter whose type, as kuna
    writes the call, is a raw functional interface has the raw type's function type, whose
    parameters are the erasures of the interface's (JLS 4.8, 9.9): that holds for a call on
    a receiver whose written type is raw (`raw_receiver_erasure::has_raw_receiver`), for a
@@ -1422,7 +1445,16 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    assigned to a variable or field whose written type is its raw interface is cast when a
    parameter is instantiated more specifically (`raw_target_cast::assigned_cast`): `Fn f =
    (Fn<String, Integer>) (s -> s.length())` for a local that stays raw because it is passed
-   on, stored or captured, which `initializer_local_type` does not type. A lambda written for such a raw parameter
+   on, stored or captured, which `initializer_local_type` does not type. A lambda or method
+   reference that a lambda returns takes the lambda's function type's return type for its
+   target, and where the returning lambda is written implicitly typed for its raw interface
+   or for the parameterization its `invokedynamic` instantiates (below), that function type
+   is erased: `Fn<String, Fn> f = a -> b -> a.length() + b.length()` types `b` as `Object`
+   whatever kuna inferred for the lambda. Such a returned value is cast as an assigned one
+   is, against the erased return type of the implementation method
+   (`raw_target_cast::returned_cast`): `a -> (Fn<String, Integer>) (b -> a.length() +
+   b.length())`. A lambda written with declared parameters is left as it was, since the
+   cast would make its body, and so the lambda, pertinent to applicability. A lambda written for such a raw parameter
    (when it needs no cast) or under this cast, and one assigned where the written type is
    its raw interface or the instantiated parameterization, declares its own parameters with
    their erased types, its implementation method's; `raw_target_cast::declare_parameters`
@@ -1430,6 +1462,21 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    parameter of a generic class is a call on a raw receiver: in `BiConsumer<List, Integer> f
    = (l, i) -> { Character[] a = (Character[]) l.stream().map(..).toArray(Character[]::new);
    }` the cast of the `Object[]` result is kept and the inner lambda is cast in turn.
+   (kuna) Inside a lambda's body a captured variable is the enclosing method's variable,
+   with the type that variable is declared with, which `raw_receiver_erasure` did not know
+   for a capture: a lambda created in the body for a call on a captured raw local
+   (`r.one(s -> bag.removeIf(t -> t.length() > s.length()))` for a raw `Bag bag` without a
+   LocalVariableTable) was written implicitly typed for the raw parameter, and its own
+   parameters were `Object`. `raw_target_cast::declare_captures` declares, while a lambda's
+   body is written, each captured parameter of its implementation method with the declared
+   type of the variable the creating `invokedynamic` passes, so the call is seen to be on a
+   raw receiver and the inner lambda is cast. The types are those of the site being
+   written: one implementation method can be the body of lambdas in several methods
+   (`deduplicated_lambda_captures`), and a body that captures a `Bag<String>` parameter in
+   one of them needs no cast. A variable an anonymous or local class captures is typed the
+   same way, from the variable its captured-source record names in the enclosing method
+   (`raw_receiver_erasure::captured_type`), when that method has no LocalVariableTable or
+   the variable is a parameter.
 2. **Methods.** Every class of the tree gets a wrapper whose `init` decompiles each of its
    methods with the schedule of sections 11.4-11.10. Synthetic classes that hold only enum
    switch maps are initialized first, so the switches of their users can be read back.
@@ -2167,7 +2214,23 @@ casts a value not known to fit. `unchecked_generic_cast`, `unchecked_call_result
 type arguments the value's type gives the target's class with the target's own, and where
 javac would reject the conversion write the source's unchecked cast, through the raw class
 when the two parameterizations are provably distinct (JLS 4.5), or give the chain's first
-call explicit type arguments; bounds and types kuna cannot resolve count as satisfied. `appendParamList` spreads a trailing array and writes
+call explicit type arguments; bounds and types kuna cannot resolve count as satisfied.
+A value written without a cast is cast too where it is not assignable to its target: its
+type gives the target's class a parameterization (it is not raw) with a type argument
+other than the target's where neither is a wildcard, which no subtyping allows (JLS 4.10.2;
+`disjoint_generic_cast::unassignable_target`). Without a LocalVariableTable a local takes
+its initializer's type, so `Fn<E, E> f = (Fn) Ident.INSTANCE; return f;` for an `enum
+Ident implements Fn<Object, Object>` came back as `Ident var0 = Ident.INSTANCE; return
+var0;`, which javac rejects, and an argument `use((Fn) i)` lost its cast, which javac
+emits nothing for, so that `use(i)` called the overload `use(Object)` instead of
+`use(Fn<String, String>)`. A returned or assigned value, whose target the declaration
+fixes, is cast to the raw class: `return (Fn) var0`. An argument for a parameter whose
+declared type does not depend on the call's inference is cast to that type through the raw
+class, `use((Fn<String, String>) (Fn) var0)`, so that no unchecked conversion erases the
+call's result (JLS 15.12.2.6); the parameterized type selects the method the bytecode
+names, as the original's cast did. Neither is done for a lambda, whose type is its target's,
+or in a lambda's body, whose return type can be an inference variable of the call the lambda
+is passed to. `appendParamList` spreads a trailing array and writes
 casts or boxing calls only where `getAmbiguousParameters` finds another overload, while
 javac resolves the written call afresh (JLS 15.12.2): `vararg_array_length`,
 `vararg_spread_resolution`, `unseen_class_overload`, `ambiguous_type_variable_argument`,
@@ -2282,6 +2345,17 @@ parameter's type
 read by `InvocationExprent`'s argument list): `fill(into.data, (N[])((UnitStore)from).data)`. Its
 inferred type stays, since a constructor infers its class's type arguments from it (a diamond
 inferred from the erasure would not compile).
+The erasure holds wherever the field read is used: as the receiver of a call or of another
+field read, whose own type is then erased (`(Integer) h.f.apply("x")` for a raw `Holder h`
+whose field is `Fn<T, Integer> f`, `(String) h.next.value`), and as the target of a store,
+which takes the erased type (`h.next = make()` and `h.value = "y"` had been written cast to
+`Holder<T>` and `T`, a variable not in scope); `raw_receiver_erasure` gives such a read the
+field's descriptor type as its declared type, and `AssignmentExprent` writes a store to it
+against that type.
+An element of an array has the component type of the array's static type (JLS 15.10.3), so a
+call on `bags[0]` for a `Bag[] bags` is a call on a raw receiver too; `raw_receiver_erasure`
+took an array access for a receiver of unknown type, and `bags[0].removeIf(t -> t.length() >
+k)` was written without the cast of its lambda for the raw parameter, typing `t` as `Object`.
 Vineflower drops a cast whose operand's inferred type is already of the cast's class, which
 holds where javac inserts the `checkcast` again: javac casts an argument to the erasure of
 its parameter's type in the call's instantiated method type and nowhere else. On a receiver
