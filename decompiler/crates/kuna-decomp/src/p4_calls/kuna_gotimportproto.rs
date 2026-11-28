@@ -35,7 +35,7 @@ fn concrete(ty: &Datatype) -> bool {
 /// Whether the type-only declaration `pieces` binds at a call to `entry`.
 pub fn binds_type_only(arch: &ArchContext, entry: &Address, pieces: &PrototypePieces) -> bool {
     arch.loader_mips_imports.contains(entry)
-        && pieces.first_var_arg_slot < 0
+        && !pieces.has_open_input_tail()
         && pieces.intypes.iter().all(|ty| concrete(ty))
         && match pieces.outtype.as_ref() {
             Some(ty) if concrete(ty) => true,

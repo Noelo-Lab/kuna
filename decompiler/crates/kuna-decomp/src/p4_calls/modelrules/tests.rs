@@ -915,6 +915,31 @@ fn decode_rule_hidden_return_strategy() {
 }
 
 #[test]
+fn big_endian_dual_spill_respects_floatleft_only_for_floats() {
+    let mgr = AddrSpaceManager::new();
+    let reg = Rc::new(AddrSpace::new(spacetype::IPTR_PROCESSOR, "register", true, 4, 1, 3, 0, 0, 0));
+    let stack = Rc::new(AddrSpace::new(spacetype::IPTR_SPACEBASE, "stack", true, 4, 1, 5, 0, 0, 0));
+    for floatleft in [false, true] {
+        let mut model = ParamListStandard::new(ParamListKind::Standard);
+        model.push_entry(excl_entry_class(0, type_class::TYPECLASS_FLOAT, &reg, 0, 8, &[], &mgr));
+        model.push_entry(excl_entry(0, &reg, 8, 8, model.get_entry(), &mgr));
+        let flags = if floatleft { crate::fspec::param_entry_flags::FLOAT_LEFT } else { 0 };
+        model.push_entry(ParamEntry::seed(1, type_class::TYPECLASS_GENERAL, stack.clone(), 0,
+            128, 1, 8, flags, true, false, model.get_entry(), &mgr).unwrap());
+        model.finish_decode();
+        let rule = decode_rule(r#"<rule><datatype name="any"/><join_dual_class stackspill="true"/></rule>"#, &model, &mgr).unwrap();
+        for (ty, offset) in [(dt_float(4), if floatleft { 0 } else { 4 }), (dt_int(4), 4)] {
+            let mut status = [-1, 0];
+            let mut result = ParameterPieces::default();
+            assert_eq!(rule.assign_address(&ty, &proto_empty(), 1, &PanicFactory, &mut status,
+                &mut result, &model, &mgr).unwrap(), AssignActionResponse::success);
+            assert_eq!(result.addr, addr(&stack, offset));
+            assert_eq!(status, [-1, 1]);
+        }
+    }
+}
+
+#[test]
 fn dual_alignment_requires_shared_slots_and_is_explicitly_opted_in() {
     let mgr = AddrSpaceManager::new();
     let reg = reg_space_le();

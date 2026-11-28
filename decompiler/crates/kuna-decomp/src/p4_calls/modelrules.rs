@@ -1211,7 +1211,7 @@ impl AssignAction {
                 &mut tmp_status[grp],
                 size_left,
                 if stack_align { align } else { 1 },
-                justify_right,
+                entries[se].justify_right_for(dt, justify_right),
                 manager,
             )?; // Consume all the space we need
             if addr.is_invalid() {
@@ -1419,7 +1419,7 @@ impl AssignAction {
                 &mut tmp_status[grp],
                 size_left,
                 align,
-                justify_right,
+                entries[se].justify_right_for(dt, justify_right),
                 manager,
             )?; // Consume all the space we need
             if addr.is_invalid() {
@@ -2086,7 +2086,8 @@ fn assign_goto_stack(
     let grp = entry.get_group() as usize;
     res.type_ = Some(Rc::clone(dt));
     let mut slot = status[grp];
-    res.addr = entry.get_addr_by_slot(&mut slot, dt.get_size(), dt.get_alignment(), manager)?;
+    res.addr = entry.get_addr_by_slot_justify(&mut slot, dt.get_size(), dt.get_alignment(),
+        entry.justify_right_for(dt, !entry.is_left_justified()), manager)?;
     status[grp] = slot;
     res.flags = 0;
     Ok(RES_SUCCESS)

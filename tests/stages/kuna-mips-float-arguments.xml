@@ -1,0 +1,244 @@
+<decompilertest>
+<binaryimage arch="MIPS:BE:32:default:default">
+<!--
+    The XML wrapper only provides the harness architecture. The script loads
+    GCC 7.3 PIC shared objects from tests/fixtures/mips-float-arguments/ (sources
+    and build.sh there): n32.so and n32-le.so (N32 BE and LE), n64.so (the same
+    source as N64, a control), r6.so (MIPS32r6 O32, FP64) and o64.so (O64).
+    The constant callers and use_* callees use mapped prototypes. The results
+    images also cover hidden result pointers and forwarding to undeclared sinks.
+
+    For the fixed N32 arguments here, position n selects f(12+n) or the n-th
+    GPR. A stacked N32 float sits at the slot's low address in both byte orders.
+    O64 uses f12/f13 for up to two leading fixed FP arguments. R6 O32 uses
+    f12/f14 for those arguments. Both reserve the corresponding GPR slots and
+    pass a float after an integer in the integer argument sequence. The
+    variadic probe passes its named double in f12 on N32 and a0 on O64.
+    The generic N32, R6 O32 and O64 compiler specs used to allocate the two register banks
+    independently, so a declared prototype read registers the caller never
+    set; N64 and the Octeon N32 specs already pair them.
+-->
+<bytechunk space="ram" offset="0x100000" readonly="true">03e0000800000000</bytechunk>
+<symbol space="ram" offset="0x100000" name="harness_stub"/>
+</binaryimage>
+<script>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-float-arguments/n32.so</com>
+  <com>read symbols</com>
+  <com>map prototype paird void paird(float8 d,int4 i);</com>
+  <com>map prototype intdbl void intdbl(int4 a,float8 b,int4 c);</com>
+  <com>map prototype spill void spill(float8 a,int4 b,float8 c,int4 d,float8 e,int4 f,float8 g,int4 h,int4 i);</com>
+  <com>map prototype many void many(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,float4 i,int4 j);</com>
+  <com>map prototype ninth void ninth(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,int4 i,int4 j);</com>
+  <com>map prototype vlog void vlog(float8 a,...);</com>
+  <com>map prototype use_intdbl float8 use_intdbl(int4 a,float8 b,int4 c);</com>
+  <com>map prototype use_many float4 use_many(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,float4 i,int4 j);</com>
+  <com>lo fu float_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu int_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_arg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_float</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu var_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_intdbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_many</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-float-arguments/n32-le.so</com>
+  <com>read symbols</com>
+  <com>map prototype paird void paird(float8 d,int4 i);</com>
+  <com>map prototype intdbl void intdbl(int4 a,float8 b,int4 c);</com>
+  <com>map prototype spill void spill(float8 a,int4 b,float8 c,int4 d,float8 e,int4 f,float8 g,int4 h,int4 i);</com>
+  <com>map prototype many void many(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,float4 i,int4 j);</com>
+  <com>map prototype ninth void ninth(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,int4 i,int4 j);</com>
+  <com>map prototype vlog void vlog(float8 a,...);</com>
+  <com>map prototype use_intdbl float8 use_intdbl(int4 a,float8 b,int4 c);</com>
+  <com>map prototype use_many float4 use_many(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,float4 i,int4 j);</com>
+  <com>lo fu float_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu int_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_arg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_float</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu var_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_intdbl</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_many</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-float-arguments/n64.so</com>
+  <com>read symbols</com>
+  <com>map prototype paird void paird(float8 d,int4 i);</com>
+  <com>map prototype intdbl void intdbl(int4 a,float8 b,int4 c);</com>
+  <com>map prototype spill void spill(float8 a,int4 b,float8 c,int4 d,float8 e,int4 f,float8 g,int4 h,int4 i);</com>
+  <com>map prototype many void many(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,float4 i,int4 j);</com>
+  <com>map prototype ninth void ninth(int4 a,int4 b,int4 c,int4 d,int4 e,int4 f,int4 g,int4 h,int4 i,int4 j);</com>
+  <com>lo fu float_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu int_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_arg</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_float</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu stack_int</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-float-arguments/r6.so</com>
+  <com>read symbols</com>
+  <com>map prototype later void later(int4 a,float4 b,int4 c);</com>
+  <com>map prototype first void first(float8 a,int4 b);</com>
+  <com>map prototype aligned void aligned(float4 a,float8 b,int4 c);</com>
+  <com>map prototype boundary void boundary(int4 a,int4 b,int4 c,float4 d,int4 e);</com>
+  <com>map prototype wide_first void wide_first(int8 a,float4 b,int4 c);</com>
+  <com>map prototype wide_later void wide_later(int4 a,float8 b,int4 c);</com>
+  <com>map prototype use_aligned float8 use_aligned(float4 a,float8 b,int4 c);</com>
+  <com>map prototype use_later float4 use_later(int4 a,float4 b,int4 c);</com>
+  <com>map prototype use_wide_later float8 use_wide_later(int4 a,float8 b,int4 c);</com>
+  <com>lo fu float_double</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu last_register</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pair_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu pair_later</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu mixed</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu leading</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_aligned</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_later</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_wide_later</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-float-arguments/o64.so</com>
+  <com>read symbols</com>
+  <com>map prototype leading void leading(float8 a,int4 b);</com>
+  <com>map prototype later void later(int4 a,float8 b,int4 c);</com>
+  <com>map prototype consecutive void consecutive(float4 a,float4 b,float8 c,int4 d,float4 e);</com>
+  <com>map prototype vlog void vlog(float8 a,...);</com>
+  <com>map prototype use_later float8 use_later(int4 a,float8 b,int4 c);</com>
+  <com>map prototype use_consecutive float8 use_consecutive(float4 a,float4 b,float8 c,int4 d,float4 e);</com>
+  <com>lo fu float_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu int_first</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu two_floats</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu var_call</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_later</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu use_consecutive</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-float-arguments/results-r6.so</com>
+  <com>read symbols</com>
+  <com>parse line struct Small { int4 value; };</com>
+  <com>parse line union Large { long long words[3]; };</com>
+  <com>map prototype small_result struct Small small_result(float8 d,long long w);</com>
+  <com>map prototype large_result union Large large_result(float4 x,float8 y);</com>
+  <com>lo fu call_small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_large</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>clear architecture</com>
+  <com>load file tests/fixtures/mips-float-arguments/results-o64.so</com>
+  <com>read symbols</com>
+  <com>parse line struct Small { int4 value; };</com>
+  <com>parse line union Large { long long words[3]; };</com>
+  <com>map prototype small_result struct Small small_result(float8 d,long long w);</com>
+  <com>map prototype large_result union Large large_result(float4 x,float8 y);</com>
+  <com>map prototype forward void forward(float8 x,int4 n);</com>
+  <com>map prototype forward_pair void forward_pair(float4 x,float4 y,int4 n);</com>
+  <com>lo fu call_small</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu call_large</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>lo fu forward_pair</com>
+  <com>decompile</com>
+  <com>print C</com>
+  <com>quit</com>
+</script>
+<stringmatch name="MIPS FP slots: an N32 double at position 0 is f12 and the next integer a1" min="3" max="3">  paird\(1\.125,0x21\);</stringmatch>
+<stringmatch name="MIPS FP slots: an N32 double at position 1 is f13 and the next integer a2" min="3" max="3">  intdbl\(2,3\.125,0x5b\);</stringmatch>
+<stringmatch name="MIPS FP slots: alternating N32 doubles and integers reach the ninth argument on the stack" min="3" max="3">  spill\(1\.125,2,3\.125,4,5\.125,6,7\.125,8,99\);</stringmatch>
+<stringmatch name="MIPS FP slots: an N32 float in a stack slot sits at its low address in both byte orders" min="3" max="3">  many\(1,2,3,4,5,6,7,8,9\.5f,10\);</stringmatch>
+<stringmatch name="MIPS FP slots: a ninth N32 integer stays right-justified" min="3" max="3">  ninth\(1,2,3,4,5,6,7,8,9,10\);</stringmatch>
+<stringmatch name="MIPS FP slots: a variadic call keeps its named double (N32 f12, O64 a0) and the optional values in GPRs" min="3" max="3">  vlog\(1\.5,0x4004000000000000,7\);</stringmatch>
+<stringmatch name="MIPS FP slots: N32, R6 O32 and O64 callees read a double and the integer after it from their positions" min="5" max="5">  return \(float8\)a \* b \+ \(float8\)c;</stringmatch>
+<stringmatch name="MIPS FP slots: an N32 callee reads its stacked float and integer" min="2" max="2">  return \(float4\)a \* i \+ \(float4\)j;</stringmatch>
+<stringmatch name="MIPS FP slots: R6 O32 passes a float after an integer in a GPR word" min="1" max="1">  later\(0x10,9\.5f,0x22\);</stringmatch>
+<stringmatch name="MIPS FP slots: R6 O32 passes a leading double in f12 and the next integer in a2" min="1" max="1">  first\(3\.125,0x17\);</stringmatch>
+<stringmatch name="MIPS FP slots: R6 O32 passes a float in the last argument register and the next integer on the stack" min="1" max="1">  boundary\(1,2,3,4\.5f,5\);</stringmatch>
+<stringmatch name="MIPS FP slots: R6 O32 aligns a double after an integer to a2/a3" min="1" max="1">  wide_later\(1,2\.5,3\);</stringmatch>
+<stringmatch name="MIPS FP slots: R6 O32 passes a float after a 64-bit integer in a2" min="1" max="1">  wide_first\(0x1122334455667788,7\.5f,0xb\);</stringmatch>
+<stringmatch name="MIPS FP slots: R6 O32 keeps f12 and f14 for a leading float and double" min="1" max="1">  aligned\(2\.5f,6\.25,0x29\);</stringmatch>
+<stringmatch name="MIPS FP slots: an R6 O32 callee reads a float after an integer from a1" min="1" max="1">  return \(float4\)a \* b \+ \(float4\)c;</stringmatch>
+<stringmatch name="MIPS FP slots: O64 passes a leading double in f12 and the next integer in a1" min="1" max="1">  leading\(2\.5,0x49\);</stringmatch>
+<stringmatch name="MIPS FP slots: O64 passes a double after an integer in a1" min="1" max="1">  later\(1,3\.5,0x5b\);</stringmatch>
+<stringmatch name="MIPS FP slots: O64 passes two leading floats in f12 and f13 and the rest in GPRs and the stack" min="1" max="1">  consecutive\(1\.25f,2\.5f,3\.5,4,5\.5f\);</stringmatch>
+<stringmatch name="MIPS FP slots: an O64 callee reads its two floats from f12 and f13" min="1" max="1">  return \(float8\)\(a \+ b\) \+ c \+ \(float8\)d \+ \(float8\)e;</stringmatch>
+<stringmatch name="MIPS FP slots: no argument reads an unset register or slot" min="0" max="0">unaff_|CONCAT|\(union \{|  (int4|float4|float8) v[0-9]+;</stringmatch>
+<stringmatch name="MIPS FP slots: both old ABIs reserve the hidden small result pointer before double and wide integer" min="2" max="2">  small_result\(v[0-9]+,3\.5,0x1122334455667788\);</stringmatch>
+<stringmatch name="MIPS FP slots: both old ABIs pass two floats after a hidden union result in integer slots" min="2" max="2">  large_result\(&amp;v[0-9]+,1\.25f,6\.5\);</stringmatch>
+<stringmatch name="MIPS FP slots: O64 forwards the first double and following integer to an undeclared sink" min="1" max="1">  sink\(x,\(int8\)n\);</stringmatch>
+<stringmatch name="MIPS FP slots: O64 forwards both leading floats and the third integer to an undeclared sink" min="1" max="1">  sink_pair\(x,y,\(int8\)n\);</stringmatch>
+</decompilertest>

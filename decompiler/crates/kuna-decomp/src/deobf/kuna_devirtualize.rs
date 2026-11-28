@@ -443,7 +443,7 @@ impl SymTarget for ArchTarget<'_> {
             }
         }
         let p = self.arch.symboltab.function_proto_pieces_of(sid)?;
-        if p.first_var_arg_slot >= 0 {
+        if p.has_open_input_tail() {
             return Some(0);
         }
         Some(p.intypes.iter().map(|t| (t.get_size().max(0) as u32 + 3) & !3).sum())

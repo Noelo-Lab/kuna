@@ -50,6 +50,57 @@
         <pentry minsize="1" maxsize="500" align="4">
           <addr offset="16" space="stack"/>
         </pentry>
+        <!-- O32 uses f12/f14 for leading fixed FP arguments. Each also
+             occupies its aligned argument words in the GPR sequence. -->
+        <!-- An aggregate result occupies a0 before the first named argument. -->
+        <rule>
+          <datatype name="float"/>
+          <datatype_at index="-1"><datatype name="struct"/></datatype_at>
+          <join align="true"/>
+        </rule>
+        <rule>
+          <datatype name="float"/>
+          <datatype_at index="-1"><datatype name="union"/></datatype_at>
+          <join align="true"/>
+        </rule>
+        <rule>
+          <datatype name="float"/>
+          <varargs first="0"/>
+          <join align="true"/>
+        </rule>
+        <rule>
+          <datatype name="float" maxsize="4"/>
+          <position index="0"/>
+          <datatype_at index="1"><datatype name="float" minsize="5" maxsize="8"/></datatype_at>
+          <consume storage="float"/>
+          <consume_extra storage="general"/>
+          <consume_extra storage="general"/>
+        </rule>
+        <rule>
+          <datatype name="float" maxsize="8"/>
+          <position index="0"/>
+          <consume storage="float"/>
+          <consume_extra storage="general"/>
+        </rule>
+        <rule>
+          <datatype name="float" maxsize="8"/>
+          <position index="1"/>
+          <datatype_at index="0"><datatype name="float" maxsize="8"/></datatype_at>
+          <consume storage="float"/>
+          <consume_extra storage="general"/>
+        </rule>
+        <rule>
+          <datatype name="float"/>
+          <join align="true"/>
+        </rule>
+        <rule>
+          <datatype name="int" minsize="5"/>
+          <join align="true"/>
+        </rule>
+        <rule>
+          <datatype name="uint" minsize="5"/>
+          <join align="true"/>
+        </rule>
       </input>
       <output>
         <pentry minsize="1" maxsize="8" metatype="float">
@@ -61,6 +112,14 @@
         <pentry minsize="5" maxsize="8">
           <addr space="join" piece1="v0" piece2="v1"/>
         </pentry>
+        <rule>
+          <datatype name="struct"/>
+          <hidden_return strategy="normalparam"/>
+        </rule>
+        <rule>
+          <datatype name="union"/>
+          <hidden_return strategy="normalparam"/>
+        </rule>
       </output>
       <unaffected>
         <register name="s0"/>

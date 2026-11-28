@@ -306,7 +306,7 @@ fn call_type(data: &mut Funcdata, tlst: &dyn TypeFactory, op: OpId) -> Option<Rc
     let nargs = pieces.intypes.len();
     if let Some(stated) = stated_pieces(data, op) {
         let fixed = stated.intypes.len();
-        let arity = if stated.first_var_arg_slot >= 0 { fixed <= nargs } else { fixed == nargs };
+        let arity = if stated.has_open_input_tail() { fixed <= nargs } else { fixed == nargs };
         let returned = stated.outtype.iter().filter(|t| t.get_metatype() != type_metatype::TYPE_VOID);
         if !arity || !returned.chain(&stated.intypes).all(|t| spellable(t, t.get_size())) {
             return None;
@@ -738,7 +738,7 @@ fn declares_call_type(data: &Funcdata, vn: VarnodeId, ty: &Datatype) -> bool {
     let Some(declared) = declared_function(data, vn) else { return false };
     let Some(built) = ty.get_ptr_to().and_then(|t| t.get_code_prototype().cloned()) else { return false };
     let out = declared.outtype.as_ref().zip(built.get_output_type()).is_some_and(|(a, b)| same_type(a, b));
-    out && declared.first_var_arg_slot < 0
+    out && !declared.has_open_input_tail()
         && !built.is_dotdotdot()
         && declared.intypes.len() == built.num_params() as usize
         && declared.intypes.iter().enumerate().all(|(i, a)| {

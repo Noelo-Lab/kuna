@@ -2,13 +2,12 @@
 use crate::{
     context::VarnodeId,
     dtype::{type_class, type_metatype},
-    fspec::{ParamActive, ParamEntry, ParamListStandard, PrototypePieces, ProtoModel},
+    fspec::{ParamActive, ParamEntry, ParamListStandard, ProtoModel},
     funcdata::Funcdata,
     infra::architecture::Architecture,
 };
 use kuna_base::{address::Address, space::AddrSpaceManager};
 use kuna_num::opcodes::OpCode;
-use std::borrow::Cow;
 use std::rc::Rc;
 
 /// The option is on and the loaded ARM image states the VFP procedure-call standard.
@@ -145,17 +144,6 @@ fn bank_restored(data: &Funcdata, vn: VarnodeId) -> bool {
         .and_then(|v| v.get_def())
         .and_then(|id| data.obank().get(id))
         .is_some_and(|o| o.code() == OpCode::CPUI_LOAD && bank_access(data, o.get_addr(), OpCode::CPUI_LOAD))
-}
-
-/// A recovered prototype's open tail read as a closed list for the canonical-storage
-/// check: a variadic callee receives even its fixed floats in r0-r3, so a recovered
-/// VFP parameter already rules the variadic reading out.
-pub fn closed_recovery<'a>(arch: &Architecture, pieces: &'a PrototypePieces) -> Cow<'a, PrototypePieces> {
-    if applies(arch) || crate::kuna_armfloatargs::applies(arch) {
-        Cow::Owned(PrototypePieces { first_var_arg_slot: -1, ..pieces.clone() })
-    } else {
-        Cow::Borrowed(pieces)
-    }
 }
 
 fn add_pairs(list: &mut ParamListStandard, manager: &AddrSpaceManager, limit: usize) {

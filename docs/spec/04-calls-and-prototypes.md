@@ -702,6 +702,28 @@ single-slot entry, or any other value, fails the `<pentry>` decode
 (`kuna_stackparamalign.rs (decode)`), which drops the model like any other
 malformed `<pentry>`. Every other cspec keeps the upstream rounding.
 
+On a big-endian stack slot wider than the value, upstream right-justifies the
+value. The kuna `<pentry floatleft="true">` attribute instead puts a
+floating-point value at the slot's low address in either byte order
+(`fspec.rs (ParamEntry::justify_right_for)`). The attribute applies to the
+fallback walk, direct stack assignment, and stack spills from both
+single-class and dual-class joins.
+Integers keep the entry's justification. Like `stackalign`, the attribute is
+valid only on an aligned stack entry; `false` is the default, and any other
+value fails the decode (`kuna_stackparamalign.rs (decode)`).
+`mips64_32_n32.cspec` sets it. GCC stores a `float` that N32 passes on the
+stack at the start of its eight-byte slot in both byte orders, and an `int`
+after it at SP+12 on big-endian.
+
+Generic R6 O32 and O64 pass structure and union results through a pointer
+in `a0`, including results smaller than one register. The pointer consumes
+the leading integer slot. Following floats use the integer sequence, with
+an O32 double aligned to an even word. For scalar returns, O64 groups
+`f12/a0` and `f13/a1` as alternative locations at the same positions.
+An undeclared callee can therefore recover a forwarded float from either
+leading FP register. A declared variadic O64 callee takes its fixed and
+optional floats in the integer sequence.
+
 The bundled AArch64 cspecs (`AARCH64.cspec`, `AARCH64_apple.cspec` and
 `AARCH64_win.cspec`) never split an argument wider than one general register
 between x7 and the stack. AAPCS64 passes such an argument wholly in registers
@@ -808,6 +830,25 @@ may use v0 for an indirect-call target before the call and then read its new
 the physical clobbers lets heritage create fresh output trials before a typed
 indirect prototype is recovered. The N32 stack fixture covers both inferred
 and declared calls at the 32-bit pointer / 64-bit result boundary.
+
+The generic hard-float MIPS models number arguments by position, as GCC does.
+- **N32 (`mips64_32_n32.cspec`).** Each of the first eight positions is a
+  `<group>` of `f(12+n)` and the n-th GPR, as in the N64 spec. A double at
+  position one is therefore in `f13`, and the integer after it is in `a2`.
+- **R6 O32 (`mips32_fp64.cspec`).** The first eligible float or double takes
+  `f12` and consumes its GPR words. A second takes `f14` after a leading FP
+  argument. Any later float is passed in the integer sequence, including the
+  last register (`boundary(1,2,3,4.5f,5)` puts `4.5f` in `a3`). Its 64-bit
+  values are aligned to an even register pair.
+- **Hard-float O64 (`mips64_32_o64.cspec`).** Up to two leading fixed FP
+  arguments take `f12` and `f13`, each reserving one eight-byte GPR position.
+  A double after an integer, and every variadic value, takes the GPR sequence.
+
+`tests/stages/kuna-mips-float-arguments.xml` checks GCC 7.3 callers and callees
+under declared prototypes against these registers. N64 and the Octeon N32 models
+already paired the banks; they serve as controls. A variadic call's named double
+on R6 O32 still loses its value: GCC passes it in `a0`/`a1`, and the rules do
+not yet reach it.
 
 ### Recovery: trials → parameters
 
@@ -7017,7 +7058,12 @@ The shape of the park is what answers it: **the parked list is a floor, not a
 ceiling.** The pieces name the first slot past the recovered parameters as the
 start of a variable tail (`PrototypePieces::first_var_arg_slot`), which is the
 one shape `func_link_input` treats as locked *and* input-active (`if !inputlocked
-|| varargs`). The recovered types bind the slots that were recovered and the
+|| varargs`). A MIPS model whose variadic rules would move one of the recovered
+parameters (O64 passes every float of a variadic call in the GPRs) marks the
+prefix with `PrototypePieces::RECOVERED_INPUT_TAIL` instead
+(`kuna_protoorder.rs (parked_tail)`): the call spec keeps the same locked and
+variadic shape, but the model rules read the prefix as fixed arguments, so a
+recovered `double` stays in `f12` during storage validation and at every call. The recovered types bind the slots that were recovered and the
 caller's own recovery still runs for everything past them, so no call is
 truncated to the parked list any more; over the same twelve binaries that class
 goes from 639 arguments at 216 sites to zero.
