@@ -383,6 +383,7 @@ mod tests {
             domain: format!("(set-logic QF_BV)\n{}", emitter.definitions()),
             mismatch: format!("(or (distinct {big} #x1234) (distinct {little} #x3412) (distinct {defined} #x01) (distinct {undefined} #x00))"),
             coverage_gap: None,
+            completion_gap: None,
             input_bytes: Vec::new(),
         };
         let mut z3 = Command::new("z3");

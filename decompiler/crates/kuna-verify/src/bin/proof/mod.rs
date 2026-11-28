@@ -11,6 +11,7 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     };
     let mut stop = None;
     let mut whole = false;
+    let mut loop_bound = None;
     let mut output = None;
     let mut sleighpath = None;
     let mut solver = "z3";
@@ -34,6 +35,14 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
             .ok_or_else(|| format!("{flag} needs a value"))?;
         match flag {
             "--stop-at" => stop = Some(number(value)?),
+            "--loop-bound" => {
+                loop_bound = Some(
+                    u8::try_from(number(value)?)
+                        .ok()
+                        .filter(|bound| (1..=32).contains(bound))
+                        .ok_or("--loop-bound requires 1..32 visits per loop location")?,
+                );
+            }
             "--indirect-target" => {
                 let (site, target) = value
                     .split_once(':')
@@ -107,12 +116,16 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     if !whole && !indirect.is_empty() {
         return Err("--indirect-target requires --whole-function".into());
     }
+    if !whole && loop_bound.is_some() {
+        return Err("--loop-bound requires --whole-function".into());
+    }
     let opts = symbolic::Options {
         inputs: &inputs,
         bindings: &bindings,
         ranges: &ranges,
         memory: &memory,
         stop,
+        loop_bound,
         indirect: &indirect,
         output: reg,
         output_bytes: width,
@@ -125,7 +138,7 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     let evidence = symbolic::prove(binary, function, &decompile_options, &roots, &opts)?;
     println!("{evidence}");
     Ok(match evidence["classification"].as_str() {
-        Some("MODEL_EQUIVALENCE") => ExitCode::SUCCESS,
+        Some("MODEL_EQUIVALENCE" | "BOUNDED_EQUIVALENCE") => ExitCode::SUCCESS,
         Some("COUNTEREXAMPLE") => ExitCode::from(1),
         _ => ExitCode::from(3),
     })

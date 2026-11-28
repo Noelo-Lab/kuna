@@ -364,8 +364,9 @@ run yet.
   byte kuna lost entirely (a store to a slot it never recovered) is not compared yet:
   telling it from the outgoing argument area and saved registers, which kuna does not
   keep in memory either, needs those found from the machine side first.
-- **Symbolic proof (Tier S).** Not started: a relational symbolic engine over both
-  sides' p-code belongs in its own pull request.
+- **Symbolic proof (Tier S).** The opt-in `prove` command checks scoped integer
+  and memory observations. It can compare loops over the inputs completing
+  within a declared bound. See [whole-function validation](symbolic-memory.md).
 - **A return kuna claims narrower than the machine's register.** The return is compared
   at the width kuna claims, and bytes of the return register outside it are not taken
   as a wider return just because they vary: a 32-bit result computed in a 64-bit

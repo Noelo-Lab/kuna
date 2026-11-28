@@ -1,6 +1,6 @@
-//! Acyclic function execution over raw instruction addresses.
+//! Function execution over raw instruction addresses.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ops::Range;
 use std::rc::Rc;
 
@@ -25,6 +25,7 @@ pub(super) struct RawFunction<'a, 'p> {
     pub stack_pointer: &'a Storage,
     pub indirect: &'a BTreeMap<u64, Vec<u64>>,
     pub step_limit: u64,
+    pub loop_bound: Option<u8>,
 }
 
 impl RawFunction<'_, '_> {
@@ -32,7 +33,7 @@ impl RawFunction<'_, '_> {
         self.follow(
             self.extent.start,
             state,
-            BTreeSet::new(),
+            BTreeMap::new(),
             FUNCTION_BRANCH_DEPTH,
             &mut 0,
         )
@@ -42,20 +43,27 @@ impl RawFunction<'_, '_> {
         &self,
         mut pc: u64,
         mut state: RawState,
-        mut seen: BTreeSet<u64>,
+        mut visits: BTreeMap<u64, u8>,
         remaining: u8,
         steps: &mut u64,
     ) -> Result<Execution, String> {
         loop {
-            charge(steps, self.step_limit)?;
             if !self.extent.contains(&pc) {
                 return Err(format!(
                     "raw edge {pc:#x} leaves the selected ELF function extent"
                 ));
             }
-            if !seen.insert(pc) {
-                return Err(format!("raw loop at {pc:#x} is outside the acyclic model"));
+            let seen = visits.entry(pc).or_default();
+            if *seen != 0 {
+                let bound = self
+                    .loop_bound
+                    .ok_or_else(|| format!("raw loop at {pc:#x} is outside the acyclic model"))?;
+                if *seen >= bound {
+                    return Execution::cut(self.output.size, state.defined, state.memory);
+                }
             }
+            *seen += 1;
+            charge(steps, self.step_limit)?;
             if pc != self.extent.start && self.env.is_entry(pc) {
                 return Err(format!("raw path enters another function at {pc:#x}"));
             }
@@ -97,14 +105,14 @@ impl RawFunction<'_, '_> {
             if let Some(op) = branch {
                 let target = op.ins.first().ok_or("raw machine branch has no target")?;
                 let target_value = if op.opc == OpCode::CPUI_BRANCHIND {
-                    Some(instruction.read(target, &state)?)
+                    Some(instruction.read(target, &mut state)?)
                 } else {
                     None
                 };
                 let condition = if op.opc == OpCode::CPUI_CBRANCH {
                     Some(instruction.read(
                         op.ins.get(1).ok_or("raw machine branch has no condition")?,
-                        &state,
+                        &mut state,
                     )?)
                 } else {
                     None
@@ -118,15 +126,15 @@ impl RawFunction<'_, '_> {
                     let yes = self.follow(
                         target.offset,
                         state.clone(),
-                        seen.clone(),
+                        visits.clone(),
                         remaining - 1,
                         steps,
                     )?;
-                    let no = self.follow(next, state, seen, remaining - 1, steps)?;
+                    let no = self.follow(next, state, visits, remaining - 1, steps)?;
                     return yes.join(no, guard);
                 }
                 if let Some(target_value) = target_value {
-                    return self.indirect_edges(pc, target_value, state, seen, remaining, steps);
+                    return self.indirect_edges(pc, target_value, state, visits, remaining, steps);
                 }
                 pc = target.offset;
             } else {
@@ -141,7 +149,7 @@ impl RawFunction<'_, '_> {
         pc: u64,
         target: Term,
         state: RawState,
-        seen: BTreeSet<u64>,
+        visits: BTreeMap<u64, u8>,
         depth: u8,
         steps: &mut u64,
     ) -> Result<Execution, String> {
@@ -161,7 +169,7 @@ impl RawFunction<'_, '_> {
             let to = constant(u128::from(destination), target.width() / 8)?;
             let is_target = Rc::new(Expr::Test("=", Rc::clone(&target), to));
             covered = Rc::new(Expr::Op("bvor", vec![covered, Rc::clone(&is_target)], 8));
-            let path = self.follow(destination, state.clone(), seen.clone(), depth - 1, steps)?;
+            let path = self.follow(destination, state.clone(), visits.clone(), depth - 1, steps)?;
             result = Some(match result {
                 Some(prior) => path.join(prior, is_target)?,
                 None => path,

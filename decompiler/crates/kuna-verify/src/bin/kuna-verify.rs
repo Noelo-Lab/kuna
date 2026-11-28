@@ -42,7 +42,7 @@ const USAGE: &str = "usage:
   kuna-verify step <binary> --regs R,R.. [--flags F,F..] [--states N] [--per-form N] [--limit N] [--canonical]
   kuna-verify oracle-case <x86-64-elf> <function|0xaddr> [--input-reg NAME HEX]... [--external-entry ADDR ARITY]... [--seed S] [--budget OPS] [--sleighpath DIR]
   kuna-verify prove <x86-64-elf> <function|0xaddr> (--stop-at ADDR | --whole-function) --return REG:BYTES
-    [--input REG]... [--bind REG HEX]... [--range REG LOW HIGH]... [--memory ADDRESS:BYTES]... [--timeout-ms N] [--sleighpath DIR]
+    [--loop-bound N] [--input REG]... [--bind REG HEX]... [--range REG LOW HIGH]... [--memory ADDRESS:BYTES]... [--timeout-ms N] [--sleighpath DIR]
   kuna-verify mutate <test.xml|dir>... | <binary> <function|0xaddr>... | --all  [--per-function N (6)] [--jobs N] [--file-seconds S]
 options: --runs N (256)  --seed S  --budget OPS (200000)  --concolic QUERIES (0)  --call-reruns N (4)  --json  --trace  --sleighpath DIR";
 

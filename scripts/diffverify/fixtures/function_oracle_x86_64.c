@@ -47,6 +47,12 @@ u64 count_down(u64 n) {
     return n;
 }
 
+u64 add_with_loop(u64 a, u64 b, u64 n) {
+    u64 result = a + b;
+    __asm__("1: addq $3, %0; decq %1; jne 1b" : "+&r"(result), "+r"(n) : : "cc");
+    return result;
+}
+
 u64 dispatch(u64 selector, u64 x) {
     switch (selector) {
     case 0: return x + 15;

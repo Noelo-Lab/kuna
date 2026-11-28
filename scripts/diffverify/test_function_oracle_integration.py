@@ -465,6 +465,57 @@ class CrossBackendTests(unittest.TestCase):
         self.assertEqual(proof["classification"], "INCONCLUSIVE")
         self.assertIn("raw loop", proof["reason"])
 
+    def test_unrolling_distinguishes_bounded_total_and_empty_domains(self):
+        options = ("--loop-bound", "4")
+        code, proof = self.prove("count_down", *options, inputs=("RDI",), whole=True)
+        self.assertEqual((code, proof["classification"]), (0, "BOUNDED_EQUIVALENCE"))
+        self.assertEqual(proof["scope"]["max_visits_per_raw_instruction_and_ir_block"], 4)
+        self.assertGreater(proof["scope"]["ir_phis"], 0)
+        for query, status in (("completion", "sat"), ("bounded_domain", "sat"), ("difference", "unsat")):
+            obligation = proof["obligation"]
+            text = obligation[f"{query}_smt2"]
+            self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), obligation[f"{query}_sha256"])
+            output = subprocess.check_output(["z3", "-in", "-smt2"], input=text, text=True, timeout=10)
+            self.assertEqual(output.splitlines()[0], status)
+
+        for lower, upper, expected in ((1, 4, (0, "MODEL_EQUIVALENCE")), (5, 10, (3, "INCONCLUSIVE"))):
+            code, proof = self.prove(
+                "count_down", *options, "--range", "RDI", str(lower), str(upper),
+                inputs=("RDI",), whole=True,
+            )
+            self.assertEqual((code, proof["classification"]), expected)
+        self.assertEqual(proof["phase"], "bounded-domain")
+
+        code, proof = self.prove("count_down", *options, "--budget", "5", inputs=("RDI",), whole=True)
+        self.assertEqual(code, 3)
+        self.assertIn("operation budget exhausted", proof["reason"])
+
+    def test_unrolling_merges_memory_and_keeps_missing_coverage_inconclusive(self):
+        rows = subprocess.check_output([
+            os.environ.get("LLVM_NM", "llvm-nm"), "--format=posix", self.elf,
+        ], text=True).splitlines()
+        symbols = {name: address for name, _, address, *_ in (row.split() for row in rows)}
+        counter = f'0x{symbols["counter"]}:8'
+        zeroed = f'0x{symbols["zeroed"]}:8'
+        options = ("--loop-bound", "2", "--memory", counter)
+        code, proof = self.prove("store_loop", *options, "--memory", zeroed, whole=True)
+        self.assertEqual((code, proof["classification"]), (0, "BOUNDED_EQUIVALENCE"), proof.get("reason"))
+        code, proof = self.prove("store_loop", *options, whole=True)
+        self.assertEqual(code, 3)
+        self.assertEqual(proof["phase"], "execution-coverage")
+
+    def test_unrolling_preserves_a_replayable_counterexample(self):
+        code, proof = self.prove(
+            "add_with_loop", "--loop-bound", "4", "--opcode-mutant", "0",
+            inputs=("RDI", "RSI", "RDX"), whole=True,
+        )
+        self.assertEqual((code, proof["classification"]), (1, "COUNTEREXAMPLE"), proof.get("reason"))
+        self.assertIn(int(proof["witness"]["registers"]["RDX"], 16), range(1, 5))
+        self.assertEqual(replay_proof(proof, self.elf, ROOT / "specs", self.verify)["independent_replay"], "confirmed")
+        proof["obligation"]["completion_smt2"] += "(assert false)\n"
+        with self.assertRaisesRegex(ValueError, "completion query digest differs"):
+            replay_proof(proof, self.elf, ROOT / "specs", self.verify)
+
     def test_whole_function_switch_requires_coverage_of_declared_indirect_targets(self):
         text = subprocess.check_output([
             os.environ.get("LLVM_OBJDUMP", "llvm-objdump"), "--disassemble-symbols=dispatch", self.elf,

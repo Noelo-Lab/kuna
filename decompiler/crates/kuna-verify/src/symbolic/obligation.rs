@@ -9,6 +9,7 @@ use super::solver::{self, Status};
 #[derive(Debug, PartialEq, Eq)]
 pub(super) enum Verdict {
     Equivalent,
+    BoundedEquivalent,
     Counterexample(BTreeMap<String, u8>),
     InfeasibleDomain,
     Unresolved { phase: &'static str, reason: String },
@@ -20,6 +21,7 @@ pub(super) struct Obligation {
     pub domain: String,
     pub mismatch: String,
     pub coverage_gap: Option<String>,
+    pub completion_gap: Option<String>,
     pub input_bytes: Vec<String>,
 }
 
@@ -29,27 +31,39 @@ impl Obligation {
     }
 
     pub fn difference_query(&self) -> String {
-        format!(
-            "{}\n(assert {})\n(check-sat)\n(get-info :reason-unknown)\n",
-            self.domain,
-            self.scoped_mismatch(),
-        )
+        self.query(&self.scoped_mismatch())
     }
 
     pub fn coverage_query(&self) -> Option<String> {
-        self.coverage_gap.as_ref().map(|gap| {
-            format!(
-                "{}\n(assert {gap})\n(check-sat)\n(get-info :reason-unknown)\n",
-                self.domain
-            )
-        })
+        self.coverage_gap.as_ref().map(|gap| self.query(gap))
+    }
+
+    pub fn completion_query(&self) -> Option<String> {
+        self.completion_gap.as_ref().map(|gap| self.query(gap))
+    }
+
+    pub fn bounded_domain_query(&self) -> Option<String> {
+        self.completion_gap
+            .as_ref()
+            .map(|gap| self.query(&format!("(not {gap})")))
+    }
+
+    fn query(&self, predicate: &str) -> String {
+        format!(
+            "{}\n(assert {predicate})\n(check-sat)\n(get-info :reason-unknown)\n",
+            self.domain
+        )
     }
 
     fn scoped_mismatch(&self) -> String {
-        match &self.coverage_gap {
-            Some(gap) => format!("(and (not {gap}) {})", self.mismatch),
-            None => self.mismatch.clone(),
+        let mut predicate = self.mismatch.clone();
+        for gap in [&self.coverage_gap, &self.completion_gap]
+            .into_iter()
+            .flatten()
+        {
+            predicate = format!("(and (not {gap}) {predicate})");
         }
+        predicate
     }
 
     fn witness_query(&self) -> String {
@@ -83,7 +97,7 @@ impl Obligation {
                         other => return unresolved("execution-coverage", other),
                     }
                 }
-                return Verdict::Equivalent;
+                return self.check_unrolling(command, deadline);
             }
             Ok((Status::Sat, _)) => {}
             other => return unresolved("observation-mismatch", other),
@@ -100,6 +114,29 @@ impl Obligation {
                 },
             },
             other => unresolved("witness", other),
+        }
+    }
+
+    fn check_unrolling(&self, command: &mut Command, deadline: Instant) -> Verdict {
+        let Some(query) = self.completion_query() else {
+            return Verdict::Equivalent;
+        };
+        match solver::run(command, &query, deadline) {
+            Ok((Status::Unsat, _)) => return Verdict::Equivalent,
+            Ok((Status::Sat, _)) => {}
+            other => return unresolved("unrolling-coverage", other),
+        }
+        let query = self
+            .bounded_domain_query()
+            .expect("completion gap is present");
+        match solver::run(command, &query, deadline) {
+            Ok((Status::Sat, _)) => Verdict::BoundedEquivalent,
+            Ok((Status::Unsat, _)) => Verdict::Unresolved {
+                phase: "bounded-domain",
+                reason: "no permitted input completes within the loop bound on both sides"
+                    .to_owned(),
+            },
+            other => unresolved("bounded-domain", other),
         }
     }
 }
@@ -171,6 +208,7 @@ mod tests {
                 ),
                 mismatch: mismatch.to_owned(),
                 coverage_gap: None,
+                completion_gap: None,
                 input_bytes: vec!["b0".to_owned()],
             }
             .solve(z3, Instant::now() + Duration::from_secs(5))

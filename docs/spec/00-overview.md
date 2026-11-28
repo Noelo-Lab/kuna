@@ -4107,11 +4107,15 @@ a difference in arithmetic definedness or returned bits, and records both
 queries for replay. The initial scope is a straight-line x86-64 interval
 ending immediately before a near return. The observation and its limits
 are documented in `docs/features/diffverify/translation-validation.md`.
-Whole-function mode derives an acyclic extent from the ELF symbol. It
+Whole-function mode derives the instruction extent from the ELF symbol. It
 keeps independent path states for raw addresses and final-IR SSA edges
 and projects writes to explicit symbolic byte windows. Agreement requires
 the absence of a mismatch and of coverage gaps over the permitted input
-states. See `docs/features/diffverify/symbolic-memory.md`.
+states. With a visit bound, the encoders preserve the path predicates at
+each loop cut. An SMT query checks that at least one input completes on
+both sides before a bounded equivalence result. A separate query must
+prove all cuts unreachable to claim equivalence for the full declared
+model. See `docs/features/diffverify/symbolic-memory.md`.
 
 ## 0.7 Feedback edges
 

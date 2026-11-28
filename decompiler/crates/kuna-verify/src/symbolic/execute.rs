@@ -26,13 +26,25 @@ pub(super) struct Execution {
     pub value: Term,
     pub defined: Term,
     pub memory: Memory,
+    pub completed: Term,
 }
 
 impl Execution {
+    pub fn cut(bytes: u32, defined: Term, memory: Memory) -> Result<Self, String> {
+        let completed = Rc::new(Expr::Test("=", Rc::clone(&defined), constant(0, 1)?));
+        Ok(Self {
+            value: constant(0, bytes)?,
+            defined,
+            memory,
+            completed,
+        })
+    }
+
     pub fn join(self, other: Self, guard: Term) -> Result<Self, String> {
         Ok(Self {
             value: terms::select(Rc::clone(&guard), self.value, other.value)?,
             memory: self.memory.join(other.memory, &guard)?,
+            completed: terms::select(Rc::clone(&guard), self.completed, other.completed)?,
             defined: terms::select(guard, self.defined, other.defined)?,
         })
     }
@@ -67,6 +79,7 @@ impl RawState {
             value: self.registers.read(output.off, output.size)?,
             defined: self.defined,
             memory: self.memory,
+            completed: constant(1, 1)?,
         })
     }
 
@@ -150,7 +163,7 @@ impl Instruction<'_> {
                     .ins
                     .get(1)
                     .ok_or("raw conditional branch has no condition")?;
-                let guard = self.read(condition, &state)?;
+                let guard = self.read(condition, &mut state)?;
                 let taken = self.run(state.clone(), target, remaining - 1)?;
                 let fallthrough = self.run(state, index + 1, remaining - 1)?;
                 return Ok(RawState {
@@ -165,8 +178,8 @@ impl Instruction<'_> {
                     return Err("malformed raw STORE".into());
                 };
                 self.check_ram(space)?;
-                let ptr = self.read(ptr, &state)?;
-                let value = self.read(value, &state)?;
+                let ptr = self.read(ptr, &mut state)?;
+                let value = self.read(value, &mut state)?;
                 state
                     .memory
                     .store(ptr, &value, self.ram.is_big_endian(), &state.defined)?;
@@ -181,7 +194,7 @@ impl Instruction<'_> {
                     return Err("malformed raw LOAD".into());
                 };
                 self.check_ram(space)?;
-                let ptr = self.read(ptr, &state)?;
+                let ptr = self.read(ptr, &mut state)?;
                 state.memory.load(
                     ptr,
                     out.size,
@@ -193,7 +206,7 @@ impl Instruction<'_> {
                 let args = op
                     .ins
                     .iter()
-                    .map(|arg| self.read(arg, &state))
+                    .map(|arg| self.read(arg, &mut state))
                     .collect::<Result<Vec<_>, _>>()?;
                 let value = terms::lower(op.opc, out.size, &args)?;
                 update_defined(&mut state.defined, op.opc, &args);
@@ -204,17 +217,23 @@ impl Instruction<'_> {
                 .as_ref()
                 .ok_or("raw output has no storage space")?
                 .get_index();
-            let dest = if space == self.register {
-                &mut state.registers
+            if space == self.register {
+                state.registers.write(out.offset, out.size, &value)?;
             } else if Some(space) == self.unique {
-                &mut state.temps
+                state.temps.write(out.offset, out.size, &value)?;
+            } else if space == self.ram.get_index() && self.ram.get_word_size() == 1 {
+                state.memory.store(
+                    constant(u128::from(out.offset), 8)?,
+                    &value,
+                    self.ram.is_big_endian(),
+                    &state.defined,
+                )?;
             } else {
                 return Err(format!(
                     "unmodeled raw write at {:#x} in space {space}",
                     self.address
                 ));
-            };
-            dest.write(out.offset, out.size, &value)?;
+            }
             index += 1;
         }
         Ok(state)
@@ -233,7 +252,7 @@ impl Instruction<'_> {
         Ok(())
     }
 
-    pub fn read(&self, arg: &VarnodeData, state: &RawState) -> Result<Term, String> {
+    pub fn read(&self, arg: &VarnodeData, state: &mut RawState) -> Result<Term, String> {
         let space = arg.space.as_ref().ok_or("raw input has no storage space")?;
         let index = space.get_index();
         if space.get_type() == IPTR_CONSTANT {
@@ -242,6 +261,14 @@ impl Instruction<'_> {
             state.registers.read(arg.offset, arg.size)
         } else if Some(index) == self.unique {
             state.temps.read(arg.offset, arg.size)
+        } else if index == self.ram.get_index() && self.ram.get_word_size() == 1 {
+            state.memory.load(
+                constant(u128::from(arg.offset), 8)?,
+                arg.size,
+                self.ram.is_big_endian(),
+                &state.defined,
+                ReadMode::Machine,
+            )
         } else {
             Err(format!(
                 "raw input uses unmodeled {} storage",
@@ -313,8 +340,7 @@ pub(super) fn ir_block(
     memory: &Memory,
     env: &Env,
     size: u32,
-    stop: Option<u64>,
-    step_limit: u64,
+    options: &super::Options<'_>,
 ) -> Result<Execution, String> {
     if program.vararg.is_some() {
         return Err("symbolic IR vararg setup is outside the model".to_owned());
@@ -329,9 +355,10 @@ pub(super) fn ir_block(
             ram_big_endian: env.ram.is_big_endian(),
         },
         size,
-        stop,
+        stop: options.stop,
         steps: 0,
-        step_limit,
+        step_limit: options.step_limit,
+        loop_bound: options.loop_bound,
     };
     let state = IrState {
         slots: vec![None; program.slots],
@@ -372,6 +399,7 @@ struct IrEncoder<'a> {
     stop: Option<u64>,
     steps: u64,
     step_limit: u64,
+    loop_bound: Option<u8>,
 }
 
 struct IrLocations {
@@ -409,15 +437,21 @@ impl IrEncoder<'_> {
         state: IrState,
         path: &mut Vec<usize>,
     ) -> Result<Execution, String> {
-        if path.contains(&index) {
-            return Err("symbolic IR loop is outside the model".to_owned());
+        let visits = path.iter().filter(|&&previous| previous == index).count();
+        if visits != 0 {
+            let bound = self
+                .loop_bound
+                .ok_or("symbolic IR loop is outside the model")?;
+            if visits >= usize::from(bound) {
+                return Execution::cut(self.size, state.defined, state.memory);
+            }
         }
         if path.len() == IR_BRANCH_DEPTH {
             return Err("symbolic IR branch depth exhausted".to_owned());
         }
         charge(&mut self.steps, self.step_limit)?;
         path.push(index);
-        let result = self.run(index, from, state, path);
+        let result = self.run(index, from, state, path, visits != 0);
         path.pop();
         result
     }
@@ -428,15 +462,16 @@ impl IrEncoder<'_> {
         from: Option<usize>,
         mut state: IrState,
         path: &mut Vec<usize>,
+        revisited: bool,
     ) -> Result<Execution, String> {
         let block = self
             .program
             .blocks
             .get(index)
             .ok_or("symbolic IR edge leaves the block list")?;
+        let mut values = Vec::with_capacity(block.phis.len());
         if !block.phis.is_empty() {
             let from = from.ok_or("symbolic entry block has a MULTIEQUAL")?;
-            let mut values = Vec::with_capacity(block.phis.len());
             for phi in &block.phis {
                 charge(&mut self.steps, self.step_limit)?;
                 let arg = phi
@@ -449,9 +484,21 @@ impl IrEncoder<'_> {
                     .ok_or("symbolic MULTIEQUAL has no output")?;
                 values.push((dest, self.read(arg, &mut state)?));
             }
-            for (dest, value) in values {
-                self.assign(&mut state, dest, value)?;
+        }
+        if revisited {
+            for dest in values
+                .iter()
+                .map(|(dest, _)| *dest)
+                .chain(block.ops.iter().filter_map(|op| op.out.as_ref()))
+            {
+                *state
+                    .slots
+                    .get_mut(dest.slot)
+                    .ok_or("symbolic IR output slot is out of range")? = None;
             }
+        }
+        for (dest, value) in values {
+            self.assign(&mut state, dest, value)?;
         }
         for op in &block.ops {
             charge(&mut self.steps, self.step_limit)?;
@@ -530,6 +577,7 @@ impl IrEncoder<'_> {
                         value: self.read(arg, &mut state)?,
                         defined: state.defined,
                         memory: state.memory,
+                        completed: constant(1, 1)?,
                     });
                 }
                 _ => {
@@ -761,6 +809,7 @@ mod tests {
             stop: Some(0x80),
             steps: 0,
             step_limit: 20,
+            loop_bound: None,
         };
         let initial = IrState {
             slots: vec![None; 1],
@@ -772,13 +821,15 @@ mod tests {
             value: constant(0x71, 1).unwrap(),
             defined: constant(1, 1).unwrap(),
             memory: Memory::default(),
+            completed: constant(1, 1).unwrap(),
         };
         let mut emitter = Emitter::default();
-        let mismatch = terms::observed_terms(&mut emitter, encoded, reference).unwrap();
+        let observations = terms::observed_terms(&mut emitter, encoded, reference, false).unwrap();
         let obligation = Obligation {
             domain: format!("(set-logic QF_BV)\n{}", emitter.definitions()),
-            mismatch: mismatch.0,
-            coverage_gap: mismatch.1,
+            mismatch: observations.mismatch,
+            coverage_gap: observations.coverage_gap,
+            completion_gap: observations.completion_gap,
             input_bytes: vec![],
         };
         let mut z3 = Command::new("z3");

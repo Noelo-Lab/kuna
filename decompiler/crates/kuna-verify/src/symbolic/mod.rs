@@ -1,4 +1,4 @@
-//! Translation validation of an explicitly scoped x86-64 straight-line block.
+//! Translation validation of explicitly scoped x86-64 code.
 
 mod byte_file;
 mod execute;
@@ -33,6 +33,7 @@ pub struct Options<'a> {
     pub ranges: &'a [(String, u64, u64)],
     pub memory: &'a [MemoryRange],
     pub stop: Option<u64>,
+    pub loop_bound: Option<u8>,
     pub indirect: &'a std::collections::BTreeMap<u64, Vec<u64>>,
     pub output: &'a str,
     pub output_bytes: u32,
@@ -141,7 +142,11 @@ fn verify_block(
         "scope": {
             "architecture": "x86-64", "abi": "sysv-amd64",
             "raw_interval": { "start": format!("{entry:#x}"), "end_exclusive": format!("{end:#x}") },
-            "control_flow": if whole { "acyclic-function" } else { "straight-line-interval" },
+            "control_flow": match (whole, opts.loop_bound) {
+                (true, Some(_)) => "bounded-function",
+                (true, None) => "acyclic-function",
+                (false, _) => "straight-line-interval",
+            },
             "raw_indirect_targets": opts.indirect.iter().map(|(pc, targets)| (
                 format!("{pc:#x}"), targets.iter().map(|target| format!("{target:#x}")).collect::<Vec<_>>(),
             )).collect::<std::collections::BTreeMap<_, _>>(),
@@ -155,6 +160,8 @@ fn verify_block(
             })).collect::<Vec<_>>(),
             "stack_entry": (whole || !opts.memory.is_empty()).then(|| format!("{:#x}", oracle::SP)),
             "max_ops_per_side": opts.step_limit,
+            "max_visits_per_raw_instruction_and_ir_block": opts.loop_bound,
+            "max_recursion_depth": 0,
             "max_raw_local_branch_depth": execute::RAW_BRANCH_DEPTH,
             "max_ir_path_depth": execute::IR_BRANCH_DEPTH,
             "max_machine_path_depth": raw_function::FUNCTION_BRANCH_DEPTH,
@@ -200,6 +207,15 @@ fn verify_block(
         result["obligation"]["coverage_sha256"] = json!(oracle::sha256(coverage.as_bytes()));
         result["obligation"]["coverage_smt2"] = json!(coverage);
     }
+    if let (Some(completion), Some(bounded)) = (
+        obligation.completion_query(),
+        obligation.bounded_domain_query(),
+    ) {
+        result["obligation"]["completion_sha256"] = json!(oracle::sha256(completion.as_bytes()));
+        result["obligation"]["completion_smt2"] = json!(completion);
+        result["obligation"]["bounded_domain_sha256"] = json!(oracle::sha256(bounded.as_bytes()));
+        result["obligation"]["bounded_domain_smt2"] = json!(bounded);
+    }
     let deadline = Instant::now() + opts.timeout;
     let mut version = Command::new(opts.solver);
     version.arg("-version");
@@ -213,6 +229,11 @@ fn verify_block(
     solver.args(["-in", "-smt2"]);
     match obligation.solve(&mut solver, deadline) {
         Verdict::Equivalent => result["classification"] = json!("MODEL_EQUIVALENCE"),
+        Verdict::BoundedEquivalent => {
+            result["classification"] = json!("BOUNDED_EQUIVALENCE");
+            result["scope"]["proven_domain"] =
+                json!("inputs-completing-on-both-sides-within-bound");
+        }
         Verdict::InfeasibleDomain => {
             result["classification"] = json!("INCONCLUSIVE");
             result["phase"] = json!("initial-domain");
@@ -386,26 +407,20 @@ fn encode(
             stack_pointer: &rsp,
             indirect: opts.indirect,
             step_limit: opts.step_limit,
+            loop_bound: opts.loop_bound,
         }
         .run(execute::RawState::new(&inputs, &memory.0)?)?
     };
-    let ir = execute::ir_block(
-        &graph,
-        &inputs,
-        &memory.0,
-        &env,
-        projection.size,
-        opts.stop,
-        opts.step_limit,
-    )?;
+    let ir = execute::ir_block(&graph, &inputs, &memory.0, &env, projection.size, opts)?;
     let mut emitter = Emitter::default();
-    let (mismatch, coverage_gap) = terms::observed_terms(&mut emitter, raw, ir)?;
+    let observations = terms::observed_terms(&mut emitter, raw, ir, opts.loop_bound.is_some())?;
     declarations.push_str(emitter.definitions());
     Ok(Encoding {
         obligation: Obligation {
             domain: declarations,
-            mismatch,
-            coverage_gap,
+            mismatch: observations.mismatch,
+            coverage_gap: observations.coverage_gap,
+            completion_gap: observations.completion_gap,
             input_bytes: names,
         },
         mutation,

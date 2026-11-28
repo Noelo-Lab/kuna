@@ -34,6 +34,8 @@ pub enum Expr {
     SignExt(Rc<Expr>, u32),
     /// `(ite (op a b) 1 0)` as one byte.
     Test(&'static str, Rc<Expr>, Rc<Expr>),
+    /// Select an arm using a nonzero bit-vector guard.
+    Select(Rc<Expr>, Rc<Expr>, Rc<Expr>),
     /// A signed overflow test of `+` (`true`) or `-`, as one byte.
     Overflow(bool, Rc<Expr>, Rc<Expr>),
 }
@@ -47,6 +49,7 @@ impl Expr {
             Expr::Concat(parts) => parts.iter().map(|p| p.width()).sum(),
             Expr::ZeroExt(e, k) | Expr::SignExt(e, k) => e.width() + k,
             Expr::Test(..) | Expr::Overflow(..) => 8,
+            Expr::Select(_, yes, _) => yes.width(),
         }
     }
 }
@@ -236,6 +239,10 @@ impl Emitter {
             Expr::ZeroExt(x, k) => format!("((_ zero_extend {k}) {})", self.name(x)),
             Expr::SignExt(x, k) => format!("((_ sign_extend {k}) {})", self.name(x)),
             Expr::Test(name, a, b) => format!("(ite ({name} {} {}) #x01 #x00)", self.name(a), self.name(b)),
+            Expr::Select(guard, yes, no) => format!(
+                "(ite (distinct {} (_ bv0 {})) {} {})",
+                self.name(guard), guard.width(), self.name(yes), self.name(no)
+            ),
             Expr::Overflow(add, a, b) => {
                 let (x, y, w) = (self.name(a), self.name(b), a.width());
                 let r = if *add { format!("(bvadd {x} {y})") } else { format!("(bvsub {x} {y})") };

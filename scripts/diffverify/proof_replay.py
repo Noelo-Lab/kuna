@@ -1,4 +1,4 @@
-"""Replay a symbolic return counterexample in Kuna and Unicorn."""
+"""Replay a symbolic counterexample in Kuna and Unicorn."""
 
 import argparse
 import hashlib
@@ -16,12 +16,16 @@ def replay_proof(proof, binary, specs, verify):
     if proof["version"] != 1 or proof["classification"] != "COUNTEREXAMPLE":
         raise ValueError("expected a version 1 symbolic counterexample")
     obligation = proof["obligation"]
-    queries = ("domain", "difference", "coverage") if "coverage_smt2" in obligation else ("domain", "difference")
+    scope = proof["scope"]
+    queries = ["domain", "difference"]
+    if "coverage_smt2" in obligation:
+        queries.append("coverage")
+    if scope.get("max_visits_per_raw_instruction_and_ir_block") is not None:
+        queries.extend(("completion", "bounded_domain"))
     for query in queries:
         encoded = obligation[f"{query}_smt2"].encode("utf-8")
         if hashlib.sha256(encoded).hexdigest() != obligation[f"{query}_sha256"]:
             raise ValueError(f"archived {query} query digest differs")
-    scope = proof["scope"]
     observation = scope["observation"]
     expected = Return.parse(f'{observation["register"]}:{observation["bytes"]}')
     registers = proof["witness"]["registers"]
@@ -32,6 +36,11 @@ def replay_proof(proof, binary, specs, verify):
         raise ValueError("witness does not fill the declared symbolic inputs")
     if any(int(registers[reg], 16) != int(value, 16) for reg, value in scope["bindings"]):
         raise ValueError("witness violates the archived register bindings")
+    if any(
+        not int(low, 16) <= int(registers[reg], 16) <= int(high, 16)
+        for reg, low, high in scope.get("ranges", [])
+    ):
+        raise ValueError("witness violates the archived register ranges")
     command = [
         verify, "oracle-case", binary, scope["raw_interval"]["start"], "--sleighpath", specs,
     ]

@@ -110,11 +110,18 @@ pub(super) fn division_guard(opcode: OpCode, operands: &[Term]) -> Option<Term> 
     Some(Rc::new(Expr::Op("bvand", vec![nonzero, safe], 8)))
 }
 
+pub(super) struct Observations {
+    pub mismatch: String,
+    pub coverage_gap: Option<String>,
+    pub completion_gap: Option<String>,
+}
+
 pub(super) fn observed_terms(
     emitter: &mut Emitter,
     left: super::execute::Execution,
     right: super::execute::Execution,
-) -> Result<(String, Option<String>), String> {
+    unrolled: bool,
+) -> Result<Observations, String> {
     let normalize = |side: &super::execute::Execution| {
         let zero = Rc::new(Expr::Const(0, side.value.width()));
         select(Rc::clone(&side.defined), Rc::clone(&side.value), zero)
@@ -153,7 +160,16 @@ pub(super) fn observed_terms(
         let right = emitter.name(&right.memory.coverage());
         format!("(or (= {left} #x00) (= {right} #x00))")
     });
-    Ok((mismatch, coverage_gap))
+    let completion_gap = unrolled.then(|| {
+        let raw = emitter.name(&left.completed);
+        let ir = emitter.name(&right.completed);
+        format!("(or (= {raw} #x00) (= {ir} #x00))")
+    });
+    Ok(Observations {
+        mismatch,
+        coverage_gap,
+        completion_gap,
+    })
 }
 
 fn valid(term: &Term) -> bool {
@@ -176,13 +192,12 @@ pub(super) fn select(guard: Term, yes: Term, no: Term) -> Result<Term, String> {
     if !valid(&guard) || !valid(&yes) || no.width() != bits {
         return Err("invalid symbolic conditional widths".to_owned());
     }
-    let zero = Rc::new(Expr::Const(0, guard.width()));
-    let truth = Rc::new(Expr::Test("distinct", guard, zero));
-    let mask = Rc::new(Expr::Op("bvneg", vec![resize(truth, bits)], bits));
-    let complement = Rc::new(Expr::Op("bvnot", vec![Rc::clone(&mask)], bits));
-    let chosen = Rc::new(Expr::Op("bvand", vec![mask, yes], bits));
-    let other = Rc::new(Expr::Op("bvand", vec![complement, no], bits));
-    Ok(Rc::new(Expr::Op("bvor", vec![chosen, other], bits)))
+    match (guard.as_ref(), Rc::ptr_eq(&yes, &no)) {
+        (_, true) => Ok(yes),
+        (Expr::Const(0, _), _) => Ok(no),
+        (Expr::Const(_, _), _) => Ok(yes),
+        _ => Ok(Rc::new(Expr::Select(guard, yes, no))),
+    }
 }
 
 #[cfg(test)]
@@ -233,12 +248,14 @@ mod tests {
             value: lower(op, 8, &inputs).unwrap(),
             defined: division_guard(op, &inputs).unwrap(),
             memory: Default::default(),
+            completed: Rc::new(Expr::Const(1, 8)),
         };
-        let mismatch = observed_terms(&mut emitter, compare(signed), compare(unsigned)).unwrap();
+        let obs = observed_terms(&mut emitter, compare(signed), compare(unsigned), false).unwrap();
         let proof = Obligation {
             domain: format!("(set-logic QF_BV)\n{}", emitter.definitions()),
-            mismatch: mismatch.0,
-            coverage_gap: mismatch.1,
+            mismatch: obs.mismatch,
+            coverage_gap: obs.coverage_gap,
+            completion_gap: obs.completion_gap,
             input_bytes: Vec::new(),
         };
         let mut z3 = Command::new("z3");
