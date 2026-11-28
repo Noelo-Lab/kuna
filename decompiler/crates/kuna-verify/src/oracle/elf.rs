@@ -11,12 +11,31 @@ const READ_WRITE: u32 = elf::PF_R | elf::PF_W;
 const READ_EXECUTE: u32 = elf::PF_R | elf::PF_X;
 
 pub(crate) fn regions(image: &[u8]) -> Result<Vec<Region>, String> {
+    regions_for(
+        image,
+        elf::EM_X86_64,
+        "oracle-case requires a fixed-address x86-64 ELF executable",
+    )
+}
+
+pub(crate) fn riscv_regions(image: &[u8]) -> Result<Vec<Region>, String> {
+    regions_for(
+        image,
+        elf::EM_RISCV,
+        "rv64-terms requires a fixed-address RV64 ELF executable",
+    )
+}
+
+fn regions_for(image: &[u8], machine: u16, invalid_image: &str) -> Result<Vec<Region>, String> {
     let file = ElfFile64::<LittleEndian>::parse(image)
         .map_err(|e| format!("expected a little-endian ELF64: {e}"))?;
     let endian = file.endian();
     let header = file.elf_header();
-    if header.e_machine(endian) != elf::EM_X86_64 || header.e_type(endian) != elf::ET_EXEC {
-        return Err("oracle-case requires a fixed-address x86-64 ELF executable".into());
+    if header.e_machine(endian) != machine || header.e_type(endian) != elf::ET_EXEC {
+        return Err(invalid_image.into());
+    }
+    if machine == elf::EM_RISCV && header.e_flags(endian) & elf::EF_RISCV_RVE != 0 {
+        return Err("the formal RV64 leaf uses the standard integer register file".into());
     }
     if file.elf_section_table().iter().any(|s| {
         matches!(

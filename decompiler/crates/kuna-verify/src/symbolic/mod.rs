@@ -2,6 +2,7 @@
 
 mod byte_file;
 mod execute;
+mod formal_rv64;
 mod induction;
 mod memory;
 mod obligation;
@@ -27,6 +28,8 @@ use crate::{abi, calls, oracle, program, session};
 use byte_file::ByteFile;
 use memory::{Memory, Window};
 use obligation::{Obligation, Verdict};
+
+pub use formal_rv64::export as rv64_terms;
 
 pub struct Options<'a> {
     pub inputs: &'a [String],

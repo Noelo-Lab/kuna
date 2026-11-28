@@ -162,3 +162,28 @@ fn number(text: &str) -> Result<u64, String> {
     };
     parsed.map_err(|_| format!("invalid unsigned number {text}"))
 }
+
+pub(super) fn rv64_terms(args: &[String]) -> Result<ExitCode, String> {
+    let [binary, function, flags @ ..] = args else {
+        return Err("rv64-terms needs an ELF and a function".into());
+    };
+    let mut sleighpath = None;
+    let mut mutation = None;
+    for pair in flags.chunks(2) {
+        match pair {
+            [flag, path] if flag == "--sleighpath" => sleighpath = Some(path.as_str()),
+            [flag, op] if flag == "--opcode-mutant" => {
+                mutation =
+                    Some(usize::try_from(number(op)?).map_err(|_| "--opcode-mutant is too large")?)
+            }
+            _ => {
+                return Err("rv64-terms accepts --sleighpath DIR and --opcode-mutant INDEX".into())
+            }
+        }
+    }
+    println!(
+        "{}",
+        symbolic::rv64_terms(binary, function, &super::spec_roots(sleighpath), mutation)?
+    );
+    Ok(ExitCode::SUCCESS)
+}

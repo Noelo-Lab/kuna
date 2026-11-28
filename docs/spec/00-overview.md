@@ -4122,6 +4122,13 @@ iteration, compares the exits and checks strict decrease of an unsigned
 ranking term on each iteration. See
 `docs/features/diffverify/symbolic-memory.md`.
 
+For RV64 integer leaves, the independent ISA check runs the executable's
+instruction through Isla's Sail model. It binds the trace's architectural
+register reads to the same argument state as the raw-p-code and final-IR
+encoders. An SMT coverage query rules out inputs omitted from the model
+traces. The two observation equalities compose over the common full-width
+`a0` result. See `docs/features/diffverify/formal-rv64.md`.
+
 ## 0.7 Feedback edges
 
 The pipeline is a fixpoint machine wearing a pipeline's clothes. Beyond the
