@@ -43,6 +43,11 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
       return null;
    }
 
+   static class Writer {
+      <V> void writeQuoted(Holder<V> encoder, V value) {
+      }
+   }
+
    static class Store {
       Object get() {
          return null;
@@ -102,6 +107,12 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
 
    <T1 extends V, T2 extends V> Seq<Holder<V>> mergeValues(Chain<T1> a, Chain<T2> b) {
       return Chain.concat(mapAll(a, v -> (V) v), mapAll(b, v -> (V) v)).collect();
+   }
+
+   @SuppressWarnings("unchecked")
+   public void writeKeys(Writer writer, Ref<K, V> ref, Store s) {
+      Holder encoder = (Holder) s.get();
+      writer.writeQuoted(encoder, ref.key);
    }
 
    @SafeVarargs

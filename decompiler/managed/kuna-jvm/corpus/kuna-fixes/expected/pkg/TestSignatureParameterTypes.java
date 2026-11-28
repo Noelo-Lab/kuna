@@ -58,6 +58,11 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
       return TestSignatureParameterTypes.Chain.concat(mapAll(var1, var0 -> (V)var0), mapAll(var2, var0 -> (V)var0)).collect();
    }
 
+   public void writeKeys(TestSignatureParameterTypes.Writer var1, TestSignatureParameterTypes.Ref<K, V> var2, TestSignatureParameterTypes.Store var3) {
+      TestSignatureParameterTypes.Holder var4 = (TestSignatureParameterTypes.Holder)var3.get();
+      var1.writeQuoted(var4, var2.key);
+   }
+
    @SafeVarargs
    static <X> X firstOf(X... var0) {
       return var0.length > 1 ? var0[1] : var0[0];
@@ -116,6 +121,11 @@ public class TestSignatureParameterTypes<K, V extends CharSequence> {
    static class Store {
       Object get() {
          return null;
+      }
+   }
+
+   static class Writer {
+      <V> void writeQuoted(TestSignatureParameterTypes.Holder<V> var1, V var2) {
       }
    }
 }

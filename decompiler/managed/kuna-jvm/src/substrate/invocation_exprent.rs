@@ -479,6 +479,17 @@ impl InvocationExprent {
     }
 
     pub fn get_inferred_expr_type(self, upper_bound: Option<&VarType>) -> VarType {
+        let inferred = self.inferred_result_type(upper_bound);
+        if raw_receiver_erasure::has_unchecked_argument(self) {
+            return self.get_expr_type();
+        }
+        inferred
+    }
+
+    /// The result type `get_inferred_expr_type` infers, before the erasure an
+    /// unchecked argument makes (JLS 15.12.2.6): the inference still fills
+    /// the call's generics map, which its arguments are written against.
+    fn inferred_result_type(self, upper_bound: Option<&VarType>) -> VarType {
         if self.d(|d| d.kuna_inlined.is_some_and(kt_inlined_stdlib_call::typed_by_use)) {
             return self.get_expr_type();
         }
@@ -527,7 +538,7 @@ impl InvocationExprent {
         }
 
         let desc = self.d(|d| d.desc);
-        if raw_receiver_erasure::has_raw_receiver(self) || raw_receiver_erasure::has_unchecked_argument(self) {
+        if raw_receiver_erasure::has_raw_receiver(self) {
             return self.get_expr_type();
         }
         if let (Some(desc), Some(mth_cls)) = (desc, mth_cls) {

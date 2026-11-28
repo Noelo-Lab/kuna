@@ -990,8 +990,9 @@ follow JLS 15.12.2.6: a call one of whose arguments is written with a raw type w
 parameter, with the receiver's declared type arguments for its class's variables, has type
 arguments other than unbounded wildcards is applicable only by unchecked conversion, and its
 result type is the erasure of the declared one
-(`raw_receiver_erasure::has_unchecked_argument`, read where `raw_receiver_erasure` erases a
-raw receiver's result): `return (R) f.apply(rawRoot, bits)` for a `BiFn<Ref<K, V>, long[],
+(`raw_receiver_erasure::has_unchecked_argument`; `InvocationExprent::get_inferred_expr_type`
+erases the result after its inference has run, since that inference also types the call's
+arguments, which an unchecked call does not erase): `return (R) f.apply(rawRoot, bits)` for a `BiFn<Ref<K, V>, long[],
 R> f` keeps the cast javac requires, and with or without the table `return (String)
 first(raw)` for a raw `Seq raw` passed to `<T> T first(Seq<T>)` no longer drops it. A cast
 argument is not taken as raw: kuna writes it with its parameter's type (`addAll((Bag<?
