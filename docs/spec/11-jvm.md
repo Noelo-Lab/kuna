@@ -2235,10 +2235,13 @@ error.
 throwing op (the state before the op flows to the handler). A forward pass then numbers
 values: every def is a value, and where a live register receives two different values at a
 block entry the block gets a phi for that register; a use names the one value reaching it.
-Webs are the union-find classes of values joined through phis. A web of a single constant
-def with no phi is *inline*: the constant is written at each of its uses, typed by that use,
-so one register can carry one literal (`0` as int, float and `null`) to differently-typed
-uses, and no store is emitted. After typing, a `move` that d8 wrote to line up a range call
+Webs are the union-find classes of values joined through phis. A constant def debug info
+does not name is a *literal*: the constant is written at each use it reaches alone (not
+through a phi), typed by that use, so one register can carry one literal (`0` as int, float
+and `null`) to differently-typed uses, and those uses neither read its local nor type its
+web. A literal no phi joins is *inline* and no store is emitted; one a phi joins is stored
+for the phi alone (d8 shares one `const/4 v, 1` between `~i - 1` and the `true` a later join
+receives, where javac writes each constant where it is used). After typing, a `move` that d8 wrote to line up a range call
 is forwarded: when its source is a parameter or a value read only by the move, and its copy
 is read once later in the same block, that reader reads the source instead and the move
 vanishes, provided no other op writes the source's local in between; a chain of such moves

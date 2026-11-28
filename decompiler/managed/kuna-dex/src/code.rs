@@ -1097,18 +1097,17 @@ impl<'d, 'a> Method<'d, 'a> {
         }
     }
 
-    /// Whether the value is a constant read only where it reaches alone.
-    pub fn inline_const(&self, v: u32) -> bool {
+    /// Whether the value is a constant debug info does not name: each use it
+    /// reaches alone reads the literal, typed by that use, as javac writes a
+    /// constant at each use; only a phi it joins reads it from its local.
+    pub fn literal(&self, v: u32) -> bool {
         let k = self.def_op[v as usize];
-        if k >= self.ops.len() {
-            return false;
-        }
-        let o = &self.ops[k];
-        if !matches!(o.insn.op, 0x12..=0x1c) || self.named_def(k) {
-            return false;
-        }
-        let (_, phi) = self.web_uses.get(&self.root(v)).copied().unwrap_or((0, false));
-        !phi
+        k < self.ops.len() && matches!(self.ops[k].insn.op, 0x12..=0x1c) && !self.named_def(k)
+    }
+
+    /// Whether the value is a [`Method::literal`] no phi joins: it is never stored.
+    pub fn inline_const(&self, v: u32) -> bool {
+        self.literal(v) && !self.web_uses.get(&self.root(v)).is_some_and(|w| w.1)
     }
 
     /// The constant op a value holds: its def, or the def a `move` copies.
@@ -1195,6 +1194,7 @@ impl<'d, 'a> Method<'d, 'a> {
             }
         };
         let inline: Vec<bool> = (0..values as u32).map(|v| self.inline_const(v)).collect();
+        let lit: Vec<bool> = (0..values as u32).map(|v| self.literal(v)).collect();
         for (k, &(_, m)) in self.params.iter().enumerate() {
             let t = tfind(&mut tp, k as u32);
             mask[t as usize] &= m;
@@ -1205,7 +1205,7 @@ impl<'d, 'a> Method<'d, 'a> {
         for &k in &live {
             let o = &self.ops[k];
             for u in &o.uses {
-                if !inline[u.val as usize] {
+                if !lit[u.val as usize] {
                     let t = tfind(&mut tp, u.val);
                     mask[t as usize] &= u.mask;
                 }
@@ -1217,13 +1217,13 @@ impl<'d, 'a> Method<'d, 'a> {
             match o.rel {
                 Rel::Same => {
                     let (u, d) = (&o.uses[0], o.def.as_ref().expect("def"));
-                    if !inline[u.val as usize] {
+                    if !lit[u.val as usize] {
                         tunion(&mut tp, &mut mask, d.id, u.val);
                     }
                 }
                 Rel::SameUses => {
                     let (a, b) = (&o.uses[0], &o.uses[1]);
-                    if !inline[a.val as usize] && !inline[b.val as usize] {
+                    if !lit[a.val as usize] && !lit[b.val as usize] {
                         tunion(&mut tp, &mut mask, a.val, b.val);
                     }
                 }
@@ -1241,7 +1241,7 @@ impl<'d, 'a> Method<'d, 'a> {
             let target = if o.rel == Rel::ArrayGet {
                 o.def.as_ref().map(|d| d.id)
             } else {
-                Some(o.uses[2].val).filter(|&v| !inline[v as usize])
+                Some(o.uses[2].val).filter(|&v| !lit[v as usize])
             };
             if let Some(t) = target {
                 mask[self.tvar[t as usize] as usize] &= e;
@@ -1339,8 +1339,8 @@ impl<'d, 'a> Method<'d, 'a> {
     /// The category of the value a use reads.
     pub fn use_cat(&self, o: &Op, u: usize) -> Mask {
         match self.cat[o.uses[u].val as usize] {
-            0 => self.inline_cat(o, u),
-            c => c,
+            c if c != 0 && !self.literal(o.uses[u].val) => c,
+            _ => self.inline_cat(o, u),
         }
     }
 
@@ -1348,7 +1348,7 @@ impl<'d, 'a> Method<'d, 'a> {
     pub fn inline_cat(&self, o: &Op, u: usize) -> Mask {
         let use_ = &o.uses[u];
         let mut m = use_.mask;
-        let known = |v: u32| Some(self.cat[v as usize]).filter(|&c| c != 0);
+        let known = |v: u32| Some(self.cat[v as usize]).filter(|&c| c != 0 && !self.literal(v));
         match o.rel {
             Rel::Same => {
                 if let Some(c) = o.def.as_ref().and_then(|d| known(d.id)) {

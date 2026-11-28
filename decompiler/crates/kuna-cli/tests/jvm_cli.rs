@@ -508,6 +508,10 @@ fn d8_register_sharing_is_undone() {
     for f in ["shapes.dex", "shapes-release.dex"] {
         let arms = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.arms"]));
         assert!(arms.contains(" = new StringBuilder(") && !arms.contains("var1000"), "{f}: {arms}");
+        let ranges = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.ranges"]));
+        assert!(ranges.contains(" = ~") && ranges.contains(" - 1;") && !ranges.contains("(boolean)"), "{f}: {ranges}");
+        let version = ok(&jvm(&["decompile", &dex(f), "vx.Shapes.version"]));
+        assert!(version.contains(" = null;") && !version.contains(" = var"), "{f}: {version}");
     }
 }
 

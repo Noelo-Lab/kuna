@@ -256,12 +256,13 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
             let phi = m.defs + i as u32;
             let root = m.root(phi);
             let ju = j as usize;
-            let uses = m.web_uses.get(&root).map_or(0, |w| w.0);
+            let web = &members[&root];
+            let literal_reads: u32 = web.iter().filter(|&&v| m.literal(v)).map(|&v| m.direct_uses[v as usize]).sum();
+            let uses = m.web_uses.get(&root).map_or(0, |w| w.0) - literal_reads;
             let caught = m.handler_live[r as usize / 64] >> (r % 64) & 1 != 0;
             if j == 0 || caught || handler[ju] || self.joins.contains_key(&j) || uses == 0 || m.direct_uses[phi as usize] != uses {
                 continue;
             }
-            let web = &members[&root];
             let consts = web.iter().all(|&v| v == phi || m.const_op(v).is_some());
             if !consts {
                 continue;
@@ -535,7 +536,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         let by = i16::try_from(o.insn.lit).ok();
         let src = m.def_op[u.val as usize];
         let folded = src < m.ops.len() && self.deferred[src];
-        if u.reg != d.reg || by.is_none() || folded || m.inline_const(u.val) || m.def_cat(d) != I || m.use_cat(o, 0) != I {
+        if u.reg != d.reg || by.is_none() || folded || m.literal(u.val) || m.def_cat(d) != I || m.use_cat(o, 0) != I {
             return Ok(false);
         }
         let s = self.local(d.reg, I, d.id)?;
@@ -636,7 +637,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
         if u == 0 && self.on_stack[k] {
             return Ok(());
         }
-        if m.inline_const(v) {
+        if m.literal(v) {
             return self.push_const(m.def_op[v as usize], c);
         }
         if let Some(p) = m.param_copy(v) {
