@@ -2526,15 +2526,26 @@ classified:
   recovered prototype (`protoorder`) states no narrower parameter there. The call
   then passes `p`. A stated struct passed in the register keeps its field
   (`fp(s.a)`), and a call to `int g(int)`, recovered before its caller, keeps
-  `g((int)n)`. A
-  zero or sign extension the code performs before the call (`mov w0,w0`,
-  `sxtw x0,w0`) writes the register, so its value is no piece of the input and is
-  passed as it was. Which trials are arguments is unchanged: with an 8-byte
-  return nothing is split and the forwarded pointer stays no argument, as above. A
-  variadic call keeps the width its format gave (x86-64
+  `g((int)n)`. A zero or sign extension the code performs before the call
+  (`mov w0,w0`, `sxtw x0,w0`) writes the register, so its value is no piece of
+  the input and is passed as it was. Which trials are arguments is unchanged:
+  with an 8-byte return nothing is split and the forwarded pointer stays no
+  argument, as above. A variadic call keeps the width its format gave (x86-64
   `__printf_chk(1,"%*lu ",w,n)` passes the `int` width in `edx` while the
   function writes all of `rdx` elsewhere), a recovered or 32-bit parameter keeps
   its piece, and float entries and stack slots are not widened.
+  The rule names no target. In x86-64 C code the return register `rax` is not
+  an argument register, so a narrow return splits nothing a call reads, but a
+  32-bit read of an incoming `rdi` or `rsi` (`cmp edi,5`) splits it the same
+  way and `fillinMap` fills the piece below a later argument (`ext(n,7)` printed
+  `ext((int)n,7)`); Go's register ABI passes its first argument in `rax`. The
+  widened value is what the register holds at the call; the cut width came from
+  an unrelated read in the caller, not from the callee. A callee nothing
+  describes that takes an `int` gets the same untouched register on AArch64 and
+  x86-64, so `ext_i2((int)n,7)` now prints `ext_i2(n,7)`, as AArch64 already
+  printed it when the caller returned a `long`. PowerPC64 and RISC-V64 callers
+  extend an `int` argument themselves, so there the call writes the register
+  and keeps `ext_i2((long)(int)n,7)`.
 
 - **Callee-body evidence** (kuna, `decompiler/crates/kuna-decomp/src/p4_calls/kuna_calleedeadarg.rs`):
   every test above reasons on the *caller's* side of the call, and on that side
