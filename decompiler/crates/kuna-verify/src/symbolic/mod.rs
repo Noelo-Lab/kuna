@@ -2,6 +2,8 @@
 
 mod byte_file;
 mod execute;
+mod formal_rv64;
+mod induction;
 mod memory;
 mod obligation;
 mod raw_function;
@@ -27,6 +29,8 @@ use byte_file::ByteFile;
 use memory::{Memory, Window};
 use obligation::{Obligation, Verdict};
 
+pub use formal_rv64::export as rv64_terms;
+
 pub struct Options<'a> {
     pub inputs: &'a [String],
     pub bindings: &'a [(String, u64)],
@@ -34,6 +38,7 @@ pub struct Options<'a> {
     pub memory: &'a [MemoryRange],
     pub stop: Option<u64>,
     pub loop_bound: Option<u8>,
+    pub induct: bool,
     pub indirect: &'a std::collections::BTreeMap<u64, Vec<u64>>,
     pub output: &'a str,
     pub output_bytes: u32,
@@ -67,11 +72,18 @@ pub struct MemoryRange {
 }
 
 struct Encoding {
-    obligation: Obligation,
+    proof: Proof,
     mutation: Option<Value>,
     ir_blocks: usize,
     ir_phis: usize,
-    memory_inputs: Vec<(u64, String)>,
+}
+
+enum Proof {
+    Observations {
+        obligation: Obligation,
+        memory_inputs: Vec<(u64, String)>,
+    },
+    Induction(induction::Induction),
 }
 
 /// Prove equality of the declared return projection over the selected interval.
@@ -142,10 +154,11 @@ fn verify_block(
         "scope": {
             "architecture": "x86-64", "abi": "sysv-amd64",
             "raw_interval": { "start": format!("{entry:#x}"), "end_exclusive": format!("{end:#x}") },
-            "control_flow": match (whole, opts.loop_bound) {
-                (true, Some(_)) => "bounded-function",
-                (true, None) => "acyclic-function",
-                (false, _) => "straight-line-interval",
+            "control_flow": match (whole, opts.induct, opts.loop_bound) {
+                (true, true, _) => "inductive-function",
+                (true, false, Some(_)) => "bounded-function",
+                (true, false, None) => "acyclic-function",
+                (false, _, _) => "straight-line-interval",
             },
             "raw_indirect_targets": opts.indirect.iter().map(|(pc, targets)| (
                 format!("{pc:#x}"), targets.iter().map(|target| format!("{target:#x}")).collect::<Vec<_>>(),
@@ -179,11 +192,10 @@ fn verify_block(
         ],
     });
     let Encoding {
-        obligation,
+        proof,
         mutation,
         ir_blocks,
         ir_phis,
-        memory_inputs,
     } = match encode(prog, fd, opts, entry..end, regions) {
         Ok(encoded) => encoded,
         Err(reason) => {
@@ -196,6 +208,33 @@ fn verify_block(
     result["mutation"] = json!(mutation);
     result["scope"]["ir_blocks"] = json!(ir_blocks);
     result["scope"]["ir_phis"] = json!(ir_phis);
+    let deadline = Instant::now() + opts.timeout;
+    let mut version = Command::new(opts.solver);
+    version.arg("-version");
+    let version = solver::run_text(
+        &mut version,
+        "",
+        deadline.min(Instant::now() + Duration::from_millis(500)),
+    );
+    result["provenance"]["solver_version"] = json!(version.ok().map(|text| text.trim().to_owned()));
+    let mut solver = Command::new(opts.solver);
+    solver.args(["-in", "-smt2"]);
+    let (obligation, memory_inputs) = match proof {
+        Proof::Observations {
+            obligation,
+            memory_inputs,
+        } => (obligation, memory_inputs),
+        Proof::Induction(induction) => {
+            let report = induction.solve(&mut solver, deadline);
+            result["classification"] = report["classification"].clone();
+            if let Some(phase) = report.get("phase") {
+                result["phase"] = phase.clone();
+                result["reason"] = report["reason"].clone();
+            }
+            result["induction"] = report;
+            return result;
+        }
+    };
     let domain = obligation.domain_query();
     let difference = obligation.difference_query();
     result["obligation"] = json!({
@@ -216,17 +255,6 @@ fn verify_block(
         result["obligation"]["bounded_domain_sha256"] = json!(oracle::sha256(bounded.as_bytes()));
         result["obligation"]["bounded_domain_smt2"] = json!(bounded);
     }
-    let deadline = Instant::now() + opts.timeout;
-    let mut version = Command::new(opts.solver);
-    version.arg("-version");
-    let version = solver::run_text(
-        &mut version,
-        "",
-        deadline.min(Instant::now() + Duration::from_millis(500)),
-    );
-    result["provenance"]["solver_version"] = json!(version.ok().map(|text| text.trim().to_owned()));
-    let mut solver = Command::new(opts.solver);
-    solver.args(["-in", "-smt2"]);
     match obligation.solve(&mut solver, deadline) {
         Verdict::Equivalent => result["classification"] = json!("MODEL_EQUIVALENCE"),
         Verdict::BoundedEquivalent => {
@@ -389,6 +417,31 @@ fn encode(
     let mut sites = calls::sites(fd, &env);
     let mut graph = program::compile(prog, fd, &sites);
     let mutation = oracle::apply_opcode_mutant(&mut graph, &mut sites, &env, opts.opcode_mutant)?;
+    let ir_blocks = graph.blocks.len();
+    let ir_phis = graph.blocks.iter().map(|block| block.phis.len()).sum();
+    if opts.induct {
+        if opts.stop.is_some() || opts.loop_bound.is_some() || !opts.memory.is_empty() {
+            return Err(
+                "induction requires whole-function mode without loop or memory limits".into(),
+            );
+        }
+        let induction = induction::Function {
+            env: &env,
+            extent,
+            program: &graph,
+            inputs: &inputs,
+            output: &projection,
+            stack_pointer: &rsp,
+            options: opts,
+        }
+        .infer(declarations)?;
+        return Ok(Encoding {
+            proof: Proof::Induction(induction),
+            mutation,
+            ir_blocks,
+            ir_phis,
+        });
+    }
     let raw = if let Some(stop) = opts.stop {
         execute::raw_block(
             &env,
@@ -408,25 +461,36 @@ fn encode(
             indirect: opts.indirect,
             step_limit: opts.step_limit,
             loop_bound: opts.loop_bound,
+            boundary: None,
         }
         .run(execute::RawState::new(&inputs, &memory.0)?)?
     };
-    let ir = execute::ir_block(&graph, &inputs, &memory.0, &env, projection.size, opts)?;
+    let ir = execute::ir_block(
+        &graph,
+        &inputs,
+        &memory.0,
+        &env,
+        projection.size,
+        opts,
+        None,
+    )?;
     let mut emitter = Emitter::default();
     let observations = terms::observed_terms(&mut emitter, raw, ir, opts.loop_bound.is_some())?;
     declarations.push_str(emitter.definitions());
     Ok(Encoding {
-        obligation: Obligation {
-            domain: declarations,
-            mismatch: observations.mismatch,
-            coverage_gap: observations.coverage_gap,
-            completion_gap: observations.completion_gap,
-            input_bytes: names,
+        proof: Proof::Observations {
+            obligation: Obligation {
+                domain: declarations,
+                mismatch: observations.mismatch,
+                coverage_gap: observations.coverage_gap,
+                completion_gap: observations.completion_gap,
+                input_bytes: names,
+            },
+            memory_inputs: memory.1,
         },
         mutation,
-        ir_blocks: graph.blocks.len(),
-        ir_phis: graph.blocks.iter().map(|block| block.phis.len()).sum(),
-        memory_inputs: memory.1,
+        ir_blocks,
+        ir_phis,
     })
 }
 

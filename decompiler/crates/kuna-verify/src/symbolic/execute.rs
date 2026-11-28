@@ -16,6 +16,7 @@ use crate::state::Env;
 use crate::storage::Storage;
 
 use super::byte_file::ByteFile;
+use super::induction::Boundary;
 use super::memory::{Memory, ReadMode};
 use super::terms::{self, Term};
 
@@ -27,6 +28,7 @@ pub(super) struct Execution {
     pub defined: Term,
     pub memory: Memory,
     pub completed: Term,
+    pub boundary: Option<Boundary>,
 }
 
 impl Execution {
@@ -37,6 +39,25 @@ impl Execution {
             defined,
             memory,
             completed,
+            boundary: None,
+        })
+    }
+
+    pub fn at_boundary(
+        bytes: u32,
+        defined: Term,
+        memory: Memory,
+        values: Vec<Term>,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            value: constant(0, bytes)?,
+            defined,
+            memory,
+            completed: constant(0, 1)?,
+            boundary: Some(Boundary {
+                reached: constant(1, 1)?,
+                values,
+            }),
         })
     }
 
@@ -45,6 +66,7 @@ impl Execution {
             value: terms::select(Rc::clone(&guard), self.value, other.value)?,
             memory: self.memory.join(other.memory, &guard)?,
             completed: terms::select(Rc::clone(&guard), self.completed, other.completed)?,
+            boundary: Boundary::merge(self.boundary, other.boundary, &guard)?,
             defined: terms::select(guard, self.defined, other.defined)?,
         })
     }
@@ -80,6 +102,7 @@ impl RawState {
             defined: self.defined,
             memory: self.memory,
             completed: constant(1, 1)?,
+            boundary: None,
         })
     }
 
@@ -341,6 +364,7 @@ pub(super) fn ir_block(
     env: &Env,
     size: u32,
     options: &super::Options<'_>,
+    boundary: Option<IrBoundary<'_>>,
 ) -> Result<Execution, String> {
     if program.vararg.is_some() {
         return Err("symbolic IR vararg setup is outside the model".to_owned());
@@ -359,13 +383,30 @@ pub(super) fn ir_block(
         steps: 0,
         step_limit: options.step_limit,
         loop_bound: options.loop_bound,
+        boundary,
     };
-    let state = IrState {
+    let mut state = IrState {
         slots: vec![None; program.slots],
         defined: constant(1, 1)?,
         memory: memory.clone(),
     };
-    encoder.block(0, None, state, &mut Vec::new())
+    let mut start = 0;
+    if let Some(boundary) = boundary {
+        if let Some(seeds) = boundary.seeds {
+            for (slot, value) in seeds {
+                state.slots[*slot] = Some(Rc::clone(value));
+            }
+            start = boundary.block;
+        }
+    }
+    encoder.block(start, None, state, &mut Vec::new())
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct IrBoundary<'a> {
+    pub block: usize,
+    pub carried: &'a [(usize, Storage)],
+    pub seeds: Option<&'a [(usize, Term)]>,
 }
 
 #[derive(Clone)]
@@ -400,6 +441,7 @@ struct IrEncoder<'a> {
     steps: u64,
     step_limit: u64,
     loop_bound: Option<u8>,
+    boundary: Option<IrBoundary<'a>>,
 }
 
 struct IrLocations {
@@ -437,8 +479,9 @@ impl IrEncoder<'_> {
         state: IrState,
         path: &mut Vec<usize>,
     ) -> Result<Execution, String> {
+        let at_boundary = self.boundary.is_some_and(|b| b.block == index);
         let visits = path.iter().filter(|&&previous| previous == index).count();
-        if visits != 0 {
+        if visits != 0 && !at_boundary {
             let bound = self
                 .loop_bound
                 .ok_or("symbolic IR loop is outside the model")?;
@@ -469,8 +512,10 @@ impl IrEncoder<'_> {
             .blocks
             .get(index)
             .ok_or("symbolic IR edge leaves the block list")?;
+        let boundary = self.boundary.filter(|b| b.block == index);
+        let seeded = boundary.is_some_and(|b| b.seeds.is_some() && from.is_none());
         let mut values = Vec::with_capacity(block.phis.len());
-        if !block.phis.is_empty() {
+        if !seeded && !block.phis.is_empty() {
             let from = from.ok_or("symbolic entry block has a MULTIEQUAL")?;
             for phi in &block.phis {
                 charge(&mut self.steps, self.step_limit)?;
@@ -485,7 +530,7 @@ impl IrEncoder<'_> {
                 values.push((dest, self.read(arg, &mut state)?));
             }
         }
-        if revisited {
+        if revisited && boundary.is_none() {
             for dest in values
                 .iter()
                 .map(|(dest, _)| *dest)
@@ -496,6 +541,20 @@ impl IrEncoder<'_> {
                     .get_mut(dest.slot)
                     .ok_or("symbolic IR output slot is out of range")? = None;
             }
+        }
+        if let Some(capture) = boundary.filter(|_| !seeded) {
+            let carried = capture
+                .carried
+                .iter()
+                .map(|(slot, _)| {
+                    let value = values
+                        .iter()
+                        .find(|(out, _)| out.slot == *slot)
+                        .ok_or("loop cutpoint lacks a carried phi value")?;
+                    Ok(Rc::clone(&value.1))
+                })
+                .collect::<Result<_, String>>()?;
+            return Execution::at_boundary(self.size, state.defined, state.memory, carried);
         }
         for (dest, value) in values {
             self.assign(&mut state, dest, value)?;
@@ -578,6 +637,7 @@ impl IrEncoder<'_> {
                         defined: state.defined,
                         memory: state.memory,
                         completed: constant(1, 1)?,
+                        boundary: None,
                     });
                 }
                 _ => {
@@ -810,6 +870,7 @@ mod tests {
             steps: 0,
             step_limit: 20,
             loop_bound: None,
+            boundary: None,
         };
         let initial = IrState {
             slots: vec![None; 1],
@@ -822,6 +883,7 @@ mod tests {
             defined: constant(1, 1).unwrap(),
             memory: Memory::default(),
             completed: constant(1, 1).unwrap(),
+            boundary: None,
         };
         let mut emitter = Emitter::default();
         let observations = terms::observed_terms(&mut emitter, encoded, reference, false).unwrap();

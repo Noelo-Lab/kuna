@@ -26,17 +26,23 @@ pub(super) struct RawFunction<'a, 'p> {
     pub indirect: &'a BTreeMap<u64, Vec<u64>>,
     pub step_limit: u64,
     pub loop_bound: Option<u8>,
+    pub boundary: Option<RawBoundary<'a>>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct RawBoundary<'a> {
+    pub address: u64,
+    pub registers: &'a [Storage],
+    pub resume: bool,
 }
 
 impl RawFunction<'_, '_> {
     pub fn run(&self, state: RawState) -> Result<Execution, String> {
-        self.follow(
-            self.extent.start,
-            state,
-            BTreeMap::new(),
-            FUNCTION_BRANCH_DEPTH,
-            &mut 0,
-        )
+        let start = self
+            .boundary
+            .filter(|boundary| boundary.resume)
+            .map_or(self.extent.start, |boundary| boundary.address);
+        self.follow(start, state, BTreeMap::new(), FUNCTION_BRANCH_DEPTH, &mut 0)
     }
 
     fn follow(
@@ -52,6 +58,22 @@ impl RawFunction<'_, '_> {
                 return Err(format!(
                     "raw edge {pc:#x} leaves the selected ELF function extent"
                 ));
+            }
+            if let Some(boundary) = self
+                .boundary
+                .filter(|boundary| boundary.address == pc && (!boundary.resume || *steps != 0))
+            {
+                let values = boundary
+                    .registers
+                    .iter()
+                    .map(|reg| state.registers.read(reg.off, reg.size))
+                    .collect::<Result<_, _>>()?;
+                return Execution::at_boundary(
+                    self.output.size,
+                    state.defined,
+                    state.memory,
+                    values,
+                );
             }
             let seen = visits.entry(pc).or_default();
             if *seen != 0 {

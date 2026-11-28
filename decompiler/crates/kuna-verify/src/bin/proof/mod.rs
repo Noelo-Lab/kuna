@@ -11,6 +11,7 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     };
     let mut stop = None;
     let mut whole = false;
+    let mut induct = false;
     let mut loop_bound = None;
     let mut output = None;
     let mut sleighpath = None;
@@ -28,6 +29,10 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     while let Some(flag) = flags.next() {
         if flag == "--whole-function" {
             whole = true;
+            continue;
+        }
+        if flag == "--induct" {
+            induct = true;
             continue;
         }
         let value = flags
@@ -119,6 +124,11 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
     if !whole && loop_bound.is_some() {
         return Err("--loop-bound requires --whole-function".into());
     }
+    if induct && (!whole || loop_bound.is_some() || !memory.is_empty()) {
+        return Err(
+            "--induct requires --whole-function without a loop bound or memory windows".into(),
+        );
+    }
     let opts = symbolic::Options {
         inputs: &inputs,
         bindings: &bindings,
@@ -126,6 +136,7 @@ pub(super) fn run(args: &[String]) -> Result<ExitCode, String> {
         memory: &memory,
         stop,
         loop_bound,
+        induct,
         indirect: &indirect,
         output: reg,
         output_bytes: width,
@@ -150,4 +161,29 @@ fn number(text: &str) -> Result<u64, String> {
         None => text.parse(),
     };
     parsed.map_err(|_| format!("invalid unsigned number {text}"))
+}
+
+pub(super) fn rv64_terms(args: &[String]) -> Result<ExitCode, String> {
+    let [binary, function, flags @ ..] = args else {
+        return Err("rv64-terms needs an ELF and a function".into());
+    };
+    let mut sleighpath = None;
+    let mut mutation = None;
+    for pair in flags.chunks(2) {
+        match pair {
+            [flag, path] if flag == "--sleighpath" => sleighpath = Some(path.as_str()),
+            [flag, op] if flag == "--opcode-mutant" => {
+                mutation =
+                    Some(usize::try_from(number(op)?).map_err(|_| "--opcode-mutant is too large")?)
+            }
+            _ => {
+                return Err("rv64-terms accepts --sleighpath DIR and --opcode-mutant INDEX".into())
+            }
+        }
+    }
+    println!(
+        "{}",
+        symbolic::rv64_terms(binary, function, &super::spec_roots(sleighpath), mutation)?
+    );
+    Ok(ExitCode::SUCCESS)
 }

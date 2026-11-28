@@ -89,3 +89,36 @@ input reaches a cut. For example, run `add_with_loop` with `--input RDI
 --input RSI --input RDX --loop-bound 4 --opcode-mutant 0`. The fixture's
 entry addition changes to subtraction in the final IR, and
 `proof_replay.py` can replay the resulting mismatch in Unicorn.
+
+## Inductive loop validation
+
+```sh
+"$K" prove fixture.elf add_with_loop --whole-function --induct --return RAX:8 \
+  --input RDI --input RSI --input RDX --sleighpath specs > induction.json
+```
+
+The prover identifies a single reachable IR loop header and proposes its
+start address as the raw cutpoint. It uses register-backed phi values to
+infer a relation between the states. It independently executes each
+prefix, then each region from the cutpoint to a return or back to the
+cutpoint. The region encoders follow their own control-flow edges.
+
+The solver establishes the relation at the first visit, checks preservation
+for arbitrary related states, and checks that both executions continue or
+return together with matching results. A well-founded unsigned ranking
+term must strictly decrease on every continuation. The candidates are
+the carried values and those values minus one modulo their width.
+`count_down` uses the second candidate to prove termination even for an
+initial count of zero, where the first decrement wraps at 64 bits.
+
+`MODEL_EQUIVALENCE` covers unbounded repetition of the validated regions
+over the declared inputs. The model covers one header, register-only
+carried state, and integer returns without arithmetic traps. A failed
+induction check yields `INCONCLUSIVE`. It can involve an abstract
+cutpoint state that the function cannot reach. Use bounded mode to search
+for a concrete difference starting at the function entry.
+
+The report includes the candidate cutpoint, the inferred relation, the
+successful ranking term, and the exact SMT queries with their results
+and hashes. The proof still depends on the SLEIGH and p-code semantics
+shared by the raw and final-IR encoders.
