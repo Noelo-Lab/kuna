@@ -13998,6 +13998,20 @@ repeat_count_source: direct_rep_count is carmel_issue=5 & wide_left_mode=1 & wid
     export direct_rep_count;
 }
 
+repeat_count_source: "R0" is carmel_issue=5 & wide_left_mode=1 & wide_40_45=0 & wide_0_10=0x400 {
+    export R0;
+}
+repeat_count_source: "R0++" is carmel_issue=5 & wide_left_mode=1 & wide_40_45=0x10 & wide_0_10=0x400 {
+    local count:2 = R0;
+    transfer_address_word(R0, RM0, RL0, 0:2, 1:2, R0);
+    export count;
+}
+repeat_count_source: "R0++:long" is carmel_issue=5 & wide_left_mode=1 & wide_40_45=0x10 & wide_0_10=0x401 {
+    local count:2 = R0;
+    transfer_address_word(R0, RM0, RL0, 0:2, 2:2, R0);
+    export count;
+}
+
 repeat_long_r4: "*R4:long" is wide_40_45=4 { export R4; }
 repeat_long_r4: "*R4++:long" is wide_40_45=0x14 {
     local address:2 = R4;

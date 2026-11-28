@@ -13,7 +13,8 @@ impl DirectRepeat {
         }
         let direct = fetch[0] == 0xb8 && fetch[4] & 0xc3 == 0 && fetch[5] == 0;
         let long_data = matches!(fetch[0], 0x44 | 0x54 | 0x74) && fetch[4] & 0xc7 == 2 && fetch[5] == 0x81;
-        (direct || long_data).then(|| Self((fetch[4] >> 3) & 7))
+        let r0_address = matches!((fetch[0], fetch[4] & !0x38, fetch[5]), (0x80, 4, 0) | (0x90, 4, 0 | 1));
+        (direct || long_data || r0_address).then(|| Self((fetch[4] >> 3) & 7))
     }
 
     /// Zero is reserved for an unresolved layout. Value one has no backedge;

@@ -5244,6 +5244,11 @@ only its left slot if that fetch is the endpoint. Positive counts repeat
 the range only when the endpoint has not already passed; zero skips the
 first issue after setup and leaves any following issues to execute once.
 
+The marked R0 address forms use that replay range with the original
+pointer as the count; no DATA read supplies it. Their word and long
+postmodifiers advance R0 by one and two words respectively, including
+when the sampled count is zero. The unmodified form leaves R0 intact.
+
 The CE2 form with a long R4 descriptor uses the same replay range. The
 address gate alone admits the access and postmodifier: a veto makes the
 body fall through once. An admitted operation reads a single 16-bit

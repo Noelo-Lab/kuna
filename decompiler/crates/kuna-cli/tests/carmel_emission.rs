@@ -323,6 +323,7 @@ fn carmel_data_repeat_replays_the_range_and_skips_only_its_first_issue_at_zero()
     check_carmel_data_repeat_range(&mixed, false);
     check_carmel_data_repeat_range(&literal, true);
     check_carmel_long_data_repeat_range();
+    check_carmel_r0_address_repeat_range();
 }
 
 fn check_carmel_data_repeat_range(code: &[u8], literal: bool) {
@@ -362,6 +363,59 @@ fn check_carmel_data_repeat_range(code: &[u8], literal: bool) {
         }
     }
     fs::remove_file(binary).unwrap();
+}
+
+fn check_carmel_r0_address_repeat_range() {
+    let scratch = tempfile::tempdir().unwrap();
+    let binary = scratch.path().join("carmel-repeat-r0.bin");
+    let source = scratch.path().join("carmel-repeat-r0.c");
+    let executable = scratch.path().join("carmel-repeat-r0.exe");
+    let nop = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let a3 = [0x21, 0xac, 0xe6, 0x2b, 0xec, 0];
+    let a4 = [0x21, 0xad, 0x28, 0x2b, 0xec, 0];
+    let ret = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+    let inputs = ["A3L", "A4L", "R0", "PACFG", "RM0", "RL0", "EST", "ECFG", "CECFG1", "CECFG2", "CETBL"];
+    let mut generated = String::from("#include <stdbool.h>\n#include <stdint.h>\n");
+    let mut main = String::from("int main(void) {\n");
+    for (i, (root, stride)) in [([0x90, 0x12, 0x34, 0xcf, 0x3c, 0], 1),
+                                ([0x90, 0xff, 0xff, 0xcf, 0x1c, 1], 2),
+                                ([0x80, 0, 0, 0xcf, 0x14, 0], 0)].into_iter().enumerate() {
+        let mut code = [root, nop, nop, nop, a3, a4, nop, nop, nop, ret, nop, nop];
+        if stride == 0 {
+            code[1..6].copy_from_slice(&[
+                [0xab, 0xec, 0, 0x2b, 0xec, 0], [0xab, 0xec, 0, 0x21, 0xac, 0xe6],
+                [0xa1, 0xad, 0x28, 0x2b, 0xec, 0], nop, nop,
+            ]);
+        }
+        fs::write(&binary, code.as_flattened()).unwrap();
+        for (j, outcome) in ["A3L", "A4L", "R0"].into_iter().enumerate() {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            command.arg("decompile").arg(&binary).args([
+                "0", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0", "--json", "--assert-strict", "--assert", &format!("return %{outcome} unsigned short"),
+            ]);
+            for (n, input) in inputs.iter().enumerate() {
+                command.args(["--assert", &format!("param {n} %{input} unsigned short in_{n}")]);
+            }
+            let report: Value = serde_json::from_slice(&common::process::required_output(&mut command).stdout).unwrap();
+            let function = &report["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let name = format!("address_repeat_{i}_{j}");
+            writeln!(generated, "#define sub_0 {name}\n{}\n#undef sub_0", function["code"].as_str().unwrap()).unwrap();
+            for (count, mode) in [(0usize, 0), (1, 0), (3, 0), (3, 2), (3, 3)] {
+                let expected = match outcome {
+                    "A3L" => 10 + count,
+                    "A4L" => 20 + if stride == 2 { 1 } else { count.max(1) },
+                    _ => (count + stride) % if mode < 2 { 65536 } else { 4 },
+                };
+                writeln!(main, "if ({name}(10,20,{count},{mode},3,0,0,0,0,0,0) != {expected}) return {};",
+                         1 + i * 3 + j).unwrap();
+            }
+        }
+    }
+    writeln!(generated, "{main}\nreturn 0;\n}}").unwrap();
+    fs::write(&source, &generated).unwrap();
+    run_emitted_c(&source, &executable, &generated);
 }
 
 fn check_carmel_long_data_repeat_range() {
