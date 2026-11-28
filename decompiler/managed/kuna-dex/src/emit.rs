@@ -692,7 +692,7 @@ impl<'m, 'd, 'a, 's, 'p> Emitter<'m, 'd, 'a, 's, 'p> {
     fn method_ref_in(&mut self, dex: &Dex, idx: u32, interface: bool) -> Result<u16> {
         let mi = dex.method(idx)?;
         let class = self.class_name_in(dex, mi.class)?.to_vec();
-        let desc = self.proto_desc(mi.proto)?;
+        let desc = dex.proto_desc(mi.proto)?;
         Ok(self.sh.pool.method(&class, dex.string(mi.name)?, &desc, interface))
     }
 

@@ -27,6 +27,12 @@ cp "$tmp/sd/classes.dex" sugar.dex
 mkdir -p "$tmp/sr"
 $D8 --release --min-api 26 --lib "$LIB" --output "$tmp/sr" $(find "$tmp/s" -name '*.class')
 cp "$tmp/sr/classes.dex" sugar-release.dex
+mkdir -p "$tmp/p" "$tmp/pd" "$tmp/pp" peers
+"$JAVAC" -g --release 8 -d "$tmp/p" src/px/*.java
+$D8 --debug --min-api 26 --lib "$LIB" --output "$tmp/pd" $(find "$tmp/p" -name '*.class')
+$D8 --debug --min-api 26 --file-per-class --lib "$LIB" --output "$tmp/pp" "$tmp/pd/classes.dex"
+cp "$tmp/pp/px/Peers.dex" peers/Peers.dex
+cp "$tmp/pp/px/Peers\$\$ExternalSyntheticLambda0.dex" peers/Lambda.dex
 "$JAVA" -cp "$tmp/s" sx.Sugar > expected/Sugar.txt
 cp "$tmp/d/classes.dex" debug.dex
 cp "$tmp/r/classes.dex" release.dex

@@ -2360,7 +2360,9 @@ synthetic bridge of the same class (`$r8$lambda$...`) that passes its parameters
 unchanged; the handle then names the method itself, virtual (interface in an interface), as
 javac's does (the bridge stays, synthetic, for the lambda class). The engine then prints the lambda or
 method reference. A lambda class of any other shape (d8 inlined the body into it) is left as
-it is; the lambda class of a `new` in a peer file is found there.
+it is; the lambda class of a `new` in a peer file is found there, and the members it names
+(the implementation method and its descriptor) are read from that file's own tables, since
+another file's indices name other members.
 
 **Backports.** Below the API level that added a JDK method, d8 calls a static method of a
 synthetic class (`X$$ExternalSyntheticBackportN.m`) holding its own implementation.
