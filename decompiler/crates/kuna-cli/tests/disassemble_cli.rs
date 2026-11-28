@@ -307,6 +307,28 @@ fn raw_carmel_listing_uses_code_words_and_keeps_byte_sizes() {
     assert!(stderr.contains("even word base"), "{stderr}");
 }
 
+#[test]
+fn raw_carmel_wide_link_renders_control_and_data_destinations() {
+    let path = common::scratch_file("raw-carmel-link", "bin");
+    std::fs::write(&path, [
+        0xbf, 0xff, 0xfc, 0xc6, 0x03, 0x07,
+        0xbf, 0xff, 0xfc, 0xc6, 0x03, 0x57,
+        0x3f, 0xff, 0xfc, 0xc6, 0x05, 0x07,
+        0x80, 0x00, 0x00, 0xc6, 0x03, 0x07,
+    ])
+    .unwrap();
+    let (stdout, stderr, status) = run_kuna(&[
+        "disassemble", path.to_str().unwrap(), "0x1000", "--count", "4", "--raw-image",
+        "--target", "Carmel:BE:24:default:default", "--base", "0x1000", "--json",
+    ]);
+    assert_eq!(status, 0, "{stderr}");
+    assert_eq!(
+        instructions(&stdout).iter().map(|row| as_str(&row["text"])).collect::<Vec<_>>(),
+        ["link(est, -0x0004);", "link(pstatus, -0x0004);",
+         "ifexe(ce1) link(*(long*)r1, -0x0004);", "???;"],
+    );
+}
+
 /// **The acceptance probe**: `kuna disassemble <bin> main` lists real
 /// instructions. Before this command there was no way to see one at all — three
 /// testers hit `unknown subcommand "disassemble"` after decompilation had

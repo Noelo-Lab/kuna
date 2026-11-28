@@ -261,7 +261,7 @@ fn wide_move(op: &Operation) -> Option<String> {
 fn wide_link(op: &Operation) -> Option<String> {
     let dest = operand::text(op, 0)?;
     let count = sign_extend(op.operands().get(1)?.value, 24);
-    (R.contains(&dest.as_ref()) && (-0x8000..0).contains(&count))
+    (-0x8000..0).contains(&count)
         .then(|| format!("link({dest}, -{:#06x})", count.unsigned_abs()))
 }
 

@@ -1605,6 +1605,8 @@ take a numeric address or range instead and do not discover functions.
 On Carmel, the base is an even CODE word address and the file must contain
 complete six-byte fetches. A listing row covers one or two three-byte words.
 `--count` counts rows; byte counts and sizes still use bytes.
+Wide `LINK` lists the selected address register, control register, or DATA
+operand with its signed negative frame displacement.
 
 ```bash
 kuna decompile payload.bin 0x4001 --raw-image \
