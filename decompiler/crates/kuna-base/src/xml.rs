@@ -2366,7 +2366,7 @@ mod tests {
         // and kuna-wholeinputarg-be / its big-endian twin
         // and kuna-arm-variadic-double / an ARM hard-float double handed on in a core pair is a parameter
         // and carmel-constructors / Carmel CODE word addresses and odd sequential entries
-        assert_eq!(count, 968, "corpus file count drifted");
+        assert_eq!(count, 969, "corpus file count drifted");
     }
 
     /// ~20 representative SLEIGH spec files across varied processors
