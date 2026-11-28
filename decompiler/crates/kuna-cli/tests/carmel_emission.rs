@@ -766,6 +766,61 @@ fn carmel_undelayed_ce_call_separates_admission_and_link_write() {
 }
 
 #[test]
+fn carmel_qualified_movu_writes_rm_at_address_admission() {
+    if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
+        return;
+    }
+    const NOP: [u8; 6] = [0x2b, 0xec, 0, 0x2b, 0xec, 0];
+    let temp = tempfile::tempdir().unwrap();
+    let binary = temp.path().join("movu.bin");
+    let source = temp.path().join("movu.c");
+    let executable = temp.path().join("movu");
+    for (packet, register, bank, sequential) in [
+        ([0x30, 0x85, 0x33, 0x2b, 0xec, 0], "RM0", 0, false),
+        ([0x2b, 0xec, 0, 0x30, 0x85, 0x33], "RM0", 1, false),
+        ([0xab, 0xec, 0, 0x30, 0x85, 0x33], "RM0", 0, true),
+        ([0xab, 0xec, 0, 0x30, 0x8f, 0x33], "RM6", 0, true),
+    ] {
+        for age in [5, 6] {
+            let mut code = [NOP; 13];
+            code[9 - age] = [0x21, 0xad, 0x6a, 0x2b, 0xec, 0];
+            code[9] = packet;
+            code[10] = [0x2b, 0xd8, 0, 0x2b, 0xec, 0];
+            fs::write(&binary, code.as_flattened()).unwrap();
+            let mut kuna = Command::new(env!("CARGO_BIN_EXE_kuna"));
+            kuna.arg("decompile").arg(&binary).args([
+                "0x1000", "--addr", "--raw-image", "--target", "Carmel:BE:24:default:default",
+                "--base", "0x1000", "--json", "--assert-strict",
+                "--assert", &format!("return %{register} unsigned short"),
+            ]);
+            for (i, input) in [register, "EST", "CECFG1", "CECFG2", "CETBL", "A5L", "ECFG"].into_iter().enumerate() {
+                kuna.args(["--assert", &format!("param {i} %{input} unsigned short in_{}", input.to_ascii_lowercase())]);
+            }
+            let output = common::process::required_output(&mut kuna);
+            let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+            let function = &json["functions"][0];
+            assert!(function["error"].is_null(), "{function}");
+            let emitted = function["code"].as_str().unwrap();
+            let table = 1 << (bank * 8);
+            let (old, new) = if age == 6 || sequential { (0x1111, 0x99) } else { (0x99, 0x1111) };
+            let (left, right) = if bank == 0 { (0x99, 0x1111) } else { (0x1111, 0x99) };
+            fs::write(&source, format!(
+                "#include <stdbool.h>\n#include <stdint.h>\n{emitted}\n\
+                 #define MOVU(c1,c2,tbl,a5) sub_1000(0x1111,0,0x0ee8|(c1),0x0ee8|(c2),tbl,a5,0)\n\
+                 int main(void) {{\n\
+                   if (MOVU(0,0,{table},65535) != {old}) return 1;\n\
+                   if (MOVU(0,0,2*{table},65535) != {new}) return 2;\n\
+                   if (MOVU(0,0,{table},0) != 0x99) return 3;\n\
+                   if (MOVU(0x1000,0,0,65535) != {left}) return 4;\n\
+                   return MOVU(0,0x1000,0,65535) != {right};\n\
+                 }}\n"
+            )).unwrap();
+            run_emitted_c(&source, &executable, emitted);
+        }
+    }
+}
+
+#[test]
 fn carmel_wide_logic_control_alias_writes_high_word_and_masks_repeat_depth() {
     if common::process::optional_output(Command::new("cc").arg("--version")).is_none() {
         return;

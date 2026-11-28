@@ -4147,6 +4147,13 @@ still publishes flags. CE-qualified writes to `A0L` and `A1L` use the
 retired result predicate, not AEN. An immediate write to `EST` changes
 only the transient EX view.
 
+Qualified compact literal `MOVU` to `RM0`, `RM2`, `RM4`, or `RM6` uses
+the five-clock address-admission sample, not the later result predicate.
+An admitted issue writes the literal and refreshes modulo alignment.
+The parallel right lane selects CE2; the parallel left lane and
+the independently executed sequential right slot select CE1.
+The issue publishes CE feedback on either path without setting ALU flags.
+
 Unqualified wide `RESET` applies control-field masks at D2. The
 retirement check follows decoded issue boundaries; the two slots of a
 sequential fetch are separate issues. It proves the four older issues,

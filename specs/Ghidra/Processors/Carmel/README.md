@@ -55,6 +55,11 @@ address enable is set. A following `MOVE A2,*R1++RN1` reads DATA at the old
 `R1` and uses the new `RN1` to postmodify the pointer.
 Emitted C keeps the returned pointer register in DATA word units even
 when that same address has a named DATA object.
+
+Qualified compact `MOVU` to a modulo register uses early address admission:
+the parallel left and sequential right forms use CE1, and the parallel
+right form uses CE2. The modulo value and alignment update together,
+independently of the late execution predicate.
 Selected compact long ADD, SUB, and multiply forms preserve status and
 two-word DATA results with an inactive peer. Qualified CLRBTR clears the
 selected backtrace port only when its predicate allows it.

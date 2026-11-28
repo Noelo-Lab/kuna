@@ -3516,6 +3516,33 @@ compact_rm_alignment: is slot_9_22=0x1847 { export RM6_ALIGN; }
     build ce_single_tick;
 }
 
+@define COMPACT_QUALIFIED_RM "carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 & slot_0_0=1 & compact_rm_destination & compact_rm_alignment & compact_rm_literal"
+
+macro compact_write_qualified_rm(destination, alignment, literal, gate) {
+    local admitted:1 = carmel_read_address_admission(gate);
+    if (admitted == 0) goto <feedback>;
+    destination = literal;
+    refresh_modulo_alignment(destination, alignment);
+  <feedback>
+    clock_ce();
+}
+
+:MOVU "CE1" compact_rm_destination,compact_rm_literal "||" nop_right is
+    (carmel_issue=1 & slot_mode=0 & $(COMPACT_QUALIFIED_RM) & ce_single_tick); (slot_mode=0 & nop_right) {
+    compact_write_qualified_rm(compact_rm_destination, compact_rm_alignment, compact_rm_literal, 1:1);
+    build ce_single_tick;
+}
+:^nop_left "||" "MOVU" "CE2" compact_rm_destination,compact_rm_literal is
+    (carmel_issue=1 & slot_mode=0 & nop_left & ce_single_tick); (slot_mode=0 & $(COMPACT_QUALIFIED_RM)) {
+    compact_write_qualified_rm(compact_rm_destination, compact_rm_alignment, compact_rm_literal, 2:1);
+    build ce_single_tick;
+}
+:MOVU "CE1" compact_rm_destination,compact_rm_literal is
+    carmel_issue=3 & slot_mode=0 & $(COMPACT_QUALIFIED_RM) & ce_single_tick {
+    compact_write_qualified_rm(compact_rm_destination, compact_rm_alignment, compact_rm_literal, 1:1);
+    build ce_single_tick;
+}
+
 :MOVE "CE1" "*R6+=RN6","FF2" is carmel_issue=3 & slot_mode=0 & slot_0_22=0x3143bd
     & carmel_phase_emit=1 & carmel_single_issue=0 & hw_loop_actions=0 {
     local admitted:1 = carmel_read_address_admission(1:1);
