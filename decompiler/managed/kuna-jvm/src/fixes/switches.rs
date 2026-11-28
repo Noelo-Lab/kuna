@@ -504,7 +504,9 @@ impl ConstExprent {
 /// javac rejects): javac gives a declared local its slot before it evaluates
 /// the initializer, and an assigned one holds its slot already, so a local
 /// the arms declare takes another slot and a store to `v`'s slot there is
-/// `v`.
+/// `v`. Only the arms are read: the code before the switch in its head block
+/// may hold another local of the slot, whose scope ended. A merged occurrence
+/// takes `v`'s table entry, which names it.
 pub fn merge_arm_locals(stat: Statement, varproc: VarProcessor) {
     for st in stat.get_stats().borrow().to_vec() {
         merge_arm_locals(st, varproc);
@@ -521,15 +523,18 @@ pub fn merge_arm_locals(stat: Statement, varproc: VarProcessor) {
         let Some(slot) = varproc.get_var_original_index(v.get_index()) else {
             continue;
         };
-        let arms = switch.get_backing().0;
+        let backing = switch.get_backing();
+        let arms = backing.get_case_statements().to_vec();
         let mut vars = Vec::new();
         let mut stored = Vec::new();
-        each_var(arms, &mut |w, store| {
-            vars.push(w);
-            if store {
-                stored.push(w);
-            }
-        });
+        for arm in &arms {
+            each_var(*arm, &mut |w, store| {
+                vars.push(w);
+                if store {
+                    stored.push(w);
+                }
+            });
+        }
         let merged: Vec<i32> = stored
             .iter()
             .filter(|w| {
@@ -542,10 +547,14 @@ pub fn merge_arm_locals(stat: Statement, varproc: VarProcessor) {
         if merged.is_empty() {
             continue;
         }
-        remove_bare_definitions(arms, &merged);
+        remove_bare(&backing.0.get_var_definitions(), &merged);
+        for arm in &arms {
+            remove_bare_definitions(*arm, &merged);
+        }
         for w in vars.into_iter().filter(|w| merged.contains(&w.get_index())) {
             w.set_index(v.get_index());
             w.set_version(v.get_version());
+            w.set_lvt(v.get_lvt());
             w.set_definition(false);
         }
     }
@@ -592,16 +601,20 @@ fn each_var(stat: Statement, f: &mut impl FnMut(VarExprent, bool)) {
 /// Removes the bare declarations (`int x;`) of the variables `indexes` from
 /// `stat` and the statements in it.
 fn remove_bare_definitions(stat: Statement, indexes: &[i32]) {
-    let mut lists = vec![stat.get_var_definitions()];
-    lists.extend(stat.get_exprents());
-    for list in lists {
-        for e in list.to_vec() {
-            if e.try_as_var().is_some_and(|v| v.is_definition() && indexes.contains(&v.get_index())) {
-                list.remove_item(&e);
-            }
-        }
+    remove_bare(&stat.get_var_definitions(), indexes);
+    if let Some(exprents) = stat.get_exprents() {
+        remove_bare(&exprents, indexes);
     }
     for st in stat.get_stats().borrow().to_vec() {
         remove_bare_definitions(st, indexes);
+    }
+}
+
+/// Removes the bare declarations of the variables `indexes` from `list`.
+fn remove_bare(list: &JList<Exprent>, indexes: &[i32]) {
+    for e in list.to_vec() {
+        if e.try_as_var().is_some_and(|v| v.is_definition() && indexes.contains(&v.get_index())) {
+            list.remove_item(&e);
+        }
     }
 }

@@ -2430,7 +2430,12 @@ to the target's slot there is the target.
 declarations are placed and makes each variable stored in the arms at the slot of the variable
 that the switch expression's assignment stores (one that holds its values: the same type, or an
 `int` for a constant narrowed to `byte`, `short` or `char`) that variable, its bare declarations
-in the arms dropped. Case `TestSwitchArmStore`.
+in the arms dropped. Case `TestSwitchArmStore`. Only the arms are read: the block that holds the
+selector also holds the code before the switch, where a local whose scope ended can have had the
+slot (`{ int t = next(); .. } int num = switch (b) { .. }`), and that local keeps its declaration.
+A merged occurrence takes the target's LocalVariableTable entry, since the entry of a declared
+local starts after its initializer and the store in the arm lies before it. Case
+`TestSwitchArmScope`.
 
 **Heap reads copied into several uses.**
 `decompiler/managed/kuna-jvm/src/p3_dataflow/stack_vars_processor.rs (StackVarsProcessor)`
