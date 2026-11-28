@@ -5,6 +5,7 @@ use crate::catch_all_statement::CatchAllStatement;
 use crate::catch_statement::CatchStatement;
 use crate::decompiler_context::DecompilerContext;
 use crate::exit_exprent;
+use crate::p8_structure::kuna_javac_layout;
 use crate::exprent::Exprent;
 use crate::function_exprent::{FunctionExprent, FunctionType};
 use crate::fixes::twr::{self as twr_fix, Closeable};
@@ -352,6 +353,7 @@ impl TryWithResourcesProcessor {
                 if exit
                     .get_value()
                     .is_some_and(|v| variable.equals_versions(v))
+                    && !declared_before(assign.0, assignment.0)
                     && !variable.is_var_referenced(
                         try_statement.get_top_parent().0,
                         &[exit.get_value().unwrap().as_var()],
@@ -632,5 +634,20 @@ impl TryWithResourcesProcessor {
             }
         }
         false
+    }
+}
+
+/// Whether `assign`, the try body's last assignment whose variable the code
+/// after the try returns, stores a local declared before the resource
+/// `resource` (javac compiles `T v; try (R r = ..) { v = e; } return v;`
+/// with `v`'s slot below `r`'s, and the temporary of `try (R r = ..) {
+/// return e; }` after it), so the source returned it after the try.
+fn declared_before(assign: Exprent, resource: Exprent) -> bool {
+    if !kuna_javac_layout::active() {
+        return false;
+    }
+    match (kuna_javac_layout::store_slot(assign), kuna_javac_layout::store_slot(resource)) {
+        (Some(v), Some(r)) => v < r,
+        _ => false,
     }
 }

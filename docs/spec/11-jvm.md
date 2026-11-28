@@ -2342,6 +2342,16 @@ check of `x` and then loads the constant: removing the check alone printed `retu
 the offset of the loaded constant, and `restore_field_read` writes the constant at that
 offset as the read of the first instance field of `x`'s class (or a superclass) that holds
 its value; where it finds no such constant, the check stays written.
+(kuna) A try-with-resources whose body ends by assigning a local that the code after the try
+returns (`T v; try (R r = ..) { v = e; } return v;`) printed as `try (R r = ..) { return e; }`:
+`TryWithResourcesProcessor` folds such a return into the body, the shape javac's desugaring of a
+`return e` inside gives, which stores `e` in a temporary and returns it right after the close.
+javac declares the temporary after the resource and a local the source declared before the try
+before it, so the return stays after the try when the assignment's store has a lower slot than
+the resource's (`decompiler/managed/kuna-jvm/src/p8_structure/try_with_resources_processor.rs
+(declared_before)`, the slots read by `kuna_javac_layout::store_slot`). Elasticsearch's
+`convertRawTemplateToComponentTemplate` lost its local and its recompiled code. Case
+`TestTwrAssignedLocal`.
 (kuna) A creation `Outer.this.new Inner(..)` whose outer instance javac checks with a
 `requireNonNull` the creation's next argument follows keeps its qualifier also when the check
 already reads the outer instance and the creation still the stack variable holding it

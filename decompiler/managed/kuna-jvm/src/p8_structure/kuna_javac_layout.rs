@@ -1436,6 +1436,18 @@ pub fn extra_inits(loop_: DoStatement, init: Exprent, update: Exprent, before: &
     taken.len() - 1
 }
 
+/// The slot the last store instruction among those `exprent` came from
+/// writes, in the method being structured.
+pub fn store_slot(exprent: Exprent) -> Option<i32> {
+    let offsets = exprent.get_bytecode()?;
+    with_code(|code| {
+        code.iter()
+            .rev()
+            .find(|c| c.0 >= 0 && offsets.get(c.0 as usize) && STORES.contains(&c.1))
+            .map(|c| c.3)
+    })
+}
+
 /// Whether the method being structured has a LocalVariableTable (then a
 /// local without an entry is a compiler's temporary).
 fn has_lvt() -> bool {
