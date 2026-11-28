@@ -4516,8 +4516,8 @@ moves.
   callers. Later explicit user prototype assertions retain precedence. Source
   aliases, aggregate register decomposition and high-level receiver syntax are
   separate from this import contract.
-  An externally visible defined DWARF function's exact `DW_AT_linkage_name` also binds its prototype
-  to matching ELF PLT entry addresses
+  An externally visible defined DWARF function's exact `DW_AT_linkage_name` (not the pre-DWARF-4
+  `DW_AT_MIPS_linkage_name`) also binds its prototype to matching ELF PLT entry addresses
   (`decompiler/crates/kuna-analysis/src/analyzers/dwarf/kuna_dwarflinkage.rs`). The linker spelling is taken from the
   definition or its one-hop `DW_AT_specification` declaration. When no explicit
   linker spelling is present, a source name is accepted only if a defined, global

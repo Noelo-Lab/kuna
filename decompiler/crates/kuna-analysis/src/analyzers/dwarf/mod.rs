@@ -217,6 +217,9 @@ struct DieSnap {
     name: String,
     linkage_name: String,
     has_linkage_name: bool,
+    /// The linkage name is the pre-DWARF-4 `DW_AT_MIPS_linkage_name`, which
+    /// only MIPS import declarations read.
+    legacy_linkage_name: bool,
     external: Option<bool>,
     /// `DW_AT_low_pc` resolved to a VMA, if present (marks a *defined* function).
     low_pc: Option<u64>,
@@ -308,6 +311,7 @@ impl DieSnap {
             name: String::new(),
             linkage_name: String::new(),
             has_linkage_name: false,
+            legacy_linkage_name: false,
             external: None,
             low_pc: None,
             type_ref: None,
@@ -447,9 +451,11 @@ fn snapshot_unit_with_go(
         if let Some(gimli::AttributeValue::Flag(value)) = entry.attr_value(gimli::DW_AT_external) {
             snap.external = Some(value);
         }
-        if let Some(val) = entry.attr_value(gimli::DW_AT_linkage_name)
-            .or_else(|| entry.attr_value(gimli::DW_AT_MIPS_linkage_name))
-        {
+        let standard_linkage = entry.attr_value(gimli::DW_AT_linkage_name);
+        let legacy_linkage = (standard_linkage.is_none() && snap.tag == gimli::DW_TAG_subprogram)
+            .then(|| entry.attr_value(gimli::DW_AT_MIPS_linkage_name)).flatten();
+        snap.legacy_linkage_name = legacy_linkage.is_some();
+        if let Some(val) = standard_linkage.or(legacy_linkage) {
             snap.has_linkage_name = true;
             if let Ok(s) = dwarf.attr_string(unit, val) {
                 if let Ok(s) = std::str::from_utf8(s.slice()) {
