@@ -914,7 +914,7 @@ impl InitializerProcessor {
                 }
                 ExprentType::New => {
                     if cl.get_fields().get(fidx as usize).has_modifier(ACC_STATIC) {
-                        Self::qualify_field_references(expr.as_new(), cl, fidx + 1);
+                        Self::qualify_field_references(expr.as_new(), cl, fidx);
                     }
                 }
                 _ => {}

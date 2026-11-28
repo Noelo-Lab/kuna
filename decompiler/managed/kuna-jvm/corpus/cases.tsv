@@ -2086,3 +2086,5 @@ case	kuna-fixes/pkg/TestStaticCompoundAssign	Kuna Fixes	kuna-fixes/classes/pkg/T
 case	kuna-fixes/pkg/TestStaticBlockInPlace	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticBlockInPlace
 # kuna-fixes/src/pkg/TestInstanceCompoundAssign.java, javac 21.0.13.1 (-g --release 17)
 case	kuna-fixes/pkg/TestInstanceCompoundAssign	Kuna Fixes	kuna-fixes/classes/pkg/TestInstanceCompoundAssign
+# kuna-fixes/src/pkg/TestStaticLambdaSelfRead.java, javac 21.0.13.1 (-g --release 17)
+case	kuna-fixes/pkg/TestStaticLambdaSelfRead	Kuna Fixes	kuna-fixes/classes/pkg/TestStaticLambdaSelfRead

@@ -1329,6 +1329,12 @@ blocks stand among the fields in that order, which keeps the order of execution.
 statements stay in `<clinit>` through the class-level passes, which type and name their locals,
 and leave it only when the class is written (`InitializerProcessor::take_static_blocks`).
 
+**A lambda reads its own field qualified (kuna).** A moved initializer's reads of later fields
+are qualified, in the bodies of its lambdas too, but in a lambda only the fields declared after
+its own were: `static final Runnable SELF = () -> { if (SELF == null) .. }` is a self-reference
+javac rejects (JLS 8.3.3 counts the field's own initializer), though the class file holds just a
+`getstatic` of `SELF` (its source wrote `C.SELF`). The field itself is now qualified as well.
+
 **A qualified empty `super()` (kuna).** A superclass constructor call that passes only the
 outer instance of an inner member superclass prints as `super()`, the outer instance being
 a synthetic argument, so `hideEmptySuper` took it for the implicit call and dropped it. It
