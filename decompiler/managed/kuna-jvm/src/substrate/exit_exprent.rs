@@ -10,6 +10,7 @@ use crate::expr_processor::{ExprProcessor, NullCastType};
 use crate::exprent::{Exprent, ExprentKind};
 use crate::i_matchable::MatchProperties;
 use crate::fixes::lambdas::lambda_type_variable_target;
+use crate::fixes::lambdas::raw_target_cast;
 use crate::java_subclass;
 use crate::match_engine::MatchEngine;
 use crate::match_node::{MatchNode, MatchValue};
@@ -152,6 +153,7 @@ impl ExitExprent {
 
             let ret_type = ret_type.expect("NullPointerException");
             if ret_type.type_ != CodeType::Void {
+                let erased_ret = ret_type.clone();
                 let mut ret = ret_type;
                 let mut generic = false;
                 if let Some(generic_ret) = method_descriptor
@@ -169,6 +171,11 @@ impl ExitExprent {
                     inv.d_mut(|d| d.kuna_target = target);
                 }
 
+                let lambda_cast = value.and_then(|v| raw_target_cast::returned_cast(&erased_ret, v));
+                if let Some(cast) = lambda_cast {
+                    raw_target_cast::write(&mut buf, value.expect("NullPointerException"), &cast, indent);
+                    return buf;
+                }
                 let _declared = disjoint_generic_cast::mark_declared_target();
                 ExprProcessor::get_casted_exprent_full(
                     value.expect("NullPointerException"),

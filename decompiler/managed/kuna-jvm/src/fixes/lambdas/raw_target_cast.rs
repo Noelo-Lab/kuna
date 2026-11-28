@@ -35,7 +35,7 @@ use crate::struct_method::StructMethod;
 use crate::text_buffer::TextBuffer;
 use crate::var_type::VarType;
 
-type Declared = (String, String, Vec<(i32, VarType)>);
+type Declared = (String, String, Vec<(i32, VarType)>, bool);
 
 thread_local! {
     static DECLARED: RefCell<Vec<Declared>> = const { RefCell::new(Vec::new()) };
@@ -308,8 +308,12 @@ fn outermost(class: &str) -> &str {
 /// Declares, until the returned guard drops, the own parameters (those
 /// after the captured values, `own` of them) of the lambda whose
 /// implementation is `content`, while its body is written, with their
-/// erased types: its implementation's.
-pub fn declare_parameters(content: StructMethod, own: usize) -> DeclaredParameters {
+/// erased types: its implementation's. `erased` says the lambda is written
+/// implicitly typed for a type whose function type is erased (the raw
+/// interface, or the parameterization its `invokedynamic` instantiates), so
+/// that a value it returns has the erased return type as its target (a cast
+/// there cannot make the lambda pertinent to applicability, JLS 15.12.2.2).
+pub fn declare_parameters(content: StructMethod, own: usize, erased: bool) -> DeclaredParameters {
     let md = MethodDescriptor::parse_descriptor(&content.get_descriptor());
     let mut slot = if content.has_modifier(CodeConstants::ACC_STATIC) { 0 } else { 1 };
     let mut params = Vec::new();
@@ -321,7 +325,7 @@ pub fn declare_parameters(content: StructMethod, own: usize) -> DeclaredParamete
         slot += p.stack_size;
     }
     let key = format!("{}{}", content.get_name(), content.get_descriptor());
-    DECLARED.with(|d| d.borrow_mut().push((content.get_class_qualified_name(), key, params)));
+    DECLARED.with(|d| d.borrow_mut().push((content.get_class_qualified_name(), key, params, erased)));
     DeclaredParameters
 }
 
@@ -364,7 +368,7 @@ pub fn declare_captures(lambda: NewExprent, node: ClassNode) -> Option<DeclaredP
         return None;
     }
     let key = format!("{}{}", info.content_method_name, info.content_method_descriptor);
-    DECLARED.with(|d| d.borrow_mut().push((info.content_class_name.clone(), key, params)));
+    DECLARED.with(|d| d.borrow_mut().push((info.content_class_name.clone(), key, params, false)));
     Some(DeclaredParameters)
 }
 
@@ -378,9 +382,27 @@ pub fn declared_parameter(method: StructMethod, slot: i32) -> Option<VarType> {
         d.borrow()
             .iter()
             .rev()
-            .filter(|(c, k, _)| *c == class && *k == key)
-            .find_map(|(_, _, params)| params.iter().find(|(s, _)| *s == slot).map(|(_, t)| t.clone()))
+            .filter(|(c, k, _, _)| *c == class && *k == key)
+            .find_map(|(_, _, params, _)| params.iter().find(|(s, _)| *s == slot).map(|(_, t)| t.clone()))
     })
+}
+
+/// The cast for `value`, a lambda or method reference returned by the method
+/// being written, whose descriptor's return type is `ret`, when that is the
+/// implementation of a lambda [`declare_parameters`] declares erased: its
+/// function type returns the erasure `ret` whatever type was inferred for
+/// the lambda, and the returned lambda takes it for its target as an
+/// assigned one ([`assigned_cast`]): `a -> (Fn<String, Integer>) (b ->
+/// a.length() + b.length())` for a lambda written as an `Fn<String, Fn>`.
+pub fn returned_cast(ret: &VarType, value: Exprent) -> Option<VarType> {
+    let method = DecompilerContext::get_current_method_wrapper()?.with(|d| d.method_struct);
+    let class = method.get_class_qualified_name();
+    let key = format!("{}{}", method.get_name(), method.get_descriptor());
+    let erased = DECLARED.with(|d| d.borrow().iter().any(|(c, k, _, erased)| *erased && *c == class && *k == key));
+    if !erased {
+        return None;
+    }
+    assigned_cast(ret, value)
 }
 
 /// Whether `t` is the type a lambda written for it gives its own

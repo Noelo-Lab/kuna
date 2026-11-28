@@ -1339,7 +1339,16 @@ Processing a root class (`ClassesProcessor::process_class`) runs, in order:
    assigned to a variable or field whose written type is its raw interface is cast when a
    parameter is instantiated more specifically (`raw_target_cast::assigned_cast`): `Fn f =
    (Fn<String, Integer>) (s -> s.length())` for a local that stays raw because it is passed
-   on, stored or captured, which `initializer_local_type` does not type. A lambda written for such a raw parameter
+   on, stored or captured, which `initializer_local_type` does not type. A lambda or method
+   reference that a lambda returns takes the lambda's function type's return type for its
+   target, and where the returning lambda is written implicitly typed for its raw interface
+   or for the parameterization its `invokedynamic` instantiates (below), that function type
+   is erased: `Fn<String, Fn> f = a -> b -> a.length() + b.length()` types `b` as `Object`
+   whatever kuna inferred for the lambda. Such a returned value is cast as an assigned one
+   is, against the erased return type of the implementation method
+   (`raw_target_cast::returned_cast`): `a -> (Fn<String, Integer>) (b -> a.length() +
+   b.length())`. A lambda written with declared parameters is left as it was, since the
+   cast would make its body, and so the lambda, pertinent to applicability. A lambda written for such a raw parameter
    (when it needs no cast) or under this cast, and one assigned where the written type is
    its raw interface or the instantiated parameterization, declares its own parameters with
    their erased types, its implementation method's; `raw_target_cast::declare_parameters`
